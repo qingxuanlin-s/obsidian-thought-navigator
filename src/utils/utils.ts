@@ -168,17 +168,25 @@ export async function mainNoteInit(plugin:ZKNavigationPlugin){
                 break;
             case "3":
                 let temLen:number = 1;
+                let parts: string[] = [];
+                
+                // 根据配置的分隔符分割文件名
                 if(plugin.settings.Separator === "other"){
-                    node.ID = note.basename.split(plugin.settings.OtherSeparator)[0];
+                    parts = note.basename.split(plugin.settings.OtherSeparator);
                     temLen = plugin.settings.OtherSeparator.length;
                 }else{
-                    node.ID = note.basename.split(plugin.settings.Separator)[0];
+                    parts = note.basename.split(plugin.settings.Separator);
                 }
+                
+                // 必须有至少2部分（ID和标题），且标题不能为空
+                if(parts.length < 2 || !parts[1] || parts[1].trim() === ''){
+                    continue; // 跳过不符合格式的文件
+                }
+                
+                node.ID = parts[0].trim();
+                node.title = parts.slice(1).join(plugin.settings.Separator === "other" ? plugin.settings.OtherSeparator : plugin.settings.Separator).trim();
                 node.IDArr = await ID_formatting(node.ID, node.IDArr, plugin.settings.siblingsOrder);
                 node.IDStr = IDArr.toString();
-                if (node.ID.length < note.basename.length - 1) {
-                    node.title = note.basename.substring(node.ID.length + temLen);
-                }
                 break;
             default:
             // do nothing
