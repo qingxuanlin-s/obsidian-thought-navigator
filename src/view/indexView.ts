@@ -84,6 +84,9 @@ export class ZKIndexView extends ItemView {
     
     // 性能优化：节点位置缓存 Map，O(1) 查找替代 O(n) filter
     nodePositionMap: Map<number, ZKNode> = new Map();
+    
+    // 防抖：避免折叠时频繁重新渲染
+    private foldRefreshTimeout: NodeJS.Timeout | null = null;
 
     constructor(leaf: WorkspaceLeaf, plugin: ZKNavigationPlugin) {
         super(leaf);
@@ -2111,8 +2114,16 @@ export class ZKIndexView extends ItemView {
                             n=>!(n.nodeIDstr.startsWith(clickNode.nodeIDstr) && (n.graphID == clickNode.graphID))
                         )   
                     }  
-                    event.stopPropagation();     
-                    await this.refreshBranchMermaid();           
+                    event.stopPropagation();
+                    
+                    // 性能优化：使用防抖，避免连续点击时多次重新渲染
+                    if (this.foldRefreshTimeout) {
+                        clearTimeout(this.foldRefreshTimeout);
+                    }
+                    this.foldRefreshTimeout = setTimeout(async () => {
+                        await this.refreshBranchMermaid();
+                        this.foldRefreshTimeout = null;
+                    }, 300);
                 })
                 
                 newCircle.addEventListener("touchend", async(event)=>{
@@ -2136,7 +2147,15 @@ export class ZKIndexView extends ItemView {
                         }
     
                     event.stopPropagation();
-                    await this.refreshBranchMermaid();           
+                    
+                    // 性能优化：使用防抖，避免连续点击时多次重新渲染
+                    if (this.foldRefreshTimeout) {
+                        clearTimeout(this.foldRefreshTimeout);
+                    }
+                    this.foldRefreshTimeout = setTimeout(async () => {
+                        await this.refreshBranchMermaid();
+                        this.foldRefreshTimeout = null;
+                    }, 300);
                 })
             }
 
