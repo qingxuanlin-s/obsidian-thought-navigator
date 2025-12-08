@@ -76,6 +76,14 @@ export class ZKIndexView extends ItemView {
     result: GitBranch[];
     allGitBranch: AllGitBranch[];
     fileContent: string;
+    
+    // 按需渲染相关属性
+    branchEntranceNodes: ZKNode[] = [];
+    renderedBranches: Set<number> = new Set();
+    indexMermaidContainer: HTMLElement | null = null;
+    
+    // 性能优化：节点位置缓存 Map，O(1) 查找替代 O(n) filter
+    nodePositionMap: Map<number, ZKNode> = new Map();
 
     constructor(leaf: WorkspaceLeaf, plugin: ZKNavigationPlugin) {
         super(leaf);
@@ -499,10 +507,12 @@ export class ZKIndexView extends ItemView {
                 const tableBtn = new ExtraButtonComponent(toolButtonsDiv);
                 tableBtn.setIcon("table").setTooltip(t("table view"))
                 tableBtn.onClick(async ()=>{
-                    this.plugin.tableArr =  this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
-                    //new tableModal(this.app, this.plugin, this.plugin.tableArr).open();
-                    await this.plugin.openTableView();                    
-                    this.plugin.clearShowingSettings(this.plugin.settings.BranchTab);
+                    if(this.branchAllNodes && this.branchAllNodes[this.plugin.settings.BranchTab]) {
+                        this.plugin.tableArr =  this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
+                        //new tableModal(this.app, this.plugin, this.plugin.tableArr).open();
+                        await this.plugin.openTableView();                    
+                        this.plugin.clearShowingSettings(this.plugin.settings.BranchTab);
+                    }
                 })
             }   
 
@@ -510,8 +520,10 @@ export class ZKIndexView extends ItemView {
                 const listBtn = new ExtraButtonComponent(toolButtonsDiv);
                 listBtn.setIcon("list-tree").setTooltip(t("list tree"))
                 listBtn.onClick(async ()=>{
-                    this.plugin.tableArr =  this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
-                    await this.plugin.openOutlineView();
+                    if(this.branchAllNodes && this.branchAllNodes[this.plugin.settings.BranchTab]) {
+                        this.plugin.tableArr =  this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
+                        await this.plugin.openOutlineView();
+                    }
                 })
 
             }  
@@ -634,12 +646,19 @@ export class ZKIndexView extends ItemView {
         
         if(branchEntranceNodeArr.length >0){
 
+            // 保存分支入口节点和容器引用，用于按需渲染
+            this.branchEntranceNodes = branchEntranceNodeArr;
+            this.indexMermaidContainer = indexMermaidDiv;
+            this.renderedBranches.clear();
+
             switch(this.plugin.settings.graphType){
                 case "structure":
-                    await this.generateFlowchart(branchEntranceNodeArr, indexMermaidDiv);
+                    // 只渲染第一个分支
+                    await this.generateFlowchart(branchEntranceNodeArr, indexMermaidDiv, 0);
                     break;
                 case "roadmap":
-                    await this.generateGitgraph(branchEntranceNodeArr, indexMermaidDiv);
+                    // 只渲染第一个分支
+                    await this.generateGitgraph(branchEntranceNodeArr, indexMermaidDiv, 0);
                     break;
                 default:
                     //do nothing
@@ -650,8 +669,10 @@ export class ZKIndexView extends ItemView {
         }
 
         if(this.plugin.settings.ListTree === true){
-            this.plugin.tableArr =  this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes;
-            this.app.workspace.trigger("zk-navigation:refresh-outline-view");
+            if(this.branchAllNodes && this.branchAllNodes[this.plugin.settings.BranchTab]) {
+                this.plugin.tableArr =  this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes;
+                this.app.workspace.trigger("zk-navigation:refresh-outline-view");
+            }
         }
         
         if(this.plugin.settings.HistoryToggle === true){ 
@@ -660,8 +681,10 @@ export class ZKIndexView extends ItemView {
 
         
         if(this.plugin.settings.TableView === true){ 
-            this.plugin.tableArr =  this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
-            this.app.workspace.trigger("zk-navigation:refresh-table-view");
+            if(this.branchAllNodes && this.branchAllNodes[this.plugin.settings.BranchTab]) {
+                this.plugin.tableArr =  this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
+                this.app.workspace.trigger("zk-navigation:refresh-table-view");
+            }
         }
 
         if(this.plugin.settings.playControllerToggle === true){
@@ -696,12 +719,40 @@ export class ZKIndexView extends ItemView {
         } 
     }
 
-    async generateFlowchart(branchEntranceNodeArr:ZKNode[], indexMermaidDiv:HTMLElement){
-        this.branchAllNodes = [];
-        for (let i = 0; i < branchEntranceNodeArr.length; i++) {            
+    async generateFlowchart(branchEntranceNodeArr:ZKNode[], indexMermaidDiv:HTMLElement, onlyRenderIndex?: number){
+        // 如果是首次调用，初始化 branchAllNodes
+        if(!this.branchAllNodes || this.branchAllNodes.length === 0) {
+            this.branchAllNodes = [];
+        }
+        
+        // 确定要渲染的分支索引范围
+        const startIndex = onlyRenderIndex !== undefined ? onlyRenderIndex : 0;
+        const endIndex = onlyRenderIndex !== undefined ? onlyRenderIndex + 1 : branchEntranceNodeArr.length;
+        
+        for (let i = startIndex; i < endIndex; i++) {            
+            // 如果已经渲染过，跳过
+            if(this.renderedBranches.has(i)) {
+                continue;
+            }
 
             const branchNodes = await this.getBranchNodes(branchEntranceNodeArr[i]);
-            this.branchAllNodes.push({branchTab:i,branchNodes:branchNodes});
+            
+            // 如果 branchAllNodes 中还没有这个索引的数据，添加占位
+            while(this.branchAllNodes.length <= i) {
+                this.branchAllNodes.push({branchTab: this.branchAllNodes.length, branchNodes: []});
+            }
+            this.branchAllNodes[i] = {branchTab:i, branchNodes:branchNodes};
+            
+            // 性能优化：构建节点位置缓存，O(1) 查找
+            for(let node of branchNodes) {
+                this.nodePositionMap.set(node.position, node);
+            }
+            
+            // 性能优化：显示加载提示（2秒后自动消失）
+            if(branchNodes.length > 100) {
+                new Notice(`正在渲染 ${branchNodes.length} 个节点...`, 2000);
+            }
+            
             let mermaidStr = await this.generateFlowchartStr(branchNodes, branchEntranceNodeArr[i],this.plugin.settings.DirectionOfBranchGraph);
             let zkGraph = indexMermaidDiv.createEl("div", { cls: "zk-index-mermaid" });
             zkGraph.id = `zk-index-mermaid-${i}`;       
@@ -719,105 +770,43 @@ export class ZKIndexView extends ItemView {
 
                     let nodeArr = flowchartG.getElementsByClassName("nodeLabel");
 
+                    // 性能优化：只遍历一次添加链接和tooltip
                     for (let i = 0; i < nodeArr.length; i++) {
-
                         let link = document.createElement('a');
                         link.addClass("internal-link");
-                        let nodePosStr = nodeGArr[i].id.split('-')[1];
-                        let node = this.plugin.MainNotes.filter(n => n.position == Number(nodePosStr))[0];
                         link.textContent = nodeArr[i].getText();
                         nodeArr[i].textContent = "";
                         nodeArr[i].appendChild(link);
                         
-                        nodeGArr[i].addEventListener('contextmenu', (event: MouseEvent) => {
-                            
-                            const menu = new Menu();
-
-                            for(let command of this.plugin.settings.NodeCommands){
-                                menu.addItem((item) =>
-                                    item
-                                      .setTitle(command.name)
-                                      .setIcon(command.icon)
-                                      .onClick(async() => {
-                                        let copyStr:string = '';
-                                        switch(command.copyType){
-                                            case 1:
-                                                copyStr = node.ID;
-                                                break;
-                                            case 2:
-                                                copyStr = node.file.path;
-                                                break;
-                                            case 3:
-                                                copyStr = moment(node.ctime).format(this.plugin.settings.datetimeFormat);
-                                                break;
-                                            default:
-                                                break;
-                                        }
-                                        if(copyStr !== ''){
-                                            await navigator.clipboard.writeText(copyStr);
-                                        }       
-                                        this.app.commands.executeCommandById(command.id); 
-                                      })
-                                )
-                            }                                
-                            menu.showAtMouseEvent(event);
-                        });
-
+                        // Tooltip - 使用缓存查找
                         if(this.plugin.settings.displayTimeToggle === true){
-                            let nodeParent = nodeArr[i].parentElement;
-                            if(nodeParent !== null){
-                                setTooltip(nodeParent, `${t("created")}: ${moment(node.ctime).format(this.plugin.settings.datetimeFormat)}`)
+                            let nodePosStr = nodeGArr[i].id.split('-')[1];
+                            let node = this.nodePositionMap.get(Number(nodePosStr));
+                            const parentEl = nodeArr[i].parentElement;
+                            if(node && parentEl){
+                                setTooltip(parentEl, `${t("created")}: ${moment(node.ctime).format(this.plugin.settings.datetimeFormat)}`)
                             }
                         }
-
-                        nodeArr[i].addEventListener("click", async (event: MouseEvent) => {
-                            if (event.ctrlKey) {
-                                this.app.workspace.openLinkText("", node.file.path, 'tab');
-                                event.stopPropagation();
-                            }
-                        })                
-
-                        nodeGArr[i].addEventListener("click", async (event: MouseEvent) => {
-                            if (event.ctrlKey) {
-                                navigator.clipboard.writeText(node.ID)
-                                new Notice(node.ID + " copied")
-                            }else if(event.shiftKey){
-                                this.plugin.settings.lastRetrival =  {
-                                    type: 'main',
-                                    ID: node.ID,
-                                    displayText: node.displayText,
-                                    filePath: node.file.path,
-                                    openTime: moment().format("YYYY-MM-DD HH:mm:ss"),
-                                }
-                                await this.plugin.clearShowingSettings();
-                                await this.IndexViewInterfaceInit();
-                            }else if(event.altKey){
-                                this.plugin.retrivalforLocaLgraph = {
-                                    type: '1',
-                                    ID: node.ID,
-                                    filePath: node.file.path,
-            
-                                };       
-                                this.plugin.openGraphView();
-                            }else{
-                                this.app.workspace.openLinkText("", node.file.path)
-                            }
-                        })
-                        nodeGArr[i].addEventListener("touchend", () => { 
-                            this.app.workspace.openLinkText("", node.file.path)
-                        })
-
-                        nodeGArr[i].addEventListener(`mouseover`, (event: MouseEvent) => {
-                            this.app.workspace.trigger(`hover-link`, {
-                                event,
-                                source: ZK_NAVIGATION,
-                                hoverParent: this,
-                                linktext: "",
-                                targetEl: link,
-                                sourcePath: node.file.path,
-                            })
-                        });
                     }
+                    
+                    // 性能优化：事件委托 - 整个图表只需4个监听器（替代 n*5 个）
+                    const mermaidEl = indexMermaid as HTMLElement;
+                    mermaidEl.addEventListener('click', this.handleNodeClick.bind(this, mermaidEl));
+                    mermaidEl.addEventListener('contextmenu', this.handleNodeContextMenu.bind(this, mermaidEl));
+                    mermaidEl.addEventListener('mouseover', this.handleNodeHover.bind(this, mermaidEl));
+                    
+                    // Touch 事件委托
+                    mermaidEl.addEventListener('touchend', (event) => {
+                        const target = event.target as HTMLElement;
+                        const nodeG = target.closest('[id^="flowchart-"]') as HTMLElement;
+                        if(!nodeG) return;
+                        
+                        const nodePosStr = nodeG.id.split('-')[1];
+                        const node = this.nodePositionMap.get(Number(nodePosStr));
+                        if(node) {
+                            this.app.workspace.openLinkText("", node.file.path);
+                        }
+                    });
                 }
                 for (let foldNode of this.plugin.settings.FoldNodeArr.filter(n => n.graphID == zkGraph.id)) {
                     
@@ -850,16 +839,48 @@ export class ZKIndexView extends ItemView {
                 }
 
             }
+            
+            // 标记该分支已渲染
+            this.renderedBranches.add(i);
         }
     }
 
-    async generateGitgraph(branchEntranceNodeArr:ZKNode[], indexMermaidDiv:HTMLElement){
-        this.branchAllNodes = [];
-        this.allGitBranch = [];
-        for (let i = 0; i < branchEntranceNodeArr.length; i++) {
+    async generateGitgraph(branchEntranceNodeArr:ZKNode[], indexMermaidDiv:HTMLElement, onlyRenderIndex?: number){
+        // 如果是首次调用，初始化数组
+        if(!this.branchAllNodes || this.branchAllNodes.length === 0) {
+            this.branchAllNodes = [];
+        }
+        if(!this.allGitBranch || this.allGitBranch.length === 0) {
+            this.allGitBranch = [];
+        }
+        
+        // 确定要渲染的分支索引范围
+        const startIndex = onlyRenderIndex !== undefined ? onlyRenderIndex : 0;
+        const endIndex = onlyRenderIndex !== undefined ? onlyRenderIndex + 1 : branchEntranceNodeArr.length;
+        
+        for (let i = startIndex; i < endIndex; i++) {
+            // 如果已经渲染过，跳过
+            if(this.renderedBranches.has(i)) {
+                continue;
+            }
 
             const branchNodes = await this.getBranchNodes(branchEntranceNodeArr[i]);
-            this.branchAllNodes.push({branchTab:i,branchNodes:branchNodes});
+            
+            // 如果 branchAllNodes 中还没有这个索引的数据，添加占位
+            while(this.branchAllNodes.length <= i) {
+                this.branchAllNodes.push({branchTab: this.branchAllNodes.length, branchNodes: []});
+            }
+            this.branchAllNodes[i] = {branchTab:i, branchNodes:branchNodes};
+            
+            // 性能优化：构建节点位置缓存
+            for(let node of branchNodes) {
+                this.nodePositionMap.set(node.position, node);
+            }
+            
+            // 性能优化：显示加载提示（2秒后自动消失）
+            if(branchNodes.length > 100) {
+                new Notice(`正在渲染 ${branchNodes.length} 个节点...`, 2000);
+            }
             
             let mermaidStr = await this.generateGitgraphStr(branchNodes, branchEntranceNodeArr[i], i);
             let zkGraph = indexMermaidDiv.createEl("div", { cls: "zk-index-mermaid" });
@@ -962,10 +983,18 @@ export class ZKIndexView extends ItemView {
                     } 
                 }
             }
+            
+            // 标记该分支已渲染
+            this.renderedBranches.add(i);
         }
     }
 
     resetController(){
+        
+        // 检查 branchAllNodes 是否存在且有对应的分支数据
+        if(!this.branchAllNodes || !this.branchAllNodes[this.plugin.settings.BranchTab]) {
+            return;
+        }
         
         this.plugin.tableArr =  this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes.sort((a, b) => a.ctime - b.ctime);
     
@@ -1043,7 +1072,21 @@ export class ZKIndexView extends ItemView {
 
     async openBranchTab(tabNo:number){
 
-        this.plugin.settings.BranchTab = tabNo;        
+        this.plugin.settings.BranchTab = tabNo;
+        
+        // 如果该分支还未渲染，先渲染它
+        if(!this.renderedBranches.has(tabNo) && this.branchEntranceNodes.length > 0 && this.indexMermaidContainer) {
+            switch(this.plugin.settings.graphType){
+                case "structure":
+                    await this.generateFlowchart(this.branchEntranceNodes, this.indexMermaidContainer, tabNo);
+                    break;
+                case "roadmap":
+                    await this.generateGitgraph(this.branchEntranceNodes, this.indexMermaidContainer, tabNo);
+                    break;
+                default:
+                    //do nothing
+            }
+        }        
 
         const branchGraph = document.getElementsByClassName("zk-index-mermaid");
         const branchTabs = document.getElementsByClassName("zk-branch-tab");
@@ -1054,17 +1097,25 @@ export class ZKIndexView extends ItemView {
 
         }
 
-        branchGraph[tabNo].removeClass("zk-hidden");
-        branchTabs[tabNo].addClass("zk-branch-tab-select");
+        if(branchGraph[tabNo]) {
+            branchGraph[tabNo].removeClass("zk-hidden");
+        }
+        if(branchTabs[tabNo]) {
+            branchTabs[tabNo].addClass("zk-branch-tab-select");
+        }
 
         if(this.plugin.settings.ListTree === true){
-            this.plugin.tableArr =  this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes;
-            this.app.workspace.trigger("zk-navigation:refresh-outline-view");
+            if(this.branchAllNodes && this.branchAllNodes[this.plugin.settings.BranchTab]) {
+                this.plugin.tableArr =  this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes;
+                this.app.workspace.trigger("zk-navigation:refresh-outline-view");
+            }
         }
 
         if(this.plugin.settings.TableView === true){
-            this.plugin.tableArr =  this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes;
-            this.app.workspace.trigger("zk-navigation:refresh-table-view");
+            if(this.branchAllNodes && this.branchAllNodes[this.plugin.settings.BranchTab]) {
+                this.plugin.tableArr =  this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes;
+                this.app.workspace.trigger("zk-navigation:refresh-table-view");
+            }
         }
         
     }
@@ -1211,14 +1262,26 @@ export class ZKIndexView extends ItemView {
         this.gitBranches = this.result.filter(b=>b.branchName !== "main")
         let gitNodePos:number = 0;
         let gitStr:string = '';
+        // 跟踪已声明的分支，避免重复声明
+        const declaredBranches = new Set<string>();
+        declaredBranches.add("main"); // main 分支默认已存在
+        
         while(temBranches.length > 0){
             
             let nextBranch = temBranches.reduce((min,obj) =>{
+                // 性能优化：添加边界检查，避免访问 undefined
+                if(!min || !min.nodes[min.currentPos]) return obj;
+                if(!obj || !obj.nodes[obj.currentPos]) return min;
                 
-                return min && min.nodes[min.currentPos].ctime < obj.nodes[obj.currentPos].ctime? min:obj;
+                return min.nodes[min.currentPos].ctime < obj.nodes[obj.currentPos].ctime ? min : obj;
             }, temBranches[0])
             
             let branchIndex = temBranches.indexOf(nextBranch);
+            
+            // 边界检查
+            if(branchIndex === -1 || !temBranches[branchIndex].nodes[temBranches[branchIndex].currentPos]) {
+                break;
+            }
             
             let nextNode = temBranches[branchIndex].nodes[temBranches[branchIndex].currentPos];
             temBranches[branchIndex].currentPos = temBranches[branchIndex].currentPos + 1;
@@ -1246,8 +1309,12 @@ export class ZKIndexView extends ItemView {
             let newBranches = this.gitBranches.filter(n=>n.branchPoint.ID == nextNode.ID);
             // 必须先声明分支
             for(let branch of newBranches){
-                temBranches.push(branch);
-                gitStr = gitStr + `branch ${branch.branchName} order: ${branch.order}\n`
+                // 检查分支是否已经被声明过，避免重复声明
+                if(!declaredBranches.has(branch.branchName)){
+                    temBranches.push(branch);
+                    gitStr = gitStr + `branch ${branch.branchName} order: ${branch.order}\n`
+                    declaredBranches.add(branch.branchName);
+                }
             }
         }	    
 
@@ -1286,7 +1353,10 @@ export class ZKIndexView extends ItemView {
                 let sons = Nodes.filter(n=>n.IDArr.length === i+1 && n.IDArr.slice(0,-1).toString() === fatherNode.IDStr);
                 if(sons.length > 0){
                     let firstSon = sons.reduce((min,obj) =>{
-                        return min && min.ctime < obj.ctime? min:obj;
+                        // 安全检查：确保节点存在
+                        if(!min || !min.ctime) return obj;
+                        if(!obj || !obj.ctime) return min;
+                        return min.ctime < obj.ctime ? min : obj;
                     }, sons[0]);
 
                     if(/[0-9]/.test(firstSon.ID.slice(-1))){
@@ -1317,7 +1387,10 @@ export class ZKIndexView extends ItemView {
             this.gitBranches.push(gitBranch);
             for(let node of sons){
                 let index = this.branchAllNodes[branchTab].branchNodes.indexOf(node);
-                this.branchAllNodes[branchTab].branchNodes[index].branchName = branchName;							
+                // 边界检查：确保索引有效
+                if(index !== -1 && this.branchAllNodes[branchTab].branchNodes[index]) {
+                    this.branchAllNodes[branchTab].branchNodes[index].branchName = branchName;
+                }							
             }	
 
         }
@@ -1332,7 +1405,12 @@ export class ZKIndexView extends ItemView {
         for(let i=current.nodes.length-1;i>=0;i--){
         let branches = this.gitBranches.filter(b=>b.branchPoint.ID === current.nodes[i].ID);
             if(branches.length > 0){               
-                branches.sort((a, b) => a.nodes[0].ctime - b.nodes[0].ctime);
+                branches.sort((a, b) => {
+                    // 安全检查：确保节点存在
+                    const aTime = a.nodes[0]?.ctime || 0;
+                    const bTime = b.nodes[0]?.ctime || 0;
+                    return aTime - bTime;
+                });
                 for(let next of branches){
                     this.orderGitBranch_uncrossing(next);
                 }
@@ -1846,6 +1924,101 @@ export class ZKIndexView extends ItemView {
         }else{
             await this.toggleTagGit(false);
         }
+    }
+
+    // 性能优化：事件委托 - 点击处理
+    handleNodeClick = (indexMermaid: HTMLElement, event: MouseEvent) => {
+        const target = event.target as HTMLElement;
+        const nodeG = target.closest('[id^="flowchart-"]') as HTMLElement;
+        if(!nodeG) return;
+        
+        const nodePosStr = nodeG.id.split('-')[1];
+        const node = this.nodePositionMap.get(Number(nodePosStr));
+        if(!node) return;
+        
+        if(event.ctrlKey) {
+            if(target.classList.contains('internal-link')) {
+                this.app.workspace.openLinkText("", node.file.path, 'tab');
+                event.stopPropagation();
+            } else {
+                navigator.clipboard.writeText(node.ID);
+                new Notice(node.ID + " copied");
+            }
+        } else if(event.shiftKey) {
+            this.plugin.settings.lastRetrival = {
+                type: 'main',
+                ID: node.ID,
+                displayText: node.displayText,
+                filePath: node.file.path,
+                openTime: moment().format("YYYY-MM-DD HH:mm:ss"),
+            };
+            this.plugin.clearShowingSettings();
+            this.IndexViewInterfaceInit();
+        } else if(event.altKey) {
+            this.plugin.retrivalforLocaLgraph = {
+                type: '1',
+                ID: node.ID,
+                filePath: node.file.path,
+            };
+            this.plugin.openGraphView();
+        } else if(target.classList.contains('internal-link')) {
+            this.app.workspace.openLinkText("", node.file.path);
+        }
+    }
+    
+    // 性能优化：事件委托 - 右键菜单处理
+    handleNodeContextMenu = (indexMermaid: HTMLElement, event: MouseEvent) => {
+        const target = event.target as HTMLElement;
+        const nodeG = target.closest('[id^="flowchart-"]') as HTMLElement;
+        if(!nodeG) return;
+        
+        const nodePosStr = nodeG.id.split('-')[1];
+        const node = this.nodePositionMap.get(Number(nodePosStr));
+        if(!node) return;
+        
+        event.preventDefault();
+        const menu = new Menu();
+        
+        for(let command of this.plugin.settings.NodeCommands) {
+            menu.addItem((item) =>
+                item
+                  .setTitle(command.name)
+                  .setIcon(command.icon)
+                  .onClick(async() => {
+                    let copyStr = '';
+                    switch(command.copyType) {
+                        case 1: copyStr = node.ID; break;
+                        case 2: copyStr = node.file.path; break;
+                        case 3: copyStr = moment(node.ctime).format(this.plugin.settings.datetimeFormat); break;
+                    }
+                    if(copyStr) await navigator.clipboard.writeText(copyStr);
+                    this.app.commands.executeCommandById(command.id);
+                  })
+            );
+        }
+        menu.showAtMouseEvent(event);
+    }
+    
+    // 性能优化：事件委托 - Hover 处理
+    handleNodeHover = (indexMermaid: HTMLElement, event: MouseEvent) => {
+        const target = event.target as HTMLElement;
+        if(!target.classList.contains('internal-link')) return;
+        
+        const nodeG = target.closest('[id^="flowchart-"]') as HTMLElement;
+        if(!nodeG) return;
+        
+        const nodePosStr = nodeG.id.split('-')[1];
+        const node = this.nodePositionMap.get(Number(nodePosStr));
+        if(!node) return;
+        
+        this.app.workspace.trigger('hover-link', {
+            event,
+            source: ZK_NAVIGATION,
+            hoverParent: this,
+            linktext: "",
+            targetEl: target,
+            sourcePath: node.file.path,
+        });
     }
 
     async toggleTagGit(toggle:boolean){
