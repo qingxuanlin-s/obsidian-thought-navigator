@@ -482,45 +482,6 @@ export async function mainNoteInit(plugin: ZKNavigationPlugin) {
 
     plugin.MainNotes = plugin.MainNotes.filter(n => n.IDArr.length > 0);
 
-    if (plugin.settings.multiIDToggle == true && plugin.settings.multiIDField != '') {
-
-        let duplicateNodes: ZKNode[] = [];
-
-        for (let i = 0; i < plugin.MainNotes.length; i++) {
-            let node = plugin.MainNotes[i];
-            if (node.file.extension == 'md') {
-                let fm = await this.app.metadataCache.getFileCache(node.file).frontmatter;
-                if (fm) {
-                    let IDs = fm[plugin.settings.multiIDField];
-                    if (Array.isArray(IDs)) {
-                        for (let j = 0; j < IDs.length; j++) {
-                            if (IDs[j] === null) {
-                                continue;
-                            }
-                            let nodeDup = Object.assign({}, node);
-                            nodeDup.ID = IDs[j].toString();
-                            nodeDup.IDArr = await ID_formatting(nodeDup.ID, [], plugin.settings.siblingsOrder);
-                            nodeDup.IDStr = nodeDup.IDArr.toString();
-                            nodeDup.randomId = random(16);
-                            duplicateNodes.push(nodeDup)
-                        }
-                    } else if (typeof IDs == "string") {
-                        let nodeDup = Object.assign({}, node);
-                        nodeDup.ID = IDs;
-                        nodeDup.IDArr = await ID_formatting(nodeDup.ID, [], plugin.settings.siblingsOrder);
-                        nodeDup.IDStr = nodeDup.IDArr.toString();
-                        nodeDup.randomId = random(16);
-                        duplicateNodes.push(nodeDup)
-                    }
-                }
-            }
-        }
-        if (duplicateNodes.length > 0) {
-            plugin.MainNotes.push(...duplicateNodes);
-            plugin.MainNotes = uniqueByZKNote(plugin.MainNotes);
-        }
-    }
-
     plugin.MainNotes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
 
     for (let i = 0; i < plugin.MainNotes.length; i++) {

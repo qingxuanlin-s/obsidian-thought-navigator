@@ -105,8 +105,6 @@ interface ZKNavigationSettings {
     outlineLayer: number;
     maxLenMainModel: number;
     maxLenIndexModel: number;
-    multiIDToggle: boolean;
-    multiIDField: string;
     lastRetrival: Retrival;
     NodeCommands: NodeCommand[];
     siblingLenToggle: boolean;
@@ -184,8 +182,6 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     outlineLayer: 2,
     maxLenMainModel: 100,
     maxLenIndexModel: 100,
-    multiIDToggle: false,
-    multiIDField: '',
     lastRetrival: {type:'', ID:'',displayText:'', filePath:'', openTime:''},
     NodeCommands: [],
     siblingLenToggle: false,
