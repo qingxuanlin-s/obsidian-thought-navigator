@@ -359,6 +359,7 @@ export class ZKIndexView extends ItemView {
 
         // MOC 模式处理
         if (this.plugin.settings.mocModeEnabled) {
+            console.log('MOC-qx');
             await this.refreshBranchMermaidMOC(indexMermaidDiv);
             return;
         }
@@ -882,20 +883,25 @@ export class ZKIndexView extends ItemView {
 
         // 检查当前活动文件在哪些MOC文件中出现
         const currentActiveFile = this.app.workspace.getActiveFile();
-        const availableMOCs: Array<{file: TFile, hasActiveFile: boolean}> = [];
+        const availableMOCs: Array<{file: TFile, hasActiveFile: boolean, nodes: ZKNode[]}> = [];
         
         const mocFiles = this.app.vault.getMarkdownFiles()
             .filter(f => f.path.startsWith(mocFolder + '/'));
             
         // 检查每个MOC文件是否包含当前活动文件
         for (const mocFile of mocFiles) {
-            let hasActiveFile = false;
-            if (currentActiveFile) {
-                const tempStructure = await parseMOCStructure(this.app, mocFile.path, headingTitle);
-                const tempNodes = await convertMOCToZKNodes(this.plugin, tempStructure);
-                hasActiveFile = tempNodes.some(n => n.file.path === currentActiveFile.path);
-            }
-            availableMOCs.push({file: mocFile, hasActiveFile});
+            const tempStructure = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+            const tempNodes = await convertMOCToZKNodes(this.plugin, tempStructure);
+            const hasActiveFile = currentActiveFile ? tempNodes.some(n => n.file.path === currentActiveFile.path) : false;
+            availableMOCs.push({file: mocFile, hasActiveFile, nodes: tempNodes});
+        }
+        
+        // 如果当前活动文件在多个MOC中，优先选择包含该文件的MOC
+        const mocsWithActiveFile = availableMOCs.filter(m => m.hasActiveFile);
+        if (mocsWithActiveFile.length > 0 && !mocFilePath) {
+            // 如果没有指定MOC文件，默认选择第一个包含当前文件的MOC
+            mocFilePath = mocsWithActiveFile[0].file.path;
+            this.plugin.settings.mocCurrentFile = mocFilePath;
         }
         
         // 显示MOC选择器
@@ -906,13 +912,22 @@ export class ZKIndexView extends ItemView {
             // 创建下拉选择器
             const mocSelector = indexLinkDiv.createEl('select', { cls: 'zk-moc-selector' });
             mocSelector.style.marginLeft = '8px';
-            mocSelector.style.padding = '2px 4px';
+            mocSelector.style.padding = '4px 8px';
             mocSelector.style.borderRadius = '4px';
             mocSelector.style.border = '1px solid var(--background-modifier-border)';
             mocSelector.style.backgroundColor = 'var(--background-primary)';
             mocSelector.style.color = 'var(--text-normal)';
+            mocSelector.style.fontSize = '14px';
+            mocSelector.style.minWidth = '120px';
             
-            availableMOCs.forEach((mocInfo, index) => {
+            // 优先显示包含当前文件的MOC
+            const sortedMOCs = [...availableMOCs].sort((a, b) => {
+                if (a.hasActiveFile && !b.hasActiveFile) return -1;
+                if (!a.hasActiveFile && b.hasActiveFile) return 1;
+                return a.file.basename.localeCompare(b.file.basename);
+            });
+            
+            sortedMOCs.forEach((mocInfo) => {
                 const option = mocSelector.createEl('option');
                 option.value = mocInfo.file.path;
                 option.textContent = `${mocInfo.file.basename}${mocInfo.hasActiveFile ? ' ✓' : ''}`;
@@ -927,6 +942,16 @@ export class ZKIndexView extends ItemView {
                 this.renderedBranches.clear();
                 await this.refreshBranchMermaid();
             });
+            
+            // 如果当前文件在多个思维树中，添加提示
+            if (mocsWithActiveFile.length > 1) {
+                const hintSpan = indexLinkDiv.createEl('small', { 
+                    text: ` (在${mocsWithActiveFile.length}个思维树中)`,
+                    cls: 'zk-moc-hint'
+                });
+                hintSpan.style.color = 'var(--text-muted)';
+                hintSpan.style.marginLeft = '4px';
+            }
         } else if (mocFile instanceof TFile) {
             // 只有一个MOC文件时，显示链接
             const link = indexLinkDiv.createEl('a', { text: `【${mocFile.basename} - ${headingTitle}】` });

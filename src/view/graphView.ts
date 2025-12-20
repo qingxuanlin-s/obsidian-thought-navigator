@@ -1378,26 +1378,105 @@ export class ZKGraphView extends ItemView {
                 mocNodeGraphTextDiv.empty();
                 mocNodeGraphTextDiv.createEl('span', { text: t("mind tree context") });
 
-                // 显示 MOC 索引笔记名称
-                const mocFileInput = mocNodeGraphTextDiv.createEl('input', {
-                    type: 'text',
-                    cls: 'zk-moc-file-input',
-                    value: mocFile.basename
-                });
-                mocFileInput.readOnly = true;
-                mocFileInput.style.marginLeft = '10px';
-                mocFileInput.style.padding = '2px 8px';
-                mocFileInput.style.border = '1px solid var(--background-modifier-border)';
-                mocFileInput.style.borderRadius = '4px';
-                mocFileInput.style.backgroundColor = 'var(--background-secondary)';
-                mocFileInput.style.color = 'var(--text-muted)';
-                mocFileInput.style.fontSize = '12px';
-                mocFileInput.style.cursor = 'pointer';
-                mocFileInput.title = mocFile.path;
-                // 点击输入框打开 MOC 文件
-                mocFileInput.addEventListener('click', () => {
-                    this.app.workspace.openLinkText('', mocFile.path, 'tab');
-                });
+                // 检查当前文件在哪些MOC文件中出现
+                const mocFolder = this.plugin.settings.mocFolderPath;
+                const headingTitle = this.plugin.settings.mocHeadingTitle;
+                const availableMOCs: Array<{file: TFile, hasCurrentFile: boolean, allNodes: ZKNode[], currentNode: ZKNode | null}> = [];
+                
+                if (mocFolder) {
+                    const mocFiles = this.app.vault.getMarkdownFiles()
+                        .filter(f => f.path.startsWith(mocFolder + '/'));
+                        
+                    // 检查每个MOC文件是否包含当前文件
+                    for (const mocFileCandidate of mocFiles) {
+                        const tempStructure = await parseMOCStructure(this.app, mocFileCandidate.path, headingTitle);
+                        const tempNodes = await convertMOCToZKNodes(this.plugin, tempStructure);
+                        const tempCurrentNode = tempNodes.find(n => n.file.path === currentFile.path);
+                        const hasCurrentFile = !!tempCurrentNode;
+                        availableMOCs.push({
+                            file: mocFileCandidate, 
+                            hasCurrentFile, 
+                            allNodes: tempNodes, 
+                            currentNode: tempCurrentNode || null
+                        });
+                    }
+                }
+                
+                // 显示MOC选择器或文件名
+                if (availableMOCs.length > 1) {
+                    // 创建下拉选择器
+                    const mocSelector = mocNodeGraphTextDiv.createEl('select', { cls: 'zk-moc-selector' });
+                    mocSelector.style.marginLeft = '10px';
+                    mocSelector.style.padding = '4px 8px';
+                    mocSelector.style.borderRadius = '4px';
+                    mocSelector.style.border = '1px solid var(--background-modifier-border)';
+                    mocSelector.style.backgroundColor = 'var(--background-primary)';
+                    mocSelector.style.color = 'var(--text-normal)';
+                    mocSelector.style.fontSize = '12px';
+                    mocSelector.style.minWidth = '120px';
+                    
+                    // 优先显示包含当前文件的MOC
+                    const sortedMOCs = [...availableMOCs].sort((a, b) => {
+                        if (a.hasCurrentFile && !b.hasCurrentFile) return -1;
+                        if (!a.hasCurrentFile && b.hasCurrentFile) return 1;
+                        return a.file.basename.localeCompare(b.file.basename);
+                    });
+                    
+                    sortedMOCs.forEach((mocInfo) => {
+                        const option = mocSelector.createEl('option');
+                        option.value = mocInfo.file.path;
+                        option.textContent = `${mocInfo.file.basename}${mocInfo.hasCurrentFile ? ' ✓' : ''}`;
+                        if (mocInfo.file.path === mocFile.path) {
+                            option.selected = true;
+                        }
+                    });
+                    
+                    mocSelector.addEventListener('change', async () => {
+                        const selectedMOC = availableMOCs.find(m => m.file.path === mocSelector.value);
+                        if (selectedMOC && selectedMOC.currentNode) {
+                            // 刷新视图显示选中的MOC
+                            await this.refreshLocalGraphMOCNode(
+                                graphMermaidDiv, 
+                                currentFile, 
+                                selectedMOC.allNodes, 
+                                selectedMOC.currentNode, 
+                                selectedMOC.file
+                            );
+                        }
+                    });
+                    
+                    // 如果当前文件在多个思维树中，添加提示
+                    const mocsWithCurrentFile = availableMOCs.filter(m => m.hasCurrentFile);
+                    if (mocsWithCurrentFile.length > 1) {
+                        const hintSpan = mocNodeGraphTextDiv.createEl('small', { 
+                            text: ` (在${mocsWithCurrentFile.length}个思维树中)`,
+                            cls: 'zk-moc-hint'
+                        });
+                        hintSpan.style.color = 'var(--text-muted)';
+                        hintSpan.style.marginLeft = '4px';
+                    }
+                } else {
+                    // 只有一个MOC文件时，显示输入框
+                    const mocFileInput = mocNodeGraphTextDiv.createEl('input', {
+                        type: 'text',
+                        cls: 'zk-moc-file-input',
+                        value: mocFile.basename
+                    });
+                    mocFileInput.readOnly = true;
+                    mocFileInput.style.marginLeft = '10px';
+                    mocFileInput.style.padding = '2px 8px';
+                    mocFileInput.style.border = '1px solid var(--background-modifier-border)';
+                    mocFileInput.style.borderRadius = '4px';
+                    mocFileInput.style.backgroundColor = 'var(--background-secondary)';
+                    mocFileInput.style.color = 'var(--text-muted)';
+                    mocFileInput.style.fontSize = '12px';
+                    mocFileInput.style.cursor = 'pointer';
+                    mocFileInput.title = mocFile.path;
+                    // 点击输入框打开 MOC 文件
+                    mocFileInput.addEventListener('click', () => {
+                        this.app.workspace.openLinkText('', mocFile.path, 'tab');
+                    });
+                }
 
                 // 生成 Mermaid 图（高亮当前文件）
                 const mermaidStr = await this.generateMOCTreeMermaidStr(relatedNodes, this.plugin.settings.DirectionOfFamilyGraph, currentFile);
