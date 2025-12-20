@@ -138,6 +138,7 @@ export default {
     "growing animation": "播放分支生长动画",
     "structure": "结构图",
     "roadmap": "路线图",
+    "hierarchical": "层级列表",
     "style : ": "风格: ",    
     "playPrevious":"向后",
     "playNext": "向前",
@@ -147,7 +148,11 @@ export default {
     "close relative": "邻近",
     "inlinks": "入链",
     "outlinks": "出链",
+    "inoutlinks": "出入链",
+    "mind tree context": "思维树",
     "expand graph": "放大显示",
+    "Open inoutlinks graph": "打开出入链图",
+    "Mermaid graph to display inlinks and outlinks": "显示当前笔记的入链和出链",
 
     //main.ts
     "open zk-index-graph": "打开分支视图",
@@ -180,5 +185,20 @@ export default {
     "to save":"保存",
     "Choose a Icon for your new Command": "为你的命令添加一个图标",
     "to choose a custom icon": "选择一个图标",
+
+    // MOC 模式
+    "MOC": "MOC",
+    "MOC Mode": "MOC 模式",
+    "Parse tree structure from MOC notes with headings like '# 思维树'": "从 MOC 索引笔记的指定标题下解析树结构",
+    "MOC Folder Location": "MOC 文件夹位置",
+    "Folder containing MOC index notes": "包含 MOC 索引笔记的文件夹",
+    "Heading Title": "标题名称",
+    "The heading title to parse (e.g. '思维树' for '# 思维树')": "要解析的一级标题（如 '思维树' 对应 '# 思维树'）",
+    "MOC Format Example:": "MOC 格式示例：",
+    "Please configure MOC folder path in settings": "请在设置中配置 MOC 文件夹路径",
+    "No MOC files found in the specified folder": "在指定文件夹中找不到 MOC 文件",
+    "No tree structure found under heading:": "在标题下找不到树结构：",
+    "Current MOC: ": "当前 MOC：",
+    "No valid nodes found": "找不到有效的节点",
 
 }

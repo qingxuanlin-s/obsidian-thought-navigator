@@ -2,7 +2,7 @@ import ZKNavigationPlugin from "main";
 import { ExtraButtonComponent, FileView, ItemView, Notice, TFile, WorkspaceLeaf, debounce, loadMermaid } from "obsidian";
 import { GitBranch, ZKNode, ZK_NAVIGATION } from "./indexView";
 import { t } from "src/lang/helper";
-import { displayWidth, mainNoteInit } from "src/utils/utils";
+import { convertMOCToZKNodes, displayWidth, mainNoteInit, parseMOCStructure } from "src/utils/utils";
 import { expandGraphModal } from "src/modal/expandGraphModal";
 
 export const ZK_GRAPH_TYPE: string = "zk-graph-type"
@@ -13,11 +13,14 @@ export class ZKGraphView extends ItemView {
     plugin: ZKNavigationPlugin;
     currentFile: TFile | null;
     familyNodeArr: ZKNode[] = [];
-    graphHeight:number = 0;
-    countOfGraphs:number = 0;
+    graphHeight: number = 0;
+    countOfGraphs: number = 0;
     gitBranches: GitBranch[] = [];
     order: number;
     result: GitBranch[];
+
+    // 防抖相关属性
+    resizeTimeout: NodeJS.Timeout | null = null;
 
     constructor(leaf: WorkspaceLeaf, plugin: ZKNavigationPlugin) {
         super(leaf);
@@ -35,54 +38,79 @@ export class ZKGraphView extends ItemView {
         return "network"
     }
 
-    onResize(){
-        
-        if(this.app.workspace.getLeavesOfType(ZK_GRAPH_TYPE).length > 0){
-                            
-            this.app.workspace.trigger("zk-navigation:refresh-local-graph");
-   
+    onResize() {
+
+        if (this.app.workspace.getLeavesOfType(ZK_GRAPH_TYPE).length > 0) {
+
+            // 使用防抖来避免频繁触发刷新
+            if (this.resizeTimeout) {
+                clearTimeout(this.resizeTimeout);
+            }
+
+            this.resizeTimeout = setTimeout(() => {
+                this.app.workspace.trigger("zk-navigation:refresh-local-graph");
+                this.resizeTimeout = null;
+            }, 300);
         }
     }
 
     async onOpen() {
-        this.refreshLocalGraph();        
+        this.refreshLocalGraph();
     }
 
     onload() {
 
-        const refresh = debounce(this.refreshLocalGraph, 300, true);
+        // 增加防抖时间，避免编辑时频繁刷新
+        const refresh = debounce(this.refreshLocalGraph, 500, true);
 
-        this.registerEvent(this.app.vault.on("rename", () => {                        
-            refresh();
-        }));
-        
-        this.registerEvent(this.app.vault.on("create", () => {            
-            refresh();
-        }));
+        // 记录上次刷新的文件路径，避免重复刷新
+        let lastRefreshedFile: string | null = null;
 
-        this.registerEvent(this.app.vault.on("delete", () => {            
+        this.registerEvent(this.app.vault.on("rename", () => {
+            lastRefreshedFile = null; // 重置，强制刷新
             refresh();
         }));
 
-        this.registerEvent(this.app.metadataCache.on("changed", ()=>{
+        this.registerEvent(this.app.vault.on("create", () => {
+            lastRefreshedFile = null;
             refresh();
         }));
 
-        this.registerEvent(this.app.metadataCache.on("deleted", ()=>{
+        this.registerEvent(this.app.vault.on("delete", () => {
+            lastRefreshedFile = null;
             refresh();
         }));
-        
-        this.registerEvent(this.app.workspace.on("active-leaf-change", async(leaf)=>{  
-            
-            if(this.app.workspace.getLeavesOfType(ZK_GRAPH_TYPE).length > 0){  
-                if(this.app.workspace.getActiveViewOfType(FileView)){    
-                    this.plugin.retrivalforLocaLgraph.type = '2';         
-                    refresh();                    
+
+        // 注释掉 metadataCache.on("changed")，避免编辑时频繁刷新
+        // 只在文件切换时刷新，编辑时不会触发刷新
+        // this.registerEvent(this.app.metadataCache.on("changed", (file)=>{
+        //     refresh();
+        // }));
+
+        this.registerEvent(this.app.metadataCache.on("deleted", () => {
+            lastRefreshedFile = null;
+            refresh();
+        }));
+
+        this.registerEvent(this.app.workspace.on("active-leaf-change", async (leaf) => {
+
+            if (this.app.workspace.getLeavesOfType(ZK_GRAPH_TYPE).length > 0) {
+                if (this.app.workspace.getActiveViewOfType(FileView)) {
+                    const activeFile = this.app.workspace.getActiveFile();
+                    // 只在文件切换时刷新
+                    if (activeFile && lastRefreshedFile !== activeFile.path) {
+                        lastRefreshedFile = activeFile.path;
+                        this.plugin.retrivalforLocaLgraph.type = '2';
+                        refresh();
+                    }
                 }
-            }             
+            }
         }));
 
-        this.registerEvent(this.app.workspace.on("zk-navigation:refresh-local-graph",  refresh));
+        this.registerEvent(this.app.workspace.on("zk-navigation:refresh-local-graph", () => {
+            lastRefreshedFile = null; // 强制刷新
+            refresh();
+        }));
 
     }
 
@@ -91,9 +119,32 @@ export class ZKGraphView extends ItemView {
         containerEl.empty();
 
         this.countGraphs();
-        this.graphHeight = Math.floor(containerEl.offsetHeight / this.countOfGraphs - 10);
+        // 安全检查：避免除以 0 或 NaN
+        const safeCount = Math.max(this.countOfGraphs, 1);
+        const containerHeight = containerEl.offsetHeight || 400; // 默认高度 400px
+        this.graphHeight = Math.max(Math.floor(containerHeight / safeCount - 10), 200); // 最小高度 200px
 
         const graphMermaidDiv = containerEl.createDiv().createDiv("zk-graph-mermaid-container");
+
+        // MOC 模式
+        if (this.plugin.settings.mocModeEnabled) {
+            const activeFile = this.app.workspace.getActiveFile();
+            if (activeFile) {
+                // 检查是否是 MOC 文件
+                if (this.isMOCFile(activeFile)) {
+                    await this.refreshLocalGraphMOC(graphMermaidDiv, activeFile);
+                    return;
+                }
+
+                // 检查是否是 MOC 树中的节点，如果是则渲染相关的思维树
+                const mocNodeResult = await this.findNodeInMOCTrees(activeFile);
+                if (mocNodeResult) {
+                    await this.refreshLocalGraphMOCNode(graphMermaidDiv, activeFile, mocNodeResult.allNodes, mocNodeResult.currentNode, mocNodeResult.mocFile);
+                    return;
+                }
+            }
+        }
+
         await mainNoteInit(this.plugin);
 
         switch (this.plugin.retrivalforLocaLgraph.type) {
@@ -101,22 +152,22 @@ export class ZKGraphView extends ItemView {
                 this.currentFile = this.app.vault.getFileByPath(this.plugin.retrivalforLocaLgraph.filePath);
                 break;
             default: // open file
-                
-                this.currentFile = this.app.workspace.getActiveFile();
-                if(this.currentFile !== null){
-                    let path = this.currentFile.path;
-                    let nodes = this.familyNodeArr.filter(n=>n.file.path ==path);
-                    if(nodes.length > 0){
-                        this.plugin.retrivalforLocaLgraph.ID = nodes[0].ID;
-                    }else{
-                        nodes = this.plugin.MainNotes.filter(n=>n.file.path == path);
 
-                        if(nodes.length >0 ){
+                this.currentFile = this.app.workspace.getActiveFile();
+                if (this.currentFile !== null) {
+                    let path = this.currentFile.path;
+                    let nodes = this.familyNodeArr.filter(n => n.file.path == path);
+                    if (nodes.length > 0) {
+                        this.plugin.retrivalforLocaLgraph.ID = nodes[0].ID;
+                    } else {
+                        nodes = this.plugin.MainNotes.filter(n => n.file.path == path);
+
+                        if (nodes.length > 0) {
                             this.plugin.retrivalforLocaLgraph.ID = nodes[0].ID;
-                        }                      
-                        
+                        }
+
                     }
-                    
+
                     this.plugin.retrivalforLocaLgraph.filePath = path;
                 }
                 break;
@@ -131,14 +182,14 @@ export class ZKGraphView extends ItemView {
             if (this.plugin.settings.FamilyGraphToggle == true) {
 
                 await this.getFamilyNodes(this.currentFile);
-                if(this.familyNodeArr.length > 0){
+                if (this.familyNodeArr.length > 0) {
 
-                
-                    if(this.plugin.settings.graphType === "structure"){
-                                            
-                        
+
+                    if (this.plugin.settings.graphType === "structure") {
+
+
                         let familyMermaidStr: string = await this.genericFamilyMermaidStr(this.currentFile, this.plugin.settings.DirectionOfFamilyGraph);
-                        
+
                         const familyGraphContainer = graphMermaidDiv.createDiv("zk-family-graph-container");
                         const familyGraphTextDiv = familyGraphContainer.createDiv("zk-graph-text");
 
@@ -149,23 +200,23 @@ export class ZKGraphView extends ItemView {
                         graphIconDiv.empty();
                         let expandBtn = new ExtraButtonComponent(graphIconDiv);
                         expandBtn.setIcon("expand").setTooltip(t("expand graph"));
-                        expandBtn.onClick(()=>{              
-                            new expandGraphModal(this.app,this.plugin, this.familyNodeArr, [], familyMermaidStr).open();
+                        expandBtn.onClick(() => {
+                            new expandGraphModal(this.app, this.plugin, this.familyNodeArr, [], familyMermaidStr).open();
                         })
 
                         const familyTreeDiv = familyGraphContainer.createEl("div", { cls: "zk-graph-mermaid" });
 
-                        familyTreeDiv.id = "zk-family-tree";                    
+                        familyTreeDiv.id = "zk-family-tree";
                         let { svg } = await mermaid.render(`${familyTreeDiv.id}-svg`, `${familyMermaidStr}`);
                         familyTreeDiv.insertAdjacentHTML('beforeend', svg);
                         familyTreeDiv.children[0].addClass("zk-full-width");
-                        familyTreeDiv.children[0].setAttribute('height', `${this.graphHeight}px`);    
+                        familyTreeDiv.children[0].setAttribute('height', `${this.graphHeight}px`);
                         graphMermaidDiv.appendChild(familyTreeDiv);
-                                                        
+
                         let panZoomTiger = svgPanZoom(`#${familyTreeDiv.id}-svg`, {
                             zoomEnabled: true,
                             controlIconsEnabled: false,
-                            fit: false,                    
+                            fit: false,
                             center: true,
                             minZoom: 0.001,
                             maxZoom: 1000,
@@ -175,16 +226,16 @@ export class ZKGraphView extends ItemView {
 
                         let setSvg = document.getElementById(`${familyTreeDiv.id}-svg`);
 
-                        if(setSvg !== null){
+                        if (setSvg !== null) {
                             let a = setSvg.children[0].getAttr("style");
-                            if(typeof a == 'string'){
+                            if (typeof a == 'string') {
                                 let b = a.match(/\d([^\,]+)\d/g)
-                                if(b !== null && Number(b[0]) > 1){
-                                    panZoomTiger.zoom(1/Number(b[0]))
-                                }                        
+                                if (b !== null && Number(b[0]) > 1) {
+                                    panZoomTiger.zoom(1 / Number(b[0]))
+                                }
                             }
                         }
-                        
+
                         let nodeGArr = familyTreeDiv.querySelectorAll("[id^='flowchart-']");
                         let nodeArr = familyTreeDiv.getElementsByClassName("nodeLabel");
 
@@ -192,37 +243,37 @@ export class ZKGraphView extends ItemView {
                             let link = document.createElement('a');
                             link.addClass("internal-link");
                             let nodePosStr = nodeGArr[i].id.split('-')[1];
-                            let node = this.familyNodeArr.filter(n=>n.position == Number(nodePosStr))[0];
+                            let node = this.familyNodeArr.filter(n => n.position == Number(nodePosStr))[0];
                             link.textContent = nodeArr[i].getText();
                             nodeArr[i].textContent = "";
                             nodeArr[i].appendChild(link);
                             nodeGArr[i].addEventListener("click", (event: MouseEvent) => {
-                                if(event.ctrlKey){
+                                if (event.ctrlKey) {
                                     this.app.workspace.openLinkText("", node.file.path, 'tab');
-                                }else if(event.shiftKey){
+                                } else if (event.shiftKey) {
                                     this.plugin.retrivalforLocaLgraph = {
                                         type: '1',
                                         ID: node.ID,
-                                        filePath: node.file.path,  
-                                    }; 
+                                        filePath: node.file.path,
+                                    };
                                     this.plugin.openGraphView();
-                                }else if(event.altKey){                 
-                                        this.plugin.clearShowingSettings();
-                                        this.plugin.settings.lastRetrival = {
-                                            type: 'main',
-                                            ID: node.ID,
-                                            displayText: node.displayText,
-                                            filePath: node.file.path,
-                                            openTime: '',                        
-                                        }
-                                        this.plugin.RefreshIndexViewFlag = true;
-                                        this.plugin.openIndexView();
-                                }else{
-                                    this.app.workspace.openLinkText("",node.file.path)
+                                } else if (event.altKey) {
+                                    this.plugin.clearShowingSettings();
+                                    this.plugin.settings.lastRetrival = {
+                                        type: 'main',
+                                        ID: node.ID,
+                                        displayText: node.displayText,
+                                        filePath: node.file.path,
+                                        openTime: '',
+                                    }
+                                    this.plugin.RefreshIndexViewFlag = true;
+                                    this.plugin.openIndexView();
+                                } else {
+                                    this.app.workspace.openLinkText("", node.file.path)
                                 }
                             })
                             nodeGArr[i].addEventListener("touchend", () => {
-                                this.app.workspace.openLinkText("",node.file.path)
+                                this.app.workspace.openLinkText("", node.file.path)
                             })
                             nodeGArr[i].addEventListener(`mouseover`, (event: MouseEvent) => {
                                 this.app.workspace.trigger(`hover-link`, {
@@ -235,7 +286,7 @@ export class ZKGraphView extends ItemView {
                                 })
                             });
                         }
-                    }else{                                      
+                    } else {
                         let familyMermaidStr: string = await this.genericGitgraphStr(this.currentFile);
                         const familyGraphContainer = graphMermaidDiv.createDiv("zk-family-graph-container");
                         const familyGraphTextDiv = familyGraphContainer.createDiv("zk-graph-text");
@@ -247,24 +298,24 @@ export class ZKGraphView extends ItemView {
                         graphIconDiv.empty();
                         let expandBtn = new ExtraButtonComponent(graphIconDiv);
                         expandBtn.setIcon("expand").setTooltip(t("expand graph"));
-                        expandBtn.onClick(()=>{              
-                            new expandGraphModal(this.app,this.plugin, this.familyNodeArr, [], familyMermaidStr, 'gitGraph').open();
+                        expandBtn.onClick(() => {
+                            new expandGraphModal(this.app, this.plugin, this.familyNodeArr, [], familyMermaidStr, 'gitGraph').open();
                         })
 
                         const familyTreeDiv = familyGraphContainer.createEl("div", { cls: "zk-graph-mermaid" });
 
-                        familyTreeDiv.id = "zk-family-tree";                    
+                        familyTreeDiv.id = "zk-family-tree";
                         let { svg } = await mermaid.render(`${familyTreeDiv.id}-svg`, `${familyMermaidStr}`);
                         familyTreeDiv.insertAdjacentHTML('beforeend', svg);
                         familyTreeDiv.children[0].removeAttribute('style');
                         familyTreeDiv.children[0].addClass("zk-full-width");
-                        familyTreeDiv.children[0].setAttribute('height', `${this.graphHeight}px`);    
+                        familyTreeDiv.children[0].setAttribute('height', `${this.graphHeight}px`);
                         graphMermaidDiv.appendChild(familyTreeDiv);
-                                                        
+
                         let panZoomTiger = svgPanZoom(`#${familyTreeDiv.id}-svg`, {
                             zoomEnabled: true,
                             controlIconsEnabled: false,
-                            fit: false,                    
+                            fit: false,
                             center: true,
                             minZoom: 0.001,
                             maxZoom: 1000,
@@ -274,56 +325,56 @@ export class ZKGraphView extends ItemView {
 
                         let setSvg = document.getElementById(`${familyTreeDiv.id}-svg`);
 
-                        if(setSvg !== null){
+                        if (setSvg !== null) {
                             let a = setSvg.children[0].getAttr("style");
-                            if(typeof a == 'string'){
+                            if (typeof a == 'string') {
                                 let b = a.match(/\d([^\,]+)\d/g)
-                                if(b !== null && Number(b[0]) > 1){
-                                    panZoomTiger.zoom(1/Number(b[0]))
-                                }                        
+                                if (b !== null && Number(b[0]) > 1) {
+                                    panZoomTiger.zoom(1 / Number(b[0]))
+                                }
                             }
                         }
-                        
+
 
                         const gElements = familyTreeDiv.querySelectorAll('g.commit-bullets');
-                        
-                        
+
+
                         const circles = gElements[1].querySelectorAll("circle.commit")
                         const circleNodes = Array.from(circles);
                         gElements[1].textContent = "";
 
-                        for(let j=0;j<circleNodes.length;j++){
+                        for (let j = 0; j < circleNodes.length; j++) {
                             let link = document.createElementNS('http://www.w3.org/2000/svg', 'a');
                             link.appendChild(circleNodes[j]);
-                            gElements[1].appendChild(link);                            
-    
-                            let nodeArr = this.familyNodeArr.filter(n=>n.gitNodePos === j);
-                            if(nodeArr.length > 0){
+                            gElements[1].appendChild(link);
+
+                            let nodeArr = this.familyNodeArr.filter(n => n.gitNodePos === j);
+                            if (nodeArr.length > 0) {
                                 let node = nodeArr[0];
-                                circleNodes[j].addEventListener("click", async (event: MouseEvent) => {  
+                                circleNodes[j].addEventListener("click", async (event: MouseEvent) => {
                                     if (event.ctrlKey) {
                                         this.app.workspace.openLinkText("", node.file.path, 'tab');
-                                    }else if(event.shiftKey){
+                                    } else if (event.shiftKey) {
                                         this.plugin.retrivalforLocaLgraph = {
                                             type: '1',
                                             ID: node.ID,
-                                            filePath: node.file.path,  
-                                        }; 
+                                            filePath: node.file.path,
+                                        };
                                         this.plugin.openGraphView();
-                                    }else if(event.altKey){
+                                    } else if (event.altKey) {
                                         this.plugin.settings.lastRetrival = {
                                             type: 'main',
                                             ID: node.ID,
                                             displayText: node.displayText,
                                             filePath: node.file.path,
-                                            openTime: '',                        
+                                            openTime: '',
                                         }
                                         this.plugin.RefreshIndexViewFlag = true;
                                         this.plugin.openIndexView();
-                                    }else{
+                                    } else {
                                         this.app.workspace.openLinkText("", node.file.path)
                                     }
-                                    
+
                                 })
                                 circleNodes[j].addEventListener(`mouseover`, (event: MouseEvent) => {
                                     this.app.workspace.trigger(`hover-link`, {
@@ -334,259 +385,147 @@ export class ZKGraphView extends ItemView {
                                         targetEl: circleNodes[j],
                                         sourcePath: node.file.path,
                                     })
-                                });                        
-                            }  
+                                });
+                            }
                         }
                     }
-                }else{
+                } else {
                     this.countOfGraphs--;
-                    this.graphHeight = Math.floor(containerEl.offsetHeight / this.countOfGraphs - 10);
+                    // 安全检查：避免除以 0 或 NaN
+                    const safeCount = Math.max(this.countOfGraphs, 1);
+                    const containerHeight = containerEl.offsetHeight || 400; // 默认高度 400px
+                    this.graphHeight = Math.max(Math.floor(containerHeight / safeCount - 10), 200); // 最小高度 200px
                 }
-            
+
             }
 
-            if (this.plugin.settings.InlinksGraphToggle == true) {
+            // 出入链合并图
+            if (this.plugin.settings.InOutlinksGraphToggle == true) {
 
                 let inlinkArr: TFile[] = await this.getInlinks(this.currentFile);
-                let inlinkMermaidStr: string = await this.genericLinksMermaidStr(this.currentFile, inlinkArr, 'in',this.plugin.settings.DirectionOfInlinksGraph);
-
-                const inlinksGraphContainer = graphMermaidDiv.createDiv("zk-inlinks-graph-container");
-                const inlinksGraphTextDiv = inlinksGraphContainer.createDiv("zk-graph-text");
-
-                inlinksGraphTextDiv.empty();
-                inlinksGraphTextDiv.createEl('span', { text: t("inlinks") });
-
-                let graphIconDiv = inlinksGraphContainer.createDiv("zk-graph-icon");
-                graphIconDiv.empty();
-                let expandBtn = new ExtraButtonComponent(graphIconDiv);
-                expandBtn.setIcon("expand").setTooltip(t("expand graph"));
-                expandBtn.onClick(()=>{              
-                    new expandGraphModal(this.app,this.plugin,[], inlinkArr, inlinkMermaidStr).open();
-                })
-
-                const inlinksDiv = inlinksGraphContainer.createEl("div", { cls: "zk-graph-mermaid" });
-                inlinksDiv.id = "zk-inlinks";
-                let { svg } = await mermaid.render(`${inlinksDiv.id}-svg`, inlinkMermaidStr);
-                inlinksDiv.insertAdjacentHTML('beforeend', svg);
-                inlinksDiv.children[0].addClass("zk-full-width");
-                inlinksDiv.children[0].setAttribute('height', `${this.graphHeight}px`); 
-                graphMermaidDiv.appendChild(inlinksDiv);
-                
-                let panZoomTiger = svgPanZoom(`#${inlinksDiv.id}-svg`, {
-                    zoomEnabled: true,
-                    controlIconsEnabled: false,
-                    fit: false,                    
-                    center: true,
-                    minZoom: 0.001,
-                    maxZoom: 1000,
-                    dblClickZoomEnabled: false,
-                    zoomScaleSensitivity: 0.3,
-                })
-
-                let setSvg = document.getElementById(`${inlinksDiv.id}-svg`);
-
-                if(setSvg !== null){
-                    let a = setSvg.children[0].getAttr("style");
-                    if(typeof a == 'string'){
-                        let b = a.match(/\d([^\,]+)\d/g)
-                        if(b !== null && Number(b[0]) > 1){
-                            panZoomTiger.zoom(1/Number(b[0]))
-                        }                        
-                    }
-                }
-                
-
-                let nodeGArr = inlinksDiv.querySelectorAll("[id^='flowchart-']");
-                let nodeArr = inlinksDiv.getElementsByClassName("nodeLabel");
-
-                inlinkArr.push(this.currentFile);
-                for (let i = 0; i < nodeArr.length; i++) {
-                    let link = document.createElement('a');
-                    link.addClass("internal-link");
-                    let nodePosStr = nodeGArr[i].id.split('-')[1];
-                    let node = inlinkArr[Number(nodePosStr)];
-                    link.textContent = nodeArr[i].getText();
-                    nodeArr[i].textContent = "";
-                    nodeArr[i].appendChild(link);
-                    nodeGArr[i].addEventListener("click", (event: MouseEvent) => {
-                        if(event.ctrlKey){
-                            this.app.workspace.openLinkText("", node.path, 'tab');
-                        }else if(event.shiftKey){
-                            this.plugin.retrivalforLocaLgraph = {
-                                type: '1',
-                                ID: '',
-                                filePath: node.path,
-            
-                            }; 
-                            this.plugin.openGraphView();
-                        }else if(event.altKey){
-                            if(this.plugin.settings.FolderOfIndexes !== '' && node.path.startsWith(this.plugin.settings.FolderOfIndexes)){
-                                this.plugin.clearShowingSettings(); 
-                                this.plugin.settings.lastRetrival = {
-                                    type: 'index',
-                                    ID: '',
-                                    displayText: '',
-                                    filePath: node.path,
-                                    openTime: '',                        
-                                }
-                                this.plugin.RefreshIndexViewFlag = true;
-                                this.plugin.openIndexView();
-                                
-                            }else{
-                                let mainNote = this.plugin.MainNotes.find(n=>n.file.path == node.path);
-                            
-                                if(mainNote){
-                                    this.plugin.clearShowingSettings();                               
-                                    this.plugin.settings.lastRetrival = {
-                                        type: 'main',
-                                        ID: mainNote.ID,
-                                        displayText: mainNote.displayText,
-                                        filePath: mainNote.file.path,
-                                        openTime: '',                        
-                                    }
-                                    this.plugin.RefreshIndexViewFlag = true;
-                                    this.plugin.openIndexView();
-                                }
-                            }
-
-                        }else{
-                            this.app.workspace.openLinkText("", node.path);
-                        }
-                    })
-                    nodeGArr[i].addEventListener("touchend", () => {
-                        this.app.workspace.openLinkText("",node.path)
-                    })
-
-                    nodeGArr[i].addEventListener(`mouseover`, (event: MouseEvent) => {
-                        this.app.workspace.trigger(`hover-link`, {
-                            event,
-                            source: ZK_NAVIGATION,
-                            hoverParent: this,
-                            linktext: "",
-                            targetEl: link,
-                            sourcePath: node.path,
-                        })
-                    });
-                }
-                
-            }
-
-            if (this.plugin.settings.OutlinksGraphToggle == true) {
-
                 let outlinkArr: TFile[] = [];
 
                 if (this.currentFile.extension === 'md') {
                     outlinkArr = await this.getOutlinks(this.currentFile);
                 }
 
-                let outlinkMermaidStr: string = await this.genericLinksMermaidStr(this.currentFile, outlinkArr, 'out', this.plugin.settings.DirectionOfOutlinksGraph);
+                let inoutlinkMermaidStr: string = await this.genericInOutLinksMermaidStr(this.currentFile, inlinkArr, outlinkArr, this.plugin.settings.DirectionOfInlinksGraph);
 
-                const outlinksGraphContainer = graphMermaidDiv.createDiv("zk-outlinks-graph-container");
-                const outlinksGraphTextDiv = outlinksGraphContainer.createDiv("zk-graph-text");
+                const inoutlinksGraphContainer = graphMermaidDiv.createDiv("zk-inoutlinks-graph-container");
+                const inoutlinksGraphTextDiv = inoutlinksGraphContainer.createDiv("zk-graph-text");
 
-                outlinksGraphTextDiv.empty();
-                outlinksGraphTextDiv.createEl('span', { text: t("outlinks") })
+                inoutlinksGraphTextDiv.empty();
+                inoutlinksGraphTextDiv.createEl('span', { text: t("inoutlinks") });
 
-
-                let graphIconDiv = outlinksGraphContainer.createDiv("zk-graph-icon");
+                let graphIconDiv = inoutlinksGraphContainer.createDiv("zk-graph-icon");
                 graphIconDiv.empty();
                 let expandBtn = new ExtraButtonComponent(graphIconDiv);
                 expandBtn.setIcon("expand").setTooltip(t("expand graph"));
-                expandBtn.onClick(()=>{              
-                    new expandGraphModal(this.app,this.plugin,[], outlinkArr, outlinkMermaidStr).open();
+                expandBtn.onClick(() => {
+                    new expandGraphModal(this.app, this.plugin, [], [...inlinkArr, ...outlinkArr], inoutlinkMermaidStr).open();
                 })
 
-                const outlinksDiv = outlinksGraphContainer.createEl("div", { cls: "zk-graph-mermaid" });
-                outlinksDiv.id = "zk-outlinks";
-                let { svg } = await mermaid.render(`${outlinksDiv.id}-svg`, outlinkMermaidStr);
-                outlinksDiv.insertAdjacentHTML('beforeend', svg);
-                outlinksDiv.children[0].addClass("zk-full-width");
-                outlinksDiv.children[0].setAttribute('height', `${this.graphHeight}px`); 
-                graphMermaidDiv.appendChild(outlinksDiv);
-                
-                let panZoomTiger = svgPanZoom(`#${outlinksDiv.id}-svg`, {
-                    zoomEnabled: true,
-                    controlIconsEnabled: false,
-                    fit: false,                    
-                    center: true,
-                    minZoom: 0.001,
-                    maxZoom: 1000,
-                    dblClickZoomEnabled: false,
-                    zoomScaleSensitivity: 0.3,
-                })
+                const inoutlinksDiv = inoutlinksGraphContainer.createEl("div", { cls: "zk-graph-mermaid" });
+                inoutlinksDiv.id = "zk-inoutlinks";
+                let { svg } = await mermaid.render(`${inoutlinksDiv.id}-svg`, inoutlinkMermaidStr);
+                inoutlinksDiv.insertAdjacentHTML('beforeend', svg);
+                inoutlinksDiv.children[0].addClass("zk-full-width");
+                inoutlinksDiv.children[0].setAttribute('height', `${this.graphHeight}px`);
+                graphMermaidDiv.appendChild(inoutlinksDiv);
 
-                let setSvg = document.getElementById(`${outlinksDiv.id}-svg`);
+                // 等待 SVG 元素插入到 DOM 中
+                await new Promise(resolve => setTimeout(resolve, 100));
 
-                if(setSvg !== null){
-                    let a = setSvg.children[0].getAttr("style");
-                    if(typeof a == 'string'){
-                        let b = a.match(/\d([^\,]+)\d/g)
-                        if(b !== null && Number(b[0]) > 1){
-                            panZoomTiger.zoom(1/Number(b[0]))
-                        }                        
+                // 查找 SVG 元素，可能带有后缀（如 -svg-0）
+                let setSvg = document.getElementById(`${inoutlinksDiv.id}-svg`) ||
+                    inoutlinksDiv.querySelector('svg') ||
+                    document.querySelector(`#${inoutlinksDiv.id}-svg-0`);
+
+                if (setSvg) {
+                    let panZoomTiger = svgPanZoom(setSvg, {
+                        zoomEnabled: true,
+                        controlIconsEnabled: false,
+                        fit: false,
+                        center: true,
+                        minZoom: 0.001,
+                        maxZoom: 1000,
+                        dblClickZoomEnabled: false,
+                        zoomScaleSensitivity: 0.3,
+                    })
+
+                    if (setSvg.children.length > 0) {
+                        let a = setSvg.children[0].getAttribute("style");
+                        if (typeof a == 'string') {
+                            let b = a.match(/\d([^\,]+)\d/g)
+                            if (b !== null && Number(b[0]) > 1) {
+                                panZoomTiger.zoom(1 / Number(b[0]))
+                            }
+                        }
                     }
                 }
-               
-                let nodeGArr = outlinksDiv.querySelectorAll("[id^='flowchart-']");
-                let nodeArr = outlinksDiv.getElementsByClassName("nodeLabel");
-                outlinkArr.push(this.currentFile);
+
+                // 合并入链和出链数组，用于事件绑定
+                // 节点顺序：入链节点 -> 当前文件 -> 出链节点
+                const allLinksArr = [...inlinkArr, this.currentFile, ...outlinkArr];
+
+                let nodeGArr = inoutlinksDiv.querySelectorAll("[id^='flowchart-']");
+                let nodeArr = inoutlinksDiv.getElementsByClassName("nodeLabel");
+
                 for (let i = 0; i < nodeArr.length; i++) {
                     let link = document.createElement('a');
                     link.addClass("internal-link");
                     let nodePosStr = nodeGArr[i].id.split('-')[1];
-                    let node = outlinkArr[Number(nodePosStr)];
+                    let node = allLinksArr[Number(nodePosStr)];
                     link.textContent = nodeArr[i].getText();
                     nodeArr[i].textContent = "";
                     nodeArr[i].appendChild(link);
-                    nodeGArr[i].addEventListener("click", async (event: MouseEvent) => {
-                        if(event.ctrlKey){
+                    nodeGArr[i].addEventListener("click", (event: MouseEvent) => {
+                        if (event.ctrlKey) {
                             this.app.workspace.openLinkText("", node.path, 'tab');
-                        }else if(event.shiftKey){
-                            
+                        } else if (event.shiftKey) {
                             this.plugin.retrivalforLocaLgraph = {
                                 type: '1',
                                 ID: '',
                                 filePath: node.path,
-            
-                            }; 
+
+                            };
                             this.plugin.openGraphView();
-                        }else if(event.altKey){
-                            if(this.plugin.settings.FolderOfIndexes !== '' && node.path.startsWith(this.plugin.settings.FolderOfIndexes)){
-                                this.plugin.clearShowingSettings(); 
+                        } else if (event.altKey) {
+                            if (this.plugin.settings.FolderOfIndexes !== '' && node.path.startsWith(this.plugin.settings.FolderOfIndexes)) {
+                                this.plugin.clearShowingSettings();
                                 this.plugin.settings.lastRetrival = {
                                     type: 'index',
                                     ID: '',
                                     displayText: '',
                                     filePath: node.path,
-                                    openTime: '',                        
+                                    openTime: '',
                                 }
                                 this.plugin.RefreshIndexViewFlag = true;
                                 this.plugin.openIndexView();
-                                
-                            }else{
-                                let mainNote = this.plugin.MainNotes.find(n=>n.file.path == node.path);
-                            
-                                if(mainNote){
-                                    this.plugin.clearShowingSettings();                               
+
+                            } else {
+                                let mainNote = this.plugin.MainNotes.find(n => n.file.path == node.path);
+
+                                if (mainNote) {
+                                    this.plugin.clearShowingSettings();
                                     this.plugin.settings.lastRetrival = {
                                         type: 'main',
                                         ID: mainNote.ID,
                                         displayText: mainNote.displayText,
                                         filePath: mainNote.file.path,
-                                        openTime: '',                        
+                                        openTime: '',
                                     }
                                     this.plugin.RefreshIndexViewFlag = true;
                                     this.plugin.openIndexView();
                                 }
                             }
 
-                        }else{
+                        } else {
                             this.app.workspace.openLinkText("", node.path);
                         }
-                            
                     })
                     nodeGArr[i].addEventListener("touchend", () => {
-                        this.app.workspace.openLinkText("",node.path)
+                        this.app.workspace.openLinkText("", node.path)
                     })
 
                     nodeGArr[i].addEventListener(`mouseover`, (event: MouseEvent) => {
@@ -600,6 +539,7 @@ export class ZKGraphView extends ItemView {
                         })
                     });
                 }
+
             }
         }
     }
@@ -610,17 +550,17 @@ export class ZKGraphView extends ItemView {
 
         let Nodes = this.plugin.MainNotes.filter(n => n.file == currentFile);
 
-        if(Nodes.length > 0 ){
-            if(this.plugin.retrivalforLocaLgraph.ID !== ''){
-                Nodes = Nodes.filter(n=>n.ID == this.plugin.retrivalforLocaLgraph.ID);
-            }else{
+        if (Nodes.length > 0) {
+            if (this.plugin.retrivalforLocaLgraph.ID !== '') {
+                Nodes = Nodes.filter(n => n.ID == this.plugin.retrivalforLocaLgraph.ID);
+            } else {
                 this.plugin.retrivalforLocaLgraph.ID = Nodes[0].ID;
-            }            
+            }
         }
 
         if (Nodes.length > 0) {
 
-            let currentNode = Nodes[0];            
+            let currentNode = Nodes[0];
 
             if (currentNode.IDArr.length > 1) {
                 let fatherArr = currentNode.IDArr.slice(0, currentNode.IDArr.length - 1);
@@ -647,23 +587,23 @@ export class ZKGraphView extends ItemView {
         }
 
         //calculate width for siblings
-        if(this.plugin.settings.siblingLenToggle === true){
-            const maxLength =  Math.max(...this.familyNodeArr.map(n=>n.IDArr.length));
-            const minLength =  Math.min(...this.familyNodeArr.map(n=>n.IDArr.length));
-    
-            for(let i=minLength;i<=maxLength;i++){
-                let layerNodes = this.familyNodeArr.filter(n=>n.IDArr.length === i);
-                if(layerNodes.length > 1){
-                    let maxTextLen = Math.max(...layerNodes.map(n=>displayWidth(n.displayText)));
-                    for(let node of layerNodes){
+        if (this.plugin.settings.siblingLenToggle === true) {
+            const maxLength = Math.max(...this.familyNodeArr.map(n => n.IDArr.length));
+            const minLength = Math.min(...this.familyNodeArr.map(n => n.IDArr.length));
+
+            for (let i = minLength; i <= maxLength; i++) {
+                let layerNodes = this.familyNodeArr.filter(n => n.IDArr.length === i);
+                if (layerNodes.length > 1) {
+                    let maxTextLen = Math.max(...layerNodes.map(n => displayWidth(n.displayText)));
+                    for (let node of layerNodes) {
                         node.fixWidth = 6 * maxTextLen + 6;
                     }
-                }else{
+                } else {
                     layerNodes[0].fixWidth = 0;
                 }
-                
+
             }
-            
+
         }
     }
 
@@ -695,10 +635,16 @@ export class ZKGraphView extends ItemView {
         let outlinkArr: TFile[] = [];
         const resolvedLinks = this.app.metadataCache.resolvedLinks;
 
-        let outlinks: string[] = Object.keys(resolvedLinks[currentFile.path]);
+        // 安全检查：确保 resolvedLinks 中有当前文件的条目
+        const fileLinks = resolvedLinks[currentFile.path];
+        if (!fileLinks) {
+            return outlinkArr;
+        }
 
-        if(this.plugin.settings.FileExtension == "md"){
-            outlinks = outlinks.filter(link=>link.endsWith(".md"))
+        let outlinks: string[] = Object.keys(fileLinks);
+
+        if (this.plugin.settings.FileExtension == "md") {
+            outlinks = outlinks.filter(link => link.endsWith(".md"))
         }
 
         for (let outlink of outlinks) {
@@ -719,9 +665,9 @@ export class ZKGraphView extends ItemView {
 
         let currentNode: ZKNode[] = [];
 
-        if(this.familyNodeArr.length > 0 ){
-            currentNode = this.familyNodeArr.filter(n=>n.file == currentFile)
-            if(currentNode.length == 0){
+        if (this.familyNodeArr.length > 0) {
+            currentNode = this.familyNodeArr.filter(n => n.file == currentFile)
+            if (currentNode.length == 0) {
                 currentNode = this.plugin.MainNotes.filter(n => n.file === currentFile);
             }
         }
@@ -748,20 +694,77 @@ export class ZKGraphView extends ItemView {
                 mermaidStr = mermaidStr + `${linkArr.length} --> ${i};\n`;
             }
         }
-        
+
         return mermaidStr;
 
     }
 
-    async genericFamilyMermaidStr(currentFile: TFile, direction:string) {
+    // 生成合并的出入链 Mermaid 字符串
+    async genericInOutLinksMermaidStr(currentFile: TFile, inlinkArr: TFile[], outlinkArr: TFile[], direction: string) {
+
+        let mermaidStr: string = `%%{ init: { 'flowchart': { 'curve': 'basis', 'wrappingWidth': '3000' },
+        'themeVariables':{ 'fontSize': '12px'}}}%% flowchart ${direction};\n`
+
+        let currentNode: ZKNode[] = [];
+
+        if (this.familyNodeArr.length > 0) {
+            currentNode = this.familyNodeArr.filter(n => n.file == currentFile)
+            if (currentNode.length == 0) {
+                currentNode = this.plugin.MainNotes.filter(n => n.file === currentFile);
+            }
+        }
+
+        // 当前文件节点的索引位置 = 入链数组长度
+        const currentFileIndex = inlinkArr.length;
+
+        if (currentNode.length > 0) {
+            mermaidStr = mermaidStr + `${currentFileIndex}("${this.escapeMermaidText(currentNode[0].displayText)}");
+            style ${currentFileIndex} fill:${this.plugin.settings.nodeColor},stroke:#333,stroke-width:1px \n`;
+        } else {
+            mermaidStr = mermaidStr + `${currentFileIndex}("${currentFile.basename}");
+            style ${currentFileIndex} fill:${this.plugin.settings.nodeColor},stroke:#333,stroke-width:1px \n`;
+        }
+
+        // 添加入链节点（索引 0 到 inlinkArr.length - 1）
+        for (let i = 0; i < inlinkArr.length; i++) {
+            let node = this.plugin.MainNotes.find(n => n.file == inlinkArr[i]);
+            if (typeof node !== 'undefined') {
+                mermaidStr = mermaidStr + `${i}("${this.escapeMermaidText(node.displayText)}");\n`;
+            } else {
+                mermaidStr = mermaidStr + `${i}("${inlinkArr[i].basename}");\n`;
+            }
+            mermaidStr = mermaidStr + `style ${i} fill:#fff; \n`;
+            // 入链：节点 -> 当前文件
+            mermaidStr = mermaidStr + `${i} --> ${currentFileIndex};\n`;
+        }
+
+        // 添加出链节点（索引从 currentFileIndex + 1 开始）
+        for (let i = 0; i < outlinkArr.length; i++) {
+            const nodeIndex = currentFileIndex + 1 + i;
+            let node = this.plugin.MainNotes.find(n => n.file == outlinkArr[i]);
+            if (typeof node !== 'undefined') {
+                mermaidStr = mermaidStr + `${nodeIndex}("${this.escapeMermaidText(node.displayText)}");\n`;
+            } else {
+                mermaidStr = mermaidStr + `${nodeIndex}("${outlinkArr[i].basename}");\n`;
+            }
+            mermaidStr = mermaidStr + `style ${nodeIndex} fill:#fff; \n`;
+            // 出链：当前文件 -> 节点
+            mermaidStr = mermaidStr + `${currentFileIndex} --> ${nodeIndex};\n`;
+        }
+
+        return mermaidStr;
+
+    }
+
+    async genericFamilyMermaidStr(currentFile: TFile, direction: string) {
         let mermaidStr: string = `%%{ init: { 'flowchart': { 'curve': 'basis', 'wrappingWidth': '3000' },
         'themeVariables':{ 'fontSize': '12px'}}}%% flowchart ${direction};`;
 
         for (let node of this.familyNodeArr) {
 
-            if(this.plugin.settings.siblingLenToggle === true && node.fixWidth !== 0){
+            if (this.plugin.settings.siblingLenToggle === true && node.fixWidth !== 0) {
                 mermaidStr = mermaidStr + `${node.position}("<p style='width:${node.fixWidth}px;margin:0px;'>${node.displayText}</p>");\n`;
-            }else{
+            } else {
                 mermaidStr = mermaidStr + `${node.position}("${node.displayText}");\n`;
             }
 
@@ -772,7 +775,7 @@ export class ZKGraphView extends ItemView {
                 mermaidStr = mermaidStr + `style ${node.position} fill:#fff; \n`;
             }
 
-            
+
         }
 
         for (let node of this.familyNodeArr) {
@@ -787,9 +790,9 @@ export class ZKGraphView extends ItemView {
             }
         }
 
-        if(this.plugin.settings.RedDashLine === true){
+        if (this.plugin.settings.RedDashLine === true) {
 
-            for (let node of this.familyNodeArr){
+            for (let node of this.familyNodeArr) {
                 if (/^[a-zA-Z]$/.test(node.file.basename.slice(-1))) {
                     //红色虚线边
                     mermaidStr = mermaidStr + `style ${node.position} stroke:#f66,stroke-width:2px,stroke-dasharray: 1 \n`;
@@ -800,58 +803,58 @@ export class ZKGraphView extends ItemView {
         return mermaidStr;
     }
 
-    async genericGitgraphStr(currentFile: TFile){
+    async genericGitgraphStr(currentFile: TFile) {
 
         this.generateGitBranch();
         this.order = 0;
         this.result = [];
-        let temBranches = this.gitBranches.filter(b=>b.branchName === "main");
-        this.gitBranches = this.gitBranches.filter(b=>b.branchName !== "main");
-        
-        if(temBranches.length > 0){
-            this.orderGitBranch(temBranches[0]);
-            
-        }            
+        let temBranches = this.gitBranches.filter(b => b.branchName === "main");
+        this.gitBranches = this.gitBranches.filter(b => b.branchName !== "main");
 
-        temBranches = this.result.filter(b=>b.branchName === "main")
-        this.gitBranches = this.result.filter(b=>b.branchName !== "main")
-        let gitNodePos:number = 0;
-        let gitStr:string = '';
-        while(temBranches.length > 0){
-            
-            let nextBranch = temBranches.reduce((min,obj) =>{
-                
-                return min && min.nodes[min.currentPos].ctime < obj.nodes[obj.currentPos].ctime? min:obj;
+        if (temBranches.length > 0) {
+            this.orderGitBranch(temBranches[0]);
+
+        }
+
+        temBranches = this.result.filter(b => b.branchName === "main")
+        this.gitBranches = this.result.filter(b => b.branchName !== "main")
+        let gitNodePos: number = 0;
+        let gitStr: string = '';
+        while (temBranches.length > 0) {
+
+            let nextBranch = temBranches.reduce((min, obj) => {
+
+                return min && min.nodes[min.currentPos].ctime < obj.nodes[obj.currentPos].ctime ? min : obj;
             }, temBranches[0])
-            
+
             let branchIndex = temBranches.indexOf(nextBranch);
-            
+
             let nextNode = temBranches[branchIndex].nodes[temBranches[branchIndex].currentPos];
             temBranches[branchIndex].currentPos = temBranches[branchIndex].currentPos + 1;
-                        
+
             nextNode.gitNodePos = gitNodePos
             gitNodePos = gitNodePos + 1;
 
-            if(nextBranch.active === false){
+            if (nextBranch.active === false) {
                 gitStr = gitStr + `checkout ${nextBranch.branchPoint.branchName}\n`
                 nextBranch.active = true;
             }
             gitStr = gitStr + `checkout ${nextBranch.branchName}
             commit id: "${nextNode?.displayText}"`
-            
-            if(nextNode?.ID === this.plugin.retrivalforLocaLgraph.ID){	
+
+            if (nextNode?.ID === this.plugin.retrivalforLocaLgraph.ID) {
                 gitStr = gitStr + `tag: "index🌿"`// `type: HIGHLIGHT`
             }
-            
+
             gitStr = gitStr + `\n`
-        
+
             //if(temBranches[branchIndex].nodes.length === 0){
-            if(temBranches[branchIndex].nodes.length === temBranches[branchIndex].currentPos){
-                temBranches.splice(branchIndex,1);
+            if (temBranches[branchIndex].nodes.length === temBranches[branchIndex].currentPos) {
+                temBranches.splice(branchIndex, 1);
             }
-            let newBranches = this.gitBranches.filter(n=>n.branchPoint.ID == nextNode?.ID);
+            let newBranches = this.gitBranches.filter(n => n.branchPoint.ID == nextNode?.ID);
             // 必须先声明分支
-            for(let branch of newBranches){
+            for (let branch of newBranches) {
                 temBranches.push(branch);
                 gitStr = gitStr + `branch ${branch.branchName} order: ${branch.order}\n`
             }
@@ -859,18 +862,18 @@ export class ZKGraphView extends ItemView {
         let mermaidStr: string = `%%{init: { 'logLevel': 'debug', 'theme': 'base', 'gitGraph': {'showBranches': false, 'parallelCommits': true, 'rotateCommitLabel': true}} }%%
                                 gitGraph
                                 ${gitStr}
-                                `; 
+                                `;
         return mermaidStr;
     }
-    
+
     generateGitBranch() {
 
         let Nodes = this.familyNodeArr;
-        const maxLength = Math.max(...Nodes.map(n=>n.IDArr.length));
-        const minLength = Math.min(...Nodes.map(n=>n.IDArr.length));
+        const maxLength = Math.max(...Nodes.map(n => n.IDArr.length));
+        const minLength = Math.min(...Nodes.map(n => n.IDArr.length));
 
         this.gitBranches = [];
-        let nodes = Nodes.filter(l=>l.IDArr.length === minLength)
+        let nodes = Nodes.filter(l => l.IDArr.length === minLength)
 
         this.gitBranches.push({
             branchName: "main",
@@ -885,11 +888,11 @@ export class ZKGraphView extends ItemView {
         let nodeIndex = Nodes.indexOf(nodes[0]);
         Nodes[nodeIndex].branchName = "main";
 
-        for(let i=minLength;i<maxLength;i++){
-            let layerNodes = Nodes.filter(n=>n.IDArr.length === i);
-	        for(let fatherNode of layerNodes){
-                let numberSons = Nodes.filter(n=>n.IDArr.length === i+1 && /[0-9]/.test(n.ID.slice(-1)) && n.IDArr.slice(0,-1).toString() === fatherNode.IDStr);
-                if(numberSons.length>0){
+        for (let i = minLength; i < maxLength; i++) {
+            let layerNodes = Nodes.filter(n => n.IDArr.length === i);
+            for (let fatherNode of layerNodes) {
+                let numberSons = Nodes.filter(n => n.IDArr.length === i + 1 && /[0-9]/.test(n.ID.slice(-1)) && n.IDArr.slice(0, -1).toString() === fatherNode.IDStr);
+                if (numberSons.length > 0) {
                     let branchName = `B${this.gitBranches.length}`;
                     let gitBranch: GitBranch = {
                         branchName: branchName,
@@ -901,14 +904,14 @@ export class ZKGraphView extends ItemView {
                         active: false,
                     };
                     this.gitBranches.push(gitBranch);
-                    for(let node of numberSons){
+                    for (let node of numberSons) {
                         let index = Nodes.indexOf(node);
-                        Nodes[index].branchName =  branchName;							
-                    }	
+                        Nodes[index].branchName = branchName;
+                    }
 
                 }
-                let letterSons = Nodes.filter(n=>n.IDArr.length === i+1 && /[a-zA-Z]/.test(n.ID.slice(-1)) && n.IDArr.slice(0,-1).toString() === fatherNode.IDStr);
-                if(letterSons.length>0){
+                let letterSons = Nodes.filter(n => n.IDArr.length === i + 1 && /[a-zA-Z]/.test(n.ID.slice(-1)) && n.IDArr.slice(0, -1).toString() === fatherNode.IDStr);
+                if (letterSons.length > 0) {
                     let branchName = `B${this.gitBranches.length}`;
                     let gitBranch: GitBranch = {
                         branchName: branchName,
@@ -920,48 +923,593 @@ export class ZKGraphView extends ItemView {
                         active: false,
                     };
                     this.gitBranches.push(gitBranch);
-                    for(let node of letterSons){                        
+                    for (let node of letterSons) {
                         let index = Nodes.indexOf(node);
-                        Nodes[index].branchName =  branchName;							
-                    }	
+                        Nodes[index].branchName = branchName;
+                    }
                 }
             }
         }
     }
 
-    orderGitBranch(current:GitBranch){
-        
+    orderGitBranch(current: GitBranch) {
+
         current.order = this.order;
         this.result.push(current);
-     
-        this.order = this.order + 1;				
-        for(let i=current.nodes.length-1;i>=0;i--){
-        let branches = this.gitBranches.filter(b=>b.branchPoint.ID === current.nodes[i].ID);
-            if(branches.length > 0){               
+
+        this.order = this.order + 1;
+        for (let i = current.nodes.length - 1; i >= 0; i--) {
+            let branches = this.gitBranches.filter(b => b.branchPoint.ID === current.nodes[i].ID);
+            if (branches.length > 0) {
                 branches.sort((a, b) => a.nodes[0].ctime - b.nodes[0].ctime);
-                for(let next of branches){
+                for (let next of branches) {
                     this.orderGitBranch(next);
                 }
             }
         }
     }
-    countGraphs(){
+    countGraphs() {
 
         let count = 0;
-        if(this.plugin.settings.FamilyGraphToggle === true){
+        if (this.plugin.settings.FamilyGraphToggle === true) {
             count++;
         }
-        if(this.plugin.settings.InlinksGraphToggle === true){
+        if (this.plugin.settings.InOutlinksGraphToggle === true) {
             count++;
         }
-        if(this.plugin.settings.OutlinksGraphToggle === true){
-            count++;
-        }
-        
+
         this.countOfGraphs = count;
     }
 
+    // 检查文件是否是 MOC 文件
+    isMOCFile(file: TFile): boolean {
+        const mocFolder = this.plugin.settings.mocFolderPath;
+        if (!mocFolder) return false;
+        return file.path.startsWith(mocFolder + '/') || file.path.startsWith(mocFolder);
+    }
+
+    // MOC 模式下的局部关系视图渲染
+    async refreshLocalGraphMOC(graphMermaidDiv: HTMLElement, mocFile: TFile) {
+        graphMermaidDiv.empty();
+
+        // 计算要显示的图数量
+        let graphCount = 0;
+        if (this.plugin.settings.FamilyGraphToggle) graphCount++;
+        if (this.plugin.settings.InOutlinksGraphToggle) graphCount++;
+
+        // 安全检查：避免除以 0 或 NaN
+        const safeCount = Math.max(graphCount, 1);
+        const containerHeight = this.containerEl.offsetHeight || 400; // 默认高度 400px
+        const graphHeight = Math.max(Math.floor(containerHeight / safeCount - 10), 200); // 最小高度 200px
+
+        const headingTitle = this.plugin.settings.mocHeadingTitle;
+        const mermaid = await loadMermaid();
+        const svgPanZoom = require("svg-pan-zoom");
+
+        // ========== 1. MOC 树结构（类似邻近图）==========
+        if (this.plugin.settings.FamilyGraphToggle) {
+            // 解析 MOC 结构
+            const mocTreeStructure = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+
+            if (mocTreeStructure.length > 0) {
+                // 转换为 ZKNode 数组用于图形显示
+                const mocNodes = await convertMOCToZKNodes(this.plugin, mocTreeStructure);
+
+                if (mocNodes.length > 0) {
+                    // 不要修改 MainNotes，只用于当前图形显示
+                    this.familyNodeArr = mocNodes;
+
+                    // 创建 MOC 树图容器
+                    const mocGraphContainer = graphMermaidDiv.createDiv("zk-family-graph-container");
+                    const mocGraphTextDiv = mocGraphContainer.createDiv("zk-graph-text");
+                    mocGraphTextDiv.empty();
+                    mocGraphTextDiv.createEl('span', { text: `${headingTitle}` });
+
+                    // 生成 Mermaid 图
+                    const mermaidStr = await this.generateMOCTreeMermaidStr(mocNodes, this.plugin.settings.DirectionOfFamilyGraph);
+
+                    const graphIconDiv = mocGraphContainer.createDiv("zk-graph-icon");
+                    graphIconDiv.empty();
+                    const expandBtn = new ExtraButtonComponent(graphIconDiv);
+                    expandBtn.setIcon("expand").setTooltip(t("expand graph"));
+                    expandBtn.onClick(() => {
+                        new expandGraphModal(this.app, this.plugin, mocNodes, [], mermaidStr).open();
+                    });
+
+                    const mocTreeDiv = mocGraphContainer.createEl("div", { cls: "zk-graph-mermaid" });
+                    mocTreeDiv.id = "zk-moc-tree";
+
+                    try {
+                        const { svg } = await mermaid.render(`${mocTreeDiv.id}-svg`, mermaidStr);
+                        mocTreeDiv.insertAdjacentHTML('beforeend', svg);
+                        mocTreeDiv.children[0].addClass("zk-full-width");
+                        mocTreeDiv.children[0].setAttribute('height', `${graphHeight}px`);
+                        graphMermaidDiv.appendChild(mocTreeDiv);
+
+                        const panZoomTiger = svgPanZoom(`#${mocTreeDiv.id}-svg`, {
+                            zoomEnabled: true,
+                            controlIconsEnabled: false,
+                            fit: true,
+                            center: true,
+                            minZoom: 0.001,
+                            maxZoom: 1000,
+                            dblClickZoomEnabled: false,
+                            zoomScaleSensitivity: 0.3,
+                        });
+
+                        // 添加节点点击事件
+                        await this.addMOCNodeEvents(mocTreeDiv, mocNodes);
+                    } catch (error) {
+                        console.error("MOC graph render error:", error);
+                        mocTreeDiv.createEl('div', { text: "渲染错误", cls: "zk-graph-text" });
+                    }
+                }
+            } else {
+                // 没有树结构时显示提示
+                const emptyContainer = graphMermaidDiv.createDiv("zk-family-graph-container");
+                const emptyTextDiv = emptyContainer.createDiv("zk-graph-text");
+                emptyTextDiv.createEl('span', { text: `${headingTitle}` });
+                emptyContainer.createEl('div', {
+                    text: `${t("No tree structure found under heading:")} # ${headingTitle}`,
+                    cls: "zk-graph-mermaid"
+                });
+            }
+        }
+
+        // ========== 2. 出入链图 ==========
+        if (this.plugin.settings.InOutlinksGraphToggle) {
+            const inlinkArr = await this.getInlinks(mocFile);
+            const outlinkArr = await this.getOutlinks(mocFile);
+            const inoutlinkMermaidStr = await this.genericInOutLinksMermaidStr(mocFile, inlinkArr, outlinkArr, this.plugin.settings.DirectionOfInlinksGraph);
+
+            const inoutlinksGraphContainer = graphMermaidDiv.createDiv("zk-inoutlinks-graph-container");
+            const inoutlinksGraphTextDiv = inoutlinksGraphContainer.createDiv("zk-graph-text");
+            inoutlinksGraphTextDiv.empty();
+            inoutlinksGraphTextDiv.createEl('span', { text: t("inoutlinks") });
+
+            const inoutlinksIconDiv = inoutlinksGraphContainer.createDiv("zk-graph-icon");
+            inoutlinksIconDiv.empty();
+            const inoutlinksExpandBtn = new ExtraButtonComponent(inoutlinksIconDiv);
+            inoutlinksExpandBtn.setIcon("expand").setTooltip(t("expand graph"));
+            inoutlinksExpandBtn.onClick(() => {
+                new expandGraphModal(this.app, this.plugin, [], [...inlinkArr, ...outlinkArr], inoutlinkMermaidStr).open();
+            });
+
+            const inoutlinksTreeDiv = inoutlinksGraphContainer.createEl("div", { cls: "zk-graph-mermaid" });
+            inoutlinksTreeDiv.id = "zk-moc-inoutlinks-tree";
+
+            try {
+                const { svg: inoutlinksSvg } = await mermaid.render(`${inoutlinksTreeDiv.id}-svg`, inoutlinkMermaidStr);
+                inoutlinksTreeDiv.insertAdjacentHTML('beforeend', inoutlinksSvg);
+                inoutlinksTreeDiv.children[0].addClass("zk-full-width");
+                inoutlinksTreeDiv.children[0].setAttribute('height', `${graphHeight}px`);
+                graphMermaidDiv.appendChild(inoutlinksTreeDiv);
+
+                // 等待 SVG 元素插入到 DOM 中
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                // 查找 SVG 元素，可能带有后缀（如 -svg-0）
+                const inoutlinksSvgElement = document.getElementById(`${inoutlinksTreeDiv.id}-svg`) ||
+                    inoutlinksTreeDiv.querySelector('svg') ||
+                    document.querySelector(`#${inoutlinksTreeDiv.id}-svg-0`);
+
+                if (inoutlinksSvgElement) {
+                    svgPanZoom(inoutlinksSvgElement, {
+                        zoomEnabled: true,
+                        controlIconsEnabled: false,
+                        fit: true,
+                        center: true,
+                        minZoom: 0.001,
+                        maxZoom: 1000,
+                        dblClickZoomEnabled: false,
+                        zoomScaleSensitivity: 0.3,
+                    });
+                }
+
+                // 添加链接点击事件（合并入链和出链数组）
+                await this.addLinkNodeEvents(inoutlinksTreeDiv, [...inlinkArr, mocFile, ...outlinkArr], mocFile);
+            } catch (error) {
+                console.error("Inoutlinks graph render error:", error);
+            }
+        }
+    }
+
+    // 为 MOC 树节点添加事件
+    async addMOCNodeEvents(treeDiv: HTMLElement, mocNodes: ZKNode[]) {
+        const nodeGArr = treeDiv.querySelectorAll("[id^='flowchart-']");
+        const nodeArr = treeDiv.getElementsByClassName("nodeLabel");
+
+        for (let i = 0; i < nodeArr.length; i++) {
+            const link = document.createElement('a');
+            link.addClass("internal-link");
+            const nodePosStr = nodeGArr[i].id.split('-')[1];
+            const node = mocNodes.filter(n => n.position == Number(nodePosStr))[0];
+
+            if (node) {
+                link.textContent = nodeArr[i].getText();
+                nodeArr[i].textContent = "";
+                nodeArr[i].appendChild(link);
+
+                nodeGArr[i].addEventListener("click", (event: MouseEvent) => {
+                    if (event.ctrlKey) {
+                        this.app.workspace.openLinkText("", node.file.path, 'tab');
+                    } else {
+                        this.app.workspace.openLinkText("", node.file.path);
+                    }
+                });
+
+                nodeGArr[i].addEventListener("mouseover", (event: MouseEvent) => {
+                    this.app.workspace.trigger('hover-link', {
+                        event,
+                        source: ZK_NAVIGATION,
+                        hoverParent: this,
+                        linktext: "",
+                        targetEl: link,
+                        sourcePath: node.file.path,
+                    });
+                });
+            }
+        }
+    }
+
+    // 为入链/出链节点添加事件
+    async addLinkNodeEvents(treeDiv: HTMLElement, linkArr: TFile[], currentFile: TFile) {
+        const nodeGArr = treeDiv.querySelectorAll("[id^='flowchart-']");
+        const nodeArr = treeDiv.getElementsByClassName("nodeLabel");
+
+        for (let i = 0; i < nodeArr.length; i++) {
+            const link = document.createElement('a');
+            link.addClass("internal-link");
+            link.textContent = nodeArr[i].getText();
+            nodeArr[i].textContent = "";
+            nodeArr[i].appendChild(link);
+
+            // 查找对应的文件
+            const nodeText = link.textContent || '';
+            let targetFile: TFile | null = null;
+
+            // 检查是否是当前文件
+            if (nodeText === currentFile.basename || nodeText.includes(currentFile.basename)) {
+                targetFile = currentFile;
+            } else {
+                // 从链接数组中查找
+                targetFile = linkArr.find(f => nodeText === f.basename || nodeText.includes(f.basename)) || null;
+            }
+
+            if (targetFile) {
+                nodeGArr[i].addEventListener("click", (event: MouseEvent) => {
+                    if (event.ctrlKey) {
+                        this.app.workspace.openLinkText("", targetFile!.path, 'tab');
+                    } else {
+                        this.app.workspace.openLinkText("", targetFile!.path);
+                    }
+                });
+
+                nodeGArr[i].addEventListener("mouseover", (event: MouseEvent) => {
+                    this.app.workspace.trigger('hover-link', {
+                        event,
+                        source: ZK_NAVIGATION,
+                        hoverParent: this,
+                        linktext: "",
+                        targetEl: link,
+                        sourcePath: targetFile!.path,
+                    });
+                });
+            }
+        }
+    }
+
+    // 转义 Mermaid 文本中的特殊字符（用于节点标签）
+    escapeMermaidText(text: string): string {
+        // 移除反引号，但保留编号内容
+        // 将 `编号` 转换为 编号（保留编号，移除反引号）
+        return text.replace(/`([^`]+)`/g, '$1')
+            .replace(/"/g, '&quot;')  // 转义双引号
+            .replace(/\n/g, ' ');     // 替换换行符
+    }
+
+    // 生成 MOC 树的 Mermaid 字符串
+    async generateMOCTreeMermaidStr(nodes: ZKNode[], direction: string, highlightFile?: TFile): Promise<string> {
+        let mermaidStr = `%%{ init: { 'flowchart': { 'curve': 'basis', 'wrappingWidth': '3000' },
+        'themeVariables':{ 'fontSize': '12px'}}}%% flowchart ${direction};\n`;
+
+        // 添加节点
+        for (const node of nodes) {
+            const nodeText = this.escapeMermaidText(node.displayText);
+            mermaidStr += `${node.position}("${nodeText}");\n`;
+            // 高亮当前文件对应的节点
+            if (highlightFile && node.file.path === highlightFile.path) {
+                mermaidStr += `style ${node.position} fill:${this.plugin.settings.nodeColor},stroke:#333,stroke-width:2px\n`;
+            } else {
+                mermaidStr += `style ${node.position} fill:#fff,stroke:#333,stroke-width:1px\n`;
+            }
+        }
+
+        // 添加连线（根据 IDArr 确定父子关系）
+        for (const node of nodes) {
+            if (node.IDArr.length > 1) {
+                const parentID = node.IDArr.at(-2);
+                const parentNode = nodes.find(n => n.IDStr === parentID);
+                if (parentNode) {
+                    if (node.relationText){
+                        mermaidStr += `${parentNode.position} -->|${node.relationText}| ${node.position};\n`;
+                    }else {
+                        mermaidStr += `${parentNode.position} --> ${node.position};\n`;
+                    }
+                    
+                }
+            }
+        }
+
+        return mermaidStr;
+    }
+
+    // 查找当前文件是否在某个 MOC 树中
+    async findNodeInMOCTrees(file: TFile): Promise<{ allNodes: ZKNode[], currentNode: ZKNode, mocFile: TFile } | null> {
+        const mocFolder = this.plugin.settings.mocFolderPath;
+        const headingTitle = this.plugin.settings.mocHeadingTitle;
+
+        if (!mocFolder) return null;
+
+        // 获取 MOC 文件夹中的所有文件
+        const mocFiles = this.app.vault.getFiles().filter(f =>
+            f.path.startsWith(mocFolder + '/') || f.path.startsWith(mocFolder)
+        ).filter(f => f.extension === 'md');
+
+        // 遍历每个 MOC 文件，查找当前文件
+        for (const mocFile of mocFiles) {
+            const mocTreeStructure = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+
+            if (mocTreeStructure.length > 0) {
+                const mocNodes = await convertMOCToZKNodes(this.plugin, mocTreeStructure);
+
+                // 查找当前文件对应的节点
+                const currentNode = mocNodes.find(n => n.file.path === file.path);
+
+                if (currentNode) {
+                    return {
+                        allNodes: mocNodes,
+                        currentNode: currentNode,
+                        mocFile: mocFile
+                    };
+                }
+            }
+        }
+
+        return null;
+    }
+
+    // 获取相关节点（上级、当前级、下级，默认3级）
+    getRelatedNodes(allNodes: ZKNode[], currentNode: ZKNode, levels: number = 3): ZKNode[] {
+        const currentDepth = currentNode.IDArr.length;
+        const relatedNodes: ZKNode[] = [];
+
+        // 计算要显示的层级范围
+        // 默认显示：上级(currentDepth-1)、当前级(currentDepth)、下级(currentDepth+1)
+        const minDepth = Math.max(1, currentDepth - Math.floor(levels / 2));
+        const maxDepth = currentDepth + Math.ceil(levels / 2) - 1;
+
+        for (const node of allNodes) {
+            const nodeDepth = node.IDArr.length;
+
+            // 检查是否在层级范围内
+            if (nodeDepth < minDepth || nodeDepth > maxDepth) continue;
+
+            // 检查是否是相关节点（需要在同一条路径上或是兄弟节点）
+            if (this.isRelatedNode(currentNode, node, minDepth, maxDepth)) {
+                relatedNodes.push(node);
+            }
+        }
+
+        // 重新分配 position 以便渲染
+        relatedNodes.forEach((node, index) => {
+            node.position = index;
+        });
+
+        return relatedNodes;
+    }
+
+    // 判断节点是否与当前节点相关
+    isRelatedNode(currentNode: ZKNode, targetNode: ZKNode, minDepth: number, maxDepth: number): boolean {
+        const currentIDArr = currentNode.IDArr;
+        const targetIDArr = targetNode.IDArr;
+        const targetDepth = targetIDArr.length;
+
+        // 如果是当前节点本身
+        if (currentNode.IDStr === targetNode.IDStr) return true;
+
+        // 上级节点：targetIDArr 是 currentIDArr 的前缀
+        if (targetDepth < currentIDArr.length) {
+            const currentPrefix = currentIDArr.slice(0, targetDepth);
+            if (currentPrefix.join(',') === targetIDArr.join(',')) {
+                return true;
+            }
+        }
+
+        // 下级节点：currentIDArr 是 targetIDArr 的前缀
+        if (targetDepth > currentIDArr.length) {
+            const targetPrefix = targetIDArr.slice(0, currentIDArr.length);
+            if (targetPrefix.join(',') === currentIDArr.join(',')) {
+                return true;
+            }
+        }
+
+        // 兄弟节点：有相同的父节点
+        if (targetDepth === currentIDArr.length && targetDepth > 1) {
+            const currentParent = currentIDArr.slice(0, -1).join(',');
+            const targetParent = targetIDArr.slice(0, -1).join(',');
+            if (currentParent === targetParent) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // 渲染 MOC 节点的相关思维树
+    async refreshLocalGraphMOCNode(graphMermaidDiv: HTMLElement, currentFile: TFile, allNodes: ZKNode[], currentNode: ZKNode, mocFile: TFile) {
+        graphMermaidDiv.empty();
+
+        // 计算要显示的图数量
+        let graphCount = 0;
+        if (this.plugin.settings.FamilyGraphToggle) graphCount++;
+        if (this.plugin.settings.InOutlinksGraphToggle) graphCount++;
+
+        // 安全检查：避免除以 0 或 NaN
+        const safeCount = Math.max(graphCount, 1);
+        const containerHeight = this.containerEl.offsetHeight || 400; // 默认高度 400px
+        const graphHeight = Math.max(Math.floor(containerHeight / safeCount - 10), 200); // 最小高度 200px
+
+        const mermaid = await loadMermaid();
+        const svgPanZoom = require("svg-pan-zoom");
+
+        // ========== 1. 思维树上下文 ==========
+        if (this.plugin.settings.FamilyGraphToggle) {
+            // 获取相关节点（上级、当前级、下级）
+            const relatedNodes = this.getRelatedNodes(allNodes, currentNode, 3);
+
+            if (relatedNodes.length > 0) {
+                // 设置到 familyNodeArr 供其他功能使用
+                this.familyNodeArr = relatedNodes;
+
+                // 创建思维树容器
+                const mocNodeGraphContainer = graphMermaidDiv.createDiv("zk-family-graph-container");
+                const mocNodeGraphTextDiv = mocNodeGraphContainer.createDiv("zk-graph-text");
+                mocNodeGraphTextDiv.empty();
+                mocNodeGraphTextDiv.createEl('span', { text: t("mind tree context") });
+
+                // 显示 MOC 索引笔记名称
+                const mocFileInput = mocNodeGraphTextDiv.createEl('input', {
+                    type: 'text',
+                    cls: 'zk-moc-file-input',
+                    value: mocFile.basename
+                });
+                mocFileInput.readOnly = true;
+                mocFileInput.style.marginLeft = '10px';
+                mocFileInput.style.padding = '2px 8px';
+                mocFileInput.style.border = '1px solid var(--background-modifier-border)';
+                mocFileInput.style.borderRadius = '4px';
+                mocFileInput.style.backgroundColor = 'var(--background-secondary)';
+                mocFileInput.style.color = 'var(--text-muted)';
+                mocFileInput.style.fontSize = '12px';
+                mocFileInput.style.cursor = 'pointer';
+                mocFileInput.title = mocFile.path;
+                // 点击输入框打开 MOC 文件
+                mocFileInput.addEventListener('click', () => {
+                    this.app.workspace.openLinkText('', mocFile.path, 'tab');
+                });
+
+                // 生成 Mermaid 图（高亮当前文件）
+                const mermaidStr = await this.generateMOCTreeMermaidStr(relatedNodes, this.plugin.settings.DirectionOfFamilyGraph, currentFile);
+
+                const graphIconDiv = mocNodeGraphContainer.createDiv("zk-graph-icon");
+                graphIconDiv.empty();
+                const expandBtn = new ExtraButtonComponent(graphIconDiv);
+                expandBtn.setIcon("expand").setTooltip(t("expand graph"));
+                expandBtn.onClick(() => {
+                    new expandGraphModal(this.app, this.plugin, relatedNodes, [], mermaidStr).open();
+                });
+
+                const mocNodeTreeDiv = mocNodeGraphContainer.createEl("div", { cls: "zk-graph-mermaid" });
+                mocNodeTreeDiv.id = "zk-moc-node-tree";
+
+                try {
+                    const { svg } = await mermaid.render(`${mocNodeTreeDiv.id}-svg`, mermaidStr);
+                    mocNodeTreeDiv.insertAdjacentHTML('beforeend', svg);
+                    mocNodeTreeDiv.children[0].addClass("zk-full-width");
+                    mocNodeTreeDiv.children[0].setAttribute('height', `${graphHeight}px`);
+                    graphMermaidDiv.appendChild(mocNodeTreeDiv);
+
+                    // 等待DOM更新完成
+                    await new Promise(resolve => setTimeout(resolve, 10));
+                    
+                    // 检查SVG元素是否存在
+                    const svgSelector = `#${mocNodeTreeDiv.id}-svg`;
+                    const svgElement = document.querySelector(svgSelector);
+                    
+                    if (svgElement) {
+                        svgPanZoom(svgSelector, {
+                            zoomEnabled: true,
+                            controlIconsEnabled: false,
+                            fit: true,
+                            center: true,
+                            minZoom: 0.001,
+                            maxZoom: 1000,
+                            dblClickZoomEnabled: false,
+                            zoomScaleSensitivity: 0.3,
+                        });
+                    } else {
+                        console.warn(`SVG element not found: ${svgSelector}`);
+                    }
+
+                    // 添加节点点击事件
+                    await this.addMOCNodeEvents(mocNodeTreeDiv, relatedNodes);
+                } catch (error) {
+                    console.error("MOC node graph render error:", error);
+                    mocNodeTreeDiv.createEl('div', { text: "渲染错误", cls: "zk-graph-text" });
+                }
+            }
+        }
+
+        // ========== 2. 出入链图 ==========
+        if (this.plugin.settings.InOutlinksGraphToggle) {
+            const inlinkArr = await this.getInlinks(currentFile);
+            const outlinkArr = await this.getOutlinks(currentFile);
+            const inoutlinkMermaidStr = await this.genericInOutLinksMermaidStr(currentFile, inlinkArr, outlinkArr, this.plugin.settings.DirectionOfInlinksGraph);
+
+            const inoutlinksGraphContainer = graphMermaidDiv.createDiv("zk-inoutlinks-graph-container");
+            const inoutlinksGraphTextDiv = inoutlinksGraphContainer.createDiv("zk-graph-text");
+            inoutlinksGraphTextDiv.empty();
+            inoutlinksGraphTextDiv.createEl('span', { text: t("inoutlinks") });
+
+            const inoutlinksIconDiv = inoutlinksGraphContainer.createDiv("zk-graph-icon");
+            inoutlinksIconDiv.empty();
+            const inoutlinksExpandBtn = new ExtraButtonComponent(inoutlinksIconDiv);
+            inoutlinksExpandBtn.setIcon("expand").setTooltip(t("expand graph"));
+            inoutlinksExpandBtn.onClick(() => {
+                new expandGraphModal(this.app, this.plugin, [], [...inlinkArr, ...outlinkArr], inoutlinkMermaidStr).open();
+            });
+
+            const inoutlinksTreeDiv = inoutlinksGraphContainer.createEl("div", { cls: "zk-graph-mermaid" });
+            inoutlinksTreeDiv.id = "zk-mocnode-inoutlinks-tree";
+
+            try {
+                const { svg: inoutlinksSvg } = await mermaid.render(`${inoutlinksTreeDiv.id}-svg`, inoutlinkMermaidStr);
+                inoutlinksTreeDiv.insertAdjacentHTML('beforeend', inoutlinksSvg);
+                inoutlinksTreeDiv.children[0].addClass("zk-full-width");
+                inoutlinksTreeDiv.children[0].setAttribute('height', `${graphHeight}px`);
+                graphMermaidDiv.appendChild(inoutlinksTreeDiv);
+
+                // 等待 SVG 元素插入到 DOM 中
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                // 查找 SVG 元素，可能带有后缀（如 -svg-0）
+                const inoutlinksSvgElement = document.getElementById(`${inoutlinksTreeDiv.id}-svg`) ||
+                    inoutlinksTreeDiv.querySelector('svg') ||
+                    document.querySelector(`#${inoutlinksTreeDiv.id}-svg-0`);
+
+                if (inoutlinksSvgElement) {
+                    svgPanZoom(inoutlinksSvgElement, {
+                        zoomEnabled: true,
+                        controlIconsEnabled: false,
+                        fit: true,
+                        center: true,
+                        minZoom: 0.001,
+                        maxZoom: 1000,
+                        dblClickZoomEnabled: false,
+                        zoomScaleSensitivity: 0.3,
+                    });
+                }
+
+                // 添加链接点击事件（合并入链和出链数组）
+                await this.addLinkNodeEvents(inoutlinksTreeDiv, [...inlinkArr, currentFile, ...outlinkArr], currentFile);
+            } catch (error) {
+                console.error("Inoutlinks graph render error:", error);
+            }
+        }
+    }
+
     async onClose() {
-        
+
     }
 }

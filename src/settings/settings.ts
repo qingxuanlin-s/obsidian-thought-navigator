@@ -642,23 +642,23 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
         );
 
         new Setting(localGraphView)
-            .setName(t("Open inlinks graph"))
-            .setDesc(t("Mermaid graph to display inlinks"))
-            .addToggle(toggle => toggle.setValue(this.plugin.settings.InlinksGraphToggle)
+            .setName(t("Open inoutlinks graph"))
+            .setDesc(t("Mermaid graph to display inlinks and outlinks"))
+            .addToggle(toggle => toggle.setValue(this.plugin.settings.InOutlinksGraphToggle)
                 .onChange((value) => {
-                    this.plugin.settings.InlinksGraphToggle = value;
+                    this.plugin.settings.InOutlinksGraphToggle = value;
                     this.plugin.RefreshIndexViewFlag = true;
                 })
             ).addExtraButton((cb)=>{
                 cb.setIcon("settings")
                 .onClick(()=>{
-                    this.hideDiv(inlinksSectionDiv);
+                    this.hideDiv(inoutlinksSectionDiv);
                 })
             })
         
-        const inlinksSectionDiv = localGraphView.createDiv("zk-local-section zk-hidden")
+        const inoutlinksSectionDiv = localGraphView.createDiv("zk-local-section zk-hidden")
         
-        new Setting(inlinksSectionDiv)
+        new Setting(inoutlinksSectionDiv)
         .setName(t("direction of graph"))
         .addDropdown(options => options
             .addOption("LR", t('"LR": feft to right'))
@@ -672,50 +672,86 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
             })
         );
 
-        new Setting(localGraphView)
-            .setName(t("Open outlinks graph"))
-            .setDesc(t("Mermaid graph to display outlinks"))
-            .addToggle(toggle => toggle.setValue(this.plugin.settings.OutlinksGraphToggle)
-                .onChange((value) => {
-                    this.plugin.settings.OutlinksGraphToggle = value;
-                    this.plugin.RefreshIndexViewFlag = true;
-                })
-            ).addExtraButton((cb)=>{
-                cb.setIcon("settings")
-                .onClick(()=>{
-                    this.hideDiv(outlinksSectionDiv);
-                })
-            })
-        
-        const outlinksSectionDiv = localGraphView.createDiv("zk-local-section zk-hidden")
-
-        new Setting(outlinksSectionDiv)
-        .setName(t("direction of graph"))
-        .addDropdown(options => options
-            .addOption("LR", t('"LR": feft to right'))
-            .addOption("RL", t('"RL": right to left'))
-            .addOption("TB", t('"TB": top to bottom'))
-            .addOption("BT", t('"BT": bottom to top'))
-            .setValue(this.plugin.settings.DirectionOfOutlinksGraph)
-            .onChange((value) => {
-                this.plugin.settings.DirectionOfOutlinksGraph = value;
-                this.plugin.RefreshIndexViewFlag = true;
-            })
-        );
-        
-        new Setting(outlinksSectionDiv)
+        new Setting(inoutlinksSectionDiv)
         .setName(t("Detect file extensions"))
         .addDropdown(options => options
             .addOption("all", t("all file extension"))
             .addOption("md", t(".md only"))
             .setValue(this.plugin.settings.FileExtension)
-            .onChange((value) => {
+                .onChange((value) => {
                 this.plugin.settings.FileExtension = value;
-                this.plugin.RefreshIndexViewFlag = true;
-            })
+                    this.plugin.RefreshIndexViewFlag = true;
+                })
         )
 
         const experimentalDiv = settingTabDiv.createDiv("zk-setting-section");
+        
+        // MOC 模式设置
+        new Setting(experimentalDiv)
+            .setName(t("MOC Mode"))
+            .setDesc(t("Parse tree structure from MOC notes with headings like '# 思维树'"))
+            .addToggle(toggle => toggle.setValue(this.plugin.settings.mocModeEnabled)
+            .onChange((value) => {
+                    this.plugin.settings.mocModeEnabled = value;
+                this.plugin.RefreshIndexViewFlag = true;
+                    this.display();
+            })
+            ).addExtraButton((cb) => {
+                cb.setIcon("settings")
+                .onClick(() => {
+                    this.hideDiv(mocSettingsDiv);
+                });
+            });
+
+        const mocSettingsDiv = experimentalDiv.createDiv("zk-local-section zk-hidden");
+
+        new Setting(mocSettingsDiv)
+            .setName(t("MOC Folder Location"))
+            .setDesc(t("Folder containing MOC index notes"))
+            .addSearch((cb) => {
+                new FolderSuggest(this.app, cb.inputEl);
+                cb.setPlaceholder(t("Example: folder1/folder2"))
+                    .setValue(this.plugin.settings.mocFolderPath)
+            .onChange((value) => {
+                        this.plugin.settings.mocFolderPath = value;
+                        this.plugin.settings.mocCurrentFile = ''; // 重置当前文件
+                        this.plugin.RefreshIndexViewFlag = true;
+                    });
+            });
+
+        new Setting(mocSettingsDiv)
+            .setName(t("Heading Title"))
+            .setDesc(t("The heading title to parse (e.g. '思维树' for '# 思维树')"))
+            .addText((cb) =>
+                cb.setValue(this.plugin.settings.mocHeadingTitle)
+                    .setPlaceholder("思维树")
+                    .onChange((value) => {
+                        this.plugin.settings.mocHeadingTitle = value;
+                this.plugin.RefreshIndexViewFlag = true;
+            })
+            );
+
+        experimentalDiv.createEl("p", { 
+            text: t("MOC Format Example:"),
+            cls: "setting-item-description"
+        });
+        
+        const formatExample = experimentalDiv.createEl("pre", {
+            cls: "setting-item-description",
+        });
+        formatExample.style.fontSize = "12px";
+        formatExample.style.padding = "8px";
+        formatExample.style.backgroundColor = "var(--background-secondary)";
+        formatExample.style.borderRadius = "4px";
+        formatExample.style.whiteSpace = "pre-wrap";
+        formatExample.textContent = `# 思维树
+- [[20251214-波函数]] a
+  - 引出 [[20251215-薛定谔方程]] a.1
+    - [[20251215-薛定谔方程扩展]] a.1.a
+  - 相关 [[20251220-概率诠释]] a.2`;
+
+        experimentalDiv.createEl("hr");
+
         new Setting(experimentalDiv)
             .setName(t("multiple IDs for main notes"))
             .setDesc(t("multiple IDs description"))

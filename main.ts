@@ -61,6 +61,7 @@ interface ZKNavigationSettings {
     FamilyGraphToggle: boolean;
     InlinksGraphToggle: boolean;
     OutlinksGraphToggle: boolean;
+    InOutlinksGraphToggle: boolean;  // 出入链合并开关
     TagOfMainNotes: string; 
     IDFieldOption: string; // 3 options for ID field
     TitleField: string; // ID field option 1, specify a frontmatter field as note title
@@ -120,6 +121,11 @@ interface ZKNavigationSettings {
     canvasCardColor: string;
     canvasArrowColor: string;
     headingMatchMode: string; // "string" or "regex"
+    // MOC 模式相关设置
+    mocModeEnabled: boolean;           // 是否启用 MOC 模式
+    mocFolderPath: string;             // MOC 索引笔记所在文件夹
+    mocHeadingTitle: string;           // 要解析的一级标题名称，如 "思维树"
+    mocCurrentFile: string;            // 当前选中的 MOC 文件路径
 }
 
 //Default value for setting field
@@ -134,6 +140,7 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     FamilyGraphToggle: true,
     InlinksGraphToggle: true,
     OutlinksGraphToggle: true,
+    InOutlinksGraphToggle: true,  // 出入链默认开启
     TagOfMainNotes: '',
     IDFieldOption: '1',
     TitleField: '',
@@ -192,7 +199,12 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     canvasSubpath: "",
     canvasCardColor: "#C0C0C0",
     canvasArrowColor: "#C0C0C0",
-    headingMatchMode: "string" 
+    headingMatchMode: "string",
+    // MOC 模式默认值
+    mocModeEnabled: false,
+    mocFolderPath: '',
+    mocHeadingTitle: '思维树',
+    mocCurrentFile: '',
 }
 
 export default class ZKNavigationPlugin extends Plugin {
@@ -222,6 +234,19 @@ export default class ZKNavigationPlugin extends Plugin {
     async onload() {
 
         await this.loadSettings();
+        
+        // 添加全局错误处理来忽略ResizeObserver错误
+        const originalError = window.onerror;
+        window.onerror = (message, source, lineno, colno, error) => {
+            if (typeof message === 'string' && message.includes('ResizeObserver loop completed')) {
+                // 忽略ResizeObserver循环错误
+                return true;
+            }
+            if (originalError) {
+                return originalError(message, source, lineno, colno, error);
+            }
+            return false;
+        };
         
         this.registerObsidianProtocolHandler("zk-navigation",async (para)=>{
 
