@@ -139,6 +139,7 @@ export default {
     "growing animation": "start timelapse animation",
     "structure": "structure",
     "roadmap": "roadmap",
+    "hierarchical": "hierarchical",
     "style : ": "style : ",
     "playPrevious":"previous",
     "playNext": "playNext",
@@ -149,7 +150,11 @@ export default {
     "close relative": "close relative",
     "inlinks": "inlinks",
     "outlinks": "outlinks",
+    "inoutlinks": "in/outlinks",
+    "mind tree context": "Mind Tree",
     "expand graph": "expand graph",
+    "Open inoutlinks graph": "Open in/outlinks graph",
+    "Mermaid graph to display inlinks and outlinks": "Mermaid graph to display inlinks and outlinks",
 
     //main.ts
     "open zk-index-graph": "open zk-index-graph",
@@ -182,4 +187,19 @@ export default {
     "to save":"to save",
     "Choose a Icon for your new Command": "Choose a Icon for your new Command",
     "to choose a custom icon": "to choose a custom icon",
+
+    // MOC Mode
+    "MOC": "MOC",
+    "MOC Mode": "MOC Mode",
+    "Parse tree structure from MOC notes with headings like '# 思维树'": "Parse tree structure from MOC index notes under specific headings",
+    "MOC Folder Location": "MOC Folder Location",
+    "Folder containing MOC index notes": "Folder containing MOC index notes",
+    "Heading Title": "Heading Title",
+    "The heading title to parse (e.g. '思维树' for '# 思维树')": "The heading title to parse (e.g. 'Mind Tree' for '# Mind Tree')",
+    "MOC Format Example:": "MOC Format Example:",
+    "Please configure MOC folder path in settings": "Please configure MOC folder path in settings",
+    "No MOC files found in the specified folder": "No MOC files found in the specified folder",
+    "No tree structure found under heading:": "No tree structure found under heading:",
+    "Current MOC: ": "Current MOC: ",
+    "No valid nodes found": "No valid nodes found",
 }

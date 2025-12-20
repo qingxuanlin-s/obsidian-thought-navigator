@@ -1,9 +1,277 @@
 import ZKNavigationPlugin, { ZoomPanScale } from "main";
-import { loadMermaid, moment, Notice, TFile } from "obsidian";
+import { App, loadMermaid, moment, Notice, TFile } from "obsidian";
 import { ZKNode } from "src/view/indexView";
 
+// MOC 解析的节点结构
+export interface MOCTreeNode {
+    wikiLink: string;           // wiki链接，如 "20251214-波函数"
+    nodeID: string;             // 节点ID，如 "a", "a.1", "a.1.a"
+    displayText: string;        // 显示文本（链接后的描述）
+    depth: number;              // 缩进深度（用于确定父子关系）
+    children: MOCTreeNode[];    // 子节点
+    file: TFile | null;         // 对应的文件
+    relationText: string;       // 关系描述，如 "引出", "相关"
+}
+
+// 解析 MOC 笔记中指定标题下的树结构
+export async function parseMOCStructure(
+    app: App,
+    filePath: string,
+    headingTitle: string
+): Promise<MOCTreeNode[]> {
+    const file = app.vault.getFileByPath(filePath);
+    if (!file) {
+        return [];
+    }
+
+    const content = await app.vault.read(file);
+    const lines = content.split('\n');
+
+    // 查找指定的一级标题
+    let startIndex = -1;
+    let endIndex = lines.length;
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+
+        // 匹配一级标题
+        if (line.startsWith('# ')) {
+            if (line === `# ${headingTitle}` || line.startsWith(`# ${headingTitle}`)) {
+                startIndex = i + 1;
+            } else if (startIndex !== -1) {
+                // 找到下一个一级标题，结束
+                endIndex = i;
+                break;
+            }
+        }
+    }
+
+    if (startIndex === -1) {
+        return [];
+    }
+
+    // 解析标题下的列表内容
+    const allNodes: MOCTreeNode[] = [];
+
+    // 第一步：收集所有节点
+    for (let i = startIndex; i < endIndex; i++) {
+        const line = lines[i];
+
+        // 跳过空行
+        if (line.trim() === '') continue;
+
+        // 解析列表项
+        const listMatch = line.match(/^(\s*)[-*]\s+(.+)$/);
+        if (!listMatch) continue;
+
+        const itemContent = listMatch[2];
+
+        // 解析 wiki 链接和节点 ID
+        const parsedItem = parseListItem(app, itemContent);
+        if (!parsedItem || !parsedItem.nodeID) continue;
+
+        // 根据节点ID计算深度（点号分隔的层级数）
+        const idParts = parsedItem.nodeID.split('.');
+        const depth = idParts.length - 1;
+
+        const node: MOCTreeNode = {
+            wikiLink: parsedItem.wikiLink,
+            nodeID: parsedItem.nodeID,
+            displayText: parsedItem.displayText,
+            depth: depth,
+            children: [],
+            file: parsedItem.file,
+            relationText: parsedItem.relationText,
+        };
+
+        allNodes.push(node);
+    }
+
+    // 第二步：根据节点ID构建父子关系
+    const treeNodes: MOCTreeNode[] = [];
+    const nodeMap = new Map<string, MOCTreeNode>();
+
+    // 创建节点映射
+    allNodes.forEach(node => {
+        nodeMap.set(node.nodeID, node);
+    });
+
+    // 构建树结构
+    allNodes.forEach(node => {
+        const idParts = node.nodeID.split('.');
+
+        if (idParts.length === 1) {
+            // 根节点（如 "a"）
+            treeNodes.push(node);
+        } else {
+            // 子节点，找到父节点
+            const parentId = idParts.slice(0, -1).join('.');
+            const parentNode = nodeMap.get(parentId);
+
+            if (parentNode) {
+                parentNode.children.push(node);
+            } else {
+                // 如果找不到父节点，作为根节点处理
+                treeNodes.push(node);
+            }
+        }
+    });
+
+    return treeNodes;
+}
+
+// 解析列表项内容
+function parseListItem(app: App, content: string): {
+    wikiLink: string;
+    nodeID: string;
+    displayText: string;
+    file: TFile | null;
+    relationText: string;
+} | null {
+    // 匹配 wiki 链接: [[链接]] 或 [[链接|显示文本]]
+    const wikiMatch = content.match(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/);
+    if (!wikiMatch) return null;
+
+    const wikiLink = wikiMatch[1];
+    const linkDisplayText = wikiMatch[2] || wikiMatch[1];
+
+    // 获取 wiki 链接后的内容
+    const afterLink = content.substring(content.indexOf(']]') + 2).trim();
+
+    // 识别用反引号包裹的节点 ID，格式如: [[link]] `c1` 或 [[link]] - `c1` 或 [[link]] `a`- 引出
+    // 匹配反引号包裹的内容，如 `c1`, `a.1`, `a.1.a` 等，允许后面有更多内容
+    const idMatch = afterLink.match(/[-–—]?\s*`([a-zA-Z0-9.]+)`/);
+    const nodeID = idMatch ? idMatch[1] : '';
+
+    // 获取关系描述（wiki链接前的文字）
+    const beforeLink = content.substring(0, content.indexOf('[[')).trim();
+    const relationText = beforeLink || '';
+
+    // 查找对应的文件
+    const file = app.metadataCache.getFirstLinkpathDest(wikiLink, '') || null;
+
+    return {
+        wikiLink,
+        nodeID,
+        displayText: linkDisplayText,
+        file,
+        relationText,
+    };
+}
+
+// 将 MOC 树结构转换为 ZKNode 数组
+export async function convertMOCToZKNodes(
+    plugin: ZKNavigationPlugin,
+    mocTrees: MOCTreeNode[],
+    parentIDArr: string[] = []
+): Promise<ZKNode[]> {
+    const nodes: ZKNode[] = [];
+    let position = 0;
+
+    const processNode = async (
+        mocNode: MOCTreeNode,
+        currentIDArr: string[],
+        index: number
+    ): Promise<void> => {
+        // 构建 ID 数组
+        const nodeIDArr = [...currentIDArr];
+
+        // 如果有节点 ID，使用它；否则使用索引
+        if (mocNode.nodeID) {
+            // 直接使用完整的节点 ID（如 "a.1.a"）
+            nodeIDArr.push(mocNode.nodeID);
+        } else {
+            nodeIDArr.push(index.toString());
+        }
+
+        // 只有当文件存在时才创建并添加节点
+        if (!mocNode.file) {
+            // 递归处理子节点（即使当前节点无文件）
+            for (let i = 0; i < mocNode.children.length; i++) {
+                await processNode(mocNode.children[i], nodeIDArr, i);
+            }
+            return;
+        }
+
+        const zkNode: ZKNode = {
+            ID: mocNode.nodeID || mocNode.wikiLink,
+            IDArr: nodeIDArr,
+            IDStr: mocNode.nodeID || nodeIDArr.join(','),
+            position: position++,
+            file: mocNode.file,
+            title: mocNode.displayText,
+            relationText: mocNode.relationText,
+            displayText: getDisplayText(plugin, mocNode),
+            ctime: mocNode.file.stat?.ctime || Date.now(),
+            randomId: random(16),
+            nodeSons: 1,
+            startY: 0,
+            height: 0,
+            isRoot: currentIDArr.length === 0,
+            fixWidth: 0,
+            branchName: "",
+            gitNodePos: 0,
+        };
+
+        nodes.push(zkNode);
+
+        // 递归处理子节点
+        for (let i = 0; i < mocNode.children.length; i++) {
+            await processNode(mocNode.children[i], nodeIDArr, i);
+        }
+    };
+
+    // 处理所有根节点
+    for (let i = 0; i < mocTrees.length; i++) {
+        await processNode(mocTrees[i], parentIDArr, i);
+    }
+
+    // 重新计算 position 和 isRoot
+    nodes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
+    for (let i = 0; i < nodes.length; i++) {
+        nodes[i].position = i;
+        // 检查是否有父节点 - 基于节点ID的层级关系
+        if (nodes[i].IDStr) {
+            const idParts = nodes[i].IDStr.split('.');
+            if (idParts.length === 1) {
+                nodes[i].isRoot = true;
+            } else {
+                const parentId = idParts.slice(0, -1).join('.');
+                nodes[i].isRoot = !nodes.find(n => n.IDStr === parentId);
+            }
+        } else {
+            nodes[i].isRoot = parentIDArr.length === 0;
+        }
+    }
+
+    return nodes;
+}
+
+// 根据设置生成显示文本
+function getDisplayText(plugin: ZKNavigationPlugin, mocNode: MOCTreeNode): string {
+    const id = mocNode.nodeID || mocNode.wikiLink;
+    const title = mocNode.displayText;
+    const relation = mocNode.relationText;
+
+    // 如果有关系描述，加入显示
+    //let prefix = relation ? `${relation} ` : '';
+
+    // 编号用反引号包裹（因为只有用反引号包裹的编号才会被识别）
+    const wrappedId = id ? `\`${id}\`` : '';
+
+    switch (plugin.settings.NodeText) {
+        case "id":
+            return wrappedId;
+        case "title":
+            return (title || wrappedId);
+        case "both":
+        default:
+            return `${wrappedId}: ${title}`;
+    }
+}
+
 // formatting Luhmann style IDs
-export async function ID_formatting(id: string, arr: string[], siblingsOrder:string): Promise<string[]> {
+export async function ID_formatting(id: string, arr: string[], siblingsOrder: string): Promise<string[]> {
     if (/^[0-9]$/.test(id[0])) {
         let numStr = id.match(/\d+/g);
         if (numStr && numStr.length > 0) {
@@ -18,12 +286,12 @@ export async function ID_formatting(id: string, arr: string[], siblingsOrder:str
             return arr;
         }
     } else if (/^[a-zA-Z]$/.test(id[0])) {
-        let letterStr:string;
-        if(siblingsOrder === "letter"){
-            letterStr = id[0].padStart(5,"0");
-        }else{
+        let letterStr: string;
+        if (siblingsOrder === "letter") {
+            letterStr = id[0].padStart(5, "0");
+        } else {
             letterStr = id[0];
-        }        
+        }
         arr.push(letterStr)
         if (id.length === 1) {
             return arr;
@@ -40,32 +308,32 @@ export async function ID_formatting(id: string, arr: string[], siblingsOrder:str
 }
 
 // translating different ID fields(filename/attribute/prefix of filename) into standard ZKNode array
-export async function mainNoteInit(plugin:ZKNavigationPlugin){
+export async function mainNoteInit(plugin: ZKNavigationPlugin) {
 
-    let mainNoteFiles:TFile[] = this.app.vault.getFiles();
+    let mainNoteFiles: TFile[] = this.app.vault.getFiles();
 
-    if(plugin.settings.MainNoteExt == 'md'){
-        mainNoteFiles = mainNoteFiles.filter(file=>file.extension == "md");
+    if (plugin.settings.MainNoteExt == 'md') {
+        mainNoteFiles = mainNoteFiles.filter(file => file.extension == "md");
     }
 
     //clear our folder field
-    if(plugin.settings.FolderOfMainNotes !== "" ){
+    if (plugin.settings.FolderOfMainNotes !== "") {
         plugin.settings.FolderList.push(plugin.settings.FolderOfMainNotes);
         plugin.settings.FolderOfMainNotes = "";
     }
 
-    if(plugin.settings.FolderList.length > 0){
+    if (plugin.settings.FolderList.length > 0) {
 
         let validFolders = [...new Set(plugin.settings.FolderList)].filter(folder => folder !== "");
 
-        let tempMainNoteFiles:TFile[] = [];
+        let tempMainNoteFiles: TFile[] = [];
 
-        for(let i=0;i<validFolders.length;i++){
+        for (let i = 0; i < validFolders.length; i++) {
 
-            if(validFolders[i] === '/'){
+            if (validFolders[i] === '/') {
                 tempMainNoteFiles.push(...mainNoteFiles.filter(file => file.parent && file.parent.name === ""))
 
-            }else{
+            } else {
                 tempMainNoteFiles.push(...mainNoteFiles.filter(
                     file => {
                         return file.path.replace(file.name, "").startsWith(validFolders[i] + '/');
@@ -76,14 +344,14 @@ export async function mainNoteInit(plugin:ZKNavigationPlugin){
     }
 
     if (plugin.settings.TagOfMainNotes !== '') {
-        
-        let mdMainNote:TFile[] = [];
-        let otherMainNote:TFile[]=[];
 
-        if(plugin.settings.MainNoteExt == 'all'){
-            otherMainNote =  mainNoteFiles.filter( file => file.extension !== "md");
+        let mdMainNote: TFile[] = [];
+        let otherMainNote: TFile[] = [];
+
+        if (plugin.settings.MainNoteExt == 'all') {
+            otherMainNote = mainNoteFiles.filter(file => file.extension !== "md");
         }
-        
+
         mdMainNote = mainNoteFiles.filter(
             file => file.extension == 'md' && getfileTags(file).includes(plugin.settings.TagOfMainNotes)
         )
@@ -103,11 +371,12 @@ export async function mainNoteInit(plugin:ZKNavigationPlugin){
             file: note,
             title: '',
             displayText: '',
+            relationText: '',
             ctime: 0,
             randomId: random(16),
-            nodeSons:1,
-            startY:0,
-            height:0,
+            nodeSons: 1,
+            startY: 0,
+            height: 0,
             isRoot: false,
             fixWidth: 0,
             branchName: "",
@@ -126,7 +395,7 @@ export async function mainNoteInit(plugin:ZKNavigationPlugin){
 
                 if (nodeCache !== null && node.file.extension == 'md') {
                     if (typeof nodeCache.frontmatter !== 'undefined' && plugin.settings.TitleField !== "") {
-                        
+
                         let title = nodeCache.frontmatter[plugin.settings.TitleField]?.toString();
                         if (typeof title == "string" && title.length > 0) {
                             node.title = title;
@@ -136,11 +405,11 @@ export async function mainNoteInit(plugin:ZKNavigationPlugin){
 
                 break;
             case "2":
-                if(node.file.extension == 'md'){
+                if (node.file.extension == 'md') {
                     if (nodeCache !== null) {
                         if (typeof nodeCache.frontmatter !== 'undefined' && plugin.settings.IDField !== "") {
                             let id = nodeCache.frontmatter[plugin.settings.IDField];
-                            if(Array.isArray(id)){
+                            if (Array.isArray(id)) {
                                 if (id[0] === null) {
                                     continue;
                                 }
@@ -148,12 +417,12 @@ export async function mainNoteInit(plugin:ZKNavigationPlugin){
                                 node.IDArr = await ID_formatting(node.ID, node.IDArr, plugin.settings.siblingsOrder);
                                 node.IDStr = node.IDArr.toString();
                                 node.title = note.basename;
-                            }else if (typeof id == "string") {
+                            } else if (typeof id == "string") {
                                 node.ID = id;
                                 node.IDArr = await ID_formatting(node.ID, node.IDArr, plugin.settings.siblingsOrder);
                                 node.IDStr = node.IDArr.toString();
                                 node.title = note.basename;
-                            }else if(typeof id == 'number'){
+                            } else if (typeof id == 'number') {
                                 node.ID = id.toString();
                                 node.IDArr = await ID_formatting(node.ID, node.IDArr, plugin.settings.siblingsOrder);
                                 node.IDStr = node.IDArr.toString();
@@ -167,22 +436,22 @@ export async function mainNoteInit(plugin:ZKNavigationPlugin){
                 }
                 break;
             case "3":
-                let temLen:number = 1;
+                let temLen: number = 1;
                 let parts: string[] = [];
-                
+
                 // 根据配置的分隔符分割文件名
-                if(plugin.settings.Separator === "other"){
+                if (plugin.settings.Separator === "other") {
                     parts = note.basename.split(plugin.settings.OtherSeparator);
                     temLen = plugin.settings.OtherSeparator.length;
-                }else{
+                } else {
                     parts = note.basename.split(plugin.settings.Separator);
                 }
-                
+
                 // 必须有至少2部分（ID和标题），且标题不能为空
-                if(parts.length < 2 || !parts[1] || parts[1].trim() === ''){
+                if (parts.length < 2 || !parts[1] || parts[1].trim() === '') {
                     continue; // 跳过不符合格式的文件
                 }
-                
+
                 node.ID = parts[0].trim();
                 node.title = parts.slice(1).join(plugin.settings.Separator === "other" ? plugin.settings.OtherSeparator : plugin.settings.Separator).trim();
                 node.IDArr = await ID_formatting(node.ID, node.IDArr, plugin.settings.siblingsOrder);
@@ -191,52 +460,52 @@ export async function mainNoteInit(plugin:ZKNavigationPlugin){
             default:
             // do nothing
         }
-        
-        if (plugin.settings.CustomCreatedTime.length > 0 && node.file.extension == 'md') {
-            
-           let ctime = nodeCache?.frontmatter?.[plugin.settings.CustomCreatedTime];
 
-           if(ctime){
+        if (plugin.settings.CustomCreatedTime.length > 0 && node.file.extension == 'md') {
+
+            let ctime = nodeCache?.frontmatter?.[plugin.settings.CustomCreatedTime];
+
+            if (ctime) {
                 let time = moment(ctime);
-                if(time.isValid()){
+                if (time.isValid()) {
                     node.ctime = time.valueOf();
                 }
-           }            
+            }
         }
 
-        if(node.ctime === 0){         
-            node.ctime = node.file.stat.ctime         
+        if (node.ctime === 0) {
+            node.ctime = node.file.stat.ctime
         }
 
         plugin.MainNotes.push(node);
     }
 
-    plugin.MainNotes = plugin.MainNotes.filter(n=>n.IDArr.length > 0);
+    plugin.MainNotes = plugin.MainNotes.filter(n => n.IDArr.length > 0);
 
-    if(plugin.settings.multiIDToggle == true && plugin.settings.multiIDField != ''){
-        
-        let duplicateNodes:ZKNode[] = [];
+    if (plugin.settings.multiIDToggle == true && plugin.settings.multiIDField != '') {
+
+        let duplicateNodes: ZKNode[] = [];
 
         for (let i = 0; i < plugin.MainNotes.length; i++) {
             let node = plugin.MainNotes[i];
-            if(node.file.extension == 'md'){
+            if (node.file.extension == 'md') {
                 let fm = await this.app.metadataCache.getFileCache(node.file).frontmatter;
-                if(fm){
+                if (fm) {
                     let IDs = fm[plugin.settings.multiIDField];
-                    if(Array.isArray(IDs)){
-                        for(let j = 0; j < IDs.length; j++){
+                    if (Array.isArray(IDs)) {
+                        for (let j = 0; j < IDs.length; j++) {
                             if (IDs[j] === null) {
                                 continue;
                             }
-                            let nodeDup =  Object.assign({}, node);
+                            let nodeDup = Object.assign({}, node);
                             nodeDup.ID = IDs[j].toString();
                             nodeDup.IDArr = await ID_formatting(nodeDup.ID, [], plugin.settings.siblingsOrder);
                             nodeDup.IDStr = nodeDup.IDArr.toString();
                             nodeDup.randomId = random(16);
                             duplicateNodes.push(nodeDup)
                         }
-                    }else if(typeof IDs == "string"){
-                        let nodeDup =  Object.assign({}, node);
+                    } else if (typeof IDs == "string") {
+                        let nodeDup = Object.assign({}, node);
                         nodeDup.ID = IDs;
                         nodeDup.IDArr = await ID_formatting(nodeDup.ID, [], plugin.settings.siblingsOrder);
                         nodeDup.IDStr = nodeDup.IDArr.toString();
@@ -246,7 +515,7 @@ export async function mainNoteInit(plugin:ZKNavigationPlugin){
                 }
             }
         }
-        if(duplicateNodes.length > 0){
+        if (duplicateNodes.length > 0) {
             plugin.MainNotes.push(...duplicateNodes);
             plugin.MainNotes = uniqueByZKNote(plugin.MainNotes);
         }
@@ -257,10 +526,10 @@ export async function mainNoteInit(plugin:ZKNavigationPlugin){
     for (let i = 0; i < plugin.MainNotes.length; i++) {
         let node = plugin.MainNotes[i];
         node.position = i;
-        if(!plugin.MainNotes.find(n=>n.IDArr.toString() == node.IDArr.slice(0,-1).toString())){
+        if (!plugin.MainNotes.find(n => n.IDArr.toString() == node.IDArr.slice(0, -1).toString())) {
             node.isRoot = true;
         }
-        
+
         switch (plugin.settings.NodeText) {
             case "id":
                 node.displayText = node.ID;
@@ -282,11 +551,11 @@ export async function mainNoteInit(plugin:ZKNavigationPlugin){
 }
 
 export const random = (e: number) => {
-	let t = [];
-	for (let n = 0; n < e; n++) {
-		t.push((16 * Math.random() | 0).toString(16));
-	}
-	return t.join("");
+    let t = [];
+    for (let n = 0; n < e; n++) {
+        t.push((16 * Math.random() | 0).toString(16));
+    }
+    return t.join("");
 };
 
 
@@ -294,11 +563,11 @@ function uniqueByZKNote(arr: ZKNode[]) {
     const map = new Map();
     const result = [];
     for (const item of arr) {
-      const compoundKey = item.ID + '_' + item.file.path;
-      if (!map.has(compoundKey)) {
-        map.set(compoundKey, true);
-        result.push(item);
-      }
+        const compoundKey = item.ID + '_' + item.file.path;
+        if (!map.has(compoundKey)) {
+            map.set(compoundKey, true);
+            result.push(item);
+        }
     }
     return result;
 }
@@ -307,17 +576,17 @@ function uniqueByTFile(arr: TFile[]) {
     const map = new Map();
     const result = [];
     for (const item of arr) {
-      const compoundKey = item.path;
-      if (!map.has(compoundKey)) {
-        map.set(compoundKey, true);
-        result.push(item);
-      }
+        const compoundKey = item.path;
+        if (!map.has(compoundKey)) {
+            map.set(compoundKey, true);
+            result.push(item);
+        }
     }
     return result;
 }
 
 
-export function displayWidth(str:string){
+export function displayWidth(str: string) {
     let length = 0;
     for (let i = 0; i < str.length; i++) {
         const charCode = str.charCodeAt(i);
@@ -327,69 +596,73 @@ export function displayWidth(str:string){
 }
 
 export async function addSvgPanZoom(
-    zkGraph:HTMLDivElement, 
-    indexMermaidDiv: HTMLElement, 
-    i:number, 
-    plugin:ZKNavigationPlugin, 
-    mermaidStr:string, height:number){
-    
+    zkGraph: HTMLDivElement,
+    indexMermaidDiv: HTMLElement,
+    i: number,
+    plugin: ZKNavigationPlugin,
+    mermaidStr: string, height: number) {
+
     const mermaid = await loadMermaid();
     let { svg } = await mermaid.render(`${zkGraph.id}-svg`, mermaidStr);
-            
+
     zkGraph.insertAdjacentHTML('beforeend', svg);
-    
-    if(plugin.settings.graphType === "roadmap"){
+
+    if (plugin.settings.graphType === "roadmap") {
         zkGraph.children[0].removeAttribute('style');
     }
-    
+
     zkGraph.children[0].addClass("zk-full-width");
 
-    zkGraph.children[0].setAttr('height', `${height}px`); 
-    
+    zkGraph.children[0].setAttr('height', `${height}px`);
+
     indexMermaidDiv.appendChild(zkGraph);
 
     const svgPanZoom = require("svg-pan-zoom");
-            
+
     let panZoomTiger = await svgPanZoom(`#${zkGraph.id}-svg`, {
         zoomEnabled: true,
         controlIconsEnabled: false,
-        fit: true,                    
+        fit: true,
         center: true,
         minZoom: 0.001,
         maxZoom: 1000,
         dblClickZoomEnabled: false,
         zoomScaleSensitivity: 0.2,
-        
-        onZoom: async () => {                        
-            plugin.settings.zoomPanScaleArr[i].zoomScale = panZoomTiger.getZoom();
 
+        onZoom: async () => {
+            // 安全检查：确保数组元素存在
+            if (plugin.settings.zoomPanScaleArr[i]) {
+                plugin.settings.zoomPanScaleArr[i].zoomScale = panZoomTiger.getZoom();
+            }
         },
-        onPan: async ()=> {
-            plugin.settings.zoomPanScaleArr[i].pan = panZoomTiger.getPan();
-            
+        onPan: async () => {
+            // 安全检查：确保数组元素存在
+            if (plugin.settings.zoomPanScaleArr[i]) {
+                plugin.settings.zoomPanScaleArr[i].pan = panZoomTiger.getPan();
+            }
         }
     })
 
     const touchSvg = document.getElementById(`${zkGraph.id}-svg`);
 
-    if(touchSvg !== null){
-        let startDistance:number = 0;
+    if (touchSvg !== null) {
+        let startDistance: number = 0;
         let scale = panZoomTiger.getZoom();
         let lastScale = scale;
 
-        touchSvg.addEventListener('touchstart', (event)=>{
-            if(event.touches.length === 2){
+        touchSvg.addEventListener('touchstart', (event) => {
+            if (event.touches.length === 2) {
                 let touch1 = event.touches[0];
                 let touch2 = event.touches[1];
                 startDistance = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY);
             }
         })
 
-        touchSvg.addEventListener('touchmove', (event)=>{
-            if(event.touches.length === 2){
+        touchSvg.addEventListener('touchmove', (event) => {
+            if (event.touches.length === 2) {
                 let touch1 = event.touches[0];
                 let touch2 = event.touches[1];
-                let currentDistance = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY);               
+                let currentDistance = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY);
                 let newScale = currentDistance / startDistance;
                 scale = scale * newScale / lastScale;
                 panZoomTiger.zoom(scale);
@@ -397,17 +670,17 @@ export async function addSvgPanZoom(
         })
     }
 
-    if(typeof plugin.settings.zoomPanScaleArr[i] === 'undefined'){
-        
+    if (typeof plugin.settings.zoomPanScaleArr[i] === 'undefined') {
+
         const setSvg = document.getElementById(`${zkGraph.id}-svg`);
-        
-        if(setSvg !== null){
+
+        if (setSvg !== null) {
             let a = setSvg.children[0].getAttr("style");
-            if(a){                
-                let b = a.match(/\d([^\,]+)\d/g)                
-                if(b !== null && Number(b[0]) > 1){
-                    panZoomTiger.zoom(1/Number(b[0]))
-                }                        
+            if (a) {
+                let b = a.match(/\d([^\,]+)\d/g)
+                if (b !== null && Number(b[0]) > 1) {
+                    panZoomTiger.zoom(1 / Number(b[0]))
+                }
             }
             let zoomPanScale: ZoomPanScale = {
                 graphID: zkGraph.id,
@@ -418,48 +691,48 @@ export async function addSvgPanZoom(
             plugin.settings.zoomPanScaleArr.push(zoomPanScale);
         }
 
-    }else{
-        panZoomTiger.zoom(plugin.settings.zoomPanScaleArr[i].zoomScale);  
-        panZoomTiger.pan(plugin.settings.zoomPanScaleArr[i].pan); 
-                
-    }  
+    } else {
+        panZoomTiger.zoom(plugin.settings.zoomPanScaleArr[i].zoomScale);
+        panZoomTiger.pan(plugin.settings.zoomPanScaleArr[i].pan);
+
+    }
 }
 
-function getfileTags(file:TFile){
-    let fileTags:string[] = [];
+function getfileTags(file: TFile) {
+    let fileTags: string[] = [];
     let fmTags = this.app.metadataCache.getFileCache(file)?.frontmatter?.tags;
-    	if(fmTags){
-		if(Array.isArray(fmTags)){
-		
-			for(let tag of fmTags){
-				splitNestedTags("#" + tag, fileTags);
-			}
-			
-		}else if(typeof fmTags == "string"){
-			splitNestedTags("#" + fmTags, fileTags);			
-		}else{
-		}
-	}
+    if (fmTags) {
+        if (Array.isArray(fmTags)) {
+
+            for (let tag of fmTags) {
+                splitNestedTags("#" + tag, fileTags);
+            }
+
+        } else if (typeof fmTags == "string") {
+            splitNestedTags("#" + fmTags, fileTags);
+        } else {
+        }
+    }
 
     let tags = this.app.metadataCache.getFileCache(file)?.tags
-	
-	if(tags && Array.isArray(tags)){
 
-		for(let tag of tags){
-			splitNestedTags(tag.tag, fileTags);
-		}
-	}
+    if (tags && Array.isArray(tags)) {
+
+        for (let tag of tags) {
+            splitNestedTags(tag.tag, fileTags);
+        }
+    }
 
     return fileTags;
 }
 
-function splitNestedTags(nestTag:string, arr:string[]){
-	let words = nestTag.split("/");
-	let tagStr = "";
-	for(let word of words){
-		tagStr = tagStr.concat(word);
-		arr.push(tagStr);
-		tagStr = tagStr.concat("/");
-	}
-	return arr
+function splitNestedTags(nestTag: string, arr: string[]) {
+    let words = nestTag.split("/");
+    let tagStr = "";
+    for (let word of words) {
+        tagStr = tagStr.concat(word);
+        arr.push(tagStr);
+        tagStr = tagStr.concat("/");
+    }
+    return arr
 }
