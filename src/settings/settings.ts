@@ -752,33 +752,6 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
 
         experimentalDiv.createEl("hr");
 
-        new Setting(experimentalDiv)
-            .setName(t("multiple IDs for main notes"))
-            .setDesc(t("multiple IDs description"))
-            .addToggle(toggle => toggle.setValue(this.plugin.settings.multiIDToggle)
-                .onChange((value) => {
-                    this.plugin.settings.multiIDToggle = value;
-                })
-            ).addExtraButton((cb)=>{
-                
-            cb.setIcon("settings")
-            .onClick(()=>{
-                this.hideDiv(multiIDDiv);                    
-            })            
-        })  
-        
-        const multiIDDiv = experimentalDiv.createDiv("zk-local-section zk-hidden")
-        
-        new Setting(multiIDDiv)
-        .setName(t("Specify a frontmatter field(list) for multiple IDs"))
-        .addText((cb) =>
-            cb.setValue(this.plugin.settings.multiIDField)
-                .onChange((value) => {
-                    this.plugin.settings.multiIDField = value;
-                })
-        );
-
-        
         this.initDiv(topButtonsDiv);
 
     }

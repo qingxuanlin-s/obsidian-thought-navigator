@@ -880,11 +880,55 @@ export class ZKIndexView extends ItemView {
         // 将 MOC 节点保存到本地变量，不要替换 MainNotes
         // MainNotes 应该保持原有的 Zettelkasten 笔记系统
 
-        // 显示当前 MOC 文件链接
+        // 检查当前活动文件在哪些MOC文件中出现
+        const currentActiveFile = this.app.workspace.getActiveFile();
+        const availableMOCs: Array<{file: TFile, hasActiveFile: boolean}> = [];
+        
+        const mocFiles = this.app.vault.getMarkdownFiles()
+            .filter(f => f.path.startsWith(mocFolder + '/'));
+            
+        // 检查每个MOC文件是否包含当前活动文件
+        for (const mocFile of mocFiles) {
+            let hasActiveFile = false;
+            if (currentActiveFile) {
+                const tempStructure = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+                const tempNodes = await convertMOCToZKNodes(this.plugin, tempStructure);
+                hasActiveFile = tempNodes.some(n => n.file.path === currentActiveFile.path);
+            }
+            availableMOCs.push({file: mocFile, hasActiveFile});
+        }
+        
+        // 显示MOC选择器
         const mocFile = this.app.vault.getFileByPath(mocFilePath);
         indexLinkDiv.createEl('abbr', { text: t("Current MOC: ") });
 
-        if (mocFile instanceof TFile) {
+        if (availableMOCs.length > 1) {
+            // 创建下拉选择器
+            const mocSelector = indexLinkDiv.createEl('select', { cls: 'zk-moc-selector' });
+            mocSelector.style.marginLeft = '8px';
+            mocSelector.style.padding = '2px 4px';
+            mocSelector.style.borderRadius = '4px';
+            mocSelector.style.border = '1px solid var(--background-modifier-border)';
+            mocSelector.style.backgroundColor = 'var(--background-primary)';
+            mocSelector.style.color = 'var(--text-normal)';
+            
+            availableMOCs.forEach((mocInfo, index) => {
+                const option = mocSelector.createEl('option');
+                option.value = mocInfo.file.path;
+                option.textContent = `${mocInfo.file.basename}${mocInfo.hasActiveFile ? ' ✓' : ''}`;
+                if (mocInfo.file.path === mocFilePath) {
+                    option.selected = true;
+                }
+            });
+            
+            mocSelector.addEventListener('change', async () => {
+                this.plugin.settings.mocCurrentFile = mocSelector.value;
+                this.plugin.settings.BranchTab = 0;
+                this.renderedBranches.clear();
+                await this.refreshBranchMermaid();
+            });
+        } else if (mocFile instanceof TFile) {
+            // 只有一个MOC文件时，显示链接
             const link = indexLinkDiv.createEl('a', { text: `【${mocFile.basename} - ${headingTitle}】` });
             link.addEventListener("click", (event: MouseEvent) => {
                 if (event.ctrlKey) {
@@ -905,42 +949,14 @@ export class ZKIndexView extends ItemView {
             });
         }
 
-        // 添加 MOC 文件选择器（如果文件夹中有多个文件）
-        const mocFiles = this.app.vault.getMarkdownFiles()
-            .filter(f => f.path.startsWith(mocFolder + '/'));
-
-        if (mocFiles.length > 1) {
-            indexLinkDiv.createEl('small', { text: ` >> ` });
-            for (let i = 0; i < mocFiles.length; i++) {
-                const file = mocFiles[i];
-                const fileTab = indexLinkDiv.createEl('span').createEl('a', {
-                    text: `📄${i + 1} `,
-                    cls: "zk-branch-tab"
-                });
-                setTooltip(fileTab, file.basename);
-
-                if (file.path === mocFilePath) {
-                    fileTab.addClass("zk-branch-tab-select");
-                }
-
-                fileTab.addEventListener("click", async () => {
-                    this.plugin.settings.mocCurrentFile = file.path;
-                    this.plugin.settings.BranchTab = 0;
-                    this.renderedBranches.clear();
-                    await this.refreshBranchMermaid();
-                });
-            }
-        }
-
         // 构建分支入口节点（MOC 模式下的特殊处理）
         let branchEntranceNodeArr: ZKNode[] = [];
         
         // 检查当前活动文件是否在MOC节点中
-        const activeFile = this.app.workspace.getActiveFile();
         let currentActiveNode: ZKNode | null = null;
         
-        if (activeFile) {
-            currentActiveNode = this.mocNodes.find(n => n.file.path === activeFile.path) || null;
+        if (currentActiveFile) {
+            currentActiveNode = this.mocNodes.find(n => n.file.path === currentActiveFile.path) || null;
         }
         
         if (currentActiveNode) {
