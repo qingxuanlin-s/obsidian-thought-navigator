@@ -197,5 +197,6 @@ export default {
     "No tree structure found under heading:": "在标题下找不到树结构：",
     "Current MOC: ": "当前 MOC：",
     "No valid nodes found": "找不到有效的节点",
+    "Updating...": "更新中...",
 
 }

@@ -4,6 +4,7 @@ import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
 import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
 import { ZKNavigationSettngTab } from "src/settings/settings";
 import { mainNoteInit } from "src/utils/utils";
+import { MOCFileMonitor } from "src/utils/mocMonitor";
 import { ZKGraphView, ZK_GRAPH_TYPE } from "src/view/graphView";
 import { ZKIndexView, ZKNode, ZK_INDEX_TYPE, ZK_NAVIGATION } from "src/view/indexView";
 import { ZK_OUTLINE_TYPE, ZKOutlineView } from "src/view/outlineView";
@@ -218,6 +219,9 @@ export default class ZKNavigationPlugin extends Plugin {
     RefreshIndexViewFlag: boolean = false;
     mainNoteModal: boolean = false;
     indexModal: boolean = false;
+    
+    // MOC 文件监听器
+    mocFileMonitor: MOCFileMonitor | null = null;
 
     async loadSettings() {
         this.settings = Object.assign(
@@ -418,6 +422,13 @@ export default class ZKNavigationPlugin extends Plugin {
             display:ZK_NAVIGATION,
         });     
 
+        // 初始化 MOC 文件监听器（用于实时同步）
+        if (this.settings.mocModeEnabled) {
+            this.mocFileMonitor = new MOCFileMonitor(this);
+            this.mocFileMonitor.initialize();
+            console.log("MOC File Monitor initialized");
+        }
+
     }
 
     async openIndexView() {
@@ -616,6 +627,13 @@ export default class ZKNavigationPlugin extends Plugin {
     }
 
     onunload() {
+        // 清理 MOC 文件监听器
+        if (this.mocFileMonitor) {
+            this.mocFileMonitor.cleanup();
+            this.mocFileMonitor = null;
+            console.log("MOC File Monitor cleaned up");
+        }
+        
         this.saveData(this.settings);
     }
 }

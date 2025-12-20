@@ -132,6 +132,72 @@ export class ZKIndexView extends ItemView {
         }
     }
 
+    /**
+     * 检查当前是否正在显示指定的 MOC 文件
+     */
+    private isDisplayingMOC(mocFile: TFile): boolean {
+        // 检查当前的 lastRetrival 是否指向该 MOC 文件
+        if (this.plugin.settings.lastRetrival.type === 'moc' && 
+            this.plugin.settings.lastRetrival.filePath === mocFile.path) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 显示加载指示器
+     */
+    private showLoadingIndicator(container: HTMLElement): HTMLElement {
+        const indicator = container.createDiv("zk-loading-indicator");
+        indicator.innerHTML = `
+            <div class="zk-spinner"></div>
+            <span>${t("Updating...")}</span>
+        `;
+        indicator.style.cssText = `
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--background-primary);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        `;
+        return indicator;
+    }
+
+    /**
+     * 平滑更新视图（避免闪烁）
+     */
+    private async smoothUpdateView(container: HTMLElement, updateFn: () => Promise<void>): Promise<void> {
+        // 显示加载指示器
+        const indicator = this.showLoadingIndicator(container);
+        
+        // 添加淡出效果
+        container.style.opacity = '0.7';
+        container.style.transition = 'opacity 0.2s ease-in-out';
+        
+        try {
+            // 执行更新
+            await updateFn();
+            
+            // 淡入效果
+            container.style.opacity = '1';
+        } catch (error) {
+            console.error("Index View: Error during smooth update", error);
+            container.style.opacity = '1';
+        } finally {
+            // 移除加载指示器
+            setTimeout(() => {
+                indicator.remove();
+            }, 200);
+        }
+    }
+
     async IndexViewInterfaceInit() {
         let { containerEl } = this;
         containerEl.empty();
@@ -328,6 +394,20 @@ export class ZKIndexView extends ItemView {
 
         const refresh = debounce(this.refreshIndexLayout, 300, true);
         this.registerEvent(this.app.workspace.on("zk-navigation:refresh-index-graph", refresh));
+
+        // MOC 文件变化事件监听（实时同步）
+        this.registerEvent(this.app.workspace.on("zk-navigation:moc-file-changed", async (mocFile: TFile) => {
+            // 只在 MOC 模式下且当前显示的是该 MOC 时才刷新
+            if (this.plugin.settings.mocModeEnabled && this.isDisplayingMOC(mocFile)) {
+                console.log(`Index View: MOC file changed, refreshing view for ${mocFile.path}`);
+                const indexMermaidDiv = document.getElementById("zk-index-mermaid-container");
+                if (indexMermaidDiv) {
+                    await this.smoothUpdateView(indexMermaidDiv, async () => {
+                        await this.refreshBranchMermaidMOC(indexMermaidDiv);
+                    });
+                }
+            }
+        }));
     }
 
     async onOpen() {
@@ -2286,14 +2366,16 @@ export class ZKIndexView extends ItemView {
                 if (!n.IDStr || !node.IDStr) return false;
 
                 // 检查是否是直接子节点
-                const nodeIdParts = node.IDStr.split('.');
-                const childIdParts = n.IDStr.split('.');
+                // MOC 节点使用逗号分隔，普通节点可能使用点分隔
+                const separator = node.IDStr.includes(',') ? ',' : '.';
+                const nodeIdParts = node.IDStr.split(separator);
+                const childIdParts = n.IDStr.split(separator);
 
                 // 子节点的层级应该比父节点多1
                 if (childIdParts.length !== nodeIdParts.length + 1) return false;
 
                 // 子节点的ID应该以父节点ID开头
-                return n.IDStr.startsWith(node.IDStr + '.');
+                return n.IDStr.startsWith(node.IDStr + separator);
             });
             
             // 调试信息
@@ -2302,9 +2384,15 @@ export class ZKIndexView extends ItemView {
             }
 
             for (let son of sonNodes) {
-
-                mermaidStr = mermaidStr + `${node.position} --> ${son.position};\n`;
-
+                // 如果子节点有 relationText，在连接线上显示
+                if (son.relationText && son.relationText.trim() !== '') {
+                    // 转义 relationText 中的特殊字符
+                    const escapedRelation = this.escapeMermaidText(son.relationText);
+                    mermaidStr = mermaidStr + `${node.position} -->|${escapedRelation}| ${son.position};\n`;
+                } else {
+                    // 没有 relationText 时使用普通连接线
+                    mermaidStr = mermaidStr + `${node.position} --> ${son.position};\n`;
+                }
             }
         }
 

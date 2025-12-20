@@ -255,3 +255,80 @@ padding: 5px;
 .zk-full-search {
     width: calc(100% - 20px);
 }
+
+
+/* MOC 实时同步 - 加载指示器样式 */
+.zk-loading-indicator {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--background-primary);
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    pointer-events: none;
+}
+
+/* 旋转动画 */
+.zk-spinner {
+    width: 20px;
+    height: 20px;
+    border: 3px solid var(--background-modifier-border);
+    border-top-color: var(--interactive-accent);
+    border-radius: 50%;
+    animation: zk-spin 0.8s linear infinite;
+}
+
+@keyframes zk-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* MOC 选择器样式优化 */
+.zk-moc-selector {
+    margin-left: 10px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--background-modifier-border);
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+    font-size: 12px;
+    min-width: 120px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.zk-moc-selector:hover {
+    background-color: var(--background-modifier-hover);
+    border-color: var(--interactive-accent);
+}
+
+.zk-moc-selector:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 2px var(--interactive-accent-hover);
+}
+
+/* MOC 提示文本样式 */
+.zk-moc-hint {
+    color: var(--text-muted);
+    margin-left: 4px;
+    font-size: 11px;
+}
+
+/* 平滑过渡效果 */
+.zk-index-mermaid-container,
+.zk-graph-mermaid-container {
+    transition: opacity 0.2s ease-in-out;
+}
+
+/* 更新中的半透明效果 */
+.zk-updating {
+    opacity: 0.7;
+}

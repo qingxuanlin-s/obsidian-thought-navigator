@@ -199,4 +199,5 @@ export default {
     "No tree structure found under heading:": "No tree structure found under heading:",
     "Current MOC: ": "Current MOC: ",
     "No valid nodes found": "No valid nodes found",
+    "Updating...": "Updating...",
 }
