@@ -112,6 +112,29 @@ export class ZKGraphView extends ItemView {
             refresh();
         }));
 
+        // MOC 文件变化事件监听（实时同步）
+        this.registerEvent(this.app.workspace.on("zk-navigation:moc-file-changed", async (mocFile: TFile) => {
+            const activeFile = this.app.workspace.getActiveFile();
+            
+            if (!activeFile) return;
+            
+            // 情况1: 当前显示的就是变化的 MOC 文件
+            if (this.isMOCFile(activeFile) && activeFile.path === mocFile.path) {
+                console.log(`Graph View: MOC file changed (direct), refreshing for ${mocFile.path}`);
+                lastRefreshedFile = null; // 强制刷新
+                refresh();
+                return;
+            }
+            
+            // 情况2: 当前文件是 MOC 树中的节点
+            const result = await this.findNodeInMOCTrees(activeFile);
+            if (result && result.mocFile.path === mocFile.path) {
+                console.log(`Graph View: MOC file changed (node), refreshing for ${mocFile.path}`);
+                lastRefreshedFile = null; // 强制刷新
+                refresh();
+            }
+        }));
+
     }
 
     refreshLocalGraph = async () => {

@@ -36,6 +36,13 @@ declare module "obsidian"{
         ):EventRef;
     }
 
+    interface Workspace{
+        on(
+            name:"zk-navigation:moc-file-changed",
+            callback: (mocFile: TFile)=>unknown
+        ):EventRef;
+    }
+
     interface App {
         commands:{
             commands:{
