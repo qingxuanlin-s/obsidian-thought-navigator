@@ -2,7 +2,7 @@ import ZKNavigationPlugin from "main";
 import { ExtraButtonComponent, FileView, ItemView, Notice, TFile, WorkspaceLeaf, debounce, loadMermaid } from "obsidian";
 import { GitBranch, ZKNode, ZK_NAVIGATION } from "./indexView";
 import { t } from "src/lang/helper";
-import { convertMOCToZKNodes, displayWidth, mainNoteInit, parseMOCStructure } from "src/utils/utils";
+import { convertMOCToZKNodes, displayWidth, mainNoteInit, parseMOCStructure,ReverseRelation } from "src/utils/utils";
 import { expandGraphModal } from "src/modal/expandGraphModal";
 
 export const ZK_GRAPH_TYPE: string = "zk-graph-type"
@@ -81,11 +81,15 @@ export class ZKGraphView extends ItemView {
             refresh();
         }));
 
-        // 注释掉 metadataCache.on("changed")，避免编辑时频繁刷新
-        // 只在文件切换时刷新，编辑时不会触发刷新
-        // this.registerEvent(this.app.metadataCache.on("changed", (file)=>{
-        //     refresh();
-        // }));
+        // 监听文件内容变化，延迟5秒刷新（防抖）
+        const changeRefresh = debounce(this.refreshLocalGraph, 5000, true);
+        this.registerEvent(this.app.metadataCache.on("changed", (file) => {
+            const activeFile = this.app.workspace.getActiveFile();
+            // 只在当前活动文件变化时刷新
+            if (activeFile && file.path === activeFile.path) {
+                changeRefresh();
+            }
+        }));
 
         this.registerEvent(this.app.metadataCache.on("deleted", () => {
             lastRefreshedFile = null;
@@ -1012,11 +1016,11 @@ export class ZKGraphView extends ItemView {
         // ========== 1. MOC 树结构（类似邻近图）==========
         if (this.plugin.settings.FamilyGraphToggle) {
             // 解析 MOC 结构
-            const mocTreeStructure = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+            const mocParseResult = await parseMOCStructure(this.app, mocFile.path, headingTitle);
 
-            if (mocTreeStructure.length > 0) {
+            if (mocParseResult.nodes.length > 0) {
                 // 转换为 ZKNode 数组用于图形显示
-                const mocNodes = await convertMOCToZKNodes(this.plugin, mocTreeStructure);
+                const mocNodes = await convertMOCToZKNodes(this.plugin, mocParseResult.nodes);
 
                 if (mocNodes.length > 0) {
                     // 不要修改 MainNotes，只用于当前图形显示
@@ -1029,7 +1033,7 @@ export class ZKGraphView extends ItemView {
                     mocGraphTextDiv.createEl('span', { text: `${headingTitle}` });
 
                     // 生成 Mermaid 图
-                    const mermaidStr = await this.generateMOCTreeMermaidStr(mocNodes, this.plugin.settings.DirectionOfFamilyGraph);
+                    const mermaidStr = await this.generateMOCTreeMermaidStr(mocNodes, this.plugin.settings.DirectionOfFamilyGraph, mocParseResult.reverseRelations);
 
                     const graphIconDiv = mocGraphContainer.createDiv("zk-graph-icon");
                     graphIconDiv.empty();
@@ -1048,17 +1052,6 @@ export class ZKGraphView extends ItemView {
                         mocTreeDiv.children[0].addClass("zk-full-width");
                         mocTreeDiv.children[0].setAttribute('height', `${graphHeight}px`);
                         graphMermaidDiv.appendChild(mocTreeDiv);
-
-                        const panZoomTiger = svgPanZoom(`#${mocTreeDiv.id}-svg`, {
-                            zoomEnabled: true,
-                            controlIconsEnabled: false,
-                            fit: true,
-                            center: true,
-                            minZoom: 0.001,
-                            maxZoom: 1000,
-                            dblClickZoomEnabled: false,
-                            zoomScaleSensitivity: 0.3,
-                        });
 
                         // 添加节点点击事件
                         await this.addMOCNodeEvents(mocTreeDiv, mocNodes);
@@ -1231,13 +1224,39 @@ export class ZKGraphView extends ItemView {
             .replace(/\n/g, ' ');     // 替换换行符
     }
 
+
+    
     // 生成 MOC 树的 Mermaid 字符串
-    async generateMOCTreeMermaidStr(nodes: ZKNode[], direction: string, highlightFile?: TFile): Promise<string> {
+    async generateMOCTreeMermaidStr(nodes: ZKNode[], direction: string, 
+        reverseRelations: Map<string, ReverseRelation>, highlightFile?: TFile): Promise<string> {
+    const reverseRelationsMap = new Map<string, ReverseRelation[]>();
+    
+    for (const [_, relation] of reverseRelations) {
+        // 将关系添加到 sourceID 下
+        if (reverseRelationsMap.has(relation.sourceID)) {
+            reverseRelationsMap.get(relation.sourceID)!.push(relation);
+        } else {
+            reverseRelationsMap.set(relation.sourceID, [relation]);
+        }
+        
+        // 将关系添加到 targetID 下
+        if (reverseRelationsMap.has(relation.targetID)) {
+            reverseRelationsMap.get(relation.targetID)!.push(relation);
+        } else {
+            reverseRelationsMap.set(relation.targetID, [relation]);
+        }
+    }
+
+        const nodeMap = new Map<string, ZKNode>();
+    
+
         let mermaidStr = `%%{ init: { 'flowchart': { 'curve': 'basis', 'wrappingWidth': '3000' },
         'themeVariables':{ 'fontSize': '12px'}}}%% flowchart ${direction};\n`;
 
         // 添加节点
         for (const node of nodes) {
+            nodeMap.set(node.IDStr,node);
+
             const nodeText = this.escapeMermaidText(node.displayText);
             mermaidStr += `${node.position}("${nodeText}");\n`;
             // 高亮当前文件对应的节点
@@ -1254,17 +1273,51 @@ export class ZKGraphView extends ItemView {
                 const parentID = node.IDArr.at(-2);
                 const parentNode = nodes.find(n => n.IDStr === parentID);
                 if (parentNode) {
-                    if (node.relationText){
-                        mermaidStr += `${parentNode.position} -->|${node.relationText}| ${node.position};\n`;
-                    }else {
-                        mermaidStr += `${parentNode.position} --> ${node.position};\n`;
+                    const nodeRel = reverseRelationsMap.get(node.IDStr)?.find(n => n.targetID === node.IDStr && n.sourceID === parentID);
+                    if(!nodeRel){
+                        if (node.relationText){
+                            mermaidStr += `${parentNode.position} -->|${this.escapeMermaidText(node.relationText)}| ${node.position};\n`;
+                        }else {
+                            mermaidStr += `${parentNode.position} --> ${node.position};\n`;
+                        }
                     }
                     
                 }
             }
         }
 
+         // 添加反向关系连线
+            for (const relNode of reverseRelations.values()) { 
+                const sourceNode = nodeMap.get(relNode.sourceID);
+                if(sourceNode === undefined) continue;
+
+                
+                const targetNode = nodeMap.get(relNode.targetID);
+                 if (targetNode) {
+                    if(targetNode.IDArr.contains(sourceNode.IDStr)){
+                        //如果是正向父子推导关系
+                        const reverseRelationText = this.escapeMermaidText(relNode.relationText);
+                        mermaidStr += `${sourceNode.position} -->|${reverseRelationText}| ${targetNode.position};\n`;
+                    } else {
+                        // 反向连线：从当前节点指向目标节点，使用虚线和不同颜色
+                        const reverseRelationText = this.escapeMermaidText(relNode.relationText);
+                        mermaidStr += `${sourceNode.position} -.->|${reverseRelationText}| ${targetNode.position};\n`;
+                        // 为反向连线添加样式（红色虚线）
+                        mermaidStr += `linkStyle ${this.countLinks(mermaidStr) - 1} stroke:#f66,stroke-width:2px,stroke-dasharray:5\n`;
+                    
+                    }
+                }              
+         }
+
+
         return mermaidStr;
+    }
+
+    // 辅助方法：计算当前已有的连线数量
+    private countLinks(mermaidStr: string): number {
+        const linkMatches = mermaidStr.match(/-->/g) || [];
+        const dashedLinkMatches = mermaidStr.match(/\.->/g) || [];
+        return linkMatches.length + dashedLinkMatches.length;
     }
 
     // 查找当前文件是否在某个 MOC 树中
@@ -1281,10 +1334,10 @@ export class ZKGraphView extends ItemView {
 
         // 遍历每个 MOC 文件，查找当前文件
         for (const mocFile of mocFiles) {
-            const mocTreeStructure = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+            const mocParseResult = await parseMOCStructure(this.app, mocFile.path, headingTitle);
 
-            if (mocTreeStructure.length > 0) {
-                const mocNodes = await convertMOCToZKNodes(this.plugin, mocTreeStructure);
+            if (mocParseResult.nodes.length > 0) {
+                const mocNodes = await convertMOCToZKNodes(this.plugin, mocParseResult.nodes);
 
                 // 查找当前文件对应的节点
                 const currentNode = mocNodes.find(n => n.file.path === file.path);
@@ -1412,8 +1465,8 @@ export class ZKGraphView extends ItemView {
                         
                     // 检查每个MOC文件是否包含当前文件
                     for (const mocFileCandidate of mocFiles) {
-                        const tempStructure = await parseMOCStructure(this.app, mocFileCandidate.path, headingTitle);
-                        const tempNodes = await convertMOCToZKNodes(this.plugin, tempStructure);
+                        const tempParseResult = await parseMOCStructure(this.app, mocFileCandidate.path, headingTitle);
+                        const tempNodes = await convertMOCToZKNodes(this.plugin, tempParseResult.nodes);
                         const tempCurrentNode = tempNodes.find(n => n.file.path === currentFile.path);
                         const hasCurrentFile = !!tempCurrentNode;
                         availableMOCs.push({
@@ -1502,7 +1555,7 @@ export class ZKGraphView extends ItemView {
                 }
 
                 // 生成 Mermaid 图（高亮当前文件）
-                const mermaidStr = await this.generateMOCTreeMermaidStr(relatedNodes, this.plugin.settings.DirectionOfFamilyGraph, currentFile);
+                const mermaidStr = await this.generateMOCTreeMermaidStr(relatedNodes, this.plugin.settings.DirectionOfFamilyGraph, new Map(), currentFile);
 
                 const graphIconDiv = mocNodeGraphContainer.createDiv("zk-graph-icon");
                 graphIconDiv.empty();
