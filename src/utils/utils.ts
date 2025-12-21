@@ -13,15 +13,98 @@ export interface MOCTreeNode {
     relationText: string;       // 关系描述，如 "引出", "相关"
 }
 
+// 反向关系信息
+export interface ReverseRelation {
+    sourceID: string;           // 源节点ID
+    targetID: string;           // 目标节点ID
+    relationText: string;       // 关系描述
+}
+
+// MOC 解析结果
+export interface MOCParseResult {
+    nodes: MOCTreeNode[];       // 解析后的树节点数组
+    reverseRelations: Map<string, ReverseRelation>; // 反向关系 Map，key 格式: "sourceID->targetID"
+    metadata: {                 // 扩展信息
+        totalNodes: number;     // 总节点数
+        maxDepth: number;       // 最大深度
+        hasReverseRelations: boolean; // 是否包含反向关系
+        parseTime: number;      // 解析耗时（毫秒）
+        filePath: string;       // MOC 文件路径
+        headingTitle: string;   // 标题名称
+    };
+}
+
+
+interface ArrowRelation {
+  source: string;
+  label: string;
+  target: string;
+  hasLabel: boolean;
+}
+
+/**
+ * 判断文本是否包含箭头关系
+ * @param text - 要检查的文本
+ * @returns 是否包含箭头关系
+ */
+function hasArrow(text: string): boolean {
+  const regex = /--(?:.*?)?-->/;
+  return regex.test(text);
+}
+
+/**
+ * 提取箭头关系
+ * 支持两种格式：
+ * 1. A -- label --> B
+ * 2. A --> B
+ * @param text - 要解析的文本
+ * @returns 箭头关系对象，如果没有匹配则返回 null
+ */
+function extractArrow(text: string): ArrowRelation | null {
+  // 匹配格式: `source` -- 或 -- label -- 或 -- -> `target`
+  // 支持 --> 和 -> 两种箭头
+  const regex = /`([^`]+)`\s*(-+)\s*(.*?)\s*(-+>)\s*`([^`]+)`/;
+  const match = text.match(regex);
+  
+  if (!match) return null;
+  
+  // 去除反引号，直接使用匹配到的内容
+  const source = match[1].trim();
+  const label = match[3].trim();
+  const target = match[5].trim();
+  
+  return {
+    source,     
+    label,
+    target,     
+    hasLabel: label.length > 0
+  };
+}
+
+
+
 // 解析 MOC 笔记中指定标题下的树结构
 export async function parseMOCStructure(
     app: App,
     filePath: string,
     headingTitle: string
-): Promise<MOCTreeNode[]> {
+): Promise<MOCParseResult> {
+    const startTime = Date.now();
+    
     const file = app.vault.getFileByPath(filePath);
     if (!file) {
-        return [];
+        return {
+            nodes: [],
+            reverseRelations: new Map(),
+            metadata: {
+                totalNodes: 0,
+                maxDepth: 0,
+                hasReverseRelations: false,
+                parseTime: Date.now() - startTime,
+                filePath,
+                headingTitle,
+            }
+        };
     }
 
     const content = await app.vault.read(file);
@@ -47,11 +130,23 @@ export async function parseMOCStructure(
     }
 
     if (startIndex === -1) {
-        return [];
+        return {
+            nodes: [],
+            reverseRelations: new Map(),
+            metadata: {
+                totalNodes: 0,
+                maxDepth: 0,
+                hasReverseRelations: false,
+                parseTime: Date.now() - startTime,
+                filePath,
+                headingTitle,
+            }
+        };
     }
 
     // 解析标题下的列表内容
     const allNodes: MOCTreeNode[] = [];
+    let maxDepth = 0;
 
     // 第一步：收集所有节点
     for (let i = startIndex; i < endIndex; i++) {
@@ -73,6 +168,7 @@ export async function parseMOCStructure(
         // 根据节点ID计算深度（点号分隔的层级数）
         const idParts = parsedItem.nodeID.split('.');
         const depth = idParts.length - 1;
+        maxDepth = Math.max(maxDepth, depth);
 
         const node: MOCTreeNode = {
             wikiLink: parsedItem.wikiLink,
@@ -87,6 +183,7 @@ export async function parseMOCStructure(
         allNodes.push(node);
     }
 
+
     // 第二步：根据节点ID构建父子关系
     const treeNodes: MOCTreeNode[] = [];
     const nodeMap = new Map<string, MOCTreeNode>();
@@ -95,6 +192,34 @@ export async function parseMOCStructure(
     allNodes.forEach(node => {
         nodeMap.set(node.nodeID, node);
     });
+
+    // 第三步：解析反向关系并存储到 Map 中
+    const reverseRelations = new Map<string, ReverseRelation>();
+    
+    for (let i = startIndex; i < endIndex; i++) {
+        const line = lines[i];
+
+        // 跳过空行
+        if (line.trim() === '') continue;
+
+        if(hasArrow(line)){
+            const arrowRelation = extractArrow(line);
+            if (arrowRelation) {
+                // 从 nodeMap 获取节点
+                const sourceNode = nodeMap.get(arrowRelation.source);
+                const targetNode = nodeMap.get(arrowRelation.target);
+                
+                if (sourceNode && targetNode) {
+                    const key = `${sourceNode.nodeID}->${targetNode.nodeID}`;
+                    reverseRelations.set(key, {
+                        sourceID: sourceNode.nodeID,
+                        targetID: targetNode.nodeID,
+                        relationText: arrowRelation.label
+                    });
+                }
+            }
+        }
+    }
 
     // 构建树结构
     allNodes.forEach(node => {
@@ -117,7 +242,20 @@ export async function parseMOCStructure(
         }
     });
 
-    return treeNodes;
+    const parseTime = Date.now() - startTime;
+
+    return {
+        nodes: treeNodes,
+        reverseRelations,
+        metadata: {
+            totalNodes: allNodes.length,
+            maxDepth,
+            hasReverseRelations: reverseRelations.size > 0,
+            parseTime,
+            filePath,
+            headingTitle,
+        }
+    };
 }
 
 // 解析列表项内容
@@ -163,6 +301,7 @@ function parseListItem(app: App, content: string): {
 export async function convertMOCToZKNodes(
     plugin: ZKNavigationPlugin,
     mocTrees: MOCTreeNode[],
+    reverseRelations: Map<string, ReverseRelation> = new Map(),
     parentIDArr: string[] = []
 ): Promise<ZKNode[]> {
     const nodes: ZKNode[] = [];
@@ -192,6 +331,7 @@ export async function convertMOCToZKNodes(
             }
             return;
         }
+
 
         const zkNode: ZKNode = {
             ID: mocNode.nodeID || mocNode.wikiLink,
@@ -251,7 +391,6 @@ export async function convertMOCToZKNodes(
 function getDisplayText(plugin: ZKNavigationPlugin, mocNode: MOCTreeNode): string {
     const id = mocNode.nodeID || mocNode.wikiLink;
     const title = mocNode.displayText;
-    const relation = mocNode.relationText;
 
     // 如果有关系描述，加入显示
     //let prefix = relation ? `${relation} ` : '';

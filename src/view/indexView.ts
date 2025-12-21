@@ -10,6 +10,12 @@ export const ZK_INDEX_TYPE: string = "zk-index-type";
 export const ZK_INDEX_VIEW: string = t("zk-index-graph");
 export const ZK_NAVIGATION: string = "zk-navigation";
 
+export interface ReverseRelation {
+    sourceID: string;
+    targetID: string;
+    relationText: string;
+}
+
 export interface ZKNode {
     ID: string;
     IDArr: string[];
@@ -92,6 +98,7 @@ export class ZKIndexView extends ItemView {
     // MOC 模式相关属性
     mocNodes: ZKNode[] = [];                    // MOC 解析后的节点
     mocTreeStructure: MOCTreeNode[] = [];       // MOC 原始树结构
+    mocReverseRelations: Map<string, ReverseRelation> = new Map(); // MOC 反向关系
 
     // 防抖相关属性
     resizeTimeout: NodeJS.Timeout | null = null;
@@ -944,14 +951,16 @@ export class ZKIndexView extends ItemView {
         }
 
         // 解析 MOC 笔记结构
-        this.mocTreeStructure = await parseMOCStructure(this.app, mocFilePath, headingTitle);
-        if (this.mocTreeStructure.length === 0) {
+        const mocParseResult = await parseMOCStructure(this.app, mocFilePath, headingTitle);
+        this.mocTreeStructure = mocParseResult.nodes;
+        this.mocReverseRelations = mocParseResult.reverseRelations;
+        if (mocParseResult.nodes.length === 0) {
             indexLinkDiv.createEl('abbr', { text: `${t("No tree structure found under heading:")} # ${headingTitle}` });
             return;
         }
 
         // 转换为 ZKNode 数组
-        this.mocNodes = await convertMOCToZKNodes(this.plugin, this.mocTreeStructure);
+        this.mocNodes = await convertMOCToZKNodes(this.plugin, mocParseResult.nodes, mocParseResult.reverseRelations);
         
         // 调试信息
         console.log("MOC Tree Structure:", this.mocTreeStructure);
@@ -970,8 +979,8 @@ export class ZKIndexView extends ItemView {
             
         // 检查每个MOC文件是否包含当前活动文件
         for (const mocFile of mocFiles) {
-            const tempStructure = await parseMOCStructure(this.app, mocFile.path, headingTitle);
-            const tempNodes = await convertMOCToZKNodes(this.plugin, tempStructure);
+            const tempParseResult = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+            const tempNodes = await convertMOCToZKNodes(this.plugin, tempParseResult.nodes, tempParseResult.reverseRelations);
             const hasActiveFile = currentActiveFile ? tempNodes.some(n => n.file.path === currentActiveFile.path) : false;
             availableMOCs.push({file: mocFile, hasActiveFile, nodes: tempNodes});
         }
@@ -1155,7 +1164,7 @@ export class ZKIndexView extends ItemView {
                 new Notice(`正在渲染 ${branchNodes.length} 个节点...`, 2000);
             }
 
-            const mermaidStr = await this.generateFlowchartStr(branchNodes, entranceNode, this.plugin.settings.DirectionOfBranchGraph);
+            const mermaidStr = await this.generateFlowchartStr(branchNodes, entranceNode, this.plugin.settings.DirectionOfBranchGraph, this.mocReverseRelations);
             const zkGraph = indexMermaidDiv.createEl("div", { cls: "zk-index-mermaid" });
             zkGraph.id = `zk-index-mermaid-${i}`;
 
@@ -2335,12 +2344,35 @@ export class ZKIndexView extends ItemView {
             .replace(/\n/g, ' ');     // 替换换行符
     }
 
-    async generateFlowchartStr(Nodes: ZKNode[], entranceNode: ZKNode, direction: string) {
+    async generateFlowchartStr(Nodes: ZKNode[], entranceNode: ZKNode, direction: string, reverseRelations?: Map<string, ReverseRelation>) {
 
         let mermaidStr: string = `%%{ init: { 'flowchart': { 'curve': 'base', 'wrappingWidth': '3000' },
         'themeVariables':{ 'fontSize': '12px'}}}%% flowchart ${direction};\n`;
 
+        // 构建反向关系映射
+        const reverseRelationsMap = new Map<string, ReverseRelation[]>();
+        const nodeMap = new Map<string, ZKNode>();
+        
+        if (reverseRelations) {
+            for (const [_, relation] of reverseRelations) {
+                // 将关系添加到 sourceID 下
+                if (reverseRelationsMap.has(relation.sourceID)) {
+                    reverseRelationsMap.get(relation.sourceID)!.push(relation);
+                } else {
+                    reverseRelationsMap.set(relation.sourceID, [relation]);
+                }
+                
+                // 将关系添加到 targetID 下
+                if (reverseRelationsMap.has(relation.targetID)) {
+                    reverseRelationsMap.get(relation.targetID)!.push(relation);
+                } else {
+                    reverseRelationsMap.set(relation.targetID, [relation]);
+                }
+            }
+        }
+
         for (let node of Nodes) {
+            nodeMap.set(node.IDStr, node);
 
             let nodeText = this.escapeMermaidText(node.displayText);
             let fixWidth = node.fixWidth;
@@ -2384,16 +2416,50 @@ export class ZKIndexView extends ItemView {
             }
 
             for (let son of sonNodes) {
-                // 如果子节点有 relationText，在连接线上显示
-                if (son.relationText && son.relationText.trim() !== '') {
-                    // 转义 relationText 中的特殊字符
-                    const escapedRelation = this.escapeMermaidText(son.relationText);
-                    mermaidStr = mermaidStr + `${node.position} -->|${escapedRelation}| ${son.position};\n`;
-                } else {
-                    // 没有 relationText 时使用普通连接线
-                    mermaidStr = mermaidStr + `${node.position} --> ${son.position};\n`;
+                // 检查是否有反向关系覆盖了这条父子连线
+                const nodeRel = reverseRelationsMap.get(son.IDStr)
+                    ?.find(n => n.targetID === son.IDStr && n.sourceID === node.IDStr);
+                
+                if (!nodeRel) {
+                    // 如果子节点有 relationText，在连接线上显示
+                    if (son.relationText && son.relationText.trim() !== '') {
+                        // 转义 relationText 中的特殊字符
+                        const escapedRelation = this.escapeMermaidText(son.relationText);
+                        mermaidStr = mermaidStr + `${node.position} -->|${escapedRelation}| ${son.position};\n`;
+                    } else {
+                        // 没有 relationText 时使用普通连接线
+                        mermaidStr = mermaidStr + `${node.position} --> ${son.position};\n`;
+                    }
                 }
             }
+        }
+
+        
+
+        // 添加反向关系连线
+        if (reverseRelations) {
+              // 添加反向关系连线
+            for (const relNode of reverseRelations.values()) { 
+                const sourceNode = nodeMap.get(relNode.sourceID);
+                if(sourceNode === undefined) continue;
+
+                
+                const targetNode = nodeMap.get(relNode.targetID);
+                 if (targetNode) {
+                    if(targetNode.IDArr.contains(sourceNode.IDStr)){
+                        //如果是正向父子推导关系
+                        const reverseRelationText = this.escapeMermaidText(relNode.relationText);
+                        mermaidStr += `${sourceNode.position} -->|${reverseRelationText}| ${targetNode.position};\n`;
+                    } else {
+                        // 反向连线：从当前节点指向目标节点，使用虚线和不同颜色
+                        const reverseRelationText = this.escapeMermaidText(relNode.relationText);
+                        mermaidStr += `${sourceNode.position} -.->|${reverseRelationText}| ${targetNode.position};\n`;
+                        // 为反向连线添加样式（红色虚线）
+                        mermaidStr += `linkStyle ${this.countLinks(mermaidStr) - 1} stroke:#f66,stroke-width:2px,stroke-dasharray:5\n`;
+                    
+                    }
+                }              
+         }
         }
 
         if (this.plugin.settings.RedDashLine === true) {
@@ -2407,6 +2473,13 @@ export class ZKIndexView extends ItemView {
         }
 
         return mermaidStr;
+    }
+
+    // 辅助方法：计算当前已有的连线数量
+    private countLinks(mermaidStr: string): number {
+        const linkMatches = mermaidStr.match(/-->/g) || [];
+        const dashedLinkMatches = mermaidStr.match(/\.->/g) || [];
+        return linkMatches.length + dashedLinkMatches.length;
     }
 
     unshiftHistoryList(lastRetrival: Retrival) {
