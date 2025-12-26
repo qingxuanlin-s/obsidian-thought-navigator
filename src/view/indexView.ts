@@ -391,8 +391,41 @@ export class ZKIndexView extends ItemView {
             this.plugin.RefreshIndexViewFlag = true;
         }));
 
-        this.registerEvent(this.app.metadataCache.on("changed", async () => {
-            this.plugin.RefreshIndexViewFlag = true;
+        // 智能延迟刷新：监听文件内容变化
+        let lastEditTime = 0;
+        let changeRefreshTimer: NodeJS.Timeout | null = null;
+
+        const smartChangeRefresh = () => {
+            const now = Date.now();
+            const timeSinceLastEdit = now - lastEditTime;
+
+            // 如果最后编辑在 2 秒内，说明还在编辑，再延迟 5 秒
+            if (timeSinceLastEdit < 2000) {
+                console.log(`Index View: Still editing (${timeSinceLastEdit}ms ago), delaying refresh by 5s`);
+                if (changeRefreshTimer) {
+                    clearTimeout(changeRefreshTimer);
+                }
+                changeRefreshTimer = setTimeout(smartChangeRefresh, 5000);
+            } else {
+                // 超过 2 秒没有编辑，执行刷新
+                console.log(`Index View: Editing stopped (${timeSinceLastEdit}ms ago), setting refresh flag`);
+                this.plugin.RefreshIndexViewFlag = true;
+                changeRefreshTimer = null;
+            }
+        };
+
+        this.registerEvent(this.app.metadataCache.on("changed", async (file) => {
+            const activeFile = this.app.workspace.getActiveFile();
+            // 只在当前活动文件变化时刷新
+            if (activeFile && file.path === activeFile.path) {
+                lastEditTime = Date.now();
+                
+                // 如果没有定时器在运行，启动一个
+                if (!changeRefreshTimer) {
+                    console.log(`Index View: File changed, starting smart refresh timer`);
+                    changeRefreshTimer = setTimeout(smartChangeRefresh, 5000);
+                }
+            }
         }));
 
         this.registerEvent(this.app.metadataCache.on("deleted", async () => {
@@ -951,11 +984,30 @@ export class ZKIndexView extends ItemView {
         }
 
         // 解析 MOC 笔记结构
+        console.log(`Index View: Parsing MOC file: ${mocFilePath}, heading: ${headingTitle}`);
         const mocParseResult = await parseMOCStructure(this.app, mocFilePath, headingTitle);
+        console.log(`Index View: Parse result - nodes: ${mocParseResult.nodes.length}, metadata:`, mocParseResult.metadata);
+        
         this.mocTreeStructure = mocParseResult.nodes;
         this.mocReverseRelations = mocParseResult.reverseRelations;
+        
         if (mocParseResult.nodes.length === 0) {
-            indexLinkDiv.createEl('abbr', { text: `${t("No tree structure found under heading:")} # ${headingTitle}` });
+            const errorMsg = `${t("No tree structure found under heading:")} # ${headingTitle}`;
+            console.warn(`Index View: ${errorMsg}`);
+            indexLinkDiv.createEl('abbr', { text: errorMsg });
+            
+            // 显示调试信息
+            if (mocParseResult.metadata.parseTime > 0) {
+                const debugInfo = indexMermaidDiv.createDiv("zk-debug-info");
+                debugInfo.style.padding = "20px";
+                debugInfo.style.color = "var(--text-muted)";
+                debugInfo.innerHTML = `
+                    <p>解析耗时: ${mocParseResult.metadata.parseTime}ms</p>
+                    <p>文件路径: ${mocParseResult.metadata.filePath}</p>
+                    <p>查找标题: ${mocParseResult.metadata.headingTitle}</p>
+                    <p>提示: 请确保 MOC 文件中存在一级标题 "# ${headingTitle}"</p>
+                `;
+            }
             return;
         }
 
