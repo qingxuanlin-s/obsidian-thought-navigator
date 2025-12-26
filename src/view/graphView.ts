@@ -81,13 +81,49 @@ export class ZKGraphView extends ItemView {
             refresh();
         }));
 
-        // 监听文件内容变化，延迟5秒刷新（防抖）
-        const changeRefresh = debounce(this.refreshLocalGraph, 5000, true);
+        // 智能延迟刷新：监听文件内容变化
+        let lastEditTime = 0;
+        let changeRefreshTimer: NodeJS.Timeout | null = null;
+
+        const smartChangeRefresh = () => {
+            const now = Date.now();
+            const timeSinceLastEdit = now - lastEditTime;
+
+            // 如果最后编辑在 2 秒内，说明还在编辑，再延迟 5 秒
+            if (timeSinceLastEdit < 2000) {
+                console.log(`Graph View: Still editing (${timeSinceLastEdit}ms ago), delaying refresh by 5s`);
+                if (changeRefreshTimer) {
+                    clearTimeout(changeRefreshTimer);
+                }
+                changeRefreshTimer = setTimeout(smartChangeRefresh, 5000);
+            } else {
+                // 超过 2 秒没有编辑，执行刷新
+                console.log(`Graph View: Editing stopped (${timeSinceLastEdit}ms ago), refreshing now`);
+                this.refreshLocalGraph();
+                changeRefreshTimer = null;
+            }
+        };
+
         this.registerEvent(this.app.metadataCache.on("changed", (file) => {
             const activeFile = this.app.workspace.getActiveFile();
             // 只在当前活动文件变化时刷新
             if (activeFile && file.path === activeFile.path) {
-                changeRefresh();
+                // 检查当前文件是否在索引笔记目录下
+                const isInMainNoteFolder = this.isFileInMainNoteFolders(activeFile);
+                
+                // 如果不在索引笔记目录下，不监听 change 事件
+                if (!isInMainNoteFolder) {
+                    console.log(`Graph View: File ${activeFile.path} is not in main note folders, skipping change event`);
+                    return;
+                }
+                
+                lastEditTime = Date.now();
+                
+                // 如果没有定时器在运行，启动一个
+                if (!changeRefreshTimer) {
+                    console.log(`Graph View: File changed, starting smart refresh timer`);
+                    changeRefreshTimer = setTimeout(smartChangeRefresh, 5000);
+                }
             }
         }));
 
@@ -1016,7 +1052,9 @@ export class ZKGraphView extends ItemView {
         // ========== 1. MOC 树结构（类似邻近图）==========
         if (this.plugin.settings.FamilyGraphToggle) {
             // 解析 MOC 结构
+            console.log(`Graph View: Parsing MOC file: ${mocFile.path}, heading: ${headingTitle}`);
             const mocParseResult = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+            console.log(`Graph View: Parse result - nodes: ${mocParseResult.nodes.length}, metadata:`, mocParseResult.metadata);
 
             if (mocParseResult.nodes.length > 0) {
                 // 转换为 ZKNode 数组用于图形显示
@@ -1061,14 +1099,32 @@ export class ZKGraphView extends ItemView {
                     }
                 }
             } else {
-                // 没有树结构时显示提示
+                // 没有树结构时显示提示和调试信息
+                console.warn(`Graph View: No tree structure found for heading: ${headingTitle}`);
                 const emptyContainer = graphMermaidDiv.createDiv("zk-family-graph-container");
                 const emptyTextDiv = emptyContainer.createDiv("zk-graph-text");
                 emptyTextDiv.createEl('span', { text: `${headingTitle}` });
-                emptyContainer.createEl('div', {
+                
+                const errorDiv = emptyContainer.createEl('div', {
                     text: `${t("No tree structure found under heading:")} # ${headingTitle}`,
                     cls: "zk-graph-mermaid"
                 });
+                errorDiv.style.padding = "20px";
+                errorDiv.style.textAlign = "center";
+                
+                // 显示调试信息
+                if (mocParseResult.metadata.parseTime > 0) {
+                    const debugInfo = emptyContainer.createDiv("zk-debug-info");
+                    debugInfo.style.padding = "20px";
+                    debugInfo.style.color = "var(--text-muted)";
+                    debugInfo.style.fontSize = "12px";
+                    debugInfo.innerHTML = `
+                        <p>解析耗时: ${mocParseResult.metadata.parseTime}ms</p>
+                        <p>文件路径: ${mocParseResult.metadata.filePath}</p>
+                        <p>查找标题: ${mocParseResult.metadata.headingTitle}</p>
+                        <p>提示: 请确保 MOC 文件中存在一级标题 "# ${headingTitle}"</p>
+                    `;
+                }
             }
         }
 
@@ -1273,7 +1329,12 @@ export class ZKGraphView extends ItemView {
                 const parentID = node.IDArr.at(-2);
                 const parentNode = nodes.find(n => n.IDStr === parentID);
                 if (parentNode) {
-                    const nodeRel = reverseRelationsMap.get(node.IDStr)?.find(n => n.targetID === node.IDStr && n.sourceID === parentID);
+                    //const nodeRel = reverseRelationsMap.get(node.IDStr)?.find(n => n.targetID === node.IDStr && n.sourceID === parentID);
+                    //如果存在任意关系就把默认关系去掉
+                    const nodeRel = reverseRelationsMap.get(node.IDStr)?.find(n => {
+                        return (n.targetID === node.IDStr && n.sourceID === parentID) || 
+                        (n.targetID === parentID && n.sourceID === node.IDStr)
+                    });
                     if(!nodeRel){
                         if (node.relationText){
                             mermaidStr += `${parentNode.position} -->|${this.escapeMermaidText(node.relationText)}| ${node.position};\n`;
@@ -1332,9 +1393,13 @@ export class ZKGraphView extends ItemView {
             f.path.startsWith(mocFolder + '/') || f.path.startsWith(mocFolder)
         ).filter(f => f.extension === 'md');
 
+        console.log(`Graph View: Searching for file ${file.path} in ${mocFiles.length} MOC files`);
+
         // 遍历每个 MOC 文件，查找当前文件
         for (const mocFile of mocFiles) {
+            console.log(`Graph View: Checking MOC file: ${mocFile.path}`);
             const mocParseResult = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+            console.log(`Graph View: Parse result for ${mocFile.path} - nodes: ${mocParseResult.nodes.length}`);
 
             if (mocParseResult.nodes.length > 0) {
                 const mocNodes = await convertMOCToZKNodes(this.plugin, mocParseResult.nodes);
@@ -1662,6 +1727,60 @@ export class ZKGraphView extends ItemView {
                 console.error("Inoutlinks graph render error:", error);
             }
         }
+    }
+
+    // 检查文件是否在主笔记（索引笔记）目录下
+    isFileInMainNoteFolders(file: TFile): boolean {
+        // 如果没有配置文件夹列表，返回 true（默认监听所有文件）
+        if (!this.plugin.settings.FolderList || this.plugin.settings.FolderList.length === 0) {
+            return true;
+        }
+
+        const validFolders = [...new Set(this.plugin.settings.FolderList)].filter(folder => folder !== "");
+        
+        // 如果没有有效的文件夹配置，返回 true
+        if (validFolders.length === 0) {
+            return true;
+        }
+
+        // 检查文件是否在配置的文件夹中
+        for (const folder of validFolders) {
+            if (folder === '/') {
+                // 根目录
+                if (file.parent && file.parent.name === "") {
+                    return true;
+                }
+            } else {
+                // 检查文件路径是否以文件夹路径开头
+                if (file.path.startsWith(folder + '/') || file.path === folder) {
+                    return true;
+                }
+            }
+        }
+
+        // 如果配置了标签，检查文件是否有该标签
+        if (this.plugin.settings.TagOfMainNotes && this.plugin.settings.TagOfMainNotes !== '') {
+            const fileCache = this.app.metadataCache.getFileCache(file);
+            if (fileCache) {
+                // 检查 frontmatter 标签
+                const fmTags = fileCache.frontmatter?.tags;
+                if (fmTags) {
+                    const tags = Array.isArray(fmTags) ? fmTags : [fmTags];
+                    if (tags.some(tag => `#${tag}` === this.plugin.settings.TagOfMainNotes || tag === this.plugin.settings.TagOfMainNotes)) {
+                        return true;
+                    }
+                }
+                
+                // 检查内容中的标签
+                if (fileCache.tags) {
+                    if (fileCache.tags.some(tagCache => tagCache.tag === this.plugin.settings.TagOfMainNotes)) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 
     async onClose() {

@@ -110,6 +110,8 @@ export async function parseMOCStructure(
     const content = await app.vault.read(file);
     const lines = content.split('\n');
 
+    console.log(`parseMOCStructure: Parsing file ${filePath}, total lines: ${lines.length}`);
+
     // 查找指定的一级标题
     let startIndex = -1;
     let endIndex = lines.length;
@@ -119,17 +121,21 @@ export async function parseMOCStructure(
 
         // 匹配一级标题
         if (line.startsWith('# ')) {
+            console.log(`parseMOCStructure: Found heading at line ${i}: "${line}"`);
             if (line === `# ${headingTitle}` || line.startsWith(`# ${headingTitle}`)) {
                 startIndex = i + 1;
+                console.log(`parseMOCStructure: Target heading found at line ${i}`);
             } else if (startIndex !== -1) {
                 // 找到下一个一级标题，结束
                 endIndex = i;
+                console.log(`parseMOCStructure: Next heading found at line ${i}, ending parse`);
                 break;
             }
         }
     }
 
     if (startIndex === -1) {
+        console.warn(`parseMOCStructure: Target heading "# ${headingTitle}" not found in file`);
         return {
             nodes: [],
             reverseRelations: new Map(),
@@ -143,6 +149,8 @@ export async function parseMOCStructure(
             }
         };
     }
+
+    console.log(`parseMOCStructure: Parsing content from line ${startIndex} to ${endIndex}`);
 
     // 解析标题下的列表内容
     const allNodes: MOCTreeNode[] = [];

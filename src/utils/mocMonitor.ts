@@ -177,9 +177,7 @@ export class MOCFileMonitor {
                 if (hasChanged) {
                     console.log(`MOC Monitor: Content changed, refreshing views for ${file.path}`);
                     await this.refreshViews(file);
-                } else {
-                    console.log(`MOC Monitor: Content unchanged, skipping refresh for ${file.path}`);
-                }
+                } 
             } catch (error) {
                 console.error(`MOC Monitor: Error handling file change for ${file.path}`, error);
             } finally {
@@ -203,7 +201,6 @@ export class MOCFileMonitor {
                 file
             );
             
-            console.log(`MOC Monitor: Triggered refresh event for ${file.path}`);
         } catch (error) {
             console.error(`MOC Monitor: Failed to refresh views for ${file.path}`, error);
             new Notice(`MOC 文件更新失败: ${error.message}`);
