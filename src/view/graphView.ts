@@ -1323,7 +1323,18 @@ export class ZKGraphView extends ItemView {
             }
         }
 
-        // 添加连线（根据 IDArr 确定父子关系）
+        // 收集所有关系连线
+        const links: Array<{
+            from: number;
+            to: number;
+            text?: string;
+            isDashed: boolean;
+            isReverse: boolean;
+            sourceIDStr: string;
+            targetIDStr: string;
+        }> = [];
+
+        // 添加父子关系连线（根据 IDArr 确定父子关系）
         for (const node of nodes) {
             if (node.IDArr.length > 1) {
                 const parentID = node.IDArr.at(-2);
@@ -1331,45 +1342,103 @@ export class ZKGraphView extends ItemView {
                 if (parentNode) {
                     //如果存在任意关系就把默认关系去掉
                     if (node.relationText){
-                      mermaidStr += `${parentNode.position} -->|${this.escapeMermaidText(node.relationText)}| ${node.position};\n`;
+                        links.push({
+                            from: parentNode.position,
+                            to: node.position,
+                            text: this.escapeMermaidText(node.relationText),
+                            isDashed: false,
+                            isReverse: false,
+                            sourceIDStr: parentNode.IDStr,
+                            targetIDStr: node.IDStr
+                        });
                     } else {
-                     const nodeRel = reverseRelationsMap.get(node.IDStr)?.find(n => {
-                        return ((n.targetID === node.IDStr && n.sourceID === parentID) || 
-                        (n.targetID === parentID && n.sourceID === node.IDStr))
-                    });
-                    
-                    if(!nodeRel){
-                        mermaidStr += `${parentNode.position} --> ${node.position};\n`;
-                    } 
+                        const nodeRel = reverseRelationsMap.get(node.IDStr)?.find(n => {
+                            return ((n.targetID === node.IDStr && n.sourceID === parentID) || 
+                            (n.targetID === parentID && n.sourceID === node.IDStr))
+                        });
+                        
+                        if(!nodeRel){
+                            links.push({
+                                from: parentNode.position,
+                                to: node.position,
+                                isDashed: false,
+                                isReverse: false,
+                                sourceIDStr: parentNode.IDStr,
+                                targetIDStr: node.IDStr
+                            });
+                        } 
                     }
-                    
                 }
             }
         }
 
-         // 添加反向关系连线
-            for (const relNode of reverseRelations.values()) { 
-                const sourceNode = nodeMap.get(relNode.sourceID);
-                if(sourceNode === undefined) continue;
+        // 添加反向关系连线
+        for (const relNode of reverseRelations.values()) { 
+            const sourceNode = nodeMap.get(relNode.sourceID);
+            if(sourceNode === undefined) continue;
 
-                
-                const targetNode = nodeMap.get(relNode.targetID);
-                 if (targetNode) {
-                    if(targetNode.IDArr.contains(sourceNode.IDStr)){
-                        //如果是正向父子推导关系
-                        const reverseRelationText = this.escapeMermaidText(relNode.relationText);
-                        mermaidStr += `${sourceNode.position} -->|${reverseRelationText}| ${targetNode.position};\n`;
-                    } else {
-                        // 反向连线：从当前节点指向目标节点，使用虚线和不同颜色
-                        const reverseRelationText = this.escapeMermaidText(relNode.relationText);
-                        mermaidStr += `${sourceNode.position} -.->|${reverseRelationText}| ${targetNode.position};\n`;
-                        // 为反向连线添加样式（红色虚线）
-                        mermaidStr += `linkStyle ${this.countLinks(mermaidStr) - 1} stroke:#f66,stroke-width:2px,stroke-dasharray:5\n`;
-                    
-                    }
-                }              
-         }
+            const targetNode = nodeMap.get(relNode.targetID);
+            if (targetNode) {
+                if(targetNode.IDArr.contains(sourceNode.IDStr)){
+                    //如果是正向父子推导关系
+                    links.push({
+                        from: sourceNode.position,
+                        to: targetNode.position,
+                        text: this.escapeMermaidText(relNode.relationText),
+                        isDashed: false,
+                        isReverse: false,
+                        sourceIDStr: sourceNode.IDStr,
+                        targetIDStr: targetNode.IDStr
+                    });
+                } else {
+                    // 反向连线：从当前节点指向目标节点，使用虚线和不同颜色
+                    links.push({
+                        from: sourceNode.position,
+                        to: targetNode.position,
+                        text: this.escapeMermaidText(relNode.relationText),
+                        isDashed: true,
+                        isReverse: true,
+                        sourceIDStr: sourceNode.IDStr,
+                        targetIDStr: targetNode.IDStr
+                    });
+                }
+            }              
+        }
 
+        // 排序关系连线：按照 sourceIDStr 和 targetIDStr 排序
+        links.sort((a, b) => {
+            // 首先按 sourceIDStr 排序
+            const sourceCompare = a.sourceIDStr.localeCompare(b.sourceIDStr);
+            if (sourceCompare !== 0) return sourceCompare;
+            
+            // 如果 sourceIDStr 相同，按 targetIDStr 排序
+            return a.targetIDStr.localeCompare(b.targetIDStr);
+        });
+
+        // 添加排序后的连线到 mermaid 字符串
+        let linkIndex = 0;
+        for (const link of links) {
+            if (link.text) {
+                if (link.isDashed) {
+                    mermaidStr += `${link.from} -.->|${link.text}| ${link.to};\n`;
+                } else {
+                    mermaidStr += `${link.from} -->|${link.text}| ${link.to};\n`;
+                }
+            } else {
+                if (link.isDashed) {
+                    mermaidStr += `${link.from} -.-> ${link.to};\n`;
+                } else {
+                    mermaidStr += `${link.from} --> ${link.to};\n`;
+                }
+            }
+            
+            // 为反向连线添加样式（红色虚线）
+            if (link.isReverse) {
+                mermaidStr += `linkStyle ${linkIndex} stroke:#f66,stroke-width:2px,stroke-dasharray:5\n`;
+            }
+            
+            linkIndex++;
+        }
 
         return mermaidStr;
     }
