@@ -31,8 +31,6 @@ export default {
     "ID Order": "ID/Title Order",
     "Set red dash line for nodes with ID ends with letter": "Set red dash line for nodes with ID ends with letter",
     "In order to distinguish nodes which ID ends with letter and number": "In order to distinguish nodes which ID ends with letter or number",
-    "Fold node toggle": "Fold node toggle",
-    "Open the fold icon(🟡🟢)": "Open the fold icon(🟡🟢)",
     "zk-local-graph-view": "zk-local-graph-view",
     "Open close-relative graph": "Open close-relative graph",
     "Mermaid graph to display parent, siblings and sons": "Mermaid graph to display parent, siblings and children",

@@ -31,8 +31,6 @@ export default {
     "ID Order": "顺序查找",
     "Set red dash line for nodes with ID ends with letter": "ID(笔记编号)为字母结尾的节点设置红色虚线框",
     "In order to distinguish nodes which ID ends with letter and number": "区分: 数字结尾ID vs 字母结尾ID",
-    "Fold node toggle": "折叠开关",
-    "Open the fold icon(🟡🟢)": "点击图标(🟡🟢)进行折叠",
     "zk-local-graph-view": "局部关系视图",
     "Open close-relative graph": "打开邻近图",
     "Mermaid graph to display parent, siblings and sons": "显示当前笔记的父节点，手足节点和子节点",

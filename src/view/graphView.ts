@@ -1329,18 +1329,18 @@ export class ZKGraphView extends ItemView {
                 const parentID = node.IDArr.at(-2);
                 const parentNode = nodes.find(n => n.IDStr === parentID);
                 if (parentNode) {
-                    //const nodeRel = reverseRelationsMap.get(node.IDStr)?.find(n => n.targetID === node.IDStr && n.sourceID === parentID);
                     //如果存在任意关系就把默认关系去掉
-                    const nodeRel = reverseRelationsMap.get(node.IDStr)?.find(n => {
-                        return (n.targetID === node.IDStr && n.sourceID === parentID) || 
-                        (n.targetID === parentID && n.sourceID === node.IDStr)
+                    if (node.relationText){
+                      mermaidStr += `${parentNode.position} -->|${this.escapeMermaidText(node.relationText)}| ${node.position};\n`;
+                    } else {
+                     const nodeRel = reverseRelationsMap.get(node.IDStr)?.find(n => {
+                        return ((n.targetID === node.IDStr && n.sourceID === parentID) || 
+                        (n.targetID === parentID && n.sourceID === node.IDStr))
                     });
+                    
                     if(!nodeRel){
-                        if (node.relationText){
-                            mermaidStr += `${parentNode.position} -->|${this.escapeMermaidText(node.relationText)}| ${node.position};\n`;
-                        }else {
-                            mermaidStr += `${parentNode.position} --> ${node.position};\n`;
-                        }
+                        mermaidStr += `${parentNode.position} --> ${node.position};\n`;
+                    } 
                     }
                     
                 }

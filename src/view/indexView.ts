@@ -1,9 +1,10 @@
-import ZKNavigationPlugin, { FoldNode, Retrival } from "main";
+import ZKNavigationPlugin, { Retrival } from "main";
 import { ButtonComponent, DropdownComponent, ExtraButtonComponent, HeadingCache, ItemView, Menu, Notice, TFile, WorkspaceLeaf, debounce, moment, setTooltip } from "obsidian";
 import { t } from "src/lang/helper";
 import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
 import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
 import { tableModal } from "src/modal/tableModal";
+import { AddFreeNodeModal } from "src/modal/addFreeNodeModal";
 import { addSvgPanZoom, convertMOCToZKNodes, displayWidth, mainNoteInit, MOCTreeNode, parseMOCStructure, random } from "src/utils/utils";
 
 export const ZK_INDEX_TYPE: string = "zk-index-type";
@@ -91,9 +92,6 @@ export class ZKIndexView extends ItemView {
 
     // 性能优化：节点位置缓存 Map，O(1) 查找替代 O(n) filter
     nodePositionMap: Map<number, ZKNode> = new Map();
-
-    // 防抖：避免折叠时频繁重新渲染
-    private foldRefreshTimeout: NodeJS.Timeout | null = null;
 
     // MOC 模式相关属性
     mocNodes: ZKNode[] = [];                    // MOC 解析后的节点
@@ -653,7 +651,6 @@ export class ZKIndexView extends ItemView {
                 playBtn.setIcon("wand-2").setTooltip(t("growing animation"));
                 playBtn.onClick(async () => {
                     if (this.plugin.settings.graphType === "structure") {
-                        this.plugin.settings.FoldNodeArr = [];
                         await this.branchGrowing();
                     } else {
                         await this.branchGrowingGit();
@@ -947,13 +944,19 @@ export class ZKIndexView extends ItemView {
                 playBtn.setIcon("wand-2").setTooltip(t("growing animation"));
                 playBtn.onClick(async () => {
                     if (this.plugin.settings.graphType === "structure") {
-                        this.plugin.settings.FoldNodeArr = [];
                         await this.branchGrowing();
                     } else {
                         await this.branchGrowingGit();
                     }
                 });
             }
+
+            // 添加自由节点按钮（仅 MOC 模式）
+            const addNodeBtn = new ExtraButtonComponent(toolButtonsDiv);
+            addNodeBtn.setIcon("plus-circle").setTooltip("添加自由节点");
+            addNodeBtn.onClick(async () => {
+                await this.addFreeNodeToMOC();
+            });
         }
 
         // 获取 MOC 文件夹中的所有文件
@@ -1266,33 +1269,6 @@ export class ZKIndexView extends ItemView {
                     });
                 }
 
-                // 处理折叠节点
-                for (let foldNode of this.plugin.settings.FoldNodeArr.filter(n => n.graphID == zkGraph.id)) {
-                    const hideNodes = this.mocNodes.filter(n =>
-                        n.IDStr.startsWith(foldNode.nodeIDstr) && (n.IDStr !== foldNode.nodeIDstr)
-                    );
-
-                    for (let hideNode of hideNodes) {
-                        const hideNodeGArr = indexMermaid.querySelectorAll(`[id^='flowchart-${hideNode.position}']`);
-                        hideNodeGArr.forEach((item) => {
-                            item.setAttr("style", "display:none");
-                        });
-
-                        const hideLines = indexMermaid.querySelectorAll(`[id^='L_${hideNode.position}']`);
-                        hideLines.forEach((item) => {
-                            item.setAttr("style", "display:none");
-                        });
-                    }
-
-                    const hideLines = indexMermaid.querySelectorAll(`[id^='L_${foldNode.position}']`);
-                    hideLines.forEach((item) => {
-                        item.setAttr("style", "display:none");
-                    });
-                }
-
-                if (this.plugin.settings.FoldToggle === true) {
-                    await this.addFoldIconMOC(indexMermaid);
-                }
             }
 
             this.renderedBranches.add(i);
@@ -1566,105 +1542,6 @@ export class ZKIndexView extends ItemView {
         }
     }
 
-    // MOC 模式专用的折叠图标添加
-    async addFoldIconMOC(indexMermaid: HTMLElement) {
-        const rects = indexMermaid.getElementsByTagName('rect');
-        let rectArr: SVGRectElement[] = [];
-        Array.from(rects).forEach(item => {
-            if (item.classList.contains("label-container")) {
-                rectArr.push(item);
-            }
-        });
-
-        rectArr.forEach(item => {
-            const circleX = Number(item.getAttr("x")) + Number(item.getAttr("width"));
-            const circleY = Number(item.getAttr("y")) + Number(item.getAttr("height")) / 2;
-            const newCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-            newCircle.setAttr('cx', circleX);
-            newCircle.setAttr('cy', circleY);
-            newCircle.setAttr('r', 8);
-
-            if (item.parentElement) {
-                const nodePosStr = item.parentElement.id.split('-')[1];
-                const node = this.mocNodes.filter(n => n.position == Number(nodePosStr))[0];
-
-                if (!node) return;
-
-                if (this.plugin.settings.FoldNodeArr.filter(n =>
-                    (n.nodeIDstr == node.IDStr) && (n.graphID == indexMermaid.id)).length === 0) {
-                    newCircle.addClass('zk-fold-yellow');
-                } else {
-                    newCircle.addClass('zk-fold-green');
-                }
-
-                item.parentElement.insertAfter(newCircle, item.nextSibling);
-
-                newCircle.addEventListener("click", async (event) => {
-                    const clickNode: FoldNode = {
-                        graphID: indexMermaid.id,
-                        nodeIDstr: node.IDStr,
-                        position: node.position,
-                    };
-
-                    if (this.plugin.settings.FoldNodeArr.filter(n =>
-                        (n.nodeIDstr == node.IDStr) && (n.graphID == indexMermaid.id)).length === 0) {
-                        this.plugin.settings.FoldNodeArr.push(clickNode);
-                    } else {
-                        const index = this.plugin.settings.FoldNodeArr.findIndex(
-                            item => (item.graphID === clickNode.graphID) && (item.nodeIDstr === clickNode.nodeIDstr));
-                        if (index !== -1) {
-                            this.plugin.settings.FoldNodeArr.splice(index, 1);
-                        }
-                    }
-
-                    if (event.ctrlKey && newCircle.hasClass('zk-fold-green')) {
-                        this.plugin.settings.FoldNodeArr = this.plugin.settings.FoldNodeArr.filter(
-                            n => !(n.nodeIDstr.startsWith(clickNode.nodeIDstr) && (n.graphID == clickNode.graphID))
-                        );
-                    }
-                    event.stopPropagation();
-
-                    if (this.foldRefreshTimeout) {
-                        clearTimeout(this.foldRefreshTimeout);
-                    }
-                    this.foldRefreshTimeout = setTimeout(async () => {
-                        await this.refreshBranchMermaid();
-                        this.foldRefreshTimeout = null;
-                    }, 300);
-                });
-
-                newCircle.addEventListener("touchend", async (event) => {
-                    const clickNode: FoldNode = {
-                        graphID: indexMermaid.id,
-                        nodeIDstr: node.IDStr,
-                        position: node.position,
-                    };
-
-                    if (this.plugin.settings.FoldNodeArr.filter(n =>
-                        (n.nodeIDstr == node.IDStr) && (n.graphID == indexMermaid.id)).length === 0) {
-                        this.plugin.settings.FoldNodeArr.push(clickNode);
-                    } else {
-                        const index = this.plugin.settings.FoldNodeArr.findIndex(
-                            item => (item.graphID === clickNode.graphID) && (item.nodeIDstr === clickNode.nodeIDstr));
-                        if (index !== -1) {
-                            this.plugin.settings.FoldNodeArr.splice(index, 1);
-                        }
-                    }
-
-                    event.stopPropagation();
-
-                    if (this.foldRefreshTimeout) {
-                        clearTimeout(this.foldRefreshTimeout);
-                    }
-                    this.foldRefreshTimeout = setTimeout(async () => {
-                        await this.refreshBranchMermaid();
-                        this.foldRefreshTimeout = null;
-                    }, 300);
-                });
-            }
-        });
-    }
-
     async addBranchIcon(branchEntranceNodeArr: ZKNode[], indexLinkDiv: HTMLDivElement) {
         if (branchEntranceNodeArr.length > 1) {
 
@@ -1776,35 +1653,6 @@ export class ZKIndexView extends ItemView {
                             this.app.workspace.openLinkText("", node.file.path);
                         }
                     });
-                }
-                for (let foldNode of this.plugin.settings.FoldNodeArr.filter(n => n.graphID == zkGraph.id)) {
-
-                    let hideNodes = this.plugin.MainNotes.filter(n =>
-                        n.IDStr.startsWith(foldNode.nodeIDstr) && (n.IDStr !== foldNode.nodeIDstr)
-                    );
-
-                    for (let hideNode of hideNodes) {
-                        let hideNodeGArr = indexMermaid.querySelectorAll(`[id^='flowchart-${hideNode.position}']`);
-
-                        hideNodeGArr.forEach((item) => {
-                            item.setAttr("style", "display:none");
-                        })
-
-                        let hideLines = indexMermaid.querySelectorAll(`[id^='L_${hideNode.position}']`);
-
-                        hideLines.forEach((item) => {
-                            item.setAttr("style", "display:none");
-                        })
-                    }
-
-                    let hideLines = indexMermaid.querySelectorAll(`[id^='L_${foldNode.position}']`);
-                    hideLines.forEach((item) => {
-                        item.setAttr("style", "display:none");
-                    })
-
-                }
-                if (this.plugin.settings.FoldToggle == true) {
-                    await this.addFoldIcon(indexMermaid);
                 }
 
             }
@@ -2440,82 +2288,71 @@ export class ZKIndexView extends ItemView {
             } else {
                 mermaidStr = mermaidStr + `style ${node.position} fill:#fff; \n`;
             }
-
         }
 
+        // 记录连线数量，用于反向关系样式
+        let linkCount = 0;
+
+        // 添加连线（根据 IDArr 确定父子关系）
         for (let node of Nodes) {
-
-            // 基于节点ID的层级关系查找直接子节点
-            let sonNodes = Nodes.filter(n => {
-                if (!n.IDStr || !node.IDStr) return false;
-
-                // 检查是否是直接子节点
-                // MOC 节点使用逗号分隔，普通节点可能使用点分隔
-                const separator = node.IDStr.includes(',') ? ',' : '.';
-                const nodeIdParts = node.IDStr.split(separator);
-                const childIdParts = n.IDStr.split(separator);
-
-                // 子节点的层级应该比父节点多1
-                if (childIdParts.length !== nodeIdParts.length + 1) return false;
-
-                // 子节点的ID应该以父节点ID开头
-                return n.IDStr.startsWith(node.IDStr + separator);
-            });
-            
-            // 调试信息
-            if (sonNodes.length > 0) {
-                console.log(`Node ${node.IDStr} has children:`, sonNodes.map(s => s.IDStr));
-            }
-
-            for (let son of sonNodes) {
-                // 检查是否有反向关系覆盖了这条父子连线
-                const nodeRel = reverseRelationsMap.get(son.IDStr)
-                    ?.find(n => n.targetID === son.IDStr && n.sourceID === node.IDStr);
+            if (node.IDArr.length > 1) {
+                // 获取父节点ID（倒数第二个元素）
+                const parentID = node.IDArr.at(-2);
+                const parentNode = Nodes.find(n => n.IDStr === parentID);
                 
-                if (!nodeRel) {
-                    // 如果子节点有 relationText，在连接线上显示
-                    if (son.relationText && son.relationText.trim() !== '') {
-                        // 转义 relationText 中的特殊字符
-                        const escapedRelation = this.escapeMermaidText(son.relationText);
-                        mermaidStr = mermaidStr + `${node.position} -->|${escapedRelation}| ${son.position};\n`;
+                if (parentNode) {
+                    if (node.relationText){
+                          // 转义 relationText 中的特殊字符
+                        const escapedRelation = this.escapeMermaidText(node.relationText);
+                        mermaidStr = mermaidStr + `${parentNode.position} -->|${escapedRelation}| ${node.position};\n`;
+                        linkCount++;
+                    } else{
+                        // 检查是否有反向关系覆盖了这条父子连线
+                        const hasReverseRelation = reverseRelationsMap.get(node.IDStr)?.find(rel => 
+                            (rel.targetID === node.IDStr && rel.sourceID === parentID) || 
+                            (rel.targetID === parentID && rel.sourceID === node.IDStr)
+                        );
+
+                        if (!hasReverseRelation) {
+                            // 没有 relationText 时使用普通连接线
+                            mermaidStr = mermaidStr + `${parentNode.position} --> ${node.position};\n`;
+                            linkCount++;
+                        }
+                    }
+
+                }
+            }
+        }
+
+        // 添加反向关系连线
+        if (reverseRelations) {
+            for (const [_, relation] of reverseRelations) {
+                const sourceNode = nodeMap.get(relation.sourceID);
+                const targetNode = nodeMap.get(relation.targetID);
+                
+                if (sourceNode && targetNode) {
+                    // 检查是否是正向父子关系
+                    const isParentChild = targetNode.IDStr.startsWith(sourceNode.IDStr + '.') || 
+                                         targetNode.IDStr.startsWith(sourceNode.IDStr + ',');
+                    
+                    if (isParentChild) {
+                        // 如果是正向父子推导关系，使用实线
+                        const reverseRelationText = this.escapeMermaidText(relation.relationText);
+                        mermaidStr += `${sourceNode.position} -->|${reverseRelationText}| ${targetNode.position};\n`;
+                        linkCount++;
                     } else {
-                        // 没有 relationText 时使用普通连接线
-                        mermaidStr = mermaidStr + `${node.position} --> ${son.position};\n`;
+                        // 反向连线：从当前节点指向目标节点，使用虚线和不同颜色
+                        const reverseRelationText = this.escapeMermaidText(relation.relationText);
+                        mermaidStr += `${sourceNode.position} -.->|${reverseRelationText}| ${targetNode.position};\n`;
+                        // 为反向连线添加样式（红色虚线）- linkCount 在这里是正确的索引
+                        mermaidStr += `linkStyle ${linkCount} stroke:#f66,stroke-width:2px,stroke-dasharray:5\n`;
+                        linkCount++;
                     }
                 }
             }
         }
 
-        
-
-        // 添加反向关系连线
-        if (reverseRelations) {
-              // 添加反向关系连线
-            for (const relNode of reverseRelations.values()) { 
-                const sourceNode = nodeMap.get(relNode.sourceID);
-                if(sourceNode === undefined) continue;
-
-                
-                const targetNode = nodeMap.get(relNode.targetID);
-                 if (targetNode) {
-                    if(targetNode.IDArr.contains(sourceNode.IDStr)){
-                        //如果是正向父子推导关系
-                        const reverseRelationText = this.escapeMermaidText(relNode.relationText);
-                        mermaidStr += `${sourceNode.position} -->|${reverseRelationText}| ${targetNode.position};\n`;
-                    } else {
-                        // 反向连线：从当前节点指向目标节点，使用虚线和不同颜色
-                        const reverseRelationText = this.escapeMermaidText(relNode.relationText);
-                        mermaidStr += `${sourceNode.position} -.->|${reverseRelationText}| ${targetNode.position};\n`;
-                        // 为反向连线添加样式（红色虚线）
-                        mermaidStr += `linkStyle ${this.countLinks(mermaidStr) - 1} stroke:#f66,stroke-width:2px,stroke-dasharray:5\n`;
-                    
-                    }
-                }              
-         }
-        }
-
         if (this.plugin.settings.RedDashLine === true) {
-
             for (let node of Nodes) {
                 if (/^[a-zA-Z]$/.test(node.ID.slice(-1))) {
                     //红色虚线边
@@ -3120,109 +2957,6 @@ export class ZKIndexView extends ItemView {
         }
     }
 
-    async addFoldIcon(indexMermaid: HTMLElement) {
-        const rects = indexMermaid.getElementsByTagName('rect');
-        let rectArr: SVGRectElement[] = [];
-        Array.from(rects).forEach(item => {
-            if (item.classList.contains("label-container")) {
-                rectArr.push(item)
-            }
-        })
-
-        rectArr.forEach(item => {
-            const circleX = Number(item.getAttr("x")) + Number(item.getAttr("width"));
-            const circleY = Number(item.getAttr("y")) + Number(item.getAttr("height")) / 2;
-            const newCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-            newCircle.setAttr('cx', circleX);
-            newCircle.setAttr('cy', circleY);
-            newCircle.setAttr('r', 8);
-
-            if (item.parentElement) {
-
-                let nodePosStr = item.parentElement.id.split('-')[1];
-                let node = this.plugin.MainNotes.filter(n => n.position == Number(nodePosStr))[0];
-
-                if (this.plugin.settings.FoldNodeArr.filter(n =>
-                    (n.nodeIDstr == node.IDStr) && (n.graphID == indexMermaid.id)).length === 0) {
-                    newCircle.addClass('zk-fold-yellow');
-                } else {
-                    newCircle.addClass('zk-fold-green');
-                }
-
-                item.parentElement.insertAfter(newCircle, item.nextSibling);
-
-                newCircle.addEventListener("click", async (event) => {
-
-                    const clickNode: FoldNode = {
-                        graphID: indexMermaid.id,
-                        nodeIDstr: node.IDStr,
-                        position: node.position,
-                    };
-
-                    if (this.plugin.settings.FoldNodeArr.filter(n =>
-                        (n.nodeIDstr == node.IDStr) && (n.graphID == indexMermaid.id)).length === 0) {
-                        this.plugin.settings.FoldNodeArr.push(clickNode);
-                    } else {
-                        let index = this.plugin.settings.FoldNodeArr.findIndex(
-                            item => (item.graphID === clickNode.graphID) && (item.nodeIDstr === clickNode.nodeIDstr));
-                        if (index !== -1) {
-                            this.plugin.settings.FoldNodeArr.splice(index, 1);
-                        }
-                    }
-
-                    if (event.ctrlKey && newCircle.hasClass('zk-fold-green')) {
-
-                        this.plugin.settings.FoldNodeArr = this.plugin.settings.FoldNodeArr.filter(
-                            n => !(n.nodeIDstr.startsWith(clickNode.nodeIDstr) && (n.graphID == clickNode.graphID))
-                        )
-                    }
-                    event.stopPropagation();
-
-                    // 性能优化：使用防抖，避免连续点击时多次重新渲染
-                    if (this.foldRefreshTimeout) {
-                        clearTimeout(this.foldRefreshTimeout);
-                    }
-                    this.foldRefreshTimeout = setTimeout(async () => {
-                        await this.refreshBranchMermaid();
-                        this.foldRefreshTimeout = null;
-                    }, 300);
-                })
-
-                newCircle.addEventListener("touchend", async (event) => {
-
-                    const clickNode: FoldNode = {
-                        graphID: indexMermaid.id,
-                        nodeIDstr: node.IDStr,
-                        position: node.position,
-                    };
-
-                    if (this.plugin.settings.FoldNodeArr.filter(n =>
-                        (n.nodeIDstr == node.IDStr) && (n.graphID = indexMermaid.id)).length === 0) {
-                        this.plugin.settings.FoldNodeArr.push(clickNode);
-                    } else {
-                        let index = this.plugin.settings.FoldNodeArr.findIndex(
-                            item => (item.graphID === clickNode.graphID) && (item.nodeIDstr === clickNode.nodeIDstr));
-                        if (index !== -1) {
-                            this.plugin.settings.FoldNodeArr.splice(index, 1);
-                        }
-                    }
-
-                    event.stopPropagation();
-
-                    // 性能优化：使用防抖，避免连续点击时多次重新渲染
-                    if (this.foldRefreshTimeout) {
-                        clearTimeout(this.foldRefreshTimeout);
-                    }
-                    this.foldRefreshTimeout = setTimeout(async () => {
-                        await this.refreshBranchMermaid();
-                        this.foldRefreshTimeout = null;
-                    }, 300);
-                })
-            }
-
-        })
-    }
-
     getCanvasCardSetting(file: TFile) {
 
         let cardSetting: string = ",";
@@ -3303,6 +3037,154 @@ export class ZKIndexView extends ItemView {
             menu.showAtPosition({ x: rect.left, y: rect.bottom });
         } else {
             menu.showAtMouseEvent(new MouseEvent('click'));
+        }
+    }
+
+    // ========== 自由节点功能 ==========
+
+    /**
+     * 生成下一个可用的自由节点 ID
+     */
+    generateNextFreeNodeID(): string {
+        // 查找所有 free.* 节点
+        const freeNodes = this.mocNodes.filter(n => n.ID.startsWith('free.'));
+        
+        if (freeNodes.length === 0) {
+            return 'free.1';
+        }
+        
+        // 找到最大的数字
+        const maxNum = Math.max(...freeNodes.map(n => {
+            const match = n.ID.match(/free\.(\d+)/);
+            return match ? parseInt(match[1]) : 0;
+        }));
+        
+        return `free.${maxNum + 1}`;
+    }
+
+    /**
+     * 添加自由节点到 MOC
+     */
+    async addFreeNodeToMOC() {
+        // 生成建议的节点 ID
+        const suggestedID = this.generateNextFreeNodeID();
+        
+        // 打开对话框
+        new AddFreeNodeModal(
+            this.app,
+            this.plugin,
+            this.mocNodes, // 当前 MOC 的所有节点
+            suggestedID,
+            async (result) => {
+                // 添加到 MOC 文件
+                await this.saveFreeNodeToMOC(result);
+                
+                // 刷新视图
+                await this.refreshBranchMermaid();
+            }
+        ).open();
+    }
+
+    /**
+     * 保存自由节点到 MOC 文件
+     */
+    async saveFreeNodeToMOC(result: {
+        wikiLink: string;
+        nodeID: string;
+        relationText: string;
+        file: TFile | null;
+        connectToNodeID?: string;
+        connectionRelation?: string;
+    }) {
+        const mocFilePath = this.plugin.settings.mocCurrentFile;
+        if (!mocFilePath) {
+            new Notice("未找到当前 MOC 文件");
+            return;
+        }
+        
+        const file = this.app.vault.getFileByPath(mocFilePath);
+        if (!file) {
+            new Notice("MOC 文件不存在");
+            return;
+        }
+        
+        try {
+            // 读取文件内容
+            let content = await this.app.vault.read(file);
+            const lines = content.split('\n');
+            
+            // 构建新节点的 Markdown
+            const nodeID = result.nodeID || this.generateNextFreeNodeID();
+            const parentID = nodeID.substring(0,nodeID.length-2);
+            
+            // 构建节点行
+            let newNodeLine: string;
+            
+            // 如果有关系描述，添加到前面
+            if (result.relationText) {
+                newNodeLine = `- ${result.relationText} [[${result.wikiLink}]] \`${nodeID}\``;
+            } else {
+                newNodeLine = `- [[${result.wikiLink}]] \`${nodeID}\``;
+            }
+            
+            // 查找指定的标题
+            const headingTitle = this.plugin.settings.mocHeadingTitle;
+            let insertIndex = -1;
+            let insertParentIndex = -1;
+            let foundHeading = false;
+            
+            for (let i = 0; i < lines.length; i++) {
+                
+                const originLine = lines[i];
+                if(originLine.contains('`'  + parentID + '`' ) && originLine.contains('[[')){
+                    insertParentIndex = i + 1;   
+                    newNodeLine = (" ".repeat(((originLine.indexOf('-') /4) +1) * 4) ) + newNodeLine;
+                }
+
+                const line = lines[i].trim();
+
+                // 找到目标标题
+                if (line === `# ${headingTitle}` || line.startsWith(`# ${headingTitle}`)) {
+                    foundHeading = true;
+                    insertIndex = i + 1;
+                    continue;
+                }
+                
+                // 如果已经找到标题，遇到下一个一级标题就停止
+                if (foundHeading && line.startsWith('# ')) {
+                    break;
+                }
+                
+                // 如果已经找到标题，更新插入位置到最后一个非空行之后
+                if (foundHeading && line.trim() !== '') {
+                    insertIndex = i + 1;
+                }
+            }
+            
+            if (!foundHeading) {
+                new Notice(`未找到标题: # ${headingTitle}`);
+                return;
+            }
+            
+            // 在指定位置插入新节点
+            lines.splice(insertParentIndex, 0, newNodeLine);
+            
+            // 如果有连接关系，添加箭头语法（在节点后面）
+            if (result.connectToNodeID && result.connectionRelation) {
+                const arrowLine = `- \`${nodeID}\` -- ${result.connectionRelation} --> \`${result.connectToNodeID}\``;
+                lines.splice(insertIndex + 1, 0, '', arrowLine);
+            }
+            
+            // 重新组合内容
+            content = lines.join('\n');
+            
+            // 保存文件
+            await this.app.vault.modify(file, content);
+            
+            new Notice(`已添加自由节点: ${nodeID}`);
+        } catch (error) {
+            console.error("保存自由节点失败:", error);
+            new Notice("保存失败，请查看控制台");
         }
     }
 

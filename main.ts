@@ -11,12 +11,6 @@ import { ZK_OUTLINE_TYPE, ZKOutlineView } from "src/view/outlineView";
 import { ZK_RECENT_TYPE, ZKRecentView } from "src/view/recentView";
 import { ZK_TABLE_TYPE, ZKTableView } from "src/view/tableView";
 
-export interface FoldNode{
-    graphID: string;
-    nodeIDstr: string;
-    position: number;
-}
-
 interface Point {
     x: number;
     y: number;
@@ -71,8 +65,6 @@ interface ZKNavigationSettings {
     OtherSeparator: string;
     IndexButtonText: string;
     SuggestMode: string;
-    FoldToggle: boolean;
-    FoldNodeArr: FoldNode[];
     RedDashLine: boolean;
     zoomPanScaleArr:ZoomPanScale[];
     CustomCreatedTime: string;
@@ -148,8 +140,6 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     OtherSeparator: "",
     IndexButtonText: t('📖index'),
     SuggestMode: 'fuzzySuggest',
-    FoldToggle: false,
-    FoldNodeArr: [],
     RedDashLine:false,
     zoomPanScaleArr:[],
     CustomCreatedTime: '',
@@ -289,7 +279,6 @@ export default class ZKNavigationPlugin extends Plugin {
                         };
                         this.settings.zoomPanScaleArr = [];
                         this.settings.BranchTab = 0;
-                        this.settings.FoldNodeArr = [];  
                         this.RefreshIndexViewFlag = true;
                         await this.openIndexView();
                     }
@@ -306,7 +295,6 @@ export default class ZKNavigationPlugin extends Plugin {
                     };
                     this.settings.zoomPanScaleArr = [];
                     this.settings.BranchTab = 0;
-                    this.settings.FoldNodeArr = [];  
                     this.RefreshIndexViewFlag = true;
                     await this.openIndexView();
                 }
@@ -578,7 +566,6 @@ export default class ZKNavigationPlugin extends Plugin {
     async clearShowingSettings(BranchTab:number=0){
         this.settings.zoomPanScaleArr = [];
         this.settings.BranchTab = BranchTab;
-        this.settings.FoldNodeArr = [];   
     }
 
     async revealFileInIndexView(){
