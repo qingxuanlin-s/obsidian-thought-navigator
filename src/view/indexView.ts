@@ -1241,9 +1241,70 @@ export class ZKIndexView extends ItemView {
                         nodeArr[j].textContent = "";
                         nodeArr[j].appendChild(link);
 
+                        // 添加 "+" 按钮到节点后面
+                        const nodePosStr = nodeGArr[j].id.split('-')[1];
+                        const node = this.nodePositionMap.get(Number(nodePosStr));
+                        
+                        if (node) {
+                            // 获取节点的矩形元素
+                            const nodeRect = nodeGArr[j].querySelector('rect');
+                            if (nodeRect) {
+                                // 创建 SVG 文本元素作为按钮
+                                const svgNS = "http://www.w3.org/2000/svg";
+                                const btnGroup = document.createElementNS(svgNS, 'g');
+                                btnGroup.setAttribute('class', 'zk-node-add-btn');
+                                btnGroup.style.cursor = 'pointer';
+                                
+                                // 获取节点矩形的位置和大小
+                                const rectX = parseFloat(nodeRect.getAttribute('x') || '0');
+                                const rectY = parseFloat(nodeRect.getAttribute('y') || '0');
+                                const rectWidth = parseFloat(nodeRect.getAttribute('width') || '0');
+                                const rectHeight = parseFloat(nodeRect.getAttribute('height') || '0');
+                                
+                                // 创建按钮圆圈背景
+                                const btnCircle = document.createElementNS(svgNS, 'circle');
+                                btnCircle.setAttribute('cx', (rectX + rectWidth + 15).toString());
+                                btnCircle.setAttribute('cy', (rectY + rectHeight / 2).toString());
+                                btnCircle.setAttribute('r', '10');
+                                btnCircle.setAttribute('fill', '#4a9eff');
+                                btnCircle.setAttribute('opacity', '0.8');
+                                
+                                // 创建按钮文本 "+"
+                                const btnText = document.createElementNS(svgNS, 'text');
+                                btnText.setAttribute('x', (rectX + rectWidth + 15).toString());
+                                btnText.setAttribute('y', (rectY + rectHeight / 2 + 4).toString());
+                                btnText.setAttribute('text-anchor', 'middle');
+                                btnText.setAttribute('fill', 'white');
+                                btnText.setAttribute('font-size', '16');
+                                btnText.setAttribute('font-weight', 'bold');
+                                btnText.textContent = '+';
+                                
+                                btnGroup.appendChild(btnCircle);
+                                btnGroup.appendChild(btnText);
+                                
+                                // 鼠标悬停效果
+                                btnGroup.addEventListener('mouseenter', () => {
+                                    btnCircle.setAttribute('opacity', '1');
+                                    btnCircle.setAttribute('r', '12');
+                                });
+                                btnGroup.addEventListener('mouseleave', () => {
+                                    btnCircle.setAttribute('opacity', '0.8');
+                                    btnCircle.setAttribute('r', '10');
+                                });
+                                
+                                // 点击事件
+                                btnGroup.addEventListener('click', async (e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    await this.addChildNodeToMOC(node);
+                                });
+                                
+                                // 添加到节点组中
+                                nodeGArr[j].appendChild(btnGroup);
+                            }
+                        }
+
                         if (this.plugin.settings.displayTimeToggle === true) {
-                            const nodePosStr = nodeGArr[j].id.split('-')[1];
-                            const node = this.nodePositionMap.get(Number(nodePosStr));
                             const parentEl = nodeArr[j].parentElement;
                             if (node && parentEl) {
                                 setTooltip(parentEl, `${t("created")}: ${moment(node.ctime).format(this.plugin.settings.datetimeFormat)}`);
@@ -1494,6 +1555,19 @@ export class ZKIndexView extends ItemView {
 
                         circleNodes[j].addEventListener('contextmenu', (event: MouseEvent) => {
                             const menu = new Menu();
+                            
+                            // 添加"添加子节点"选项
+                            menu.addItem((item) =>
+                                item
+                                    .setTitle("添加子节点")
+                                    .setIcon("plus-circle")
+                                    .onClick(async () => {
+                                        await this.addChildNodeToMOC(node);
+                                    })
+                            );
+                            
+                            menu.addSeparator();
+                            
                             for (let command of this.plugin.settings.NodeCommands) {
                                 menu.addItem((item) =>
                                     item
@@ -3060,6 +3134,135 @@ export class ZKIndexView extends ItemView {
         }));
         
         return `free.${maxNum + 1}`;
+    }
+
+    /**
+     * 为指定节点添加子节点
+     */
+    async addChildNodeToMOC(parentNode: ZKNode) {
+        // 生成子节点 ID
+        const suggestedID = this.generateChildNodeID(parentNode.IDStr);
+        
+        // 打开对话框，预选父节点
+        const modal = new AddFreeNodeModal(
+            this.app,
+            this.plugin,
+            this.mocNodes,
+            suggestedID,
+            async (result) => {
+                // 添加到 MOC 文件
+                await this.saveFreeNodeToMOC(result);
+                
+                // 刷新视图
+                await this.refreshBranchMermaid();
+            }
+        );
+        
+        // 预设父节点
+        modal.connectToNodeID = parentNode.IDStr;
+        modal.nodeID = suggestedID;
+        
+        modal.onOpen();
+        modal.open();
+    }
+
+    /**
+     * 生成子节点 ID（基于父节点）
+     */
+    generateChildNodeID(parentNodeID: string): string {
+        const parentParts = parentNodeID.split('.');
+        const lastPart = parentParts[parentParts.length - 1];
+        
+        // 判断父节点最后一级是数字还是字母
+        const isLastPartNumber = /^\d+$/.test(lastPart);
+        const isLastPartLetter = /^[a-z]+$/.test(lastPart);
+        
+        if (isLastPartNumber) {
+            // 父节点是数字，生成字母后缀
+            return this.generateLetterSuffix(parentNodeID);
+        } else if (isLastPartLetter) {
+            // 父节点是字母，生成数字后缀
+            return this.generateNumberSuffix(parentNodeID);
+        } else {
+            // 如果无法判断类型，默认生成字母后缀
+            return this.generateLetterSuffix(parentNodeID);
+        }
+    }
+
+    /**
+     * 生成字母后缀的子节点 ID
+     */
+    private generateLetterSuffix(parentNodeID: string): string {
+        const letters = 'abcdefghijklmnopqrstuvwxyz';
+        
+        // 获取父节点的所有子节点
+        const existingChildren = this.getDirectChildren(parentNodeID);
+
+        // 提取已存在的字母后缀
+        const existingSuffixes = new Set<string>();
+        existingChildren.forEach(child => {
+            const parts = child.IDStr.split('.');
+            const lastPart = parts[parts.length - 1];
+            if (/^[a-z]+$/.test(lastPart)) {
+                existingSuffixes.add(lastPart);
+            }
+        });
+
+        // 找到第一个未使用的字母
+        for (const letter of letters) {
+            if (!existingSuffixes.has(letter)) {
+                return `${parentNodeID}.${letter}`;
+            }
+        }
+
+        // 如果所有单字母都用完了，使用双字母
+        for (let i = 0; i < letters.length; i++) {
+            for (let j = 0; j < letters.length; j++) {
+                const doubleLetter = letters[i] + letters[j];
+                if (!existingSuffixes.has(doubleLetter)) {
+                    return `${parentNodeID}.${doubleLetter}`;
+                }
+            }
+        }
+
+        return `${parentNodeID}.aaa`;
+    }
+
+    /**
+     * 生成数字后缀的子节点 ID
+     */
+    private generateNumberSuffix(parentNodeID: string): string {
+        const existingChildren = this.getDirectChildren(parentNodeID);
+
+        const existingNumbers = new Set<number>();
+        existingChildren.forEach(child => {
+            const parts = child.IDStr.split('.');
+            const lastPart = parts[parts.length - 1];
+            if (/^\d+$/.test(lastPart)) {
+                existingNumbers.add(parseInt(lastPart, 10));
+            }
+        });
+
+        let nextNumber = 1;
+        while (existingNumbers.has(nextNumber)) {
+            nextNumber++;
+        }
+
+        return `${parentNodeID}.${nextNumber}`;
+    }
+
+    /**
+     * 获取指定父节点的直接子节点
+     */
+    private getDirectChildren(parentNodeID: string): ZKNode[] {
+        return this.mocNodes.filter(node => {
+            const nodeIdParts = node.IDStr.split('.');
+            const parentIdParts = parentNodeID.split('.');
+            
+            if (nodeIdParts.length !== parentIdParts.length + 1) return false;
+            
+            return node.IDStr.startsWith(parentNodeID + '.');
+        });
     }
 
     /**
