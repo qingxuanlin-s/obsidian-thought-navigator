@@ -70,7 +70,6 @@ export class ZKRecentView extends ItemView {
                 this.plugin.settings.HistoryList.unshift( this.plugin.settings.lastRetrival);
                 this.plugin.settings.zoomPanScaleArr = [];
                 this.plugin.settings.BranchTab = 0;
-                this.plugin.settings.FoldNodeArr = [];  
                 this.app.workspace.trigger("zk-navigation:refresh-recent-view");
                 this.plugin.RefreshIndexViewFlag = true;
                 this.plugin.openIndexView();

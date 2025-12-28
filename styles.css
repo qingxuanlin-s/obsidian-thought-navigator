@@ -240,18 +240,6 @@ padding: 5px;
   width: 100%;
 }
 
-.zk-fold-green{
-  fill: #3CB43C !important;
-  stroke:#333 !important;
-  stroke-width:1px !important;
-}
-
-.zk-fold-yellow{
-  fill: yellow !important;
-  stroke:#333 !important;
-  stroke-width:1px !important;
-}
-
 .zk-full-search {
     width: calc(100% - 20px);
 }
@@ -331,4 +319,77 @@ padding: 5px;
 /* 更新中的半透明效果 */
 .zk-updating {
     opacity: 0.7;
+}
+/* 文件建议器样式 */
+.suggestion-note {
+    font-size: 0.8em;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+/* 更新指示器样式 */
+.zk-update-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(var(--background-primary-rgb), 0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    transition: opacity 0.2s ease-in-out;
+}
+
+.zk-loading-indicator {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 20px;
+    background: var(--background-primary);
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.zk-spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--background-modifier-border);
+    border-top: 2px solid var(--interactive-accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* MOC 选择器样式 */
+.zk-moc-selector {
+    margin-left: 8px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-size: 14px;
+    min-width: 120px;
+}
+
+.zk-moc-hint {
+    color: var(--text-muted);
+    margin-left: 4px;
+}
+
+.zk-moc-file-input {
+    margin-left: 10px;
+    padding: 2px 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
 }

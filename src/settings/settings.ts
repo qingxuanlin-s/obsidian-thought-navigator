@@ -1060,15 +1060,6 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
             );
 
         new Setting(structureSettingDiv)
-            .setName(t("Fold node toggle"))
-            .setDesc(t("Open the fold icon(🟡🟢)"))
-            .addToggle(toggle => toggle.setValue(this.plugin.settings.FoldToggle)
-                .onChange((value) => {
-                    this.plugin.settings.FoldToggle = value;
-                    this.plugin.RefreshIndexViewFlag = true;
-                })
-            );
-        new Setting(structureSettingDiv)
             .setName(t("Set color for nodes"))
             .addExtraButton((cb)=>{
                 cb.setIcon("rotate-ccw")

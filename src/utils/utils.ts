@@ -11,6 +11,9 @@ export interface MOCTreeNode {
     children: MOCTreeNode[];    // 子节点
     file: TFile | null;         // 对应的文件
     relationText: string;       // 关系描述，如 "引出", "相关"
+    isArrowRelation?: boolean;  // 是否是箭头关系节点
+    arrowSource?: string;       // 箭头关系的源节点ID
+    arrowTarget?: string;       // 箭头关系的目标节点ID
 }
 
 // 反向关系信息
@@ -152,16 +155,35 @@ export async function parseMOCStructure(
 
     console.log(`parseMOCStructure: Parsing content from line ${startIndex} to ${endIndex}`);
 
-    // 解析标题下的列表内容
+    // 解析标题下的列表内容和箭头关系
     const allNodes: MOCTreeNode[] = [];
+    const arrowRelations: Array<{relation: ArrowRelation, lineIndex: number, indentLevel: number}> = [];
     let maxDepth = 0;
 
-    // 第一步：收集所有节点
+    // 第一步：收集所有节点和箭头关系
     for (let i = startIndex; i < endIndex; i++) {
         const line = lines[i];
 
         // 跳过空行
         if (line.trim() === '') continue;
+
+        // 检查是否是箭头关系行
+        if (hasArrow(line)) {
+            const arrowRelation = extractArrow(line);
+            if (arrowRelation) {
+                // 计算缩进级别
+                const indentMatch = line.match(/^(\s*)/);
+                const indentLevel = indentMatch ? Math.floor(indentMatch[1].length / 2) : 0; // 假设每2个空格为一级缩进
+                
+                arrowRelations.push({
+                    relation: arrowRelation,
+                    lineIndex: i,
+                    indentLevel: indentLevel
+                });
+                console.log(`Found arrow relation at line ${i}, indent level ${indentLevel}: ${arrowRelation.source} -> ${arrowRelation.target}`);
+            }
+            continue; // 跳过箭头关系行，不作为普通节点处理
+        }
 
         // 解析列表项
         const listMatch = line.match(/^(\s*)[-*]\s+(.+)$/);
@@ -191,7 +213,6 @@ export async function parseMOCStructure(
         allNodes.push(node);
     }
 
-
     // 第二步：根据节点ID构建父子关系
     const treeNodes: MOCTreeNode[] = [];
     const nodeMap = new Map<string, MOCTreeNode>();
@@ -201,35 +222,7 @@ export async function parseMOCStructure(
         nodeMap.set(node.nodeID, node);
     });
 
-    // 第三步：解析反向关系并存储到 Map 中
-    const reverseRelations = new Map<string, ReverseRelation>();
-    
-    for (let i = startIndex; i < endIndex; i++) {
-        const line = lines[i];
-
-        // 跳过空行
-        if (line.trim() === '') continue;
-
-        if(hasArrow(line)){
-            const arrowRelation = extractArrow(line);
-            if (arrowRelation) {
-                // 从 nodeMap 获取节点
-                const sourceNode = nodeMap.get(arrowRelation.source);
-                const targetNode = nodeMap.get(arrowRelation.target);
-                
-                if (sourceNode && targetNode) {
-                    const key = `${sourceNode.nodeID}->${targetNode.nodeID}`;
-                    reverseRelations.set(key, {
-                        sourceID: sourceNode.nodeID,
-                        targetID: targetNode.nodeID,
-                        relationText: arrowRelation.label
-                    });
-                }
-            }
-        }
-    }
-
-    // 构建树结构
+    // 构建基本树结构
     allNodes.forEach(node => {
         const idParts = node.nodeID.split('.');
 
@@ -250,6 +243,50 @@ export async function parseMOCStructure(
         }
     });
 
+    // 第三步：将箭头关系插入到对应的父级节点下
+    const reverseRelations = new Map<string, ReverseRelation>();
+    
+    for (const arrowInfo of arrowRelations) {
+        const { relation, lineIndex, indentLevel } = arrowInfo;
+        
+        // 从 nodeMap 获取节点
+        const sourceNode = nodeMap.get(relation.source);
+        const targetNode = nodeMap.get(relation.target);
+        
+        if (sourceNode && targetNode) {
+            // 找到应该归属的父级节点
+            const parentNode = findParentNodeForArrow(sourceNode, targetNode, allNodes, indentLevel);
+            
+            if (parentNode) {
+                // 创建一个虚拟的箭头关系节点
+                const arrowNode: MOCTreeNode = {
+                    wikiLink: `${relation.source}->${relation.target}`,
+                    nodeID: `arrow_${relation.source}_${relation.target}`,
+                    displayText: `${relation.source} --${relation.label}--> ${relation.target}`,
+                    depth: parentNode.depth + 1,
+                    children: [],
+                    file: null, // 箭头关系没有对应的文件
+                    relationText: relation.label,
+                    isArrowRelation: true, // 标记为箭头关系
+                    arrowSource: relation.source,
+                    arrowTarget: relation.target
+                };
+                
+                // 将箭头关系添加到父节点的子节点中
+                parentNode.children.push(arrowNode);
+                console.log(`Added arrow relation "${arrowNode.displayText}" under parent "${parentNode.nodeID}"`);
+            }
+            
+            // 同时保存到 reverseRelations Map 中供其他功能使用
+            const key = `${sourceNode.nodeID}->${targetNode.nodeID}`;
+            reverseRelations.set(key, {
+                sourceID: sourceNode.nodeID,
+                targetID: targetNode.nodeID,
+                relationText: relation.label
+            });
+        }
+    }
+
     const parseTime = Date.now() - startTime;
 
     return {
@@ -264,6 +301,56 @@ export async function parseMOCStructure(
             headingTitle,
         }
     };
+}
+
+// 辅助函数：找到箭头关系应该归属的父级节点
+function findParentNodeForArrow(
+    sourceNode: MOCTreeNode, 
+    targetNode: MOCTreeNode, 
+    allNodes: MOCTreeNode[], 
+    indentLevel: number
+): MOCTreeNode | null {
+    // 策略1: 根据缩进级别找到对应深度的父节点
+    // 如果缩进级别为0，放在根节点下
+    // 如果缩进级别为1，放在一级节点下，以此类推
+    
+    // 找到源节点和目标节点的共同祖先
+    const sourceIdParts = sourceNode.nodeID.split('.');
+    const targetIdParts = targetNode.nodeID.split('.');
+    
+    // 找到共同前缀
+    let commonPrefixLength = 0;
+    const minLength = Math.min(sourceIdParts.length, targetIdParts.length);
+    
+    for (let i = 0; i < minLength; i++) {
+        if (sourceIdParts[i] === targetIdParts[i]) {
+            commonPrefixLength++;
+        } else {
+            break;
+        }
+    }
+    
+    // 如果有共同前缀，找到对应的共同祖先节点
+    if (commonPrefixLength > 0) {
+        const commonAncestorId = sourceIdParts.slice(0, commonPrefixLength).join('.');
+        const commonAncestor = allNodes.find(n => n.nodeID === commonAncestorId);
+        if (commonAncestor) {
+            return commonAncestor;
+        }
+    }
+    
+    // 如果没有共同祖先，根据源节点的层级决定
+    // 通常放在源节点的父节点下，或者源节点本身下
+    if (sourceIdParts.length > 1) {
+        const sourceParentId = sourceIdParts.slice(0, -1).join('.');
+        const sourceParent = allNodes.find(n => n.nodeID === sourceParentId);
+        if (sourceParent) {
+            return sourceParent;
+        }
+    }
+    
+    // 最后的备选方案：放在源节点下
+    return sourceNode;
 }
 
 // 解析列表项内容
