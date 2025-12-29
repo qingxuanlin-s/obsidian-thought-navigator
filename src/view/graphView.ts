@@ -91,14 +91,12 @@ export class ZKGraphView extends ItemView {
 
             // 如果最后编辑在 2 秒内，说明还在编辑，再延迟 5 秒
             if (timeSinceLastEdit < 2000) {
-                console.log(`Graph View: Still editing (${timeSinceLastEdit}ms ago), delaying refresh by 5s`);
                 if (changeRefreshTimer) {
                     clearTimeout(changeRefreshTimer);
                 }
                 changeRefreshTimer = setTimeout(smartChangeRefresh, 5000);
             } else {
                 // 超过 2 秒没有编辑，执行刷新
-                console.log(`Graph View: Editing stopped (${timeSinceLastEdit}ms ago), refreshing now`);
                 this.refreshLocalGraph();
                 changeRefreshTimer = null;
             }
@@ -113,7 +111,6 @@ export class ZKGraphView extends ItemView {
                 
                 // 如果不在索引笔记目录下，不监听 change 事件
                 if (!isInMainNoteFolder) {
-                    console.log(`Graph View: File ${activeFile.path} is not in main note folders, skipping change event`);
                     return;
                 }
                 
@@ -121,7 +118,6 @@ export class ZKGraphView extends ItemView {
                 
                 // 如果没有定时器在运行，启动一个
                 if (!changeRefreshTimer) {
-                    console.log(`Graph View: File changed, starting smart refresh timer`);
                     changeRefreshTimer = setTimeout(smartChangeRefresh, 5000);
                 }
             }
@@ -160,7 +156,6 @@ export class ZKGraphView extends ItemView {
             
             // 情况1: 当前显示的就是变化的 MOC 文件
             if (this.isMOCFile(activeFile) && activeFile.path === mocFile.path) {
-                console.log(`Graph View: MOC file changed (direct), refreshing for ${mocFile.path}`);
                 lastRefreshedFile = null; // 强制刷新
                 refresh();
                 return;
@@ -169,7 +164,6 @@ export class ZKGraphView extends ItemView {
             // 情况2: 当前文件是 MOC 树中的节点
             const result = await this.findNodeInMOCTrees(activeFile);
             if (result && result.mocFile.path === mocFile.path) {
-                console.log(`Graph View: MOC file changed (node), refreshing for ${mocFile.path}`);
                 lastRefreshedFile = null; // 强制刷新
                 refresh();
             }
@@ -1051,9 +1045,7 @@ export class ZKGraphView extends ItemView {
         // ========== 1. MOC 树结构（类似邻近图）==========
         if (this.plugin.settings.FamilyGraphToggle) {
             // 解析 MOC 结构
-            console.log(`Graph View: Parsing MOC file: ${mocFile.path}, heading: ${headingTitle}`);
             const mocParseResult = await parseMOCStructure(this.app, mocFile.path, headingTitle);
-            console.log(`Graph View: Parse result - nodes: ${mocParseResult.nodes.length}, metadata:`, mocParseResult.metadata);
 
             if (mocParseResult.nodes.length > 0) {
                 // 转换为 ZKNode 数组用于图形显示
@@ -1461,13 +1453,10 @@ export class ZKGraphView extends ItemView {
             f.path.startsWith(mocFolder + '/') || f.path.startsWith(mocFolder)
         ).filter(f => f.extension === 'md');
 
-        console.log(`Graph View: Searching for file ${file.path} in ${mocFiles.length} MOC files`);
 
         // 遍历每个 MOC 文件，查找当前文件
         for (const mocFile of mocFiles) {
-            console.log(`Graph View: Checking MOC file: ${mocFile.path}`);
             const mocParseResult = await parseMOCStructure(this.app, mocFile.path, headingTitle);
-            console.log(`Graph View: Parse result for ${mocFile.path} - nodes: ${mocParseResult.nodes.length}`);
 
             if (mocParseResult.nodes.length > 0) {
                 const mocNodes = await convertMOCToZKNodes(this.plugin, mocParseResult.nodes);

@@ -28,7 +28,6 @@ export class MOCFileMonitor {
      * 初始化监听器，注册 Vault 事件
      */
     initialize(): void {
-        console.log("MOC File Monitor: Initializing...");
 
         // 监听文件修改事件
         this.plugin.registerEvent(
@@ -65,7 +64,6 @@ export class MOCFileMonitor {
             })
         );
 
-        console.log("MOC File Monitor: Initialized successfully");
     }
 
     /**
@@ -175,7 +173,6 @@ export class MOCFileMonitor {
                 const hasChanged = await this.hasContentChanged(file);
                 
                 if (hasChanged) {
-                    console.log(`MOC Monitor: Content changed, refreshing views for ${file.path}`);
                     await this.refreshViews(file);
                 } 
             } catch (error) {
@@ -211,7 +208,6 @@ export class MOCFileMonitor {
      * 清理资源
      */
     cleanup(): void {
-        console.log("MOC File Monitor: Cleaning up...");
         
         // 清除所有防抖定时器
         for (const timer of this.debounceTimers.values()) {
@@ -222,7 +218,6 @@ export class MOCFileMonitor {
         // 清除哈希缓存
         this.contentHashCache.clear();
         
-        console.log("MOC File Monitor: Cleanup complete");
     }
 
     /**
