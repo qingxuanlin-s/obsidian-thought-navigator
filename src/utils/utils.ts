@@ -173,8 +173,7 @@ export async function parseMOCStructure(
                     relation: arrowRelation,
                     lineIndex: i,
                     indentLevel: indentLevel
-                });
-                console.log(`Found arrow relation at line ${i}, indent level ${indentLevel}: ${arrowRelation.source} -> ${arrowRelation.target}`);
+                });                
             }
             continue; // 跳过箭头关系行，不作为普通节点处理
         }
@@ -831,6 +830,13 @@ export async function addSvgPanZoom(
             }
         }
     })
+
+    // 将 panZoom 实例存储到 SVG 元素上，方便后续访问
+    const svgElement = document.getElementById(`${zkGraph.id}-svg`);
+    if (svgElement) {
+        // @ts-ignore
+        svgElement.panZoomInstance = panZoomTiger;
+    }
 
     const touchSvg = document.getElementById(`${zkGraph.id}-svg`);
 

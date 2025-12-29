@@ -5,6 +5,7 @@ import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
 import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
 import { tableModal } from "src/modal/tableModal";
 import { AddFreeNodeModal } from "src/modal/addFreeNodeModal";
+import { expandGraphModal } from "src/modal/expandGraphModal";
 import { addSvgPanZoom, convertMOCToZKNodes, displayWidth, mainNoteInit, MOCTreeNode, parseMOCStructure, random } from "src/utils/utils";
 
 export const ZK_INDEX_TYPE: string = "zk-index-type";
@@ -399,14 +400,12 @@ export class ZKIndexView extends ItemView {
 
             // 如果最后编辑在 2 秒内，说明还在编辑，再延迟 5 秒
             if (timeSinceLastEdit < 2000) {
-                console.log(`Index View: Still editing (${timeSinceLastEdit}ms ago), delaying refresh by 5s`);
                 if (changeRefreshTimer) {
                     clearTimeout(changeRefreshTimer);
                 }
                 changeRefreshTimer = setTimeout(smartChangeRefresh, 5000);
             } else {
                 // 超过 2 秒没有编辑，执行刷新
-                console.log(`Index View: Editing stopped (${timeSinceLastEdit}ms ago), setting refresh flag`);
                 this.plugin.RefreshIndexViewFlag = true;
                 changeRefreshTimer = null;
             }
@@ -419,8 +418,7 @@ export class ZKIndexView extends ItemView {
                 lastEditTime = Date.now();
                 
                 // 如果没有定时器在运行，启动一个
-                if (!changeRefreshTimer) {
-                    console.log(`Index View: File changed, starting smart refresh timer`);
+                if (!changeRefreshTimer) {                
                     changeRefreshTimer = setTimeout(smartChangeRefresh, 5000);
                 }
             }
@@ -437,7 +435,6 @@ export class ZKIndexView extends ItemView {
         this.registerEvent(this.app.workspace.on("zk-navigation:moc-file-changed", async (mocFile: TFile) => {
             // 只在 MOC 模式下且当前显示的是该 MOC 时才刷新
             if (this.plugin.settings.mocModeEnabled && this.isDisplayingMOC(mocFile)) {
-                console.log(`Index View: MOC file changed, refreshing view for ${mocFile.path}`);
                 const indexMermaidDiv = document.getElementById("zk-index-mermaid-container");
                 if (indexMermaidDiv) {
                     await this.smoothUpdateView(indexMermaidDiv, async () => {
@@ -477,7 +474,6 @@ export class ZKIndexView extends ItemView {
 
         // MOC 模式处理
         if (this.plugin.settings.mocModeEnabled) {
-            console.log('MOC-qx');
             await this.refreshBranchMermaidMOC(indexMermaidDiv);
             return;
         }
@@ -949,6 +945,33 @@ export class ZKIndexView extends ItemView {
                         await this.branchGrowingGit();
                     }
                 });
+
+                const centerBtn = new ExtraButtonComponent(playControllerDiv);
+                centerBtn.setIcon("target").setTooltip("居中");
+                centerBtn.onClick(() => {
+                    // 获取当前 SVG 的 pan-zoom 实例并居中
+                    const svgElement = indexMermaidDiv.querySelector(`#zk-index-mermaid-${this.plugin.settings.BranchTab}-svg`);
+                    if (svgElement) {
+                        // @ts-ignore
+                        const panZoomInstance = svgElement.panZoomInstance;
+                        if (panZoomInstance) {
+                            panZoomInstance.fit();
+                            panZoomInstance.center();
+                        }
+                    }
+                });
+
+                const expandBtn = new ExtraButtonComponent(playControllerDiv);
+                expandBtn.setIcon("expand").setTooltip(t("expand graph"));
+                expandBtn.onClick(async () => {
+                    // 获取当前分支的节点和 mermaid 字符串
+                    if (this.branchAllNodes && this.branchAllNodes[this.plugin.settings.BranchTab]) {
+                        const branchNodes = this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes;
+                        const entranceNode = this.branchEntranceNodes[this.plugin.settings.BranchTab];
+                        const mermaidStr = await this.generateFlowchartStr(branchNodes, entranceNode, this.plugin.settings.DirectionOfBranchGraph, this.mocReverseRelations);
+                        new expandGraphModal(this.app, this.plugin, branchNodes, [], mermaidStr).open();
+                    }
+                });
             }
 
             // 添加自由节点按钮（仅 MOC 模式）
@@ -987,9 +1010,7 @@ export class ZKIndexView extends ItemView {
         }
 
         // 解析 MOC 笔记结构
-        console.log(`Index View: Parsing MOC file: ${mocFilePath}, heading: ${headingTitle}`);
         const mocParseResult = await parseMOCStructure(this.app, mocFilePath, headingTitle);
-        console.log(`Index View: Parse result - nodes: ${mocParseResult.nodes.length}, metadata:`, mocParseResult.metadata);
         
         this.mocTreeStructure = mocParseResult.nodes;
         this.mocReverseRelations = mocParseResult.reverseRelations;
@@ -1017,10 +1038,6 @@ export class ZKIndexView extends ItemView {
         // 转换为 ZKNode 数组
         this.mocNodes = await convertMOCToZKNodes(this.plugin, mocParseResult.nodes, mocParseResult.reverseRelations);
         
-        // 调试信息
-        console.log("MOC Tree Structure:", this.mocTreeStructure);
-        console.log("Converted MOC Nodes:", this.mocNodes);
-        console.log("MOC Nodes IDStr mapping:", this.mocNodes.map(n => ({ id: n.ID, idStr: n.IDStr, isRoot: n.isRoot })));
 
         // 将 MOC 节点保存到本地变量，不要替换 MainNotes
         // MainNotes 应该保持原有的 Zettelkasten 笔记系统
@@ -1130,7 +1147,6 @@ export class ZKIndexView extends ItemView {
         
         if (currentActiveNode) {
             // 如果当前活动文件对应一个MOC节点，显示以它为根的子树
-            console.log("Found active node:", currentActiveNode);
             branchEntranceNodeArr = [currentActiveNode];
         } else {
             // 否则显示所有根节点
@@ -1200,10 +1216,6 @@ export class ZKIndexView extends ItemView {
                 n.IDStr === entranceNode.IDStr || n.IDStr.startsWith(entranceNode.IDStr + '.')
             );
             
-            // 调试信息
-            console.log(`Branch ${i} - Entrance Node:`, entranceNode);
-            console.log(`Branch ${i} - Filtered Nodes:`, branchNodes);
-            console.log(`Branch ${i} - All MOC Nodes:`, this.mocNodes);
 
             while (this.branchAllNodes.length <= i) {
                 this.branchAllNodes.push({ branchTab: this.branchAllNodes.length, branchNodes: [] });
@@ -1220,6 +1232,7 @@ export class ZKIndexView extends ItemView {
             }
 
             const mermaidStr = await this.generateFlowchartStr(branchNodes, entranceNode, this.plugin.settings.DirectionOfBranchGraph, this.mocReverseRelations);
+            
             const zkGraph = indexMermaidDiv.createEl("div", { cls: "zk-index-mermaid" });
             zkGraph.id = `zk-index-mermaid-${i}`;
 
@@ -1337,12 +1350,10 @@ export class ZKIndexView extends ItemView {
     }
 
     // MOC 模式专用的层级列表渲染
-    async generateHierarchicalListMOC(indexMermaidDiv: HTMLElement) {
-        console.log("generateHierarchicalListMOC called, mocTreeStructure length:", this.mocTreeStructure?.length);
+    async generateHierarchicalListMOC(indexMermaidDiv: HTMLElement) {    
 
         // 检查是否有树结构
         if (!this.mocTreeStructure || this.mocTreeStructure.length === 0) {
-            console.warn("MOC tree structure is empty");
             const headingTitle = this.plugin.settings.mocHeadingTitle;
             const errorDiv = indexMermaidDiv.createEl('div', {
                 text: `${t("No tree structure found under heading:")} # ${headingTitle}`,
@@ -1440,13 +1451,11 @@ export class ZKIndexView extends ItemView {
         };
 
         // 渲染所有根节点
-        console.log("Rendering root nodes, count:", this.mocTreeStructure.length);
         let renderedCount = 0;
         for (const rootNode of this.mocTreeStructure) {
             renderTreeNode(rootNode, listContainer, 0);
             renderedCount++;
         }
-        console.log("Rendered", renderedCount, "root nodes");
 
         // 保存到 branchAllNodes 供其他功能使用
         if (this.branchAllNodes.length === 0) {

@@ -135,6 +135,27 @@ padding: 5px;
   border-color: #00a8ff;
 }
 
+.zk-graph-icon-bottom {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 5px;
+  margin-top: 5px;
+}
+
+.zk-graph-icon-bottom > .clickable-icon {
+  background-color: #1a1f2e;
+  border: 1px solid #2a3f5f;
+  padding: 4px 8px;
+  color: #00a8ff;
+  margin: 0 2px;
+}
+
+.zk-graph-icon-bottom > .clickable-icon:hover {
+  background-color: #2a3f5f;
+  border-color: #00a8ff;
+}
+
 
 .top-buttons-div{
   display: flex;

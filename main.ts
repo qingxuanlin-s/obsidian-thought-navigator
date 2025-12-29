@@ -413,8 +413,7 @@ export default class ZKNavigationPlugin extends Plugin {
         // 初始化 MOC 文件监听器（用于实时同步）
         if (this.settings.mocModeEnabled) {
             this.mocFileMonitor = new MOCFileMonitor(this);
-            this.mocFileMonitor.initialize();
-            console.log("MOC File Monitor initialized");
+            this.mocFileMonitor.initialize();    
         }
 
     }
@@ -618,7 +617,6 @@ export default class ZKNavigationPlugin extends Plugin {
         if (this.mocFileMonitor) {
             this.mocFileMonitor.cleanup();
             this.mocFileMonitor = null;
-            console.log("MOC File Monitor cleaned up");
         }
         
         this.saveData(this.settings);
