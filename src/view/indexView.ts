@@ -1261,9 +1261,9 @@ export class ZKIndexView extends ItemView {
                                 const rectWidth = parseFloat(nodeRect.getAttribute('width') || '0');
                                 const rectHeight = parseFloat(nodeRect.getAttribute('height') || '0');
                                 
-                                // 创建按钮圆圈背景
+                                // 创建按钮圆圈背景（位置更靠近节点边缘）
                                 const btnCircle = document.createElementNS(svgNS, 'circle');
-                                btnCircle.setAttribute('cx', (rectX + rectWidth + 15).toString());
+                                btnCircle.setAttribute('cx', (rectX + rectWidth + 5).toString());
                                 btnCircle.setAttribute('cy', (rectY + rectHeight / 2).toString());
                                 btnCircle.setAttribute('r', '10');
                                 btnCircle.setAttribute('fill', '#4a9eff');
@@ -1271,7 +1271,7 @@ export class ZKIndexView extends ItemView {
                                 
                                 // 创建按钮文本 "+"
                                 const btnText = document.createElementNS(svgNS, 'text');
-                                btnText.setAttribute('x', (rectX + rectWidth + 15).toString());
+                                btnText.setAttribute('x', (rectX + rectWidth + 5).toString());
                                 btnText.setAttribute('y', (rectY + rectHeight / 2 + 4).toString());
                                 btnText.setAttribute('text-anchor', 'middle');
                                 btnText.setAttribute('fill', 'white');
@@ -2357,11 +2357,7 @@ export class ZKIndexView extends ItemView {
                 mermaidStr = mermaidStr + `${node.position}("${nodeText}");`;
             }
 
-            if (node.IDStr.startsWith(entranceNode.IDStr)) {
-                mermaidStr = mermaidStr + `style ${node.position} fill:${this.plugin.settings.nodeColor},stroke:#333,stroke-width:1px \n`;
-            } else {
-                mermaidStr = mermaidStr + `style ${node.position} fill:#fff; \n`;
-            }
+            mermaidStr = mermaidStr + `style ${node.position} fill:#2a3446,stroke:#5a6f7f,stroke-width:1px,color:#e0e0e0 \n`;
         }
 
         // 收集所有关系连线

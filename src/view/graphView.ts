@@ -737,10 +737,10 @@ export class ZKGraphView extends ItemView {
 
         if (currentNode.length > 0) {
             mermaidStr = mermaidStr + `${linkArr.length}("${currentNode[0].displayText}");
-            style ${linkArr.length} fill:${this.plugin.settings.nodeColor},stroke:#333,stroke-width:1px \n`;
+            style ${linkArr.length} fill:#1a5f8f,stroke:#2a7faf,stroke-width:2px,color:#fff \n`;
         } else {
             mermaidStr = mermaidStr + `${linkArr.length}("${currentFile.basename}");
-            style ${linkArr.length} fill:${this.plugin.settings.nodeColor},stroke:#333,stroke-width:1px \n`;
+            style ${linkArr.length} fill:#1a5f8f,stroke:#2a7faf,stroke-width:2px,color:#fff \n`;
         }
 
         for (let i = 0; i < linkArr.length; i++) {
@@ -750,7 +750,7 @@ export class ZKGraphView extends ItemView {
             } else {
                 mermaidStr = mermaidStr + `${i}("${linkArr[i].basename}");\n`;
             }
-            mermaidStr = mermaidStr + `style ${i} fill:#fff; \n`;
+            mermaidStr = mermaidStr + `style ${i} fill:#2a3446,stroke:#5a6f7f,stroke-width:1px,color:#e0e0e0 \n`;
             if (direction1 == 'in') {
                 mermaidStr = mermaidStr + `${i} --> ${linkArr.length};\n`;
             } else {
@@ -782,10 +782,10 @@ export class ZKGraphView extends ItemView {
 
         if (currentNode.length > 0) {
             mermaidStr = mermaidStr + `${currentFileIndex}("${this.escapeMermaidText(currentNode[0].displayText)}");
-            style ${currentFileIndex} fill:${this.plugin.settings.nodeColor},stroke:#333,stroke-width:1px \n`;
+            style ${currentFileIndex} fill:#1a5f8f,stroke:#2a7faf,stroke-width:2px,color:#fff \n`;
         } else {
             mermaidStr = mermaidStr + `${currentFileIndex}("${currentFile.basename}");
-            style ${currentFileIndex} fill:${this.plugin.settings.nodeColor},stroke:#333,stroke-width:1px \n`;
+            style ${currentFileIndex} fill:#1a5f8f,stroke:#2a7faf,stroke-width:2px,color:#fff \n`;
         }
 
         // 添加入链节点（索引 0 到 inlinkArr.length - 1）
@@ -796,7 +796,7 @@ export class ZKGraphView extends ItemView {
             } else {
                 mermaidStr = mermaidStr + `${i}("${inlinkArr[i].basename}");\n`;
             }
-            mermaidStr = mermaidStr + `style ${i} fill:#fff; \n`;
+            mermaidStr = mermaidStr + `style ${i} fill:#2a3446,stroke:#5a6f7f,stroke-width:1px,color:#e0e0e0 \n`;
             // 入链：节点 -> 当前文件
             mermaidStr = mermaidStr + `${i} --> ${currentFileIndex};\n`;
         }
@@ -810,7 +810,7 @@ export class ZKGraphView extends ItemView {
             } else {
                 mermaidStr = mermaidStr + `${nodeIndex}("${outlinkArr[i].basename}");\n`;
             }
-            mermaidStr = mermaidStr + `style ${nodeIndex} fill:#fff; \n`;
+            mermaidStr = mermaidStr + `style ${nodeIndex} fill:#2a3446,stroke:#5a6f7f,stroke-width:1px,color:#e0e0e0 \n`;
             // 出链：当前文件 -> 节点
             mermaidStr = mermaidStr + `${currentFileIndex} --> ${nodeIndex};\n`;
         }
@@ -832,10 +832,9 @@ export class ZKGraphView extends ItemView {
             }
 
             if (node.file == currentFile) {
-                mermaidStr = mermaidStr + `style ${node.position} fill:${this.plugin.settings.nodeColor},stroke:#333,stroke-width:1px \n`;
+                mermaidStr = mermaidStr + `style ${node.position} fill:#1a5f8f,stroke:#2a7faf,stroke-width:2px,color:#fff \n`;
             } else {
-                //白底
-                mermaidStr = mermaidStr + `style ${node.position} fill:#fff; \n`;
+                mermaidStr = mermaidStr + `style ${node.position} fill:#2a3446,stroke:#5a6f7f,stroke-width:1px,color:#e0e0e0 \n`;
             }
 
 
@@ -1317,9 +1316,9 @@ export class ZKGraphView extends ItemView {
             mermaidStr += `${node.position}("${nodeText}");\n`;
             // 高亮当前文件对应的节点
             if (highlightFile && node.file.path === highlightFile.path) {
-                mermaidStr += `style ${node.position} fill:${this.plugin.settings.nodeColor},stroke:#333,stroke-width:2px\n`;
+                mermaidStr += `style ${node.position} fill:#1a5f8f,stroke:#2a7faf,stroke-width:2px,color:#fff\n`;
             } else {
-                mermaidStr += `style ${node.position} fill:#fff,stroke:#333,stroke-width:1px\n`;
+                mermaidStr += `style ${node.position} fill:#2a3446,stroke:#5a6f7f,stroke-width:1px,color:#e0e0e0\n`;
             }
         }
 

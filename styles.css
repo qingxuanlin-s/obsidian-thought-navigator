@@ -1,12 +1,13 @@
 .zk-view-content{
-  background-color: rgba(var(--color-blue-rgb), 0.1);
+  background-color: #25303c;
 }
 
 .zk-index-toolbar{
-background-color: rgba(var(--color-blue-rgb), 0.2);
+background-color: #1a1f2e;
 margin:10px;
 margin-bottom: 5px;
 border-radius: 5px;
+border: 1px solid #2a3f5f;
 }
 
 .zk-index-toolbar-block{
@@ -25,10 +26,12 @@ padding: 5px;
   margin-bottom: 0px;
   border-radius: 5px;
   position: relative;
+  background-color: #25303c;
 }
 
 .zk-index-mermaid{
  border-radius: 5px;
+ background-color: #25303c;
 }
 .zk-index-mermaid svg{
   margin-top: 30px;
@@ -41,7 +44,7 @@ padding: 5px;
  }
 .zk-index-link{
   position: absolute;
-  background-color: rgba(var(--color-blue-rgb), 0.2);
+  background-color: #1a1f2e;
   margin-bottom: 0px;
   margin-top: 0px;
   border-radius: 5px;
@@ -49,6 +52,7 @@ padding: 5px;
   padding-left: 10px;
   padding-right: 15px;
   max-width: 50%;
+  border: 1px solid #2a3f5f;
 }
 
 .zk-tool-buttons {
@@ -62,14 +66,20 @@ padding: 5px;
 }
 
 .zk-tool-buttons > .clickable-icon {
-  background-color: rgba(var(--color-blue-rgb), 0.3);
+  background-color: #1a1f2e;
   margin-left: 2px;
   padding: 2px;
-  border: 1px solid;
+  border: 1px solid #2a3f5f;
+  color: #00a8ff;
+}
+
+.zk-tool-buttons > .clickable-icon:hover {
+  background-color: #2a3f5f;
+  border-color: #00a8ff;
 }
 
 .zk-extra-buttons{
-  background-color: rgba(var(--color-blue-rgb), 0.1);
+  background-color: #1a1f2e;
 }
 
 .zk-index-link > span {
@@ -77,31 +87,32 @@ padding: 5px;
 }
 
 .zk-index-link > span :hover {
-  background-color: rgba(var(--color-blue-rgb), 0.5);
+  background-color: #2a3f5f;
   border-radius: 3px;
-  border: 1px solid;  
+  border: 1px solid #00a8ff;  
 }
 
 .zk-branch-tab-select{ 
-  background-color: rgba(var(--color-blue-rgb), 0.5);
+  background-color: #2a3f5f;
   border-radius: 3px;
-  border: 1px solid;
+  border: 1px solid #00a8ff;
  }
  
 .zk-graph-mermaid { 
-  background-color: rgba(var(--color-blue-rgb), 0.1);
+  background-color: #25303c;
   margin: 5px;
   border-radius: 5px;
 }
 
 .zk-graph-text {  
   position: fixed;
-  background-color: rgba(var(--color-blue-rgb), 0.2);
+  background-color: #1a1f2e;
   margin:5px;
   margin-top: 0px;
   border-radius: 5px;
   padding: 5px;
   float: left;
+  border: 1px solid #2a3f5f;
 }
 
 .zk-graph-icon {
@@ -113,9 +124,15 @@ padding: 5px;
 }
 
 .zk-graph-icon >.clickable-icon {  
-  background-color: rgba(var(--color-blue-rgb), 0.3);
-  border: 1px solid;
+  background-color: #1a1f2e;
+  border: 1px solid #2a3f5f;
   padding: 2px;
+  color: #00a8ff;
+}
+
+.zk-graph-icon >.clickable-icon:hover {
+  background-color: #2a3f5f;
+  border-color: #00a8ff;
 }
 
 
@@ -152,14 +169,15 @@ padding: 5px;
 }
 
 .zk-table-view table thead tr {
-  background-color: rgba(var(--color-blue-rgb), 1);
-  color: var(--text-on-accent);
+  background-color: #00a8ff;
+  color: #ffffff;
 }
 
 .zk-table-view table th, .zk-table-view table td {
 	border-width: 1px;
 	padding: 8px;
 	border-style: solid;
+  border-color: #2a3f5f;
 }
 
 .zk-table-view table ul {
@@ -181,7 +199,7 @@ padding: 5px;
   
 }
 .zk-expand-graph{  
-  background-color: rgba(var(--color-blue-rgb), 0.1);
+  background-color: #25303c;
 }
 
 .recent-item{
@@ -226,10 +244,16 @@ padding: 5px;
 }
 
 .zk-play-controller > .clickable-icon {
-  background-color: rgba(var(--color-blue-rgb), 0.2);
+  background-color: #1a1f2e;
   margin: 1px;
   padding: 2px;
-  border: 1px solid;
+  border: 1px solid #2a3f5f;
+  color: #00a8ff;
+}
+
+.zk-play-controller > .clickable-icon:hover {
+  background-color: #2a3f5f;
+  border-color: #00a8ff;
 }
 
 .zk-hidden{
@@ -251,10 +275,11 @@ padding: 5px;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    background: var(--background-primary);
+    background: #1a1f2e;
     padding: 20px;
     border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    border: 1px solid #2a3f5f;
     z-index: 1000;
     display: flex;
     align-items: center;
@@ -266,8 +291,8 @@ padding: 5px;
 .zk-spinner {
     width: 20px;
     height: 20px;
-    border: 3px solid var(--background-modifier-border);
-    border-top-color: var(--interactive-accent);
+    border: 3px solid #2a3f5f;
+    border-top-color: #00a8ff;
     border-radius: 50%;
     animation: zk-spin 0.8s linear infinite;
 }
@@ -283,9 +308,9 @@ padding: 5px;
     margin-left: 10px;
     padding: 4px 8px;
     border-radius: 4px;
-    border: 1px solid var(--background-modifier-border);
-    background-color: var(--background-primary);
-    color: var(--text-normal);
+    border: 1px solid #2a3f5f;
+    background-color: #1a1f2e;
+    color: #e0e0e0;
     font-size: 12px;
     min-width: 120px;
     cursor: pointer;
@@ -293,19 +318,19 @@ padding: 5px;
 }
 
 .zk-moc-selector:hover {
-    background-color: var(--background-modifier-hover);
-    border-color: var(--interactive-accent);
+    background-color: #2a3f5f;
+    border-color: #00a8ff;
 }
 
 .zk-moc-selector:focus {
     outline: none;
-    border-color: var(--interactive-accent);
-    box-shadow: 0 0 0 2px var(--interactive-accent-hover);
+    border-color: #00a8ff;
+    box-shadow: 0 0 0 2px rgba(0, 168, 255, 0.3);
 }
 
 /* MOC 提示文本样式 */
 .zk-moc-hint {
-    color: var(--text-muted);
+    color: #808080;
     margin-left: 4px;
     font-size: 11px;
 }
@@ -323,7 +348,7 @@ padding: 5px;
 /* 文件建议器样式 */
 .suggestion-note {
     font-size: 0.8em;
-    color: var(--text-muted);
+    color: #808080;
     margin-top: 2px;
 }
 
@@ -334,7 +359,7 @@ padding: 5px;
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(var(--background-primary-rgb), 0.95);
+    background: rgba(15, 20, 25, 0.95);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -347,16 +372,17 @@ padding: 5px;
     align-items: center;
     gap: 10px;
     padding: 20px;
-    background: var(--background-primary);
+    background: #1a1f2e;
     border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    border: 1px solid #2a3f5f;
 }
 
 .zk-spinner {
     width: 20px;
     height: 20px;
-    border: 2px solid var(--background-modifier-border);
-    border-top: 2px solid var(--interactive-accent);
+    border: 2px solid #2a3f5f;
+    border-top: 2px solid #00a8ff;
     border-radius: 50%;
     animation: spin 1s linear infinite;
 }
@@ -371,25 +397,40 @@ padding: 5px;
     margin-left: 8px;
     padding: 4px 8px;
     border-radius: 4px;
-    border: 1px solid var(--background-modifier-border);
-    background: var(--background-primary);
-    color: var(--text-normal);
+    border: 1px solid #2a3f5f;
+    background: #1a1f2e;
+    color: #e0e0e0;
     font-size: 14px;
     min-width: 120px;
 }
 
 .zk-moc-hint {
-    color: var(--text-muted);
+    color: #808080;
     margin-left: 4px;
 }
 
 .zk-moc-file-input {
     margin-left: 10px;
     padding: 2px 8px;
-    border: 1px solid var(--background-modifier-border);
+    border: 1px solid #2a3f5f;
     border-radius: 4px;
-    background: var(--background-secondary);
-    color: var(--text-muted);
+    background: #1a1f2e;
+    color: #808080;
     font-size: 12px;
     cursor: pointer;
+}
+
+.zk-moc-file-input:hover {
+    background: #2a3f5f;
+    border-color: #00a8ff;
+}
+
+/* 节点添加按钮样式 */
+.zk-node-add-btn {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.zk-node-add-btn:hover {
+    transform: scale(1.1);
 }
