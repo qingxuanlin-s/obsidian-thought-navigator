@@ -117,6 +117,7 @@ export default {
     "id": "ID",
     "title": "文字标题",
     "both": "ID+标题",
+    "id-title": "ID+标题(无前缀)",
     "Current index: ": "当前关键词:",
     "random index": "随机关键词",
     "random main note": "随机主笔记",

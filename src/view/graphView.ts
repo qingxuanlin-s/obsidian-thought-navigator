@@ -66,19 +66,34 @@ export class ZKGraphView extends ItemView {
         // 记录上次刷新的文件路径，避免重复刷新
         let lastRefreshedFile: string | null = null;
 
-        this.registerEvent(this.app.vault.on("rename", () => {
-            lastRefreshedFile = null; // 重置，强制刷新
-            refresh();
+        this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+            // 只在索引文件或当前活动文件改名时刷新
+            if (file instanceof TFile) {
+                const activeFile = this.app.workspace.getActiveFile();
+                const isActiveFile = activeFile && (file.path === activeFile.path || oldPath === activeFile.path);
+                const isInMainNoteFolder = this.isFileInMainNoteFolders(file);
+                
+                if (isActiveFile || isInMainNoteFolder) {
+                    lastRefreshedFile = null;
+                    refresh();
+                }
+            }
         }));
 
-        this.registerEvent(this.app.vault.on("create", () => {
-            lastRefreshedFile = null;
-            refresh();
+        this.registerEvent(this.app.vault.on("create", (file) => {
+            // 只在索引文件创建时刷新
+            if (file instanceof TFile && this.isFileInMainNoteFolders(file)) {
+                lastRefreshedFile = null;
+                refresh();
+            }
         }));
 
-        this.registerEvent(this.app.vault.on("delete", () => {
-            lastRefreshedFile = null;
-            refresh();
+        this.registerEvent(this.app.vault.on("delete", (file) => {
+            // 只在索引文件删除时刷新
+            if (file instanceof TFile && this.isFileInMainNoteFolders(file)) {
+                lastRefreshedFile = null;
+                refresh();
+            }
         }));
 
         // 智能延迟刷新：监听文件内容变化
@@ -123,9 +138,12 @@ export class ZKGraphView extends ItemView {
             }
         }));
 
-        this.registerEvent(this.app.metadataCache.on("deleted", () => {
-            lastRefreshedFile = null;
-            refresh();
+        this.registerEvent(this.app.metadataCache.on("deleted", (file) => {
+            // 只在索引文件删除时刷新
+            if (file instanceof TFile && this.isFileInMainNoteFolders(file)) {
+                lastRefreshedFile = null;
+                refresh();
+            }
         }));
 
         this.registerEvent(this.app.workspace.on("active-leaf-change", async (leaf) => {
@@ -717,7 +735,7 @@ export class ZKGraphView extends ItemView {
 
     async genericLinksMermaidStr(currentFile: TFile, linkArr: TFile[], direction1: string = 'in', direction2: string) {
 
-        let mermaidStr: string = `%%{ init: { 'flowchart': { 'curve': 'basis', 'wrappingWidth': '3000' },
+        let mermaidStr: string = `%%{ init: { 'flowchart': { 'curve': 'basis', 'wrappingWidth': '5000' },
         'themeVariables':{ 'fontSize': '12px'}}}%% flowchart ${direction2};\n`
 
         let currentNode: ZKNode[] = [];
@@ -730,7 +748,7 @@ export class ZKGraphView extends ItemView {
         }
 
         if (currentNode.length > 0) {
-            mermaidStr = mermaidStr + `${linkArr.length}("${currentNode[0].displayText}");
+            mermaidStr = mermaidStr + `${linkArr.length}("${this.processDisplayText(currentNode[0].displayText)}");
             style ${linkArr.length} fill:#1a5f8f,stroke:#2a7faf,stroke-width:2px,color:#fff \n`;
         } else {
             mermaidStr = mermaidStr + `${linkArr.length}("${currentFile.basename}");
@@ -759,7 +777,7 @@ export class ZKGraphView extends ItemView {
     // 生成合并的出入链 Mermaid 字符串
     async genericInOutLinksMermaidStr(currentFile: TFile, inlinkArr: TFile[], outlinkArr: TFile[], direction: string) {
 
-        let mermaidStr: string = `%%{ init: { 'flowchart': { 'curve': 'basis', 'wrappingWidth': '3000' },
+        let mermaidStr: string = `%%{ init: { 'flowchart': { 'curve': 'basis', 'wrappingWidth': '5000' },
         'themeVariables':{ 'fontSize': '12px'}}}%% flowchart ${direction};\n`
 
         let currentNode: ZKNode[] = [];
@@ -775,7 +793,7 @@ export class ZKGraphView extends ItemView {
         const currentFileIndex = inlinkArr.length;
 
         if (currentNode.length > 0) {
-            mermaidStr = mermaidStr + `${currentFileIndex}("${this.escapeMermaidText(currentNode[0].displayText)}");
+            mermaidStr = mermaidStr + `${currentFileIndex}("${this.escapeMermaidText(this.processDisplayText(currentNode[0].displayText))}");
             style ${currentFileIndex} fill:#1a5f8f,stroke:#2a7faf,stroke-width:2px,color:#fff \n`;
         } else {
             mermaidStr = mermaidStr + `${currentFileIndex}("${currentFile.basename}");
@@ -786,7 +804,7 @@ export class ZKGraphView extends ItemView {
         for (let i = 0; i < inlinkArr.length; i++) {
             let node = this.plugin.MainNotes.find(n => n.file == inlinkArr[i]);
             if (typeof node !== 'undefined') {
-                mermaidStr = mermaidStr + `${i}("${this.escapeMermaidText(node.displayText)}");\n`;
+                mermaidStr = mermaidStr + `${i}("${this.escapeMermaidText(this.processDisplayText(node.displayText))}");\n`;
             } else {
                 mermaidStr = mermaidStr + `${i}("${inlinkArr[i].basename}");\n`;
             }
@@ -800,7 +818,7 @@ export class ZKGraphView extends ItemView {
             const nodeIndex = currentFileIndex + 1 + i;
             let node = this.plugin.MainNotes.find(n => n.file == outlinkArr[i]);
             if (typeof node !== 'undefined') {
-                mermaidStr = mermaidStr + `${nodeIndex}("${this.escapeMermaidText(node.displayText)}");\n`;
+                mermaidStr = mermaidStr + `${nodeIndex}("${this.escapeMermaidText(this.processDisplayText(node.displayText))}");\n`;
             } else {
                 mermaidStr = mermaidStr + `${nodeIndex}("${outlinkArr[i].basename}");\n`;
             }
@@ -814,15 +832,15 @@ export class ZKGraphView extends ItemView {
     }
 
     async genericFamilyMermaidStr(currentFile: TFile, direction: string) {
-        let mermaidStr: string = `%%{ init: { 'flowchart': { 'curve': 'basis', 'wrappingWidth': '3000' },
+        let mermaidStr: string = `%%{ init: { 'flowchart': { 'curve': 'basis', 'wrappingWidth': '5000' },
         'themeVariables':{ 'fontSize': '12px'}}}%% flowchart ${direction};`;
 
         for (let node of this.familyNodeArr) {
 
             if (this.plugin.settings.siblingLenToggle === true && node.fixWidth !== 0) {
-                mermaidStr = mermaidStr + `${node.position}("<p style='width:${node.fixWidth}px;margin:0px;'>${node.displayText}</p>");\n`;
+                mermaidStr = mermaidStr + `${node.position}("<p style='width:${node.fixWidth}px;margin:0px;'>${this.processDisplayText(node.displayText)}</p>");\n`;
             } else {
-                mermaidStr = mermaidStr + `${node.position}("${node.displayText}");\n`;
+                mermaidStr = mermaidStr + `${node.position}("${this.processDisplayText(node.displayText)}");\n`;
             }
 
             if (node.file == currentFile) {
@@ -1271,6 +1289,19 @@ export class ZKGraphView extends ItemView {
             .replace(/\n/g, ' ');     // 替换换行符
     }
 
+    /**
+     * 根据设置处理显示文本
+     * - "id-title": 去掉数字前缀，只显示标题部分
+     * - 其他模式: 保持原样
+     */
+    processDisplayText(text: string): string {
+        if (this.plugin.settings.NodeText === "id-title") {
+            // 去掉开头的数字和空格
+            return text.replace(/(: )\d+\s+/, "$1");
+        }
+        return text;
+    }
+
 
     
     // 生成 MOC 树的 Mermaid 字符串
@@ -1297,14 +1328,14 @@ export class ZKGraphView extends ItemView {
         const nodeMap = new Map<string, ZKNode>();
     
 
-        let mermaidStr = `%%{ init: { 'flowchart': { 'curve': 'basis', 'wrappingWidth': '3000' },
+        let mermaidStr = `%%{ init: { 'flowchart': { 'curve': 'basis', 'wrappingWidth': '5000' },
         'themeVariables':{ 'fontSize': '12px'}}}%% flowchart ${direction};\n`;
 
         // 添加节点
         for (const node of nodes) {
             nodeMap.set(node.IDStr,node);
 
-            const nodeText = this.escapeMermaidText(node.displayText);
+            const nodeText = this.escapeMermaidText(this.processDisplayText(node.displayText));
             mermaidStr += `${node.position}("${nodeText}");\n`;
             // 高亮当前文件对应的节点
             if (highlightFile && node.file.path === highlightFile.path) {
