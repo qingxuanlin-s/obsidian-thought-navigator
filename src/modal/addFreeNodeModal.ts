@@ -52,6 +52,11 @@ export class AddFreeNodeModal extends Modal {
         file: TFile | null;
         connectToNodeID?: string;
         connectionRelation?: string;
+        reverseRelation?: {
+            sourceID: string;
+            targetID: string;
+            relationText: string;
+        };
     }) => void;
 
     wikiLink: string = "";
@@ -59,6 +64,7 @@ export class AddFreeNodeModal extends Modal {
     relationText: string = "";
     connectToNodeID: string = "";
     connectionRelation: string = "";
+    isReverseConnection: boolean = false; // 是否为反向连接
 
     // UI 元素引用
     nodeIDSetting: Setting | null = null;
@@ -76,6 +82,11 @@ export class AddFreeNodeModal extends Modal {
             file: TFile | null;
             connectToNodeID?: string;
             connectionRelation?: string;
+            reverseRelation?: {
+                sourceID: string;
+                targetID: string;
+                relationText: string;
+            };
         }) => void
     ) {
         super(app);
@@ -200,6 +211,22 @@ export class AddFreeNodeModal extends Modal {
     }
 
     /**
+     * 根据文件名查找现有节点
+     */
+    private findNodeByFileName(fileName: string): ZKNode | null {
+        // 移除可能的 .md 后缀
+        const baseName = fileName.replace(/\.md$/, '');
+        
+        // 在可用节点中查找匹配的节点
+        const matchedNode = this.availableNodes.find(node => {
+            // 匹配文件的 basename
+            return node.file && node.file.basename === baseName;
+        });
+        
+        return matchedNode || null;
+    }
+
+    /**
      * 更新节点 ID 输入框
      */
     updateNodeIDInput(newID: string) {
@@ -214,7 +241,7 @@ export class AddFreeNodeModal extends Modal {
         const { contentEl } = this;
         contentEl.empty();
 
-        contentEl.createEl("h2", { text: "添加自由节点" });
+        contentEl.createEl("h2", { text: this.isReverseConnection ? "添加反向连接节点" : "添加自由节点" });
 
         // 连接到节点（必选，移到最前面）
         if (this.availableNodes.length > 0) {
@@ -224,11 +251,11 @@ export class AddFreeNodeModal extends Modal {
             });
 
             new Setting(contentEl)
-                .setName("连接到节点 *")
-                .setDesc("必选，选择要连接的父节点，将自动生成子节点 ID")
+                .setName(this.isReverseConnection ? "连接到节点 (目标) *" : "连接到节点 *")
+                .setDesc(this.isReverseConnection ? "新节点将指向此目标节点" : "必选，选择要连接的父节点，将自动生成子节点 ID")
                 .addDropdown((dropdown) => {
                     // 添加空选项作为提示
-                    dropdown.addOption("", "-- 请选择父节点 --");
+                    dropdown.addOption("", this.isReverseConnection ? "-- 目标节点已选定 --" : "-- 请选择父节点 --");
                     
                     Object.keys(nodeOptions).forEach((key) => {
                         dropdown.addOption(key, nodeOptions[key]);
@@ -237,14 +264,17 @@ export class AddFreeNodeModal extends Modal {
                     dropdown.setValue(this.connectToNodeID).onChange((value) => {
                         this.connectToNodeID = value;
                         
-                        // 当选择父节点后，自动生成子节点 ID
-                        if (value) {
+                        // 反向连接时不自动生成子节点 ID
+                        if (!this.isReverseConnection && value) {
                             const generatedID = this.generateChildNodeID(value);
                             this.updateNodeIDInput(generatedID);
-                        } else {
-                            this.updateNodeIDInput("");
                         }
                     });
+                    
+                    // 反向连接时禁用下拉框（目标已确定）
+                    if (this.isReverseConnection) {
+                        dropdown.setDisabled(true);
+                    }
                 });
         } else {
             // 如果没有可用节点，显示提示
@@ -265,22 +295,50 @@ export class AddFreeNodeModal extends Modal {
                     .setValue(this.wikiLink)
                     .onChange((value) => {
                         this.wikiLink = value;
+                        
+                        // 反向连接时，检查该文件是否已存在对应节点
+                        if (this.isReverseConnection && value.trim()) {
+                            const existingNode = this.findNodeByFileName(value.trim());
+                            if (existingNode) {
+                                // 如果节点已存在，使用现有节点的 ID
+                                this.updateNodeIDInput(existingNode.IDStr);
+                                new Notice(`检测到现有节点：${existingNode.IDStr}`);
+                            } else {
+                                // 如果节点不存在，恢复建议的 ID
+                                const suggestedID = this.generateChildNodeID(this.connectToNodeID);
+                                this.updateNodeIDInput(suggestedID);
+                            }
+                        }
                     });
 
                 // 添加文件建议器
-                new MarkdownFileSuggest(this.app, text.inputEl);
+                const fileSuggest = new MarkdownFileSuggest(this.app, text.inputEl);
+                
+                // 监听文件选择事件
+                text.inputEl.addEventListener('blur', () => {
+                    // 延迟执行，确保建议器的选择已完成
+                    setTimeout(() => {
+                        if (this.isReverseConnection && this.wikiLink.trim()) {
+                            const existingNode = this.findNodeByFileName(this.wikiLink.trim());
+                            if (existingNode) {
+                                this.updateNodeIDInput(existingNode.IDStr);
+                                new Notice(`检测到现有节点：${existingNode.IDStr}`);
+                            }
+                        }
+                    }, 100);
+                });
             });
 
         // 节点 ID 输入（自动生成，只读显示）
         this.nodeIDSetting = new Setting(contentEl)
             .setName("节点 ID")
-            .setDesc("自动生成，基于父节点 ID")
+            .setDesc(this.isReverseConnection ? "自动生成或从现有节点获取" : "自动生成，基于父节点 ID")
             .addText((text) => {
                 this.nodeIDInputEl = text.inputEl;
                 text
-                    .setPlaceholder(this.nodeID || "请先选择父节点")
+                    .setPlaceholder(this.nodeID || (this.isReverseConnection ? "选择 Wiki 链接后自动填充" : "请先选择父节点"))
                     .setValue(this.nodeID)
-                    .setDisabled(true) // 设置为只读
+                    .setDisabled(true) // 始终禁用手动编辑
                     .onChange((value) => {
                         this.nodeID = value;
                     });
@@ -289,10 +347,10 @@ export class AddFreeNodeModal extends Modal {
         // 连接关系描述
         new Setting(contentEl)
             .setName("连接关系")
-            .setDesc("可选，描述与父节点的关系")
+            .setDesc(this.isReverseConnection ? "描述新节点指向目标节点的关系" : "可选，描述与父节点的关系")
             .addText((text) =>
                 text
-                    .setPlaceholder("如：补充、扩展、澄清")
+                    .setPlaceholder(this.isReverseConnection ? "如：反驳、质疑、补充" : "如：补充、扩展、澄清")
                     .setValue(this.connectionRelation)
                     .onChange((value) => {
                         this.connectionRelation = value;
