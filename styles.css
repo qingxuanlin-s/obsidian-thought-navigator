@@ -455,3 +455,34 @@ padding: 5px;
 .zk-node-add-btn:hover {
     transform: scale(1.1);
 }
+
+/* 添加节点菜单样式 */
+.zk-add-node-menu {
+    background: #1a1f2e;
+    border: 1px solid #2a3f5f;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    padding: 4px;
+    min-width: 180px;
+}
+
+.zk-menu-option {
+    padding: 10px 16px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    font-size: 14px;
+    color: #e0e8f0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.zk-menu-option:hover {
+    background: #2a3f5f;
+    color: #00a8ff;
+}
+
+.zk-menu-option:active {
+    background: #3a4f6f;
+}

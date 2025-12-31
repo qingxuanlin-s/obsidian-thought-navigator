@@ -1305,11 +1305,16 @@ export class ZKIndexView extends ItemView {
                                     btnCircle.setAttribute('r', '10');
                                 });
                                 
-                                // 点击事件
+                                // 点击事件 - 显示菜单
                                 btnGroup.addEventListener('click', async (e) => {
                                     e.stopPropagation();
                                     e.preventDefault();
-                                    await this.addChildNodeToMOC(node);
+                                    
+                                    // 获取按钮的屏幕坐标
+                                    const btnRect = btnCircle.getBoundingClientRect();
+                                    
+                                    // 显示弹出菜单，位置在按钮右侧
+                                    this.showAddNodeMenu(btnRect, node, indexMermaidDiv);
                                 });
                                 
                                 // 添加到节点组中
@@ -3209,6 +3214,92 @@ export class ZKIndexView extends ItemView {
     }
 
     /**
+     * 显示添加节点菜单
+     */
+    showAddNodeMenu(btnRect: DOMRect, node: ZKNode, container: HTMLElement) {
+        // 移除已存在的菜单
+        const existingMenu = document.querySelector('.zk-add-node-menu');
+        if (existingMenu) {
+            existingMenu.remove();
+        }
+
+        // 创建菜单容器
+        const menu = document.body.createDiv('zk-add-node-menu');
+        menu.style.position = 'fixed';
+        // 菜单显示在按钮右侧
+        menu.style.left = `${btnRect.right + 10}px`;
+        menu.style.top = `${btnRect.top - 20}px`;
+        menu.style.zIndex = '10000';
+
+        // 正向连接选项
+        const forwardOption = menu.createDiv('zk-menu-option');
+        forwardOption.innerHTML = '➡️ 正向 (Link To)';
+        forwardOption.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            menu.remove();
+            await this.addChildNodeToMOC(node);
+        });
+
+        // 反向连接选项
+        const reverseOption = menu.createDiv('zk-menu-option');
+        reverseOption.innerHTML = '⬅️ 反向 (Link From)';
+        reverseOption.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            menu.remove();
+            await this.addReverseNodeToMOC(node);
+        });
+
+        // 点击其他地方关闭菜单
+        const closeMenu = (e: MouseEvent) => {
+            if (!menu.contains(e.target as Node)) {
+                menu.remove();
+                document.removeEventListener('click', closeMenu);
+            }
+        };
+        setTimeout(() => {
+            document.addEventListener('click', closeMenu);
+        }, 0);
+    }
+
+    /**
+     * 添加反向连接节点
+     */
+    async addReverseNodeToMOC(targetNode: ZKNode) {
+        // 生成建议的节点 ID（基于目标节点，和正向连接一致）
+        const suggestedID = this.generateChildNodeID(targetNode.IDStr);
+        
+        // 打开对话框
+        const modal = new AddFreeNodeModal(
+            this.app,
+            this.plugin,
+            this.mocNodes,
+            suggestedID,
+            async (result) => {
+                // 添加反向关系：新节点 -> 目标节点
+                result.reverseRelation = {
+                    sourceID: result.nodeID,
+                    targetID: targetNode.IDStr,
+                    relationText: result.connectionRelation || ''
+                };
+                
+                // 添加到 MOC 文件
+                await this.saveFreeNodeToMOC(result);
+                
+                // 刷新视图
+                await this.refreshBranchMermaid();
+            }
+        );
+        
+        // 预设连接到目标节点（反向）
+        modal.connectToNodeID = targetNode.IDStr;
+        modal.nodeID = suggestedID;
+        modal.isReverseConnection = true; // 标记为反向连接
+        
+        modal.onOpen();
+        modal.open();
+    }
+
+    /**
      * 为指定节点添加子节点
      */
     async addChildNodeToMOC(parentNode: ZKNode) {
@@ -3370,6 +3461,11 @@ export class ZKIndexView extends ItemView {
         file: TFile | null;
         connectToNodeID?: string;
         connectionRelation?: string;
+        reverseRelation?: {
+            sourceID: string;
+            targetID: string;
+            relationText: string;
+        };
     }) {
         const mocFilePath = this.plugin.settings.mocCurrentFile;
         if (!mocFilePath) {
@@ -3395,8 +3491,11 @@ export class ZKIndexView extends ItemView {
             // 构建节点行
             let newNodeLine: string;
             
-            // 如果有关系描述，添加到前面
-            if (result.relationText) {
+            // 如果有连接关系描述（正向连接的关系），添加到前面
+            if (result.connectionRelation) {
+                newNodeLine = `- ${result.connectionRelation} [[${result.wikiLink}]] \`${nodeID}\``;
+            } else if (result.relationText) {
+                // 兼容旧的 relationText 字段
                 newNodeLine = `- ${result.relationText} [[${result.wikiLink}]] \`${nodeID}\``;
             } else {
                 newNodeLine = `- [[${result.wikiLink}]] \`${nodeID}\``;
@@ -3444,10 +3543,10 @@ export class ZKIndexView extends ItemView {
             // 在指定位置插入新节点
             lines.splice(insertParentIndex, 0, newNodeLine);
             
-            // 如果有连接关系，添加箭头语法（在节点后面）
-            if (result.connectToNodeID && result.connectionRelation) {
-                const arrowLine = `- \`${nodeID}\` -- ${result.connectionRelation} --> \`${result.connectToNodeID}\``;
-                lines.splice(insertIndex + 1, 0, '', arrowLine);
+            // 如果是反向连接，添加箭头语法
+            if (result.reverseRelation) {
+                const arrowLine = `- \`${result.reverseRelation.sourceID}\` -- ${result.reverseRelation.relationText} --> \`${result.reverseRelation.targetID}\``;
+                lines.splice(insertParentIndex + 1, 0, '', arrowLine);
             }
             
             // 重新组合内容
