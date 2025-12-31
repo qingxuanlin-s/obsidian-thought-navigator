@@ -343,6 +343,7 @@ export class ZKIndexView extends ItemView {
             .addOption("id", t("id"))
             .addOption("title", t("title"))
             .addOption("both", t("both"))
+            .addOption("id-title", t("id-title"))
             .setValue(this.plugin.settings.NodeText)
             .onChange((NodeText) => {
                 this.plugin.settings.NodeText = NodeText;
@@ -1422,7 +1423,7 @@ export class ZKIndexView extends ItemView {
 
             // Wiki 链接
             const linkEl = contentDiv.createEl("a", {
-                text: node.displayText,
+                text: this.processDisplayText(node.displayText),
                 cls: "internal-link"
             });
             linkEl.setAttribute("href", node.file.path);
@@ -2332,9 +2333,22 @@ export class ZKIndexView extends ItemView {
             .replace(/\n/g, ' ');     // 替换换行符
     }
 
+    /**
+     * 根据设置处理显示文本
+     * - "id-title": 去掉数字前缀，只显示标题部分
+     * - 其他模式: 保持原样
+     */
+    processDisplayText(text: string): string {
+        if (this.plugin.settings.NodeText === "id-title") {
+            // 去掉开头的数字和空格
+            return text.replace(/(: )\d+\s+/, "$1");
+        }
+        return text;
+    }
+
     async generateFlowchartStr(Nodes: ZKNode[], entranceNode: ZKNode, direction: string, reverseRelations?: Map<string, ReverseRelation>) {
 
-        let mermaidStr: string = `%%{ init: { 'flowchart': { 'curve': 'base', 'wrappingWidth': '3000' },
+        let mermaidStr: string = `%%{ init: { 'flowchart': { 'curve': 'base', 'wrappingWidth': '5000' },
         'themeVariables':{ 'fontSize': '12px'}}}%% flowchart ${direction};\n`;
 
         // 构建反向关系映射
@@ -2362,7 +2376,7 @@ export class ZKIndexView extends ItemView {
         for (let node of Nodes) {
             nodeMap.set(node.IDStr, node);
 
-            let nodeText = this.escapeMermaidText(node.displayText);
+            let nodeText = this.escapeMermaidText(this.processDisplayText(node.displayText));
             let fixWidth = node.fixWidth;
 
             if (this.plugin.settings.siblingLenToggle === true && node.fixWidth > 0) {
@@ -3233,7 +3247,7 @@ export class ZKIndexView extends ItemView {
 
         // 正向连接选项
         const forwardOption = menu.createDiv('zk-menu-option');
-        forwardOption.innerHTML = '➡️ 正向 (Link To)';
+        forwardOption.innerHTML = '➡️ 正向';
         forwardOption.addEventListener('click', async (e) => {
             e.stopPropagation();
             menu.remove();
@@ -3242,7 +3256,7 @@ export class ZKIndexView extends ItemView {
 
         // 反向连接选项
         const reverseOption = menu.createDiv('zk-menu-option');
-        reverseOption.innerHTML = '⬅️ 反向 (Link From)';
+        reverseOption.innerHTML = '⬅️ 反向';
         reverseOption.addEventListener('click', async (e) => {
             e.stopPropagation();
             menu.remove();

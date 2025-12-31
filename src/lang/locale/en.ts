@@ -118,6 +118,7 @@ export default {
     "id": "id",
     "title": "title",
     "both": "both",
+    "id-title": "ID+Title(No Prefix)",
     "Current index: ": "Index:",
     "random index": "random keyword",
     "random main note": "random main note",
