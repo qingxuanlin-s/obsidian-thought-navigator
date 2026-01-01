@@ -1,0 +1,71 @@
+import { TFile } from "obsidian";
+import { ZKNode } from "src/view/indexView";
+
+/**
+ * 图形数据结构
+ */
+export interface GraphData {
+    nodes: ZKNode[];
+    edges: Edge[];
+    metadata: GraphMetadata;
+}
+
+export interface Edge {
+    id: string;
+    source: string;  // 源节点 ID
+    target: string;  // 目标节点 ID
+    type: 'parent' | 'child' | 'sibling' | 'link' | 'inlink' | 'outlink' | 'forward' | 'reverse';
+    label?: string;
+}
+
+export interface GraphMetadata {
+    currentFile: string;
+    timestamp: number;
+    hash: string;
+    renderType: 'family' | 'inoutlinks' | 'moc' | 'moc-tree' | 'index';
+}
+
+/**
+ * 视图状态
+ */
+export interface ViewState {
+    zoom: number;
+    pan: { x: number; y: number };
+    selectedNodes: string[];
+    expandedNodes: string[];
+    timestamp: number;
+}
+
+/**
+ * 渲染选项
+ */
+export interface RenderOptions {
+    direction?: 'TB' | 'BT' | 'LR' | 'RL';
+    layoutType?: 'breadthfirst' | 'dagre' | 'cose' | 'grid';
+    animate?: boolean;
+    animationDuration?: number;
+    nodeText?: 'id' | 'title' | 'both' | 'id-title';
+}
+
+/**
+ * 图形变化
+ */
+export interface GraphChanges {
+    addedNodes: ZKNode[];
+    removedNodes: ZKNode[];
+    updatedNodes: ZKNode[];
+    addedEdges: Edge[];
+    removedEdges: Edge[];
+    updatedEdges: Edge[];
+}
+
+/**
+ * 渲染器接口
+ */
+export interface IGraphRenderer {
+    render(container: HTMLElement, data: GraphData, options: RenderOptions): Promise<void>;
+    update(changes: GraphChanges): Promise<void>;
+    destroy(): void;
+    getState(): ViewState;
+    setState(state: ViewState): void;
+}

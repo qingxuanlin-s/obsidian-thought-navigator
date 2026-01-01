@@ -6,7 +6,10 @@ import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
 import { tableModal } from "src/modal/tableModal";
 import { AddFreeNodeModal } from "src/modal/addFreeNodeModal";
 import { expandGraphModal } from "src/modal/expandGraphModal";
-import { addSvgPanZoom, convertMOCToZKNodes, displayWidth, mainNoteInit, MOCTreeNode, parseMOCStructure, random } from "src/utils/utils";
+import { convertMOCToZKNodes, displayWidth, mainNoteInit, MOCTreeNode, parseMOCStructure, random, addSvgPanZoom } from "src/utils/utils";
+import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
+import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
+import { RenderOptions } from "src/renderer/types";
 
 export const ZK_INDEX_TYPE: string = "zk-index-type";
 export const ZK_INDEX_VIEW: string = t("zk-index-graph");
@@ -90,6 +93,9 @@ export class ZKIndexView extends ItemView {
     branchEntranceNodes: ZKNode[] = [];
     renderedBranches: Set<number> = new Set();
     indexMermaidContainer: HTMLElement | null = null;
+
+    // Cytoscape 渲染器
+    private branchRenderer: CytoscapeRenderer | null = null;
 
     // 性能优化：节点位置缓存 Map，O(1) 查找替代 O(n) filter
     nodePositionMap: Map<number, ZKNode> = new Map();
@@ -849,6 +855,7 @@ export class ZKIndexView extends ItemView {
     }
 
     // MOC 模式专用的刷新方法
+    // MOC 模式专用的刷新方法 - 使用 Cytoscape 渲染
     async refreshBranchMermaidMOC(indexMermaidDiv: HTMLElement) {
         indexMermaidDiv.empty();
 
@@ -876,11 +883,7 @@ export class ZKIndexView extends ItemView {
                 const canvasBtn = new ExtraButtonComponent(toolButtonsDiv);
                 canvasBtn.setIcon("layout-dashboard").setTooltip(t("export to canvas"));
                 canvasBtn.onClick(async () => {
-                    if (this.plugin.settings.graphType === "structure") {
-                        await this.generateCanvasStr();
-                    } else {
-                        await this.generateCanvasStrGit();
-                    }
+                    await this.generateCanvasStr();
                     await this.exportToCanvas();
                 });
             }
@@ -889,10 +892,9 @@ export class ZKIndexView extends ItemView {
                 const tableBtn = new ExtraButtonComponent(toolButtonsDiv);
                 tableBtn.setIcon("table").setTooltip(t("table view"));
                 tableBtn.onClick(async () => {
-                    if (this.branchAllNodes && this.branchAllNodes[this.plugin.settings.BranchTab]) {
-                        this.plugin.tableArr = this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
+                    if (this.mocNodes && this.mocNodes.length > 0) {
+                        this.plugin.tableArr = this.mocNodes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
                         await this.plugin.openTableView();
-                        this.plugin.clearShowingSettings(this.plugin.settings.BranchTab);
                     }
                 });
             }
@@ -901,81 +903,14 @@ export class ZKIndexView extends ItemView {
                 const listBtn = new ExtraButtonComponent(toolButtonsDiv);
                 listBtn.setIcon("list-tree").setTooltip(t("list tree"));
                 listBtn.onClick(async () => {
-                    if (this.branchAllNodes && this.branchAllNodes[this.plugin.settings.BranchTab]) {
-                        this.plugin.tableArr = this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
+                    if (this.mocNodes && this.mocNodes.length > 0) {
+                        this.plugin.tableArr = this.mocNodes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
                         await this.plugin.openOutlineView();
                     }
                 });
             }
 
-            if (this.plugin.settings.playControllerToggle === true) {
-                const playControllerDiv = indexMermaidDiv.createDiv("zk-play-controller");
-
-                const previousBtn = new ExtraButtonComponent(playControllerDiv);
-                previousBtn
-                    .setIcon('arrow-left')
-                    .setTooltip(t("playPrevious"))
-                    .onClick(async () => {
-                        this.playStatus.current = (this.playStatus.current - 1 + this.playStatus.total) % this.playStatus.total;
-                        if (this.plugin.settings.graphType === "structure") {
-                            await this.branchPlaying();
-                        } else {
-                            await this.branchPlayingGit();
-                        }
-                    });
-
-                const nextBtn = new ExtraButtonComponent(playControllerDiv);
-                nextBtn
-                    .setIcon('arrow-right')
-                    .setTooltip(t("playNext"))
-                    .onClick(async () => {
-                        this.playStatus.current = (this.playStatus.current + 1) % this.playStatus.total;
-                        if (this.plugin.settings.graphType === "structure") {
-                            await this.branchPlaying();
-                        } else {
-                            await this.branchPlayingGit();
-                        }
-                    });
-
-                const playBtn = new ExtraButtonComponent(playControllerDiv);
-                playBtn.setIcon("wand-2").setTooltip(t("growing animation"));
-                playBtn.onClick(async () => {
-                    if (this.plugin.settings.graphType === "structure") {
-                        await this.branchGrowing();
-                    } else {
-                        await this.branchGrowingGit();
-                    }
-                });
-
-                const centerBtn = new ExtraButtonComponent(playControllerDiv);
-                centerBtn.setIcon("target").setTooltip("居中");
-                centerBtn.onClick(() => {
-                    // 获取当前 SVG 的 pan-zoom 实例并居中
-                    const svgElement = indexMermaidDiv.querySelector(`#zk-index-mermaid-${this.plugin.settings.BranchTab}-svg`);
-                    if (svgElement) {
-                        // @ts-ignore
-                        const panZoomInstance = svgElement.panZoomInstance;
-                        if (panZoomInstance) {
-                            panZoomInstance.fit();
-                            panZoomInstance.center();
-                        }
-                    }
-                });
-
-                const expandBtn = new ExtraButtonComponent(playControllerDiv);
-                expandBtn.setIcon("expand").setTooltip(t("expand graph"));
-                expandBtn.onClick(async () => {
-                    // 获取当前分支的节点和 mermaid 字符串
-                    if (this.branchAllNodes && this.branchAllNodes[this.plugin.settings.BranchTab]) {
-                        const branchNodes = this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes;
-                        const entranceNode = this.branchEntranceNodes[this.plugin.settings.BranchTab];
-                        const mermaidStr = await this.generateFlowchartStr(branchNodes, entranceNode, this.plugin.settings.DirectionOfBranchGraph, this.mocReverseRelations);
-                        new expandGraphModal(this.app, this.plugin, branchNodes, [], mermaidStr).open();
-                    }
-                });
-            }
-
-            // 添加自由节点按钮（仅 MOC 模式）
+            // 添加自由节点按钮
             const addNodeBtn = new ExtraButtonComponent(toolButtonsDiv);
             addNodeBtn.setIcon("plus-circle").setTooltip("添加自由节点");
             addNodeBtn.onClick(async () => {
@@ -983,7 +918,34 @@ export class ZKIndexView extends ItemView {
             });
         }
 
-        // 获取 MOC 文件夹中的所有文件
+        // 添加播放控制器（底部居中）
+        if (this.plugin.settings.playControllerToggle === true) {
+            const playControllerDiv = indexMermaidDiv.createDiv("zk-play-controller");
+
+            // 居中按钮
+            const centerBtn = new ExtraButtonComponent(playControllerDiv);
+            centerBtn.setIcon("target").setTooltip("居中");
+            centerBtn.onClick(() => {
+                if (this.branchRenderer) {
+                    this.branchRenderer.fitAndCenter();
+                }
+            });
+
+            // 放大按钮
+            const expandBtn = new ExtraButtonComponent(playControllerDiv);
+            expandBtn.setIcon("expand").setTooltip(t("expand graph"));
+            expandBtn.onClick(() => {
+                // 使用 Cytoscape 的全屏功能
+                const branchGraphDiv = document.getElementById('zk-branch-cytoscape');
+                if (branchGraphDiv) {
+                    if (branchGraphDiv.requestFullscreen) {
+                        branchGraphDiv.requestFullscreen();
+                    }
+                }
+            });
+        }
+
+        // 获取 MOC 配置
         const mocFolder = this.plugin.settings.mocFolderPath;
         const headingTitle = this.plugin.settings.mocHeadingTitle;
 
@@ -992,206 +954,128 @@ export class ZKIndexView extends ItemView {
             return;
         }
 
-        // 获取当前选中的 MOC 文件或使用配置的文件
-        let mocFilePath = this.plugin.settings.mocCurrentFile;
+        // 获取 MOC 文件
+        const mocFiles = this.app.vault.getMarkdownFiles().filter(f => f.path.startsWith(mocFolder));
 
-        // 如果没有选中的文件，尝试从文件夹获取第一个
-        if (!mocFilePath) {
-            const mocFiles = this.app.vault.getMarkdownFiles()
-                .filter(f => f.path.startsWith(mocFolder + '/'));
-            if (mocFiles.length > 0) {
-                mocFilePath = mocFiles[0].path;
-                this.plugin.settings.mocCurrentFile = mocFilePath;
-            }
-        }
-
-        if (!mocFilePath) {
+        if (mocFiles.length === 0) {
             indexLinkDiv.createEl('abbr', { text: t("No MOC files found in the specified folder") });
             return;
         }
 
-        // 解析 MOC 笔记结构
-        const mocParseResult = await parseMOCStructure(this.app, mocFilePath, headingTitle);
-        
-        this.mocTreeStructure = mocParseResult.nodes;
-        this.mocReverseRelations = mocParseResult.reverseRelations;
-        
-        if (mocParseResult.nodes.length === 0) {
-            const errorMsg = `${t("No tree structure found under heading:")} # ${headingTitle}`;
-            console.warn(`Index View: ${errorMsg}`);
-            indexLinkDiv.createEl('abbr', { text: errorMsg });
-            
-            // 显示调试信息
-            if (mocParseResult.metadata.parseTime > 0) {
-                const debugInfo = indexMermaidDiv.createDiv("zk-debug-info");
-                debugInfo.style.padding = "20px";
-                debugInfo.style.color = "var(--text-muted)";
-                debugInfo.innerHTML = `
-                    <p>解析耗时: ${mocParseResult.metadata.parseTime}ms</p>
-                    <p>文件路径: ${mocParseResult.metadata.filePath}</p>
-                    <p>查找标题: ${mocParseResult.metadata.headingTitle}</p>
-                    <p>提示: 请确保 MOC 文件中存在一级标题 "# ${headingTitle}"</p>
-                `;
+        // 创建 MOC 文件选择器
+        indexLinkDiv.createEl('abbr', { text: t("Current MOC: ") });
+        const mocSelector = indexLinkDiv.createEl('select', { cls: 'zk-moc-selector' });
+        mocSelector.style.marginLeft = '8px';
+        mocSelector.style.padding = '4px 8px';
+        mocSelector.style.borderRadius = '4px';
+        mocSelector.style.border = '1px solid var(--background-modifier-border)';
+        mocSelector.style.backgroundColor = 'var(--background-primary)';
+        mocSelector.style.color = 'var(--text-normal)';
+        mocSelector.style.fontSize = '14px';
+        mocSelector.style.minWidth = '120px';
+
+        mocFiles.forEach(file => {
+            const option = mocSelector.createEl('option');
+            option.value = file.path;
+            option.text = file.basename;
+            if (this.plugin.settings.mocCurrentFile === file.path) {
+                option.selected = true;
             }
+        });
+
+        mocSelector.addEventListener('change', async () => {
+            this.plugin.settings.mocCurrentFile = mocSelector.value;
+            await this.plugin.saveData(this.plugin.settings);
+            await this.refreshBranchMermaidMOC(indexMermaidDiv);
+        });
+
+        // 解析当前 MOC 文件
+        const currentMOCPath = this.plugin.settings.mocCurrentFile || mocFiles[0].path;
+        const currentMOCFile = this.app.vault.getAbstractFileByPath(currentMOCPath);
+
+        if (!(currentMOCFile instanceof TFile)) {
+            indexLinkDiv.createEl('abbr', { text: "Invalid MOC file" });
             return;
         }
 
-        // 转换为 ZKNode 数组
+        const mocContent = await this.app.vault.read(currentMOCFile);
+        const mocParseResult = await parseMOCStructure(this.app, currentMOCPath, headingTitle);
+
+        if (mocParseResult.nodes.length === 0) {
+            indexLinkDiv.createEl('abbr', { text: t("No valid nodes found") });
+            return;
+        }
+
+        // 转换为 ZKNode
         this.mocNodes = await convertMOCToZKNodes(this.plugin, mocParseResult.nodes, mocParseResult.reverseRelations);
-        
+        this.mocReverseRelations = mocParseResult.reverseRelations;
 
-        // 将 MOC 节点保存到本地变量，不要替换 MainNotes
-        // MainNotes 应该保持原有的 Zettelkasten 笔记系统
+        // 创建图形容器
+        const branchGraphContainer = indexMermaidDiv.createDiv("zk-branch-graph-container");
+        const branchGraphDiv = branchGraphContainer.createEl("div", {
+            cls: "zk-graph-cytoscape"
+        });
+        branchGraphDiv.id = "zk-branch-cytoscape";
+        // 为顶部工具栏和底部留出空间
+        branchGraphDiv.style.height = `${this.containerEl.offsetHeight - 150}px`;
+        branchGraphDiv.style.width = "100%";
+        branchGraphDiv.style.marginBottom = "60px"; // 为底部按钮留出空间
 
-        // 检查当前活动文件在哪些MOC文件中出现
-        const currentActiveFile = this.app.workspace.getActiveFile();
-        const availableMOCs: Array<{file: TFile, hasActiveFile: boolean, nodes: ZKNode[]}> = [];
-        
-        const mocFiles = this.app.vault.getMarkdownFiles()
-            .filter(f => f.path.startsWith(mocFolder + '/'));
-            
-        // 检查每个MOC文件是否包含当前活动文件
-        for (const mocFile of mocFiles) {
-            const tempParseResult = await parseMOCStructure(this.app, mocFile.path, headingTitle);
-            const tempNodes = await convertMOCToZKNodes(this.plugin, tempParseResult.nodes, tempParseResult.reverseRelations);
-            const hasActiveFile = currentActiveFile ? tempNodes.some(n => n.file.path === currentActiveFile.path) : false;
-            availableMOCs.push({file: mocFile, hasActiveFile, nodes: tempNodes});
+        // 构建图形数据
+        const graphData = GraphDataBuilder.fromMOCTree(this.mocNodes, this.mocReverseRelations, null);
+
+        // 配置渲染选项
+        const options: RenderOptions = {
+            direction: (this.plugin.settings.DirectionOfBranchGraph || 'LR') as 'TB' | 'BT' | 'LR' | 'RL',
+            layoutType: 'dagre',
+            animate: true,
+            animationDuration: 500,
+            nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title'
+        };
+
+        // 创建或复用渲染器
+        if (this.branchRenderer) {
+            this.branchRenderer.destroy();
         }
-        
-        // 如果当前活动文件在多个MOC中，优先选择包含该文件的MOC
-        const mocsWithActiveFile = availableMOCs.filter(m => m.hasActiveFile);
-        if (mocsWithActiveFile.length > 0 && !mocFilePath) {
-            // 如果没有指定MOC文件，默认选择第一个包含当前文件的MOC
-            mocFilePath = mocsWithActiveFile[0].file.path;
-            this.plugin.settings.mocCurrentFile = mocFilePath;
-        }
-        
-        // 显示MOC选择器
-        const mocFile = this.app.vault.getFileByPath(mocFilePath);
-        indexLinkDiv.createEl('abbr', { text: t("Current MOC: ") });
+        this.branchRenderer = new CytoscapeRenderer();
 
-        if (availableMOCs.length > 1) {
-            // 创建下拉选择器
-            const mocSelector = indexLinkDiv.createEl('select', { cls: 'zk-moc-selector' });
-            mocSelector.style.marginLeft = '8px';
-            mocSelector.style.padding = '4px 8px';
-            mocSelector.style.borderRadius = '4px';
-            mocSelector.style.border = '1px solid var(--background-modifier-border)';
-            mocSelector.style.backgroundColor = 'var(--background-primary)';
-            mocSelector.style.color = 'var(--text-normal)';
-            mocSelector.style.fontSize = '14px';
-            mocSelector.style.minWidth = '120px';
-            
-            // 优先显示包含当前文件的MOC
-            const sortedMOCs = [...availableMOCs].sort((a, b) => {
-                if (a.hasActiveFile && !b.hasActiveFile) return -1;
-                if (!a.hasActiveFile && b.hasActiveFile) return 1;
-                return a.file.basename.localeCompare(b.file.basename);
-            });
-            
-            sortedMOCs.forEach((mocInfo) => {
-                const option = mocSelector.createEl('option');
-                option.value = mocInfo.file.path;
-                option.textContent = `${mocInfo.file.basename}${mocInfo.hasActiveFile ? ' ✓' : ''}`;
-                if (mocInfo.file.path === mocFilePath) {
-                    option.selected = true;
-                }
-            });
-            
-            mocSelector.addEventListener('change', async () => {
-                this.plugin.settings.mocCurrentFile = mocSelector.value;
-                this.plugin.settings.BranchTab = 0;
-                this.renderedBranches.clear();
-                await this.refreshBranchMermaid();
-            });
-            
-            // 如果当前文件在多个思维树中，添加提示
-            if (mocsWithActiveFile.length > 1) {
-                const hintSpan = indexLinkDiv.createEl('small', { 
-                    text: ` (在${mocsWithActiveFile.length}个思维树中)`,
-                    cls: 'zk-moc-hint'
-                });
-                hintSpan.style.color = 'var(--text-muted)';
-                hintSpan.style.marginLeft = '4px';
+        // 渲染图形
+        await this.branchRenderer.render(branchGraphDiv, graphData, options);
+
+        // 监听节点点击事件
+        branchGraphDiv.addEventListener('node-click', (event: any) => {
+            const { node, ctrlKey, shiftKey } = event.detail;
+
+            if (ctrlKey) {
+                // Ctrl + 点击：在新标签页打开
+                this.app.workspace.openLinkText("", node.file.path, 'tab');
+            } else if (shiftKey) {
+                // Shift + 点击：在图形视图中打开
+                this.plugin.retrivalforLocaLgraph = {
+                    type: '1',
+                    ID: node.ID,
+                    filePath: node.file.path,
+                };
+                this.plugin.openGraphView();
+            } else {
+                // 普通点击：打开文件
+                this.app.workspace.openLinkText("", node.file.path);
             }
-        } else if (mocFile instanceof TFile) {
-            // 只有一个MOC文件时，显示链接
-            const link = indexLinkDiv.createEl('a', { text: `【${mocFile.basename} - ${headingTitle}】` });
-            link.addEventListener("click", (event: MouseEvent) => {
-                if (event.ctrlKey) {
-                    this.app.workspace.openLinkText("", mocFile.path, 'tab');
-                } else {
-                    this.app.workspace.openLinkText("", mocFile.path);
-                }
+        });
+
+        // 监听节点悬停事件
+        branchGraphDiv.addEventListener('node-hover', (event: any) => {
+            const { node, event: mouseEvent } = event.detail;
+
+            this.app.workspace.trigger('hover-link', {
+                event: mouseEvent,
+                source: 'zk-navigation',
+                hoverParent: branchGraphDiv,
+                linktext: "",
+                targetEl: mouseEvent.target,
+                sourcePath: node.file.path,
             });
-            link.addEventListener(`mouseover`, (event: MouseEvent) => {
-                this.app.workspace.trigger(`hover-link`, {
-                    event,
-                    source: ZK_NAVIGATION,
-                    hoverParent: link,
-                    linktext: "",
-                    targetEl: link,
-                    sourcePath: mocFile.path,
-                });
-            });
-        }
-
-        // 构建分支入口节点（MOC 模式下的特殊处理）
-        let branchEntranceNodeArr: ZKNode[] = [];
-        
-        // 检查当前活动文件是否在MOC节点中
-        let currentActiveNode: ZKNode | null = null;
-        
-        if (currentActiveFile) {
-            currentActiveNode = this.mocNodes.find(n => n.file.path === currentActiveFile.path) || null;
-        }
-        
-        if (currentActiveNode) {
-            // 如果当前活动文件对应一个MOC节点，显示以它为根的子树
-            branchEntranceNodeArr = [currentActiveNode];
-        } else {
-            // 否则显示所有根节点
-            branchEntranceNodeArr = this.mocNodes.filter(n => n.isRoot);
-        }
-
-        if (branchEntranceNodeArr.length > 0) {
-            // 保存分支入口节点和容器引用，用于按需渲染
-            this.branchEntranceNodes = branchEntranceNodeArr;
-            this.indexMermaidContainer = indexMermaidDiv;
-            this.renderedBranches.clear();
-
-            switch (this.plugin.settings.graphType) {
-                case "structure":
-                    await this.generateFlowchartMOC(branchEntranceNodeArr, indexMermaidDiv, 0);
-                    break;
-                case "roadmap":
-                    await this.generateGitgraphMOC(branchEntranceNodeArr, indexMermaidDiv, 0);
-                    break;
-                default:
-                // do nothing
-            }
-
-            // 添加分支图标（如果有多个根节点）
-            await this.addBranchIcon(branchEntranceNodeArr, indexLinkDiv);
-        }
-
-        if (this.plugin.settings.ListTree === true) {
-            if (this.branchAllNodes && this.branchAllNodes[this.plugin.settings.BranchTab]) {
-                this.plugin.tableArr = this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes;
-                this.app.workspace.trigger("zk-navigation:refresh-outline-view");
-            }
-        }
-
-        if (this.plugin.settings.TableView === true) {
-            if (this.branchAllNodes && this.branchAllNodes[this.plugin.settings.BranchTab]) {
-                this.plugin.tableArr = this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
-                this.app.workspace.trigger("zk-navigation:refresh-table-view");
-            }
-        }
-
-        if (this.plugin.settings.playControllerToggle === true) {
-            this.resetController();
-        }
+        });
 
         this.plugin.indexViewOffsetWidth = this.containerEl.offsetWidth;
         this.plugin.indexViewOffsetHeight = this.containerEl.offsetHeight;
