@@ -41,6 +41,7 @@ padding: 5px;
  }
  .zk-graph-top{
   position: relative;
+  z-index: 10; /* 确保工具栏在最上层 */
  }
 .zk-index-link{
   position: absolute;
@@ -102,6 +103,24 @@ padding: 5px;
   background-color: #25303c;
   margin: 5px;
   border-radius: 5px;
+}
+
+/* Cytoscape 图形容器样式 */
+.zk-graph-cytoscape {
+  background-color: transparent; /* 改为透明 */
+  margin: 5px;
+  border-radius: 5px;
+  border: 1px solid var(--background-modifier-border);
+  position: relative;
+  overflow: hidden;
+}
+
+/* 分支图形容器 */
+.zk-branch-graph-container {
+  position: relative;
+  margin-top: 50px; /* 为工具栏留出空间 */
+  z-index: 1; /* 确保在工具栏下方 */
+  background-color: transparent; /* 改为透明 */
 }
 
 .zk-graph-text {  
@@ -262,6 +281,7 @@ padding: 5px;
   bottom: 15px;
   left: 45%;
   display: flex;
+  z-index: 100; /* 确保在图形容器上方 */
 }
 
 .zk-play-controller > .clickable-icon {
