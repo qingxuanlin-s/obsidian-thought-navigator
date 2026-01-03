@@ -5727,7 +5727,9 @@ export class ZKIndexView extends ItemView {
             }
             
             // 检查是否已存在相同的箭头关系
-            const arrowPattern = new RegExp(`\`${sourceID}\`\\s*--.*?-->\\s*\`${targetID}\``);
+            const escapedSource = sourceID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const escapedTarget = targetID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->\\s*${escapedTarget}\\b`);
             for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
                 if (arrowPattern.test(lines[i])) {
                     new Notice(`箭头关系已存在: ${sourceID} → ${targetID}`);
@@ -5737,8 +5739,8 @@ export class ZKIndexView extends ItemView {
             
             // 构建箭头关系行
             const arrowLine = relationText 
-                ? `\`${sourceID}\` -- ${relationText} --> \`${targetID}\``
-                : `\`${sourceID}\` --> \`${targetID}\``;
+                ? `${sourceID} -- ${relationText} --> ${targetID}`
+                : `${sourceID} --> ${targetID}`;
             
             // 查找 ext 行的位置（箭头关系应该插入在 ext 行之前）
             let insertIndex = sectionEndIndex;
@@ -5816,9 +5818,11 @@ export class ZKIndexView extends ItemView {
             }
             
             // 查找并删除箭头关系行
-            // 箭头关系格式：`sourceID` -- label --> `targetID` 或 `sourceID` --> `targetID`
+            // 箭头关系格式：sourceID -- label --> targetID 或 sourceID --> targetID
             let arrowLineIndex = -1;
-            const arrowPattern = new RegExp(`\`${sourceID}\`\\s*--.*?-->\\s*\`${targetID}\``);
+            const escapedSource = sourceID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const escapedTarget = targetID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->\\s*${escapedTarget}\\b`);
             
             for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
                 const line = lines[i];
@@ -5885,9 +5889,12 @@ export class ZKIndexView extends ItemView {
             }
             
             // 查找箭头关系行
-            // 箭头关系格式：`sourceID` -- label --> `targetID` 或 `sourceID` --> `targetID`
+            // 箭头关系格式：sourceID -- label --> targetID 或 sourceID --> targetID
             let arrowLineIndex = -1;
-            const arrowPattern = new RegExp(`\`${sourceID}\`\\s*--.*?-->\\s*\`${targetID}\``);
+            // 转义正则表达式特殊字符
+            const escapedSource = sourceID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const escapedTarget = targetID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->\\s*${escapedTarget}\\b`);
             
             for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
                 const line = lines[i];
@@ -5909,11 +5916,11 @@ export class ZKIndexView extends ItemView {
             
             let newLine: string;
             if (newLabel) {
-                // 有标签：`sourceID` -- label --> `targetID`
-                newLine = `${indent}\`${sourceID}\` -- ${newLabel} --> \`${targetID}\``;
+                // 有标签：sourceID -- label --> targetID
+                newLine = `${indent}${sourceID} -- ${newLabel} --> ${targetID}`;
             } else {
-                // 无标签：`sourceID` --> `targetID`
-                newLine = `${indent}\`${sourceID}\` --> \`${targetID}\``;
+                // 无标签：sourceID --> targetID
+                newLine = `${indent}${sourceID} --> ${targetID}`;
             }
             
             // 替换该行
