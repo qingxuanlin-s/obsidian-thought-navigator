@@ -1333,6 +1333,26 @@ export class ZKIndexView extends ItemView {
             
             menu.addSeparator();
             
+            // 修改节点 ID 选项
+            menu.addItem((item) => {
+                item.setTitle("✏️ 修改节点 ID")
+                    .setIcon("pencil")
+                    .onClick(async () => {
+                        await this.renameNodeID(node);
+                    });
+            });
+            
+            // 修改节点颜色选项
+            menu.addItem((item) => {
+                item.setTitle("🎨 修改节点颜色")
+                    .setIcon("palette")
+                    .onClick(async () => {
+                        await this.changeNodeColor(node);
+                    });
+            });
+            
+            menu.addSeparator();
+            
             // 打开文件选项
             menu.addItem((item) => {
                 item.setTitle("📄 打开文件")
@@ -3627,6 +3647,241 @@ export class ZKIndexView extends ItemView {
         setTimeout(() => {
             document.addEventListener('click', closeMenu);
         }, 0);
+    }
+
+    /**
+     * 修改节点 ID
+     */
+    async renameNodeID(node: ZKNode) {
+        // 显示输入对话框
+        const newID = await this.showNodeIDInputDialog(node.IDStr);
+        
+        if (!newID || newID === node.IDStr) {
+            return; // 取消或未修改
+        }
+        
+        // 检查新 ID 是否已存在
+        const existingNode = this.mocNodes.find(n => n.IDStr === newID);
+        if (existingNode) {
+            new Notice(`节点 ID "${newID}" 已存在，请使用其他 ID`);
+            return;
+        }
+        
+        // 在刷新前保存所有节点的当前位置
+        await this.saveAllNodePositionsBeforeRefresh();
+        
+        try {
+            const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+            if (mocFile) {
+                await this.updateNodeIDInMOC(mocFile, node.IDStr, newID);
+                
+                // 刷新视图
+                await this.refreshBranchMermaid();
+                
+                new Notice(`已将节点 ID 从 "${node.IDStr}" 修改为 "${newID}"`);
+            }
+        } catch (error) {
+            console.error('Failed to rename node ID:', error);
+            new Notice(`修改节点 ID 失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 显示节点 ID 输入对话框
+     */
+    private showNodeIDInputDialog(currentID: string): Promise<string | null> {
+        return new Promise((resolve) => {
+            const modal = new Modal(this.app);
+            modal.titleEl.setText('修改节点 ID');
+            
+            const { contentEl } = modal;
+            contentEl.empty();
+            contentEl.style.padding = '20px';
+            
+            const infoDiv = contentEl.createDiv();
+            infoDiv.style.marginBottom = '15px';
+            infoDiv.style.padding = '10px';
+            infoDiv.style.backgroundColor = 'var(--background-secondary)';
+            infoDiv.style.borderRadius = '4px';
+            infoDiv.style.color = 'var(--text-muted)';
+            infoDiv.innerHTML = `
+                <div style="margin-bottom: 5px;">当前 ID: <strong>${currentID}</strong></div>
+                <div style="font-size: 0.9em;">注意：修改 ID 后，所有相关的箭头关系也会自动更新</div>
+            `;
+            
+            const inputContainer = contentEl.createDiv();
+            inputContainer.style.marginBottom = '15px';
+            
+            const label = inputContainer.createEl('label', { text: '新的节点 ID：' });
+            label.style.display = 'block';
+            label.style.marginBottom = '5px';
+            label.style.color = 'var(--text-normal)';
+            
+            const input = inputContainer.createEl('input', {
+                type: 'text',
+                value: currentID
+            });
+            input.style.width = '100%';
+            input.style.padding = '8px';
+            input.style.border = '1px solid var(--background-modifier-border)';
+            input.style.borderRadius = '4px';
+            input.style.backgroundColor = 'var(--background-primary)';
+            input.style.color = 'var(--text-normal)';
+            
+            const buttonContainer = contentEl.createDiv();
+            buttonContainer.style.display = 'flex';
+            buttonContainer.style.justifyContent = 'flex-end';
+            buttonContainer.style.gap = '10px';
+            
+            const cancelButton = buttonContainer.createEl('button', { text: '取消' });
+            cancelButton.style.padding = '6px 16px';
+            cancelButton.style.border = '1px solid var(--background-modifier-border)';
+            cancelButton.style.borderRadius = '4px';
+            cancelButton.style.backgroundColor = 'var(--background-primary)';
+            cancelButton.style.color = 'var(--text-normal)';
+            cancelButton.style.cursor = 'pointer';
+            cancelButton.addEventListener('click', () => {
+                modal.close();
+                resolve(null);
+            });
+            
+            const confirmButton = buttonContainer.createEl('button', { text: '确认' });
+            confirmButton.style.padding = '6px 16px';
+            confirmButton.style.border = 'none';
+            confirmButton.style.borderRadius = '4px';
+            confirmButton.style.backgroundColor = '#5b8fd9';
+            confirmButton.style.color = '#ffffff';
+            confirmButton.style.cursor = 'pointer';
+            confirmButton.addEventListener('click', () => {
+                const newID = input.value.trim();
+                if (!newID) {
+                    new Notice('节点 ID 不能为空');
+                    return;
+                }
+                modal.close();
+                resolve(newID);
+            });
+            
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    const newID = input.value.trim();
+                    if (!newID) {
+                        new Notice('节点 ID 不能为空');
+                        return;
+                    }
+                    modal.close();
+                    resolve(newID);
+                } else if (e.key === 'Escape') {
+                    modal.close();
+                    resolve(null);
+                }
+            });
+            
+            modal.open();
+            setTimeout(() => {
+                input.focus();
+                input.select();
+            }, 0);
+        });
+    }
+
+    /**
+     * 在 MOC 文件中更新节点 ID
+     */
+    private async updateNodeIDInMOC(mocFile: TFile, oldID: string, newID: string): Promise<void> {
+        try {
+            const content = await this.app.vault.read(mocFile);
+            const lines = content.split('\n');
+            const headingTitle = this.plugin.settings.mocHeadingTitle;
+            
+            // 查找思维树标题的范围
+            let headingIndex = -1;
+            let sectionEndIndex = lines.length;
+            
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].trim() === `# ${headingTitle}`) {
+                    headingIndex = i;
+                    for (let j = i + 1; j < lines.length; j++) {
+                        if (lines[j].trim().startsWith('# ')) {
+                            sectionEndIndex = j;
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+            
+            if (headingIndex === -1) {
+                new Notice(`未找到标题: # ${headingTitle}`);
+                return;
+            }
+            
+            // 更新节点行中的 ID
+            const nodePattern = new RegExp(`(\\[\\[.*?\\]\\])\\s*\`${oldID}\``);
+            let updated = false;
+            
+            for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
+                if (nodePattern.test(lines[i])) {
+                    lines[i] = lines[i].replace(nodePattern, `$1 \`${newID}\``);
+                    updated = true;
+                    break;
+                }
+            }
+            
+            if (!updated) {
+                new Notice(`未找到节点: ${oldID}`);
+                return;
+            }
+            
+            // 更新所有箭头关系中的 ID
+            const arrowPattern1 = new RegExp(`\`${oldID}\`(\\s*--.*?-->)`, 'g');
+            const arrowPattern2 = new RegExp(`(-->\\s*)\`${oldID}\``, 'g');
+            
+            for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
+                lines[i] = lines[i].replace(arrowPattern1, `\`${newID}\`$1`);
+                lines[i] = lines[i].replace(arrowPattern2, `$1\`${newID}\``);
+            }
+            
+            // 更新 ext 数据中的节点位置和边弧度
+            for (let i = sectionEndIndex - 1; i > headingIndex; i--) {
+                const line = lines[i].trim();
+                const match = line.match(/^%%\s*ext:\s*(\{.*\})\s*%%$/);
+                if (match) {
+                    try {
+                        const extData = JSON.parse(match[1]);
+                        
+                        // 更新节点位置
+                        if (extData.node_positions && extData.node_positions[oldID]) {
+                            extData.node_positions[newID] = extData.node_positions[oldID];
+                            delete extData.node_positions[oldID];
+                        }
+                        
+                        // 更新边弧度（需要更新包含该节点的所有边 key）
+                        if (extData.edge_curvatures) {
+                            const newCurvatures: Record<string, any> = {};
+                            Object.entries(extData.edge_curvatures).forEach(([key, value]) => {
+                                // key 格式: "source-target"
+                                const parts = key.split('-');
+                                const newKey = parts.map(part => part === oldID ? newID : part).join('-');
+                                newCurvatures[newKey] = value;
+                            });
+                            extData.edge_curvatures = newCurvatures;
+                        }
+                        
+                        lines[i] = `%% ext:${JSON.stringify(extData)} %%`;
+                    } catch (e) {
+                        console.error('Failed to parse ext data:', e);
+                    }
+                    break;
+                }
+            }
+            
+            await this.app.vault.modify(mocFile, lines.join('\n'));
+            console.log(`Updated node ID from ${oldID} to ${newID}`);
+        } catch (error) {
+            console.error('Failed to update node ID:', error);
+            throw error;
+        }
     }
 
     /**
