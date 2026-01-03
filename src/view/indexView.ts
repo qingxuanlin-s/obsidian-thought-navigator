@@ -110,6 +110,9 @@ export class ZKIndexView extends ItemView {
     resizeTimeout: NodeJS.Timeout | null = null;
     edgeCurvatureSaveTimeout: NodeJS.Timeout | null = null;
     nodePositionSaveTimeout: NodeJS.Timeout | null = null;
+    
+    // 视图状态缓存（缩放和平移）
+    private savedViewState: { zoom: number; pan: { x: number; y: number } } | null = null;
 
     constructor(leaf: WorkspaceLeaf, plugin: ZKNavigationPlugin) {
         super(leaf);
@@ -1049,12 +1052,30 @@ export class ZKIndexView extends ItemView {
 
         // 创建或复用渲染器
         if (this.branchRenderer) {
+            // 保存当前视图状态
+            const state = this.branchRenderer.getState();
+            this.savedViewState = {
+                zoom: state.zoom,
+                pan: state.pan
+            };
+            
             this.branchRenderer.destroy();
         }
         this.branchRenderer = new CytoscapeRenderer();
 
         // 渲染图形
         await this.branchRenderer.render(branchGraphDiv, graphData, options);
+        
+        // 恢复视图状态
+        if (this.savedViewState) {
+            this.branchRenderer.setState({
+                zoom: this.savedViewState.zoom,
+                pan: this.savedViewState.pan,
+                selectedNodes: [],
+                expandedNodes: [],
+                timestamp: Date.now()
+            });
+        }
 
         // 监听节点位置变化事件（拖动后保存到 MOC 文件）
         branchGraphDiv.addEventListener('node-position-changed', async (event: any) => {
