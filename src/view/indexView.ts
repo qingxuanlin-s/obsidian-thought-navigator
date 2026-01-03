@@ -1355,6 +1355,90 @@ export class ZKIndexView extends ItemView {
             }
         });
 
+        // 监听创建箭头关系事件（拖动连线到现有节点）
+        branchGraphDiv.addEventListener('create-arrow-relation', async (event: any) => {
+            const { sourceNode, targetNode } = event.detail;
+            
+            if (!sourceNode || !targetNode) {
+                console.warn('Invalid nodes for arrow relation:', { sourceNode, targetNode });
+                return;
+            }
+            
+            // 显示关系文本输入对话框
+            const relationText = await this.showRelationTextDialog();
+            
+            // 在刷新前保存所有节点的当前位置
+            await this.saveAllNodePositionsBeforeRefresh();
+            
+            try {
+                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                if (mocFile) {
+                    await this.addArrowRelationToMOC(
+                        mocFile,
+                        sourceNode.IDStr,
+                        targetNode.IDStr,
+                        relationText || ''
+                    );
+                    
+                    // 刷新视图
+                    await this.refreshBranchMermaid();
+                    
+                    new Notice(`已创建箭头关系: ${sourceNode.ID} → ${targetNode.ID}`);
+                }
+            } catch (error) {
+                console.error('Failed to create arrow relation:', error);
+                new Notice(`创建箭头关系失败: ${error.message}`);
+            }
+        });
+
+        // 监听创建子节点事件（拖动连线到空白处）
+        branchGraphDiv.addEventListener('create-child-node', async (event: any) => {
+            const { parentNode, position } = event.detail;
+            
+            if (!parentNode) {
+                console.warn('Invalid parent node for child creation:', parentNode);
+                return;
+            }
+            
+            // 生成子节点 ID
+            const suggestedID = this.generateChildNodeID(parentNode.IDStr);
+            
+            // 打开对话框
+            const modal = new AddFreeNodeModal(
+                this.app,
+                this.plugin,
+                this.mocNodes,
+                suggestedID,
+                async (result) => {
+                    // 在刷新前保存所有节点的当前位置
+                    await this.saveAllNodePositionsBeforeRefresh();
+                    
+                    // 添加到 MOC 文件
+                    await this.saveFreeNodeToMOC(result);
+                    
+                    // 保存新节点的位置
+                    if (position && result.nodeID) {
+                        const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                        if (mocFile) {
+                            await this.saveNodePositionToMOC(mocFile, result.nodeID, position);
+                        }
+                    }
+                    
+                    // 刷新视图
+                    await this.refreshBranchMermaid();
+                    
+                    new Notice(`已创建子节点: ${result.nodeID}`);
+                }
+            );
+            
+            // 预设父节点
+            modal.connectToNodeID = parentNode.IDStr;
+            modal.nodeID = suggestedID;
+            
+            modal.onOpen();
+            modal.open();
+        });
+
         this.plugin.indexViewOffsetWidth = this.containerEl.offsetWidth;
         this.plugin.indexViewOffsetHeight = this.containerEl.offsetHeight;
     }
@@ -3442,6 +3526,81 @@ export class ZKIndexView extends ItemView {
         setTimeout(() => {
             document.addEventListener('click', closeMenu);
         }, 0);
+    }
+
+    /**
+     * 显示关系文本输入对话框
+     */
+    private showRelationTextDialog(): Promise<string | null> {
+        return new Promise((resolve) => {
+            const modal = new Modal(this.app);
+            modal.titleEl.setText('输入关系描述');
+            
+            const { contentEl } = modal;
+            contentEl.empty();
+            contentEl.style.padding = '20px';
+            
+            const inputContainer = contentEl.createDiv();
+            inputContainer.style.marginBottom = '15px';
+            
+            const label = inputContainer.createEl('label', { text: '关系描述（可选）：' });
+            label.style.display = 'block';
+            label.style.marginBottom = '5px';
+            label.style.color = 'var(--text-normal)';
+            
+            const input = inputContainer.createEl('input', {
+                type: 'text',
+                placeholder: '例如：引出、相关、应用等'
+            });
+            input.style.width = '100%';
+            input.style.padding = '8px';
+            input.style.border = '1px solid var(--background-modifier-border)';
+            input.style.borderRadius = '4px';
+            input.style.backgroundColor = 'var(--background-primary)';
+            input.style.color = 'var(--text-normal)';
+            
+            const buttonContainer = contentEl.createDiv();
+            buttonContainer.style.display = 'flex';
+            buttonContainer.style.justifyContent = 'flex-end';
+            buttonContainer.style.gap = '10px';
+            
+            const cancelButton = buttonContainer.createEl('button', { text: '取消' });
+            cancelButton.style.padding = '6px 16px';
+            cancelButton.style.border = '1px solid var(--background-modifier-border)';
+            cancelButton.style.borderRadius = '4px';
+            cancelButton.style.backgroundColor = 'var(--background-primary)';
+            cancelButton.style.color = 'var(--text-normal)';
+            cancelButton.style.cursor = 'pointer';
+            cancelButton.addEventListener('click', () => {
+                modal.close();
+                resolve(null);
+            });
+            
+            const confirmButton = buttonContainer.createEl('button', { text: '确认' });
+            confirmButton.style.padding = '6px 16px';
+            confirmButton.style.border = 'none';
+            confirmButton.style.borderRadius = '4px';
+            confirmButton.style.backgroundColor = '#5b8fd9';
+            confirmButton.style.color = '#ffffff';
+            confirmButton.style.cursor = 'pointer';
+            confirmButton.addEventListener('click', () => {
+                modal.close();
+                resolve(input.value.trim());
+            });
+            
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    modal.close();
+                    resolve(input.value.trim());
+                } else if (e.key === 'Escape') {
+                    modal.close();
+                    resolve(null);
+                }
+            });
+            
+            modal.open();
+            setTimeout(() => input.focus(), 0);
+        });
     }
 
     /**
