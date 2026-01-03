@@ -1316,6 +1316,23 @@ export class ZKIndexView extends ItemView {
             }
         });
 
+        // 监听边标签编辑事件（双击边）
+        branchGraphDiv.addEventListener('edge-label-edit', async (event: any) => {
+            const { edgeId, source, target, oldLabel, newLabel } = event.detail;
+            
+            try {
+                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                if (mocFile) {
+                    await this.updateArrowRelationLabelInMOC(mocFile, source, target, newLabel);
+                    // 刷新视图
+                    await this.refreshBranchMermaid();
+                }
+            } catch (error) {
+                console.error('Failed to update arrow relation label:', error);
+                new Notice(`更新关系文本失败: ${error.message}`);
+            }
+        });
+
         this.plugin.indexViewOffsetWidth = this.containerEl.offsetWidth;
         this.plugin.indexViewOffsetHeight = this.containerEl.offsetHeight;
     }
@@ -4155,6 +4172,91 @@ export class ZKIndexView extends ItemView {
         } catch (error) {
             console.error('Failed to delete arrow relation:', error);
             new Notice(`删除箭头关系失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 更新 MOC 文件中箭头关系的标签
+     */
+    private async updateArrowRelationLabelInMOC(mocFile: TFile, sourceID: string, targetID: string, newLabel: string): Promise<void> {
+        try {
+            // 读取 MOC 文件内容
+            const content = await this.app.vault.read(mocFile);
+            const lines = content.split('\n');
+            const headingTitle = this.plugin.settings.mocHeadingTitle;
+            
+            // 查找思维树标题的范围
+            let headingIndex = -1;
+            let sectionEndIndex = lines.length;
+            
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].trim() === `# ${headingTitle}`) {
+                    headingIndex = i;
+                    
+                    for (let j = i + 1; j < lines.length; j++) {
+                        if (lines[j].trim().startsWith('# ')) {
+                            sectionEndIndex = j;
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+            
+            if (headingIndex === -1) {
+                new Notice(`未找到标题: # ${headingTitle}`);
+                return;
+            }
+            
+            // 查找箭头关系行
+            // 箭头关系格式：`sourceID` -- label --> `targetID` 或 `sourceID` --> `targetID`
+            let arrowLineIndex = -1;
+            const arrowPattern = new RegExp(`\`${sourceID}\`\\s*--.*?-->\\s*\`${targetID}\``);
+            
+            for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
+                const line = lines[i];
+                if (arrowPattern.test(line)) {
+                    arrowLineIndex = i;
+                    break;
+                }
+            }
+            
+            if (arrowLineIndex === -1) {
+                new Notice(`未找到箭头关系: ${sourceID} --> ${targetID}`);
+                return;
+            }
+            
+            // 构建新的箭头关系行
+            const oldLine = lines[arrowLineIndex];
+            const indentMatch = oldLine.match(/^(\s*)/);
+            const indent = indentMatch ? indentMatch[1] : '';
+            
+            let newLine: string;
+            if (newLabel) {
+                // 有标签：`sourceID` -- label --> `targetID`
+                newLine = `${indent}\`${sourceID}\` -- ${newLabel} --> \`${targetID}\``;
+            } else {
+                // 无标签：`sourceID` --> `targetID`
+                newLine = `${indent}\`${sourceID}\` --> \`${targetID}\``;
+            }
+            
+            // 替换该行
+            const newLines = [
+                ...lines.slice(0, arrowLineIndex),
+                newLine,
+                ...lines.slice(arrowLineIndex + 1)
+            ];
+            
+            const newContent = newLines.join('\n');
+            
+            // 写回文件
+            await this.app.vault.modify(mocFile, newContent);
+            
+            new Notice(`已更新关系文本: ${sourceID} → ${targetID}`);
+            console.log(`Updated arrow relation label: ${sourceID} -- ${newLabel} --> ${targetID}`);
+        } catch (error) {
+            console.error('Failed to update arrow relation label:', error);
+            new Notice(`更新关系文本失败: ${error.message}`);
         }
     }
 
