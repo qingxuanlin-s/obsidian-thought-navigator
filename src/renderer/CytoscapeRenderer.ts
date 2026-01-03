@@ -102,6 +102,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
         // 绑定事件
         this.bindEvents();
+        
+        // 绑定键盘事件
+        this.bindKeyboardEvents();
 
         // 添加节点徽章（左上角的 ID）
         this.addNodeBadges();
@@ -113,12 +116,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
         if (this.cy) {
             if (hasSavedPositions) {
                 // 如果有保存的位置，使用 preset 布局（保持原位置）
-                console.log('Using saved positions (preset layout)');
                 const layout = this.cy.layout({ name: 'preset' });
                 layout.run();
             } else {
-                // 如果没有保存的位置，使用指定的布局算法
-                console.log('No saved positions, using layout:', options.layoutType);
                 const layout = this.cy.layout(this.getLayout(options));
                 layout.run();
             }
@@ -328,7 +328,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             return element;
         });
         
-        console.log('Converted nodes:', elements.map(e => ({ id: e.data.id, label: e.data.label, badge: e.data.badge, position: e.position })));
+        
         return elements;
     }
 
@@ -1244,6 +1244,80 @@ case 'dagre':
                     }
                 }
             }));
+        });
+    }
+
+    /**
+     * 绑定键盘事件
+     */
+    private bindKeyboardEvents(): void {
+        if (!this.container) return;
+
+        // 监听键盘按下事件
+        const handleKeyDown = (event: KeyboardEvent) => {
+            // Delete 或 Backspace 键
+            if (event.key === 'Delete' || event.key === 'Backspace') {
+                if (!this.cy) return;
+
+                // 获取选中的元素
+                const selected = this.cy.$(':selected');
+                
+                // 检查是否有选中的分组节点
+                const selectedGroups = selected.filter('node[?isGroup]');
+                
+                if (selectedGroups.length > 0) {
+                    // 阻止默认行为（避免浏览器后退）
+                    event.preventDefault();
+                    event.stopPropagation();
+                    
+                    // 触发删除分组事件
+                    selectedGroups.forEach((groupNode: any) => {
+                        const data = groupNode.data();
+                        this.container?.dispatchEvent(new CustomEvent('group-delete-key', {
+                            detail: {
+                                groupId: data.id,
+                                groupLabel: data.label
+                            }
+                        }));
+                    });
+                }
+                
+                // 检查是否有选中的箭头关系边
+                const selectedReverseEdges = selected.filter('edge[type="reverse"]');
+                
+                if (selectedReverseEdges.length > 0) {
+                    // 阻止默认行为
+                    event.preventDefault();
+                    event.stopPropagation();
+                    
+                    // 触发删除边事件
+                    selectedReverseEdges.forEach((edge: any) => {
+                        const data = edge.data();
+                        this.container?.dispatchEvent(new CustomEvent('edge-delete-key', {
+                            detail: {
+                                edgeId: data.id,
+                                source: data.source,
+                                target: data.target,
+                                type: data.type,
+                                label: data.label
+                            }
+                        }));
+                    });
+                }
+            }
+        };
+
+        // 添加事件监听器
+        this.container.addEventListener('keydown', handleKeyDown);
+        
+        // 确保容器可以接收键盘事件
+        if (!this.container.hasAttribute('tabindex')) {
+            this.container.setAttribute('tabindex', '0');
+        }
+        
+        // 当容器获得焦点时，自动聚焦
+        this.container.addEventListener('mousedown', () => {
+            this.container?.focus();
         });
     }
 

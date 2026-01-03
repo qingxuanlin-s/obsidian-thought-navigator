@@ -1158,6 +1158,11 @@ export class ZKIndexView extends ItemView {
         branchGraphDiv.addEventListener('node-hover', (event: any) => {
             const { node, event: mouseEvent } = event.detail;
 
+            // 检查节点是否有效
+            if (!node || !node.file) {
+                return;
+            }
+
             this.app.workspace.trigger('hover-link', {
                 event: mouseEvent,
                 source: 'zk-navigation',
@@ -1171,6 +1176,12 @@ export class ZKIndexView extends ItemView {
         // 监听节点右键菜单事件
         branchGraphDiv.addEventListener('node-contextmenu', (event: any) => {
             const { node, event: mouseEvent, position } = event.detail;
+            
+            // 检查节点是否有效
+            if (!node || !node.file) {
+                console.warn('Invalid node for context menu:', node);
+                return;
+            }
             
             // 阻止默认右键菜单
             mouseEvent.preventDefault();
@@ -1269,6 +1280,40 @@ export class ZKIndexView extends ItemView {
             });
             
             menu.showAtPosition(position);
+        });
+
+        // 监听分组删除键事件（Delete/Backspace）
+        branchGraphDiv.addEventListener('group-delete-key', async (event: any) => {
+            const { groupId, groupLabel } = event.detail;
+            
+            try {
+                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                if (mocFile) {
+                    await this.deleteGroupFromMOC(mocFile, groupId);
+                    // 刷新视图
+                    await this.refreshBranchMermaid();
+                }
+            } catch (error) {
+                console.error('Failed to delete group:', error);
+                new Notice(`删除分组失败: ${error.message}`);
+            }
+        });
+
+        // 监听边删除键事件（Delete/Backspace）
+        branchGraphDiv.addEventListener('edge-delete-key', async (event: any) => {
+            const { edgeId, source, target, type, label } = event.detail;
+            
+            try {
+                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                if (mocFile) {
+                    await this.deleteArrowRelationFromMOC(mocFile, source, target);
+                    // 刷新视图
+                    await this.refreshBranchMermaid();
+                }
+            } catch (error) {
+                console.error('Failed to delete arrow relation:', error);
+                new Notice(`删除箭头关系失败: ${error.message}`);
+            }
         });
 
         this.plugin.indexViewOffsetWidth = this.containerEl.offsetWidth;
@@ -3946,8 +3991,7 @@ export class ZKIndexView extends ItemView {
             // 写回文件
             await this.app.vault.modify(mocFile, newContent);
             
-            new Notice(`已重命名分组: ${oldLabel} → ${newLabel}`);
-            console.log(`Renamed group ${groupId}: ${oldLabel} → ${newLabel}`);
+            
         } catch (error) {
             console.error('Failed to rename group:', error);
             new Notice(`重命名分组失败: ${error.message}`);
