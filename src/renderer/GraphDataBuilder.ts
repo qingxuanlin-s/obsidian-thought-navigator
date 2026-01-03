@@ -79,6 +79,12 @@ export class GraphDataBuilder {
 
         // 添加父子关系连线（根据 IDArr 确定父子关系）
         for (const node of this.nodes) {
+            // 跳过根节点（没有父节点）
+            if (node.isRoot) {
+                console.log(`[buildMOCTreeEdges] Skipping root node: ${node.IDStr}`);
+                continue;
+            }
+            
             if (node.IDArr.length > 1) {
                 const parentID = node.IDArr.at(-2);
                 const parentNode = this.nodes.find(n => n.IDStr === parentID);
@@ -114,6 +120,9 @@ export class GraphDataBuilder {
                 }
             }
         }
+        
+        console.log(`[buildMOCTreeEdges] Total nodes: ${this.nodes.length}, Total edges: ${this.edges.length}`);
+        console.log(`[buildMOCTreeEdges] Root nodes:`, this.nodes.filter(n => n.isRoot).map(n => n.IDStr));
 
         // 添加反向关系连线（箭头关系）
         // 所有箭头关系都使用虚线，方向按照 MOC 文件中定义的方向（source -> target）
