@@ -1727,14 +1727,6 @@ export class ZKGraphView extends ItemView {
         // 构建图形数据（使用 MOC 树专用方法）
         const graphData = GraphDataBuilder.fromMOCTree(mocNodes, reverseRelations, null);
         
-        // 调试：输出图形数据
-        console.log('MOC Tree Graph Data:', {
-            nodesCount: graphData.nodes.length,
-            edgesCount: graphData.edges.length,
-            nodes: graphData.nodes.map(n => ({ ID: n.ID, IDStr: n.IDStr, displayText: n.displayText })),
-            edges: graphData.edges.map(e => ({ id: e.id, source: e.source, target: e.target, type: e.type, label: e.label })),
-            reverseRelationsCount: reverseRelations.size
-        });
 
         // 配置渲染选项
         const options: RenderOptions = {
@@ -1758,7 +1750,6 @@ export class ZKGraphView extends ItemView {
         const cy = this.familyGraphRenderer.getCytoscapeInstance();
         if (cy) {
             cy.nodes().ungrabify(); // 禁止拖动节点
-            console.log('GraphView: Nodes are locked (view-only mode)');
         }
 
         // 监听节点点击事件
