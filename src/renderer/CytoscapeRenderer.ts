@@ -625,6 +625,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'border-width': '3px',
                 'font-weight': '600'
             } as any
+        },
+        // 连接目标悬停状态
+        {
+            selector: 'node.connection-target-hover',
+            style: {
+                'border-color': '#10b981',  // 绿色
+                'border-width': '3px',
+                'background-color': 'rgba(16, 185, 129, 0.1)'
+            } as any
         }
     ];
 }
@@ -794,6 +803,260 @@ case 'dagre':
         
         // 添加边控制点
         this.addEdgeControlPoints();
+        
+        // 添加连线手柄
+        this.addConnectionHandles();
+    }
+    
+    /**
+     * 添加连线手柄（用于拖动创建连接）
+     */
+    private addConnectionHandles(): void {
+        if (!this.cy || !this.container) return;
+
+        // 移除旧的手柄容器
+        const oldHandleContainer = this.container.querySelector('.zk-connection-handles');
+        if (oldHandleContainer) {
+            oldHandleContainer.remove();
+        }
+
+        // 创建手柄容器
+        const handleContainer = document.createElement('div');
+        handleContainer.className = 'zk-connection-handles';
+        handleContainer.style.cssText = `
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 3;
+        `;
+        this.container.appendChild(handleContainer);
+
+        // 为每个节点创建连线手柄
+        this.cy.nodes('[!isGroup]').forEach((node: any) => {
+            const handle = document.createElement('div');
+            handle.className = 'zk-connection-handle';
+            handle.style.cssText = `
+                position: absolute;
+                width: 12px;
+                height: 12px;
+                background-color: #5b8fd9;
+                border: 2px solid #ffffff;
+                border-radius: 50%;
+                cursor: crosshair;
+                pointer-events: auto;
+                transform: translate(-50%, -50%);
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+                opacity: 0;
+                transition: opacity 0.2s;
+            `;
+            handleContainer.appendChild(handle);
+
+            // 更新手柄位置的函数
+            const updateHandlePosition = () => {
+                if (!this.cy) return;
+                
+                const boundingBox = node.renderedBoundingBox();
+                const zoom = this.cy.zoom();
+                
+                // 手柄位置在节点右边缘中点
+                const x = boundingBox.x2;
+                const y = (boundingBox.y1 + boundingBox.y2) / 2;
+                
+                handle.style.left = `${x}px`;
+                handle.style.top = `${y}px`;
+                handle.style.width = `${12 * zoom}px`;
+                handle.style.height = `${12 * zoom}px`;
+                handle.style.borderWidth = `${2 * zoom}px`;
+            };
+
+            // 初始位置
+            updateHandlePosition();
+
+            // 监听节点位置和视图变化
+            if (this.cy) {
+                this.cy.on('zoom pan position', updateHandlePosition);
+            }
+
+            // 鼠标悬停显示手柄
+            node.on('mouseover', () => {
+                handle.style.opacity = '1';
+            });
+
+            node.on('mouseout', () => {
+                handle.style.opacity = '0';
+            });
+
+            // 拖动创建连接
+            this.bindConnectionDrag(handle, node, handleContainer);
+        });
+    }
+
+    /**
+     * 绑定连线拖动事件
+     */
+    private bindConnectionDrag(handle: HTMLElement, sourceNode: any, container: HTMLElement): void {
+        if (!this.cy || !this.container) return;
+
+        let isDragging = false;
+        let dragLine: SVGLineElement | null = null;
+        let svgOverlay: SVGSVGElement | null = null;
+
+        handle.addEventListener('mousedown', (e: MouseEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            isDragging = true;
+            handle.style.opacity = '1';
+
+            // 创建 SVG 叠加层用于绘制连线
+            svgOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svgOverlay.style.cssText = `
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                pointer-events: none;
+                z-index: 2;
+            `;
+            this.container!.appendChild(svgOverlay);
+
+            // 创建连线
+            dragLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            dragLine.setAttribute('stroke', '#5b8fd9');
+            dragLine.setAttribute('stroke-width', '2');
+            dragLine.setAttribute('stroke-dasharray', '5,5');
+            svgOverlay.appendChild(dragLine);
+
+            const sourcePos = sourceNode.renderedPosition();
+            dragLine.setAttribute('x1', sourcePos.x.toString());
+            dragLine.setAttribute('y1', sourcePos.y.toString());
+            dragLine.setAttribute('x2', sourcePos.x.toString());
+            dragLine.setAttribute('y2', sourcePos.y.toString());
+        });
+
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isDragging || !dragLine || !this.cy) return;
+
+            const containerRect = this.container!.getBoundingClientRect();
+            const mouseX = e.clientX - containerRect.left;
+            const mouseY = e.clientY - containerRect.top;
+
+            const sourcePos = sourceNode.renderedPosition();
+            dragLine.setAttribute('x1', sourcePos.x.toString());
+            dragLine.setAttribute('y1', sourcePos.y.toString());
+            dragLine.setAttribute('x2', mouseX.toString());
+            dragLine.setAttribute('y2', mouseY.toString());
+
+            // 检测鼠标下的节点
+            const mousePos = { x: mouseX, y: mouseY };
+            const targetNode = this.getNodeAtPosition(mousePos);
+            
+            if (targetNode && targetNode !== sourceNode) {
+                // 高亮目标节点
+                dragLine.setAttribute('stroke', '#10b981'); // 绿色表示可以连接
+                targetNode.addClass('connection-target-hover');
+            } else {
+                dragLine.setAttribute('stroke', '#5b8fd9'); // 蓝色
+                this.cy.nodes('.connection-target-hover').removeClass('connection-target-hover');
+            }
+        };
+
+        const handleMouseUp = async (e: MouseEvent) => {
+            if (!isDragging || !this.cy) return;
+
+            isDragging = false;
+
+            const containerRect = this.container!.getBoundingClientRect();
+            const mouseX = e.clientX - containerRect.left;
+            const mouseY = e.clientY - containerRect.top;
+            const mousePos = { x: mouseX, y: mouseY };
+
+            // 检测目标节点
+            const targetNode = this.getNodeAtPosition(mousePos);
+
+            // 清理
+            if (svgOverlay) {
+                svgOverlay.remove();
+                svgOverlay = null;
+            }
+            dragLine = null;
+            this.cy.nodes('.connection-target-hover').removeClass('.connection-target-hover');
+
+            const sourceData = sourceNode.data();
+            const sourceOriginalNode = sourceData.originalNode;
+
+            if (targetNode && targetNode !== sourceNode) {
+                // 连接到现有节点 - 创建反向关系
+                const targetData = targetNode.data();
+                const targetOriginalNode = targetData.originalNode;
+
+                this.container?.dispatchEvent(new CustomEvent('create-arrow-relation', {
+                    detail: {
+                        sourceNode: sourceOriginalNode,
+                        targetNode: targetOriginalNode
+                    }
+                }));
+            } else {
+                // 连接到空白处 - 创建子节点
+                const modelPos = this.cy.pan();
+                const zoom = this.cy.zoom();
+                const graphX = (mouseX - modelPos.x) / zoom;
+                const graphY = (mouseY - modelPos.y) / zoom;
+
+                this.container?.dispatchEvent(new CustomEvent('create-child-node', {
+                    detail: {
+                        parentNode: sourceOriginalNode,
+                        position: { x: graphX, y: graphY }
+                    }
+                }));
+            }
+        };
+
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+
+        // 清理函数
+        const cleanup = () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
+
+        // 当手柄被移除时清理
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                mutation.removedNodes.forEach((node) => {
+                    if (node === handle) {
+                        cleanup();
+                        observer.disconnect();
+                    }
+                });
+            });
+        });
+
+        observer.observe(container, { childList: true });
+    }
+
+    /**
+     * 获取指定位置的节点
+     */
+    private getNodeAtPosition(pos: { x: number; y: number }): any {
+        if (!this.cy) return null;
+
+        const nodes = this.cy.nodes('[!isGroup]');
+        for (let i = 0; i < nodes.length; i++) {
+            const node = nodes[i];
+            const bb = node.renderedBoundingBox();
+            
+            if (pos.x >= bb.x1 && pos.x <= bb.x2 && pos.y >= bb.y1 && pos.y <= bb.y2) {
+                return node;
+            }
+        }
+
+        return null;
     }
     
     /**
