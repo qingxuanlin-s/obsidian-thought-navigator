@@ -116,8 +116,20 @@ export class MermaidParser {
     parseEdge(line: string): EdgeDefinition | null {
         const trimmedLine = line.trim();
         
-        // 匹配有标签的边：source -->|label| target
-        const labeledEdgeRegex = /^([a-zA-Z0-9.]+)\s*-->\s*\|([^|]+)\|\s*([a-zA-Z0-9.]+)$/;
+        // 匹配格式1：source -- label --> target
+        const dashedLabelEdgeRegex = /^([a-zA-Z0-9._]+)\s*--\s+(.+?)\s+-->\s*([a-zA-Z0-9._]+)$/;
+        const dashedLabelMatch = trimmedLine.match(dashedLabelEdgeRegex);
+        
+        if (dashedLabelMatch) {
+            return {
+                source: dashedLabelMatch[1],
+                target: dashedLabelMatch[3],
+                label: dashedLabelMatch[2].trim()
+            };
+        }
+        
+        // 匹配格式2：source -->|label| target
+        const labeledEdgeRegex = /^([a-zA-Z0-9._]+)\s*-->\s*\|([^|]+)\|\s*([a-zA-Z0-9._]+)$/;
         const labeledMatch = trimmedLine.match(labeledEdgeRegex);
         
         if (labeledMatch) {
@@ -128,8 +140,8 @@ export class MermaidParser {
             };
         }
         
-        // 匹配无标签的边：source --> target
-        const unlabeledEdgeRegex = /^([a-zA-Z0-9.]+)\s*-->\s*([a-zA-Z0-9.]+)$/;
+        // 匹配格式3：source --> target (无标签)
+        const unlabeledEdgeRegex = /^([a-zA-Z0-9._]+)\s*-->\s*([a-zA-Z0-9._]+)$/;
         const unlabeledMatch = trimmedLine.match(unlabeledEdgeRegex);
         
         if (unlabeledMatch) {
