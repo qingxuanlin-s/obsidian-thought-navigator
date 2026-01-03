@@ -253,6 +253,14 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 转换数据为 Cytoscape 元素（包含分组）
      */
     private convertToElementsWithGroups(data: GraphData): cytoscape.ElementDefinition[] {
+        // 先加载边弧度信息到 Map（必须在 convertEdgesToElements 之前）
+        this.edgeControlPoints.clear();
+        const edgeCurvatures = data.metadata.edgeCurvatures || {};
+        Object.entries(edgeCurvatures).forEach(([key, value]) => {
+            this.edgeControlPoints.set(key, value);
+        });
+        
+        // 然后转换节点和边
         const nodes = this.convertNodesToElements(data.nodes);
         const edges = this.convertEdgesToElements(data.edges);
         
@@ -281,13 +289,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     node.data.parent = parentGroup.id;
                 }
             }
-        });
-        
-        // 加载边弧度信息到 Map
-        this.edgeControlPoints.clear();
-        const edgeCurvatures = data.metadata.edgeCurvatures || {};
-        Object.entries(edgeCurvatures).forEach(([key, value]) => {
-            this.edgeControlPoints.set(key, value);
         });
         
         return [...groupNodes, ...nodes, ...edges];
@@ -359,11 +360,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 }
             };
             
-            // 尝试从 Map 中读取弧度数据
-            const key1 = `${edge.source}-${edge.target}`;
-            const key2 = edge.id;
-            
-            const curvature = this.edgeControlPoints.get(key1) || this.edgeControlPoints.get(key2);
+            // 使用标准格式: source-target (如 "a-a.1.a")
+            const key = `${edge.source}-${edge.target}`;
+            const curvature = this.edgeControlPoints.get(key);
             
             if (curvature) {
                 element.data.controlPointDistance = curvature.distance;
@@ -542,7 +541,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'curve-style': 'unbundled-bezier',
                 'control-point-distances': (ele: any) => {
                     const distance = ele.data('controlPointDistance');
-                    return distance !== undefined ? distance : 40;
+                    return distance !== undefined ? distance : 0;  // 默认为 0（直线）
                 },
                 'control-point-weights': (ele: any) => {
                     const weight = ele.data('controlPointWeight');
@@ -833,6 +832,17 @@ case 'dagre':
         this.cy.on('unselect', 'edge', () => {
             this.hideEdgeControlPoints(controlPointContainer);
         });
+
+        // 监听节点位置变化，更新控制点位置
+        this.cy.on('position', 'node', () => {
+            // 如果有选中的边，更新其控制点
+            const selectedEdge = this.cy?.$('edge:selected');
+            if (selectedEdge && selectedEdge.length > 0) {
+                // 触发控制点位置更新
+                const event = new CustomEvent('update-control-point-position');
+                controlPointContainer.dispatchEvent(event);
+            }
+        });
     }
 
     /**
@@ -851,34 +861,8 @@ case 'dagre':
         if (!sourceNode.length || !targetNode.length) return;
 
         // 获取当前弧度参数
-        const distance = data.controlPointDistance !== undefined ? data.controlPointDistance : 40;
+        const distance = data.controlPointDistance !== undefined ? data.controlPointDistance : 0;  // 默认为 0
         const weight = data.controlPointWeight !== undefined ? data.controlPointWeight : 0.5;
-
-        // 计算控制点位置
-        const updateControlPointPosition = () => {
-            if (!this.cy) return;
-            
-            const sourcePos = sourceNode.renderedPosition();
-            const targetPos = targetNode.renderedPosition();
-
-            // 计算边的中点
-            const midX = sourcePos.x + (targetPos.x - sourcePos.x) * weight;
-            const midY = sourcePos.y + (targetPos.y - sourcePos.y) * weight;
-
-            // 计算垂直方向
-            const dx = targetPos.x - sourcePos.x;
-            const dy = targetPos.y - sourcePos.y;
-            const len = Math.sqrt(dx * dx + dy * dy);
-            const perpX = -dy / len;
-            const perpY = dx / len;
-
-            // 控制点位置
-            const cpX = midX + perpX * distance;
-            const cpY = midY + perpY * distance;
-
-            controlPoint.style.left = `${cpX}px`;
-            controlPoint.style.top = `${cpY}px`;
-        };
 
         // 创建控制点
         const controlPoint = document.createElement('div');
@@ -898,23 +882,54 @@ case 'dagre':
         `;
         container.appendChild(controlPoint);
 
+        // 计算控制点位置的函数
+        const updateControlPointPosition = () => {
+            if (!this.cy) return;
+            
+            const sourcePos = sourceNode.renderedPosition();
+            const targetPos = targetNode.renderedPosition();
+
+            // 计算边的中点
+            const currentWeight = edge.data('controlPointWeight') !== undefined ? edge.data('controlPointWeight') : 0.5;
+            const midX = sourcePos.x + (targetPos.x - sourcePos.x) * currentWeight;
+            const midY = sourcePos.y + (targetPos.y - sourcePos.y) * currentWeight;
+
+            // 计算垂直方向
+            const dx = targetPos.x - sourcePos.x;
+            const dy = targetPos.y - sourcePos.y;
+            const len = Math.sqrt(dx * dx + dy * dy);
+            const perpX = -dy / len;
+            const perpY = dx / len;
+
+            // 控制点位置
+            const currentDistance = edge.data('controlPointDistance') !== undefined ? edge.data('controlPointDistance') : 0;
+            const cpX = midX + perpX * currentDistance;
+            const cpY = midY + perpY * currentDistance;
+
+            controlPoint.style.left = `${cpX}px`;
+            controlPoint.style.top = `${cpY}px`;
+        };
+
         // 初始位置
         updateControlPointPosition();
 
         // 监听图形缩放和平移
         this.cy.on('zoom pan', updateControlPointPosition);
 
+        // 监听节点位置变化（使用 Cytoscape 的全局事件）
+        this.cy.on('position', updateControlPointPosition);
+
+        // 监听自定义的控制点位置更新事件
+        const handleUpdatePosition = () => updateControlPointPosition();
+        container.addEventListener('update-control-point-position', handleUpdatePosition);
+
         // 拖动控制点
         let isDragging = false;
-        let startX = 0;
-        let startY = 0;
 
         controlPoint.addEventListener('mousedown', (e: MouseEvent) => {
             e.preventDefault();
             e.stopPropagation();
             isDragging = true;
-            startX = e.clientX;
-            startY = e.clientY;
             controlPoint.style.cursor = 'grabbing';
         });
 
@@ -930,8 +945,9 @@ case 'dagre':
             const mouseY = e.clientY - containerRect.top;
 
             // 计算边的中点和方向
-            const midX = sourcePos.x + (targetPos.x - sourcePos.x) * weight;
-            const midY = sourcePos.y + (targetPos.y - sourcePos.y) * weight;
+            const currentWeight = edge.data('controlPointWeight') !== undefined ? edge.data('controlPointWeight') : 0.5;
+            const midX = sourcePos.x + (targetPos.x - sourcePos.x) * currentWeight;
+            const midY = sourcePos.y + (targetPos.y - sourcePos.y) * currentWeight;
 
             const dx = targetPos.x - sourcePos.x;
             const dy = targetPos.y - sourcePos.y;
@@ -946,19 +962,19 @@ case 'dagre':
 
             // 更新边的弧度
             edge.data('controlPointDistance', newDistance);
-            edge.data('controlPointWeight', weight);
+            edge.data('controlPointWeight', currentWeight);
 
-            // 更新控制点位置
+            // 立即更新控制点位置
             updateControlPointPosition();
 
             // 触发弧度变化事件
             this.container?.dispatchEvent(new CustomEvent('edge-curvature-changed', {
                 detail: {
-                    edgeId: data.id,
+                    edgeId: `${data.originalSource}-${data.originalTarget}`,  // 使用原始 ID 格式
                     source: data.originalSource || data.source,
                     target: data.originalTarget || data.target,
                     distance: newDistance,
-                    weight: weight
+                    weight: currentWeight
                 }
             }));
         };
@@ -977,8 +993,9 @@ case 'dagre':
         const cleanup = () => {
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
+            container.removeEventListener('update-control-point-position', handleUpdatePosition);
             if (this.cy) {
-                this.cy.off('zoom pan', updateControlPointPosition);
+                this.cy.off('zoom pan position', updateControlPointPosition);
             }
         };
 
