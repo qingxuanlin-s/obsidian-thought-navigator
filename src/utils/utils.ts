@@ -548,10 +548,6 @@ export async function convertMOCToZKNodes(
         await processNode(mocTrees[i], parentIDArr, i);
     }
 
-    console.log(`[convertMOCToZKNodes] Total nodes processed: ${nodes.length}`);
-    nodes.forEach(n => {
-        console.log(`[convertMOCToZKNodes] Node: ${n.IDStr}, file: ${n.file?.path || 'null'}`);
-    });
 
     // 重新计算 position 和 isRoot
     nodes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
