@@ -1211,6 +1211,70 @@ export class ZKIndexView extends ItemView {
             });
         });
 
+        // 监听节点选中事件（单击）
+        branchGraphDiv.addEventListener('node-select', (event: any) => {
+            const { node } = event.detail;
+            // 可以在这里添加选中节点的其他逻辑
+            console.log('Node selected:', node.ID);
+        });
+
+        // 监听节点打开事件（双击）
+        branchGraphDiv.addEventListener('node-open', (event: any) => {
+            const { node, event: mouseEvent, ctrlKey } = event.detail;
+            
+            // 检查节点是否有效
+            if (!node || !node.file) {
+                console.warn('Invalid node for opening:', node);
+                return;
+            }
+            
+            // 打开文件
+            if (ctrlKey) {
+                // Ctrl + 双击：在新标签页打开
+                this.app.workspace.openLinkText("", node.file.path, 'tab');
+            } else {
+                // 普通双击：在当前标签页打开
+                this.app.workspace.openLinkText("", node.file.path);
+            }
+        });
+
+        // 监听节点删除键事件
+        branchGraphDiv.addEventListener('node-delete-key', async (event: any) => {
+            const { node, relationCount } = event.detail;
+            
+            if (!node || !node.ID) {
+                console.warn('Invalid node for deletion:', node);
+                return;
+            }
+            
+            // 如果关系数量超过2个，需要二次确认
+            if (relationCount > 2) {
+                const confirmed = await this.showDeleteConfirmDialog(node, relationCount);
+                if (!confirmed) {
+                    return;
+                }
+            }
+            
+            // 在刷新前保存所有节点的当前位置
+            await this.saveAllNodePositionsBeforeRefresh();
+            
+            // 删除节点
+            try {
+                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                if (mocFile) {
+                    await this.deleteNodeFromMOC(mocFile, node.IDStr);
+                    
+                    // 刷新视图
+                    await this.refreshBranchMermaid();
+                    
+                    new Notice(`已删除节点: ${node.ID}`);
+                }
+            } catch (error) {
+                console.error('Failed to delete node:', error);
+                new Notice(`删除节点失败: ${error.message}`);
+            }
+        });
+
         // 监听节点右键菜单事件
         branchGraphDiv.addEventListener('node-contextmenu', (event: any) => {
             const { node, event: mouseEvent, position } = event.detail;
@@ -3542,6 +3606,164 @@ export class ZKIndexView extends ItemView {
         setTimeout(() => {
             document.addEventListener('click', closeMenu);
         }, 0);
+    }
+
+    /**
+     * 显示删除确认对话框
+     */
+    private showDeleteConfirmDialog(node: ZKNode, relationCount: number): Promise<boolean> {
+        return new Promise((resolve) => {
+            const modal = new Modal(this.app);
+            modal.titleEl.setText('确认删除节点');
+            
+            const { contentEl } = modal;
+            contentEl.empty();
+            contentEl.style.padding = '20px';
+            
+            const warningDiv = contentEl.createDiv();
+            warningDiv.style.marginBottom = '15px';
+            warningDiv.style.padding = '15px';
+            warningDiv.style.backgroundColor = 'rgba(239, 68, 68, 0.1)';
+            warningDiv.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+            warningDiv.style.borderRadius = '4px';
+            
+            const warningIcon = warningDiv.createEl('div', { text: '⚠️' });
+            warningIcon.style.fontSize = '24px';
+            warningIcon.style.marginBottom = '10px';
+            
+            const warningText = warningDiv.createEl('div');
+            warningText.innerHTML = `
+                <div style="font-weight: 600; margin-bottom: 8px;">即将删除节点：${node.ID}</div>
+                <div style="color: var(--text-muted);">该节点有 <strong>${relationCount}</strong> 个关系连接</div>
+                <div style="color: var(--text-muted); margin-top: 8px;">删除后将同时删除：</div>
+                <ul style="margin: 8px 0; padding-left: 20px; color: var(--text-muted);">
+                    <li>节点在 MOC 文件中的条目</li>
+                    <li>所有与该节点相关的箭头关系</li>
+                    <li>节点的位置信息</li>
+                </ul>
+                <div style="color: var(--text-error); font-weight: 600; margin-top: 8px;">此操作不可撤销！</div>
+            `;
+            
+            const buttonContainer = contentEl.createDiv();
+            buttonContainer.style.display = 'flex';
+            buttonContainer.style.justifyContent = 'flex-end';
+            buttonContainer.style.gap = '10px';
+            buttonContainer.style.marginTop = '20px';
+            
+            const cancelButton = buttonContainer.createEl('button', { text: '取消' });
+            cancelButton.style.padding = '6px 16px';
+            cancelButton.style.border = '1px solid var(--background-modifier-border)';
+            cancelButton.style.borderRadius = '4px';
+            cancelButton.style.backgroundColor = 'var(--background-primary)';
+            cancelButton.style.color = 'var(--text-normal)';
+            cancelButton.style.cursor = 'pointer';
+            cancelButton.addEventListener('click', () => {
+                modal.close();
+                resolve(false);
+            });
+            
+            const confirmButton = buttonContainer.createEl('button', { text: '确认删除' });
+            confirmButton.style.padding = '6px 16px';
+            confirmButton.style.border = 'none';
+            confirmButton.style.borderRadius = '4px';
+            confirmButton.style.backgroundColor = '#ef4444';
+            confirmButton.style.color = '#ffffff';
+            confirmButton.style.cursor = 'pointer';
+            confirmButton.addEventListener('click', () => {
+                modal.close();
+                resolve(true);
+            });
+            
+            modal.open();
+        });
+    }
+
+    /**
+     * 从 MOC 文件中删除节点
+     */
+    private async deleteNodeFromMOC(mocFile: TFile, nodeID: string): Promise<void> {
+        try {
+            const content = await this.app.vault.read(mocFile);
+            const lines = content.split('\n');
+            const headingTitle = this.plugin.settings.mocHeadingTitle;
+            
+            // 查找思维树标题的范围
+            let headingIndex = -1;
+            let sectionEndIndex = lines.length;
+            
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].trim() === `# ${headingTitle}`) {
+                    headingIndex = i;
+                    for (let j = i + 1; j < lines.length; j++) {
+                        if (lines[j].trim().startsWith('# ')) {
+                            sectionEndIndex = j;
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+            
+            if (headingIndex === -1) {
+                new Notice(`未找到标题: # ${headingTitle}`);
+                return;
+            }
+            
+            // 查找并删除节点行
+            const nodePattern = new RegExp(`\\[\\[.*?\\]\\]\\s*\`${nodeID}\``);
+            let nodeLineIndex = -1;
+            
+            for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
+                if (nodePattern.test(lines[i])) {
+                    nodeLineIndex = i;
+                    break;
+                }
+            }
+            
+            if (nodeLineIndex === -1) {
+                new Notice(`未找到节点: ${nodeID}`);
+                return;
+            }
+            
+            // 删除节点行
+            let newLines = [
+                ...lines.slice(0, nodeLineIndex),
+                ...lines.slice(nodeLineIndex + 1)
+            ];
+            
+            // 删除所有与该节点相关的箭头关系
+            const arrowPattern1 = new RegExp(`\`${nodeID}\`\\s*--.*?-->`);
+            const arrowPattern2 = new RegExp(`-->\\s*\`${nodeID}\``);
+            
+            newLines = newLines.filter((line, index) => {
+                if (index < headingIndex || index >= sectionEndIndex - 1) return true;
+                return !arrowPattern1.test(line) && !arrowPattern2.test(line);
+            });
+            
+            // 从 ext 数据中删除节点位置
+            for (let i = newLines.length - 1; i > headingIndex; i--) {
+                const line = newLines[i].trim();
+                const match = line.match(/^%%\s*ext:\s*(\{.*\})\s*%%$/);
+                if (match) {
+                    try {
+                        const extData = JSON.parse(match[1]);
+                        if (extData.node_positions && extData.node_positions[nodeID]) {
+                            delete extData.node_positions[nodeID];
+                            newLines[i] = `%% ext:${JSON.stringify(extData)} %%`;
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse ext data:', e);
+                    }
+                    break;
+                }
+            }
+            
+            await this.app.vault.modify(mocFile, newLines.join('\n'));
+            console.log(`Deleted node: ${nodeID}`);
+        } catch (error) {
+            console.error('Failed to delete node:', error);
+            throw error;
+        }
     }
 
     /**
