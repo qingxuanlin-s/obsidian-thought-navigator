@@ -1839,7 +1839,7 @@ case 'dagre':
         // 绑定分组创建事件（Command + 拖动）
         this.bindGroupCreationEvents();
 
-        // 节点点击事件
+        // 节点点击事件（单击选中，不打开文件）
         this.cy.on('tap', 'node', (evt: any) => {
             const node = evt.target;
             const data = node.data();
@@ -1850,8 +1850,29 @@ case 'dagre':
                 return;
             }
 
-            // 触发自定义事件
-            this.container?.dispatchEvent(new CustomEvent('node-click', {
+            // 单击只选中节点，不打开文件
+            // 触发自定义事件（用于其他功能，如高亮等）
+            this.container?.dispatchEvent(new CustomEvent('node-select', {
+                detail: {
+                    node: data.originalNode,
+                    event: originalEvent
+                }
+            }));
+        });
+
+        // 节点双击事件（打开文件）
+        this.cy.on('dbltap', 'node', (evt: any) => {
+            const node = evt.target;
+            const data = node.data();
+            const originalEvent = evt.originalEvent as MouseEvent;
+
+            // 如果是分组节点，不触发
+            if (data.isGroup) {
+                return;
+            }
+
+            // 双击打开文件
+            this.container?.dispatchEvent(new CustomEvent('node-open', {
                 detail: {
                     node: data.originalNode,
                     event: originalEvent,
@@ -2059,6 +2080,36 @@ case 'dagre':
                 // 获取选中的元素
                 const selected = this.cy.$(':selected');
                 
+                // 检查是否有选中的普通节点
+                const selectedNodes = selected.filter('node[!isGroup]');
+                
+                if (selectedNodes.length > 0) {
+                    // 阻止默认行为（避免浏览器后退）
+                    event.preventDefault();
+                    event.stopPropagation();
+                    
+                    // 触发删除节点事件
+                    selectedNodes.forEach((node: any) => {
+                        const data = node.data();
+                        const originalNode = data.originalNode;
+                        
+                        if (originalNode) {
+                            // 计算节点的关系数量（入边 + 出边）
+                            const connectedEdges = node.connectedEdges();
+                            const relationCount = connectedEdges.length;
+                            
+                            this.container?.dispatchEvent(new CustomEvent('node-delete-key', {
+                                detail: {
+                                    node: originalNode,
+                                    relationCount: relationCount
+                                }
+                            }));
+                        }
+                    });
+                    
+                    return; // 处理完节点删除后返回
+                }
+                
                 // 检查是否有选中的分组节点
                 const selectedGroups = selected.filter('node[?isGroup]');
                 
@@ -2077,6 +2128,8 @@ case 'dagre':
                             }
                         }));
                     });
+                    
+                    return;
                 }
                 
                 // 检查是否有选中的箭头关系边
