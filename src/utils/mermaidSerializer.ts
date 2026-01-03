@@ -141,18 +141,18 @@ export class MermaidSerializer {
         }
         
         // 3. 定义其他节点（不在分组中的非根节点）
+        lines.push('%% 3. 定义末端节点 (在分组之外)');
         const otherNodes = allNodes.filter(n => {
             const idParts = n.nodeID.split('.');
             return idParts.length > 1 && !nodesInGroups.has(n.nodeID);
         });
         
         if (otherNodes.length > 0) {
-            lines.push('%% 3. 定义末端节点 (在分组之外)');
             for (const node of otherNodes) {
                 lines.push(this.serializeNode(node));
             }
-            lines.push('');
         }
+        lines.push('');
         
         // 4. 定义连线关系
         lines.push('%% 4. 定义连线关系');

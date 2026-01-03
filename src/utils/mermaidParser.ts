@@ -49,7 +49,6 @@ export class MermaidParser {
      * 清除所有解析缓存
      */
     static clearCache(): void {
-        console.log(`[MermaidParser] Clearing all cache (${MermaidParser.parseCache.size} entries)`);
         MermaidParser.parseCache.clear();
     }
 
@@ -64,7 +63,6 @@ export class MermaidParser {
                 cleared++;
             }
         }
-        console.log(`[MermaidParser] Cleared ${cleared} cache entries for ${filePath}`);
     }
 
     /**
@@ -297,14 +295,12 @@ export class MermaidParser {
             const cacheKey = `${filePath}:${file.stat.mtime}`;
             const cached = MermaidParser.parseCache.get(cacheKey);
             if (cached) {
-                console.log(`Using cached parse result for ${filePath}`);
                 return cached;
             }
             
             // 清除该文件的旧缓存（mtime 不同的）
             for (const key of MermaidParser.parseCache.keys()) {
                 if (key.startsWith(`${filePath}:`)) {
-                    console.log(`Clearing old cache for ${filePath}`);
                     MermaidParser.parseCache.delete(key);
                 }
             }
@@ -351,7 +347,6 @@ export class MermaidParser {
                 // 将 subgraph 中的节点添加到 nodesMap
                 subgraphResult.nodes.forEach(node => {
                     nodesMap.set(node.id, node);
-                    console.log(`[MermaidParser] Added node from subgraph: ${node.id}`);
                 });
                 i = subgraphResult.endIndex + 1;
                 continue;
@@ -488,13 +483,7 @@ export class MermaidParser {
         // 创建所有节点
         for (const [id, nodeDef] of nodesMap) {
             const file = this.app.metadataCache.getFirstLinkpathDest(nodeDef.wikiLink, '') || null;
-            
-            // 调试输出
-            if (!file) {
-                console.warn(`[MermaidParser] File not found for node ${id}: ${nodeDef.wikiLink}`);
-            } else {
-                console.log(`[MermaidParser] Found file for node ${id}: ${file.path}`);
-            }
+        
             
             const idParts = id.split('.');
             const depth = idParts.length - 1;
@@ -515,35 +504,26 @@ export class MermaidParser {
         // 构建父子关系（基于节点 ID 的层级结构）
         for (const [id, node] of nodeMap) {
             const idParts = id.split('.');
-            
-            console.log(`[buildMOCTreeNodes] Processing node ${id}, depth: ${idParts.length - 1}`);
+        
             
             if (idParts.length === 1) {
                 // 根节点
-                console.log(`[buildMOCTreeNodes] Adding ${id} as root node`);
                 treeNodes.push(node);
             } else {
                 // 子节点，找到父节点
                 const parentId = idParts.slice(0, -1).join('.');
                 const parentNode = nodeMap.get(parentId);
                 
-                console.log(`[buildMOCTreeNodes] Looking for parent ${parentId} for node ${id}`);
-                
                 if (parentNode) {
-                    console.log(`[buildMOCTreeNodes] Found parent ${parentId}, adding ${id} as child`);
                     parentNode.children.push(node);
                 } else {
                     // 如果找不到父节点，作为根节点处理
-                    console.log(`[buildMOCTreeNodes] Parent ${parentId} not found, adding ${id} as root`);
                     treeNodes.push(node);
                 }
             }
         }
         
-        console.log(`[buildMOCTreeNodes] Total root nodes: ${treeNodes.length}`);
-        treeNodes.forEach(root => {
-            console.log(`[buildMOCTreeNodes] Root: ${root.nodeID}, children: ${root.children.length}`);
-        });
+
         
         // 从边中提取关系文本（父子边的标签）
         for (const edge of edges) {

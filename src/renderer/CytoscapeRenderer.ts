@@ -274,7 +274,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 data: {
                     id: group.id,
                     label: group.label,
-                    isGroup: true
+                    isGroup: true,
+                    nodeIds: group.nodeIds || []  // 添加节点 ID 列表
                 },
                 classes: 'group-node'
             };
@@ -833,6 +834,9 @@ case 'dagre':
         
         // 添加连线手柄
         this.addConnectionHandles();
+        
+        // 添加分组调整大小手柄
+        this.addGroupResizeHandles();
     }
     
     /**
@@ -1464,25 +1468,205 @@ case 'dagre':
     private createGroupFromNodes(nodes: any[]): void {
         if (nodes.length === 0) return;
 
-        // 创建自定义输入对话框
-        this.showGroupNameDialog((groupLabel) => {
-            if (!groupLabel) return;
+        // 获取节点 ID 列表
+        const nodeIds = nodes.map(node => node.data('originalNode').ID);
 
-            // 生成分组 ID
-            const groupId = `group_${Date.now()}`;
+        // 检查是否有节点已经在某个分组中
+        const existingGroups = this.findGroupsContainingNodes(nodeIds);
 
-            // 获取节点 ID 列表
-            const nodeIds = nodes.map(node => node.data('originalNode').ID);
+        if (existingGroups.length > 0) {
+            // 有节点已经在分组中，询问用户是创建新分组还是添加到现有分组
+            this.showGroupActionDialog(existingGroups, (action, targetGroupId) => {
+                if (action === 'new') {
+                    // 创建新分组
+                    this.showGroupNameDialog((groupLabel) => {
+                        if (!groupLabel) return;
 
-            // 触发创建分组事件
-            this.container?.dispatchEvent(new CustomEvent('group-create', {
-                detail: {
-                    groupId,
-                    groupLabel,
-                    nodeIds
+                        const groupId = `group_${Date.now()}`;
+                        this.container?.dispatchEvent(new CustomEvent('group-create', {
+                            detail: { groupId, groupLabel, nodeIds }
+                        }));
+                    });
+                } else if (action === 'add' && targetGroupId) {
+                    // 添加到现有分组
+                    this.container?.dispatchEvent(new CustomEvent('group-add-nodes', {
+                        detail: { groupId: targetGroupId, nodeIds }
+                    }));
                 }
-            }));
+            });
+        } else {
+            // 没有节点在分组中，直接创建新分组
+            this.showGroupNameDialog((groupLabel) => {
+                if (!groupLabel) return;
+
+                const groupId = `group_${Date.now()}`;
+                this.container?.dispatchEvent(new CustomEvent('group-create', {
+                    detail: { groupId, groupLabel, nodeIds }
+                }));
+            });
+        }
+    }
+
+    /**
+     * 查找包含指定节点的分组
+     */
+    private findGroupsContainingNodes(nodeIds: string[]): Array<{ id: string; label: string; nodeIds: string[] }> {
+        const groups = this.currentData?.metadata?.groups || [];
+        const result: Array<{ id: string; label: string; nodeIds: string[] }> = [];
+
+        for (const group of groups) {
+            // 检查是否有任何选中的节点在这个分组中
+            const hasCommonNode = nodeIds.some(id => group.nodeIds.includes(id));
+            if (hasCommonNode) {
+                result.push(group);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * 显示分组操作选择对话框
+     */
+    private showGroupActionDialog(
+        existingGroups: Array<{ id: string; label: string; nodeIds: string[] }>,
+        callback: (action: 'new' | 'add', groupId?: string) => void
+    ): void {
+        // 创建遮罩层
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        `;
+
+        // 创建对话框
+        const dialog = document.createElement('div');
+        dialog.style.cssText = `
+            background-color: var(--background-primary);
+            border: 1px solid var(--background-modifier-border);
+            border-radius: 8px;
+            padding: 20px;
+            min-width: 350px;
+            max-width: 500px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        `;
+
+        // 标题
+        const title = document.createElement('h3');
+        title.textContent = '选择操作';
+        title.style.cssText = `
+            margin: 0 0 15px 0;
+            color: var(--text-normal);
+            font-size: 16px;
+        `;
+
+        // 提示信息
+        const info = document.createElement('p');
+        info.textContent = '部分节点已在分组中，请选择操作：';
+        info.style.cssText = `
+            margin: 0 0 15px 0;
+            color: var(--text-muted);
+            font-size: 14px;
+        `;
+
+        // 选项容器
+        const optionsContainer = document.createElement('div');
+        optionsContainer.style.cssText = `
+            margin-bottom: 20px;
+        `;
+
+        // 创建新分组选项
+        const newGroupOption = document.createElement('div');
+        newGroupOption.style.cssText = `
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 2px solid var(--background-modifier-border);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        `;
+        newGroupOption.innerHTML = `
+            <div style="font-weight: 600; color: var(--text-normal); margin-bottom: 4px;">创建新分组</div>
+            <div style="font-size: 12px; color: var(--text-muted);">将选中的节点创建为新的分组</div>
+        `;
+        newGroupOption.addEventListener('mouseenter', () => {
+            newGroupOption.style.borderColor = '#5b8fd9';
+            newGroupOption.style.backgroundColor = 'rgba(91, 143, 217, 0.1)';
         });
+        newGroupOption.addEventListener('mouseleave', () => {
+            newGroupOption.style.borderColor = 'var(--background-modifier-border)';
+            newGroupOption.style.backgroundColor = 'transparent';
+        });
+        newGroupOption.addEventListener('click', () => {
+            overlay.remove();
+            callback('new');
+        });
+
+        optionsContainer.appendChild(newGroupOption);
+
+        // 为每个现有分组创建选项
+        existingGroups.forEach(group => {
+            const groupOption = document.createElement('div');
+            groupOption.style.cssText = `
+                padding: 10px;
+                margin-bottom: 10px;
+                border: 2px solid var(--background-modifier-border);
+                border-radius: 6px;
+                cursor: pointer;
+                transition: all 0.2s;
+            `;
+            groupOption.innerHTML = `
+                <div style="font-weight: 600; color: var(--text-normal); margin-bottom: 4px;">添加到「${group.label}」</div>
+                <div style="font-size: 12px; color: var(--text-muted);">将新选中的节点添加到此分组（当前 ${group.nodeIds.length} 个节点）</div>
+            `;
+            groupOption.addEventListener('mouseenter', () => {
+                groupOption.style.borderColor = '#5b8fd9';
+                groupOption.style.backgroundColor = 'rgba(91, 143, 217, 0.1)';
+            });
+            groupOption.addEventListener('mouseleave', () => {
+                groupOption.style.borderColor = 'var(--background-modifier-border)';
+                groupOption.style.backgroundColor = 'transparent';
+            });
+            groupOption.addEventListener('click', () => {
+                overlay.remove();
+                callback('add', group.id);
+            });
+
+            optionsContainer.appendChild(groupOption);
+        });
+
+        // 取消按钮
+        const cancelButton = document.createElement('button');
+        cancelButton.textContent = '取消';
+        cancelButton.style.cssText = `
+            width: 100%;
+            padding: 8px;
+            border: 1px solid var(--background-modifier-border);
+            border-radius: 4px;
+            background-color: var(--background-primary);
+            color: var(--text-normal);
+            cursor: pointer;
+            font-size: 14px;
+        `;
+        cancelButton.addEventListener('click', () => {
+            overlay.remove();
+        });
+
+        // 组装对话框
+        dialog.appendChild(title);
+        dialog.appendChild(info);
+        dialog.appendChild(optionsContainer);
+        dialog.appendChild(cancelButton);
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
     }
 
     /**
@@ -2087,11 +2271,11 @@ case 'dagre':
         });
 
         // 边双击事件（编辑关系文本）
-        this.cy.on('dbltap', 'edge[type="reverse"]', (evt: any) => {
+        this.cy.on('dbltap', 'edge', (evt: any) => {
             const edge = evt.target;
             const data = edge.data();
 
-            // 只允许编辑箭头关系的文本
+            // 允许编辑所有边的标签
             this.showInlineEdgeLabelEditor(edge);
         });
 
@@ -2241,5 +2425,426 @@ case 'dagre':
 
         // 如果变化超过 20%，重新布局
         return changeRatio > 0.2;
+    }
+
+    /**
+     * 添加分组调整大小手柄
+     */
+    private addGroupResizeHandles(): void {
+        if (!this.cy || !this.container) return;
+
+        // 移除旧的手柄容器
+        const oldHandleContainer = this.container.querySelector('.zk-group-resize-handles');
+        if (oldHandleContainer) {
+            oldHandleContainer.remove();
+        }
+
+        // 创建手柄容器
+        const handleContainer = document.createElement('div');
+        handleContainer.className = 'zk-group-resize-handles';
+        handleContainer.style.cssText = `
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 999;
+        `;
+        this.container.appendChild(handleContainer);
+
+        let currentHandles: HTMLElement[] = [];
+        let selectedGroup: any = null;
+        let resizePreview: HTMLElement | null = null;  // 添加预览框
+
+        // 清除所有手柄
+        const clearHandles = () => {
+            currentHandles.forEach(handle => handle.remove());
+            currentHandles = [];
+            selectedGroup = null;
+            if (resizePreview) {
+                resizePreview.remove();
+                resizePreview = null;
+            }
+        };
+
+        // 创建四个角的调整大小手柄
+        const createResizeHandles = (groupNode: any) => {
+            console.log('Creating resize handles for group:', groupNode.id());
+            clearHandles();
+            selectedGroup = groupNode;
+
+            const positions = [
+                { name: 'nw', cursor: 'nwse-resize', x: 0, y: 0 },      // 左上
+                { name: 'ne', cursor: 'nesw-resize', x: 1, y: 0 },      // 右上
+                { name: 'sw', cursor: 'nesw-resize', x: 0, y: 1 },      // 左下
+                { name: 'se', cursor: 'nwse-resize', x: 1, y: 1 }       // 右下
+            ];
+
+            positions.forEach(pos => {
+                const handle = document.createElement('div');
+                handle.className = `zk-group-resize-handle zk-group-resize-${pos.name}`;
+                handle.style.cssText = `
+                    position: absolute;
+                    width: 10px;
+                    height: 10px;
+                    background-color: #5b8fd9;
+                    border: 2px solid #ffffff;
+                    border-radius: 2px;
+                    cursor: ${pos.cursor};
+                    pointer-events: auto;
+                    transform: translate(-50%, -50%);
+                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+                    z-index: 1000;
+                `;
+                handleContainer.appendChild(handle);
+                currentHandles.push(handle);
+
+                console.log('Created handle:', pos.name, handle);
+
+                // 绑定拖动事件
+                this.bindResizeHandleDrag(handle, groupNode, pos, handleContainer);
+            });
+
+            // 更新手柄位置
+            updateHandlePositions();
+        };
+
+        // 更新手柄位置
+        const updateHandlePositions = () => {
+            if (!selectedGroup || currentHandles.length === 0) return;
+            if (!this.cy) return;
+
+            const bb = selectedGroup.renderedBoundingBox();
+            const positions = [
+                { x: bb.x1, y: bb.y1 },  // 左上
+                { x: bb.x2, y: bb.y1 },  // 右上
+                { x: bb.x1, y: bb.y2 },  // 左下
+                { x: bb.x2, y: bb.y2 }   // 右下
+            ];
+
+            console.log('Updating handle positions:', positions);
+
+            currentHandles.forEach((handle, index) => {
+                handle.style.left = `${positions[index].x}px`;
+                handle.style.top = `${positions[index].y}px`;
+            });
+        };
+
+        // 监听分组节点选中事件
+        this.cy.on('select', 'node[?isGroup]', (evt: any) => {
+            console.log('Group selected, creating handles');
+            const groupNode = evt.target;
+            createResizeHandles(groupNode);
+        });
+
+        // 监听分组节点取消选中事件
+        this.cy.on('unselect', 'node[?isGroup]', () => {
+            clearHandles();
+        });
+
+        // 监听视图变化，更新手柄位置
+        this.cy.on('pan zoom viewport', () => {
+            if (selectedGroup) {
+                updateHandlePositions();
+            }
+        });
+
+        // 监听分组节点移动
+        this.cy.on('position', 'node[?isGroup]', (evt: any) => {
+            if (evt.target === selectedGroup) {
+                updateHandlePositions();
+            }
+        });
+    }
+
+    /**
+     * 绑定调整大小手柄的拖动事件
+     */
+    private bindResizeHandleDrag(
+        handle: HTMLElement,
+        groupNode: any,
+        position: { name: string; cursor: string; x: number; y: number },
+        handleContainer: HTMLElement
+    ): void {
+        if (!this.cy || !this.container) return;
+
+        let isDragging = false;
+        let startMousePos: { x: number; y: number } | null = null;
+        let startBoundingBox: any = null;
+        let originalNodeIds: string[] = [];
+        let resizePreview: HTMLElement | null = null;
+
+        handle.addEventListener('mousedown', (e: MouseEvent) => {
+            console.log('Handle mousedown triggered', position.name);
+            e.preventDefault();
+            e.stopPropagation();
+
+            isDragging = true;
+            startMousePos = { x: e.clientX, y: e.clientY };
+            startBoundingBox = groupNode.renderedBoundingBox();
+            
+            // 记录原始节点列表
+            originalNodeIds = groupNode.data('nodeIds') || [];
+
+            console.log('Start dragging:', { startMousePos, startBoundingBox, originalNodeIds });
+
+            // 创建预览框
+            resizePreview = document.createElement('div');
+            resizePreview.className = 'zk-group-resize-preview';
+            resizePreview.style.cssText = `
+                position: absolute;
+                border: 2px dashed #5b8fd9;
+                background-color: rgba(91, 143, 217, 0.1);
+                pointer-events: none;
+                z-index: 998;
+            `;
+            handleContainer.appendChild(resizePreview);
+
+            // 禁用 Cytoscape 的平移
+            if (this.cy) {
+                this.cy.userPanningEnabled(false);
+                this.cy.boxSelectionEnabled(false);
+            }
+
+            // 添加全局鼠标移动和释放监听器
+            const handleMouseMove = (e: MouseEvent) => {
+                if (!isDragging || !startMousePos || !startBoundingBox || !this.cy) return;
+
+                console.log('Mouse moving during drag');
+
+                // 将屏幕坐标转换为渲染坐标
+                const zoom = this.cy.zoom();
+                const pan = this.cy.pan();
+                
+                const deltaX = (e.clientX - startMousePos.x);
+                const deltaY = (e.clientY - startMousePos.y);
+
+                console.log('Delta:', { deltaX, deltaY, zoom, pan });
+
+                // 计算新的边界框
+                let newX1 = startBoundingBox.x1;
+                let newY1 = startBoundingBox.y1;
+                let newX2 = startBoundingBox.x2;
+                let newY2 = startBoundingBox.y2;
+
+                // 根据手柄位置调整边界
+                if (position.x === 0) {
+                    newX1 += deltaX;  // 左边
+                } else {
+                    newX2 += deltaX;  // 右边
+                }
+
+                if (position.y === 0) {
+                    newY1 += deltaY;  // 上边
+                } else {
+                    newY2 += deltaY;  // 下边
+                }
+
+                // 确保最小尺寸
+                const minSize = 50;
+                if (newX2 - newX1 < minSize || newY2 - newY1 < minSize) {
+                    return;
+                }
+
+                // 查找新边界内的所有节点
+                const nodesInBounds: any[] = [];
+                this.cy.nodes('[!isGroup]').forEach((node: any) => {
+                    const nodeBB = node.renderedBoundingBox();
+                    const nodeCenterX = (nodeBB.x1 + nodeBB.x2) / 2;
+                    const nodeCenterY = (nodeBB.y1 + nodeBB.y2) / 2;
+
+                    // 检查节点中心是否在新边界内
+                    if (nodeCenterX >= newX1 && nodeCenterX <= newX2 &&
+                        nodeCenterY >= newY1 && nodeCenterY <= newY2) {
+                        nodesInBounds.push(node);
+                    }
+                });
+
+                console.log('Nodes in new bounds:', nodesInBounds.length, 'New bounds:', { newX1, newY1, newX2, newY2 });
+
+                // 更新预览框位置
+                if (resizePreview) {
+                    resizePreview.style.left = `${newX1}px`;
+                    resizePreview.style.top = `${newY1}px`;
+                    resizePreview.style.width = `${newX2 - newX1}px`;
+                    resizePreview.style.height = `${newY2 - newY1}px`;
+                }
+
+                // 更新分组的节点列表（视觉预览）
+                const newNodeIds = nodesInBounds.map(n => n.data('originalNode').ID);
+                
+                console.log('New node IDs:', newNodeIds, 'Original:', originalNodeIds);
+                
+                // 临时更新分组边界（通过调整子节点）
+                // 注意：这里只是视觉预览，实际更新在 mouseup 时进行
+                nodesInBounds.forEach(node => {
+                    if (!originalNodeIds.includes(node.data('originalNode').ID)) {
+                        // 新加入的节点，临时设置为分组的子节点
+                        console.log('Adding node to group:', node.data('originalNode').ID);
+                        node.data('parent', groupNode.id());
+                    }
+                });
+
+                // 移除不在边界内的节点
+                this.cy.nodes(`[parent="${groupNode.id()}"]`).forEach((node: any) => {
+                    const nodeId = node.data('originalNode').ID;
+                    if (!newNodeIds.includes(nodeId)) {
+                        console.log('Removing node from group:', nodeId);
+                        node.data('parent', undefined);
+                    }
+                });
+            };
+
+            const handleMouseUp = (e: MouseEvent) => {
+                if (!isDragging) return;
+
+                isDragging = false;
+
+                console.log('Mouse up, finalizing resize');
+
+                // 移除预览框
+                if (resizePreview) {
+                    resizePreview.remove();
+                    resizePreview = null;
+                }
+
+                // 恢复 Cytoscape 的平移
+                if (this.cy) {
+                    this.cy.userPanningEnabled(true);
+                    this.cy.boxSelectionEnabled(true);
+                }
+
+                // 重新计算最终边界（使用最终鼠标位置）
+                if (startMousePos && startBoundingBox && this.cy) {
+                    const deltaX = e.clientX - startMousePos.x;
+                    const deltaY = e.clientY - startMousePos.y;
+
+                    let newX1 = startBoundingBox.x1;
+                    let newY1 = startBoundingBox.y1;
+                    let newX2 = startBoundingBox.x2;
+                    let newY2 = startBoundingBox.y2;
+
+                    if (position.x === 0) {
+                        newX1 += deltaX;
+                    } else {
+                        newX2 += deltaX;
+                    }
+
+                    if (position.y === 0) {
+                        newY1 += deltaY;
+                    } else {
+                        newY2 += deltaY;
+                    }
+
+                    console.log('Final bounds:', { newX1, newY1, newX2, newY2 });
+
+                    // 确保最小尺寸
+                    const minSize = 50;
+                    if (newX2 - newX1 >= minSize && newY2 - newY1 >= minSize) {
+                        // 查找最终边界内的所有节点
+                        const nodesInBounds: any[] = [];
+                        this.cy.nodes('[!isGroup]').forEach((node: any) => {
+                            const nodeBB = node.renderedBoundingBox();
+                            const nodeCenterX = (nodeBB.x1 + nodeBB.x2) / 2;
+                            const nodeCenterY = (nodeBB.y1 + nodeBB.y2) / 2;
+
+                            if (nodeCenterX >= newX1 && nodeCenterX <= newX2 &&
+                                nodeCenterY >= newY1 && nodeCenterY <= newY2) {
+                                nodesInBounds.push(node);
+                            }
+                        });
+
+                        console.log('Final nodes in bounds:', nodesInBounds.map(n => n.data('originalNode').ID));
+
+                        // 清除所有当前的 parent 关系
+                        this.cy.nodes(`[parent="${groupNode.id()}"]`).forEach((node: any) => {
+                            console.log('Clearing parent for:', node.data('originalNode').ID);
+                            node.data('parent', undefined);
+                        });
+
+                        // 设置新的 parent 关系
+                        nodesInBounds.forEach(node => {
+                            const currentParent = node.data('parent');
+                            const isGroup = node.data('isGroup');
+                            const nodeId = node.data('originalNode')?.ID || node.id();
+                            
+                            console.log('Setting parent for:', nodeId, 'current parent:', currentParent, 'isGroup:', isGroup, 'new parent:', groupNode.id());
+                            console.log('  Node object:', node.id(), 'has originalNode:', !!node.data('originalNode'));
+                            
+                            // 分组节点不能作为子节点
+                            if (isGroup) {
+                                console.log('  Skipping: node is a group itself');
+                                return;
+                            }
+                            
+                            // 使用 move() 方法移动节点到新的 parent
+                            try {
+                                if (currentParent !== groupNode.id()) {
+                                    node.move({ parent: groupNode.id() });
+                                    console.log('  Moved node using move() method');
+                                }
+                            } catch (error) {
+                                console.log('  Failed to move node:', error);
+                            }
+                        });
+
+                        // 验证设置是否成功
+                        console.log('Verifying parent assignments:');
+                        nodesInBounds.forEach(node => {
+                            const parentId = node.data('parent');
+                            console.log('  Node', node.data('originalNode').ID, 'parent:', parentId);
+                        });
+                    }
+                }
+
+                // 获取最终的节点列表
+                const finalNodeIds: string[] = [];
+                console.log('Querying nodes with parent:', groupNode.id());
+                this.cy?.nodes(`[parent="${groupNode.id()}"]`).forEach((node: any) => {
+                    const nodeId = node.data('originalNode').ID;
+                    console.log('  Found node with parent:', nodeId);
+                    finalNodeIds.push(nodeId);
+                });
+
+                console.log('Final node IDs:', finalNodeIds, 'Original:', originalNodeIds);
+
+                // 更新分组的 nodeIds 数据
+                groupNode.data('nodeIds', finalNodeIds);
+
+                // 强制 Cytoscape 重新计算分组边界
+                if (this.cy) {
+                    // 触发布局更新
+                    this.cy.nodes(`[parent="${groupNode.id()}"]`).forEach((node: any) => {
+                        node.trigger('position');
+                    });
+                    
+                    // 强制重绘
+                    this.cy.forceRender();
+                }
+
+                // 触发分组更新事件
+                if (finalNodeIds.length > 0 && 
+                    JSON.stringify(finalNodeIds.sort()) !== JSON.stringify(originalNodeIds.sort())) {
+                    console.log('Dispatching group-resize event');
+                    this.container?.dispatchEvent(new CustomEvent('group-resize', {
+                        detail: {
+                            groupId: groupNode.id(),
+                            groupLabel: groupNode.data('label'),
+                            nodeIds: finalNodeIds
+                        }
+                    }));
+                } else {
+                    console.log('No changes to dispatch');
+                }
+
+                // 移除全局监听器
+                document.removeEventListener('mousemove', handleMouseMove);
+                document.removeEventListener('mouseup', handleMouseUp);
+            };
+
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+        });
     }
 }

@@ -1160,6 +1160,23 @@ export class ZKIndexView extends ItemView {
             }
         });
 
+        // 监听分组调整大小事件
+        branchGraphDiv.addEventListener('group-resize', async (event: any) => {
+            const { groupId, groupLabel, nodeIds } = event.detail;
+            
+            try {
+                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                if (mocFile) {
+                    // 更新分组的节点列表
+                    await this.updateGroupNodesInMOC(mocFile, groupId, nodeIds);
+                    // 刷新视图以显示更新后的分组
+                    await this.refreshBranchMermaid();
+                }
+            } catch (error) {
+                console.error('Failed to resize group:', error);
+            }
+        });
+
         // 监听分组右键菜单事件
         branchGraphDiv.addEventListener('group-contextmenu', async (event: any) => {
             const { groupId, groupLabel, position } = event.detail;
@@ -3929,7 +3946,6 @@ export class ZKIndexView extends ItemView {
             }
             
             await this.app.vault.modify(mocFile, lines.join('\n'));
-            console.log(`Updated node color for ${nodeID}: ${color || 'default'}`);
         } catch (error) {
             console.error('Failed to update node color:', error);
             throw error;
@@ -4164,7 +4180,6 @@ export class ZKIndexView extends ItemView {
             }
             
             await this.app.vault.modify(mocFile, lines.join('\n'));
-            console.log(`Updated node ID from ${oldID} to ${newID}`);
         } catch (error) {
             console.error('Failed to update node ID:', error);
             throw error;
@@ -5210,7 +5225,6 @@ export class ZKIndexView extends ItemView {
             await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
             
             new Notice(`已创建分组: ${group.label}`);
-            console.log(`Saved group:`, group);
         } catch (error) {
             console.error('Failed to save group:', error);
             new Notice(`保存分组失败: ${error.message}`);
@@ -5372,8 +5386,223 @@ export class ZKIndexView extends ItemView {
             const deletedGroup = groups[groupIndex];
             groups.splice(groupIndex, 1);
             
+            // 删除 mermaid 代码中的 subgraph（这会修改 lines 数组）
+            await this.deleteSubgraphFromMermaid(lines, headingIndex, sectionEndIndex, groupId);
+            
+            // 重新查找 ext 行的位置（因为 lines 数组已被修改）
+            let newPosLineIndex = -1;
+            for (let i = lines.length - 1; i > headingIndex; i--) {
+                const line = lines[i].trim();
+                const match = line.match(/^%%\s*ext:\s*(\{.*\})\s*%%$/);
+                if (match) {
+                    newPosLineIndex = i;
+                    break;
+                }
+            }
+            
             // 构建新的 ext 行
             const extData: any = { node_positions: nodePositions, groups };
+            const newPosLine = `%% ext:${JSON.stringify(extData)} %%`;
+            
+            // 更新 ext 行
+            if (newPosLineIndex !== -1) {
+                lines[newPosLineIndex] = newPosLine;
+            } else {
+                console.warn('Could not find ext line after deleting subgraph');
+            }
+            
+            const newContent = lines.join('\n');
+            
+            // 写回文件
+            await this.app.vault.modify(mocFile, newContent);
+            
+            new Notice(`已删除分组: ${deletedGroup.label}`);
+        } catch (error) {
+            console.error('Failed to delete group:', error);
+            new Notice(`删除分组失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 从 mermaid 代码中删除 subgraph
+     */
+    private async deleteSubgraphFromMermaid(
+        lines: string[], 
+        headingIndex: number, 
+        sectionEndIndex: number, 
+        groupId: string
+    ): Promise<void> {
+        // 查找 subgraph 的开始和结束位置
+        let subgraphStartIndex = -1;
+        let subgraphEndIndex = -1;
+        
+        for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
+            const line = lines[i].trim();
+            
+            // 匹配 subgraph 开始行
+            if (line.startsWith('subgraph') && line.includes(groupId)) {
+                subgraphStartIndex = i;
+                
+                // 查找对应的 end
+                for (let j = i + 1; j < sectionEndIndex; j++) {
+                    if (lines[j].trim() === 'end') {
+                        subgraphEndIndex = j;
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+        
+        if (subgraphStartIndex === -1 || subgraphEndIndex === -1) {
+            console.warn(`未找到 subgraph ${groupId}`);
+            return;
+        }
+        
+        // 收集 subgraph 中的节点定义
+        const nodeDefinitions: string[] = [];
+        for (let i = subgraphStartIndex + 1; i < subgraphEndIndex; i++) {
+            const line = lines[i].trim();
+            // 跳过 direction 行和空行
+            if (line.startsWith('direction ') || line === '') {
+                console.log('  Skipping (direction or empty)');
+                continue;
+            }
+            // 收集节点定义
+            if (line.match(/^[a-zA-Z0-9._]+\[/)) {
+                console.log('  Matched as node definition');
+                nodeDefinitions.push(line);
+            } else {
+                console.log('  Not matched as node definition');
+            }
+        }
+        
+        console.log('Collected node definitions from subgraph:', nodeDefinitions);
+        
+        // 查找插入位置：在 "%% 3. 定义末端节点" 注释之后
+        let insertIndex = -1;
+        for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
+            const line = lines[i].trim();
+            // 匹配各种可能的注释格式
+            if (line.match(/^%%\s*3[.、]\s*定义/) || 
+                line.match(/^%%\s*定义未分组/) ||
+                line.match(/^%%\s*定义末端节点/)) {
+                insertIndex = i + 1;
+                console.log('  Found insert position!');
+                break;
+            }
+        }
+        
+        console.log('Insert index for node definitions:', insertIndex);
+        
+        // 如果没找到插入位置，就在删除的 subgraph 位置插入
+        if (insertIndex === -1) {
+            insertIndex = subgraphStartIndex;
+            console.log('Using subgraph position as insert index:', insertIndex);
+        }
+        
+        // 插入节点定义并删除 subgraph
+        if (nodeDefinitions.length > 0) {
+            // 如果插入位置在 subgraph 之后，需要调整索引
+            if (insertIndex > subgraphStartIndex) {
+                // 先插入节点
+                lines.splice(insertIndex, 0, ...nodeDefinitions);
+                // 然后删除 subgraph（索引需要调整）
+                lines.splice(subgraphStartIndex, subgraphEndIndex - subgraphStartIndex + 1);
+            } else {
+                // 先删除 subgraph
+                lines.splice(subgraphStartIndex, subgraphEndIndex - subgraphStartIndex + 1);
+                // 然后插入节点（索引不需要调整）
+                lines.splice(insertIndex, 0, ...nodeDefinitions);
+            }
+        } else {
+            // 只删除 subgraph
+            lines.splice(subgraphStartIndex, subgraphEndIndex - subgraphStartIndex + 1);
+        }
+        
+        console.log('Deleted subgraph and moved node definitions');
+    }
+
+    /**
+     * 更新 MOC 文件中分组的节点列表
+     */
+    private async updateGroupNodesInMOC(mocFile: TFile, groupId: string, newNodeIds: string[]): Promise<void> {
+        try {
+            // 读取 MOC 文件内容
+            const content = await this.app.vault.read(mocFile);
+            const lines = content.split('\n');
+            const headingTitle = this.plugin.settings.mocHeadingTitle;
+            
+            // 查找思维树标题的范围
+            let headingIndex = -1;
+            let sectionEndIndex = lines.length;
+            
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].trim() === `# ${headingTitle}`) {
+                    headingIndex = i;
+                    
+                    for (let j = i + 1; j < lines.length; j++) {
+                        if (lines[j].trim().startsWith('# ')) {
+                            sectionEndIndex = j;
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+            
+            if (headingIndex === -1) {
+                new Notice(`未找到标题: # ${headingTitle}`);
+                return;
+            }
+            
+            // 查找 ext 行
+            let posLineIndex = -1;
+            let nodePositions: Record<string, { x: number; y: number }> = {};
+            let groups: any[] = [];
+            let edgeCurvatures: Record<string, { distance: number; weight: number }> = {};
+            let nodeColors: Record<string, string> = {};
+            
+            for (let i = sectionEndIndex - 1; i > headingIndex; i--) {
+                const line = lines[i].trim();
+                const match = line.match(/^%%\s*ext:\s*(\{.*\})\s*%%$/);
+                if (match) {
+                    try {
+                        const extData = JSON.parse(match[1]);
+                        if (extData.node_positions) {
+                            posLineIndex = i;
+                            nodePositions = extData.node_positions;
+                            groups = extData.groups || [];
+                            edgeCurvatures = extData.edge_curvatures || {};
+                            nodeColors = extData.node_colors || {};
+                            break;
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse ext data:', e);
+                    }
+                }
+            }
+            
+            // 查找并更新分组
+            const groupIndex = groups.findIndex((g: any) => g.id === groupId);
+            if (groupIndex === -1) {
+                new Notice(`未找到分组: ${groupId}`);
+                return;
+            }
+            
+            // 更新节点列表
+            groups[groupIndex].nodeIds = newNodeIds;
+            
+            // 更新 mermaid 代码中的 subgraph
+            await this.updateSubgraphInMermaid(lines, headingIndex, sectionEndIndex, groupId, groups[groupIndex].label, newNodeIds);
+            
+            // 构建新的 ext 行
+            const extData: any = { 
+                node_positions: nodePositions, 
+                groups,
+                edge_curvatures: edgeCurvatures,
+                node_colors: nodeColors
+            };
             const newPosLine = `%% ext:${JSON.stringify(extData)} %%`;
             
             // 重新构建文件内容
@@ -5388,12 +5617,80 @@ export class ZKIndexView extends ItemView {
             // 写回文件
             await this.app.vault.modify(mocFile, newContent);
             
-            new Notice(`已删除分组: ${deletedGroup.label}`);
-            console.log(`Deleted group:`, deletedGroup);
         } catch (error) {
-            console.error('Failed to delete group:', error);
-            new Notice(`删除分组失败: ${error.message}`);
+            console.error('Failed to update group nodes:', error);
+            new Notice(`更新分组失败: ${error.message}`);
         }
+    }
+
+    /**
+     * 更新 mermaid 代码中的 subgraph
+     */
+    private async updateSubgraphInMermaid(
+        lines: string[], 
+        headingIndex: number, 
+        sectionEndIndex: number, 
+        groupId: string, 
+        groupLabel: string,
+        newNodeIds: string[]
+    ): Promise<void> {
+        // 查找 subgraph 的开始和结束位置
+        let subgraphStartIndex = -1;
+        let subgraphEndIndex = -1;
+        
+        for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
+            const line = lines[i].trim();
+            
+            // 匹配 subgraph 开始行，例如: subgraph group_1767440368838 [分组1]
+            if (line.startsWith('subgraph') && line.includes(groupId)) {
+                subgraphStartIndex = i;
+                
+                // 查找对应的 end
+                for (let j = i + 1; j < sectionEndIndex; j++) {
+                    if (lines[j].trim() === 'end') {
+                        subgraphEndIndex = j;
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+        
+        if (subgraphStartIndex === -1 || subgraphEndIndex === -1) {
+            console.warn(`未找到 subgraph ${groupId}`);
+            return;
+        }
+        
+        // 构建新的 subgraph 内容
+        const newSubgraphLines: string[] = [];
+        newSubgraphLines.push(`subgraph ${groupId} [${groupLabel}]`);
+        newSubgraphLines.push('    direction TB');
+        
+        // 添加节点定义
+        newNodeIds.forEach(nodeId => {
+            // 查找原始的节点定义（可能在 subgraph 外面）
+            let nodeDefinition = null;
+            for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
+                const line = lines[i].trim();
+                // 匹配节点定义，例如: a.1["[[20251214 薛定谔方程]]"]
+                if (line.startsWith(`${nodeId}[`)) {
+                    nodeDefinition = line;
+                    break;
+                }
+            }
+            
+            if (nodeDefinition) {
+                newSubgraphLines.push(`    ${nodeDefinition}`);
+            } else {
+                // 如果找不到定义，创建一个简单的
+                newSubgraphLines.push(`    ${nodeId}["${nodeId}"]`);
+            }
+        });
+        
+        newSubgraphLines.push('end');
+        
+        // 替换原来的 subgraph
+        lines.splice(subgraphStartIndex, subgraphEndIndex - subgraphStartIndex + 1, ...newSubgraphLines);
     }
 
     /**
@@ -5479,7 +5776,6 @@ export class ZKIndexView extends ItemView {
                 await this.app.vault.modify(mocFile, newLines.join('\n'));
             }
             
-            console.log(`Added arrow relation: ${sourceID} -- ${relationText} --> ${targetID}`);
         } catch (error) {
             console.error('Failed to add arrow relation:', error);
             throw error;
@@ -5549,7 +5845,6 @@ export class ZKIndexView extends ItemView {
             await this.app.vault.modify(mocFile, newContent);
             
             new Notice(`已删除箭头关系: ${sourceID} → ${targetID}`);
-            console.log(`Deleted arrow relation: ${sourceID} --> ${targetID}`);
         } catch (error) {
             console.error('Failed to delete arrow relation:', error);
             new Notice(`删除箭头关系失败: ${error.message}`);
@@ -5634,7 +5929,6 @@ export class ZKIndexView extends ItemView {
             await this.app.vault.modify(mocFile, newContent);
             
             new Notice(`已更新关系文本: ${sourceID} → ${targetID}`);
-            console.log(`Updated arrow relation label: ${sourceID} -- ${newLabel} --> ${targetID}`);
         } catch (error) {
             console.error('Failed to update arrow relation label:', error);
             new Notice(`更新关系文本失败: ${error.message}`);
@@ -5810,7 +6104,6 @@ export class ZKIndexView extends ItemView {
             // 保存更新后的数据
             await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
             
-            console.log(`Saved curvature for edge ${edgeId}:`, curvature);
         } catch (error) {
             console.error('Failed to save edge curvature:', error);
             new Notice(`保存边弧度失败: ${error.message}`);
