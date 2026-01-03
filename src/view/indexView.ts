@@ -1486,11 +1486,33 @@ export class ZKIndexView extends ItemView {
                 return;
             }
             
+            // 检查目标节点是否是自由节点（ID 以 "free." 开头）
+            const isFreeNode = targetNode.IDStr.startsWith('free.');
+            let finalTargetID = targetNode.IDStr;
+            
+            if (isFreeNode) {
+                // 生成新的子节点 ID
+                const newChildID = this.generateChildNodeID(sourceNode.IDStr);
+                
+                // 在刷新前保存所有节点的当前位置
+                await this.saveAllNodePositionsBeforeRefresh();
+                
+                // 重命名自由节点为子节点
+                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                if (mocFile) {
+                    await this.updateNodeIDInMOC(mocFile, targetNode.IDStr, newChildID);
+                    finalTargetID = newChildID;
+                    new Notice(`自由节点 ${targetNode.IDStr} 已转换为 ${newChildID}`);
+                }
+            }
+            
             // 显示关系文本输入对话框
             const relationText = await this.showRelationTextDialog();
             
-            // 在刷新前保存所有节点的当前位置
-            await this.saveAllNodePositionsBeforeRefresh();
+            // 在刷新前保存所有节点的当前位置（如果之前没保存）
+            if (!isFreeNode) {
+                await this.saveAllNodePositionsBeforeRefresh();
+            }
             
             try {
                 const mocFile = this.app.vault.getFileByPath(currentMOCPath);
@@ -1498,14 +1520,14 @@ export class ZKIndexView extends ItemView {
                     await this.addArrowRelationToMOC(
                         mocFile,
                         sourceNode.IDStr,
-                        targetNode.IDStr,
+                        finalTargetID,
                         relationText || ''
                     );
                     
                     // 刷新视图
                     await this.refreshBranchMermaid();
                     
-                    new Notice(`已创建箭头关系: ${sourceNode.ID} → ${targetNode.ID}`);
+                    new Notice(`已创建箭头关系: ${sourceNode.ID} → ${finalTargetID}`);
                 }
             } catch (error) {
                 console.error('Failed to create arrow relation:', error);

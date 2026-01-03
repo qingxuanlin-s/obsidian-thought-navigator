@@ -246,16 +246,12 @@ export async function parseMOCStructure(
 
         const itemContent = listMatch[2];
         
-        console.log(`[parseMOCStructure] Parsing line ${i}: "${line}"`);
-        console.log(`[parseMOCStructure] Item content: "${itemContent}"`);
 
         // 解析 wiki 链接和节点 ID
         const parsedItem = parseListItem(app, itemContent);
         
-        console.log(`[parseMOCStructure] Parsed item:`, parsedItem);
         
         if (!parsedItem || !parsedItem.nodeID) {
-            console.log(`[parseMOCStructure] Skipping line ${i}: no nodeID`);
             continue;
         }
 
@@ -275,10 +271,8 @@ export async function parseMOCStructure(
         };
 
         allNodes.push(node);
-        console.log(`[parseMOCStructure] Added node: ${parsedItem.nodeID}`);
     }
     
-    console.log(`[parseMOCStructure] Total nodes parsed: ${allNodes.length}`);
 
     // 第二步：根据节点ID构建父子关系
     const treeNodes: MOCTreeNode[] = [];
@@ -554,18 +548,11 @@ export async function convertMOCToZKNodes(
                 // 如果找不到父节点，标记为根节点（如 free.1 找不到 free）
                 nodes[i].isRoot = !hasParent;
                 
-                // 调试日志
-                if (!hasParent) {
-                    console.log(`[convertMOCToZKNodes] Node ${nodes[i].IDStr} marked as root (parent ${parentId} not found)`);
-                }
             }
         } else {
             nodes[i].isRoot = parentIDArr.length === 0;
         }
     }
-
-    console.log(`[convertMOCToZKNodes] Total nodes: ${nodes.length}, Root nodes: ${nodes.filter(n => n.isRoot).length}`);
-    console.log(`[convertMOCToZKNodes] All nodes:`, nodes.map(n => ({ id: n.IDStr, isRoot: n.isRoot })));
 
     return nodes;
 }
