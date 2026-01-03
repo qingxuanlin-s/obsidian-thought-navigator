@@ -108,6 +108,8 @@ export class ZKIndexView extends ItemView {
 
     // 防抖相关属性
     resizeTimeout: NodeJS.Timeout | null = null;
+    edgeCurvatureSaveTimeout: NodeJS.Timeout | null = null;
+    nodePositionSaveTimeout: NodeJS.Timeout | null = null;
 
     constructor(leaf: WorkspaceLeaf, plugin: ZKNavigationPlugin) {
         super(leaf);
@@ -1064,30 +1066,44 @@ export class ZKIndexView extends ItemView {
                 return;
             }
             
-            // 保存位置到 MOC 文件
-            try {
-                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
-                if (mocFile) {
-                    await this.saveNodePositionToMOC(mocFile, node.ID, position);
-                }
-            } catch (error) {
-                console.error('Failed to save node position:', error);
+            // 使用防抖，避免拖动时频繁保存
+            if (this.nodePositionSaveTimeout) {
+                clearTimeout(this.nodePositionSaveTimeout);
             }
+            
+            this.nodePositionSaveTimeout = setTimeout(async () => {
+                // 保存位置到 MOC 文件
+                try {
+                    const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                    if (mocFile) {
+                        await this.saveNodePositionToMOC(mocFile, node.ID, position);
+                    }
+                } catch (error) {
+                    console.error('Failed to save node position:', error);
+                }
+            }, 500); // 500ms 防抖延迟
         });
 
         // 监听边弧度变化事件（拖动控制点后保存到 MOC 文件）
         branchGraphDiv.addEventListener('edge-curvature-changed', async (event: any) => {
             const { edgeId, source, target, distance, weight } = event.detail;
             
-            // 保存弧度到 MOC 文件
-            try {
-                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
-                if (mocFile) {
-                    await this.saveEdgeCurvatureToMOC(mocFile, edgeId, { distance, weight });
-                }
-            } catch (error) {
-                console.error('Failed to save edge curvature:', error);
+            // 使用防抖，避免拖动时频繁保存
+            if (this.edgeCurvatureSaveTimeout) {
+                clearTimeout(this.edgeCurvatureSaveTimeout);
             }
+            
+            this.edgeCurvatureSaveTimeout = setTimeout(async () => {
+                // 保存弧度到 MOC 文件
+                try {
+                    const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                    if (mocFile) {
+                        await this.saveEdgeCurvatureToMOC(mocFile, edgeId, { distance, weight });
+                    }
+                } catch (error) {
+                    console.error('Failed to save edge curvature:', error);
+                }
+            }, 500); // 500ms 防抖延迟
         });
 
         // 监听分组创建事件
