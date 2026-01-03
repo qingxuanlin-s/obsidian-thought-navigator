@@ -4873,6 +4873,7 @@ export class ZKIndexView extends ItemView {
             let insertIndex = -1;
             let insertParentIndex = -1;
             let foundHeading = false;
+            let extLineIndex = -1;  // ext 数据行的位置
             
             // 如果有父节点 ID，尝试查找父节点
             const hasParentNode = result.connectToNodeID && result.connectToNodeID.trim() !== '';
@@ -4900,6 +4901,12 @@ export class ZKIndexView extends ItemView {
                     break;
                 }
                 
+                // 如果已经找到标题，检查是否是 ext 数据行
+                if (foundHeading && line.match(/^%%\s*ext:/)) {
+                    extLineIndex = i;
+                    break;  // 找到 ext 行就停止
+                }
+                
                 // 如果已经找到标题，更新插入位置到最后一个非空行之后
                 if (foundHeading && line.trim() !== '') {
                     insertIndex = i + 1;
@@ -4917,8 +4924,18 @@ export class ZKIndexView extends ItemView {
                 // 如果找到了父节点，插入到父节点下方
                 finalInsertIndex = insertParentIndex;
             } else if (!hasParentNode) {
-                // 如果没有父节点（创建初始节点），插入到标题下方
-                finalInsertIndex = insertIndex;
+                // 如果没有父节点（创建自由节点）
+                if (extLineIndex !== -1) {
+                    // 如果有 ext 数据行，插入到 ext 行之前
+                    finalInsertIndex = extLineIndex;
+                    // 跳过 ext 行前的空行
+                    while (finalInsertIndex > 0 && lines[finalInsertIndex - 1].trim() === '') {
+                        finalInsertIndex--;
+                    }
+                } else {
+                    // 如果没有 ext 行，插入到标题下方的最后
+                    finalInsertIndex = insertIndex;
+                }
             } else {
                 // 如果指定了父节点但未找到，提示错误
                 new Notice(`未找到父节点: ${result.connectToNodeID}`);
@@ -5712,8 +5729,6 @@ export class ZKIndexView extends ItemView {
             
             // 写回文件
             await this.app.vault.modify(mocFile, newContent);
-            
-            console.log(`Saved position for node ${nodeID}:`, position);
         } catch (error) {
             console.error('Failed to save node position:', error);
             new Notice(`保存节点位置失败: ${error.message}`);
