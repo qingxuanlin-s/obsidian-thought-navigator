@@ -243,7 +243,7 @@ export class AddFreeNodeModal extends Modal {
 
         contentEl.createEl("h2", { text: this.isReverseConnection ? "添加反向连接节点" : "添加自由节点" });
 
-        // 连接到节点（必选，移到最前面）
+        // 连接到节点（可选，只在有节点时显示）
         if (this.availableNodes.length > 0) {
             const nodeOptions: Record<string, string> = {};
             this.availableNodes.forEach((node) => {
@@ -251,11 +251,11 @@ export class AddFreeNodeModal extends Modal {
             });
 
             new Setting(contentEl)
-                .setName(this.isReverseConnection ? "连接到节点 (目标) *" : "连接到节点 *")
-                .setDesc(this.isReverseConnection ? "新节点将指向此目标节点" : "必选，选择要连接的父节点，将自动生成子节点 ID")
+                .setName(this.isReverseConnection ? "连接到节点 (目标) *" : "连接到节点")
+                .setDesc(this.isReverseConnection ? "新节点将指向此目标节点" : "可选，选择要连接的父节点，将自动生成子节点 ID")
                 .addDropdown((dropdown) => {
                     // 添加空选项作为提示
-                    dropdown.addOption("", this.isReverseConnection ? "-- 目标节点已选定 --" : "-- 请选择父节点 --");
+                    dropdown.addOption("", this.isReverseConnection ? "-- 目标节点已选定 --" : "-- 不连接到任何节点 --");
                     
                     Object.keys(nodeOptions).forEach((key) => {
                         dropdown.addOption(key, nodeOptions[key]);
@@ -268,6 +268,9 @@ export class AddFreeNodeModal extends Modal {
                         if (!this.isReverseConnection && value) {
                             const generatedID = this.generateChildNodeID(value);
                             this.updateNodeIDInput(generatedID);
+                        } else if (!value) {
+                            // 如果取消选择父节点，恢复建议的 ID
+                            this.updateNodeIDInput(this.nodeID);
                         }
                     });
                     
@@ -277,12 +280,11 @@ export class AddFreeNodeModal extends Modal {
                     }
                 });
         } else {
-            // 如果没有可用节点，显示提示
-            contentEl.createEl("p", {
-                text: "当前 MOC 中没有可用节点，无法添加自由节点。",
-                cls: "mod-warning"
-            });
-            return;
+            // 如果没有可用节点，显示提示（但允许继续创建初始节点）
+            contentEl.createDiv({
+                text: "当前 MOC 中没有节点，将创建第一个初始节点。",
+                cls: "mod-info"
+            }).style.cssText = "padding: 10px; margin-bottom: 15px; background: var(--background-secondary); border-radius: 5px; color: var(--text-muted);";
         }
 
         // Wiki 链接输入（支持搜索）
@@ -329,33 +331,39 @@ export class AddFreeNodeModal extends Modal {
                 });
             });
 
-        // 节点 ID 输入（自动生成，只读显示）
+        // 节点 ID 输入（自动生成或手动输入）
         this.nodeIDSetting = new Setting(contentEl)
-            .setName("节点 ID")
-            .setDesc(this.isReverseConnection ? "自动生成或从现有节点获取" : "自动生成，基于父节点 ID")
+            .setName("节点 ID *")
+            .setDesc(this.availableNodes.length > 0 
+                ? (this.isReverseConnection ? "自动生成或从现有节点获取" : "自动生成，基于父节点 ID，或手动输入")
+                : "手动输入初始节点 ID（如：1, a, 1a 等）")
             .addText((text) => {
                 this.nodeIDInputEl = text.inputEl;
                 text
-                    .setPlaceholder(this.nodeID || (this.isReverseConnection ? "选择 Wiki 链接后自动填充" : "请先选择父节点"))
+                    .setPlaceholder(this.nodeID || (this.availableNodes.length > 0 
+                        ? (this.isReverseConnection ? "选择 Wiki 链接后自动填充" : "请先选择父节点")
+                        : "输入初始节点 ID"))
                     .setValue(this.nodeID)
-                    .setDisabled(true) // 始终禁用手动编辑
+                    .setDisabled(this.availableNodes.length > 0 && !this.isReverseConnection) // 只在有节点且非反向连接时禁用
                     .onChange((value) => {
                         this.nodeID = value;
                     });
             });
 
-        // 连接关系描述
-        new Setting(contentEl)
-            .setName("连接关系")
-            .setDesc(this.isReverseConnection ? "描述新节点指向目标节点的关系" : "可选，描述与父节点的关系")
-            .addText((text) =>
-                text
-                    .setPlaceholder(this.isReverseConnection ? "如：反驳、质疑、补充" : "如：补充、扩展、澄清")
-                    .setValue(this.connectionRelation)
-                    .onChange((value) => {
-                        this.connectionRelation = value;
-                    })
-            );
+        // 连接关系描述（只在有节点时显示）
+        if (this.availableNodes.length > 0) {
+            new Setting(contentEl)
+                .setName("连接关系")
+                .setDesc(this.isReverseConnection ? "描述新节点指向目标节点的关系" : "可选，描述与父节点的关系")
+                .addText((text) =>
+                    text
+                        .setPlaceholder(this.isReverseConnection ? "如：反驳、质疑、补充" : "如：补充、扩展、澄清")
+                        .setValue(this.connectionRelation)
+                        .onChange((value) => {
+                            this.connectionRelation = value;
+                        })
+                );
+        }
 
         // 按钮
         new Setting(contentEl)
@@ -365,19 +373,39 @@ export class AddFreeNodeModal extends Modal {
                     .setCta()
                     .onClick(() => {
                         // 验证必填字段
-                        if (!this.connectToNodeID) {
-                            new Notice("请先选择要连接的父节点");
-                            return;
-                        }
+                        if (this.availableNodes.length > 0 && this.connectToNodeID && !this.isReverseConnection) {
+                            // 有节点且选择了父节点的情况
+                            if (!this.wikiLink.trim()) {
+                                new Notice("Wiki 链接不能为空");
+                                return;
+                            }
 
-                        if (!this.wikiLink.trim()) {
-                            new Notice("Wiki 链接不能为空");
-                            return;
-                        }
+                            if (!this.nodeID.trim()) {
+                                new Notice("节点 ID 生成失败，请重新选择父节点");
+                                return;
+                            }
+                        } else if (this.availableNodes.length === 0) {
+                            // 没有节点的情况（创建初始节点）
+                            if (!this.wikiLink.trim()) {
+                                new Notice("Wiki 链接不能为空");
+                                return;
+                            }
 
-                        if (!this.nodeID.trim()) {
-                            new Notice("节点 ID 生成失败，请重新选择父节点");
-                            return;
+                            if (!this.nodeID.trim()) {
+                                new Notice("请输入节点 ID");
+                                return;
+                            }
+                        } else {
+                            // 有节点但未选择父节点的情况
+                            if (!this.wikiLink.trim()) {
+                                new Notice("Wiki 链接不能为空");
+                                return;
+                            }
+
+                            if (!this.nodeID.trim()) {
+                                new Notice("请输入节点 ID");
+                                return;
+                            }
                         }
 
                         // 查找或创建文件
@@ -391,7 +419,7 @@ export class AddFreeNodeModal extends Modal {
                             nodeID: this.nodeID.trim(),
                             relationText: this.relationText.trim(),
                             file,
-                            connectToNodeID: this.connectToNodeID,
+                            connectToNodeID: this.connectToNodeID || undefined,
                             connectionRelation: this.connectionRelation.trim() || undefined,
                         });
                         this.close();

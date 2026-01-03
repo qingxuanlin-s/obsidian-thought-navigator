@@ -23,6 +23,7 @@ export interface GraphMetadata {
     timestamp: number;
     hash: string;
     renderType: 'family' | 'inoutlinks' | 'moc' | 'moc-tree' | 'index';
+    groups?: any[];  // 分组信息
 }
 
 /**

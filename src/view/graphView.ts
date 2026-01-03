@@ -854,15 +854,15 @@ export class ZKGraphView extends ItemView {
             const mocParseResult = await parseMOCStructure(this.app, mocFile.path, headingTitle);
 
             if (mocParseResult.nodes.length > 0) {
-                // 转换为 ZKNode 数组用于图形显示（传递 reverseRelations）
-                const mocNodes = await convertMOCToZKNodes(this.plugin, mocParseResult.nodes, mocParseResult.reverseRelations);
+                // 转换为 ZKNode 数组用于图形显示（传递 reverseRelations 和 nodePositions）
+                const mocNodes = await convertMOCToZKNodes(this.plugin, mocParseResult.nodes, mocParseResult.reverseRelations, [], mocParseResult.nodePositions);
 
                 if (mocNodes.length > 0) {
                     // 不要修改 MainNotes，只用于当前图形显示
                     this.familyNodeArr = mocNodes;
 
-                    // 使用 Cytoscape 渲染 MOC 树（传递 reverseRelations）
-                    await this.renderMOCTreeWithCytoscape(graphMermaidDiv, mocNodes, headingTitle, graphHeight, mocParseResult.reverseRelations);
+                    // 使用 Cytoscape 渲染 MOC 树（传递 reverseRelations 和 mocFile）
+                    await this.renderMOCTreeWithCytoscape(graphMermaidDiv, mocNodes, headingTitle, graphHeight, mocParseResult.reverseRelations, mocFile);
                 }
             } else {
                 // 没有树结构时显示提示和调试信息
@@ -1199,7 +1199,7 @@ export class ZKGraphView extends ItemView {
             const mocParseResult = await parseMOCStructure(this.app, mocFile.path, headingTitle);
 
             if (mocParseResult.nodes.length > 0) {
-                const mocNodes = await convertMOCToZKNodes(this.plugin, mocParseResult.nodes, mocParseResult.reverseRelations);
+                const mocNodes = await convertMOCToZKNodes(this.plugin, mocParseResult.nodes, mocParseResult.reverseRelations, [], mocParseResult.nodePositions);
 
                 // 查找当前文件对应的节点
                 const currentNode = mocNodes.find(n => n.file.path === file.path);
@@ -1328,7 +1328,7 @@ export class ZKGraphView extends ItemView {
                     // 检查每个MOC文件是否包含当前文件
                     for (const mocFileCandidate of mocFiles) {
                         const tempParseResult = await parseMOCStructure(this.app, mocFileCandidate.path, headingTitle);
-                        const tempNodes = await convertMOCToZKNodes(this.plugin, tempParseResult.nodes, tempParseResult.reverseRelations);
+                        const tempNodes = await convertMOCToZKNodes(this.plugin, tempParseResult.nodes, tempParseResult.reverseRelations, [], tempParseResult.nodePositions);
                         const tempCurrentNode = tempNodes.find(n => n.file.path === currentFile.path);
                         const hasCurrentFile = !!tempCurrentNode;
                         availableMOCs.push({
@@ -1453,6 +1453,12 @@ export class ZKGraphView extends ItemView {
 
                 // 渲染图形
                 await this.familyGraphRenderer.render(mocNodeTreeDiv, graphData, options);
+
+                // 局部视图：禁用节点拖动（只查看）
+                const cy = this.familyGraphRenderer.getCytoscapeInstance();
+                if (cy) {
+                    cy.nodes().ungrabify(); // 禁止拖动节点
+                }
 
                 // 监听节点点击事件
                 mocNodeTreeDiv.addEventListener('node-click', (event: any) => {
@@ -1683,7 +1689,8 @@ export class ZKGraphView extends ItemView {
         mocNodes: ZKNode[],
         headingTitle: string,
         graphHeight: number,
-        reverseRelations: Map<string, ReverseRelation>
+        reverseRelations: Map<string, ReverseRelation>,
+        mocFile: TFile
     ): Promise<void> {
         // 创建 MOC 树图容器
         const mocGraphContainer = container.createDiv("zk-family-graph-container");
@@ -1746,6 +1753,13 @@ export class ZKGraphView extends ItemView {
 
         // 渲染图形
         await this.familyGraphRenderer.render(mocTreeDiv, graphData, options);
+
+        // GraphView：禁用节点拖动（只查看）
+        const cy = this.familyGraphRenderer.getCytoscapeInstance();
+        if (cy) {
+            cy.nodes().ungrabify(); // 禁止拖动节点
+            console.log('GraphView: Nodes are locked (view-only mode)');
+        }
 
         // 监听节点点击事件
         mocTreeDiv.addEventListener('node-click', (event: any) => {
@@ -1960,4 +1974,6 @@ export class ZKGraphView extends ItemView {
             overlay.remove();
         }
     }
+
+
 }

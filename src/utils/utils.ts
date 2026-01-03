@@ -27,6 +27,8 @@ export interface ReverseRelation {
 export interface MOCParseResult {
     nodes: MOCTreeNode[];       // 解析后的树节点数组
     reverseRelations: Map<string, ReverseRelation>; // 反向关系 Map，key 格式: "sourceID->targetID"
+    nodePositions: Record<string, { x: number; y: number }>; // 节点位置信息
+    groups: GroupInfo[];        // 分组信息
     metadata: {                 // 扩展信息
         totalNodes: number;     // 总节点数
         maxDepth: number;       // 最大深度
@@ -35,6 +37,14 @@ export interface MOCParseResult {
         filePath: string;       // MOC 文件路径
         headingTitle: string;   // 标题名称
     };
+}
+
+// 分组信息
+export interface GroupInfo {
+    id: string;                 // 分组 ID
+    label: string;              // 分组标签
+    nodeIds: string[];          // 包含的节点 ID 列表
+    color?: string;             // 分组颜色（可选）
 }
 
 
@@ -99,6 +109,8 @@ export async function parseMOCStructure(
         return {
             nodes: [],
             reverseRelations: new Map(),
+            nodePositions: {},
+            groups: [],
             metadata: {
                 totalNodes: 0,
                 maxDepth: 0,
@@ -112,7 +124,6 @@ export async function parseMOCStructure(
 
     const content = await app.vault.read(file);
     const lines = content.split('\n');
-
 
     // 查找指定的一级标题
     let startIndex = -1;
@@ -137,6 +148,8 @@ export async function parseMOCStructure(
         return {
             nodes: [],
             reverseRelations: new Map(),
+            nodePositions: {},
+            groups: [],
             metadata: {
                 totalNodes: 0,
                 maxDepth: 0,
@@ -146,6 +159,41 @@ export async function parseMOCStructure(
                 headingTitle,
             }
         };
+    }
+
+    // 解析标题下的节点位置信息和分组信息（新格式：%% ext:{"node_positions":{...},"groups":[...]} %%）
+    const nodePositions: Record<string, { x: number; y: number }> = {};
+    const groups: any[] = [];
+    let posLineIndex = -1;
+    
+    // 从后往前查找位置行
+    for (let i = endIndex - 1; i > startIndex; i--) {
+        const line = lines[i].trim();
+        const match = line.match(/^%%\s*ext:\s*(\{.*\})\s*%%$/);
+        if (match) {
+            try {
+                const extData = JSON.parse(match[1]);
+                if (extData.node_positions) {
+                    posLineIndex = i;
+                    Object.assign(nodePositions, extData.node_positions);
+                    if (extData.groups) {
+                        groups.push(...extData.groups);
+                    }
+                    break;
+                }
+            } catch (e) {
+                console.error('Failed to parse node_positions:', e);
+            }
+        }
+    }
+    
+    // 如果找到位置行，更新 endIndex 排除它
+    if (posLineIndex !== -1) {
+        endIndex = posLineIndex;
+        // 跳过位置行前的空行
+        while (endIndex > startIndex && lines[endIndex - 1].trim() === '') {
+            endIndex--;
+        }
     }
 
 
@@ -285,6 +333,8 @@ export async function parseMOCStructure(
     return {
         nodes: treeNodes,
         reverseRelations,
+        nodePositions,
+        groups,
         metadata: {
             totalNodes: allNodes.length,
             maxDepth,
@@ -390,7 +440,8 @@ export async function convertMOCToZKNodes(
     plugin: ZKNavigationPlugin,
     mocTrees: MOCTreeNode[],
     reverseRelations: Map<string, ReverseRelation> = new Map(),
-    parentIDArr: string[] = []
+    parentIDArr: string[] = [],
+    nodePositions: Record<string, { x: number; y: number }> = {}
 ): Promise<ZKNode[]> {
     const nodes: ZKNode[] = [];
     let position = 0;
@@ -440,6 +491,12 @@ export async function convertMOCToZKNodes(
             branchName: "",
             gitNodePos: 0,
         };
+
+        // 如果有保存的位置信息，添加到节点
+        const nodeID = mocNode.nodeID || mocNode.wikiLink;
+        if (nodePositions[nodeID]) {
+            zkNode.savedPosition = nodePositions[nodeID];
+        }
 
         nodes.push(zkNode);
 

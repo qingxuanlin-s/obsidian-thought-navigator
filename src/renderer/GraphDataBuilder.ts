@@ -115,33 +115,22 @@ export class GraphDataBuilder {
             }
         }
 
-        // 添加反向关系连线
+        // 添加反向关系连线（箭头关系）
+        // 所有箭头关系都使用虚线，方向按照 MOC 文件中定义的方向（source -> target）
         for (const relNode of reverseRelations.values()) { 
             const sourceNode = nodeMap.get(relNode.sourceID);
             if (sourceNode === undefined) continue;
 
             const targetNode = nodeMap.get(relNode.targetID);
             if (targetNode) {
-                // 检查是否是正向父子推导关系
-                if (targetNode.IDArr.includes(sourceNode.IDStr)) {
-                    // 正向连线
-                    this.edges.push({
-                        id: `edge-reverse-${sourceNode.ID}-${targetNode.ID}`,
-                        source: sourceNode.ID,
-                        target: targetNode.ID,
-                        type: 'forward',
-                        label: relNode.relationText
-                    });
-                } else {
-                    // 反向连线：使用虚线
-                    this.edges.push({
-                        id: `edge-reverse-${sourceNode.ID}-${targetNode.ID}`,
-                        source: sourceNode.ID,
-                        target: targetNode.ID,
-                        type: 'reverse',
-                        label: relNode.relationText
-                    });
-                }
+                // 箭头关系：从 source 指向 target，使用虚线
+                this.edges.push({
+                    id: `edge-arrow-${sourceNode.ID}-${targetNode.ID}`,
+                    source: sourceNode.ID,
+                    target: targetNode.ID,
+                    type: 'reverse',  // 使用虚线样式
+                    label: relNode.relationText
+                });
             }              
         }
 
@@ -266,7 +255,8 @@ export class GraphDataBuilder {
                 currentFile: this.metadata.currentFile || '',
                 timestamp: this.metadata.timestamp || Date.now(),
                 hash: this.metadata.hash || this.computeHash(),
-                renderType: this.metadata.renderType || 'family'
+                renderType: this.metadata.renderType || 'family',
+                ...this.metadata  // 保留所有其他 metadata 字段（如 groups）
             }
         };
     }
@@ -297,17 +287,20 @@ export class GraphDataBuilder {
     }
 
     /**
-     * 静态工厂方法：从 MOC 树节点创建（包含 reverseRelations）
+     * 静态工厂方法：从 MOC 树节点创建（包含 reverseRelations 和 groups）
      */
-    static fromMOCTree(nodes: ZKNode[], reverseRelations: Map<string, any>, currentFile: TFile | null): GraphData {
-        return new GraphDataBuilder()
+    static fromMOCTree(nodes: ZKNode[], reverseRelations: Map<string, any>, currentFile: TFile | null, groups: any[] = []): GraphData {
+        const graphData = new GraphDataBuilder()
             .addNodes(nodes)
             .buildMOCTreeEdges(reverseRelations)
             .setMetadata({
                 currentFile: currentFile?.path || '',
-                renderType: 'moc-tree'
+                renderType: 'moc-tree',
+                groups: groups  // 添加分组信息到元数据
             })
             .build();
+        
+        return graphData;
     }
 
     /**
