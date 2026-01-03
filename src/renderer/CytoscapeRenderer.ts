@@ -744,6 +744,10 @@ case 'dagre':
         `;
         this.container.appendChild(badgeContainer);
 
+        // 存储所有徽章的更新函数
+        const badgeUpdaters: Array<() => void> = [];
+        let updateScheduled = false;
+
         // 为每个有 badge 的节点创建徽章元素
         this.cy.nodes('[badge]').forEach((node: any) => {
             const badge = node.data('badge');
@@ -773,34 +777,25 @@ case 'dagre':
                 // 检查 cy 实例是否存在
                 if (!this.cy) return;
                 
-                const pos = node.renderedPosition();
                 const zoom = this.cy.zoom();
                 const boundingBox = node.renderedBoundingBox();
                 
-                // 计算徽章位置（节点左上角内部）
-                const x = boundingBox.x1 + 4 * zoom;  // 左边距 4px
-                const y = boundingBox.y1 + 4 * zoom;  // 上边距 4px
+                // 计算徽章位置（节点左上角内部，增加更多内边距）
+                const x = boundingBox.x1 + 8 * zoom;  // 左边距 8px
+                const y = boundingBox.y1 + 8 * zoom;  // 上边距 8px
                 
                 badgeEl.style.left = `${x}px`;
                 badgeEl.style.top = `${y}px`;
-                // 移除 scale 变换，让徽章随图形缩放
-                badgeEl.style.transform = '';
-                badgeEl.style.fontSize = `${10 * zoom}px`;
-                badgeEl.style.padding = `${2 * zoom}px ${6 * zoom}px`;
-                badgeEl.style.borderRadius = `${4 * zoom}px`;
+                badgeEl.style.fontSize = `${9 * zoom}px`;
+                badgeEl.style.padding = `${2 * zoom}px ${5 * zoom}px`;
+                badgeEl.style.borderRadius = `${3 * zoom}px`;
                 badgeEl.style.borderWidth = `${1 * zoom}px`;
             };
 
+            badgeUpdaters.push(updateBadgePosition);
+
             // 初始位置
             updateBadgePosition();
-
-            // 监听节点位置变化
-            node.on('position', updateBadgePosition);
-            
-            // 监听视图变化（缩放、平移）
-            if (this.cy) {
-                this.cy.on('zoom pan', updateBadgePosition);
-            }
 
             // 点击徽章时选中节点
             badgeEl.addEventListener('click', (e) => {
@@ -808,6 +803,30 @@ case 'dagre':
                 node.select();
             });
         });
+
+        // 统一的更新函数，使用 requestAnimationFrame 确保在下一帧更新
+        const scheduleUpdate = () => {
+            if (updateScheduled) return;
+            updateScheduled = true;
+            
+            requestAnimationFrame(() => {
+                badgeUpdaters.forEach(updater => updater());
+                updateScheduled = false;
+            });
+        };
+
+        // 立即更新函数（用于拖动结束等需要立即同步的场景）
+        const immediateUpdate = () => {
+            badgeUpdaters.forEach(updater => updater());
+            updateScheduled = false;
+        };
+
+        // 监听全局事件
+        if (this.cy) {
+            this.cy.on('pan zoom viewport drag position', scheduleUpdate);
+            // 拖动结束时立即更新
+            this.cy.on('dragfree', immediateUpdate);
+        }
         
         // 添加边控制点
         this.addEdgeControlPoints();
@@ -841,6 +860,10 @@ case 'dagre':
             z-index: 3;
         `;
         this.container.appendChild(handleContainer);
+
+        // 存储所有手柄的更新函数
+        const handleUpdaters: Array<() => void> = [];
+        let updateScheduled = false;
 
         // 为每个节点创建连线手柄
         this.cy.nodes('[!isGroup]').forEach((node: any) => {
@@ -880,13 +903,10 @@ case 'dagre':
                 handle.style.borderWidth = `${2 * zoom}px`;
             };
 
+            handleUpdaters.push(updateHandlePosition);
+
             // 初始位置
             updateHandlePosition();
-
-            // 监听节点位置和视图变化
-            if (this.cy) {
-                this.cy.on('zoom pan position', updateHandlePosition);
-            }
 
             // 鼠标悬停显示手柄
             node.on('mouseover', () => {
@@ -900,6 +920,30 @@ case 'dagre':
             // 拖动创建连接
             this.bindConnectionDrag(handle, node, handleContainer);
         });
+
+        // 统一的更新函数，使用 requestAnimationFrame 确保在下一帧更新
+        const scheduleUpdate = () => {
+            if (updateScheduled) return;
+            updateScheduled = true;
+            
+            requestAnimationFrame(() => {
+                handleUpdaters.forEach(updater => updater());
+                updateScheduled = false;
+            });
+        };
+
+        // 立即更新函数（用于拖动结束等需要立即同步的场景）
+        const immediateUpdate = () => {
+            handleUpdaters.forEach(updater => updater());
+            updateScheduled = false;
+        };
+
+        // 监听全局事件
+        if (this.cy) {
+            this.cy.on('pan zoom viewport drag position', scheduleUpdate);
+            // 拖动结束时立即更新
+            this.cy.on('dragfree', immediateUpdate);
+        }
     }
 
     /**
@@ -1103,17 +1147,6 @@ case 'dagre':
         this.cy.on('unselect', 'edge', () => {
             this.hideEdgeControlPoints(controlPointContainer);
         });
-
-        // 监听节点位置变化，更新控制点位置
-        this.cy.on('position', 'node', () => {
-            // 如果有选中的边，更新其控制点
-            const selectedEdge = this.cy?.$('edge:selected');
-            if (selectedEdge && selectedEdge.length > 0) {
-                // 触发控制点位置更新
-                const event = new CustomEvent('update-control-point-position');
-                controlPointContainer.dispatchEvent(event);
-            }
-        });
     }
 
     /**
@@ -1181,18 +1214,31 @@ case 'dagre':
             controlPoint.style.top = `${cpY}px`;
         };
 
+        // 使用 requestAnimationFrame 调度更新
+        let updateScheduled = false;
+        const scheduleUpdate = () => {
+            if (updateScheduled) return;
+            updateScheduled = true;
+            
+            requestAnimationFrame(() => {
+                updateControlPointPosition();
+                updateScheduled = false;
+            });
+        };
+
+        // 立即更新函数（用于拖动结束等需要立即同步的场景）
+        const immediateUpdate = () => {
+            updateControlPointPosition();
+            updateScheduled = false;
+        };
+
         // 初始位置
         updateControlPointPosition();
 
-        // 监听图形缩放和平移
-        this.cy.on('zoom pan', updateControlPointPosition);
-
-        // 监听节点位置变化（使用 Cytoscape 的全局事件）
-        this.cy.on('position', updateControlPointPosition);
-
-        // 监听自定义的控制点位置更新事件
-        const handleUpdatePosition = () => updateControlPointPosition();
-        container.addEventListener('update-control-point-position', handleUpdatePosition);
+        // 监听图形缩放、平移和节点位置变化
+        this.cy.on('zoom pan position drag viewport', scheduleUpdate);
+        // 拖动结束时立即更新
+        this.cy.on('dragfree', immediateUpdate);
 
         // 拖动控制点
         let isDragging = false;
@@ -1264,9 +1310,9 @@ case 'dagre':
         const cleanup = () => {
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
-            container.removeEventListener('update-control-point-position', handleUpdatePosition);
             if (this.cy) {
-                this.cy.off('zoom pan position', updateControlPointPosition);
+                this.cy.off('zoom pan position drag viewport', scheduleUpdate);
+                this.cy.off('dragfree', immediateUpdate);
             }
         };
 
