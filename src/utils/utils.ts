@@ -30,6 +30,7 @@ export interface MOCParseResult {
     nodePositions: Record<string, { x: number; y: number }>; // 节点位置信息
     groups: GroupInfo[];        // 分组信息
     edgeCurvatures: Record<string, { distance: number; weight: number }>; // 边弧度信息
+    nodeColors: Record<string, string>; // 节点颜色信息
     metadata: {                 // 扩展信息
         totalNodes: number;     // 总节点数
         maxDepth: number;       // 最大深度
@@ -113,6 +114,7 @@ export async function parseMOCStructure(
             nodePositions: {},
             groups: [],
             edgeCurvatures: {},
+            nodeColors: {},
             metadata: {
                 totalNodes: 0,
                 maxDepth: 0,
@@ -153,6 +155,7 @@ export async function parseMOCStructure(
             nodePositions: {},
             groups: [],
             edgeCurvatures: {},
+            nodeColors: {},
             metadata: {
                 totalNodes: 0,
                 maxDepth: 0,
@@ -168,6 +171,7 @@ export async function parseMOCStructure(
     const nodePositions: Record<string, { x: number; y: number }> = {};
     const groups: any[] = [];
     const edgeCurvatures: Record<string, { distance: number; weight: number }> = {};
+    const nodeColors: Record<string, string> = {};
     let posLineIndex = -1;
     
     // 从后往前查找位置行
@@ -185,6 +189,9 @@ export async function parseMOCStructure(
                     }
                     if (extData.edge_curvatures) {
                         Object.assign(edgeCurvatures, extData.edge_curvatures);
+                    }
+                    if (extData.node_colors) {
+                        Object.assign(nodeColors, extData.node_colors);
                     }
                     break;
                 }
@@ -343,6 +350,7 @@ export async function parseMOCStructure(
         nodePositions,
         groups,
         edgeCurvatures,
+        nodeColors,
         metadata: {
             totalNodes: allNodes.length,
             maxDepth,

@@ -1039,7 +1039,8 @@ export class ZKIndexView extends ItemView {
         // 构建图形数据（包含分组信息和边弧度信息）
         const groups = mocParseResult.groups || [];
         const edgeCurvatures = mocParseResult.edgeCurvatures || {};
-        const graphData = GraphDataBuilder.fromMOCTree(this.mocNodes, this.mocReverseRelations, null, groups, edgeCurvatures);
+        const nodeColors = mocParseResult.nodeColors || {};
+        const graphData = GraphDataBuilder.fromMOCTree(this.mocNodes, this.mocReverseRelations, null, groups, edgeCurvatures, nodeColors);
 
         // 配置渲染选项
         const options: RenderOptions = {
@@ -3647,6 +3648,270 @@ export class ZKIndexView extends ItemView {
         setTimeout(() => {
             document.addEventListener('click', closeMenu);
         }, 0);
+    }
+
+    /**
+     * 修改节点颜色
+     */
+    async changeNodeColor(node: ZKNode) {
+        // 预设颜色
+        const colors = [
+            { name: '青色', value: '#0891b2' },
+            { name: '蓝色', value: '#2563eb' },
+            { name: '深紫', value: '#7c3aed' },
+            { name: '紫红', value: '#c026d3' },
+            { name: '玫红', value: '#db2777' },
+            { name: '绿色', value: '#16a34a' },
+            { name: '深绿', value: '#047857' },
+            { name: '橙色', value: '#ea580c' },
+            { name: '深橙', value: '#dc2626' },
+            { name: '红色', value: '#dc2626' },
+            { name: '默认', value: '' }
+        ];
+        
+        // 显示颜色选择对话框
+        const selectedColor = await this.showColorPickerDialog(colors, node);
+        
+        if (selectedColor === null) {
+            return; // 取消
+        }
+        
+        // 在刷新前保存所有节点的当前位置
+        await this.saveAllNodePositionsBeforeRefresh();
+        
+        try {
+            const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+            if (mocFile) {
+                await this.updateNodeColorInMOC(mocFile, node.IDStr, selectedColor);
+                
+                // 刷新视图
+                await this.refreshBranchMermaid();
+                
+                if (selectedColor) {
+                    new Notice(`已设置节点 ${node.ID} 的颜色`);
+                } else {
+                    new Notice(`已重置节点 ${node.ID} 的颜色`);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to change node color:', error);
+            new Notice(`修改节点颜色失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 显示颜色选择对话框
+     */
+    private showColorPickerDialog(colors: Array<{ name: string; value: string }>, node: ZKNode): Promise<string | null> {
+        return new Promise((resolve) => {
+            const modal = new Modal(this.app);
+            modal.titleEl.setText('选择节点颜色');
+            
+            const { contentEl } = modal;
+            contentEl.empty();
+            contentEl.style.padding = '20px';
+            
+            const infoDiv = contentEl.createDiv();
+            infoDiv.style.marginBottom = '15px';
+            infoDiv.style.padding = '10px';
+            infoDiv.style.backgroundColor = 'var(--background-secondary)';
+            infoDiv.style.borderRadius = '4px';
+            infoDiv.style.color = 'var(--text-muted)';
+            infoDiv.innerHTML = `
+                <div>节点: <strong>${node.ID}</strong></div>
+                <div style="font-size: 0.9em; margin-top: 5px;">选择一个颜色作为节点的外框颜色</div>
+            `;
+            
+            const colorGrid = contentEl.createDiv();
+            colorGrid.style.display = 'grid';
+            colorGrid.style.gridTemplateColumns = 'repeat(5, 1fr)';
+            colorGrid.style.gap = '10px';
+            colorGrid.style.marginBottom = '20px';
+            
+            let selectedColor: string | null = null;
+            
+            colors.forEach((color) => {
+                const colorButton = colorGrid.createDiv();
+                colorButton.style.cssText = `
+                    width: 80px;
+                    height: 80px;
+                    border-radius: 16px;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 14px;
+                    font-weight: 600;
+                    color: white;
+                    transition: all 0.2s;
+                    border: 3px solid transparent;
+                `;
+                
+                if (color.value) {
+                    colorButton.style.backgroundColor = color.value;
+                } else {
+                    // 默认颜色显示为灰色边框
+                    colorButton.style.backgroundColor = 'var(--background-secondary)';
+                    colorButton.style.border = '3px solid var(--background-modifier-border)';
+                    colorButton.style.color = 'var(--text-normal)';
+                }
+                
+                colorButton.textContent = color.name;
+                
+                // 悬停效果
+                colorButton.addEventListener('mouseenter', () => {
+                    colorButton.style.transform = 'scale(1.1)';
+                    colorButton.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+                });
+                
+                colorButton.addEventListener('mouseleave', () => {
+                    if (selectedColor !== color.value) {
+                        colorButton.style.transform = 'scale(1)';
+                        colorButton.style.boxShadow = 'none';
+                    }
+                });
+                
+                // 点击选择
+                colorButton.addEventListener('click', () => {
+                    // 取消之前的选中
+                    colorGrid.querySelectorAll('div').forEach(btn => {
+                        btn.style.transform = 'scale(1)';
+                        btn.style.border = color.value ? '3px solid transparent' : '3px solid var(--background-modifier-border)';
+                    });
+                    
+                    // 选中当前颜色
+                    selectedColor = color.value;
+                    colorButton.style.transform = 'scale(1.1)';
+                    colorButton.style.border = '3px solid white';
+                    colorButton.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+                });
+                
+                // 双击直接确认
+                colorButton.addEventListener('dblclick', () => {
+                    selectedColor = color.value;
+                    modal.close();
+                    resolve(selectedColor);
+                });
+            });
+            
+            const buttonContainer = contentEl.createDiv();
+            buttonContainer.style.display = 'flex';
+            buttonContainer.style.justifyContent = 'flex-end';
+            buttonContainer.style.gap = '10px';
+            
+            const cancelButton = buttonContainer.createEl('button', { text: '取消' });
+            cancelButton.style.padding = '6px 16px';
+            cancelButton.style.border = '1px solid var(--background-modifier-border)';
+            cancelButton.style.borderRadius = '4px';
+            cancelButton.style.backgroundColor = 'var(--background-primary)';
+            cancelButton.style.color = 'var(--text-normal)';
+            cancelButton.style.cursor = 'pointer';
+            cancelButton.addEventListener('click', () => {
+                modal.close();
+                resolve(null);
+            });
+            
+            const confirmButton = buttonContainer.createEl('button', { text: '确认' });
+            confirmButton.style.padding = '6px 16px';
+            confirmButton.style.border = 'none';
+            confirmButton.style.borderRadius = '4px';
+            confirmButton.style.backgroundColor = '#5b8fd9';
+            confirmButton.style.color = '#ffffff';
+            confirmButton.style.cursor = 'pointer';
+            confirmButton.addEventListener('click', () => {
+                if (selectedColor === null) {
+                    new Notice('请选择一个颜色');
+                    return;
+                }
+                modal.close();
+                resolve(selectedColor);
+            });
+            
+            modal.open();
+        });
+    }
+
+    /**
+     * 在 MOC 文件中更新节点颜色
+     */
+    private async updateNodeColorInMOC(mocFile: TFile, nodeID: string, color: string): Promise<void> {
+        try {
+            const content = await this.app.vault.read(mocFile);
+            const lines = content.split('\n');
+            const headingTitle = this.plugin.settings.mocHeadingTitle;
+            
+            // 查找思维树标题的范围
+            let headingIndex = -1;
+            let sectionEndIndex = lines.length;
+            
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].trim() === `# ${headingTitle}`) {
+                    headingIndex = i;
+                    for (let j = i + 1; j < lines.length; j++) {
+                        if (lines[j].trim().startsWith('# ')) {
+                            sectionEndIndex = j;
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+            
+            if (headingIndex === -1) {
+                new Notice(`未找到标题: # ${headingTitle}`);
+                return;
+            }
+            
+            // 更新 ext 数据中的节点颜色
+            let extLineIndex = -1;
+            let extData: any = {};
+            
+            for (let i = sectionEndIndex - 1; i > headingIndex; i--) {
+                const line = lines[i].trim();
+                const match = line.match(/^%%\s*ext:\s*(\{.*\})\s*%%$/);
+                if (match) {
+                    try {
+                        extData = JSON.parse(match[1]);
+                        extLineIndex = i;
+                        break;
+                    } catch (e) {
+                        console.error('Failed to parse ext data:', e);
+                    }
+                }
+            }
+            
+            // 初始化 node_colors 对象
+            if (!extData.node_colors) {
+                extData.node_colors = {};
+            }
+            
+            // 设置或删除颜色
+            if (color) {
+                extData.node_colors[nodeID] = color;
+            } else {
+                delete extData.node_colors[nodeID];
+            }
+            
+            // 更新或创建 ext 行
+            const newExtLine = `%% ext:${JSON.stringify(extData)} %%`;
+            
+            if (extLineIndex !== -1) {
+                lines[extLineIndex] = newExtLine;
+            } else {
+                // 在标题末尾插入新的 ext 行
+                let lastContentIndex = sectionEndIndex - 1;
+                while (lastContentIndex > headingIndex && lines[lastContentIndex].trim() === '') {
+                    lastContentIndex--;
+                }
+                lines.splice(lastContentIndex + 1, 0, '', newExtLine);
+            }
+            
+            await this.app.vault.modify(mocFile, lines.join('\n'));
+            console.log(`Updated node color for ${nodeID}: ${color || 'default'}`);
+        } catch (error) {
+            console.error('Failed to update node color:', error);
+            throw error;
+        }
     }
 
     /**
