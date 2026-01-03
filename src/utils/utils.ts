@@ -127,6 +127,18 @@ export async function parseMOCStructure(
     }
 
     const content = await app.vault.read(file);
+    
+    // 检测是否包含 Mermaid 代码块
+    const { MermaidParser } = await import('./mermaidParser');
+    const mermaidParser = new MermaidParser(app);
+    const mermaidBlock = mermaidParser.extractMermaidBlock(content);
+    
+    if (mermaidBlock) {
+        // 使用 Mermaid 解析器
+        return await mermaidParser.parse(content, filePath, headingTitle);
+    }
+    
+    // 否则使用旧的列表格式解析逻辑
     const lines = content.split('\n');
 
     // 查找指定的一级标题
@@ -493,11 +505,14 @@ export async function convertMOCToZKNodes(
             return;
         }
 
+        // 对于 MOC 节点，IDStr 直接使用 nodeID（如 "a", "a.1"）
+        // 这样父子关系判断才能正确工作
+        const idStr = mocNode.nodeID || nodeIDArr.join(',');
 
         const zkNode: ZKNode = {
             ID: mocNode.nodeID || mocNode.wikiLink,
             IDArr: nodeIDArr,
-            IDStr: mocNode.nodeID || nodeIDArr.join(','),
+            IDStr: idStr,
             position: position++,
             file: mocNode.file,
             title: mocNode.displayText,
@@ -532,6 +547,11 @@ export async function convertMOCToZKNodes(
     for (let i = 0; i < mocTrees.length; i++) {
         await processNode(mocTrees[i], parentIDArr, i);
     }
+
+    console.log(`[convertMOCToZKNodes] Total nodes processed: ${nodes.length}`);
+    nodes.forEach(n => {
+        console.log(`[convertMOCToZKNodes] Node: ${n.IDStr}, file: ${n.file?.path || 'null'}`);
+    });
 
     // 重新计算 position 和 isRoot
     nodes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
@@ -1012,4 +1032,116 @@ function splitNestedTags(nestTag: string, arr: string[]) {
         tagStr = tagStr.concat("/");
     }
     return arr
+}
+
+/**
+ * 替换指定标题下的内容
+ * @param content - 原始文件内容
+ * @param headingTitle - 标题名称
+ * @param newContent - 新内容
+ * @returns 更新后的文件内容
+ */
+function replaceHeadingContent(
+    content: string,
+    headingTitle: string,
+    newContent: string
+): string {
+    const lines = content.split('\n');
+    let startIndex = -1;
+    let endIndex = lines.length;
+
+    // 查找指定的一级标题
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+
+        if (line.startsWith('# ')) {
+            if (line === `# ${headingTitle}` || line.startsWith(`# ${headingTitle}`)) {
+                startIndex = i;
+            } else if (startIndex !== -1) {
+                // 找到下一个一级标题，结束
+                endIndex = i;
+                break;
+            }
+        }
+    }
+
+    if (startIndex === -1) {
+        // 标题不存在，在文件末尾添加
+        return content + '\n\n# ' + headingTitle + '\n\n' + newContent;
+    }
+
+    // 替换标题下的内容
+    const before = lines.slice(0, startIndex + 1).join('\n');
+    const after = endIndex < lines.length ? '\n' + lines.slice(endIndex).join('\n') : '';
+    
+    return before + '\n\n' + newContent + '\n' + after;
+}
+
+/**
+ * 保存 MOC 数据到文件
+ * @param app - Obsidian App 实例
+ * @param filePath - 文件路径
+ * @param headingTitle - 标题名称
+ * @param data - MOC 解析结果
+ */
+export async function saveMOCStructure(
+    app: App,
+    filePath: string,
+    headingTitle: string,
+    data: MOCParseResult
+): Promise<void> {
+    const file = app.vault.getFileByPath(filePath);
+    if (!file) {
+        throw new Error(`File not found: ${filePath}`);
+    }
+
+    const content = await app.vault.read(file);
+    
+    // 使用 MermaidSerializer 序列化数据
+    const { MermaidSerializer } = await import('./mermaidSerializer');
+    const serializer = new MermaidSerializer();
+    const mermaidContent = serializer.serialize(data);
+    
+    // 替换指定标题下的内容
+    const updatedContent = replaceHeadingContent(
+        content,
+        headingTitle,
+        mermaidContent
+    );
+    
+    await app.vault.modify(file, updatedContent);
+}
+
+/**
+ * 创建 MOC 模板（Mermaid 格式）
+ * @returns Mermaid 格式的模板字符串
+ */
+export function createMOCTemplate(): string {
+    return `\`\`\`mermaid
+graph LR
+
+%% 1. 定义根节点
+a["[[示例笔记 A]]"]
+
+%% 2. 定义子节点
+a.1["[[示例笔记 A.1]]"]
+a.2["[[示例笔记 A.2]]"]
+
+%% 3. 定义连线关系
+%% 父子关系
+a --> a.1
+a --> a.2
+
+%% 可选：添加带标签的关系
+%% a.1 -->|相关| a.2
+
+%% ext:{"node_positions":{},"groups":[],"edge_curvatures":{},"node_colors":{}} %%
+\`\`\`
+
+**使用说明：**
+1. 节点格式：\`nodeId["[[笔记标题]]"]\`
+2. 边格式：\`source --> target\` 或 \`source -->|标签| target\`
+3. 节点 ID 使用字母和数字，用点号分隔层级（如 a, a.1, a.1.a）
+4. 拖动节点后位置会自动保存到 ext 注释中
+`;
 }

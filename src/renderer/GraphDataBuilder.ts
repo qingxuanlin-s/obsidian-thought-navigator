@@ -52,98 +52,60 @@ export class GraphDataBuilder {
 
     /**
      * 从 MOC 树节点构建边（包含 reverseRelations）
-     * 这个方法复制了原来 Mermaid 的边构建逻辑
+     * 只根据 Mermaid 文件中的箭头关系来生成边
+     * - 如果箭头是父->子关系，使用实线（type: 'parent'）
+     * - 其他情况使用虚线（type: 'reverse'）
      */
     buildMOCTreeEdges(reverseRelations: Map<string, any>): this {
         const nodeMap = new Map<string, ZKNode>();
         this.nodes.forEach(node => nodeMap.set(node.IDStr, node));
 
-        // 构建 reverseRelationsMap（按 sourceID 和 targetID 索引）
-        const reverseRelationsMap = new Map<string, any[]>();
-        
-        for (const [_, relation] of reverseRelations) {
-            // 将关系添加到 sourceID 下
-            if (reverseRelationsMap.has(relation.sourceID)) {
-                reverseRelationsMap.get(relation.sourceID)!.push(relation);
-            } else {
-                reverseRelationsMap.set(relation.sourceID, [relation]);
-            }
-            
-            // 将关系添加到 targetID 下
-            if (reverseRelationsMap.has(relation.targetID)) {
-                reverseRelationsMap.get(relation.targetID)!.push(relation);
-            } else {
-                reverseRelationsMap.set(relation.targetID, [relation]);
-            }
-        }
-
-        // 添加父子关系连线（根据 IDArr 确定父子关系）
-        for (const node of this.nodes) {
-            // 跳过根节点（没有父节点）
-            if (node.isRoot) {
-                console.log(`[buildMOCTreeEdges] Skipping root node: ${node.IDStr}`);
-                continue;
-            }
-            
-            if (node.IDArr.length > 1) {
-                const parentID = node.IDArr.at(-2);
-                const parentNode = this.nodes.find(n => n.IDStr === parentID);
-                
-                if (parentNode) {
-                    // 如果存在 relationText 就使用它
-                    if (node.relationText) {
-                        this.edges.push({
-                            id: `edge-parent-${parentNode.ID}-${node.ID}`,
-                            source: parentNode.ID,
-                            target: node.ID,
-                            type: 'parent',
-                            label: node.relationText
-                        });
-                    } else {
-                        // 检查是否有反向关系覆盖了这条边
-                        const nodeRel = reverseRelationsMap.get(node.IDStr)?.find(n => {
-                            return ((n.targetID === node.IDStr && n.sourceID === parentID) || 
-                                    (n.targetID === parentID && n.sourceID === node.IDStr))
-                        });
-                        
-                        // 如果没有反向关系，添加默认的父子边
-                        if (!nodeRel) {
-                            this.edges.push({
-                                id: `edge-parent-${parentNode.ID}-${node.ID}`,
-                                source: parentNode.ID,
-                                target: node.ID,
-                                type: 'parent',
-                                label: ''
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        
-        console.log(`[buildMOCTreeEdges] Total nodes: ${this.nodes.length}, Total edges: ${this.edges.length}`);
-        console.log(`[buildMOCTreeEdges] Root nodes:`, this.nodes.filter(n => n.isRoot).map(n => n.IDStr));
-
-        // 添加反向关系连线（箭头关系）
-        // 所有箭头关系都使用虚线，方向按照 MOC 文件中定义的方向（source -> target）
+        // 只根据 reverseRelations（Mermaid 文件中的箭头）来生成边
         for (const relNode of reverseRelations.values()) { 
             const sourceNode = nodeMap.get(relNode.sourceID);
             if (sourceNode === undefined) continue;
 
             const targetNode = nodeMap.get(relNode.targetID);
             if (targetNode) {
-                // 箭头关系：从 source 指向 target，使用虚线
+                // 判断是否是父子关系：检查 target 的父节点 ID 是否等于 source 的 ID
+                const isParentChild = this.isParentChildRelation(relNode.sourceID, relNode.targetID);
+                
+                // 如果是父子关系，使用实线；否则使用虚线
+                const edgeType = isParentChild ? 'parent' : 'reverse';
+                
                 this.edges.push({
-                    id: `edge-arrow-${sourceNode.ID}-${targetNode.ID}`,
+                    id: `edge-${sourceNode.ID}-${targetNode.ID}`,
                     source: sourceNode.ID,
                     target: targetNode.ID,
-                    type: 'reverse',  // 使用虚线样式
-                    label: relNode.relationText
+                    type: edgeType,
+                    label: relNode.relationText || ''
                 });
             }              
         }
 
         return this;
+    }
+
+    /**
+     * 判断两个节点 ID 是否是父子关系
+     * @param sourceID 源节点 ID（如 "a"）
+     * @param targetID 目标节点 ID（如 "a.1"）
+     * @returns 如果 target 是 source 的直接子节点，返回 true
+     */
+    private isParentChildRelation(sourceID: string, targetID: string): boolean {
+        // 将 ID 按点号分割
+        const targetParts = targetID.split('.');
+        
+        // 如果 target 只有一级（如 "a"），不可能是子节点
+        if (targetParts.length <= 1) {
+            return false;
+        }
+        
+        // 获取 target 的父节点 ID（去掉最后一部分）
+        const targetParentID = targetParts.slice(0, -1).join('.');
+        
+        // 如果 target 的父节点 ID 等于 source ID，则是父子关系
+        return targetParentID === sourceID;
     }
 
     /**
