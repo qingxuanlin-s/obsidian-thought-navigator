@@ -366,63 +366,13 @@ export class AddFreeNodeModal extends Modal {
         }
 
         // 按钮
-        new Setting(contentEl)
+        const createButton = new Setting(contentEl)
             .addButton((btn) =>
                 btn
                     .setButtonText("创建")
                     .setCta()
                     .onClick(() => {
-                        // 验证必填字段
-                        if (this.availableNodes.length > 0 && this.connectToNodeID && !this.isReverseConnection) {
-                            // 有节点且选择了父节点的情况
-                            if (!this.wikiLink.trim()) {
-                                new Notice("Wiki 链接不能为空");
-                                return;
-                            }
-
-                            if (!this.nodeID.trim()) {
-                                new Notice("节点 ID 生成失败，请重新选择父节点");
-                                return;
-                            }
-                        } else if (this.availableNodes.length === 0) {
-                            // 没有节点的情况（创建初始节点）
-                            if (!this.wikiLink.trim()) {
-                                new Notice("Wiki 链接不能为空");
-                                return;
-                            }
-
-                            if (!this.nodeID.trim()) {
-                                new Notice("请输入节点 ID");
-                                return;
-                            }
-                        } else {
-                            // 有节点但未选择父节点的情况
-                            if (!this.wikiLink.trim()) {
-                                new Notice("Wiki 链接不能为空");
-                                return;
-                            }
-
-                            if (!this.nodeID.trim()) {
-                                new Notice("请输入节点 ID");
-                                return;
-                            }
-                        }
-
-                        // 查找或创建文件
-                        let file = this.app.metadataCache.getFirstLinkpathDest(
-                            this.wikiLink,
-                            ""
-                        );
-
-                        this.onSubmit({
-                            wikiLink: this.wikiLink,
-                            nodeID: this.nodeID.trim(),
-                            relationText: this.relationText.trim(),
-                            file,
-                            connectToNodeID: this.connectToNodeID || undefined,
-                            connectionRelation: this.connectionRelation.trim() || undefined,
-                        });
-                        this.close();
+                        this.handleSubmit();
                     })
             )
             .addButton((btn) =>
@@ -430,6 +380,74 @@ export class AddFreeNodeModal extends Modal {
                     this.close();
                 })
             );
+        
+        // 为所有输入框绑定回车键
+        const inputs = contentEl.querySelectorAll('input, textarea');
+        inputs.forEach((input) => {
+            input.addEventListener('keydown', (e: KeyboardEvent) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    this.handleSubmit();
+                }
+            });
+        });
+    }
+    
+    /**
+     * 处理提交逻辑
+     */
+    private handleSubmit() {
+        // 验证必填字段
+        if (this.availableNodes.length > 0 && this.connectToNodeID && !this.isReverseConnection) {
+            // 有节点且选择了父节点的情况
+            if (!this.wikiLink.trim()) {
+                new Notice("Wiki 链接不能为空");
+                return;
+            }
+
+            if (!this.nodeID.trim()) {
+                new Notice("节点 ID 生成失败，请重新选择父节点");
+                return;
+            }
+        } else if (this.availableNodes.length === 0) {
+            // 没有节点的情况（创建初始节点）
+            if (!this.wikiLink.trim()) {
+                new Notice("Wiki 链接不能为空");
+                return;
+            }
+
+            if (!this.nodeID.trim()) {
+                new Notice("请输入节点 ID");
+                return;
+            }
+        } else {
+            // 有节点但未选择父节点的情况
+            if (!this.wikiLink.trim()) {
+                new Notice("Wiki 链接不能为空");
+                return;
+            }
+
+            if (!this.nodeID.trim()) {
+                new Notice("请输入节点 ID");
+                return;
+            }
+        }
+
+        // 查找或创建文件
+        let file = this.app.metadataCache.getFirstLinkpathDest(
+            this.wikiLink,
+            ""
+        );
+
+        this.onSubmit({
+            wikiLink: this.wikiLink,
+            nodeID: this.nodeID.trim(),
+            relationText: this.relationText.trim(),
+            file,
+            connectToNodeID: this.connectToNodeID || undefined,
+            connectionRelation: this.connectionRelation.trim() || undefined,
+        });
+        this.close();
     }
 
     onClose() {
