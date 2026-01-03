@@ -25,6 +25,7 @@ export interface GraphMetadata {
     renderType: 'family' | 'inoutlinks' | 'moc' | 'moc-tree' | 'index';
     groups?: any[];  // 分组信息
     edgeCurvatures?: Record<string, { distance: number; weight: number }>;  // 边弧度信息
+    nodeColors?: Record<string, string>;  // 节点颜色信息
 }
 
 /**

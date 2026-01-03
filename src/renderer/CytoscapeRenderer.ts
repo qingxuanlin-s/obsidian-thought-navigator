@@ -310,6 +310,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
         // 获取当前文件路径（如果有）
         const currentFilePath = this.currentData?.metadata.currentFile || '';
         
+        // 获取节点颜色映射
+        const nodeColors = this.currentData?.metadata.nodeColors || {};
+        
         const elements = nodes.map(node => {
             const element: any = {
                 group: 'nodes' as const,
@@ -322,7 +325,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     displayText: node.displayText,
                     position: node.position,
                     isCurrentFile: node.file.path === currentFilePath,
-                    originalNode: node
+                    originalNode: node,
+                    customColor: nodeColors[node.IDStr] || null  // 添加自定义颜色
                 }
             };
             
@@ -506,7 +510,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'padding': '16px',
                 'shape': 'round-rectangle',
                 'border-width': '2px',
-                'border-color': colors.nodeBorder,
+                'border-color': (ele: any) => {
+                    // 如果有自定义颜色，使用自定义颜色
+                    const customColor = ele.data('customColor');
+                    return customColor || colors.nodeBorder;
+                },
                 'transition-property': 'background-color, border-color',
                 'transition-duration': '0.2s'
             } as any
