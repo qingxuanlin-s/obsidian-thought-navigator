@@ -287,16 +287,17 @@ export class GraphDataBuilder {
     }
 
     /**
-     * 静态工厂方法：从 MOC 树节点创建（包含 reverseRelations 和 groups）
+     * 静态工厂方法：从 MOC 树节点创建（包含 reverseRelations、groups 和 edgeCurvatures）
      */
-    static fromMOCTree(nodes: ZKNode[], reverseRelations: Map<string, any>, currentFile: TFile | null, groups: any[] = []): GraphData {
+    static fromMOCTree(nodes: ZKNode[], reverseRelations: Map<string, any>, currentFile: TFile | null, groups: any[] = [], edgeCurvatures: Record<string, { distance: number; weight: number }> = {}): GraphData {
         const graphData = new GraphDataBuilder()
             .addNodes(nodes)
             .buildMOCTreeEdges(reverseRelations)
             .setMetadata({
                 currentFile: currentFile?.path || '',
                 renderType: 'moc-tree',
-                groups: groups  // 添加分组信息到元数据
+                groups: groups,  // 添加分组信息到元数据
+                edgeCurvatures: edgeCurvatures  // 添加边弧度信息到元数据
             })
             .build();
         

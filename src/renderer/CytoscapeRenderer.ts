@@ -51,6 +51,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private container: HTMLElement | null = null;
     private currentData: GraphData | null = null;
     private currentOptions: RenderOptions | null = null;
+    private edgeControlPoints: Map<string, { distance: number; weight: number }> = new Map();
 
     /**
      * 渲染图形
@@ -282,6 +283,13 @@ export class CytoscapeRenderer implements IGraphRenderer {
             }
         });
         
+        // 加载边弧度信息到 Map
+        this.edgeControlPoints.clear();
+        const edgeCurvatures = data.metadata.edgeCurvatures || {};
+        Object.entries(edgeCurvatures).forEach(([key, value]) => {
+            this.edgeControlPoints.set(key, value);
+        });
+        
         return [...groupNodes, ...nodes, ...edges];
     }
 
@@ -336,19 +344,34 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 转换边为 Cytoscape 元素
      */
     private convertEdgesToElements(edges: Edge[]): any[] {
-        const elements = edges.map(edge => ({
-            group: 'edges' as const,
-            data: {
-                id: this.escapeId(edge.id),
-                source: this.escapeId(edge.source),
-                target: this.escapeId(edge.target),
-                label: edge.label || '',
-                type: edge.type,
-                // 保存原始的 source 和 target ID（未转义）
-                originalSource: edge.source,
-                originalTarget: edge.target
+        const elements = edges.map(edge => {
+            const element: any = {
+                group: 'edges' as const,
+                data: {
+                    id: this.escapeId(edge.id),
+                    source: this.escapeId(edge.source),
+                    target: this.escapeId(edge.target),
+                    label: edge.label || '',
+                    type: edge.type,
+                    // 保存原始的 source 和 target ID（未转义）
+                    originalSource: edge.source,
+                    originalTarget: edge.target
+                }
+            };
+            
+            // 尝试从 Map 中读取弧度数据
+            const key1 = `${edge.source}-${edge.target}`;
+            const key2 = edge.id;
+            
+            const curvature = this.edgeControlPoints.get(key1) || this.edgeControlPoints.get(key2);
+            
+            if (curvature) {
+                element.data.controlPointDistance = curvature.distance;
+                element.data.controlPointWeight = curvature.weight;
             }
-        }));
+            
+            return element;
+        });
         
         return elements;
     }
@@ -490,26 +513,25 @@ export class CytoscapeRenderer implements IGraphRenderer {
             } as any
         },
         // 节点徽章样式已通过 HTML 叠加层实现，这里不需要额外样式
-        // 分组节点样式
+        // 分组节点样式 - 容器化设计
         {
             selector: '.group-node',
             style: {
-                'background-color': 'transparent',
-                'background-opacity': 0,
-                'border-width': '2px',
-                'border-color': '#fca5a5',  // 淡红色（原来是 #ef4444）
-                'border-style': 'dashed',
+                'background-color': 'rgba(30, 41, 59, 0.2)',  // 半透明深色背景
+                'background-opacity': 1,
+                'border-width': '0px',  // 移除边框
+                'shape': 'round-rectangle',  // 圆角矩形
                 'label': 'data(label)',
                 'text-valign': 'top',
                 'text-halign': 'center',
                 'text-margin-y': -10,
                 'font-size': '14px',
                 'font-weight': '600',
-                'color': '#fca5a5',  // 淡红色文字（原来是 #ef4444）
+                'color': '#94a3b8',  // 柔和的灰色文字
                 'padding': '20px'
             } as any
         },
-        // 默认边样式
+        // 默认边样式 - 使用 unbundled-bezier 支持自定义控制点
         {
             selector: 'edge',
             style: {
@@ -517,8 +539,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'line-color': colors.edgeNormal,
                 'target-arrow-color': colors.edgeNormal,
                 'target-arrow-shape': 'triangle',
-                'curve-style': 'bezier',
-                'control-point-step-size': 40,
+                'curve-style': 'unbundled-bezier',
+                'control-point-distances': (ele: any) => {
+                    const distance = ele.data('controlPointDistance');
+                    return distance !== undefined ? distance : 40;
+                },
+                'control-point-weights': (ele: any) => {
+                    const weight = ele.data('controlPointWeight');
+                    return weight !== undefined ? weight : 0.5;
+                },
                 'arrow-scale': 1.2,
                 'label': 'data(label)',
                 'font-size': '11px',
@@ -541,24 +570,20 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'line-color': colors.edgeForward,
                 'target-arrow-color': colors.edgeForward,
                 'width': 2.5,
-                'curve-style': 'bezier',
-                'control-point-step-size': 40,
                 'z-index': 999
             } as any
         },
-        // 反向边（虚线）
+        // 反向边（虚线）- 降噪设计
         {
             selector: 'edge[type="reverse"]',
             style: {
-                'curve-style': 'bezier',
-                'control-point-step-size': 80,
                 'line-style': 'dashed',
                 'line-dash-pattern': [6, 4],
-                'line-color': colors.edgeReverse,
-                'target-arrow-color': colors.edgeReverse,
-                'width': 2,
-                'arrow-scale': 1.1,
-                'opacity': 0.85,
+                'line-color': '#64748b',  // 暗灰色（降噪）
+                'target-arrow-color': '#64748b',
+                'width': 1.5,  // 更细
+                'arrow-scale': 1.0,
+                'opacity': 0.5,  // 更淡
                 'z-index': 999
             } as any
         },
@@ -713,13 +738,14 @@ case 'dagre':
             badgeEl.textContent = badge;
             badgeEl.style.cssText = `
                 position: absolute;
-                background-color: #5b8fd9;
-                color: #ffffff;
-                font-size: 10px;
+                background-color: rgba(59, 130, 246, 0.15);
+                color: #94a3b8;
+                font-size: 9px;
                 font-weight: 600;
                 padding: 2px 6px;
                 border-radius: 4px;
-                border: 1px solid #3d5a80;
+                border: 1px solid rgba(71, 85, 105, 0.4);
+                backdrop-filter: blur(4px);
                 white-space: nowrap;
                 pointer-events: auto;
                 cursor: pointer;
@@ -766,6 +792,217 @@ case 'dagre':
                 node.select();
             });
         });
+        
+        // 添加边控制点
+        this.addEdgeControlPoints();
+    }
+    
+    /**
+     * 添加边控制点（用于手动调整弧度）
+     */
+    private addEdgeControlPoints(): void {
+        if (!this.cy || !this.container) return;
+
+        // 移除旧的控制点容器
+        const oldControlPointContainer = this.container.querySelector('.zk-edge-control-points');
+        if (oldControlPointContainer) {
+            oldControlPointContainer.remove();
+        }
+
+        // 创建控制点容器
+        const controlPointContainer = document.createElement('div');
+        controlPointContainer.className = 'zk-edge-control-points';
+        controlPointContainer.style.cssText = `
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 2;
+        `;
+        this.container.appendChild(controlPointContainer);
+
+        // 监听边选中事件
+        this.cy.on('select', 'edge', (evt: any) => {
+            const edge = evt.target;
+            this.showEdgeControlPoint(edge, controlPointContainer);
+        });
+
+        // 监听边取消选中事件
+        this.cy.on('unselect', 'edge', () => {
+            this.hideEdgeControlPoints(controlPointContainer);
+        });
+    }
+
+    /**
+     * 显示边的控制点
+     */
+    private showEdgeControlPoint(edge: any, container: HTMLElement): void {
+        if (!this.cy) return;
+
+        // 清除旧的控制点
+        this.hideEdgeControlPoints(container);
+
+        const data = edge.data();
+        const sourceNode = this.cy.$id(data.source);
+        const targetNode = this.cy.$id(data.target);
+
+        if (!sourceNode.length || !targetNode.length) return;
+
+        // 获取当前弧度参数
+        const distance = data.controlPointDistance !== undefined ? data.controlPointDistance : 40;
+        const weight = data.controlPointWeight !== undefined ? data.controlPointWeight : 0.5;
+
+        // 计算控制点位置
+        const updateControlPointPosition = () => {
+            if (!this.cy) return;
+            
+            const sourcePos = sourceNode.renderedPosition();
+            const targetPos = targetNode.renderedPosition();
+
+            // 计算边的中点
+            const midX = sourcePos.x + (targetPos.x - sourcePos.x) * weight;
+            const midY = sourcePos.y + (targetPos.y - sourcePos.y) * weight;
+
+            // 计算垂直方向
+            const dx = targetPos.x - sourcePos.x;
+            const dy = targetPos.y - sourcePos.y;
+            const len = Math.sqrt(dx * dx + dy * dy);
+            const perpX = -dy / len;
+            const perpY = dx / len;
+
+            // 控制点位置
+            const cpX = midX + perpX * distance;
+            const cpY = midY + perpY * distance;
+
+            controlPoint.style.left = `${cpX}px`;
+            controlPoint.style.top = `${cpY}px`;
+        };
+
+        // 创建控制点
+        const controlPoint = document.createElement('div');
+        controlPoint.className = 'zk-edge-control-point';
+        controlPoint.style.cssText = `
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background-color: #5b8fd9;
+            border: 2px solid #ffffff;
+            border-radius: 50%;
+            cursor: move;
+            pointer-events: auto;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+        `;
+        container.appendChild(controlPoint);
+
+        // 初始位置
+        updateControlPointPosition();
+
+        // 监听图形缩放和平移
+        this.cy.on('zoom pan', updateControlPointPosition);
+
+        // 拖动控制点
+        let isDragging = false;
+        let startX = 0;
+        let startY = 0;
+
+        controlPoint.addEventListener('mousedown', (e: MouseEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            isDragging = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            controlPoint.style.cursor = 'grabbing';
+        });
+
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isDragging || !this.cy) return;
+
+            const sourcePos = sourceNode.renderedPosition();
+            const targetPos = targetNode.renderedPosition();
+
+            // 计算鼠标在画布上的位置
+            const containerRect = this.container!.getBoundingClientRect();
+            const mouseX = e.clientX - containerRect.left;
+            const mouseY = e.clientY - containerRect.top;
+
+            // 计算边的中点和方向
+            const midX = sourcePos.x + (targetPos.x - sourcePos.x) * weight;
+            const midY = sourcePos.y + (targetPos.y - sourcePos.y) * weight;
+
+            const dx = targetPos.x - sourcePos.x;
+            const dy = targetPos.y - sourcePos.y;
+            const len = Math.sqrt(dx * dx + dy * dy);
+            const perpX = -dy / len;
+            const perpY = dx / len;
+
+            // 计算新的 distance（鼠标到边中点的垂直距离）
+            const toMouseX = mouseX - midX;
+            const toMouseY = mouseY - midY;
+            const newDistance = toMouseX * perpX + toMouseY * perpY;
+
+            // 更新边的弧度
+            edge.data('controlPointDistance', newDistance);
+            edge.data('controlPointWeight', weight);
+
+            // 更新控制点位置
+            updateControlPointPosition();
+
+            // 触发弧度变化事件
+            this.container?.dispatchEvent(new CustomEvent('edge-curvature-changed', {
+                detail: {
+                    edgeId: data.id,
+                    source: data.originalSource || data.source,
+                    target: data.originalTarget || data.target,
+                    distance: newDistance,
+                    weight: weight
+                }
+            }));
+        };
+
+        const handleMouseUp = () => {
+            if (isDragging) {
+                isDragging = false;
+                controlPoint.style.cursor = 'move';
+            }
+        };
+
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+
+        // 清理函数
+        const cleanup = () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            if (this.cy) {
+                this.cy.off('zoom pan', updateControlPointPosition);
+            }
+        };
+
+        // 当控制点被移除时清理
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                mutation.removedNodes.forEach((node) => {
+                    if (node === controlPoint) {
+                        cleanup();
+                        observer.disconnect();
+                    }
+                });
+            });
+        });
+
+        observer.observe(container, { childList: true });
+    }
+
+    /**
+     * 隐藏边控制点
+     */
+    private hideEdgeControlPoints(container: HTMLElement): void {
+        const controlPoints = container.querySelectorAll('.zk-edge-control-point');
+        controlPoints.forEach(cp => cp.remove());
     }
 
     /**
@@ -1455,8 +1692,12 @@ case 'dagre':
         this.cy.on('dragfree', 'node', (evt: any) => {
             if (!evt || !evt.target) return;
             const node = evt.target;
-            const position = node.position();
             const data = node.data();
+            
+            // 如果是分组节点，不触发位置保存
+            if (data.isGroup) return;
+            
+            const position = node.position();
 
             // 触发位置变化事件
             this.container?.dispatchEvent(new CustomEvent('node-position-changed', {
