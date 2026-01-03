@@ -29,6 +29,7 @@ export interface MOCParseResult {
     reverseRelations: Map<string, ReverseRelation>; // 反向关系 Map，key 格式: "sourceID->targetID"
     nodePositions: Record<string, { x: number; y: number }>; // 节点位置信息
     groups: GroupInfo[];        // 分组信息
+    edgeCurvatures: Record<string, { distance: number; weight: number }>; // 边弧度信息
     metadata: {                 // 扩展信息
         totalNodes: number;     // 总节点数
         maxDepth: number;       // 最大深度
@@ -111,6 +112,7 @@ export async function parseMOCStructure(
             reverseRelations: new Map(),
             nodePositions: {},
             groups: [],
+            edgeCurvatures: {},
             metadata: {
                 totalNodes: 0,
                 maxDepth: 0,
@@ -150,6 +152,7 @@ export async function parseMOCStructure(
             reverseRelations: new Map(),
             nodePositions: {},
             groups: [],
+            edgeCurvatures: {},
             metadata: {
                 totalNodes: 0,
                 maxDepth: 0,
@@ -161,9 +164,10 @@ export async function parseMOCStructure(
         };
     }
 
-    // 解析标题下的节点位置信息和分组信息（新格式：%% ext:{"node_positions":{...},"groups":[...]} %%）
+    // 解析标题下的节点位置信息、分组信息和边弧度信息（新格式：%% ext:{"node_positions":{...},"groups":[...],"edge_curvatures":{...}} %%）
     const nodePositions: Record<string, { x: number; y: number }> = {};
     const groups: any[] = [];
+    const edgeCurvatures: Record<string, { distance: number; weight: number }> = {};
     let posLineIndex = -1;
     
     // 从后往前查找位置行
@@ -179,10 +183,13 @@ export async function parseMOCStructure(
                     if (extData.groups) {
                         groups.push(...extData.groups);
                     }
+                    if (extData.edge_curvatures) {
+                        Object.assign(edgeCurvatures, extData.edge_curvatures);
+                    }
                     break;
                 }
             } catch (e) {
-                console.error('Failed to parse node_positions:', e);
+                console.error('Failed to parse ext data:', e);
             }
         }
     }
@@ -335,6 +342,7 @@ export async function parseMOCStructure(
         reverseRelations,
         nodePositions,
         groups,
+        edgeCurvatures,
         metadata: {
             totalNodes: allNodes.length,
             maxDepth,

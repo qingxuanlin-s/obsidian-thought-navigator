@@ -1031,9 +1031,10 @@ export class ZKIndexView extends ItemView {
             `;
         }
 
-        // 构建图形数据（包含分组信息）
+        // 构建图形数据（包含分组信息和边弧度信息）
         const groups = mocParseResult.groups || [];
-        const graphData = GraphDataBuilder.fromMOCTree(this.mocNodes, this.mocReverseRelations, null, groups);
+        const edgeCurvatures = mocParseResult.edgeCurvatures || {};
+        const graphData = GraphDataBuilder.fromMOCTree(this.mocNodes, this.mocReverseRelations, null, groups, edgeCurvatures);
 
         // 配置渲染选项
         const options: RenderOptions = {
@@ -1057,6 +1058,12 @@ export class ZKIndexView extends ItemView {
         branchGraphDiv.addEventListener('node-position-changed', async (event: any) => {
             const { node, position } = event.detail;
             
+            // 检查节点是否有效
+            if (!node || !node.ID) {
+                console.warn('Invalid node in position-changed event:', node);
+                return;
+            }
+            
             // 保存位置到 MOC 文件
             try {
                 const mocFile = this.app.vault.getFileByPath(currentMOCPath);
@@ -1065,6 +1072,21 @@ export class ZKIndexView extends ItemView {
                 }
             } catch (error) {
                 console.error('Failed to save node position:', error);
+            }
+        });
+
+        // 监听边弧度变化事件（拖动控制点后保存到 MOC 文件）
+        branchGraphDiv.addEventListener('edge-curvature-changed', async (event: any) => {
+            const { edgeId, source, target, distance, weight } = event.detail;
+            
+            // 保存弧度到 MOC 文件
+            try {
+                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                if (mocFile) {
+                    await this.saveEdgeCurvatureToMOC(mocFile, edgeId, { distance, weight });
+                }
+            } catch (error) {
+                console.error('Failed to save edge curvature:', error);
             }
         });
 
@@ -4366,6 +4388,114 @@ export class ZKIndexView extends ItemView {
         } catch (error) {
             console.error('Failed to save node position:', error);
             new Notice(`保存节点位置失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 保存边弧度到 MOC 文件
+     */
+    private async saveEdgeCurvatureToMOC(mocFile: TFile, edgeId: string, curvature: { distance: number; weight: number }): Promise<void> {
+        try {
+            // 读取 MOC 文件内容
+            const content = await this.app.vault.read(mocFile);
+            const lines = content.split('\n');
+            const headingTitle = this.plugin.settings.mocHeadingTitle;
+            
+            // 查找思维树标题的范围
+            let headingIndex = -1;
+            let sectionEndIndex = lines.length;
+            
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].trim() === `# ${headingTitle}`) {
+                    headingIndex = i;
+                    
+                    // 查找下一个一级标题，确定当前标题的范围
+                    for (let j = i + 1; j < lines.length; j++) {
+                        if (lines[j].trim().startsWith('# ')) {
+                            sectionEndIndex = j;
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+            
+            if (headingIndex === -1) {
+                new Notice(`未找到标题: # ${headingTitle}`);
+                return;
+            }
+            
+            // 查找 ext 行
+            let posLineIndex = -1;
+            let nodePositions: Record<string, { x: number; y: number }> = {};
+            let groups: any[] = [];
+            let edgeCurvatures: Record<string, { distance: number; weight: number }> = {};
+            
+            // 从后往前查找 ext 行
+            for (let i = sectionEndIndex - 1; i > headingIndex; i--) {
+                const line = lines[i].trim();
+                const match = line.match(/^%%\s*ext:\s*(\{.*\})\s*%%$/);
+                if (match) {
+                    try {
+                        const extData = JSON.parse(match[1]);
+                        posLineIndex = i;
+                        nodePositions = extData.node_positions || {};
+                        groups = extData.groups || [];
+                        edgeCurvatures = extData.edge_curvatures || {};
+                        break;
+                    } catch (e) {
+                        console.error('Failed to parse ext data:', e);
+                    }
+                }
+            }
+            
+            // 更新或添加当前边的弧度
+            edgeCurvatures[edgeId] = {
+                distance: Math.round(curvature.distance * 100) / 100, // 保留两位小数
+                weight: Math.round(curvature.weight * 100) / 100
+            };
+            
+            // 构建新的 ext 行
+            const extData: any = { node_positions: nodePositions, edge_curvatures: edgeCurvatures };
+            if (groups.length > 0) {
+                extData.groups = groups;
+            }
+            const newPosLine = `%% ext:${JSON.stringify(extData)} %%`;
+            
+            // 重新构建文件内容
+            let newLines: string[];
+            
+            if (posLineIndex !== -1) {
+                // 替换现有的 ext 行
+                newLines = [
+                    ...lines.slice(0, posLineIndex),
+                    newPosLine,
+                    ...lines.slice(posLineIndex + 1)
+                ];
+            } else {
+                // 在标题范围末尾插入新的 ext 行
+                let lastContentIndex = sectionEndIndex - 1;
+                while (lastContentIndex > headingIndex && lines[lastContentIndex].trim() === '') {
+                    lastContentIndex--;
+                }
+                
+                newLines = [
+                    ...lines.slice(0, lastContentIndex + 1),
+                    '',
+                    newPosLine,
+                    ...lines.slice(sectionEndIndex)
+                ];
+            }
+            
+            const newContent = newLines.join('\n');
+            
+            // 写回文件
+            await this.app.vault.modify(mocFile, newContent);
+            
+            console.log(`Saved curvature for edge ${edgeId}:`, curvature);
+        } catch (error) {
+            console.error('Failed to save edge curvature:', error);
+            new Notice(`保存边弧度失败: ${error.message}`);
         }
     }
 }
