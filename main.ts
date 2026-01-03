@@ -117,6 +117,7 @@ interface ZKNavigationSettings {
     mocFolderPath: string;             // MOC 索引笔记所在文件夹
     mocHeadingTitle: string;           // 要解析的一级标题名称，如 "思维树"
     mocCurrentFile: string;            // 当前选中的 MOC 文件路径
+    mocNodePositions: Record<string, Record<string, { x: number; y: number }>>; // MOC 节点位置存储 {mocFilePath: {nodeId: {x, y}}}
 }
 
 //Default value for setting field
@@ -192,6 +193,7 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     mocFolderPath: '',
     mocHeadingTitle: '思维树',
     mocCurrentFile: '',
+    mocNodePositions: {}, // MOC 节点位置存储
 }
 
 export default class ZKNavigationPlugin extends Plugin {

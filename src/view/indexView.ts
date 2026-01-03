@@ -1,5 +1,5 @@
 import ZKNavigationPlugin, { Retrival } from "main";
-import { ButtonComponent, DropdownComponent, ExtraButtonComponent, HeadingCache, ItemView, Menu, Notice, TFile, WorkspaceLeaf, debounce, moment, setTooltip } from "obsidian";
+import { ButtonComponent, DropdownComponent, ExtraButtonComponent, HeadingCache, ItemView, Menu, Modal, Notice, Setting, TFile, WorkspaceLeaf, debounce, moment, setTooltip } from "obsidian";
 import { t } from "src/lang/helper";
 import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
 import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
@@ -39,6 +39,7 @@ export interface ZKNode {
     fixWidth: number; // used for setting the same width for siblings
     branchName: string; // for generating gitGraph
     gitNodePos: number; // for keeping node's position in gitBranch
+    savedPosition?: { x: number; y: number }; // 保存的节点位置（用于 Cytoscape 图形）
 }
 
 interface BrancAllhNodes {
@@ -1001,16 +1002,13 @@ export class ZKIndexView extends ItemView {
         const mocContent = await this.app.vault.read(currentMOCFile);
         const mocParseResult = await parseMOCStructure(this.app, currentMOCPath, headingTitle);
 
-        if (mocParseResult.nodes.length === 0) {
-            indexLinkDiv.createEl('abbr', { text: t("No valid nodes found") });
-            return;
-        }
-
-        // 转换为 ZKNode
-        this.mocNodes = await convertMOCToZKNodes(this.plugin, mocParseResult.nodes, mocParseResult.reverseRelations);
+        // 转换为 ZKNode（即使为空也继续）
+        this.mocNodes = mocParseResult.nodes.length > 0 
+            ? await convertMOCToZKNodes(this.plugin, mocParseResult.nodes, mocParseResult.reverseRelations, [], mocParseResult.nodePositions)
+            : [];
         this.mocReverseRelations = mocParseResult.reverseRelations;
 
-        // 创建图形容器
+        // 创建图形容器（即使没有节点也创建，以便支持双击添加）
         const branchGraphContainer = indexMermaidDiv.createDiv("zk-branch-graph-container");
         const branchGraphDiv = branchGraphContainer.createEl("div", {
             cls: "zk-graph-cytoscape"
@@ -1021,8 +1019,21 @@ export class ZKIndexView extends ItemView {
         branchGraphDiv.style.width = "100%";
         branchGraphDiv.style.marginBottom = "60px"; // 为底部按钮留出空间
 
-        // 构建图形数据
-        const graphData = GraphDataBuilder.fromMOCTree(this.mocNodes, this.mocReverseRelations, null);
+        // 如果没有节点，显示提示信息
+        if (this.mocNodes.length === 0) {
+            const emptyHint = branchGraphContainer.createDiv("zk-empty-hint");
+            emptyHint.style.textAlign = "center";
+            emptyHint.style.padding = "40px 20px";
+            emptyHint.style.color = "var(--text-muted)";
+            emptyHint.innerHTML = `
+                <div style="font-size: 16px; margin-bottom: 10px;">📝 思维树为空</div>
+                <div style="font-size: 14px;">双击空白处或点击右上角按钮创建第一个节点</div>
+            `;
+        }
+
+        // 构建图形数据（包含分组信息）
+        const groups = mocParseResult.groups || [];
+        const graphData = GraphDataBuilder.fromMOCTree(this.mocNodes, this.mocReverseRelations, null, groups);
 
         // 配置渲染选项
         const options: RenderOptions = {
@@ -1042,9 +1053,89 @@ export class ZKIndexView extends ItemView {
         // 渲染图形
         await this.branchRenderer.render(branchGraphDiv, graphData, options);
 
+        // 监听节点位置变化事件（拖动后保存到 MOC 文件）
+        branchGraphDiv.addEventListener('node-position-changed', async (event: any) => {
+            const { node, position } = event.detail;
+            
+            // 保存位置到 MOC 文件
+            try {
+                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                if (mocFile) {
+                    await this.saveNodePositionToMOC(mocFile, node.ID, position);
+                }
+            } catch (error) {
+                console.error('Failed to save node position:', error);
+            }
+        });
+
+        // 监听分组创建事件
+        branchGraphDiv.addEventListener('group-create', async (event: any) => {
+            const { groupId, groupLabel, nodeIds } = event.detail;
+            
+            try {
+                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                if (mocFile) {
+                    await this.saveGroupToMOC(mocFile, { id: groupId, label: groupLabel, nodeIds });
+                    // 刷新视图以显示新分组
+                    await this.refreshBranchMermaid();
+                }
+            } catch (error) {
+                console.error('Failed to save group:', error);
+            }
+        });
+
+        // 监听分组重命名事件
+        branchGraphDiv.addEventListener('group-rename', async (event: any) => {
+            const { groupId, oldLabel, newLabel } = event.detail;
+            
+            try {
+                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                if (mocFile) {
+                    await this.renameGroupInMOC(mocFile, groupId, newLabel);
+                    // 刷新视图以显示更新后的分组名
+                    await this.refreshBranchMermaid();
+                }
+            } catch (error) {
+                console.error('Failed to rename group:', error);
+            }
+        });
+
+        // 监听分组右键菜单事件
+        branchGraphDiv.addEventListener('group-contextmenu', async (event: any) => {
+            const { groupId, groupLabel, position } = event.detail;
+            
+            // 创建右键菜单
+            const menu = new Menu();
+            
+            menu.addItem((item) => {
+                item.setTitle('删除分组')
+                    .setIcon('trash')
+                    .onClick(async () => {
+                        try {
+                            const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                            if (mocFile) {
+                                await this.deleteGroupFromMOC(mocFile, groupId);
+                                // 刷新视图
+                                await this.refreshBranchMermaid();
+                            }
+                        } catch (error) {
+                            console.error('Failed to delete group:', error);
+                        }
+                    });
+            });
+            
+            menu.showAtPosition(position);
+        });
+
         // 监听节点点击事件
         branchGraphDiv.addEventListener('node-click', (event: any) => {
             const { node, ctrlKey, shiftKey } = event.detail;
+
+            // 检查节点是否有效
+            if (!node || !node.file) {
+                console.warn('Invalid node clicked:', node);
+                return;
+            }
 
             if (ctrlKey) {
                 // Ctrl + 点击：在新标签页打开
@@ -1075,6 +1166,109 @@ export class ZKIndexView extends ItemView {
                 targetEl: mouseEvent.target,
                 sourcePath: node.file.path,
             });
+        });
+
+        // 监听节点右键菜单事件
+        branchGraphDiv.addEventListener('node-contextmenu', (event: any) => {
+            const { node, event: mouseEvent, position } = event.detail;
+            
+            // 阻止默认右键菜单
+            mouseEvent.preventDefault();
+            mouseEvent.stopPropagation();
+            
+            // 创建菜单
+            const menu = new Menu();
+            
+            // 添加子节点选项
+            menu.addItem((item) => {
+                item.setTitle("➕ 添加子节点")
+                    .setIcon("plus-circle")
+                    .onClick(async () => {
+                        await this.addChildNodeToMOC(node);
+                    });
+            });
+            
+            // 添加反向连接选项
+            menu.addItem((item) => {
+                item.setTitle("🔗 添加反向连接")
+                    .setIcon("link")
+                    .onClick(async () => {
+                        await this.addReverseNodeToMOC(node);
+                    });
+            });
+            
+            menu.addSeparator();
+            
+            // 打开文件选项
+            menu.addItem((item) => {
+                item.setTitle("📄 打开文件")
+                    .setIcon("file")
+                    .onClick(() => {
+                        this.app.workspace.openLinkText("", node.file.path);
+                    });
+            });
+            
+            // 在新标签页打开
+            menu.addItem((item) => {
+                item.setTitle("🗂️ 在新标签页打开")
+                    .setIcon("file-plus")
+                    .onClick(() => {
+                        this.app.workspace.openLinkText("", node.file.path, 'tab');
+                    });
+            });
+            
+            // 显示菜单
+            menu.showAtMouseEvent(mouseEvent);
+        });
+
+        // 监听背景双击事件（创建自由节点）
+        branchGraphDiv.addEventListener('background-dblclick', async (event: any) => {
+            const { position } = event.detail;
+            console.log('Background double-clicked at:', position);
+            
+            // 调用添加自由节点方法，传递位置信息
+            await this.addFreeNodeToMOC(position);
+        });
+
+        // 监听边点击事件
+        branchGraphDiv.addEventListener('edge-click', (event: any) => {
+            const { edgeId, source, target, type, label } = event.detail;
+            console.log('Edge clicked:', { edgeId, source, target, type, label });
+            // 可以在这里添加边的高亮或其他交互
+        });
+
+        // 监听边右键菜单事件（删除边）
+        branchGraphDiv.addEventListener('edge-contextmenu', async (event: any) => {
+            const { edgeId, source, target, type, label, position } = event.detail;
+            
+            // 只允许删除箭头关系（type === 'reverse'），不允许删除父子关系
+            if (type !== 'reverse') {
+                new Notice('只能删除箭头关系，不能删除父子关系');
+                return;
+            }
+            
+            // 创建右键菜单
+            const menu = new Menu();
+            
+            menu.addItem((item) => {
+                item.setTitle('删除箭头关系')
+                    .setIcon('trash')
+                    .onClick(async () => {
+                        try {
+                            const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                            if (mocFile) {
+                                await this.deleteArrowRelationFromMOC(mocFile, source, target);
+                                // 刷新视图
+                                await this.refreshBranchMermaid();
+                            }
+                        } catch (error) {
+                            console.error('Failed to delete arrow relation:', error);
+                            new Notice(`删除箭头关系失败: ${error.message}`);
+                        }
+                    });
+            });
+            
+            menu.showAtPosition(position);
         });
 
         this.plugin.indexViewOffsetWidth = this.containerEl.offsetWidth;
@@ -3093,8 +3287,15 @@ export class ZKIndexView extends ItemView {
 
     /**
      * 生成下一个可用的自由节点 ID
+     * 如果没有任何节点，返回 "1" 作为初始节点 ID
+     * 如果有节点，返回 "free.X" 格式的 ID
      */
     generateNextFreeNodeID(): string {
+        // 如果没有任何节点，返回初始节点 ID
+        if (this.mocNodes.length === 0) {
+            return '1';
+        }
+        
         // 查找所有 free.* 节点
         const freeNodes = this.mocNodes.filter(n => n.ID.startsWith('free.'));
         
@@ -3166,6 +3367,9 @@ export class ZKIndexView extends ItemView {
         // 生成建议的节点 ID（基于目标节点，和正向连接一致）
         const suggestedID = this.generateChildNodeID(targetNode.IDStr);
         
+        // 计算默认位置（在目标节点左边）
+        const defaultPosition = this.calculateDefaultPosition(targetNode, 'left');
+        
         // 打开对话框
         const modal = new AddFreeNodeModal(
             this.app,
@@ -3182,6 +3386,15 @@ export class ZKIndexView extends ItemView {
                 
                 // 添加到 MOC 文件
                 await this.saveFreeNodeToMOC(result);
+                
+                // 保存新节点的位置
+                if (defaultPosition && result.nodeID) {
+                    const mocFilePath = this.plugin.settings.mocCurrentFile;
+                    const mocFile = this.app.vault.getFileByPath(mocFilePath);
+                    if (mocFile) {
+                        await this.saveNodePositionToMOC(mocFile, result.nodeID, defaultPosition);
+                    }
+                }
                 
                 // 刷新视图
                 await this.refreshBranchMermaid();
@@ -3204,6 +3417,9 @@ export class ZKIndexView extends ItemView {
         // 生成子节点 ID
         const suggestedID = this.generateChildNodeID(parentNode.IDStr);
         
+        // 计算默认位置（在父节点右边）
+        const defaultPosition = this.calculateDefaultPosition(parentNode, 'right');
+        
         // 打开对话框，预选父节点
         const modal = new AddFreeNodeModal(
             this.app,
@@ -3213,6 +3429,15 @@ export class ZKIndexView extends ItemView {
             async (result) => {
                 // 添加到 MOC 文件
                 await this.saveFreeNodeToMOC(result);
+                
+                // 保存新节点的位置
+                if (defaultPosition && result.nodeID) {
+                    const mocFilePath = this.plugin.settings.mocCurrentFile;
+                    const mocFile = this.app.vault.getFileByPath(mocFilePath);
+                    if (mocFile) {
+                        await this.saveNodePositionToMOC(mocFile, result.nodeID, defaultPosition);
+                    }
+                }
                 
                 // 刷新视图
                 await this.refreshBranchMermaid();
@@ -3225,6 +3450,47 @@ export class ZKIndexView extends ItemView {
         
         modal.onOpen();
         modal.open();
+    }
+
+    /**
+     * 计算新节点的默认位置
+     * @param referenceNode 参考节点（父节点或目标节点）
+     * @param direction 方向：'right' 表示在右边，'left' 表示在左边
+     */
+    private calculateDefaultPosition(referenceNode: ZKNode, direction: 'right' | 'left' = 'right'): { x: number; y: number } | null {
+        // 尝试从 Cytoscape 实例获取节点位置
+        if (this.branchRenderer) {
+            const cy = this.branchRenderer.getCytoscapeInstance();
+            if (cy) {
+                const nodeId = referenceNode.ID.replace(/[^a-zA-Z0-9_-]/g, '_');
+                const cyNode = cy.$id(nodeId);
+                
+                if (cyNode.length > 0) {
+                    const position = cyNode.position();
+                    const offset = direction === 'right' ? 250 : -250; // 右边或左边偏移 250 像素
+                    
+                    return {
+                        x: position.x + offset,
+                        y: position.y + 50 // 稍微向下偏移 50 像素
+                    };
+                }
+            }
+        }
+        
+        // 如果无法从 Cytoscape 获取位置，使用保存的位置
+        if (referenceNode.savedPosition) {
+            const offset = direction === 'right' ? 250 : -250;
+            return {
+                x: referenceNode.savedPosition.x + offset,
+                y: referenceNode.savedPosition.y + 50
+            };
+        }
+        
+        // 如果都没有，返回一个默认位置
+        return {
+            x: direction === 'right' ? 250 : -250,
+            y: 100
+        };
     }
 
     /**
@@ -3328,8 +3594,9 @@ export class ZKIndexView extends ItemView {
 
     /**
      * 添加自由节点到 MOC
+     * @param position 可选的位置参数，用于双击创建时指定位置
      */
-    async addFreeNodeToMOC() {
+    async addFreeNodeToMOC(position?: { x: number; y: number }) {
         // 生成建议的节点 ID
         const suggestedID = this.generateNextFreeNodeID();
         
@@ -3342,6 +3609,15 @@ export class ZKIndexView extends ItemView {
             async (result) => {
                 // 添加到 MOC 文件
                 await this.saveFreeNodeToMOC(result);
+                
+                // 如果提供了位置信息，保存节点位置
+                if (position && result.file) {
+                    const mocFilePath = this.plugin.settings.mocCurrentFile;
+                    const mocFile = this.app.vault.getFileByPath(mocFilePath);
+                    if (mocFile && result.nodeID) {
+                        await this.saveNodePositionToMOC(mocFile, result.nodeID, position);
+                    }
+                }
                 
                 // 刷新视图
                 await this.refreshBranchMermaid();
@@ -3384,7 +3660,6 @@ export class ZKIndexView extends ItemView {
             
             // 构建新节点的 Markdown
             const nodeID = result.nodeID || this.generateNextFreeNodeID();
-            const parentID = nodeID.substring(0,nodeID.length-2);
             
             // 构建节点行
             let newNodeLine: string;
@@ -3405,12 +3680,16 @@ export class ZKIndexView extends ItemView {
             let insertParentIndex = -1;
             let foundHeading = false;
             
+            // 如果有父节点 ID，尝试查找父节点
+            const hasParentNode = result.connectToNodeID && result.connectToNodeID.trim() !== '';
+            
             for (let i = 0; i < lines.length; i++) {
-                
                 const originLine = lines[i];
-                if(originLine.contains('`'  + parentID + '`' ) && originLine.contains('[[')){
+                
+                // 如果有父节点，查找父节点位置
+                if (hasParentNode && originLine.contains('`' + result.connectToNodeID + '`') && originLine.contains('[[')) {
                     insertParentIndex = i + 1;   
-                    newNodeLine = (" ".repeat(((originLine.indexOf('-') /4) +1) * 4) ) + newNodeLine;
+                    newNodeLine = (" ".repeat(((originLine.indexOf('-') / 4) + 1) * 4)) + newNodeLine;
                 }
 
                 const line = lines[i].trim();
@@ -3438,13 +3717,27 @@ export class ZKIndexView extends ItemView {
                 return;
             }
             
+            // 确定最终插入位置
+            let finalInsertIndex: number;
+            if (hasParentNode && insertParentIndex !== -1) {
+                // 如果找到了父节点，插入到父节点下方
+                finalInsertIndex = insertParentIndex;
+            } else if (!hasParentNode) {
+                // 如果没有父节点（创建初始节点），插入到标题下方
+                finalInsertIndex = insertIndex;
+            } else {
+                // 如果指定了父节点但未找到，提示错误
+                new Notice(`未找到父节点: ${result.connectToNodeID}`);
+                return;
+            }
+            
             // 在指定位置插入新节点
-            lines.splice(insertParentIndex, 0, newNodeLine);
+            lines.splice(finalInsertIndex, 0, newNodeLine);
             
             // 如果是反向连接，添加箭头语法
             if (result.reverseRelation) {
                 const arrowLine = `- \`${result.reverseRelation.sourceID}\` -- ${result.reverseRelation.relationText} --> \`${result.reverseRelation.targetID}\``;
-                lines.splice(insertParentIndex + 1, 0, '', arrowLine);
+                lines.splice(finalInsertIndex + 1, 0, '', arrowLine);
             }
             
             // 重新组合内容
@@ -3462,5 +3755,471 @@ export class ZKIndexView extends ItemView {
 
     async onClose() {
         this.plugin.saveData(this.plugin.settings);
+    }
+
+    /**
+     * 保存分组到 MOC 文件
+     */
+    private async saveGroupToMOC(mocFile: TFile, group: { id: string; label: string; nodeIds: string[]; color?: string }): Promise<void> {
+        try {
+            // 读取 MOC 文件内容
+            const content = await this.app.vault.read(mocFile);
+            const lines = content.split('\n');
+            const headingTitle = this.plugin.settings.mocHeadingTitle;
+            
+            // 查找思维树标题的范围
+            let headingIndex = -1;
+            let sectionEndIndex = lines.length;
+            
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].trim() === `# ${headingTitle}`) {
+                    headingIndex = i;
+                    
+                    // 查找下一个一级标题，确定当前标题的范围
+                    for (let j = i + 1; j < lines.length; j++) {
+                        if (lines[j].trim().startsWith('# ')) {
+                            sectionEndIndex = j;
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+            
+            if (headingIndex === -1) {
+                new Notice(`未找到标题: # ${headingTitle}`);
+                return;
+            }
+            
+            // 查找 ext 行
+            let posLineIndex = -1;
+            let nodePositions: Record<string, { x: number; y: number }> = {};
+            let groups: any[] = [];
+            
+            for (let i = sectionEndIndex - 1; i > headingIndex; i--) {
+                const line = lines[i].trim();
+                const match = line.match(/^%%\s*ext:\s*(\{.*\})\s*%%$/);
+                if (match) {
+                    try {
+                        const extData = JSON.parse(match[1]);
+                        if (extData.node_positions) {
+                            posLineIndex = i;
+                            nodePositions = extData.node_positions;
+                            groups = extData.groups || [];
+                            break;
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse ext data:', e);
+                    }
+                }
+            }
+            
+            // 添加或更新分组
+            const existingGroupIndex = groups.findIndex((g: any) => g.id === group.id);
+            if (existingGroupIndex !== -1) {
+                groups[existingGroupIndex] = group;
+            } else {
+                groups.push(group);
+            }
+            
+            // 构建新的 ext 行
+            const extData: any = { node_positions: nodePositions, groups };
+            const newPosLine = `%% ext:${JSON.stringify(extData)} %%`;
+            
+            // 重新构建文件内容
+            let newLines: string[];
+            
+            if (posLineIndex !== -1) {
+                // 替换现有的 ext 行
+                newLines = [
+                    ...lines.slice(0, posLineIndex),
+                    newPosLine,
+                    ...lines.slice(posLineIndex + 1)
+                ];
+            } else {
+                // 在标题范围末尾插入新的 ext 行
+                let lastContentIndex = sectionEndIndex - 1;
+                while (lastContentIndex > headingIndex && lines[lastContentIndex].trim() === '') {
+                    lastContentIndex--;
+                }
+                
+                newLines = [
+                    ...lines.slice(0, lastContentIndex + 1),
+                    '',
+                    newPosLine,
+                    ...lines.slice(sectionEndIndex)
+                ];
+            }
+            
+            const newContent = newLines.join('\n');
+            
+            // 写回文件
+            await this.app.vault.modify(mocFile, newContent);
+            
+            new Notice(`已创建分组: ${group.label}`);
+            console.log(`Saved group:`, group);
+        } catch (error) {
+            console.error('Failed to save group:', error);
+            new Notice(`保存分组失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 重命名 MOC 文件中的分组
+     */
+    private async renameGroupInMOC(mocFile: TFile, groupId: string, newLabel: string): Promise<void> {
+        try {
+            // 读取 MOC 文件内容
+            const content = await this.app.vault.read(mocFile);
+            const lines = content.split('\n');
+            const headingTitle = this.plugin.settings.mocHeadingTitle;
+            
+            // 查找思维树标题的范围
+            let headingIndex = -1;
+            let sectionEndIndex = lines.length;
+            
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].trim() === `# ${headingTitle}`) {
+                    headingIndex = i;
+                    
+                    for (let j = i + 1; j < lines.length; j++) {
+                        if (lines[j].trim().startsWith('# ')) {
+                            sectionEndIndex = j;
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+            
+            if (headingIndex === -1) {
+                new Notice(`未找到标题: # ${headingTitle}`);
+                return;
+            }
+            
+            // 查找 ext 行
+            let posLineIndex = -1;
+            let nodePositions: Record<string, { x: number; y: number }> = {};
+            let groups: any[] = [];
+            
+            for (let i = sectionEndIndex - 1; i > headingIndex; i--) {
+                const line = lines[i].trim();
+                const match = line.match(/^%%\s*ext:\s*(\{.*\})\s*%%$/);
+                if (match) {
+                    try {
+                        const extData = JSON.parse(match[1]);
+                        if (extData.node_positions) {
+                            posLineIndex = i;
+                            nodePositions = extData.node_positions;
+                            groups = extData.groups || [];
+                            break;
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse ext data:', e);
+                    }
+                }
+            }
+            
+            // 查找并更新分组
+            const groupIndex = groups.findIndex((g: any) => g.id === groupId);
+            if (groupIndex === -1) {
+                new Notice(`未找到分组: ${groupId}`);
+                return;
+            }
+            
+            const oldLabel = groups[groupIndex].label;
+            groups[groupIndex].label = newLabel;
+            
+            // 构建新的 ext 行
+            const extData: any = { node_positions: nodePositions, groups };
+            const newPosLine = `%% ext:${JSON.stringify(extData)} %%`;
+            
+            // 重新构建文件内容
+            const newLines = [
+                ...lines.slice(0, posLineIndex),
+                newPosLine,
+                ...lines.slice(posLineIndex + 1)
+            ];
+            
+            const newContent = newLines.join('\n');
+            
+            // 写回文件
+            await this.app.vault.modify(mocFile, newContent);
+            
+            new Notice(`已重命名分组: ${oldLabel} → ${newLabel}`);
+            console.log(`Renamed group ${groupId}: ${oldLabel} → ${newLabel}`);
+        } catch (error) {
+            console.error('Failed to rename group:', error);
+            new Notice(`重命名分组失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 从 MOC 文件中删除分组
+     */
+    private async deleteGroupFromMOC(mocFile: TFile, groupId: string): Promise<void> {
+        try {
+            // 读取 MOC 文件内容
+            const content = await this.app.vault.read(mocFile);
+            const lines = content.split('\n');
+            const headingTitle = this.plugin.settings.mocHeadingTitle;
+            
+            // 查找思维树标题的范围
+            let headingIndex = -1;
+            let sectionEndIndex = lines.length;
+            
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].trim() === `# ${headingTitle}`) {
+                    headingIndex = i;
+                    
+                    for (let j = i + 1; j < lines.length; j++) {
+                        if (lines[j].trim().startsWith('# ')) {
+                            sectionEndIndex = j;
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+            
+            if (headingIndex === -1) {
+                new Notice(`未找到标题: # ${headingTitle}`);
+                return;
+            }
+            
+            // 查找 ext 行
+            let posLineIndex = -1;
+            let nodePositions: Record<string, { x: number; y: number }> = {};
+            let groups: any[] = [];
+            
+            for (let i = sectionEndIndex - 1; i > headingIndex; i--) {
+                const line = lines[i].trim();
+                const match = line.match(/^%%\s*ext:\s*(\{.*\})\s*%%$/);
+                if (match) {
+                    try {
+                        const extData = JSON.parse(match[1]);
+                        if (extData.node_positions) {
+                            posLineIndex = i;
+                            nodePositions = extData.node_positions;
+                            groups = extData.groups || [];
+                            break;
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse ext data:', e);
+                    }
+                }
+            }
+            
+            // 查找并删除分组
+            const groupIndex = groups.findIndex((g: any) => g.id === groupId);
+            if (groupIndex === -1) {
+                new Notice(`未找到分组: ${groupId}`);
+                return;
+            }
+            
+            const deletedGroup = groups[groupIndex];
+            groups.splice(groupIndex, 1);
+            
+            // 构建新的 ext 行
+            const extData: any = { node_positions: nodePositions, groups };
+            const newPosLine = `%% ext:${JSON.stringify(extData)} %%`;
+            
+            // 重新构建文件内容
+            const newLines = [
+                ...lines.slice(0, posLineIndex),
+                newPosLine,
+                ...lines.slice(posLineIndex + 1)
+            ];
+            
+            const newContent = newLines.join('\n');
+            
+            // 写回文件
+            await this.app.vault.modify(mocFile, newContent);
+            
+            new Notice(`已删除分组: ${deletedGroup.label}`);
+            console.log(`Deleted group:`, deletedGroup);
+        } catch (error) {
+            console.error('Failed to delete group:', error);
+            new Notice(`删除分组失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 从 MOC 文件中删除箭头关系
+     */
+    private async deleteArrowRelationFromMOC(mocFile: TFile, sourceID: string, targetID: string): Promise<void> {
+        try {
+            // 读取 MOC 文件内容
+            const content = await this.app.vault.read(mocFile);
+            const lines = content.split('\n');
+            const headingTitle = this.plugin.settings.mocHeadingTitle;
+            
+            // 查找思维树标题的范围
+            let headingIndex = -1;
+            let sectionEndIndex = lines.length;
+            
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].trim() === `# ${headingTitle}`) {
+                    headingIndex = i;
+                    
+                    for (let j = i + 1; j < lines.length; j++) {
+                        if (lines[j].trim().startsWith('# ')) {
+                            sectionEndIndex = j;
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+            
+            if (headingIndex === -1) {
+                new Notice(`未找到标题: # ${headingTitle}`);
+                return;
+            }
+            
+            // 查找并删除箭头关系行
+            // 箭头关系格式：`sourceID` -- label --> `targetID` 或 `sourceID` --> `targetID`
+            let arrowLineIndex = -1;
+            const arrowPattern = new RegExp(`\`${sourceID}\`\\s*--.*?-->\\s*\`${targetID}\``);
+            
+            for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
+                const line = lines[i];
+                if (arrowPattern.test(line)) {
+                    arrowLineIndex = i;
+                    break;
+                }
+            }
+            
+            if (arrowLineIndex === -1) {
+                new Notice(`未找到箭头关系: ${sourceID} --> ${targetID}`);
+                return;
+            }
+            
+            // 删除该行
+            const newLines = [
+                ...lines.slice(0, arrowLineIndex),
+                ...lines.slice(arrowLineIndex + 1)
+            ];
+            
+            const newContent = newLines.join('\n');
+            
+            // 写回文件
+            await this.app.vault.modify(mocFile, newContent);
+            
+            new Notice(`已删除箭头关系: ${sourceID} → ${targetID}`);
+            console.log(`Deleted arrow relation: ${sourceID} --> ${targetID}`);
+        } catch (error) {
+            console.error('Failed to delete arrow relation:', error);
+            new Notice(`删除箭头关系失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 保存节点位置到 MOC 文件的思维树标题末尾
+     */
+    private async saveNodePositionToMOC(mocFile: TFile, nodeID: string, position: { x: number; y: number }): Promise<void> {
+        try {
+            // 读取 MOC 文件内容
+            const content = await this.app.vault.read(mocFile);
+            const lines = content.split('\n');
+            const headingTitle = this.plugin.settings.mocHeadingTitle;
+            
+            // 查找思维树标题的范围
+            let headingIndex = -1;
+            let sectionEndIndex = lines.length;
+            
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].trim() === `# ${headingTitle}`) {
+                    headingIndex = i;
+                    
+                    // 查找下一个一级标题，确定当前标题的范围
+                    for (let j = i + 1; j < lines.length; j++) {
+                        if (lines[j].trim().startsWith('# ')) {
+                            sectionEndIndex = j;
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+            
+            if (headingIndex === -1) {
+                new Notice(`未找到标题: # ${headingTitle}`);
+                return;
+            }
+            
+            // 查找位置行（新格式：%% ext:{"node_positions":{...},"groups":[...]} %%）
+            let posLineIndex = -1;
+            let nodePositions: Record<string, { x: number; y: number }> = {};
+            let groups: any[] = [];
+            
+            // 从后往前查找位置行
+            for (let i = sectionEndIndex - 1; i > headingIndex; i--) {
+                const line = lines[i].trim();
+                const match = line.match(/^%%\s*ext:\s*(\{.*\})\s*%%$/);
+                if (match) {
+                    try {
+                        const extData = JSON.parse(match[1]);
+                        if (extData.node_positions) {
+                            posLineIndex = i;
+                            nodePositions = extData.node_positions;
+                            groups = extData.groups || [];
+                            break;
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse node_positions:', e);
+                    }
+                }
+            }
+            
+            // 更新或添加当前节点的位置
+            nodePositions[nodeID] = {
+                x: Math.round(position.x * 100) / 100, // 保留两位小数
+                y: Math.round(position.y * 100) / 100
+            };
+            
+            // 构建新的位置行（包含分组信息）
+            const extData: any = { node_positions: nodePositions };
+            if (groups.length > 0) {
+                extData.groups = groups;
+            }
+            const newPosLine = `%% ext:${JSON.stringify(extData)} %%`;
+            
+            // 重新构建文件内容
+            let newLines: string[];
+            
+            if (posLineIndex !== -1) {
+                // 替换现有的位置行
+                newLines = [
+                    ...lines.slice(0, posLineIndex),
+                    newPosLine,
+                    ...lines.slice(posLineIndex + 1)
+                ];
+            } else {
+                // 在标题范围末尾插入新的位置行
+                // 找到最后一个非空行
+                let lastContentIndex = sectionEndIndex - 1;
+                while (lastContentIndex > headingIndex && lines[lastContentIndex].trim() === '') {
+                    lastContentIndex--;
+                }
+                
+                newLines = [
+                    ...lines.slice(0, lastContentIndex + 1),
+                    '',
+                    newPosLine,
+                    ...lines.slice(sectionEndIndex)
+                ];
+            }
+            
+            const newContent = newLines.join('\n');
+            
+            // 写回文件
+            await this.app.vault.modify(mocFile, newContent);
+            
+            console.log(`Saved position for node ${nodeID}:`, position);
+        } catch (error) {
+            console.error('Failed to save node position:', error);
+            new Notice(`保存节点位置失败: ${error.message}`);
+        }
     }
 }
