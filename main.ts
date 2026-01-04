@@ -418,6 +418,15 @@ export default class ZKNavigationPlugin extends Plugin {
             this.mocFileMonitor.initialize();    
         }
 
+        // 监听文件重命名事件，更新 MOC 文件中的链接
+        this.registerEvent(
+            this.app.vault.on("rename", async (file, oldPath) => {
+                if (file instanceof TFile && this.settings.mocModeEnabled) {
+                    await this.updateMOCLinksAfterRename(file, oldPath);
+                }
+            })
+        );
+
     }
 
     async openIndexView() {
@@ -612,6 +621,64 @@ export default class ZKNavigationPlugin extends Plugin {
             }
             return;            
         }
+    }
+
+    /**
+     * 文件重命名后更新所有 MOC 文件中的链接
+     */
+    async updateMOCLinksAfterRename(file: TFile, oldPath: string): Promise<void> {
+        try {
+            const mocFolder = this.settings.mocFolderPath;
+            if (!mocFolder) return;
+
+            // 获取旧文件名和新文件名（不含扩展名）
+            const oldBasename = oldPath.split('/').pop()?.replace('.md', '') || '';
+            const newBasename = file.basename;
+
+            // 如果文件名没变，不需要更新
+            if (oldBasename === newBasename) return;
+
+            // 获取所有 MOC 文件
+            const mocFiles = this.app.vault.getMarkdownFiles()
+                .filter(f => f.path.startsWith(mocFolder + '/'));
+
+            // 遍历所有 MOC 文件，更新链接
+            for (const mocFile of mocFiles) {
+                let content = await this.app.vault.read(mocFile);
+                let modified = false;
+
+                // 替换 [[oldName]] 格式的链接
+                const wikiLinkRegex = new RegExp(`\\[\\[${this.escapeRegex(oldBasename)}\\]\\]`, 'g');
+                if (wikiLinkRegex.test(content)) {
+                    content = content.replace(wikiLinkRegex, `[[${newBasename}]]`);
+                    modified = true;
+                }
+
+                // 替换 [[oldName|alias]] 格式的链接
+                const wikiLinkWithAliasRegex = new RegExp(`\\[\\[${this.escapeRegex(oldBasename)}\\|([^\\]]+)\\]\\]`, 'g');
+                if (wikiLinkWithAliasRegex.test(content)) {
+                    content = content.replace(wikiLinkWithAliasRegex, `[[${newBasename}|$1]]`);
+                    modified = true;
+                }
+
+                // 如果内容被修改，保存文件
+                if (modified) {
+                    await this.app.vault.modify(mocFile, content);
+                    console.log(`Updated links in MOC file: ${mocFile.path}`);
+                }
+            }
+
+        } catch (error) {
+            console.error('Error updating MOC links after rename:', error);
+            new Notice(`更新 MOC 文件链接失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 转义正则表达式特殊字符
+     */
+    private escapeRegex(str: string): string {
+        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
     onunload() {
