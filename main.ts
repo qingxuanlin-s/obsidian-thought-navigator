@@ -128,7 +128,7 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     MainNoteExt:"md",
     StartingPoint: 'parent',
     DisplayLevel: 'end',
-    NodeText: "both",
+    NodeText: "id-title",
     FamilyGraphToggle: true,
     InlinksGraphToggle: true,
     OutlinksGraphToggle: true,

@@ -996,7 +996,15 @@ export class ZKIndexView extends ItemView {
         });
 
         // 解析当前 MOC 文件
-        const currentMOCPath = this.plugin.settings.mocCurrentFile || mocFiles[0].path;
+        let currentMOCPath = this.plugin.settings.mocCurrentFile;
+        
+        // 如果没有设置当前 MOC，使用第一个 MOC 文件并保存设置
+        if (!currentMOCPath && mocFiles.length > 0) {
+            currentMOCPath = mocFiles[0].path;
+            this.plugin.settings.mocCurrentFile = currentMOCPath;
+            await this.plugin.saveData(this.plugin.settings);
+        }
+        
         const currentMOCFile = this.app.vault.getAbstractFileByPath(currentMOCPath);
 
         if (!(currentMOCFile instanceof TFile)) {
