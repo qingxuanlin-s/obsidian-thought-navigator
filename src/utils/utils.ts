@@ -582,7 +582,7 @@ function getDisplayText(plugin: ZKNavigationPlugin, mocNode: MOCTreeNode): strin
     //let prefix = relation ? `${relation} ` : '';
 
     // 编号用反引号包裹（因为只有用反引号包裹的编号才会被识别）
-    const wrappedId = id ? `\`${id}\`` : '';
+    const wrappedId = id ? id : '';
 
     switch (plugin.settings.NodeText) {
         case "id":

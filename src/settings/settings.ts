@@ -470,11 +470,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
         formatExample.style.backgroundColor = "var(--background-secondary)";
         formatExample.style.borderRadius = "4px";
         formatExample.style.whiteSpace = "pre-wrap";
-        formatExample.textContent = `# 思维树
-- [[20251214-波函数]] a
-  - 引出 [[20251215-薛定谔方程]] a.1
-    - [[20251215-薛定谔方程扩展]] a.1.a
-  - 相关 [[20251220-概率诠释]] a.2`;
+        formatExample.textContent = `# 思维树`;
 
         experimentalDiv.createEl("hr");
 

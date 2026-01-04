@@ -98,7 +98,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
             // 启用节点拖动
             autoungrabify: false,
             userZoomingEnabled: true,
-            userPanningEnabled: true
+            userPanningEnabled: true,
+            // 设置缩放范围
+            minZoom: 0.1,
+            maxZoom: 3.0
         });
 
         // 绑定事件
@@ -206,6 +209,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
     fitAndCenter(): void {
         if (this.cy) {
             this.cy.fit();
+            
+            // 限制最大缩放级别，避免单个节点时过度放大
+            const currentZoom = this.cy.zoom();
+            const maxZoom = 2.0;  // 最大缩放级别
+            
+            if (currentZoom > maxZoom) {
+                this.cy.zoom(maxZoom);
+            }
+            
             this.cy.center();
         }
     }
@@ -432,9 +444,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
      */
     private processDisplayText(text: string, nodeText: string): string {
         if (nodeText === 'id-title') {
-            // id-title 模式：去掉 ": " 后面的时间戳
-            // 例如：a.1: 20251215 薛定谔方程 -> a.1: 薛定谔方程
-            return text.replace(/[^ ]+ /, ' ');
+            // id-title 模式：去掉 "ID: " 前缀和时间戳
+            // 例如：1: 20251215 nihao -> nihao
+            // 或者：a.1: 20251215 薛定谔方程 -> 薛定谔方程
+            return text
+                .replace(/^[a-zA-Z0-9._]+:\s*/, '')  // 去掉 "ID: " 前缀
+                .replace(/^(\d{8}|\d{14}|\d{4}-\d{2}-\d{2}|\d{8}-\d{6})\s+/, '');  // 去掉时间戳
         } else if (nodeText === 'title' || nodeText === 'both') {
             // title 或 both 模式：去掉开头的时间戳
             // 例如：20251215 薛定谔方程 -> 薛定谔方程
