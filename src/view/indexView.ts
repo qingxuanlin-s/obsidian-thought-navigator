@@ -996,18 +996,6 @@ export class ZKIndexView extends ItemView {
         branchGraphDiv.style.width = "100%";
         branchGraphDiv.style.marginBottom = "10px"; // 为底部按钮留出空间
 
-        // 如果没有节点，显示提示信息
-        if (this.mocNodes.length === 0) {
-            const emptyHint = branchGraphContainer.createDiv("zk-empty-hint");
-            emptyHint.style.textAlign = "center";
-            emptyHint.style.padding = "40px 20px";
-            emptyHint.style.color = "var(--text-muted)";
-            emptyHint.innerHTML = `
-                <div style="font-size: 16px; margin-bottom: 10px;">📝 思维树为空</div>
-                <div style="font-size: 14px;">双击空白处或点击右上角按钮创建第一个节点</div>
-            `;
-        }
-
         // 构建图形数据（包含分组信息和边弧度信息）
         const groups = mocParseResult.groups || [];
         const edgeCurvatures = mocParseResult.edgeCurvatures || {};
@@ -2719,7 +2707,7 @@ export class ZKIndexView extends ItemView {
      */
     processDisplayText(text: string): string {
         if (this.plugin.settings.NodeText === "id-title") {
-            // 去掉开头的数字和空格
+            // 去掉开头的任意数字和空格
             return text.replace(/(: )\d+\s+/, "$1");
         }
         return text;
@@ -5748,7 +5736,8 @@ export class ZKIndexView extends ItemView {
             // 检查是否已存在相同的箭头关系
             const escapedSource = sourceID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const escapedTarget = targetID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->\\s*${escapedTarget}\\b`);
+            //const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->\\s*${escapedTarget}\\b`);
+            const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->(?:\\|.*?\\|)?\\s*${escapedTarget}\\b`);
             for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
                 if (arrowPattern.test(lines[i])) {
                     new Notice(`箭头关系已存在: ${sourceID} → ${targetID}`);
@@ -5841,7 +5830,8 @@ export class ZKIndexView extends ItemView {
             let arrowLineIndex = -1;
             const escapedSource = sourceID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const escapedTarget = targetID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->\\s*${escapedTarget}\\b`);
+            //const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->\\s*${escapedTarget}\\b`);
+            const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->(?:\\|.*?\\|)?\\s*${escapedTarget}\\b`);
             
             for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
                 const line = lines[i];
@@ -5913,7 +5903,8 @@ export class ZKIndexView extends ItemView {
             // 转义正则表达式特殊字符
             const escapedSource = sourceID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const escapedTarget = targetID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->\\s*${escapedTarget}\\b`);
+            //const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->\\s*${escapedTarget}\\b`);
+            const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->(?:\\|.*?\\|)?\\s*${escapedTarget}\\b`);
             
             for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
                 const line = lines[i];
