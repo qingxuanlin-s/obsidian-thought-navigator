@@ -8,12 +8,16 @@ margin:10px;
 margin-bottom: 5px;
 border-radius: 5px;
 border: 1px solid #2a3f5f;
+padding: 8px;
+display: flex;
+align-items: center;
+gap: 12px;
+flex-wrap: wrap;
 }
 
 .zk-index-toolbar-block{
-float:left;
+display: flex;
 align-items: center;
-padding: 5px;
 }
 
 .show-graph-div {
@@ -43,18 +47,6 @@ padding: 5px;
   position: relative;
   z-index: 10; /* 确保工具栏在最上层 */
  }
-.zk-index-link{
-  position: absolute;
-  background-color: #1a1f2e;
-  margin-bottom: 0px;
-  margin-top: 0px;
-  border-radius: 5px;
-  padding: 5px;
-  padding-left: 10px;
-  padding-right: 15px;
-  max-width: 50%;
-  border: 1px solid #2a3f5f;
-}
 
 .zk-tool-buttons {
   position: absolute;
@@ -83,16 +75,6 @@ padding: 5px;
   background-color: #1a1f2e;
 }
 
-.zk-index-link > span {
-  padding-left: 5px;
-}
-
-.zk-index-link > span :hover {
-  background-color: #2a3f5f;
-  border-radius: 3px;
-  border: 1px solid #00a8ff;  
-}
-
 .zk-branch-tab-select{ 
   background-color: #2a3f5f;
   border-radius: 3px;
@@ -118,7 +100,7 @@ padding: 5px;
 /* 分支图形容器 */
 .zk-branch-graph-container {
   position: relative;
-  margin-top: 50px; /* 为工具栏留出空间 */
+  margin-top: 30px; /* 为工具栏留出空间 */
   z-index: 1; /* 确保在工具栏下方 */
   background-color: transparent; /* 改为透明 */
 }
@@ -278,18 +260,21 @@ padding: 5px;
 
 .zk-play-controller {
   position: fixed;
-  bottom: 15px;
+  bottom: 5px;
   left: 45%;
   display: flex;
+  gap: 2px;
   z-index: 100; /* 确保在图形容器上方 */
 }
 
 .zk-play-controller > .clickable-icon {
   background-color: #1a1f2e;
-  margin: 1px;
-  padding: 2px;
+  margin: 0;
+  padding: 4px;
   border: 1px solid #2a3f5f;
   color: #00a8ff;
+  width: 28px;
+  height: 28px;
 }
 
 .zk-play-controller > .clickable-icon:hover {
@@ -505,4 +490,39 @@ padding: 5px;
 
 .zk-menu-option:active {
     background: #3a4f6f;
+}
+
+/* MOC 选择器样式 */
+.zk-moc-selector-block {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    height: 32px;
+    box-sizing: border-box;
+}
+
+.zk-moc-selector-block:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.zk-moc-search-icon {
+    font-size: 14px;
+    opacity: 0.6;
+}
+
+.zk-moc-display {
+    color: var(--text-normal);
+    font-size: 14px;
+    min-width: 100px;
+    user-select: none;
+}
+
+/* MOC 按钮宽度 */
+.zk-moc-button {
+    min-width: 180px;
 }

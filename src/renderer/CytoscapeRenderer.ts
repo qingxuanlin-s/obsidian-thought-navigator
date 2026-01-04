@@ -101,7 +101,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             userPanningEnabled: true,
             // 设置缩放范围
             minZoom: 0.1,
-            maxZoom: 3.0
+            maxZoom: 1.0
         });
 
         // 绑定事件
@@ -212,7 +212,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             
             // 限制最大缩放级别，避免单个节点时过度放大
             const currentZoom = this.cy.zoom();
-            const maxZoom = 2.0;  // 最大缩放级别
+            const maxZoom = 2.0;  // 最大缩放级别，降低此值可让节点显示更小
             
             if (currentZoom > maxZoom) {
                 this.cy.zoom(maxZoom);
