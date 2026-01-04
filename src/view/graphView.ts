@@ -1005,7 +1005,7 @@ export class ZKGraphView extends ItemView {
      */
     processDisplayText(text: string): string {
         if (this.plugin.settings.NodeText === "id-title") {
-            // 去掉开头的数字和空格
+            // 去掉开头的任意数字和空格
             return text.replace(/(: )\d+\s+/, "$1");
         }
         return text;

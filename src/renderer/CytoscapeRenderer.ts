@@ -449,11 +449,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
             // 或者：a.1: 20251215 薛定谔方程 -> 薛定谔方程
             return text
                 .replace(/^[a-zA-Z0-9._]+:\s*/, '')  // 去掉 "ID: " 前缀
-                .replace(/^(\d{8}|\d{14}|\d{4}-\d{2}-\d{2}|\d{8}-\d{6})\s+/, '');  // 去掉时间戳
+                .replace(/^\d+\s+/, '');  // 去掉开头的任意数字和空格
         } else if (nodeText === 'title' || nodeText === 'both') {
             // title 或 both 模式：去掉开头的时间戳
             // 例如：20251215 薛定谔方程 -> 薛定谔方程
-            return text.replace(/^(\d{8}|\d{14}|\d{4}-\d{2}-\d{2}|\d{8}-\d{6})\s+/, "");
+            return text.replace(/^\d+\s+/, "");
         }
         
         return text;
