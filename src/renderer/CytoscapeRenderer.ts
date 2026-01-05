@@ -571,7 +571,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     const weight = ele.data('controlPointWeight');
                     return weight !== undefined ? weight : 0.5;
                 },
-                'arrow-scale': 1.2,
+                'arrow-scale': 1.5,
                 'label': 'data(label)',
                 'font-size': '11px',
                 'color': colors.nodeText,
