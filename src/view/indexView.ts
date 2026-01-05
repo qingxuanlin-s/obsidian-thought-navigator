@@ -4123,14 +4123,19 @@ export class ZKIndexView extends ItemView {
             }
             
             // 更新节点行中的 ID
-            const nodePattern = new RegExp(`(\\[\\[.*?\\]\\])\\s*\`${oldID}\``);
+            const nodePattern = new RegExp(`${oldID}\\s*\\["(\\[\\[.*?\\]\\])"\\]`);
             let updated = false;
             
             for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
+                //更新节点
                 if (nodePattern.test(lines[i])) {
-                    lines[i] = lines[i].replace(nodePattern, `$1 \`${newID}\``);
-                    updated = true;
-                    break;
+                    lines[i] = lines[i].replace(`${oldID}`, `${newID}`);
+                    updated = true;                 
+                }
+                
+                //更新关系
+                if(lines[i].contains(`${oldID}`) && lines[i].indexOf('-->') >0){
+                    lines[i] = lines[i].replace(`${oldID}`, `${newID}`);
                 }
             }
             
@@ -4138,15 +4143,7 @@ export class ZKIndexView extends ItemView {
                 new Notice(`未找到节点: ${oldID}`);
                 return;
             }
-            
-            // 更新所有箭头关系中的 ID
-            const arrowPattern1 = new RegExp(`\`${oldID}\`(\\s*--.*?-->)`, 'g');
-            const arrowPattern2 = new RegExp(`(-->\\s*)\`${oldID}\``, 'g');
-            
-            for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
-                lines[i] = lines[i].replace(arrowPattern1, `\`${newID}\`$1`);
-                lines[i] = lines[i].replace(arrowPattern2, `$1\`${newID}\``);
-            }
+
             
             // 更新 ext 数据中的节点位置和边弧度
             for (let i = sectionEndIndex - 1; i > headingIndex; i--) {

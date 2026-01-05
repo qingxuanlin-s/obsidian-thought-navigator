@@ -189,8 +189,8 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     canvasArrowColor: "#C0C0C0",
     headingMatchMode: "string",
     // MOC 模式默认值
-    mocModeEnabled: false,
-    mocFolderPath: '',
+    mocModeEnabled: true,
+    mocFolderPath: '/',
     mocHeadingTitle: '思维树',
     mocCurrentFile: '',
     mocNodePositions: {}, // MOC 节点位置存储
