@@ -664,7 +664,6 @@ export default class ZKNavigationPlugin extends Plugin {
                 // 如果内容被修改，保存文件
                 if (modified) {
                     await this.app.vault.modify(mocFile, content);
-                    console.log(`Updated links in MOC file: ${mocFile.path}`);
                 }
             }
 

@@ -2485,7 +2485,6 @@ case 'dagre':
 
         // 创建四个角的调整大小手柄
         const createResizeHandles = (groupNode: any) => {
-            console.log('Creating resize handles for group:', groupNode.id());
             clearHandles();
             selectedGroup = groupNode;
 
@@ -2515,7 +2514,6 @@ case 'dagre':
                 handleContainer.appendChild(handle);
                 currentHandles.push(handle);
 
-                console.log('Created handle:', pos.name, handle);
 
                 // 绑定拖动事件
                 this.bindResizeHandleDrag(handle, groupNode, pos, handleContainer);
@@ -2538,7 +2536,6 @@ case 'dagre':
                 { x: bb.x2, y: bb.y2 }   // 右下
             ];
 
-            console.log('Updating handle positions:', positions);
 
             currentHandles.forEach((handle, index) => {
                 handle.style.left = `${positions[index].x}px`;
@@ -2548,7 +2545,6 @@ case 'dagre':
 
         // 监听分组节点选中事件
         this.cy.on('select', 'node[?isGroup]', (evt: any) => {
-            console.log('Group selected, creating handles');
             const groupNode = evt.target;
             createResizeHandles(groupNode);
         });
@@ -2591,7 +2587,6 @@ case 'dagre':
         let resizePreview: HTMLElement | null = null;
 
         handle.addEventListener('mousedown', (e: MouseEvent) => {
-            console.log('Handle mousedown triggered', position.name);
             e.preventDefault();
             e.stopPropagation();
 
@@ -2602,7 +2597,6 @@ case 'dagre':
             // 记录原始节点列表
             originalNodeIds = groupNode.data('nodeIds') || [];
 
-            console.log('Start dragging:', { startMousePos, startBoundingBox, originalNodeIds });
 
             // 创建预览框
             resizePreview = document.createElement('div');
@@ -2626,16 +2620,12 @@ case 'dagre':
             const handleMouseMove = (e: MouseEvent) => {
                 if (!isDragging || !startMousePos || !startBoundingBox || !this.cy) return;
 
-                console.log('Mouse moving during drag');
-
                 // 将屏幕坐标转换为渲染坐标
                 const zoom = this.cy.zoom();
                 const pan = this.cy.pan();
                 
                 const deltaX = (e.clientX - startMousePos.x);
                 const deltaY = (e.clientY - startMousePos.y);
-
-                console.log('Delta:', { deltaX, deltaY, zoom, pan });
 
                 // 计算新的边界框
                 let newX1 = startBoundingBox.x1;
@@ -2676,7 +2666,6 @@ case 'dagre':
                     }
                 });
 
-                console.log('Nodes in new bounds:', nodesInBounds.length, 'New bounds:', { newX1, newY1, newX2, newY2 });
 
                 // 更新预览框位置
                 if (resizePreview) {
@@ -2688,15 +2677,13 @@ case 'dagre':
 
                 // 更新分组的节点列表（视觉预览）
                 const newNodeIds = nodesInBounds.map(n => n.data('originalNode').ID);
-                
-                console.log('New node IDs:', newNodeIds, 'Original:', originalNodeIds);
+            
                 
                 // 临时更新分组边界（通过调整子节点）
                 // 注意：这里只是视觉预览，实际更新在 mouseup 时进行
                 nodesInBounds.forEach(node => {
                     if (!originalNodeIds.includes(node.data('originalNode').ID)) {
                         // 新加入的节点，临时设置为分组的子节点
-                        console.log('Adding node to group:', node.data('originalNode').ID);
                         node.data('parent', groupNode.id());
                     }
                 });
@@ -2705,7 +2692,6 @@ case 'dagre':
                 this.cy.nodes(`[parent="${groupNode.id()}"]`).forEach((node: any) => {
                     const nodeId = node.data('originalNode').ID;
                     if (!newNodeIds.includes(nodeId)) {
-                        console.log('Removing node from group:', nodeId);
                         node.data('parent', undefined);
                     }
                 });
@@ -2715,8 +2701,6 @@ case 'dagre':
                 if (!isDragging) return;
 
                 isDragging = false;
-
-                console.log('Mouse up, finalizing resize');
 
                 // 移除预览框
                 if (resizePreview) {
@@ -2752,7 +2736,6 @@ case 'dagre':
                         newY2 += deltaY;
                     }
 
-                    console.log('Final bounds:', { newX1, newY1, newX2, newY2 });
 
                     // 确保最小尺寸
                     const minSize = 50;
@@ -2770,11 +2753,9 @@ case 'dagre':
                             }
                         });
 
-                        console.log('Final nodes in bounds:', nodesInBounds.map(n => n.data('originalNode').ID));
 
                         // 清除所有当前的 parent 关系
                         this.cy.nodes(`[parent="${groupNode.id()}"]`).forEach((node: any) => {
-                            console.log('Clearing parent for:', node.data('originalNode').ID);
                             node.data('parent', undefined);
                         });
 
@@ -2783,13 +2764,9 @@ case 'dagre':
                             const currentParent = node.data('parent');
                             const isGroup = node.data('isGroup');
                             const nodeId = node.data('originalNode')?.ID || node.id();
-                            
-                            console.log('Setting parent for:', nodeId, 'current parent:', currentParent, 'isGroup:', isGroup, 'new parent:', groupNode.id());
-                            console.log('  Node object:', node.id(), 'has originalNode:', !!node.data('originalNode'));
-                            
+                    
                             // 分组节点不能作为子节点
                             if (isGroup) {
-                                console.log('  Skipping: node is a group itself');
                                 return;
                             }
                             
@@ -2797,32 +2774,22 @@ case 'dagre':
                             try {
                                 if (currentParent !== groupNode.id()) {
                                     node.move({ parent: groupNode.id() });
-                                    console.log('  Moved node using move() method');
+
                                 }
                             } catch (error) {
-                                console.log('  Failed to move node:', error);
+                                console.warn('  Failed to move node:', error);
                             }
-                        });
-
-                        // 验证设置是否成功
-                        console.log('Verifying parent assignments:');
-                        nodesInBounds.forEach(node => {
-                            const parentId = node.data('parent');
-                            console.log('  Node', node.data('originalNode').ID, 'parent:', parentId);
-                        });
+                        });                    
                     }
                 }
 
                 // 获取最终的节点列表
                 const finalNodeIds: string[] = [];
-                console.log('Querying nodes with parent:', groupNode.id());
                 this.cy?.nodes(`[parent="${groupNode.id()}"]`).forEach((node: any) => {
                     const nodeId = node.data('originalNode').ID;
-                    console.log('  Found node with parent:', nodeId);
                     finalNodeIds.push(nodeId);
                 });
 
-                console.log('Final node IDs:', finalNodeIds, 'Original:', originalNodeIds);
 
                 // 更新分组的 nodeIds 数据
                 groupNode.data('nodeIds', finalNodeIds);
@@ -2841,7 +2808,6 @@ case 'dagre':
                 // 触发分组更新事件
                 if (finalNodeIds.length > 0 && 
                     JSON.stringify(finalNodeIds.sort()) !== JSON.stringify(originalNodeIds.sort())) {
-                    console.log('Dispatching group-resize event');
                     this.container?.dispatchEvent(new CustomEvent('group-resize', {
                         detail: {
                             groupId: groupNode.id(),

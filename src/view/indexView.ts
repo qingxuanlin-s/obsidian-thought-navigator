@@ -973,7 +973,6 @@ export class ZKIndexView extends ItemView {
             return;
         }
 
-        const mocContent = await this.app.vault.read(currentMOCFile);
         const mocParseResult = await parseMOCStructure(this.app, currentMOCPath, headingTitle);
 
 
@@ -983,7 +982,6 @@ export class ZKIndexView extends ItemView {
             : [];
         this.mocReverseRelations = mocParseResult.reverseRelations;
 
-        console.log('Converted mocNodes:', this.mocNodes);
 
         // 创建图形容器（即使没有节点也创建，以便支持双击添加）
         const branchGraphContainer = indexMermaidDiv.createDiv("zk-branch-graph-container");
@@ -1356,7 +1354,6 @@ export class ZKIndexView extends ItemView {
         // 监听背景双击事件（创建自由节点）
         branchGraphDiv.addEventListener('background-dblclick', async (event: any) => {
             const { position } = event.detail;
-            console.log('Background double-clicked at:', position);
             
             // 调用添加自由节点方法，传递位置信息
             await this.addFreeNodeToMOC(position);
@@ -1365,7 +1362,6 @@ export class ZKIndexView extends ItemView {
         // 监听边点击事件
         branchGraphDiv.addEventListener('edge-click', (event: any) => {
             const { edgeId, source, target, type, label } = event.detail;
-            console.log('Edge clicked:', { edgeId, source, target, type, label });
             // 可以在这里添加边的高亮或其他交互
         });
 
@@ -5472,19 +5468,16 @@ export class ZKIndexView extends ItemView {
             const line = lines[i].trim();
             // 跳过 direction 行和空行
             if (line.startsWith('direction ') || line === '') {
-                console.log('  Skipping (direction or empty)');
                 continue;
             }
             // 收集节点定义
             if (line.match(/^[a-zA-Z0-9._]+\[/)) {
-                console.log('  Matched as node definition');
                 nodeDefinitions.push(line);
             } else {
                 console.log('  Not matched as node definition');
             }
         }
         
-        console.log('Collected node definitions from subgraph:', nodeDefinitions);
         
         // 查找插入位置：在 "%% 3. 定义末端节点" 注释之后
         let insertIndex = -1;
@@ -5495,17 +5488,14 @@ export class ZKIndexView extends ItemView {
                 line.match(/^%%\s*定义未分组/) ||
                 line.match(/^%%\s*定义末端节点/)) {
                 insertIndex = i + 1;
-                console.log('  Found insert position!');
                 break;
             }
         }
         
-        console.log('Insert index for node definitions:', insertIndex);
         
         // 如果没找到插入位置，就在删除的 subgraph 位置插入
         if (insertIndex === -1) {
             insertIndex = subgraphStartIndex;
-            console.log('Using subgraph position as insert index:', insertIndex);
         }
         
         // 插入节点定义并删除 subgraph
@@ -5527,7 +5517,6 @@ export class ZKIndexView extends ItemView {
             lines.splice(subgraphStartIndex, subgraphEndIndex - subgraphStartIndex + 1);
         }
         
-        console.log('Deleted subgraph and moved node definitions');
     }
 
     /**
