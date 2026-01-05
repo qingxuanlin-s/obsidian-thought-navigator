@@ -97,6 +97,11 @@ align-items: center;
   overflow: hidden;
 }
 
+/* 全屏模式下的背景色 */
+.zk-graph-cytoscape:fullscreen {
+  background-color: #25303c; /* 与正常模式保持一致 */
+}
+
 /* 分支图形容器 */
 .zk-branch-graph-container {
   position: relative;
