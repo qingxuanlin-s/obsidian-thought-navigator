@@ -524,7 +524,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     const textHeight = estimatedLines * lineHeight;
                     return Math.max(baseHeight, textHeight + padding);
                 },
-                'padding': '16px',
+                'padding': '20px',
                 'shape': 'round-rectangle',
                 'border-width': '2px',
                 'border-color': (ele: any) => {
