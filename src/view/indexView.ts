@@ -1040,7 +1040,7 @@ export class ZKIndexView extends ItemView {
 
 
         // 转换为 ZKNode（即使为空也继续）
-        this.mocNodes = mocParseResult.nodes.length > 0 
+        this.mocNodes = mocParseResult.nodes.length > 0
             ? await convertMOCToZKNodes(this.plugin, mocParseResult.nodes, mocParseResult.reverseRelations, [], mocParseResult.nodePositions)
             : [];
         this.mocReverseRelations = mocParseResult.reverseRelations;
@@ -3933,32 +3933,32 @@ export class ZKIndexView extends ItemView {
                 return;
             }
 
-            // 第二步：选择目标节点
+            // 第二步：选择目标节点（可能包含多个）
             const { CrossDomainNodeModal } = await import('src/modal/crossDomainNodeModal');
-            const targetNode = await new Promise<ZKNode>((resolve) => {
+            const targetNodes = await new Promise<any[]>((resolve) => {
                 new CrossDomainNodeModal(
                     this.app,
                     targetMOCData.nodes,
                     sourceNode,
                     currentMOCPath,
                     mocFile,
-                    (srcNode, srcPath, tgtNode, tgtFile) => resolve(tgtNode)
+                    (srcNode, srcPath, tgtNodes, tgtFile) => resolve(tgtNodes)
                 ).open();
             });
 
-            if (!targetNode) {
+            if (!targetNodes || targetNodes.length === 0) {
                 return; // 用户取消
             }
 
-            // 保存跨领域关联数据到双方的 ext JSON
-            await this.saveCrossDomainLink(sourceNode, currentMOCPath, targetNode, mocFile.path);
+            // 保存跨领域关联数据到双方的 ext JSON（支持多个节点）
+            await this.saveCrossDomainLinks(sourceNode, currentMOCPath, targetNodes, mocFile.path);
 
             // 刷新视图
             await this.refreshBranchMermaid();
 
             const sourceId = (sourceNode as any).nodeID || sourceNode.IDStr;
-            const targetId = (targetNode as any).nodeID || (targetNode as any).IDStr;
-            new Notice(`已关联跨领域节点: ${sourceId} ↔ ${targetId}`);
+            const targetIds = targetNodes.map(n => (n as any).nodeID || (n as any).IDStr).join(', ');
+            new Notice(`已关联跨领域节点: ${sourceId} ↔ ${targetIds} (${targetNodes.length} 个节点)`);
         } catch (error) {
             console.error('Failed to link cross-domain node:', error);
             new Notice(`关联跨领域节点失败: ${error.message}`);
@@ -4007,6 +4007,57 @@ export class ZKIndexView extends ItemView {
         const targetMOCFile = this.app.vault.getFileByPath(targetMOCPath);
         if (targetMOCFile) {
             await this.addCrossDomainLinkToExt(targetMOCFile, targetNodeId, sourceLink);
+        }
+    }
+
+    /**
+     * 保存多个跨领域关联到双方 MOC 文件的 ext 数据
+     */
+    private async saveCrossDomainLinks(
+        sourceNode: any,
+        sourceMOCPath: string,
+        targetNodes: any[],
+        targetMOCPath: string
+    ): Promise<void> {
+        // 获取源节点信息
+        const sourceNodeId = sourceNode.IDStr || sourceNode.nodeID;
+        const sourceDisplayText = sourceNode.displayText || sourceNode.title;
+        const sourceFilePath = sourceNode.file?.path || sourceNode.filePath;
+
+        // 构建源节点关联数据
+        const sourceLink = {
+            nodeId: sourceNodeId,
+            mocPath: sourceMOCPath,
+            displayText: sourceDisplayText,
+            filePath: sourceFilePath
+        };
+
+        // 保存所有目标节点到源 MOC 文件
+        const sourceMOCFile = this.app.vault.getFileByPath(sourceMOCPath);
+        if (sourceMOCFile) {
+            for (const targetNode of targetNodes) {
+                const targetNodeId = targetNode.nodeID || targetNode.IDStr;
+                const targetDisplayText = targetNode.title || targetNode.displayText;
+                const targetFilePath = targetNode.filePath || targetNode.file?.path;
+
+                const targetLink = {
+                    nodeId: targetNodeId,
+                    mocPath: targetMOCPath,
+                    displayText: targetDisplayText,
+                    filePath: targetFilePath
+                };
+
+                await this.addCrossDomainLinkToExt(sourceMOCFile, sourceNodeId, targetLink);
+            }
+        }
+
+        // 保存源节点到所有目标节点的 MOC 文件
+        for (const targetNode of targetNodes) {
+            const targetNodeId = targetNode.nodeID || targetNode.IDStr;
+            const targetMOCFile = this.app.vault.getFileByPath(targetMOCPath);
+            if (targetMOCFile) {
+                await this.addCrossDomainLinkToExt(targetMOCFile, targetNodeId, sourceLink);
+            }
         }
     }
 

@@ -2511,10 +2511,10 @@ case 'dagre':
                 // 保持选中状态
                 node.select();
 
-                // 触发跳转事件
+                // 触发跳转事件，传递 originalNode
                 this.container?.dispatchEvent(new CustomEvent('cross-domain-node-click', {
                     detail: {
-                        node: data,
+                        node: data.originalNode,
                         event: originalEvent
                     }
                 }));
