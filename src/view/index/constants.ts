@@ -88,7 +88,6 @@ export const SUCCESS_MESSAGES = {
  * 警告消息
  */
 export const WARNING_MESSAGES = {
-    ONLY_DELETE_ARROW_RELATIONS: '只能删除箭头关系，不能删除父子关系',
     OPERATION_IRREVERSIBLE: '此操作不可撤销！',
 } as const;
 

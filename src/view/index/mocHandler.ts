@@ -78,7 +78,7 @@ export class MOCHandler {
             for (let i = sectionRange.headingIndex + 1; i < sectionRange.sectionEndIndex; i++) {
                 //更新节点
                 if (nodePattern.test(lines[i])) {
-                    lines[i] = lines[i].replace(nodePattern, `${newID} ["$1"]`);
+                    lines[i] = lines[i].replace(nodePattern, `${newID}["$1"]`);
                     updated = true;
                 }
 
