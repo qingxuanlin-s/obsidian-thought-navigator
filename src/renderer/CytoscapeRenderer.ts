@@ -846,7 +846,10 @@ case 'dagre':
         
         // 添加边控制点
         this.addEdgeControlPoints();
-        
+
+        // 添加边端点手柄
+        this.addEdgeEndpointHandles();
+
         // 添加连线手柄
         this.addConnectionHandles();
         
@@ -1356,6 +1359,366 @@ case 'dagre':
     private hideEdgeControlPoints(container: HTMLElement): void {
         const controlPoints = container.querySelectorAll('.zk-edge-control-point');
         controlPoints.forEach(cp => cp.remove());
+    }
+
+    /**
+     * 添加边端点手柄（用于拖动修改边的起点和终点）
+     */
+    private addEdgeEndpointHandles(): void {
+        if (!this.cy || !this.container) return;
+
+        // 创建手柄容器
+        const handleContainer = document.createElement('div');
+        handleContainer.className = 'zk-edge-endpoint-handles';
+        handleContainer.style.cssText = `
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 2;
+        `;
+        this.container.appendChild(handleContainer);
+
+        // 监听边选中事件
+        this.cy.on('select', 'edge', (evt: any) => {
+            const edge = evt.target;
+            this.showEdgeEndpointHandles(edge, handleContainer);
+        });
+
+        // 监听边取消选中事件
+        this.cy.on('unselect', 'edge', () => {
+            this.hideEdgeEndpointHandles(handleContainer);
+        });
+    }
+
+    /**
+     * 显示边的端点手柄
+     */
+    private showEdgeEndpointHandles(edge: any, container: HTMLElement): void {
+        // 清除旧的手柄
+        this.hideEdgeEndpointHandles(container);
+
+        const data = edge.data();
+        const sourceNode = this.cy!.$id(data.source);
+        const targetNode = this.cy!.$id(data.target);
+
+        if (!sourceNode.length || !targetNode.length) return;
+
+        // 检查约束：目标节点必须是叶子节点（nodeSons === 1）
+        const targetData = targetNode.data();
+        const originalTargetNode = targetData.originalNode;
+        const canModifyTarget = originalTargetNode && originalTargetNode.nodeSons === 1;
+
+        // 创建起点手柄（始终可用）
+        const sourceHandle = this.createEndpointHandle('source', sourceNode, edge, container);
+
+        // 创建终点手柄（仅当满足约束时）
+        let targetHandle: HTMLElement | null = null;
+        if (canModifyTarget) {
+            targetHandle = this.createEndpointHandle('target', targetNode, edge, container);
+        }
+
+        // 在视口变化时更新位置
+        const scheduleUpdate = () => {
+            requestAnimationFrame(() => {
+                this.updateEndpointHandlePosition(sourceHandle, sourceNode, edge, 'source');
+                if (targetHandle) {
+                    this.updateEndpointHandlePosition(targetHandle, targetNode, edge, 'target');
+                }
+            });
+        };
+
+        this.cy!.on('zoom pan viewport drag position', scheduleUpdate);
+    }
+
+    /**
+     * 创建端点手柄
+     */
+    private createEndpointHandle(
+        type: 'source' | 'target',
+        node: any,
+        edge: any,
+        container: HTMLElement
+    ): HTMLElement {
+        const handle = document.createElement('div');
+        handle.className = `zk-edge-endpoint-handle zk-edge-endpoint-${type}`;
+        handle.style.cssText = `
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background-color: #f97316;
+            border: 2px solid #ffffff;
+            border-radius: 3px;
+            cursor: grab;
+            pointer-events: auto;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+            z-index: 1001;
+        `;
+        container.appendChild(handle);
+
+        // 初始位置
+        this.updateEndpointHandlePosition(handle, node, edge, type);
+
+        // 绑定拖动事件
+        this.bindEndpointHandleDrag(handle, type, node, edge, container);
+
+        return handle;
+    }
+
+    /**
+     * 更新端点手柄位置（计算边的实际端点）
+     */
+    private updateEndpointHandlePosition(handle: HTMLElement, node: any, edge: any, type: 'source' | 'target'): void {
+        if (!this.cy) return;
+
+        const renderedPos = node.renderedPosition();
+        let x = renderedPos.x;
+        let y = renderedPos.y;
+
+        // 获取节点边界框
+        const boundingBox = node.renderedBoundingBox();
+        const width = boundingBox.x2 - boundingBox.x1;
+        const height = boundingBox.y2 - boundingBox.y1;
+
+        // 获取边的方向
+        const edgeData = edge.data();
+        const sourceNode = this.cy.$id(edgeData.source);
+        const targetNode = this.cy.$id(edgeData.target);
+
+        if (type === 'source') {
+            // 起点：计算指向终点的方向
+            const targetPos = targetNode.renderedPosition();
+            const dx = targetPos.x - x;
+            const dy = targetPos.y - y;
+            const angle = Math.atan2(dy, dx);
+
+            // 根据角度将手柄定位到节点边缘
+            const cos = Math.cos(angle);
+            const sin = Math.sin(angle);
+
+            // 计算边缘位置（使用节点宽度和高度的一半）
+            const halfWidth = width / 2;
+            const halfHeight = height / 2;
+
+            if (Math.abs(cos) > Math.abs(sin)) {
+                // 水平方向
+                x = x + (cos > 0 ? halfWidth : -halfWidth);
+            } else {
+                // 垂直方向
+                y = y + (sin > 0 ? halfHeight : -halfHeight);
+            }
+        } else {
+            // 终点：计算指向起点的方向
+            const sourcePos = sourceNode.renderedPosition();
+            const dx = sourcePos.x - x;
+            const dy = sourcePos.y - y;
+            const angle = Math.atan2(dy, dx);
+
+            // 根据角度将手柄定位到节点边缘
+            const cos = Math.cos(angle);
+            const sin = Math.sin(angle);
+
+            // 计算边缘位置
+            const halfWidth = width / 2;
+            const halfHeight = height / 2;
+
+            if (Math.abs(cos) > Math.abs(sin)) {
+                // 水平方向
+                x = x + (cos > 0 ? halfWidth : -halfWidth);
+            } else {
+                // 垂直方向
+                y = y + (sin > 0 ? halfHeight : -halfHeight);
+            }
+        }
+
+        handle.style.left = `${x}px`;
+        handle.style.top = `${y}px`;
+    }
+
+    /**
+     * 隐藏边端点手柄
+     */
+    private hideEdgeEndpointHandles(container: HTMLElement): void {
+        const handles = container.querySelectorAll('.zk-edge-endpoint-handle');
+        handles.forEach(h => h.remove());
+    }
+
+    /**
+     * 绑定端点手柄拖动事件
+     */
+    private bindEndpointHandleDrag(
+        handle: HTMLElement,
+        type: 'source' | 'target',
+        sourceOrTargetNode: any,
+        edge: any,
+        container: HTMLElement
+    ): void {
+        if (!this.cy || !this.container) return;
+
+        let isDragging = false;
+        let dragLine: SVGLineElement | null = null;
+        let svgOverlay: SVGSVGElement | null = null;
+
+        handle.addEventListener('mousedown', (e: MouseEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            isDragging = true;
+            handle.style.cursor = 'grabbing';
+
+            // 创建 SVG 覆盖层用于拖动线
+            svgOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svgOverlay.style.cssText = `
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                pointer-events: none;
+                z-index: 2;
+            `;
+            this.container!.appendChild(svgOverlay);
+
+            dragLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            dragLine.setAttribute('stroke', '#f97316');
+            dragLine.setAttribute('stroke-width', '2');
+            dragLine.setAttribute('stroke-dasharray', '5,5');
+            svgOverlay.appendChild(dragLine);
+
+            const nodePos = sourceOrTargetNode.renderedPosition();
+            dragLine.setAttribute('x1', nodePos.x.toString());
+            dragLine.setAttribute('y1', nodePos.y.toString());
+            dragLine.setAttribute('x2', nodePos.x.toString());
+            dragLine.setAttribute('y2', nodePos.y.toString());
+        });
+
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isDragging || !dragLine || !this.cy) return;
+
+            const containerRect = this.container!.getBoundingClientRect();
+            const mouseX = e.clientX - containerRect.left;
+            const mouseY = e.clientY - containerRect.top;
+
+            const nodePos = sourceOrTargetNode.renderedPosition();
+            dragLine.setAttribute('x1', nodePos.x.toString());
+            dragLine.setAttribute('y1', nodePos.y.toString());
+            dragLine.setAttribute('x2', mouseX.toString());
+            dragLine.setAttribute('y2', mouseY.toString());
+
+            // 检查是否悬停在有效的目标节点上
+            const mousePos = { x: mouseX, y: mouseY };
+            const targetNode = this.getNodeAtPosition(mousePos);
+
+            if (targetNode && targetNode !== sourceOrTargetNode) {
+                // 高亮目标节点
+                dragLine.setAttribute('stroke', '#10b981'); // 绿色表示有效连接
+                targetNode.addClass('connection-target-hover');
+            } else {
+                dragLine.setAttribute('stroke', '#f97316'); // 橙色表示拖动中
+                this.cy.nodes('.connection-target-hover').removeClass('connection-target-hover');
+            }
+        };
+
+        const handleMouseUp = async (e: MouseEvent) => {
+            if (!isDragging || !this.cy) return;
+
+            isDragging = false;
+
+            const containerRect = this.container!.getBoundingClientRect();
+            const mouseX = e.clientX - containerRect.left;
+            const mouseY = e.clientY - containerRect.top;
+            const mousePos = { x: mouseX, y: mouseY };
+
+            // 检测目标节点
+            const newTargetNode = this.getNodeAtPosition(mousePos);
+
+            // 清理视觉元素
+            if (svgOverlay) {
+                svgOverlay.remove();
+                svgOverlay = null;
+            }
+            dragLine = null;
+            this.cy.nodes('.connection-target-hover').removeClass('connection-target-hover');
+            handle.style.cursor = 'grab';
+
+            // 如果连接到有效节点
+            if (newTargetNode && newTargetNode !== sourceOrTargetNode) {
+                const edgeData = edge.data();
+                const sourceNode = this.cy.$id(edgeData.source);
+                const originalTargetNode = this.cy.$id(edgeData.target);
+
+                if (type === 'source') {
+                    // 修改起点
+                    this.container?.dispatchEvent(new CustomEvent('edge-source-changed', {
+                        detail: {
+                            edgeId: edgeData.id,
+                            oldSource: edgeData.originalSource || edgeData.source,
+                            newSource: newTargetNode.data().originalNode.IDStr,
+                            target: edgeData.originalTarget || edgeData.target,
+                            label: edgeData.label
+                        }
+                    }));
+                } else if (type === 'target') {
+                    // 修改终点（包含 ID 继承）
+
+                    // 检查新目标是否有子节点（约束）
+                    const newTargetData = newTargetNode.data();
+                    const newTargetNodeSons = newTargetData.originalNode.nodeSons;
+                    if (newTargetNodeSons > 1) {
+                        const { Notice } = require('obsidian');
+                        new Notice('无法连接到有子节点的节点');
+                        return;
+                    }
+
+                    const oldTargetData = originalTargetNode.data();
+                    const oldTargetID = oldTargetData.originalNode.IDStr;
+                    const newTargetData2 = newTargetNode.data();
+                    const newTargetID = newTargetData2.originalNode.IDStr;
+
+                    console.log(`🎯 准备发送 edge-target-changed 事件:`);
+                    console.log(`   - source: ${edgeData.originalSource || edgeData.source}`);
+                    console.log(`   - oldTarget: ${oldTargetID}`);
+                    console.log(`   - newTarget: ${newTargetID}`);
+                    console.log(`   - newTarget 是否以 free. 开头: ${newTargetID.startsWith('free.')}`);
+
+                    this.container?.dispatchEvent(new CustomEvent('edge-target-changed', {
+                        detail: {
+                            edgeId: edgeData.id,
+                            source: edgeData.originalSource || edgeData.source,
+                            oldTarget: oldTargetID,
+                            newTarget: newTargetID,
+                            label: edgeData.label
+                        }
+                    }));
+                }
+            }
+        };
+
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+
+        // 清理函数
+        const cleanup = () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
+
+        // 当手柄被移除时清理
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                mutation.removedNodes.forEach((node) => {
+                    if (node === handle) {
+                        cleanup();
+                        observer.disconnect();
+                    }
+                });
+            });
+        });
+
+        observer.observe(container, { childList: true });
     }
 
     /**
@@ -2300,6 +2663,13 @@ case 'dagre':
             const data = edge.data();
             const originalEvent = evt.originalEvent as MouseEvent;
 
+            // 获取目标节点的 nodeSons 信息
+            const targetNode = this.cy!.$id(data.target);
+            if (!targetNode.length) return;
+
+            const targetData = targetNode.data();
+            const targetNodeSons = targetData.originalNode ? targetData.originalNode.nodeSons : 1;
+
             // 触发边右键菜单事件
             this.container?.dispatchEvent(new CustomEvent('edge-contextmenu', {
                 detail: {
@@ -2308,6 +2678,7 @@ case 'dagre':
                     target: data.originalTarget || data.target,  // 使用原始 ID
                     type: data.type,
                     label: data.label,
+                    targetNodeSons: targetNodeSons,  // 添加目标节点的子节点数量
                     event: originalEvent,
                     position: {
                         x: originalEvent.clientX,
@@ -2385,24 +2756,33 @@ case 'dagre':
                     return;
                 }
                 
-                // 检查是否有选中的箭头关系边
-                const selectedReverseEdges = selected.filter('edge[type="reverse"]');
-                
-                if (selectedReverseEdges.length > 0) {
+                // 检查是否有选中的边（所有类型）
+                const selectedEdges = selected.filter('edge');
+
+                if (selectedEdges.length > 0) {
                     // 阻止默认行为
                     event.preventDefault();
                     event.stopPropagation();
-                    
+
                     // 触发删除边事件
-                    selectedReverseEdges.forEach((edge: any) => {
+                    selectedEdges.forEach((edge: any) => {
                         const data = edge.data();
+
+                        // 获取目标节点的 nodeSons 信息
+                        const targetNode = this.cy!.$id(data.target);
+                        if (!targetNode.length) return;
+
+                        const targetData = targetNode.data();
+                        const targetNodeSons = targetData.originalNode ? targetData.originalNode.nodeSons : 1;
+
                         this.container?.dispatchEvent(new CustomEvent('edge-delete-key', {
                             detail: {
                                 edgeId: data.id,
                                 source: data.originalSource || data.source,  // 使用原始 ID
                                 target: data.originalTarget || data.target,  // 使用原始 ID
                                 type: data.type,
-                                label: data.label
+                                label: data.label,
+                                targetNodeSons: targetNodeSons  // 添加目标节点的子节点数量
                             }
                         }));
                     });

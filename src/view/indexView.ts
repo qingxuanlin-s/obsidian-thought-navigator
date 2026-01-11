@@ -12,7 +12,6 @@ import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
 import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
 import { RenderOptions } from "src/renderer/types";
 import { MOCHandler } from "src/view/index/mocHandler";
-import { MOCFileUtils, ModalUtils, NodeIDGenerator } from "src/view/index/mocUtils";
 import {
     DEBOUNCE_DELAY,
     ERROR_MESSAGES,
@@ -1429,14 +1428,7 @@ export class ZKIndexView extends ItemView {
 
         // 监听边右键菜单事件（删除边）
         this.addTrackedListener(branchGraphDiv, 'edge-contextmenu', async (event: any) => {
-            const { edgeId, source, target, type, label, position } = event.detail;
-
-            // 只允许删除箭头关系（type === 'reverse'），不允许删除父子关系
-            if (type !== 'reverse') {
-                new Notice('只能删除箭头关系，不能删除父子关系');
-                return;
-            }
-
+            const { edgeId, source, target, type, label, position, targetNodeSons } = event.detail;
             // 创建右键菜单
             const menu = new Menu();
 
@@ -1447,7 +1439,7 @@ export class ZKIndexView extends ItemView {
                         try {
                             const mocFile = this.app.vault.getFileByPath(currentMOCPath);
                             if (mocFile) {
-                                await this.deleteArrowRelationFromMOC(mocFile, source, target);
+                                await this.deleteArrowRelationFromMOC(mocFile, source, target, targetNodeSons);
                                 // 刷新视图
                                 await this.refreshBranchMermaid();
                             }
@@ -1480,12 +1472,12 @@ export class ZKIndexView extends ItemView {
 
         // 监听边删除键事件（Delete/Backspace）
         this.addTrackedListener(branchGraphDiv, 'edge-delete-key', async (event: any) => {
-            const { edgeId, source, target, type, label } = event.detail;
+            const { edgeId, source, target, type, label, targetNodeSons } = event.detail;
 
             try {
                 const mocFile = this.app.vault.getFileByPath(currentMOCPath);
                 if (mocFile) {
-                    await this.deleteArrowRelationFromMOC(mocFile, source, target);
+                    await this.deleteArrowRelationFromMOC(mocFile, source, target, targetNodeSons);
                     // 刷新视图
                     await this.refreshBranchMermaid();
                 }
@@ -1509,6 +1501,40 @@ export class ZKIndexView extends ItemView {
             } catch (error) {
                 console.error('Failed to update arrow relation label:', error);
                 new Notice(`更新关系文本失败: ${error.message}`);
+            }
+        });
+
+        // 监听边起点修改事件
+        this.addTrackedListener(branchGraphDiv, 'edge-source-changed', async (event: any) => {
+            const { edgeId, oldSource, newSource, target, label } = event.detail;
+
+            try {
+                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                if (mocFile) {
+                    await this.updateEdgeSourceInMOC(mocFile, oldSource, newSource, target, label);
+                    await this.refreshBranchMermaid();
+                    new Notice(`已修改边起点: ${oldSource} → ${newSource}`);
+                }
+            } catch (error) {
+                console.error('Failed to update edge source:', error);
+                new Notice(`修改边起点失败: ${error.message}`);
+            }
+        });
+
+        // 监听边终点修改事件
+        this.addTrackedListener(branchGraphDiv, 'edge-target-changed', async (event: any) => {
+            const { edgeId, source, oldTarget, newTarget, label } = event.detail;
+
+            try {
+                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                if (mocFile) {
+                    await this.updateEdgeTargetInMOC(mocFile, source, oldTarget, newTarget, label);
+                    await this.refreshBranchMermaid();
+                    new Notice(`已修改边终点: ${oldTarget} → ${newTarget}`);
+                }
+            } catch (error) {
+                console.error('Failed to update edge target:', error);
+                new Notice(`修改边终点失败: ${error.message}`);
             }
         });
 
@@ -5513,22 +5539,32 @@ export class ZKIndexView extends ItemView {
 
     /**
      * 从 MOC 文件中删除箭头关系
+     * @param mocFile - MOC 文件
+     * @param sourceID - 源节点 ID
+     * @param targetID - 目标节点 ID
+     * @param targetNodeSons - 目标节点的子节点数量（用于约束检查）
      */
-    private async deleteArrowRelationFromMOC(mocFile: TFile, sourceID: string, targetID: string): Promise<void> {
+    private async deleteArrowRelationFromMOC(mocFile: TFile, sourceID: string, targetID: string, targetNodeSons?: number): Promise<void> {
         try {
+            // 约束 1：只能删除目标节点没有子节点的关系
+            if (targetNodeSons !== undefined && targetNodeSons > 1) {
+                new Notice(`无法删除：目标节点有 ${targetNodeSons} 个子节点`);
+                return;
+            }
+
             // 读取 MOC 文件内容
             const content = await this.app.vault.read(mocFile);
             const lines = content.split('\n');
             const headingTitle = this.plugin.settings.mocHeadingTitle;
-            
+
             // 查找思维树标题的范围
             let headingIndex = -1;
             let sectionEndIndex = lines.length;
-            
+
             for (let i = 0; i < lines.length; i++) {
                 if (lines[i].trim() === `# ${headingTitle}`) {
                     headingIndex = i;
-                    
+
                     for (let j = i + 1; j < lines.length; j++) {
                         if (lines[j].trim().startsWith('# ')) {
                             sectionEndIndex = j;
@@ -5538,20 +5574,19 @@ export class ZKIndexView extends ItemView {
                     break;
                 }
             }
-            
+
             if (headingIndex === -1) {
                 new Notice(`未找到标题: # ${headingTitle}`);
                 return;
             }
-            
+
             // 查找并删除箭头关系行
             // 箭头关系格式：sourceID -- label --> targetID 或 sourceID --> targetID
             let arrowLineIndex = -1;
             const escapedSource = sourceID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const escapedTarget = targetID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            //const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->\\s*${escapedTarget}\\b`);
             const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->(?:\\|.*?\\|)?\\s*${escapedTarget}\\b`);
-            
+
             for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
                 const line = lines[i];
                 if (arrowPattern.test(line)) {
@@ -5559,24 +5594,26 @@ export class ZKIndexView extends ItemView {
                     break;
                 }
             }
-            
+
             if (arrowLineIndex === -1) {
                 new Notice(`未找到箭头关系: ${sourceID} --> ${targetID}`);
                 return;
             }
-            
+
             // 删除该行
             const newLines = [
                 ...lines.slice(0, arrowLineIndex),
                 ...lines.slice(arrowLineIndex + 1)
             ];
-            
-            const newContent = newLines.join('\n');
-            
-            // 写回文件
-            await this.app.vault.modify(mocFile, newContent);
-            
+
+            await this.app.vault.modify(mocFile, newLines.join('\n'));
+
+            // 约束 2：删除后，将目标节点 ID 转换为自由节点格式
+            const freeNodeID = this.generateNextFreeNodeID();
+            await this.mocHandler.updateNodeIDInMOC(mocFile, targetID, freeNodeID);
+
             new Notice(`已删除箭头关系: ${sourceID} → ${targetID}`);
+            new Notice(`${targetID} 已转换为自由节点: ${freeNodeID}`);
         } catch (error) {
             console.error('Failed to delete arrow relation:', error);
             new Notice(`删除箭头关系失败: ${error.message}`);
@@ -5668,6 +5705,271 @@ export class ZKIndexView extends ItemView {
         } catch (error) {
             console.error('Failed to update arrow relation label:', error);
             new Notice(`更新关系文本失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 更新 MOC 文件中边的起点
+     */
+    private async updateEdgeSourceInMOC(
+        mocFile: TFile,
+        oldSource: string,
+        newSource: string,
+        target: string,
+        label: string
+    ): Promise<void> {
+        try {
+            const content = await this.app.vault.read(mocFile);
+            const lines = content.split('\n');
+            const headingTitle = this.plugin.settings.mocHeadingTitle;
+
+            // 查找思维树标题的范围
+            let headingIndex = -1;
+            let sectionEndIndex = lines.length;
+
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].trim() === `# ${headingTitle}`) {
+                    headingIndex = i;
+
+                    for (let j = i + 1; j < lines.length; j++) {
+                        if (lines[j].trim().startsWith('# ')) {
+                            sectionEndIndex = j;
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+
+            if (headingIndex === -1) {
+                new Notice(`未找到标题: # ${headingTitle}`);
+                return;
+            }
+
+            // 查找箭头关系行
+            let arrowLineIndex = -1;
+            const escapedOldSource = oldSource.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const escapedTarget = target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const arrowPattern = new RegExp(`\\b${escapedOldSource}\\s*(?:--.*?)?-->(?:\\|.*?\\|)?\\s*${escapedTarget}\\b`);
+
+            for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
+                const line = lines[i];
+                if (arrowPattern.test(line)) {
+                    arrowLineIndex = i;
+                    break;
+                }
+            }
+
+            if (arrowLineIndex === -1) {
+                console.error(`未找到箭头关系: ${oldSource} --> ${target}`);
+                console.error(`搜索模式: ${arrowPattern}`);
+                console.error(`搜索范围: 行 ${headingIndex + 1} 到 ${sectionEndIndex}`);
+                new Notice(`未找到箭头关系: ${oldSource} --> ${target}`);
+                return;
+            }
+
+            // 构建新的箭头关系行
+            const oldLine = lines[arrowLineIndex];
+            const indentMatch = oldLine.match(/^(\s*)/);
+            const indent = indentMatch ? indentMatch[1] : '';
+
+            // 提取旧的标签（如果有）
+            const oldLabelMatch = oldLine.match(/--\s*(.+?)\s*-->/);
+            const oldLabel = oldLabelMatch ? oldLabelMatch[1] : null;
+
+            let newLine: string;
+            // 如果有旧标签或新标签，使用标签格式
+            if (oldLabel || label) {
+                const finalLabel = label || oldLabel;
+                newLine = `${indent}${newSource} -- ${finalLabel} --> ${target}`;
+            } else {
+                newLine = `${indent}${newSource} --> ${target}`;
+            }
+
+            console.log(`更新边起点: ${oldLine} => ${newLine}`);
+
+            // 替换该行
+            const newLines = [
+                ...lines.slice(0, arrowLineIndex),
+                newLine,
+                ...lines.slice(arrowLineIndex + 1)
+            ];
+
+            await this.app.vault.modify(mocFile, newLines.join('\n'));
+        } catch (error) {
+            console.error('Failed to update edge source:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 更新 MOC 文件中边的终点（包含 ID 继承）
+     */
+    private async updateEdgeTargetInMOC(
+        mocFile: TFile,
+        source: string,
+        oldTarget: string,
+        newTarget: string,
+        label: string
+    ): Promise<void> {
+        try {
+            console.log(`🎯 updateEdgeTargetInMOC 被调用`);
+            console.log(`   source=${source}`);
+            console.log(`   oldTarget=${oldTarget}`);
+            console.log(`   newTarget=${newTarget}`);
+            console.log(`   label=${label}`);
+
+            // 所有情况都需要 ID 互换（包括自由节点）
+            console.log(`✅ 执行 ID 互换: ${oldTarget} <-> ${newTarget}`);
+            console.log(`📋 将执行以下操作:`);
+            console.log(`   1. 互换节点定义: ${oldTarget} <-> ${newTarget}`);
+            console.log(`   2. 更新所有箭头关系中的 ID 引用`);
+            console.log(`   3. 交换 ext 数据中的节点位置和边弧度`);
+            console.log(`📝 互换前: oldTarget=${oldTarget}, newTarget=${newTarget}`);
+
+            // 直接在 MOC 文件中交换两个节点的定义和所有引用
+            const content = await this.app.vault.read(mocFile);
+            const lines = content.split('\n');
+            const headingTitle = this.plugin.settings.mocHeadingTitle;
+
+            // 查找思维树标题的范围
+            let headingIndex = -1;
+            let sectionEndIndex = lines.length;
+
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].trim() === `# ${headingTitle}`) {
+                    headingIndex = i;
+
+                    for (let j = i + 1; j < lines.length; j++) {
+                        if (lines[j].trim().startsWith('# ')) {
+                            sectionEndIndex = j;
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+
+            if (headingIndex === -1) {
+                new Notice(`未找到标题: # ${headingTitle}`);
+                return;
+            }
+
+            // 第一步：找到两个节点的定义行
+            let oldTargetLineIndex = -1;
+            let newTargetLineIndex = -1;
+            let oldTargetLine = '';
+            let newTargetLine = '';
+
+            const escapedOldTarget = oldTarget.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const escapedNewTarget = newTarget.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const nodePatternOld = new RegExp(`^\\s*${escapedOldTarget}\\s*\\[`);
+            const nodePatternNew = new RegExp(`^\\s*${escapedNewTarget}\\s*\\[`);
+
+            for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
+                if (oldTargetLineIndex === -1 && nodePatternOld.test(lines[i])) {
+                    oldTargetLineIndex = i;
+                    oldTargetLine = lines[i];
+                }
+                if (newTargetLineIndex === -1 && nodePatternNew.test(lines[i])) {
+                    newTargetLineIndex = i;
+                    newTargetLine = lines[i];
+                }
+                if (oldTargetLineIndex !== -1 && newTargetLineIndex !== -1) {
+                    break;
+                }
+            }
+
+            if (oldTargetLineIndex === -1 || newTargetLineIndex === -1) {
+                new Notice(`未找到节点定义`);
+                return;
+            }
+
+            console.log(`找到节点定义: oldTarget 在行 ${oldTargetLineIndex}, newTarget 在行 ${newTargetLineIndex}`);
+
+            // 第二步：交换两个节点的 ID（保持原行的其他内容不变）
+            const oldTargetIndent = oldTargetLine.match(/^(\s*)/)?.[1] || '';
+            const newTargetIndent = newTargetLine.match(/^(\s*)/)?.[1] || '';
+
+            // 提取节点定义中的内容部分（ID 之后的部分）
+            const oldTargetContent = oldTargetLine.replace(nodePatternOld, '');
+            const newTargetContent = newTargetLine.replace(nodePatternNew, '');
+
+            // 构建新行：交换 ID，保持内容
+            const newOldTargetLine = `${oldTargetIndent}${newTarget}${oldTargetContent}`;
+            const newNewTargetLine = `${newTargetIndent}${oldTarget}${newTargetContent}`;
+
+            lines[oldTargetLineIndex] = newOldTargetLine;
+            lines[newTargetLineIndex] = newNewTargetLine;
+
+            console.log(`步骤 1⃣: 交换节点定义行`);
+            console.log(`  ${oldTarget} 行 ${oldTargetLineIndex}: ${oldTargetLine}`);
+            console.log(`  ${newTarget} 行 ${newTargetLineIndex}: ${newTargetLine}`);
+            console.log(`  → 交换后:`);
+            console.log(`    ${oldTarget} 变为: ${newOldTargetLine}`);
+            console.log(`    ${newTarget} 变为: ${newNewTargetLine}`);
+
+            // 第三步：更新所有引用（箭头关系）
+            for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
+                if (!lines[i].includes('-->')) continue;
+
+                // 替换所有 oldTarget 为 newTarget，newTarget 为 oldTarget
+                let line = lines[i];
+
+                // 同时替换，避免重复替换
+                // 先替换为临时标记
+                line = line.replace(new RegExp(`\\b${escapedOldTarget}\\b`, 'g'), '<<<OLD>>>');
+                line = line.replace(new RegExp(`\\b${escapedNewTarget}\\b`, 'g'), '<<<NEW>>>');
+
+                // 再交换
+                line = line.replace(/<<<OLD>>>/g, newTarget);
+                line = line.replace(/<<<NEW>>>/g, oldTarget);
+
+                lines[i] = line;
+            }
+
+            console.log(`步骤 2⃣: 更新所有箭头关系中的 ID 引用`);
+            console.log(`  已将 ${oldTarget} → ${newTarget}`);
+            console.log(`  已将 ${newTarget} → ${oldTarget}`);
+
+            // 第四步：更新 ext 数据中的节点位置
+            const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
+            const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+
+            // 交换节点位置
+            if (mocData.nodePositions) {
+                const oldPos = mocData.nodePositions[oldTarget];
+                const newPos = mocData.nodePositions[newTarget];
+
+                if (oldPos && newPos) {
+                    // 交换位置数据
+                    mocData.nodePositions[newTarget] = oldPos;
+                    mocData.nodePositions[oldTarget] = newPos;
+                }
+            }
+
+            // 更新边弧度 key
+            if (mocData.edgeCurvatures) {
+                const newCurvatures: Record<string, any> = {};
+                Object.entries(mocData.edgeCurvatures).forEach(([key, value]) => {
+                    let newKey = key;
+                    newKey = newKey.replace(new RegExp(`\\b${escapedOldTarget}\\b`, 'g'), '<<<OLD>>>');
+                    newKey = newKey.replace(new RegExp(`\\b${escapedNewTarget}\\b`, 'g'), '<<<NEW>>>');
+                    newKey = newKey.replace(/<<<OLD>>>/g, newTarget);
+                    newKey = newKey.replace(/<<<NEW>>>/g, oldTarget);
+                    newCurvatures[newKey] = value;
+                });
+                mocData.edgeCurvatures = newCurvatures;
+            }
+
+            await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
+
+            console.log(`步骤 3⃣: 更新 ext 数据完成`);
+            console.log(`✅ ID 互换完成: ${oldTarget} <-> ${newTarget}`);
+            console.log(`📝 注意: 节点定义已互换，文件引用也随之互换`);
+        } catch (error) {
+            console.error('Failed to update edge target:', error);
+            throw error;
         }
     }
 
