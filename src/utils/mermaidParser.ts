@@ -435,9 +435,11 @@ export class MermaidParser {
                 }
             }
         }
-        
+
         // 构建 MOCTreeNode 结构
-        const mocNodes = await this.buildMOCTreeNodes(nodesMap, validEdges);
+        // 提取 filePath 的目录部分作为 basePath，用于解析 wikilink
+        const basePath = filePath.includes('/') ? filePath.substring(0, filePath.lastIndexOf('/')) : '';
+        const mocNodes = await this.buildMOCTreeNodes(nodesMap, validEdges, basePath);
         
         // 构建反向关系 Map
         // 将所有边都添加到 reverseRelations 中（包括无标签的边）
@@ -491,19 +493,21 @@ export class MermaidParser {
      */
     private async buildMOCTreeNodes(
         nodesMap: Map<string, NodeDefinition>,
-        edges: EdgeDefinition[]
+        edges: EdgeDefinition[],
+        basePath: string = ''
     ): Promise<MOCTreeNode[]> {
         const treeNodes: MOCTreeNode[] = [];
         const nodeMap = new Map<string, MOCTreeNode>();
-        
+
         // 创建所有节点
         for (const [id, nodeDef] of nodesMap) {
-            const file = this.app.metadataCache.getFirstLinkpathDest(nodeDef.wikiLink, '') || null;
-        
-            
+            // 使用 basePath 解析 wikilink，这样跨领域 MOC 文件中的链接才能正确解析
+            const file = this.app.metadataCache.getFirstLinkpathDest(nodeDef.wikiLink, basePath) || null;
+
+
             const idParts = id.split('.');
             const depth = idParts.length - 1;
-            
+
             const treeNode: MOCTreeNode = {
                 wikiLink: nodeDef.wikiLink,
                 nodeID: id,
@@ -513,15 +517,15 @@ export class MermaidParser {
                 file,
                 relationText: ''
             };
-            
+
             nodeMap.set(id, treeNode);
         }
-        
+
         // 构建父子关系（基于节点 ID 的层级结构）
         for (const [id, node] of nodeMap) {
             const idParts = id.split('.');
-        
-            
+
+
             if (idParts.length === 1) {
                 // 根节点
                 treeNodes.push(node);
@@ -529,7 +533,7 @@ export class MermaidParser {
                 // 子节点，找到父节点
                 const parentId = idParts.slice(0, -1).join('.');
                 const parentNode = nodeMap.get(parentId);
-                
+
                 if (parentNode) {
                     parentNode.children.push(node);
                 } else {
@@ -538,9 +542,9 @@ export class MermaidParser {
                 }
             }
         }
-        
 
-        
+
+
         // 从边中提取关系文本（父子边的标签）
         for (const edge of edges) {
             const targetNode = nodeMap.get(edge.target);
@@ -556,7 +560,7 @@ export class MermaidParser {
                 }
             }
         }
-        
+
         return treeNodes;
     }
 
