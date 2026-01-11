@@ -68,13 +68,18 @@ export class MermaidSerializer {
      * @returns 元数据注释字符串
      */
     serializeMetadata(data: MOCParseResult): string {
-        const metadata = {
+        const metadata: any = {
             node_positions: data.nodePositions,
             groups: data.groups,
             edge_curvatures: data.edgeCurvatures,
             node_colors: data.nodeColors
         };
-        
+
+        // 添加跨领域关联（如果存在）
+        if (data.crossDomainLinks && Object.keys(data.crossDomainLinks).length > 0) {
+            metadata.cross_domain_links = data.crossDomainLinks;
+        }
+
         const jsonStr = JSON.stringify(metadata);
         return `%% ext:${jsonStr} %%`;
     }
