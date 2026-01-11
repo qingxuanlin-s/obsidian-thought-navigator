@@ -31,6 +31,7 @@ export interface MOCParseResult {
     groups: GroupInfo[];        // 分组信息
     edgeCurvatures: Record<string, { distance: number; weight: number }>; // 边弧度信息
     nodeColors: Record<string, string>; // 节点颜色信息
+    crossDomainLinks?: Record<string, CrossDomainLink[]>; // 跨领域节点关联信息
     metadata: {                 // 扩展信息
         totalNodes: number;     // 总节点数
         maxDepth: number;       // 最大深度
@@ -39,6 +40,15 @@ export interface MOCParseResult {
         filePath: string;       // MOC 文件路径
         headingTitle: string;   // 标题名称
     };
+}
+
+// 跨领域节点关联
+export interface CrossDomainLink {
+    nodeId: string;             // 关联的节点 ID
+    mocPath: string;            // 关联的 MOC 文件路径
+    displayText: string;        // 节点显示文本
+    filePath: string;           // 节点文件路径
+    position?: { x: number; y: number };  // 虚拟跨领域节点的位置
 }
 
 // 分组信息
@@ -184,8 +194,9 @@ export async function parseMOCStructure(
     const groups: any[] = [];
     const edgeCurvatures: Record<string, { distance: number; weight: number }> = {};
     const nodeColors: Record<string, string> = {};
+    const crossDomainLinks: Record<string, CrossDomainLink[]> = {};
     let posLineIndex = -1;
-    
+
     // 从后往前查找位置行
     for (let i = endIndex - 1; i > startIndex; i--) {
         const line = lines[i].trim();
@@ -204,6 +215,9 @@ export async function parseMOCStructure(
                     }
                     if (extData.node_colors) {
                         Object.assign(nodeColors, extData.node_colors);
+                    }
+                    if (extData.cross_domain_links) {
+                        Object.assign(crossDomainLinks, extData.cross_domain_links);
                     }
                     break;
                 }
@@ -369,6 +383,7 @@ export async function parseMOCStructure(
         groups,
         edgeCurvatures,
         nodeColors,
+        crossDomainLinks,
         metadata: {
             totalNodes: allNodes.length,
             maxDepth,

@@ -208,6 +208,94 @@ export class GraphDataBuilder {
     }
 
     /**
+     * 构建跨领域关联边（虚线连接）
+     */
+    buildCrossDomainEdges(crossDomainLinks: Record<string, any[]>): this {
+        const nodeMap = new Map<string, ZKNode>();
+        this.nodes.forEach(node => {
+            // 使用 IDStr 作为 key
+            nodeMap.set(node.IDStr, node);
+            // 同时也支持 ID 作为 key（兼容性）
+            nodeMap.set(node.ID, node);
+        });
+
+        // 获取 nodePositions（从元数据中）
+        const nodePositions: Record<string, { x: number; y: number }> = (this.metadata as any).nodePositions || {};
+
+        // 遍历所有跨领域关联
+        for (const [sourceNodeId, links] of Object.entries(crossDomainLinks)) {
+            const sourceNode = nodeMap.get(sourceNodeId);
+            if (!sourceNode) continue;
+
+            for (const link of links) {
+                // 创建跨领域节点（虚拟节点，不在当前 MOC 中）
+                // 使用简短的 ID 格式：cd-节点ID-MOC文件名
+                // 从 mocPath 中提取 MOC 文件名（如 "测试/跨界.md" -> "测试"）
+                const mocFileName = link.mocPath.split('/')[0];
+                const crossDomainNodeId = `cd-${link.nodeId}-${mocFileName}`;
+
+                // 检查是否已经添加过这个跨领域节点
+                let crossDomainNode = this.nodes.find(n => n.ID === crossDomainNodeId);
+
+                if (!crossDomainNode) {
+                    // 从 node_positions 中读取保存的位置（使用 link.nodeId 作为键）
+                    const savedPosition = nodePositions[link.nodeId];
+
+                    // 如果没有保存的位置，计算默认位置
+                    let finalPosition = savedPosition;
+                    if (!finalPosition) {
+                        const sourceNodePosition = nodePositions[sourceNodeId];
+                        if (sourceNodePosition) {
+                            // 默认位置：源节点右侧 200px，同一水平线
+                            finalPosition = {
+                                x: sourceNodePosition.x + 200,
+                                y: sourceNodePosition.y
+                            };
+                        }
+                    }
+
+                    crossDomainNode = {
+                        ID: crossDomainNodeId,
+                        IDArr: [crossDomainNodeId],
+                        IDStr: crossDomainNodeId,
+                        position: this.nodes.length,
+                        file: link as any,  // 存储链接信息
+                        title: link.displayText,
+                        displayText: link.displayText,
+                        relationText: `跨领域: ${link.mocPath}`,
+                        ctime: Date.now(),
+                        randomId: Math.random().toString(36),
+                        nodeSons: 0,
+                        startY: sourceNode.startY,
+                        height: sourceNode.height,
+                        isRoot: false,
+                        fixWidth: sourceNode.fixWidth,
+                        branchName: '',
+                        gitNodePos: 0,
+                        isCrossDomain: true,  // 标记为跨领域节点
+                        // 使用保存的位置或计算的默认位置
+                        savedPosition: finalPosition
+                    };
+                    this.nodes.push(crossDomainNode);
+                }
+
+                // 添加跨领域边（虚线）
+                this.edges.push({
+                    id: `edge-cross-domain-${sourceNodeId}-${link.nodeId}`,
+                    source: sourceNode.ID,
+                    target: crossDomainNode.ID,
+                    type: 'cross-domain' as any,  // 新的边类型
+                    label: '跨领域',
+                    // 存储跨领域链接信息，用于点击跳转
+                    crossDomainLink: link
+                });
+            }
+        }
+
+        return this;
+    }
+
+    /**
      * 设置元数据
      */
     setMetadata(metadata: Partial<GraphMetadata>): this {
@@ -261,25 +349,31 @@ export class GraphDataBuilder {
      * 静态工厂方法：从 MOC 树节点创建（包含 reverseRelations、groups、edgeCurvatures 和 nodeColors）
      */
     static fromMOCTree(
-        nodes: ZKNode[], 
-        reverseRelations: Map<string, any>, 
-        currentFile: TFile | null, 
-        groups: any[] = [], 
+        nodes: ZKNode[],
+        reverseRelations: Map<string, any>,
+        currentFile: TFile | null,
+        groups: any[] = [],
         edgeCurvatures: Record<string, { distance: number; weight: number }> = {},
-        nodeColors: Record<string, string> = {}
+        nodeColors: Record<string, string> = {},
+        crossDomainLinks: Record<string, any[]> = {},
+        nodePositions: Record<string, { x: number; y: number }> = {}
     ): GraphData {
         const graphData = new GraphDataBuilder()
             .addNodes(nodes)
             .buildMOCTreeEdges(reverseRelations)
+            // 先设置元数据（包含 nodePositions），这样 buildCrossDomainEdges 才能访问
             .setMetadata({
                 currentFile: currentFile?.path || '',
                 renderType: 'moc-tree',
-                groups: groups,  // 添加分组信息到元数据
-                edgeCurvatures: edgeCurvatures,  // 添加边弧度信息到元数据
-                nodeColors: nodeColors  // 添加节点颜色信息到元数据
+                groups: groups,
+                edgeCurvatures: edgeCurvatures,
+                nodeColors: nodeColors,
+                crossDomainLinks: crossDomainLinks,
+                nodePositions: nodePositions
             })
+            .buildCrossDomainEdges(crossDomainLinks)
             .build();
-        
+
         return graphData;
     }
 

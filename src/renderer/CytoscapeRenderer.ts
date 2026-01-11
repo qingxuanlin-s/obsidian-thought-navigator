@@ -115,7 +115,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
         // 检查是否有保存的位置
         const hasSavedPositions = data.nodes.some(node => node.savedPosition);
-        
+
         // 运行布局
         if (this.cy) {
             if (hasSavedPositions) {
@@ -339,10 +339,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     position: node.position,
                     isCurrentFile: node.file.path === currentFilePath,
                     originalNode: node,
-                    customColor: nodeColors[node.IDStr] || null  // 添加自定义颜色
+                    customColor: nodeColors[node.IDStr] || null,  // 添加自定义颜色
+                    isCrossDomain: node.isCrossDomain || false  // 传递跨领域节点标记
                 }
             };
-            
+
             // 如果节点有保存的位置信息，使用它
             if (node.savedPosition) {
                 element.position = {
@@ -350,7 +351,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     y: node.savedPosition.y
                 };
             }
-            
+
             return element;
         });
         
@@ -608,6 +609,27 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'arrow-scale': 1.0,
                 'opacity': 0.5,  // 更淡
                 'z-index': 999
+            } as any
+        },
+        // 跨领域边（虚线连接 + 特殊样式）
+        {
+            selector: 'edge[type="cross-domain"]',
+            style: {
+                'line-style': 'dashed',
+                'line-dash-pattern': [8, 4],  // 虚线模式
+                'line-color': '#8b5cf6',  // 紫色（跨领域标识）
+                'target-arrow-color': '#8b5cf6',
+                'width': 2,
+                'arrow-scale': 1.2,
+                'opacity': 0.7,
+                'label': 'data(label)',
+                'font-size': '10px',
+                'color': '#8b5cf6',
+                'text-background-color': '#f3e8ff',
+                'text-background-opacity': 1,
+                'text-background-padding': '3px',
+                'text-background-shape': 'roundrectangle',
+                'z-index': 998
             } as any
         },
         // 边选中状态
@@ -1132,7 +1154,7 @@ case 'dagre':
 
         return null;
     }
-    
+
     /**
      * 添加边控制点（用于手动调整弧度）
      */
@@ -2484,7 +2506,22 @@ case 'dagre':
                 return;
             }
 
-            // 单击只选中节点，不打开文件
+            // 跨领域节点：单击触发跳转
+            if (data.isCrossDomain) {
+                // 保持选中状态
+                node.select();
+
+                // 触发跳转事件
+                this.container?.dispatchEvent(new CustomEvent('cross-domain-node-click', {
+                    detail: {
+                        node: data,
+                        event: originalEvent
+                    }
+                }));
+                return;
+            }
+
+            // 普通节点：单击只选中，不打开文件
             // 触发自定义事件（用于其他功能，如高亮等）
             this.container?.dispatchEvent(new CustomEvent('node-select', {
                 detail: {
@@ -2505,7 +2542,12 @@ case 'dagre':
                 return;
             }
 
-            // 双击打开文件
+            // 跨领域节点不响应双击（已在单击中处理跳转）
+            if (data.isCrossDomain) {
+                return;
+            }
+
+            // 普通节点：双击打开文件
             this.container?.dispatchEvent(new CustomEvent('node-open', {
                 detail: {
                     node: data.originalNode,
@@ -2589,6 +2631,22 @@ case 'dagre':
             const originalEvent = evt.originalEvent as MouseEvent;
             const renderedPosition = node.renderedPosition();
 
+            // 跨领域节点：发送专门的跨领域右键菜单事件
+            if (data.isCrossDomain) {
+                this.container?.dispatchEvent(new CustomEvent('cross-domain-contextmenu', {
+                    detail: {
+                        node: data.originalNode,
+                        event: originalEvent,
+                        position: {
+                            x: renderedPosition.x,
+                            y: renderedPosition.y
+                        }
+                    }
+                }));
+                return;
+            }
+
+            // 普通节点：发送普通的节点右键菜单事件
             this.container?.dispatchEvent(new CustomEvent('node-contextmenu', {
                 detail: {
                     node: data.originalNode,
@@ -2628,13 +2686,40 @@ case 'dagre':
             if (!evt || !evt.target) return;
             const node = evt.target;
             const data = node.data();
-            
+
             // 如果是分组节点，不触发位置保存
             if (data.isGroup) return;
-            
+
             const position = node.position();
 
-            // 触发位置变化事件
+            // 跨领域节点：触发特殊的位置变化事件
+            if (data.isCrossDomain) {
+                const crossDomainLink = data.originalNode?.file;
+
+                // 找到连接这个跨领域节点的边，获取源节点 ID
+                const connectedEdges = this.cy!.$(`edge[type="cross-domain"][target="${data.id}"]`);
+                let sourceNodeId = null;
+                if (connectedEdges.length > 0) {
+                    sourceNodeId = connectedEdges.first().data().originalSource;
+                }
+
+                this.container?.dispatchEvent(new CustomEvent('cross-domain-node-position-changed', {
+                    detail: {
+                        node: data.originalNode,
+                        nodeId: data.id,
+                        position: {
+                            x: position.x,
+                            y: position.y
+                        },
+                        // 获取跨领域链接信息和源节点 ID
+                        crossDomainLink: crossDomainLink,
+                        sourceNodeId: sourceNodeId
+                    }
+                }));
+                return;
+            }
+
+            // 普通节点：触发位置变化事件
             this.container?.dispatchEvent(new CustomEvent('node-position-changed', {
                 detail: {
                     node: data.originalNode,

@@ -14,8 +14,9 @@ export interface Edge {
     id: string;
     source: string;  // 源节点 ID
     target: string;  // 目标节点 ID
-    type: 'parent' | 'child' | 'sibling' | 'link' | 'inlink' | 'outlink' | 'forward' | 'reverse';
+    type: 'parent' | 'child' | 'sibling' | 'link' | 'inlink' | 'outlink' | 'forward' | 'reverse' | 'cross-domain';
     label?: string;
+    crossDomainLink?: any;  // 跨领域链接信息（用于 cross-domain 类型）
 }
 
 export interface GraphMetadata {
@@ -26,6 +27,8 @@ export interface GraphMetadata {
     groups?: any[];  // 分组信息
     edgeCurvatures?: Record<string, { distance: number; weight: number }>;  // 边弧度信息
     nodeColors?: Record<string, string>;  // 节点颜色信息
+    crossDomainLinks?: Record<string, any[]>;  // 跨领域关联信息
+    nodePositions?: Record<string, { x: number; y: number }>;  // 节点位置信息
 }
 
 /**

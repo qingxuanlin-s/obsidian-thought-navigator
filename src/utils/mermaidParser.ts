@@ -250,12 +250,14 @@ export class MermaidParser {
         groups: GroupInfo[];
         edgeCurvatures: Record<string, { distance: number; weight: number }>;
         nodeColors: Record<string, string>;
+        crossDomainLinks: Record<string, any[]>;  // 跨领域关联
     } {
         const defaultMetadata = {
             nodePositions: {},
             groups: [],
             edgeCurvatures: {},
-            nodeColors: {}
+            nodeColors: {},
+            crossDomainLinks: {}
         };
         
         // 匹配元数据注释：%% ext:{JSON} %%
@@ -268,12 +270,13 @@ export class MermaidParser {
         
         try {
             const metadata = JSON.parse(match[1]);
-            
+
             return {
                 nodePositions: metadata.node_positions || {},
                 groups: metadata.groups || [],
                 edgeCurvatures: metadata.edge_curvatures || {},
-                nodeColors: metadata.node_colors || {}
+                nodeColors: metadata.node_colors || {},
+                crossDomainLinks: metadata.cross_domain_links || {}
             };
         } catch (e) {
             this.warnings.push({
@@ -449,7 +452,7 @@ export class MermaidParser {
         }
         
         const parseTime = Date.now() - startTime;
-        
+
         const result = {
             nodes: mocNodes,
             reverseRelations,
@@ -457,6 +460,7 @@ export class MermaidParser {
             groups: metadata.groups,
             edgeCurvatures: metadata.edgeCurvatures,
             nodeColors: metadata.nodeColors,
+            crossDomainLinks: metadata.crossDomainLinks,
             metadata: {
                 totalNodes: nodesMap.size,
                 maxDepth: this.calculateMaxDepth(mocNodes),
@@ -587,6 +591,7 @@ export class MermaidParser {
             groups: [],
             edgeCurvatures: {},
             nodeColors: {},
+            crossDomainLinks: {},
             metadata: {
                 totalNodes: 0,
                 maxDepth: 0,

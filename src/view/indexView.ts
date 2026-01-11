@@ -49,6 +49,7 @@ export interface ZKNode {
     branchName: string; // for generating gitGraph
     gitNodePos: number; // for keeping node's position in gitBranch
     savedPosition?: { x: number; y: number }; // 保存的节点位置（用于 Cytoscape 图形）
+    isCrossDomain?: boolean; // 是否为跨领域节点
 }
 
 interface BrancAllhNodes {
@@ -119,6 +120,7 @@ export class ZKIndexView extends ItemView {
     resizeTimeout: NodeJS.Timeout | null = null;
     edgeCurvatureSaveTimeout: NodeJS.Timeout | null = null;
     nodePositionSaveTimeout: NodeJS.Timeout | null = null;
+    crossDomainPositionSaveTimeout: NodeJS.Timeout | null = null;
 
     // 视图状态缓存（缩放和平移）
     private savedViewState: { zoom: number; pan: { x: number; y: number } } | null = null;
@@ -1059,7 +1061,9 @@ export class ZKIndexView extends ItemView {
         const groups = mocParseResult.groups || [];
         const edgeCurvatures = mocParseResult.edgeCurvatures || {};
         const nodeColors = mocParseResult.nodeColors || {};
-        const graphData = GraphDataBuilder.fromMOCTree(this.mocNodes, this.mocReverseRelations, null, groups, edgeCurvatures, nodeColors);
+        const crossDomainLinks = mocParseResult.crossDomainLinks || {};
+        const nodePositions = mocParseResult.nodePositions || {};
+        const graphData = GraphDataBuilder.fromMOCTree(this.mocNodes, this.mocReverseRelations, null, groups, edgeCurvatures, nodeColors, crossDomainLinks, nodePositions);
 
         // 配置渲染选项
         const options: RenderOptions = {
@@ -1121,6 +1125,33 @@ export class ZKIndexView extends ItemView {
                     }
                 } catch (error) {
                     console.error('Failed to save node position:', error);
+                }
+            }, DEBOUNCE_DELAY.POSITION_SAVE);
+        });
+
+        // 监听跨领域节点位置变化事件（拖动后保存到 cross_domain_links）
+        this.addTrackedListener(branchGraphDiv, 'cross-domain-node-position-changed', async (event: any) => {
+            const { node, position, crossDomainLink, sourceNodeId } = event.detail;
+
+            // 检查是否有效
+            if (!node || !crossDomainLink || !sourceNodeId) {
+                return;
+            }
+
+            // 使用防抖，避免拖动时频繁保存
+            if (this.crossDomainPositionSaveTimeout) {
+                clearTimeout(this.crossDomainPositionSaveTimeout);
+            }
+
+            this.crossDomainPositionSaveTimeout = setTimeout(async () => {
+                // 保存跨领域节点位置到 MOC 文件
+                try {
+                    const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                    if (mocFile) {
+                        await this.saveCrossDomainNodePosition(mocFile, sourceNodeId, crossDomainLink, position);
+                    }
+                } catch (error) {
+                    console.error('Failed to save cross-domain node position:', error);
                 }
             }, DEBOUNCE_DELAY.POSITION_SAVE);
         });
@@ -1296,6 +1327,40 @@ export class ZKIndexView extends ItemView {
             }
         });
 
+        // 监听跨领域节点点击事件（跳转到关联的 MOC 文件）
+        this.addTrackedListener(branchGraphDiv, 'cross-domain-node-click', async (event: any) => {
+            const { node } = event.detail;
+
+            // 获取跨领域链接信息
+            const crossDomainLink = node.file;  // 跨领域节点的 file 字段存储了链接信息
+
+            if (!crossDomainLink || !crossDomainLink.mocPath) {
+                new Notice('跨领域节点信息无效');
+                return;
+            }
+
+            try {
+                // 切换到关联的 MOC 文件
+                const mocFile = this.app.vault.getFileByPath(crossDomainLink.mocPath);
+                if (!mocFile) {
+                    new Notice(`未找到 MOC 文件: ${crossDomainLink.mocPath}`);
+                    return;
+                }
+
+                // 更新当前 MOC 文件设置
+                this.plugin.settings.mocCurrentFile = mocFile.path;
+                await this.plugin.saveData(this.plugin.settings);
+
+                // 刷新视图
+                await this.refreshBranchMermaid();
+
+                new Notice(`已跳转到 MOC: ${mocFile.basename}`);
+            } catch (error) {
+                console.error('Failed to jump to cross-domain MOC:', error);
+                new Notice(`跳转失败: ${error.message}`);
+            }
+        });
+
         // 监听节点删除键事件
         this.addTrackedListener(branchGraphDiv, 'node-delete-key', async (event: any) => {
             const { node, relationCount } = event.detail;
@@ -1331,6 +1396,35 @@ export class ZKIndexView extends ItemView {
                 console.error('Failed to delete node:', error);
                 new Notice(`删除节点失败: ${error.message}`);
             }
+        });
+
+        // 监听跨领域节点右键菜单事件
+        this.addTrackedListener(branchGraphDiv, 'cross-domain-contextmenu', async (event: any) => {
+            const { node, event: mouseEvent } = event.detail;
+
+            // 获取跨领域链接信息
+            const crossDomainLink = node?.file;
+
+            // 阻止默认右键菜单
+            mouseEvent.preventDefault();
+            mouseEvent.stopPropagation();
+
+            // 创建菜单
+            const menu = new Menu();
+
+            // 添加"打开跨界思维树"选项
+            menu.addItem((item) => {
+                item.setTitle("🌳 打开跨界思维树")
+                    .setIcon("network")
+                    .onClick(async () => {
+                        if (crossDomainLink?.mocPath) {
+                            await this.openCrossDomainMOC(crossDomainLink.mocPath);
+                        }
+                    });
+            });
+
+            // 显示菜单
+            menu.showAtMouseEvent(mouseEvent);
         });
 
         // 监听节点右键菜单事件
@@ -1369,7 +1463,18 @@ export class ZKIndexView extends ItemView {
             });
             
             menu.addSeparator();
-            
+
+            // 关联跨领域节点选项
+            menu.addItem((item) => {
+                item.setTitle("🌐 关联跨领域节点")
+                    .setIcon("network")
+                    .onClick(async () => {
+                        await this.linkCrossDomainNode(node);
+                    });
+            });
+
+            menu.addSeparator();
+
             // 修改节点 ID 选项
             menu.addItem((item) => {
                 item.setTitle("✏️ 修改节点 ID")
@@ -1378,7 +1483,7 @@ export class ZKIndexView extends ItemView {
                         await this.renameNodeID(node);
                     });
             });
-            
+
             // 修改节点颜色选项
             menu.addItem((item) => {
                 item.setTitle("🎨 修改节点颜色")
@@ -1387,7 +1492,7 @@ export class ZKIndexView extends ItemView {
                         await this.changeNodeColor(node);
                     });
             });
-            
+
             menu.addSeparator();
             
             // 打开文件选项
@@ -3783,6 +3888,170 @@ export class ZKIndexView extends ItemView {
     /**
      * 修改节点颜色
      */
+    /**
+     * 关联跨领域节点
+     */
+    async linkCrossDomainNode(sourceNode: ZKNode) {
+        try {
+            const currentMOCPath = this.plugin.settings.mocCurrentFile;
+
+            // 获取所有 MOC 文件
+            const mocFolder = this.plugin.settings.mocFolderPath;
+            const mocFiles = this.app.vault.getMarkdownFiles().filter(f => f.path.startsWith(mocFolder));
+
+            if (mocFiles.length === 0) {
+                new Notice('没有找到其他 MOC 文件');
+                return;
+            }
+
+            // 第一步：选择目标 MOC 文件
+            const { CrossDomainMOCModal } = await import('src/modal/crossDomainNodeModal');
+            const mocFile = await new Promise<TFile>((resolve) => {
+                new CrossDomainMOCModal(
+                    this.app,
+                    mocFiles,
+                    sourceNode,
+                    currentMOCPath,
+                    (selectedFile) => resolve(selectedFile)
+                ).open();
+            });
+
+            if (!mocFile) {
+                return; // 用户取消
+            }
+
+            // 解析目标 MOC 文件获取节点列表
+            const { parseMOCStructure } = await import('src/utils/utils');
+            const targetMOCData = await parseMOCStructure(
+                this.app,
+                mocFile.path,
+                this.plugin.settings.mocHeadingTitle
+            );
+
+            if (targetMOCData.nodes.length === 0) {
+                new Notice(`MOC 文件 "${mocFile.basename}" 中没有节点`);
+                return;
+            }
+
+            // 第二步：选择目标节点
+            const { CrossDomainNodeModal } = await import('src/modal/crossDomainNodeModal');
+            const targetNode = await new Promise<ZKNode>((resolve) => {
+                new CrossDomainNodeModal(
+                    this.app,
+                    targetMOCData.nodes,
+                    sourceNode,
+                    currentMOCPath,
+                    mocFile,
+                    (srcNode, srcPath, tgtNode, tgtFile) => resolve(tgtNode)
+                ).open();
+            });
+
+            if (!targetNode) {
+                return; // 用户取消
+            }
+
+            // 保存跨领域关联数据到双方的 ext JSON
+            await this.saveCrossDomainLink(sourceNode, currentMOCPath, targetNode, mocFile.path);
+
+            // 刷新视图
+            await this.refreshBranchMermaid();
+
+            const sourceId = (sourceNode as any).nodeID || sourceNode.IDStr;
+            const targetId = (targetNode as any).nodeID || (targetNode as any).IDStr;
+            new Notice(`已关联跨领域节点: ${sourceId} ↔ ${targetId}`);
+        } catch (error) {
+            console.error('Failed to link cross-domain node:', error);
+            new Notice(`关联跨领域节点失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 保存跨领域关联到双方 MOC 文件的 ext 数据
+     */
+    private async saveCrossDomainLink(
+        sourceNode: any,
+        sourceMOCPath: string,
+        targetNode: any,
+        targetMOCPath: string
+    ): Promise<void> {
+        // 获取节点 ID（兼容不同类型）
+        const sourceNodeId = sourceNode.IDStr || sourceNode.nodeID;
+        const targetNodeId = targetNode.nodeID || targetNode.IDStr;
+        const sourceDisplayText = sourceNode.displayText || sourceNode.title;
+        const targetDisplayText = targetNode.title || targetNode.displayText;
+        const sourceFilePath = sourceNode.file?.path || sourceNode.filePath;
+        const targetFilePath = targetNode.filePath || targetNode.file?.path;
+
+        // 构建跨领域关联数据
+        const sourceLink = {
+            nodeId: sourceNodeId,
+            mocPath: sourceMOCPath,
+            displayText: sourceDisplayText,
+            filePath: sourceFilePath
+        };
+
+        const targetLink = {
+            nodeId: targetNodeId,
+            mocPath: targetMOCPath,
+            displayText: targetDisplayText,
+            filePath: targetFilePath
+        };
+
+        // 保存到源 MOC 文件
+        const sourceMOCFile = this.app.vault.getFileByPath(sourceMOCPath);
+        if (sourceMOCFile) {
+            await this.addCrossDomainLinkToExt(sourceMOCFile, sourceNodeId, targetLink);
+        }
+
+        // 保存到目标 MOC 文件
+        const targetMOCFile = this.app.vault.getFileByPath(targetMOCPath);
+        if (targetMOCFile) {
+            await this.addCrossDomainLinkToExt(targetMOCFile, targetNodeId, sourceLink);
+        }
+    }
+
+    /**
+     * 添加跨领域关联到 MOC 文件的 ext 数据
+     */
+    private async addCrossDomainLinkToExt(
+        mocFile: TFile,
+        nodeId: string,
+        crossDomainLink: {
+            nodeId: string;
+            mocPath: string;
+            displayText: string;
+            filePath: string;
+        }
+    ): Promise<void> {
+        const headingTitle = this.plugin.settings.mocHeadingTitle;
+
+        // 解析当前的 MOC 结构
+        const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
+        const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+
+        // 初始化 cross_domain_links 字段
+        if (!mocData.crossDomainLinks) {
+            mocData.crossDomainLinks = {};
+        }
+
+        // 添加跨领域关联
+        if (!mocData.crossDomainLinks[nodeId]) {
+            mocData.crossDomainLinks[nodeId] = [];
+        }
+
+        // 检查是否已经存在该关联
+        const exists = mocData.crossDomainLinks[nodeId].some(
+            (link: any) => link.mocPath === crossDomainLink.mocPath && link.nodeId === crossDomainLink.nodeId
+        );
+
+        if (!exists) {
+            mocData.crossDomainLinks[nodeId].push(crossDomainLink);
+        }
+
+        // 保存回 MOC 文件
+        await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
+    }
+
     async changeNodeColor(node: ZKNode) {
         // 预设颜色
         const colors = [
@@ -6128,23 +6397,113 @@ export class ZKIndexView extends ItemView {
     private async saveEdgeCurvatureToMOC(mocFile: TFile, edgeId: string, curvature: { distance: number; weight: number }): Promise<void> {
         try {
             const headingTitle = this.plugin.settings.mocHeadingTitle;
-            
+
             // 解析当前的 MOC 结构
             const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
             const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
-            
+
             // 更新边弧度
             mocData.edgeCurvatures[edgeId] = {
                 distance: Math.round(curvature.distance * 100) / 100, // 保留两位小数
                 weight: Math.round(curvature.weight * 100) / 100
             };
-            
+
             // 保存更新后的数据
             await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
-            
+
         } catch (error) {
             console.error('Failed to save edge curvature:', error);
             new Notice(`保存边弧度失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 保存跨领域节点位置到 node_positions 和 cross_domain_links
+     */
+    private async saveCrossDomainNodePosition(
+        mocFile: TFile,
+        sourceNodeId: string,
+        crossDomainLink: any,
+        position: { x: number; y: number }
+    ): Promise<void> {
+        try {
+            const headingTitle = this.plugin.settings.mocHeadingTitle;
+
+            // 解析当前的 MOC 结构
+            const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
+            const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+
+            const roundedPosition = {
+                x: Math.round(position.x * 100) / 100,
+                y: Math.round(position.y * 100) / 100
+            };
+
+            // 1. 保存到 node_positions（用于读取位置）
+            mocData.nodePositions[crossDomainLink.nodeId] = roundedPosition;
+
+            // 2. 初始化 cross_domain_links
+            if (!mocData.crossDomainLinks) {
+                mocData.crossDomainLinks = {};
+            }
+
+            // 使用源节点 ID 作为键
+            if (!mocData.crossDomainLinks[sourceNodeId]) {
+                mocData.crossDomainLinks[sourceNodeId] = [];
+            }
+
+            // 查找对应的跨领域关联
+            const links = mocData.crossDomainLinks[sourceNodeId];
+            const link = links.find(l =>
+                l.nodeId === crossDomainLink.nodeId &&
+                l.mocPath === crossDomainLink.mocPath
+            );
+
+            if (link) {
+                // 更新位置信息
+                link.position = roundedPosition;
+            } else {
+                // 如果找不到，创建新的链接记录
+                links.push({
+                    nodeId: crossDomainLink.nodeId,
+                    mocPath: crossDomainLink.mocPath,
+                    displayText: crossDomainLink.displayText,
+                    filePath: crossDomainLink.filePath,
+                    position: roundedPosition
+                });
+            }
+
+            // 保存更新后的数据
+            await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
+
+        } catch (error) {
+            console.error('Failed to save cross-domain node position:', error);
+            new Notice(`保存跨领域节点位置失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 打开跨界思维树
+     * @param mocPath - 跨界 MOC 文件路径
+     */
+    private async openCrossDomainMOC(mocPath: string): Promise<void> {
+        try {
+            // 验证文件存在
+            const mocFile = this.app.vault.getFileByPath(mocPath);
+            if (!mocFile) {
+                new Notice(`找不到 MOC 文件: ${mocPath}`);
+                return;
+            }
+
+            // 切换当前 MOC 文件
+            this.plugin.settings.mocCurrentFile = mocPath;
+
+            // 刷新视图
+            await this.refreshBranchMermaid();
+
+            new Notice(`已切换到: ${mocFile.basename}`);
+        } catch (error) {
+            console.error('Failed to open cross-domain MOC:', error);
+            new Notice(`打开跨界思维树失败: ${error.message}`);
         }
     }
 }
