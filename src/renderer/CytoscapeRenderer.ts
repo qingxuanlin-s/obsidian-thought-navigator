@@ -513,12 +513,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 },
                 'height': (ele: any) => {
                     const label = ele.data('label') || '';
-                    const baseHeight = 50;
-                    const lineHeight = 18;
+                    const baseHeight = 50 * 2 / 3;  // 改为原来的 2/3
+                    const lineHeight = 18 * 2 / 3;  // 改为原来的 2/3
                     const maxWidth = 200;
                     const charWidth = 8;
-                    const padding = 24;
-                    
+                    const padding = 24 * 2 / 3;  // 改为原来的 2/3
+
                     const estimatedLines = Math.ceil((label.length * charWidth) / maxWidth);
                     const textHeight = estimatedLines * lineHeight;
                     return Math.max(baseHeight, textHeight + padding);
@@ -1474,64 +1474,55 @@ case 'dagre':
     private updateEndpointHandlePosition(handle: HTMLElement, node: any, edge: any, type: 'source' | 'target'): void {
         if (!this.cy) return;
 
-        const renderedPos = node.renderedPosition();
-        let x = renderedPos.x;
-        let y = renderedPos.y;
-
-        // 获取节点边界框
+        // 获取节点中心和边界框
+        const nodeCenter = node.renderedPosition();
         const boundingBox = node.renderedBoundingBox();
-        const width = boundingBox.x2 - boundingBox.x1;
-        const height = boundingBox.y2 - boundingBox.y1;
+        const halfWidth = (boundingBox.x2 - boundingBox.x1) / 2;
+        const halfHeight = (boundingBox.y2 - boundingBox.y1) / 2;
 
-        // 获取边的方向
+        // 获取边的另一端节点位置
         const edgeData = edge.data();
-        const sourceNode = this.cy.$id(edgeData.source);
-        const targetNode = this.cy.$id(edgeData.target);
+        let otherNode: any;
 
         if (type === 'source') {
-            // 起点：计算指向终点的方向
-            const targetPos = targetNode.renderedPosition();
-            const dx = targetPos.x - x;
-            const dy = targetPos.y - y;
-            const angle = Math.atan2(dy, dx);
-
-            // 根据角度将手柄定位到节点边缘
-            const cos = Math.cos(angle);
-            const sin = Math.sin(angle);
-
-            // 计算边缘位置（使用节点宽度和高度的一半）
-            const halfWidth = width / 2;
-            const halfHeight = height / 2;
-
-            if (Math.abs(cos) > Math.abs(sin)) {
-                // 水平方向
-                x = x + (cos > 0 ? halfWidth : -halfWidth);
-            } else {
-                // 垂直方向
-                y = y + (sin > 0 ? halfHeight : -halfHeight);
-            }
+            otherNode = this.cy.$id(edgeData.target);
         } else {
-            // 终点：计算指向起点的方向
-            const sourcePos = sourceNode.renderedPosition();
-            const dx = sourcePos.x - x;
-            const dy = sourcePos.y - y;
-            const angle = Math.atan2(dy, dx);
+            otherNode = this.cy.$id(edgeData.source);
+        }
 
-            // 根据角度将手柄定位到节点边缘
-            const cos = Math.cos(angle);
-            const sin = Math.sin(angle);
+        const otherPos = otherNode.renderedPosition();
 
-            // 计算边缘位置
-            const halfWidth = width / 2;
-            const halfHeight = height / 2;
+        // 计算从当前节点指向另一端的方向
+        const dx = otherPos.x - nodeCenter.x;
+        const dy = otherPos.y - nodeCenter.y;
 
-            if (Math.abs(cos) > Math.abs(sin)) {
-                // 水平方向
-                x = x + (cos > 0 ? halfWidth : -halfWidth);
-            } else {
-                // 垂直方向
-                y = y + (sin > 0 ? halfHeight : -halfHeight);
-            }
+        // 归一化方向
+        const length = Math.sqrt(dx * dx + dy * dy);
+        const dirX = length > 0 ? dx / length : 0;
+        const dirY = length > 0 ? dy / length : 0;
+
+        // 计算交点（线段与矩形边框的交点）
+        let x = nodeCenter.x;
+        let y = nodeCenter.y;
+
+        // 计算到各边的距离
+        const distToRight = halfWidth / Math.abs(dirX || 1);
+        const distToLeft = halfWidth / Math.abs(dirX || 1);
+        const distToBottom = halfHeight / Math.abs(dirY || 1);
+        const distToTop = halfHeight / Math.abs(dirY || 1);
+
+        // 找出最小的正距离
+        let minDist = Infinity;
+
+        if (dirX > 0) distToRight < minDist && (minDist = distToRight);
+        if (dirX < 0) distToLeft < minDist && (minDist = distToLeft);
+        if (dirY > 0) distToBottom < minDist && (minDist = distToBottom);
+        if (dirY < 0) distToTop < minDist && (minDist = distToTop);
+
+        // 计算交点
+        if (minDist !== Infinity) {
+            x = nodeCenter.x + dirX * minDist;
+            y = nodeCenter.y + dirY * minDist;
         }
 
         handle.style.left = `${x}px`;
@@ -1583,16 +1574,29 @@ case 'dagre':
             this.container!.appendChild(svgOverlay);
 
             dragLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            dragLine.setAttribute('stroke', '#f97316');
+            dragLine.setAttribute('stroke', '#3b82f6');  // 改为蓝色
             dragLine.setAttribute('stroke-width', '2');
             dragLine.setAttribute('stroke-dasharray', '5,5');
             svgOverlay.appendChild(dragLine);
 
-            const nodePos = sourceOrTargetNode.renderedPosition();
-            dragLine.setAttribute('x1', nodePos.x.toString());
-            dragLine.setAttribute('y1', nodePos.y.toString());
-            dragLine.setAttribute('x2', nodePos.x.toString());
-            dragLine.setAttribute('y2', nodePos.y.toString());
+            // 获取父级起始位置
+            const edgeData = edge.data();
+            let startPos: { x: number; y: number };
+
+            if (type === 'source') {
+                // 拖动起点时，从终点位置开始
+                const targetNode = this.cy!.$id(edgeData.target);
+                startPos = targetNode.renderedPosition();
+            } else {
+                // 拖动终点时，从起点位置开始
+                const sourceNode = this.cy!.$id(edgeData.source);
+                startPos = sourceNode.renderedPosition();
+            }
+
+            dragLine.setAttribute('x1', startPos.x.toString());
+            dragLine.setAttribute('y1', startPos.y.toString());
+            dragLine.setAttribute('x2', startPos.x.toString());
+            dragLine.setAttribute('y2', startPos.y.toString());
         });
 
         const handleMouseMove = (e: MouseEvent) => {
@@ -1602,9 +1606,22 @@ case 'dagre':
             const mouseX = e.clientX - containerRect.left;
             const mouseY = e.clientY - containerRect.top;
 
-            const nodePos = sourceOrTargetNode.renderedPosition();
-            dragLine.setAttribute('x1', nodePos.x.toString());
-            dragLine.setAttribute('y1', nodePos.y.toString());
+            // 获取父级起始位置
+            const edgeData = edge.data();
+            let startPos: { x: number; y: number };
+
+            if (type === 'source') {
+                // 拖动起点时，从终点位置开始
+                const targetNode = this.cy!.$id(edgeData.target);
+                startPos = targetNode.renderedPosition();
+            } else {
+                // 拖动终点时，从起点位置开始
+                const sourceNode = this.cy!.$id(edgeData.source);
+                startPos = sourceNode.renderedPosition();
+            }
+
+            dragLine.setAttribute('x1', startPos.x.toString());
+            dragLine.setAttribute('y1', startPos.y.toString());
             dragLine.setAttribute('x2', mouseX.toString());
             dragLine.setAttribute('y2', mouseY.toString());
 
@@ -1613,11 +1630,12 @@ case 'dagre':
             const targetNode = this.getNodeAtPosition(mousePos);
 
             if (targetNode && targetNode !== sourceOrTargetNode) {
-                // 高亮目标节点
-                dragLine.setAttribute('stroke', '#10b981'); // 绿色表示有效连接
+                // 绿色表示有效连接
+                dragLine.setAttribute('stroke', '#10b981');
                 targetNode.addClass('connection-target-hover');
             } else {
-                dragLine.setAttribute('stroke', '#f97316'); // 橙色表示拖动中
+                // 蓝色表示拖动中
+                dragLine.setAttribute('stroke', '#3b82f6');
                 this.cy.nodes('.connection-target-hover').removeClass('connection-target-hover');
             }
         };
