@@ -2506,13 +2506,11 @@ case 'dagre':
                 return;
             }
 
-            // 跨领域节点：单击触发跳转
+            // 跨领域节点：单击只选中，不跳转（跳转到双击处理）
             if (data.isCrossDomain) {
-                // 保持选中状态
-                node.select();
-
-                // 触发跳转事件，传递 originalNode
-                this.container?.dispatchEvent(new CustomEvent('cross-domain-node-click', {
+                // 只选中节点，不触发跳转
+                // 触发选中事件以便其他功能使用
+                this.container?.dispatchEvent(new CustomEvent('node-select', {
                     detail: {
                         node: data.originalNode,
                         event: originalEvent
@@ -2542,8 +2540,15 @@ case 'dagre':
                 return;
             }
 
-            // 跨领域节点不响应双击（已在单击中处理跳转）
+            // 跨领域节点：双击触发跳转
             if (data.isCrossDomain) {
+                // 触发跳转事件，传递 originalNode
+                this.container?.dispatchEvent(new CustomEvent('cross-domain-node-click', {
+                    detail: {
+                        node: data.originalNode,
+                        event: originalEvent
+                    }
+                }));
                 return;
             }
 

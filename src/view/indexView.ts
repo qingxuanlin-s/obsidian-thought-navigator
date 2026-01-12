@@ -5770,85 +5770,113 @@ export class ZKIndexView extends ItemView {
      */
     private async addArrowRelationToMOC(mocFile: TFile, sourceID: string, targetID: string, relationText: string = ''): Promise<void> {
         try {
-            // 读取 MOC 文件内容
-            const content = await this.app.vault.read(mocFile);
-            const lines = content.split('\n');
             const headingTitle = this.plugin.settings.mocHeadingTitle;
-            
-            // 查找思维树标题的范围
-            let headingIndex = -1;
-            let sectionEndIndex = lines.length;
-            
-            for (let i = 0; i < lines.length; i++) {
-                if (lines[i].trim() === `# ${headingTitle}`) {
-                    headingIndex = i;
-                    
-                    for (let j = i + 1; j < lines.length; j++) {
-                        if (lines[j].trim().startsWith('# ')) {
-                            sectionEndIndex = j;
-                            break;
-                        }
-                    }
-                    break;
-                }
-            }
-            
-            if (headingIndex === -1) {
-                new Notice(`未找到标题: # ${headingTitle}`);
-                return;
-            }
-            
-            // 检查是否已存在相同的箭头关系
-            const escapedSource = sourceID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const escapedTarget = targetID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            //const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->\\s*${escapedTarget}\\b`);
-            const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->(?:\\|.*?\\|)?\\s*${escapedTarget}\\b`);
-            for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
-                if (arrowPattern.test(lines[i])) {
+
+            // 检测是否是 Mermaid 格式
+            const { MermaidParser } = await import('src/utils/mermaidParser');
+            const mermaidParser = new MermaidParser(this.app);
+            const content = await this.app.vault.read(mocFile);
+            const mermaidBlock = mermaidParser.extractMermaidBlock(content);
+
+            if (mermaidBlock) {
+                // 使用 Mermaid 格式：通过 parse/modify/save 流程来保留所有 metadata
+                const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
+                const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+
+                // 检查是否已存在相同的箭头关系
+                const key = `${sourceID}->${targetID}`;
+                if (mocData.reverseRelations.has(key)) {
                     new Notice(`箭头关系已存在: ${sourceID} → ${targetID}`);
                     return;
                 }
-            }
-            
-            // 构建箭头关系行
-            const arrowLine = relationText 
-                ? `${sourceID} -- ${relationText} --> ${targetID}`
-                : `${sourceID} --> ${targetID}`;
-            
-            // 查找 ext 行的位置（箭头关系应该插入在 ext 行之前）
-            let insertIndex = sectionEndIndex;
-            for (let i = sectionEndIndex - 1; i > headingIndex; i--) {
-                const line = lines[i].trim();
-                if (line.match(/^%%\s*ext:/)) {
-                    insertIndex = i;
-                    break;
-                }
-            }
-            
-            // 如果找到了 ext 行，在其前面插入；否则在标题末尾插入
-            if (insertIndex < sectionEndIndex) {
-                // 在 ext 行前插入，确保有空行分隔
-                const newLines = [
-                    ...lines.slice(0, insertIndex),
-                    arrowLine,
-                    '',
-                    ...lines.slice(insertIndex)
-                ];
-                await this.app.vault.modify(mocFile, newLines.join('\n'));
+
+                // 添加箭头关系到 reverseRelations
+                mocData.reverseRelations.set(key, {
+                    sourceID: sourceID,
+                    targetID: targetID,
+                    relationText: relationText || ''
+                });
+
+                // 保存更新后的数据（这会保留 crossDomainLinks 等所有 metadata）
+                await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
             } else {
-                // 在标题末尾插入
-                let lastContentIndex = sectionEndIndex - 1;
-                while (lastContentIndex > headingIndex && lines[lastContentIndex].trim() === '') {
-                    lastContentIndex--;
+                // 使用旧的列表格式（保持原有逻辑）
+                const lines = content.split('\n');
+
+                // 查找思维树标题的范围
+                let headingIndex = -1;
+                let sectionEndIndex = lines.length;
+
+                for (let i = 0; i < lines.length; i++) {
+                    if (lines[i].trim() === `# ${headingTitle}`) {
+                        headingIndex = i;
+
+                        for (let j = i + 1; j < lines.length; j++) {
+                            if (lines[j].trim().startsWith('# ')) {
+                                sectionEndIndex = j;
+                                break;
+                            }
+                        }
+                        break;
+                    }
                 }
-                
-                const newLines = [
-                    ...lines.slice(0, lastContentIndex + 1),
-                    '',
-                    arrowLine,
-                    ...lines.slice(sectionEndIndex)
-                ];
-                await this.app.vault.modify(mocFile, newLines.join('\n'));
+
+                if (headingIndex === -1) {
+                    new Notice(`未找到标题: # ${headingTitle}`);
+                    return;
+                }
+
+                // 检查是否已存在相同的箭头关系
+                const escapedSource = sourceID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const escapedTarget = targetID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->(?:\\|.*?\\|)?\\s*${escapedTarget}\\b`);
+                for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
+                    if (arrowPattern.test(lines[i])) {
+                        new Notice(`箭头关系已存在: ${sourceID} → ${targetID}`);
+                        return;
+                    }
+                }
+
+                // 构建箭头关系行
+                const arrowLine = relationText
+                    ? `${sourceID} -- ${relationText} --> ${targetID}`
+                    : `${sourceID} --> ${targetID}`;
+
+                // 查找 ext 行的位置（箭头关系应该插入在 ext 行之前）
+                let insertIndex = sectionEndIndex;
+                for (let i = sectionEndIndex - 1; i > headingIndex; i--) {
+                    const line = lines[i].trim();
+                    if (line.match(/^%%\s*ext:/)) {
+                        insertIndex = i;
+                        break;
+                    }
+                }
+
+                // 如果找到了 ext 行，在其前面插入；否则在标题末尾插入
+                if (insertIndex < sectionEndIndex) {
+                    // 在 ext 行前插入，确保有空行分隔
+                    const newLines = [
+                        ...lines.slice(0, insertIndex),
+                        arrowLine,
+                        '',
+                        ...lines.slice(insertIndex)
+                    ];
+                    await this.app.vault.modify(mocFile, newLines.join('\n'));
+                } else {
+                    // 在标题末尾插入
+                    let lastContentIndex = sectionEndIndex - 1;
+                    while (lastContentIndex > headingIndex && lines[lastContentIndex].trim() === '') {
+                        lastContentIndex--;
+                    }
+
+                    const newLines = [
+                        ...lines.slice(0, lastContentIndex + 1),
+                        '',
+                        arrowLine,
+                        ...lines.slice(sectionEndIndex)
+                    ];
+                    await this.app.vault.modify(mocFile, newLines.join('\n'));
+                }
             }
             
         } catch (error) {
@@ -5872,68 +5900,100 @@ export class ZKIndexView extends ItemView {
                 return;
             }
 
-            // 读取 MOC 文件内容
-            const content = await this.app.vault.read(mocFile);
-            const lines = content.split('\n');
             const headingTitle = this.plugin.settings.mocHeadingTitle;
 
-            // 查找思维树标题的范围
-            let headingIndex = -1;
-            let sectionEndIndex = lines.length;
+            // 检测是否是 Mermaid 格式
+            const { MermaidParser } = await import('src/utils/mermaidParser');
+            const mermaidParser = new MermaidParser(this.app);
+            const content = await this.app.vault.read(mocFile);
+            const mermaidBlock = mermaidParser.extractMermaidBlock(content);
 
-            for (let i = 0; i < lines.length; i++) {
-                if (lines[i].trim() === `# ${headingTitle}`) {
-                    headingIndex = i;
+            if (mermaidBlock) {
+                // 使用 Mermaid 格式：通过 parse/modify/save 流程来保留所有 metadata
+                const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
+                const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
 
-                    for (let j = i + 1; j < lines.length; j++) {
-                        if (lines[j].trim().startsWith('# ')) {
-                            sectionEndIndex = j;
-                            break;
+                // 检查箭头关系是否存在
+                const key = `${sourceID}->${targetID}`;
+                if (!mocData.reverseRelations.has(key)) {
+                    new Notice(`未找到箭头关系: ${sourceID} --> ${targetID}`);
+                    return;
+                }
+
+                // 从 reverseRelations 中删除
+                mocData.reverseRelations.delete(key);
+
+                // 保存更新后的数据（这会保留 crossDomainLinks 等所有 metadata）
+                await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
+
+                // 约束 2：删除后，将目标节点 ID 转换为自由节点格式
+                const freeNodeID = this.generateNextFreeNodeID();
+                await this.mocHandler.updateNodeIDInMOC(mocFile, targetID, freeNodeID);
+
+                new Notice(`已删除箭头关系: ${sourceID} → ${targetID}`);
+                new Notice(`${targetID} 已转换为自由节点: ${freeNodeID}`);
+            } else {
+                // 使用旧的列表格式（保持原有逻辑）
+                const lines = content.split('\n');
+
+                // 查找思维树标题的范围
+                let headingIndex = -1;
+                let sectionEndIndex = lines.length;
+
+                for (let i = 0; i < lines.length; i++) {
+                    if (lines[i].trim() === `# ${headingTitle}`) {
+                        headingIndex = i;
+
+                        for (let j = i + 1; j < lines.length; j++) {
+                            if (lines[j].trim().startsWith('# ')) {
+                                sectionEndIndex = j;
+                                break;
+                            }
                         }
+                        break;
                     }
-                    break;
                 }
-            }
 
-            if (headingIndex === -1) {
-                new Notice(`未找到标题: # ${headingTitle}`);
-                return;
-            }
-
-            // 查找并删除箭头关系行
-            // 箭头关系格式：sourceID -- label --> targetID 或 sourceID --> targetID
-            let arrowLineIndex = -1;
-            const escapedSource = sourceID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const escapedTarget = targetID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->(?:\\|.*?\\|)?\\s*${escapedTarget}\\b`);
-
-            for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
-                const line = lines[i];
-                if (arrowPattern.test(line)) {
-                    arrowLineIndex = i;
-                    break;
+                if (headingIndex === -1) {
+                    new Notice(`未找到标题: # ${headingTitle}`);
+                    return;
                 }
+
+                // 查找并删除箭头关系行
+                // 箭头关系格式：sourceID -- label --> targetID 或 sourceID --> targetID
+                let arrowLineIndex = -1;
+                const escapedSource = sourceID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const escapedTarget = targetID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->(?:\\|.*?\\|)?\\s*${escapedTarget}\\b`);
+
+                for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
+                    const line = lines[i];
+                    if (arrowPattern.test(line)) {
+                        arrowLineIndex = i;
+                        break;
+                    }
+                }
+
+                if (arrowLineIndex === -1) {
+                    new Notice(`未找到箭头关系: ${sourceID} --> ${targetID}`);
+                    return;
+                }
+
+                // 删除该行
+                const newLines = [
+                    ...lines.slice(0, arrowLineIndex),
+                    ...lines.slice(arrowLineIndex + 1)
+                ];
+
+                await this.app.vault.modify(mocFile, newLines.join('\n'));
+
+                // 约束 2：删除后，将目标节点 ID 转换为自由节点格式
+                const freeNodeID = this.generateNextFreeNodeID();
+                await this.mocHandler.updateNodeIDInMOC(mocFile, targetID, freeNodeID);
+
+                new Notice(`已删除箭头关系: ${sourceID} → ${targetID}`);
+                new Notice(`${targetID} 已转换为自由节点: ${freeNodeID}`);
             }
-
-            if (arrowLineIndex === -1) {
-                new Notice(`未找到箭头关系: ${sourceID} --> ${targetID}`);
-                return;
-            }
-
-            // 删除该行
-            const newLines = [
-                ...lines.slice(0, arrowLineIndex),
-                ...lines.slice(arrowLineIndex + 1)
-            ];
-
-            await this.app.vault.modify(mocFile, newLines.join('\n'));
-
-            // 约束 2：删除后，将目标节点 ID 转换为自由节点格式
-            const freeNodeID = this.generateNextFreeNodeID();
-            await this.mocHandler.updateNodeIDInMOC(mocFile, targetID, freeNodeID);
-
-            new Notice(`已删除箭头关系: ${sourceID} → ${targetID}`);
-            new Notice(`${targetID} 已转换为自由节点: ${freeNodeID}`);
         } catch (error) {
             console.error('Failed to delete arrow relation:', error);
             new Notice(`删除箭头关系失败: ${error.message}`);
@@ -5945,81 +6005,107 @@ export class ZKIndexView extends ItemView {
      */
     private async updateArrowRelationLabelInMOC(mocFile: TFile, sourceID: string, targetID: string, newLabel: string): Promise<void> {
         try {
-            // 读取 MOC 文件内容
-            const content = await this.app.vault.read(mocFile);
-            const lines = content.split('\n');
             const headingTitle = this.plugin.settings.mocHeadingTitle;
-            
-            // 查找思维树标题的范围
-            let headingIndex = -1;
-            let sectionEndIndex = lines.length;
-            
-            for (let i = 0; i < lines.length; i++) {
-                if (lines[i].trim() === `# ${headingTitle}`) {
-                    headingIndex = i;
-                    
-                    for (let j = i + 1; j < lines.length; j++) {
-                        if (lines[j].trim().startsWith('# ')) {
-                            sectionEndIndex = j;
-                            break;
-                        }
-                    }
-                    break;
+
+            // 检测是否是 Mermaid 格式
+            const { MermaidParser } = await import('src/utils/mermaidParser');
+            const mermaidParser = new MermaidParser(this.app);
+            const content = await this.app.vault.read(mocFile);
+            const mermaidBlock = mermaidParser.extractMermaidBlock(content);
+
+            if (mermaidBlock) {
+                // 使用 Mermaid 格式：通过 parse/modify/save 流程来保留所有 metadata
+                const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
+                const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+
+                // 检查箭头关系是否存在
+                const key = `${sourceID}->${targetID}`;
+                const relation = mocData.reverseRelations.get(key);
+                if (!relation) {
+                    new Notice(`未找到箭头关系: ${sourceID} --> ${targetID}`);
+                    return;
                 }
-            }
-            
-            if (headingIndex === -1) {
-                new Notice(`未找到标题: # ${headingTitle}`);
-                return;
-            }
-            
-            // 查找箭头关系行
-            // 箭头关系格式：sourceID -- label --> targetID 或 sourceID --> targetID
-            let arrowLineIndex = -1;
-            // 转义正则表达式特殊字符
-            const escapedSource = sourceID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const escapedTarget = targetID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            //const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->\\s*${escapedTarget}\\b`);
-            const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->(?:\\|.*?\\|)?\\s*${escapedTarget}\\b`);
-            
-            for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
-                const line = lines[i];
-                if (arrowPattern.test(line)) {
-                    arrowLineIndex = i;
-                    break;
-                }
-            }
-            
-            if (arrowLineIndex === -1) {
-                new Notice(`未找到箭头关系: ${sourceID} --> ${targetID}`);
-                return;
-            }
-            
-            // 构建新的箭头关系行
-            const oldLine = lines[arrowLineIndex];
-            const indentMatch = oldLine.match(/^(\s*)/);
-            const indent = indentMatch ? indentMatch[1] : '';
-            
-            let newLine: string;
-            if (newLabel) {
-                // 有标签：sourceID -- label --> targetID
-                newLine = `${indent}${sourceID} -- ${newLabel} --> ${targetID}`;
+
+                // 更新关系标签
+                relation.relationText = newLabel;
+                mocData.reverseRelations.set(key, relation);
+
+                // 保存更新后的数据（这会保留 crossDomainLinks 等所有 metadata）
+                await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
             } else {
-                // 无标签：sourceID --> targetID
-                newLine = `${indent}${sourceID} --> ${targetID}`;
+                // 使用旧的列表格式（保持原有逻辑）
+                const lines = content.split('\n');
+
+                // 查找思维树标题的范围
+                let headingIndex = -1;
+                let sectionEndIndex = lines.length;
+
+                for (let i = 0; i < lines.length; i++) {
+                    if (lines[i].trim() === `# ${headingTitle}`) {
+                        headingIndex = i;
+
+                        for (let j = i + 1; j < lines.length; j++) {
+                            if (lines[j].trim().startsWith('# ')) {
+                                sectionEndIndex = j;
+                                break;
+                            }
+                        }
+                        break;
+                    }
+                }
+
+                if (headingIndex === -1) {
+                    new Notice(`未找到标题: # ${headingTitle}`);
+                    return;
+                }
+
+                // 查找箭头关系行
+                // 箭头关系格式：sourceID -- label --> targetID 或 sourceID --> targetID
+                let arrowLineIndex = -1;
+                // 转义正则表达式特殊字符
+                const escapedSource = sourceID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const escapedTarget = targetID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->(?:\\|.*?\\|)?\\s*${escapedTarget}\\b`);
+
+                for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
+                    const line = lines[i];
+                    if (arrowPattern.test(line)) {
+                        arrowLineIndex = i;
+                        break;
+                    }
+                }
+
+                if (arrowLineIndex === -1) {
+                    new Notice(`未找到箭头关系: ${sourceID} --> ${targetID}`);
+                    return;
+                }
+
+                // 构建新的箭头关系行
+                const oldLine = lines[arrowLineIndex];
+                const indentMatch = oldLine.match(/^(\s*)/);
+                const indent = indentMatch ? indentMatch[1] : '';
+
+                let newLine: string;
+                if (newLabel) {
+                    // 有标签：sourceID -- label --> targetID
+                    newLine = `${indent}${sourceID} -- ${newLabel} --> ${targetID}`;
+                } else {
+                    // 无标签：sourceID --> targetID
+                    newLine = `${indent}${sourceID} --> ${targetID}`;
+                }
+
+                // 替换该行
+                const newLines = [
+                    ...lines.slice(0, arrowLineIndex),
+                    newLine,
+                    ...lines.slice(arrowLineIndex + 1)
+                ];
+
+                const newContent = newLines.join('\n');
+
+                // 写回文件
+                await this.app.vault.modify(mocFile, newContent);
             }
-            
-            // 替换该行
-            const newLines = [
-                ...lines.slice(0, arrowLineIndex),
-                newLine,
-                ...lines.slice(arrowLineIndex + 1)
-            ];
-            
-            const newContent = newLines.join('\n');
-            
-            // 写回文件
-            await this.app.vault.modify(mocFile, newContent);
             
             new Notice(`已更新关系文本: ${sourceID} → ${targetID}`);
         } catch (error) {
