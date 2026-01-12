@@ -1106,20 +1106,24 @@ export async function saveMOCStructure(
         throw new Error(`File not found: ${filePath}`);
     }
 
+    // 清除该文件的解析缓存（如果存在）
+    const { MermaidParser } = await import('./mermaidParser');
+    MermaidParser.clearCacheForFile(filePath);
+
     const content = await app.vault.read(file);
-    
+
     // 使用 MermaidSerializer 序列化数据
     const { MermaidSerializer } = await import('./mermaidSerializer');
     const serializer = new MermaidSerializer();
     const mermaidContent = serializer.serialize(data);
-    
+
     // 替换指定标题下的内容
     const updatedContent = replaceHeadingContent(
         content,
         headingTitle,
         mermaidContent
     );
-    
+
     await app.vault.modify(file, updatedContent);
 }
 
