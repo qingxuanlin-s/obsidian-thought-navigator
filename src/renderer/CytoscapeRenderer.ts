@@ -98,7 +98,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             // 启用节点拖动
             autoungrabify: false,
             userZoomingEnabled: true,
-            userPanningEnabled: true,
+            userPanningEnabled: false,  // 禁用默认拖动，改为空格键+拖动
             // 设置缩放范围
             minZoom: 0.1,
             maxZoom: 1.0
@@ -2795,6 +2795,25 @@ case 'dagre':
                 }
             }));
         });
+
+        // 画板拖动视觉反馈（当空格键按下并拖动时）
+        this.cy.on('grab', () => {
+            if (this.cy) {
+                const container = this.cy.container();
+                if (container) {
+                    container.style.cursor = 'grabbing';
+                }
+            }
+        });
+
+        this.cy.on('free', () => {
+            if (this.cy && this.cy.userPanningEnabled()) {
+                const container = this.cy.container();
+                if (container) {
+                    container.style.cursor = 'grab';
+                }
+            }
+        });
     }
 
     /**
@@ -2805,6 +2824,17 @@ case 'dagre':
 
         // 监听键盘按下事件
         const handleKeyDown = (event: KeyboardEvent) => {
+            // 空格键：启用画板拖动
+            if (event.code === 'Space' && !event.repeat) {
+                if (this.cy) {
+                    this.cy.userPanningEnabled(true);
+                    const container = this.cy.container();
+                    if (container) {
+                        container.style.cursor = 'grab';
+                    }
+                }
+            }
+
             // Delete 或 Backspace 键
             if (event.key === 'Delete' || event.key === 'Backspace') {
                 if (!this.cy) return;
@@ -2898,14 +2928,29 @@ case 'dagre':
             }
         };
 
+        // 监听键盘松开事件
+        const handleKeyUp = (event: KeyboardEvent) => {
+            // 空格键：禁用画板拖动
+            if (event.code === 'Space') {
+                if (this.cy) {
+                    this.cy.userPanningEnabled(false);
+                    const container = this.cy.container();
+                    if (container) {
+                        container.style.cursor = 'default';
+                    }
+                }
+            }
+        };
+
         // 添加事件监听器
         this.container.addEventListener('keydown', handleKeyDown);
-        
+        this.container.addEventListener('keyup', handleKeyUp);
+
         // 确保容器可以接收键盘事件
         if (!this.container.hasAttribute('tabindex')) {
             this.container.setAttribute('tabindex', '0');
         }
-        
+
         // 当容器获得焦点时，自动聚焦
         this.container.addEventListener('mousedown', () => {
             this.container?.focus();
