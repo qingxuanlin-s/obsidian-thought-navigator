@@ -4074,33 +4074,26 @@ export class ZKIndexView extends ItemView {
             filePath: string;
         }
     ): Promise<void> {
-        const headingTitle = this.plugin.settings.mocHeadingTitle;
+        await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
+            // 初始化 cross_domain_links 字段
+            if (!mocData.crossDomainLinks) {
+                mocData.crossDomainLinks = {};
+            }
 
-        // 解析当前的 MOC 结构
-        const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
-        const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+            // 添加跨领域关联
+            if (!mocData.crossDomainLinks[nodeId]) {
+                mocData.crossDomainLinks[nodeId] = [];
+            }
 
-        // 初始化 cross_domain_links 字段
-        if (!mocData.crossDomainLinks) {
-            mocData.crossDomainLinks = {};
-        }
+            // 检查是否已经存在该关联
+            const exists = mocData.crossDomainLinks[nodeId].some(
+                (link: any) => link.mocPath === crossDomainLink.mocPath && link.nodeId === crossDomainLink.nodeId
+            );
 
-        // 添加跨领域关联
-        if (!mocData.crossDomainLinks[nodeId]) {
-            mocData.crossDomainLinks[nodeId] = [];
-        }
-
-        // 检查是否已经存在该关联
-        const exists = mocData.crossDomainLinks[nodeId].some(
-            (link: any) => link.mocPath === crossDomainLink.mocPath && link.nodeId === crossDomainLink.nodeId
-        );
-
-        if (!exists) {
-            mocData.crossDomainLinks[nodeId].push(crossDomainLink);
-        }
-
-        // 保存回 MOC 文件
-        await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
+            if (!exists) {
+                mocData.crossDomainLinks[nodeId].push(crossDomainLink);
+            }
+        });
     }
 
     async changeNodeColor(node: ZKNode) {
@@ -5020,231 +5013,64 @@ export class ZKIndexView extends ItemView {
             new Notice("未找到当前 MOC 文件");
             return;
         }
-        
-        const file = this.app.vault.getFileByPath(mocFilePath);
-        if (!file) {
-            new Notice("MOC 文件不存在");
-            return;
-        }
-        
-        try {
-            const headingTitle = this.plugin.settings.mocHeadingTitle;
-            
-            // 读取文件内容
-            let content = await this.app.vault.read(file);
-            
-            // 检测是否是 Mermaid 格式
-            const { MermaidParser } = await import('src/utils/mermaidParser');
-            const mermaidParser = new MermaidParser(this.app);
-            const mermaidBlock = mermaidParser.extractMermaidBlock(content);
-            
-            if (mermaidBlock) {
-                // 使用 Mermaid 格式保存
-                await this.saveFreeNodeToMOCMermaid(result);
-                return;
-            }
-            
-            // 否则使用旧的列表格式
-            const lines = content.split('\n');
-            
-            // 构建新节点的 Markdown
-            const nodeID = result.nodeID || this.generateNextFreeNodeID();
-            
-            // 构建节点行
-            let newNodeLine: string;
-            
-            // 如果有连接关系描述（正向连接的关系），添加到前面
-            if (result.connectionRelation) {
-                newNodeLine = `- ${result.connectionRelation} [[${result.wikiLink}]] \`${nodeID}\``;
-            } else if (result.relationText) {
-                // 兼容旧的 relationText 字段
-                newNodeLine = `- ${result.relationText} [[${result.wikiLink}]] \`${nodeID}\``;
-            } else {
-                newNodeLine = `- [[${result.wikiLink}]] \`${nodeID}\``;
-            }
-            
-            // 使用之前声明的 headingTitle
-            let insertIndex = -1;
-            let insertParentIndex = -1;
-            let foundHeading = false;
-            let extLineIndex = -1;  // ext 数据行的位置
-            
-            // 如果有父节点 ID，尝试查找父节点
-            const hasParentNode = result.connectToNodeID && result.connectToNodeID.trim() !== '';
-            
-            for (let i = 0; i < lines.length; i++) {
-                const originLine = lines[i];
-                
-                // 如果有父节点，查找父节点位置
-                if (hasParentNode && originLine.startsWith( result.connectToNodeID + '' ) && originLine.contains('[[')) {
-                    insertParentIndex = i + 1;   
-                    newNodeLine = (" ".repeat(((originLine.indexOf('-') / 4) + 1) * 4)) + newNodeLine;
-                }
 
-                const line = lines[i].trim();
-
-                // 找到目标标题
-                if (line === `# ${headingTitle}` || line.startsWith(`# ${headingTitle}`)) {
-                    foundHeading = true;
-                    insertIndex = i + 1;
-                    continue;
-                }
-                
-                // 如果已经找到标题，遇到下一个一级标题就停止
-                if (foundHeading && line.startsWith('# ')) {
-                    break;
-                }
-                
-                // 如果已经找到标题，检查是否是 ext 数据行
-                if (foundHeading && line.match(/^%%\s*ext:/)) {
-                    extLineIndex = i;
-                    break;  // 找到 ext 行就停止
-                }
-                
-                // 如果已经找到标题，更新插入位置到最后一个非空行之后
-                if (foundHeading && line.trim() !== '') {
-                    insertIndex = i + 1;
-                }
-            }
-            
-            if (!foundHeading) {
-                new Notice(`未找到标题: # ${headingTitle}`);
-                return;
-            }
-            
-            // 确定最终插入位置
-            let finalInsertIndex: number;
-            if (hasParentNode && insertParentIndex !== -1) {
-                // 如果找到了父节点，插入到父节点下方
-                finalInsertIndex = insertParentIndex;
-            } else if (!hasParentNode) {
-                // 如果没有父节点（创建自由节点）
-                if (extLineIndex !== -1) {
-                    // 如果有 ext 数据行，插入到 ext 行之前
-                    finalInsertIndex = extLineIndex;
-                    // 跳过 ext 行前的空行
-                    while (finalInsertIndex > 0 && lines[finalInsertIndex - 1].trim() === '') {
-                        finalInsertIndex--;
-                    }
-                } else {
-                    // 如果没有 ext 行，插入到标题下方的最后
-                    finalInsertIndex = insertIndex;
-                }
-            } else {
-                // 如果指定了父节点但未找到，提示错误
-                new Notice(`未找到父节点: ${result.connectToNodeID}`);
-                return;
-            }
-            
-            // 在指定位置插入新节点
-            lines.splice(finalInsertIndex, 0, newNodeLine);
-            
-            // 如果是反向连接，添加箭头语法
-            if (result.reverseRelation) {
-                const arrowLine = `- \`${result.reverseRelation.sourceID}\` -- ${result.reverseRelation.relationText} --> \`${result.reverseRelation.targetID}\``;
-                lines.splice(finalInsertIndex + 1, 0, '', arrowLine);
-            }
-            
-            // 重新组合内容
-            content = lines.join('\n');
-            
-            // 保存文件
-            await this.app.vault.modify(file, content);
-            
-            new Notice(`已添加自由节点: ${nodeID}`);
-        } catch (error) {
-            console.error("保存自由节点失败:", error);
-            new Notice("保存失败，请查看控制台");
-        }
-    }
-
-    /**
-     * 保存自由节点到 MOC 文件（Mermaid 格式）
-     */
-    async saveFreeNodeToMOCMermaid(result: {
-        wikiLink: string;
-        nodeID: string;
-        relationText: string;
-        file: TFile | null;
-        connectToNodeID?: string;
-        connectionRelation?: string;
-        reverseRelation?: {
-            sourceID: string;
-            targetID: string;
-            relationText: string;
-        };
-    }) {
-        const mocFilePath = this.plugin.settings.mocCurrentFile;
-        if (!mocFilePath) {
-            new Notice("未找到当前 MOC 文件");
-            return;
-        }
-        
         const mocFile = this.app.vault.getFileByPath(mocFilePath);
         if (!mocFile) {
             new Notice("MOC 文件不存在");
             return;
         }
-        
+
         try {
-            const mocHeadingTitle = this.plugin.settings.mocHeadingTitle;
-            
-            // 解析当前的 MOC 结构
-            const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
-            const mocData = await parseMOCStructure(this.app, mocFile.path, mocHeadingTitle);
-            
-            // 创建新节点
-            const newNode: MOCTreeNode = {
-                wikiLink: result.wikiLink,
-                nodeID: result.nodeID,
-                displayText: result.wikiLink,
-                depth: 0,
-                children: [],
-                file: result.file,
-                relationText: result.connectionRelation || result.relationText || ''
-            };
-            
-            // 如果有父节点，添加为子节点
-            if (result.connectToNodeID) {
-                // 查找父节点
-                const findNodeInTree = (nodes: MOCTreeNode[], nodeID: string): MOCTreeNode | null => {
-                    for (const node of nodes) {
-                        if (node.nodeID === nodeID) {
-                            return node;
-                        }
-                        if (node.children && node.children.length > 0) {
-                            const found = findNodeInTree(node.children, nodeID);
-                            if (found) return found;
-                        }
-                    }
-                    return null;
+            await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
+                // 创建新节点
+                const newNode: MOCTreeNode = {
+                    wikiLink: result.wikiLink,
+                    nodeID: result.nodeID,
+                    displayText: result.wikiLink,
+                    depth: 0,
+                    children: [],
+                    file: result.file,
+                    relationText: result.connectionRelation || result.relationText || ''
                 };
-                
-                const parentNode = findNodeInTree(mocData.nodes, result.connectToNodeID);
-                if (parentNode) {
-                    // 计算深度
-                    newNode.depth = parentNode.depth + 1;
-                    // 添加到父节点的子节点
-                    parentNode.children.push(newNode);
+
+                // 如果有父节点，添加为子节点
+                if (result.connectToNodeID) {
+                    // 查找父节点
+                    const findNodeInTree = (nodes: MOCTreeNode[], nodeID: string): MOCTreeNode | null => {
+                        for (const node of nodes) {
+                            if (node.nodeID === nodeID) {
+                                return node;
+                            }
+                            if (node.children && node.children.length > 0) {
+                                const found = findNodeInTree(node.children, nodeID);
+                                if (found) return found;
+                            }
+                        }
+                        return null;
+                    };
+
+                    const parentNode = findNodeInTree(mocData.nodes, result.connectToNodeID);
+                    if (parentNode) {
+                        // 计算深度
+                        newNode.depth = parentNode.depth + 1;
+                        // 添加到父节点的子节点
+                        parentNode.children.push(newNode);
+                    } else {
+                        throw new Error(`未找到父节点: ${result.connectToNodeID}`);
+                    }
                 } else {
-                    new Notice(`未找到父节点: ${result.connectToNodeID}`);
-                    return;
+                    // 作为根节点添加
+                    newNode.depth = 0;
+                    mocData.nodes.push(newNode);
                 }
-            } else {
-                // 作为根节点添加
-                newNode.depth = 0;
-                mocData.nodes.push(newNode);
-            }
-            
-            // 如果有反向关系，添加到 reverseRelations
-            if (result.reverseRelation) {
-                const key = `${result.reverseRelation.sourceID}->${result.reverseRelation.targetID}`;
-                mocData.reverseRelations.set(key, result.reverseRelation);
-            }
-            
-            // 保存更新后的数据
-            await saveMOCStructure(this.app, mocFile.path, mocHeadingTitle, mocData);
-            
+
+                // 如果有反向关系，添加到 reverseRelations
+                if (result.reverseRelation) {
+                    const key = `${result.reverseRelation.sourceID}->${result.reverseRelation.targetID}`;
+                    mocData.reverseRelations.set(key, result.reverseRelation);
+                }
+            });
+
             new Notice(`已添加自由节点: ${result.nodeID}`);
         } catch (error) {
             console.error("保存自由节点失败:", error);
@@ -5285,13 +5111,7 @@ export class ZKIndexView extends ItemView {
      * 保存分组到 MOC 文件
      */
     private async saveGroupToMOC(mocFile: TFile, group: { id: string; label: string; nodeIds: string[]; color?: string }): Promise<void> {
-        try {
-            const headingTitle = this.plugin.settings.mocHeadingTitle;
-            
-            // 解析当前的 MOC 结构
-            const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
-            const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
-            
+        await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
             // 添加或更新分组
             const existingGroupIndex = mocData.groups.findIndex((g: any) => g.id === group.id);
             if (existingGroupIndex !== -1) {
@@ -5299,15 +5119,9 @@ export class ZKIndexView extends ItemView {
             } else {
                 mocData.groups.push(group);
             }
-            
-            // 保存更新后的数据
-            await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
-            
-            new Notice(`已创建分组: ${group.label}`);
-        } catch (error) {
-            console.error('Failed to save group:', error);
-            new Notice(`保存分组失败: ${error.message}`);
-        }
+        });
+
+        new Notice(`已创建分组: ${group.label}`);
     }
 
     /**
@@ -5315,84 +5129,16 @@ export class ZKIndexView extends ItemView {
      */
     private async renameGroupInMOC(mocFile: TFile, groupId: string, newLabel: string): Promise<void> {
         try {
-            // 读取 MOC 文件内容
-            const content = await this.app.vault.read(mocFile);
-            const lines = content.split('\n');
-            const headingTitle = this.plugin.settings.mocHeadingTitle;
-            
-            // 查找思维树标题的范围
-            let headingIndex = -1;
-            let sectionEndIndex = lines.length;
-            
-            for (let i = 0; i < lines.length; i++) {
-                if (lines[i].trim() === `# ${headingTitle}`) {
-                    headingIndex = i;
-                    
-                    for (let j = i + 1; j < lines.length; j++) {
-                        if (lines[j].trim().startsWith('# ')) {
-                            sectionEndIndex = j;
-                            break;
-                        }
-                    }
-                    break;
+            await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
+                const groupIndex = mocData.groups.findIndex((g: any) => g.id === groupId);
+                if (groupIndex === -1) {
+                    throw new Error(`未找到分组: ${groupId}`);
                 }
-            }
-            
-            if (headingIndex === -1) {
-                new Notice(`未找到标题: # ${headingTitle}`);
-                return;
-            }
-            
-            // 查找 ext 行
-            let posLineIndex = -1;
-            let nodePositions: Record<string, { x: number; y: number }> = {};
-            let groups: any[] = [];
-            
-            for (let i = sectionEndIndex - 1; i > headingIndex; i--) {
-                const line = lines[i].trim();
-                const match = line.match(/^%%\s*ext:\s*(\{.*\})\s*%%$/);
-                if (match) {
-                    try {
-                        const extData = JSON.parse(match[1]);
-                        if (extData.node_positions) {
-                            posLineIndex = i;
-                            nodePositions = extData.node_positions;
-                            groups = extData.groups || [];
-                            break;
-                        }
-                    } catch (e) {
-                        console.error('Failed to parse ext data:', e);
-                    }
-                }
-            }
-            
-            // 查找并更新分组
-            const groupIndex = groups.findIndex((g: any) => g.id === groupId);
-            if (groupIndex === -1) {
-                new Notice(`未找到分组: ${groupId}`);
-                return;
-            }
-            
-            const oldLabel = groups[groupIndex].label;
-            groups[groupIndex].label = newLabel;
-            
-            // 构建新的 ext 行
-            const extData: any = { node_positions: nodePositions, groups };
-            const newPosLine = `%% ext:${JSON.stringify(extData)} %%`;
-            
-            // 重新构建文件内容
-            const newLines = [
-                ...lines.slice(0, posLineIndex),
-                newPosLine,
-                ...lines.slice(posLineIndex + 1)
-            ];
-            
-            const newContent = newLines.join('\n');
-            
-            // 写回文件
-            await this.app.vault.modify(mocFile, newContent);
-            
-            
+
+                mocData.groups[groupIndex].label = newLabel;
+            });
+
+            new Notice(`已重命名分组: ${newLabel}`);
         } catch (error) {
             console.error('Failed to rename group:', error);
             new Notice(`重命名分组失败: ${error.message}`);
@@ -5770,24 +5516,11 @@ export class ZKIndexView extends ItemView {
      */
     private async addArrowRelationToMOC(mocFile: TFile, sourceID: string, targetID: string, relationText: string = ''): Promise<void> {
         try {
-            const headingTitle = this.plugin.settings.mocHeadingTitle;
-
-            // 检测是否是 Mermaid 格式
-            const { MermaidParser } = await import('src/utils/mermaidParser');
-            const mermaidParser = new MermaidParser(this.app);
-            const content = await this.app.vault.read(mocFile);
-            const mermaidBlock = mermaidParser.extractMermaidBlock(content);
-
-            if (mermaidBlock) {
-                // 使用 Mermaid 格式：通过 parse/modify/save 流程来保留所有 metadata
-                const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
-                const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
-
+            await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
                 // 检查是否已存在相同的箭头关系
                 const key = `${sourceID}->${targetID}`;
                 if (mocData.reverseRelations.has(key)) {
-                    new Notice(`箭头关系已存在: ${sourceID} → ${targetID}`);
-                    return;
+                    throw new Error(`箭头关系已存在: ${sourceID} → ${targetID}`);
                 }
 
                 // 添加箭头关系到 reverseRelations
@@ -5796,92 +5529,14 @@ export class ZKIndexView extends ItemView {
                     targetID: targetID,
                     relationText: relationText || ''
                 });
-
-                // 保存更新后的数据（这会保留 crossDomainLinks 等所有 metadata）
-                await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
-            } else {
-                // 使用旧的列表格式（保持原有逻辑）
-                const lines = content.split('\n');
-
-                // 查找思维树标题的范围
-                let headingIndex = -1;
-                let sectionEndIndex = lines.length;
-
-                for (let i = 0; i < lines.length; i++) {
-                    if (lines[i].trim() === `# ${headingTitle}`) {
-                        headingIndex = i;
-
-                        for (let j = i + 1; j < lines.length; j++) {
-                            if (lines[j].trim().startsWith('# ')) {
-                                sectionEndIndex = j;
-                                break;
-                            }
-                        }
-                        break;
-                    }
-                }
-
-                if (headingIndex === -1) {
-                    new Notice(`未找到标题: # ${headingTitle}`);
-                    return;
-                }
-
-                // 检查是否已存在相同的箭头关系
-                const escapedSource = sourceID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const escapedTarget = targetID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->(?:\\|.*?\\|)?\\s*${escapedTarget}\\b`);
-                for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
-                    if (arrowPattern.test(lines[i])) {
-                        new Notice(`箭头关系已存在: ${sourceID} → ${targetID}`);
-                        return;
-                    }
-                }
-
-                // 构建箭头关系行
-                const arrowLine = relationText
-                    ? `${sourceID} -- ${relationText} --> ${targetID}`
-                    : `${sourceID} --> ${targetID}`;
-
-                // 查找 ext 行的位置（箭头关系应该插入在 ext 行之前）
-                let insertIndex = sectionEndIndex;
-                for (let i = sectionEndIndex - 1; i > headingIndex; i--) {
-                    const line = lines[i].trim();
-                    if (line.match(/^%%\s*ext:/)) {
-                        insertIndex = i;
-                        break;
-                    }
-                }
-
-                // 如果找到了 ext 行，在其前面插入；否则在标题末尾插入
-                if (insertIndex < sectionEndIndex) {
-                    // 在 ext 行前插入，确保有空行分隔
-                    const newLines = [
-                        ...lines.slice(0, insertIndex),
-                        arrowLine,
-                        '',
-                        ...lines.slice(insertIndex)
-                    ];
-                    await this.app.vault.modify(mocFile, newLines.join('\n'));
-                } else {
-                    // 在标题末尾插入
-                    let lastContentIndex = sectionEndIndex - 1;
-                    while (lastContentIndex > headingIndex && lines[lastContentIndex].trim() === '') {
-                        lastContentIndex--;
-                    }
-
-                    const newLines = [
-                        ...lines.slice(0, lastContentIndex + 1),
-                        '',
-                        arrowLine,
-                        ...lines.slice(sectionEndIndex)
-                    ];
-                    await this.app.vault.modify(mocFile, newLines.join('\n'));
-                }
-            }
-            
+            });
         } catch (error) {
             console.error('Failed to add arrow relation:', error);
-            throw error;
+            if (error.message.includes('已存在')) {
+                new Notice(error.message);
+            } else {
+                throw error;
+            }
         }
     }
 
@@ -5900,100 +5555,23 @@ export class ZKIndexView extends ItemView {
                 return;
             }
 
-            const headingTitle = this.plugin.settings.mocHeadingTitle;
-
-            // 检测是否是 Mermaid 格式
-            const { MermaidParser } = await import('src/utils/mermaidParser');
-            const mermaidParser = new MermaidParser(this.app);
-            const content = await this.app.vault.read(mocFile);
-            const mermaidBlock = mermaidParser.extractMermaidBlock(content);
-
-            if (mermaidBlock) {
-                // 使用 Mermaid 格式：通过 parse/modify/save 流程来保留所有 metadata
-                const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
-                const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
-
+            await this.mocHandler.modifyMOCData(mocFile, async (mocData) => {
                 // 检查箭头关系是否存在
                 const key = `${sourceID}->${targetID}`;
                 if (!mocData.reverseRelations.has(key)) {
-                    new Notice(`未找到箭头关系: ${sourceID} --> ${targetID}`);
-                    return;
+                    throw new Error(`未找到箭头关系: ${sourceID} --> ${targetID}`);
                 }
 
                 // 从 reverseRelations 中删除
                 mocData.reverseRelations.delete(key);
+            });
 
-                // 保存更新后的数据（这会保留 crossDomainLinks 等所有 metadata）
-                await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
+            // 约束 2：删除后，将目标节点 ID 转换为自由节点格式
+            const freeNodeID = this.generateNextFreeNodeID();
+            await this.mocHandler.updateNodeIDInMOC(mocFile, targetID, freeNodeID);
 
-                // 约束 2：删除后，将目标节点 ID 转换为自由节点格式
-                const freeNodeID = this.generateNextFreeNodeID();
-                await this.mocHandler.updateNodeIDInMOC(mocFile, targetID, freeNodeID);
-
-                new Notice(`已删除箭头关系: ${sourceID} → ${targetID}`);
-                new Notice(`${targetID} 已转换为自由节点: ${freeNodeID}`);
-            } else {
-                // 使用旧的列表格式（保持原有逻辑）
-                const lines = content.split('\n');
-
-                // 查找思维树标题的范围
-                let headingIndex = -1;
-                let sectionEndIndex = lines.length;
-
-                for (let i = 0; i < lines.length; i++) {
-                    if (lines[i].trim() === `# ${headingTitle}`) {
-                        headingIndex = i;
-
-                        for (let j = i + 1; j < lines.length; j++) {
-                            if (lines[j].trim().startsWith('# ')) {
-                                sectionEndIndex = j;
-                                break;
-                            }
-                        }
-                        break;
-                    }
-                }
-
-                if (headingIndex === -1) {
-                    new Notice(`未找到标题: # ${headingTitle}`);
-                    return;
-                }
-
-                // 查找并删除箭头关系行
-                // 箭头关系格式：sourceID -- label --> targetID 或 sourceID --> targetID
-                let arrowLineIndex = -1;
-                const escapedSource = sourceID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const escapedTarget = targetID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->(?:\\|.*?\\|)?\\s*${escapedTarget}\\b`);
-
-                for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
-                    const line = lines[i];
-                    if (arrowPattern.test(line)) {
-                        arrowLineIndex = i;
-                        break;
-                    }
-                }
-
-                if (arrowLineIndex === -1) {
-                    new Notice(`未找到箭头关系: ${sourceID} --> ${targetID}`);
-                    return;
-                }
-
-                // 删除该行
-                const newLines = [
-                    ...lines.slice(0, arrowLineIndex),
-                    ...lines.slice(arrowLineIndex + 1)
-                ];
-
-                await this.app.vault.modify(mocFile, newLines.join('\n'));
-
-                // 约束 2：删除后，将目标节点 ID 转换为自由节点格式
-                const freeNodeID = this.generateNextFreeNodeID();
-                await this.mocHandler.updateNodeIDInMOC(mocFile, targetID, freeNodeID);
-
-                new Notice(`已删除箭头关系: ${sourceID} → ${targetID}`);
-                new Notice(`${targetID} 已转换为自由节点: ${freeNodeID}`);
-            }
+            new Notice(`已删除箭头关系: ${sourceID} → ${targetID}`);
+            new Notice(`${targetID} 已转换为自由节点: ${freeNodeID}`);
         } catch (error) {
             console.error('Failed to delete arrow relation:', error);
             new Notice(`删除箭头关系失败: ${error.message}`);
@@ -6005,108 +5583,19 @@ export class ZKIndexView extends ItemView {
      */
     private async updateArrowRelationLabelInMOC(mocFile: TFile, sourceID: string, targetID: string, newLabel: string): Promise<void> {
         try {
-            const headingTitle = this.plugin.settings.mocHeadingTitle;
-
-            // 检测是否是 Mermaid 格式
-            const { MermaidParser } = await import('src/utils/mermaidParser');
-            const mermaidParser = new MermaidParser(this.app);
-            const content = await this.app.vault.read(mocFile);
-            const mermaidBlock = mermaidParser.extractMermaidBlock(content);
-
-            if (mermaidBlock) {
-                // 使用 Mermaid 格式：通过 parse/modify/save 流程来保留所有 metadata
-                const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
-                const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
-
+            await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
                 // 检查箭头关系是否存在
                 const key = `${sourceID}->${targetID}`;
                 const relation = mocData.reverseRelations.get(key);
                 if (!relation) {
-                    new Notice(`未找到箭头关系: ${sourceID} --> ${targetID}`);
-                    return;
+                    throw new Error(`未找到箭头关系: ${sourceID} --> ${targetID}`);
                 }
 
                 // 更新关系标签
                 relation.relationText = newLabel;
                 mocData.reverseRelations.set(key, relation);
+            });
 
-                // 保存更新后的数据（这会保留 crossDomainLinks 等所有 metadata）
-                await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
-            } else {
-                // 使用旧的列表格式（保持原有逻辑）
-                const lines = content.split('\n');
-
-                // 查找思维树标题的范围
-                let headingIndex = -1;
-                let sectionEndIndex = lines.length;
-
-                for (let i = 0; i < lines.length; i++) {
-                    if (lines[i].trim() === `# ${headingTitle}`) {
-                        headingIndex = i;
-
-                        for (let j = i + 1; j < lines.length; j++) {
-                            if (lines[j].trim().startsWith('# ')) {
-                                sectionEndIndex = j;
-                                break;
-                            }
-                        }
-                        break;
-                    }
-                }
-
-                if (headingIndex === -1) {
-                    new Notice(`未找到标题: # ${headingTitle}`);
-                    return;
-                }
-
-                // 查找箭头关系行
-                // 箭头关系格式：sourceID -- label --> targetID 或 sourceID --> targetID
-                let arrowLineIndex = -1;
-                // 转义正则表达式特殊字符
-                const escapedSource = sourceID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const escapedTarget = targetID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const arrowPattern = new RegExp(`\\b${escapedSource}\\s*(?:--.*?)?-->(?:\\|.*?\\|)?\\s*${escapedTarget}\\b`);
-
-                for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
-                    const line = lines[i];
-                    if (arrowPattern.test(line)) {
-                        arrowLineIndex = i;
-                        break;
-                    }
-                }
-
-                if (arrowLineIndex === -1) {
-                    new Notice(`未找到箭头关系: ${sourceID} --> ${targetID}`);
-                    return;
-                }
-
-                // 构建新的箭头关系行
-                const oldLine = lines[arrowLineIndex];
-                const indentMatch = oldLine.match(/^(\s*)/);
-                const indent = indentMatch ? indentMatch[1] : '';
-
-                let newLine: string;
-                if (newLabel) {
-                    // 有标签：sourceID -- label --> targetID
-                    newLine = `${indent}${sourceID} -- ${newLabel} --> ${targetID}`;
-                } else {
-                    // 无标签：sourceID --> targetID
-                    newLine = `${indent}${sourceID} --> ${targetID}`;
-                }
-
-                // 替换该行
-                const newLines = [
-                    ...lines.slice(0, arrowLineIndex),
-                    newLine,
-                    ...lines.slice(arrowLineIndex + 1)
-                ];
-
-                const newContent = newLines.join('\n');
-
-                // 写回文件
-                await this.app.vault.modify(mocFile, newContent);
-            }
-            
             new Notice(`已更新关系文本: ${sourceID} → ${targetID}`);
         } catch (error) {
             console.error('Failed to update arrow relation label:', error);
@@ -6125,83 +5614,28 @@ export class ZKIndexView extends ItemView {
         label: string
     ): Promise<void> {
         try {
-            const content = await this.app.vault.read(mocFile);
-            const lines = content.split('\n');
-            const headingTitle = this.plugin.settings.mocHeadingTitle;
-
-            // 查找思维树标题的范围
-            let headingIndex = -1;
-            let sectionEndIndex = lines.length;
-
-            for (let i = 0; i < lines.length; i++) {
-                if (lines[i].trim() === `# ${headingTitle}`) {
-                    headingIndex = i;
-
-                    for (let j = i + 1; j < lines.length; j++) {
-                        if (lines[j].trim().startsWith('# ')) {
-                            sectionEndIndex = j;
-                            break;
-                        }
-                    }
-                    break;
+            await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
+                // 查找并删除旧的关系
+                const oldKey = `${oldSource}->${target}`;
+                const oldRelation = mocData.reverseRelations.get(oldKey);
+                if (!oldRelation) {
+                    throw new Error(`未找到箭头关系: ${oldSource} --> ${target}`);
                 }
-            }
 
-            if (headingIndex === -1) {
-                new Notice(`未找到标题: # ${headingTitle}`);
-                return;
-            }
+                // 删除旧关系
+                mocData.reverseRelations.delete(oldKey);
 
-            // 查找箭头关系行
-            let arrowLineIndex = -1;
-            const escapedOldSource = oldSource.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const escapedTarget = target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const arrowPattern = new RegExp(`\\b${escapedOldSource}\\s*(?:--.*?)?-->(?:\\|.*?\\|)?\\s*${escapedTarget}\\b`);
+                // 添加新关系（保留旧标签或使用新标签）
+                const newKey = `${newSource}->${target}`;
+                const finalLabel = label || oldRelation.relationText || '';
+                mocData.reverseRelations.set(newKey, {
+                    sourceID: newSource,
+                    targetID: target,
+                    relationText: finalLabel
+                });
+            });
 
-            for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
-                const line = lines[i];
-                if (arrowPattern.test(line)) {
-                    arrowLineIndex = i;
-                    break;
-                }
-            }
-
-            if (arrowLineIndex === -1) {
-                console.error(`未找到箭头关系: ${oldSource} --> ${target}`);
-                console.error(`搜索模式: ${arrowPattern}`);
-                console.error(`搜索范围: 行 ${headingIndex + 1} 到 ${sectionEndIndex}`);
-                new Notice(`未找到箭头关系: ${oldSource} --> ${target}`);
-                return;
-            }
-
-            // 构建新的箭头关系行
-            const oldLine = lines[arrowLineIndex];
-            const indentMatch = oldLine.match(/^(\s*)/);
-            const indent = indentMatch ? indentMatch[1] : '';
-
-            // 提取旧的标签（如果有）
-            const oldLabelMatch = oldLine.match(/--\s*(.+?)\s*-->/);
-            const oldLabel = oldLabelMatch ? oldLabelMatch[1] : null;
-
-            let newLine: string;
-            // 如果有旧标签或新标签，使用标签格式
-            if (oldLabel || label) {
-                const finalLabel = label || oldLabel;
-                newLine = `${indent}${newSource} -- ${finalLabel} --> ${target}`;
-            } else {
-                newLine = `${indent}${newSource} --> ${target}`;
-            }
-
-            console.log(`更新边起点: ${oldLine} => ${newLine}`);
-
-            // 替换该行
-            const newLines = [
-                ...lines.slice(0, arrowLineIndex),
-                newLine,
-                ...lines.slice(arrowLineIndex + 1)
-            ];
-
-            await this.app.vault.modify(mocFile, newLines.join('\n'));
+            console.log(`已更新边起点: ${oldSource} → ${newSource} --> ${target}`);
         } catch (error) {
             console.error('Failed to update edge source:', error);
             throw error;
@@ -6213,166 +5647,24 @@ export class ZKIndexView extends ItemView {
      */
     private async updateEdgeTargetInMOC(
         mocFile: TFile,
-        source: string,
+        _source: string,
         oldTarget: string,
         newTarget: string,
-        label: string
+        _label: string
     ): Promise<void> {
         try {
-            console.log(`🎯 updateEdgeTargetInMOC 被调用`);
-            console.log(`   source=${source}`);
-            console.log(`   oldTarget=${oldTarget}`);
-            console.log(`   newTarget=${newTarget}`);
-            console.log(`   label=${label}`);
+            // 交换节点ID：使用 updateNodeIDInMOC 来完成ID互换
+            // 第一步：将 oldTarget 临时改为 tempID
+            const tempID = `temp_${Date.now()}`;
+            await this.mocHandler.updateNodeIDInMOC(mocFile, oldTarget, tempID);
 
-            // 所有情况都需要 ID 互换（包括自由节点）
-            console.log(`✅ 执行 ID 互换: ${oldTarget} <-> ${newTarget}`);
-            console.log(`📋 将执行以下操作:`);
-            console.log(`   1. 互换节点定义: ${oldTarget} <-> ${newTarget}`);
-            console.log(`   2. 更新所有箭头关系中的 ID 引用`);
-            console.log(`   3. 交换 ext 数据中的节点位置和边弧度`);
-            console.log(`📝 互换前: oldTarget=${oldTarget}, newTarget=${newTarget}`);
+            // 第二步：将 newTarget 改为 oldTarget（继承ID）
+            await this.mocHandler.updateNodeIDInMOC(mocFile, newTarget, oldTarget);
 
-            // 直接在 MOC 文件中交换两个节点的定义和所有引用
-            const content = await this.app.vault.read(mocFile);
-            const lines = content.split('\n');
-            const headingTitle = this.plugin.settings.mocHeadingTitle;
+            // 第三步：将 tempID 改为 newTarget
+            await this.mocHandler.updateNodeIDInMOC(mocFile, tempID, newTarget);
 
-            // 查找思维树标题的范围
-            let headingIndex = -1;
-            let sectionEndIndex = lines.length;
-
-            for (let i = 0; i < lines.length; i++) {
-                if (lines[i].trim() === `# ${headingTitle}`) {
-                    headingIndex = i;
-
-                    for (let j = i + 1; j < lines.length; j++) {
-                        if (lines[j].trim().startsWith('# ')) {
-                            sectionEndIndex = j;
-                            break;
-                        }
-                    }
-                    break;
-                }
-            }
-
-            if (headingIndex === -1) {
-                new Notice(`未找到标题: # ${headingTitle}`);
-                return;
-            }
-
-            // 第一步：找到两个节点的定义行
-            let oldTargetLineIndex = -1;
-            let newTargetLineIndex = -1;
-            let oldTargetLine = '';
-            let newTargetLine = '';
-
-            const escapedOldTarget = oldTarget.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const escapedNewTarget = newTarget.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const nodePatternOld = new RegExp(`^\\s*${escapedOldTarget}\\s*\\[`);
-            const nodePatternNew = new RegExp(`^\\s*${escapedNewTarget}\\s*\\[`);
-
-            for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
-                if (oldTargetLineIndex === -1 && nodePatternOld.test(lines[i])) {
-                    oldTargetLineIndex = i;
-                    oldTargetLine = lines[i];
-                }
-                if (newTargetLineIndex === -1 && nodePatternNew.test(lines[i])) {
-                    newTargetLineIndex = i;
-                    newTargetLine = lines[i];
-                }
-                if (oldTargetLineIndex !== -1 && newTargetLineIndex !== -1) {
-                    break;
-                }
-            }
-
-            if (oldTargetLineIndex === -1 || newTargetLineIndex === -1) {
-                new Notice(`未找到节点定义`);
-                return;
-            }
-
-            console.log(`找到节点定义: oldTarget 在行 ${oldTargetLineIndex}, newTarget 在行 ${newTargetLineIndex}`);
-
-            // 第二步：交换两个节点的 ID（保持原行的其他内容不变）
-            const oldTargetIndent = oldTargetLine.match(/^(\s*)/)?.[1] || '';
-            const newTargetIndent = newTargetLine.match(/^(\s*)/)?.[1] || '';
-
-            // 提取节点定义中的内容部分（ID 之后的部分）
-            const oldTargetContent = oldTargetLine.replace(nodePatternOld, '');
-            const newTargetContent = newTargetLine.replace(nodePatternNew, '');
-
-            // 构建新行：交换 ID，保持内容
-            const newOldTargetLine = `${oldTargetIndent}${newTarget}${oldTargetContent}`;
-            const newNewTargetLine = `${newTargetIndent}${oldTarget}${newTargetContent}`;
-
-            lines[oldTargetLineIndex] = newOldTargetLine;
-            lines[newTargetLineIndex] = newNewTargetLine;
-
-            console.log(`步骤 1⃣: 交换节点定义行`);
-            console.log(`  ${oldTarget} 行 ${oldTargetLineIndex}: ${oldTargetLine}`);
-            console.log(`  ${newTarget} 行 ${newTargetLineIndex}: ${newTargetLine}`);
-            console.log(`  → 交换后:`);
-            console.log(`    ${oldTarget} 变为: ${newOldTargetLine}`);
-            console.log(`    ${newTarget} 变为: ${newNewTargetLine}`);
-
-            // 第三步：更新所有引用（箭头关系）
-            for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
-                if (!lines[i].includes('-->')) continue;
-
-                // 替换所有 oldTarget 为 newTarget，newTarget 为 oldTarget
-                let line = lines[i];
-
-                // 同时替换，避免重复替换
-                // 先替换为临时标记
-                line = line.replace(new RegExp(`\\b${escapedOldTarget}\\b`, 'g'), '<<<OLD>>>');
-                line = line.replace(new RegExp(`\\b${escapedNewTarget}\\b`, 'g'), '<<<NEW>>>');
-
-                // 再交换
-                line = line.replace(/<<<OLD>>>/g, newTarget);
-                line = line.replace(/<<<NEW>>>/g, oldTarget);
-
-                lines[i] = line;
-            }
-
-            console.log(`步骤 2⃣: 更新所有箭头关系中的 ID 引用`);
-            console.log(`  已将 ${oldTarget} → ${newTarget}`);
-            console.log(`  已将 ${newTarget} → ${oldTarget}`);
-
-            // 第四步：更新 ext 数据中的节点位置
-            const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
-            const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
-
-            // 交换节点位置
-            if (mocData.nodePositions) {
-                const oldPos = mocData.nodePositions[oldTarget];
-                const newPos = mocData.nodePositions[newTarget];
-
-                if (oldPos && newPos) {
-                    // 交换位置数据
-                    mocData.nodePositions[newTarget] = oldPos;
-                    mocData.nodePositions[oldTarget] = newPos;
-                }
-            }
-
-            // 更新边弧度 key
-            if (mocData.edgeCurvatures) {
-                const newCurvatures: Record<string, any> = {};
-                Object.entries(mocData.edgeCurvatures).forEach(([key, value]) => {
-                    let newKey = key;
-                    newKey = newKey.replace(new RegExp(`\\b${escapedOldTarget}\\b`, 'g'), '<<<OLD>>>');
-                    newKey = newKey.replace(new RegExp(`\\b${escapedNewTarget}\\b`, 'g'), '<<<NEW>>>');
-                    newKey = newKey.replace(/<<<OLD>>>/g, newTarget);
-                    newKey = newKey.replace(/<<<NEW>>>/g, oldTarget);
-                    newCurvatures[newKey] = value;
-                });
-                mocData.edgeCurvatures = newCurvatures;
-            }
-
-            await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
-
-            console.log(`步骤 3⃣: 更新 ext 数据完成`);
-            console.log(`✅ ID 互换完成: ${oldTarget} <-> ${newTarget}`);
-            console.log(`📝 注意: 节点定义已互换，文件引用也随之互换`);
+            console.log(`✅ 已完成 ID 互换: ${oldTarget} <-> ${newTarget}`);
         } catch (error) {
             console.error('Failed to update edge target:', error);
             throw error;
@@ -6563,13 +5855,7 @@ export class ZKIndexView extends ItemView {
         crossDomainLink: any,
         position: { x: number; y: number }
     ): Promise<void> {
-        try {
-            const headingTitle = this.plugin.settings.mocHeadingTitle;
-
-            // 解析当前的 MOC 结构
-            const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
-            const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
-
+        await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
             const roundedPosition = {
                 x: Math.round(position.x * 100) / 100,
                 y: Math.round(position.y * 100) / 100
@@ -6608,14 +5894,7 @@ export class ZKIndexView extends ItemView {
                     position: roundedPosition
                 });
             }
-
-            // 保存更新后的数据
-            await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
-
-        } catch (error) {
-            console.error('Failed to save cross-domain node position:', error);
-            new Notice(`保存跨领域节点位置失败: ${error.message}`);
-        }
+        });
     }
 
     /**
