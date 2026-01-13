@@ -57,12 +57,19 @@ export class MermaidParser {
      */
     static clearCacheForFile(filePath: string): void {
         let cleared = 0;
+        const keysBefore = Array.from(MermaidParser.parseCache.keys());
+        console.log(`[MermaidParser.clearCacheForFile] 清除前缓存:`, keysBefore);
+
         for (const key of MermaidParser.parseCache.keys()) {
             if (key.startsWith(`${filePath}:`)) {
+                console.log(`[MermaidParser.clearCacheForFile] 删除缓存 key:`, key);
                 MermaidParser.parseCache.delete(key);
                 cleared++;
             }
         }
+
+        const keysAfter = Array.from(MermaidParser.parseCache.keys());
+        console.log(`[MermaidParser.clearCacheForFile] 清除后缓存:`, keysAfter, `共删除 ${cleared} 个`);
     }
 
     /**
@@ -271,11 +278,17 @@ export class MermaidParser {
         try {
             const metadata = JSON.parse(match[1]);
 
+            // 调试日志：检查解析出的 node_colors
+            const parsedNodeColors = metadata.node_colors || {};
+            if (Object.keys(parsedNodeColors).length > 0) {
+                console.log(`[MermaidParser] 解析到 node_colors:`, parsedNodeColors);
+            }
+
             return {
                 nodePositions: metadata.node_positions || {},
                 groups: metadata.groups || [],
                 edgeCurvatures: metadata.edge_curvatures || {},
-                nodeColors: metadata.node_colors || {},
+                nodeColors: parsedNodeColors,
                 crossDomainLinks: metadata.cross_domain_links || {}
             };
         } catch (e) {
@@ -303,16 +316,20 @@ export class MermaidParser {
         headingTitle: string
     ): Promise<MOCParseResult> {
         const startTime = Date.now();
-        
+
         // 检查缓存
         const file = this.app.vault.getFileByPath(filePath);
         if (file) {
             const cacheKey = `${filePath}:${file.stat.mtime}`;
+            console.log(`[MermaidParser.parse] 检查缓存 key:`, cacheKey);
             const cached = MermaidParser.parseCache.get(cacheKey);
             if (cached) {
+                console.log(`[MermaidParser.parse] 缓存命中！返回缓存数据`);
                 return cached;
             }
-            
+
+            console.log(`[MermaidParser.parse] 缓存未命中，开始解析`);
+
             // 清除该文件的旧缓存（mtime 不同的）
             for (const key of MermaidParser.parseCache.keys()) {
                 if (key.startsWith(`${filePath}:`)) {
@@ -320,7 +337,7 @@ export class MermaidParser {
                 }
             }
         }
-        
+
         // 重置错误和警告
         this.errors = [];
         this.warnings = [];
@@ -476,8 +493,9 @@ export class MermaidParser {
         // 保存到缓存
         if (file) {
             const cacheKey = `${filePath}:${file.stat.mtime}`;
+            console.log(`[MermaidParser.parse] 保存到缓存 key:`, cacheKey, `node_colors:`, result.nodeColors);
             MermaidParser.parseCache.set(cacheKey, result);
-            
+
             // 限制缓存大小（最多保留 50 个）
             if (MermaidParser.parseCache.size > 50) {
                 const firstKey = MermaidParser.parseCache.keys().next().value;
