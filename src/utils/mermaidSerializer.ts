@@ -69,15 +69,20 @@ export class MermaidSerializer {
      */
     serializeMetadata(data: MOCParseResult): string {
         const metadata: any = {
-            node_positions: data.nodePositions,
-            groups: data.groups,
-            edge_curvatures: data.edgeCurvatures,
-            node_colors: data.nodeColors
+            node_positions: data.nodePositions || {},
+            groups: data.groups || [],
+            edge_curvatures: data.edgeCurvatures || {},
+            node_colors: data.nodeColors || {}
         };
 
         // 添加跨领域关联（如果存在）
         if (data.crossDomainLinks && Object.keys(data.crossDomainLinks).length > 0) {
             metadata.cross_domain_links = data.crossDomainLinks;
+        }
+
+        // 调试日志：检查要序列化的 node_colors
+        if (data.nodeColors && Object.keys(data.nodeColors).length > 0) {
+            console.log(`[MermaidSerializer] 序列化 node_colors:`, data.nodeColors);
         }
 
         const jsonStr = JSON.stringify(metadata);

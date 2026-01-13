@@ -5150,98 +5150,18 @@ export class ZKIndexView extends ItemView {
      */
     private async deleteGroupFromMOC(mocFile: TFile, groupId: string): Promise<void> {
         try {
-            // 读取 MOC 文件内容
-            const content = await this.app.vault.read(mocFile);
-            const lines = content.split('\n');
-            const headingTitle = this.plugin.settings.mocHeadingTitle;
-            
-            // 查找思维树标题的范围
-            let headingIndex = -1;
-            let sectionEndIndex = lines.length;
-            
-            for (let i = 0; i < lines.length; i++) {
-                if (lines[i].trim() === `# ${headingTitle}`) {
-                    headingIndex = i;
-                    
-                    for (let j = i + 1; j < lines.length; j++) {
-                        if (lines[j].trim().startsWith('# ')) {
-                            sectionEndIndex = j;
-                            break;
-                        }
-                    }
-                    break;
+            await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
+                // 查找并删除分组
+                const groupIndex = mocData.groups.findIndex((g: any) => g.id === groupId);
+                if (groupIndex === -1) {
+                    throw new Error(`未找到分组: ${groupId}`);
                 }
-            }
-            
-            if (headingIndex === -1) {
-                new Notice(`未找到标题: # ${headingTitle}`);
-                return;
-            }
-            
-            // 查找 ext 行
-            let posLineIndex = -1;
-            let nodePositions: Record<string, { x: number; y: number }> = {};
-            let groups: any[] = [];
-            
-            for (let i = sectionEndIndex - 1; i > headingIndex; i--) {
-                const line = lines[i].trim();
-                const match = line.match(/^%%\s*ext:\s*(\{.*\})\s*%%$/);
-                if (match) {
-                    try {
-                        const extData = JSON.parse(match[1]);
-                        if (extData.node_positions) {
-                            posLineIndex = i;
-                            nodePositions = extData.node_positions;
-                            groups = extData.groups || [];
-                            break;
-                        }
-                    } catch (e) {
-                        console.error('Failed to parse ext data:', e);
-                    }
-                }
-            }
-            
-            // 查找并删除分组
-            const groupIndex = groups.findIndex((g: any) => g.id === groupId);
-            if (groupIndex === -1) {
-                new Notice(`未找到分组: ${groupId}`);
-                return;
-            }
-            
-            const deletedGroup = groups[groupIndex];
-            groups.splice(groupIndex, 1);
-            
-            // 删除 mermaid 代码中的 subgraph（这会修改 lines 数组）
-            await this.deleteSubgraphFromMermaid(lines, headingIndex, sectionEndIndex, groupId);
-            
-            // 重新查找 ext 行的位置（因为 lines 数组已被修改）
-            let newPosLineIndex = -1;
-            for (let i = lines.length - 1; i > headingIndex; i--) {
-                const line = lines[i].trim();
-                const match = line.match(/^%%\s*ext:\s*(\{.*\})\s*%%$/);
-                if (match) {
-                    newPosLineIndex = i;
-                    break;
-                }
-            }
-            
-            // 构建新的 ext 行
-            const extData: any = { node_positions: nodePositions, groups };
-            const newPosLine = `%% ext:${JSON.stringify(extData)} %%`;
-            
-            // 更新 ext 行
-            if (newPosLineIndex !== -1) {
-                lines[newPosLineIndex] = newPosLine;
-            } else {
-                console.warn('Could not find ext line after deleting subgraph');
-            }
-            
-            const newContent = lines.join('\n');
-            
-            // 写回文件
-            await this.app.vault.modify(mocFile, newContent);
-            
-            new Notice(`已删除分组: ${deletedGroup.label}`);
+
+                const deletedGroup = mocData.groups[groupIndex];
+                mocData.groups.splice(groupIndex, 1);
+
+                new Notice(`已删除分组: ${deletedGroup.label}`);
+            });
         } catch (error) {
             console.error('Failed to delete group:', error);
             new Notice(`删除分组失败: ${error.message}`);
@@ -5249,266 +5169,24 @@ export class ZKIndexView extends ItemView {
     }
 
     /**
-     * 从 mermaid 代码中删除 subgraph
-     */
-    private async deleteSubgraphFromMermaid(
-        lines: string[], 
-        headingIndex: number, 
-        sectionEndIndex: number, 
-        groupId: string
-    ): Promise<void> {
-        // 查找 subgraph 的开始和结束位置
-        let subgraphStartIndex = -1;
-        let subgraphEndIndex = -1;
-        
-        for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
-            const line = lines[i].trim();
-            
-            // 匹配 subgraph 开始行
-            if (line.startsWith('subgraph') && line.includes(groupId)) {
-                subgraphStartIndex = i;
-                
-                // 查找对应的 end
-                for (let j = i + 1; j < sectionEndIndex; j++) {
-                    if (lines[j].trim() === 'end') {
-                        subgraphEndIndex = j;
-                        break;
-                    }
-                }
-                break;
-            }
-        }
-        
-        if (subgraphStartIndex === -1 || subgraphEndIndex === -1) {
-            console.warn(`未找到 subgraph ${groupId}`);
-            return;
-        }
-        
-        // 收集 subgraph 中的节点定义
-        const nodeDefinitions: string[] = [];
-        for (let i = subgraphStartIndex + 1; i < subgraphEndIndex; i++) {
-            const line = lines[i].trim();
-            // 跳过 direction 行和空行
-            if (line.startsWith('direction ') || line === '') {
-                continue;
-            }
-            // 收集节点定义
-            if (line.match(/^[a-zA-Z0-9._]+\[/)) {
-                nodeDefinitions.push(line);
-            } else {
-                console.log('  Not matched as node definition');
-            }
-        }
-        
-        
-        // 查找插入位置：在 "%% 3. 定义末端节点" 注释之后
-        let insertIndex = -1;
-        for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
-            const line = lines[i].trim();
-            // 匹配各种可能的注释格式
-            if (line.match(/^%%\s*3[.、]\s*定义/) || 
-                line.match(/^%%\s*定义未分组/) ||
-                line.match(/^%%\s*定义末端节点/)) {
-                insertIndex = i + 1;
-                break;
-            }
-        }
-        
-        
-        // 如果没找到插入位置，就在删除的 subgraph 位置插入
-        if (insertIndex === -1) {
-            insertIndex = subgraphStartIndex;
-        }
-        
-        // 插入节点定义并删除 subgraph
-        if (nodeDefinitions.length > 0) {
-            // 如果插入位置在 subgraph 之后，需要调整索引
-            if (insertIndex > subgraphStartIndex) {
-                // 先插入节点
-                lines.splice(insertIndex, 0, ...nodeDefinitions);
-                // 然后删除 subgraph（索引需要调整）
-                lines.splice(subgraphStartIndex, subgraphEndIndex - subgraphStartIndex + 1);
-            } else {
-                // 先删除 subgraph
-                lines.splice(subgraphStartIndex, subgraphEndIndex - subgraphStartIndex + 1);
-                // 然后插入节点（索引不需要调整）
-                lines.splice(insertIndex, 0, ...nodeDefinitions);
-            }
-        } else {
-            // 只删除 subgraph
-            lines.splice(subgraphStartIndex, subgraphEndIndex - subgraphStartIndex + 1);
-        }
-        
-    }
-
-    /**
      * 更新 MOC 文件中分组的节点列表
      */
     private async updateGroupNodesInMOC(mocFile: TFile, groupId: string, newNodeIds: string[]): Promise<void> {
         try {
-            // 读取 MOC 文件内容
-            const content = await this.app.vault.read(mocFile);
-            const lines = content.split('\n');
-            const headingTitle = this.plugin.settings.mocHeadingTitle;
-            
-            // 查找思维树标题的范围
-            let headingIndex = -1;
-            let sectionEndIndex = lines.length;
-            
-            for (let i = 0; i < lines.length; i++) {
-                if (lines[i].trim() === `# ${headingTitle}`) {
-                    headingIndex = i;
-                    
-                    for (let j = i + 1; j < lines.length; j++) {
-                        if (lines[j].trim().startsWith('# ')) {
-                            sectionEndIndex = j;
-                            break;
-                        }
-                    }
-                    break;
+            await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
+                // 查找并更新分组
+                const groupIndex = mocData.groups.findIndex((g: any) => g.id === groupId);
+                if (groupIndex === -1) {
+                    throw new Error(`未找到分组: ${groupId}`);
                 }
-            }
-            
-            if (headingIndex === -1) {
-                new Notice(`未找到标题: # ${headingTitle}`);
-                return;
-            }
-            
-            // 查找 ext 行
-            let posLineIndex = -1;
-            let nodePositions: Record<string, { x: number; y: number }> = {};
-            let groups: any[] = [];
-            let edgeCurvatures: Record<string, { distance: number; weight: number }> = {};
-            let nodeColors: Record<string, string> = {};
-            
-            for (let i = sectionEndIndex - 1; i > headingIndex; i--) {
-                const line = lines[i].trim();
-                const match = line.match(/^%%\s*ext:\s*(\{.*\})\s*%%$/);
-                if (match) {
-                    try {
-                        const extData = JSON.parse(match[1]);
-                        if (extData.node_positions) {
-                            posLineIndex = i;
-                            nodePositions = extData.node_positions;
-                            groups = extData.groups || [];
-                            edgeCurvatures = extData.edge_curvatures || {};
-                            nodeColors = extData.node_colors || {};
-                            break;
-                        }
-                    } catch (e) {
-                        console.error('Failed to parse ext data:', e);
-                    }
-                }
-            }
-            
-            // 查找并更新分组
-            const groupIndex = groups.findIndex((g: any) => g.id === groupId);
-            if (groupIndex === -1) {
-                new Notice(`未找到分组: ${groupId}`);
-                return;
-            }
-            
-            // 更新节点列表
-            groups[groupIndex].nodeIds = newNodeIds;
-            
-            // 更新 mermaid 代码中的 subgraph
-            await this.updateSubgraphInMermaid(lines, headingIndex, sectionEndIndex, groupId, groups[groupIndex].label, newNodeIds);
-            
-            // 构建新的 ext 行
-            const extData: any = { 
-                node_positions: nodePositions, 
-                groups,
-                edge_curvatures: edgeCurvatures,
-                node_colors: nodeColors
-            };
-            const newPosLine = `%% ext:${JSON.stringify(extData)} %%`;
-            
-            // 重新构建文件内容
-            const newLines = [
-                ...lines.slice(0, posLineIndex),
-                newPosLine,
-                ...lines.slice(posLineIndex + 1)
-            ];
-            
-            const newContent = newLines.join('\n');
-            
-            // 写回文件
-            await this.app.vault.modify(mocFile, newContent);
-            
+
+                // 更新节点列表
+                mocData.groups[groupIndex].nodeIds = newNodeIds;
+            });
         } catch (error) {
             console.error('Failed to update group nodes:', error);
             new Notice(`更新分组失败: ${error.message}`);
         }
-    }
-
-    /**
-     * 更新 mermaid 代码中的 subgraph
-     */
-    private async updateSubgraphInMermaid(
-        lines: string[], 
-        headingIndex: number, 
-        sectionEndIndex: number, 
-        groupId: string, 
-        groupLabel: string,
-        newNodeIds: string[]
-    ): Promise<void> {
-        // 查找 subgraph 的开始和结束位置
-        let subgraphStartIndex = -1;
-        let subgraphEndIndex = -1;
-        
-        for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
-            const line = lines[i].trim();
-            
-            // 匹配 subgraph 开始行，例如: subgraph group_1767440368838 [分组1]
-            if (line.startsWith('subgraph') && line.includes(groupId)) {
-                subgraphStartIndex = i;
-                
-                // 查找对应的 end
-                for (let j = i + 1; j < sectionEndIndex; j++) {
-                    if (lines[j].trim() === 'end') {
-                        subgraphEndIndex = j;
-                        break;
-                    }
-                }
-                break;
-            }
-        }
-        
-        if (subgraphStartIndex === -1 || subgraphEndIndex === -1) {
-            console.warn(`未找到 subgraph ${groupId}`);
-            return;
-        }
-        
-        // 构建新的 subgraph 内容
-        const newSubgraphLines: string[] = [];
-        newSubgraphLines.push(`subgraph ${groupId} [${groupLabel}]`);
-        newSubgraphLines.push('    direction TB');
-        
-        // 添加节点定义
-        newNodeIds.forEach(nodeId => {
-            // 查找原始的节点定义（可能在 subgraph 外面）
-            let nodeDefinition = null;
-            for (let i = headingIndex + 1; i < sectionEndIndex; i++) {
-                const line = lines[i].trim();
-                // 匹配节点定义，例如: a.1["[[20251214 薛定谔方程]]"]
-                if (line.startsWith(`${nodeId}[`)) {
-                    nodeDefinition = line;
-                    break;
-                }
-            }
-            
-            if (nodeDefinition) {
-                newSubgraphLines.push(`    ${nodeDefinition}`);
-            } else {
-                // 如果找不到定义，创建一个简单的
-                newSubgraphLines.push(`    ${nodeId}["${nodeId}"]`);
-            }
-        });
-        
-        newSubgraphLines.push('end');
-        
-        // 替换原来的 subgraph
-        lines.splice(subgraphStartIndex, subgraphEndIndex - subgraphStartIndex + 1, ...newSubgraphLines);
     }
 
     /**
@@ -5672,28 +5350,27 @@ export class ZKIndexView extends ItemView {
     }
 
     /**
-     * 在刷新前保存所有节点的当前位置
+     * 在刷新前保存所有节点的当前位置（仅在位置发生变化时）
      */
     private async saveAllNodePositionsBeforeRefresh(): Promise<void> {
         if (!this.branchRenderer) {
-        
             return;
         }
-        
+
         const cy = this.branchRenderer.getCytoscapeInstance();
-        if (!cy) {        
+        if (!cy) {
             return;
         }
-        
+
         const mocFilePath = this.plugin.settings.mocCurrentFile;
         const mocFile = this.app.vault.getFileByPath(mocFilePath);
         if (!mocFile) {
             return;
         }
-        
+
         // 获取所有节点的当前位置
         const positions: Record<string, { x: number; y: number }> = {};
-        
+
         cy.nodes('[!isGroup]').forEach((node: any) => {
             const data = node.data();
             const originalNode = data.originalNode;
@@ -5705,90 +5382,40 @@ export class ZKIndexView extends ItemView {
                 };
             }
         });
-        
-        
-        // 批量保存所有位置
+
+        // 批量保存所有位置（仅在位置发生变化时）
         try {
-            const content = await this.app.vault.read(mocFile);
-            const lines = content.split('\n');
-            const headingTitle = this.plugin.settings.mocHeadingTitle;
-            
-            // 查找思维树标题的范围
-            let headingIndex = -1;
-            let sectionEndIndex = lines.length;
-            
-            for (let i = 0; i < lines.length; i++) {
-                if (lines[i].trim() === `# ${headingTitle}`) {
-                    headingIndex = i;
-                    for (let j = i + 1; j < lines.length; j++) {
-                        if (lines[j].trim().startsWith('# ')) {
-                            sectionEndIndex = j;
+            await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
+                // 检查位置是否发生变化
+                const oldPositions = mocData.nodePositions || {};
+                let hasChanged = false;
+
+                // 检查节点数量是否变化
+                const newKeys = Object.keys(positions);
+                const oldKeys = Object.keys(oldPositions);
+                if (newKeys.length !== oldKeys.length) {
+                    hasChanged = true;
+                } else {
+                    // 检查每个节点的位置是否变化
+                    for (const nodeId of newKeys) {
+                        const newPos = positions[nodeId];
+                        const oldPos = oldPositions[nodeId];
+
+                        if (!oldPos || newPos.x !== oldPos.x || newPos.y !== oldPos.y) {
+                            hasChanged = true;
                             break;
                         }
                     }
-                    break;
                 }
-            }
-            
-            if (headingIndex === -1) {
-                return;
-            }
-            
-            // 查找现有的 ext 行
-            let posLineIndex = -1;
-            let groups: any[] = [];
-            let edgeCurvatures: Record<string, { distance: number; weight: number }> = {};
-            
-            for (let i = sectionEndIndex - 1; i > headingIndex; i--) {
-                const line = lines[i].trim();
-                const match = line.match(/^%%\s*ext:\s*(\{.*\})\s*%%$/);
-                if (match) {
-                    try {
-                        const extData = JSON.parse(match[1]);
-                        posLineIndex = i;
-                        groups = extData.groups || [];
-                        edgeCurvatures = extData.edge_curvatures || {};
-                        break;
-                    } catch (e) {
-                        console.error('Failed to parse ext data:', e);
-                    }
+
+                // 只有在位置真正变化时才更新
+                if (hasChanged) {
+                    console.log('[saveAllNodePositionsBeforeRefresh] 检测到位置变化，保存节点位置');
+                    mocData.nodePositions = positions;
+                } else {
+                    console.log('[saveAllNodePositionsBeforeRefresh] 位置未变化，跳过保存');
                 }
-            }
-            
-            // 构建新的 ext 行
-            const extData: any = { node_positions: positions };
-            if (groups.length > 0) {
-                extData.groups = groups;
-            }
-            if (Object.keys(edgeCurvatures).length > 0) {
-                extData.edge_curvatures = edgeCurvatures;
-            }
-            const newPosLine = `%% ext:${JSON.stringify(extData)} %%`;
-            
-            // 重新构建文件内容
-            let newLines: string[];
-            
-            if (posLineIndex !== -1) {
-                newLines = [
-                    ...lines.slice(0, posLineIndex),
-                    newPosLine,
-                    ...lines.slice(posLineIndex + 1)
-                ];
-            } else {
-                let lastContentIndex = sectionEndIndex - 1;
-                while (lastContentIndex > headingIndex && lines[lastContentIndex].trim() === '') {
-                    lastContentIndex--;
-                }
-                newLines = [
-                    ...lines.slice(0, lastContentIndex + 1),
-                    '',
-                    newPosLine,
-                    ...lines.slice(sectionEndIndex)
-                ];
-            }
-            
-            await this.app.vault.modify(mocFile, newLines.join('\n'));
-            
+            });
         } catch (error) {
             console.error('[saveAllNodePositions] Failed to save:', error);
         }

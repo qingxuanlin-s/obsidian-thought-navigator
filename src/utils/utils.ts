@@ -88,12 +88,23 @@ export async function parseMOCStructure(
         };
     }
 
+    console.log(`[parseMOCStructure] 开始解析，文件 mtime:`, file.stat.mtime);
+
     const content = await app.vault.read(file);
 
     // 使用 Mermaid 解析器
     const { MermaidParser } = await import('./mermaidParser');
     const mermaidParser = new MermaidParser(app);
-    return await mermaidParser.parse(content, filePath, headingTitle);
+    const result = await mermaidParser.parse(content, filePath, headingTitle);
+
+    // 调试日志：显示解析结果中的 node_colors
+    if (result.nodeColors && Object.keys(result.nodeColors).length > 0) {
+        console.log(`[parseMOCStructure] 解析完成，node_colors:`, result.nodeColors);
+    } else {
+        console.log(`[parseMOCStructure] 解析完成，node_colors 为空或未定义`);
+    }
+
+    return result;
 }
 
 // 将 MOC 树结构转换为 ZKNode 数组
@@ -718,16 +729,20 @@ export async function saveMOCStructure(
         throw new Error(`File not found: ${filePath}`);
     }
 
-    // 清除该文件的解析缓存（如果存在）
-    const { MermaidParser } = await import('./mermaidParser');
-    MermaidParser.clearCacheForFile(filePath);
-
     const content = await app.vault.read(file);
+
+    // 检查读取到的内容中是否包含 node_colors
+    const nodeColorsInContent = content.match(/"node_colors":\s*{([^}]*)}/);
+    console.log(`[saveMOCStructure] 读取到的文件内容中的 node_colors:`, nodeColorsInContent ? nodeColorsInContent[0] : '未找到');
 
     // 使用 MermaidSerializer 序列化数据
     const { MermaidSerializer } = await import('./mermaidSerializer');
     const serializer = new MermaidSerializer();
     const mermaidContent = serializer.serialize(data);
+
+    // 检查序列化后的内容中是否包含 node_colors
+    const nodeColorsInSerialized = mermaidContent.match(/"node_colors":\s*{([^}]*)}/);
+    console.log(`[saveMOCStructure] 序列化后的内容中的 node_colors:`, nodeColorsInSerialized ? nodeColorsInSerialized[0] : '未找到');
 
     // 替换指定标题下的内容
     const updatedContent = replaceHeadingContent(
@@ -736,7 +751,16 @@ export async function saveMOCStructure(
         mermaidContent
     );
 
+    
     await app.vault.modify(file, updatedContent);
+
+    // 等待文件系统更新 mtime
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+
+    // 写入完成后清除该文件的旧缓存（基于旧 mtime 的缓存）
+    const { MermaidParser } = await import('./mermaidParser');
+    MermaidParser.clearCacheForFile(filePath);
 }
 
 /**

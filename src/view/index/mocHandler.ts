@@ -127,48 +127,40 @@ export class MOCHandler {
      * 从 MOC 文件中删除节点
      */
     async deleteNodeFromMOC(mocFile: TFile, nodeID: string): Promise<void> {
-        // 检测是否是 Mermaid 格式
-        const { MermaidParser } = await import('src/utils/mermaidParser');
-        const mermaidParser = new MermaidParser(this.app);
-        const content = await this.app.vault.read(mocFile);
-        const mermaidBlock = mermaidParser.extractMermaidBlock(content);
-
-        if (mermaidBlock) {
-            // 使用 Mermaid 格式
-            await this.modifyMOCData(mocFile, (mocData) => {
-                // 递归查找并删除节点
-                const deleteNodeFromTree = (nodes: any[], targetID: string): boolean => {
-                    for (let i = 0; i < nodes.length; i++) {
-                        const node = nodes[i];
-                        if (node.nodeID === targetID) {
-                            nodes.splice(i, 1);
+        await this.modifyMOCData(mocFile, (mocData) => {
+            // 递归查找并删除节点
+            const deleteNodeFromTree = (nodes: any[], targetID: string): boolean => {
+                for (let i = 0; i < nodes.length; i++) {
+                    const node = nodes[i];
+                    if (node.nodeID === targetID) {
+                        nodes.splice(i, 1);
+                        return true;
+                    }
+                    if (node.children && node.children.length > 0) {
+                        if (deleteNodeFromTree(node.children, targetID)) {
                             return true;
                         }
-                        if (node.children && node.children.length > 0) {
-                            if (deleteNodeFromTree(node.children, targetID)) {
-                                return true;
-                            }
-                        }
                     }
-                    return false;
-                };
-
-                const deleted = deleteNodeFromTree(mocData.nodes, nodeID);
-
-                if (!deleted) {
-                    throw new Error(`未找到节点: ${nodeID}`);
                 }
+                return false;
+            };
 
-                if (mocData.nodePositions && mocData.nodePositions[nodeID]) {
-                    delete mocData.nodePositions[nodeID];
-                }
-            });
+            const deleted = deleteNodeFromTree(mocData.nodes, nodeID);
 
-            new Notice(`已删除节点: ${nodeID}`);
-        } else {
-            // 旧的列表格式（已废弃，但保留以防万一）
-            throw new Error('仅支持 Mermaid 格式的 MOC 文件');
-        }
+            if (!deleted) {
+                throw new Error(`未找到节点: ${nodeID}`);
+            }
+
+            if (mocData.nodePositions && mocData.nodePositions[nodeID]) {
+                delete mocData.nodePositions[nodeID];
+            }
+
+            if (mocData.nodeColors && mocData.nodeColors[nodeID]) {
+                delete mocData.nodeColors[nodeID];
+            }
+        });
+
+        new Notice(`已删除节点: ${nodeID}`);
     }
 
     /**
