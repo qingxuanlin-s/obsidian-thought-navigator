@@ -1075,9 +1075,6 @@ export class ZKIndexView extends ItemView {
 
         // 创建或复用渲染器
         if (this.branchRenderer) {
-            // 保存当前MOC文件的视图状态到设置
-            await this.saveMOCViewState();
-
             this.branchRenderer.destroy();
         }
         this.branchRenderer = new CytoscapeRenderer();
@@ -1085,23 +1082,10 @@ export class ZKIndexView extends ItemView {
         // 渲染图形
         await this.branchRenderer.render(branchGraphDiv, graphData, options);
 
-        // 尝试从设置中加载该MOC文件的视图状态
-        const savedState = this.loadMOCViewState(currentMOCPath);
-        if (savedState) {
-            // 恢复保存的视图状态
-            this.branchRenderer.setState({
-                zoom: savedState.zoom,
-                pan: savedState.pan,
-                selectedNodes: [],
-                expandedNodes: [],
-                timestamp: Date.now()
-            });
-        } else {
-            // 没有保存的状态，自动居中
-            const cy = this.branchRenderer.getCytoscapeInstance();
-            if (cy) {
-                cy.fit(undefined, 50); // 50px padding
-            }
+        // 每次切换MOC后自动居中
+        const cy = this.branchRenderer.getCytoscapeInstance();
+        if (cy) {
+            cy.fit(undefined, 50); // 50px padding
         }
 
         // 监听节点位置变化事件（拖动后保存到 MOC 文件）
@@ -5612,58 +5596,6 @@ export class ZKIndexView extends ItemView {
     /**
      * 在刷新前保存所有节点的当前位置（仅在位置发生变化时）
      */
-    /**
-     * 保存当前MOC文件的视图状态（缩放和平移）
-     * 只保留最近10个MOC文件的状态
-     */
-    private async saveMOCViewState(): Promise<void> {
-        if (!this.branchRenderer) {
-            return;
-        }
-
-        const cy = this.branchRenderer.getCytoscapeInstance();
-        if (!cy) {
-            return;
-        }
-
-        const mocFilePath = this.plugin.settings.mocCurrentFile;
-        if (!mocFilePath) {
-            return;
-        }
-
-        // 获取当前的缩放和平移状态
-        const zoom = cy.zoom();
-        const pan = cy.pan();
-
-        // 保存到设置中
-        const viewStates = this.plugin.settings.mocViewStates || {};
-        viewStates[mocFilePath] = {
-            zoom: zoom,
-            pan: { x: pan.x, y: pan.y }
-        };
-
-        // 限制只保留最近10个MOC文件的状态
-        const mocPaths = Object.keys(viewStates);
-        if (mocPaths.length > 10) {
-            // 按文件路径排序，删除最旧的
-            mocPaths.sort();
-            for (let i = 0; i < mocPaths.length - 10; i++) {
-                delete viewStates[mocPaths[i]];
-            }
-        }
-
-        this.plugin.settings.mocViewStates = viewStates;
-        await this.plugin.saveData(this.plugin.settings);
-    }
-
-    /**
-     * 加载指定MOC文件的视图状态
-     */
-    private loadMOCViewState(mocFilePath: string): { zoom: number; pan: { x: number; y: number } } | null {
-        const viewStates = this.plugin.settings.mocViewStates || {};
-        return viewStates[mocFilePath] || null;
-    }
-
     private async saveAllNodePositionsBeforeRefresh(): Promise<void> {
         if (!this.branchRenderer) {
             return;
