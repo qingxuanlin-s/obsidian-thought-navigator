@@ -52,6 +52,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private currentData: GraphData | null = null;
     private currentOptions: RenderOptions | null = null;
     private edgeControlPoints: Map<string, { distance: number; weight: number }> = new Map();
+    private batchSelectedNodeIds: string[] = []; // 保存批量选中的节点ID
 
     /**
      * 渲染图形
@@ -106,9 +107,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
         // 绑定事件
         this.bindEvents();
-        
+
         // 绑定键盘事件
         this.bindKeyboardEvents();
+
+        // 初始化框选功能
+        this.initBoxSelection();
 
         // 添加节点徽章（左上角的 ID）
         this.addNodeBadges();
@@ -1718,12 +1722,6 @@ case 'dagre':
                     const newTargetData2 = newTargetNode.data();
                     const newTargetID = newTargetData2.originalNode.IDStr;
 
-                    console.log(`🎯 准备发送 edge-target-changed 事件:`);
-                    console.log(`   - source: ${edgeData.originalSource || edgeData.source}`);
-                    console.log(`   - oldTarget: ${oldTargetID}`);
-                    console.log(`   - newTarget: ${newTargetID}`);
-                    console.log(`   - newTarget 是否以 free. 开头: ${newTargetID.startsWith('free.')}`);
-
                     this.container?.dispatchEvent(new CustomEvent('edge-target-changed', {
                         detail: {
                             edgeId: edgeData.id,
@@ -2841,25 +2839,41 @@ case 'dagre':
 
                 // 获取选中的元素
                 const selected = this.cy.$(':selected');
-                
+
                 // 检查是否有选中的普通节点
                 const selectedNodes = selected.filter('node[!isGroup]');
-                
+
                 if (selectedNodes.length > 0) {
                     // 阻止默认行为（避免浏览器后退）
                     event.preventDefault();
                     event.stopPropagation();
-                    
-                    // 触发删除节点事件
+
+                    // 如果选中的节点 >= 2个，使用批量删除
+                    if (selectedNodes.length >= 2) {
+                        // 保存选中的节点 ID
+                        this.batchSelectedNodeIds = [];
+                        selectedNodes.forEach((node: any) => {
+                            const data = node.data();
+                            if (data.originalNode && data.originalNode.IDStr) {
+                                this.batchSelectedNodeIds.push(data.originalNode.IDStr);
+                            }
+                        });
+
+                        // 触发批量删除
+                        this.batchDeleteNodes();
+                        return;
+                    }
+
+                    // 单个节点删除，使用现有的确认流程
                     selectedNodes.forEach((node: any) => {
                         const data = node.data();
                         const originalNode = data.originalNode;
-                        
+
                         if (originalNode) {
                             // 计算节点的关系数量（入边 + 出边）
                             const connectedEdges = node.connectedEdges();
                             const relationCount = connectedEdges.length;
-                            
+
                             this.container?.dispatchEvent(new CustomEvent('node-delete-key', {
                                 detail: {
                                     node: originalNode,
@@ -2868,7 +2882,7 @@ case 'dagre':
                             }));
                         }
                     });
-                    
+
                     return; // 处理完节点删除后返回
                 }
                 
@@ -3348,8 +3362,6 @@ case 'dagre':
                             nodeIds: finalNodeIds
                         }
                     }));
-                } else {
-                    console.log('No changes to dispatch');
                 }
 
                 // 移除全局监听器
@@ -3360,5 +3372,424 @@ case 'dagre':
             document.addEventListener('mousemove', handleMouseMove);
             document.addEventListener('mouseup', handleMouseUp);
         });
+    }
+
+    /**
+     * 选择选择框内的节点
+     */
+    private selectNodesInBox(left: number, top: number, width: number, height: number): void {
+        if (!this.cy) return;
+
+        const nodes = this.cy.nodes().filter((node: any) => !node.data('isGroup'));
+
+        nodes.forEach((node: any) => {
+            const bbox = node.renderedBoundingBox();
+            const intersects = !(
+                bbox.x2 < left ||
+                bbox.x1 > left + width ||
+                bbox.y2 < top ||
+                bbox.y1 > top + height
+            );
+
+            if (intersects) {
+                node.select();
+            }
+        });
+    }
+
+    /**
+     * 初始化框选功能
+     */
+    private initBoxSelection(): void {
+        if (!this.cy || !this.container) return;
+
+        // 创建选择框元素
+        const selectionBox = document.createElement('div');
+        selectionBox.className = 'zk-selection-box';
+        selectionBox.style.cssText = `
+            position: absolute;
+            display: none;
+            border: 2px dashed #5b8fd9;
+            background-color: rgba(91, 143, 217, 0.1);
+            border-radius: 4px;
+            pointer-events: none;
+            z-index: 9999;
+        `;
+        this.container.appendChild(selectionBox);
+
+        let isDragging = false;
+        let hasMoved = false;  // 标记是否真正移动了鼠标
+        let startX = 0;
+        let startY = 0;
+        let isMultiSelect = false;
+
+        // 鼠标按下开始框选
+        this.container.addEventListener('mousedown', (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+
+            // 只在 canvas 上点击时才开始框选
+            if (target.tagName !== 'CANVAS') return;
+
+            // 检查点击位置是否有节点
+            if (this.cy) {
+                const rect = (this.container?.getBoundingClientRect() as DOMRect) ?? new DOMRect(0, 0, 0, 0);
+                const clickX = e.clientX - rect.left;
+                const clickY = e.clientY - rect.top;
+
+                // 检查点击位置是否在某个节点上
+                const clickedNode = this.cy.$('node').filter((node: any) => {
+                    const bbox = node.renderedBoundingBox();
+                    return clickX >= bbox.x1 && clickX <= bbox.x2 &&
+                           clickY >= bbox.y1 && clickY <= bbox.y2;
+                });
+
+                // 如果点击在节点上，不开始框选
+                if (clickedNode.length > 0) {
+                    return;
+                }
+            }
+
+            // 检查是否按住多选键
+            isMultiSelect = e.shiftKey || e.ctrlKey || e.metaKey;
+
+            // 如果没有按住多选键，先清除现有选择
+            if (!isMultiSelect && this.cy) {
+                this.cy.$(':selected').unselect();
+                this.hideBatchToolbar();
+            }
+
+            const rect = (this.container?.getBoundingClientRect() as DOMRect) ?? new DOMRect(0, 0, 0, 0);
+            startX = e.clientX - rect.left;
+            startY = e.clientY - rect.top;
+            isDragging = true;
+            hasMoved = false;  // 重置移动标记
+
+            // 显示选择框
+            selectionBox.style.display = 'block';
+            selectionBox.style.left = `${startX}px`;
+            selectionBox.style.top = `${startY}px`;
+            selectionBox.style.width = '0px';
+            selectionBox.style.height = '0px';
+
+            e.preventDefault();
+        });
+
+        // 鼠标移动更新选择框
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isDragging) return;
+
+            const rect = (this.container?.getBoundingClientRect() as DOMRect) ?? new DOMRect(0, 0, 0, 0);
+            const currentX = e.clientX - rect.left;
+            const currentY = e.clientY - rect.top;
+
+            // 检查是否移动了足够的距离（避免误触）
+            if (Math.abs(currentX - startX) > 5 || Math.abs(currentY - startY) > 5) {
+                hasMoved = true;
+            }
+
+            const left = Math.min(startX, currentX);
+            const top = Math.min(startY, currentY);
+            const width = Math.abs(currentX - startX);
+            const height = Math.abs(currentY - startY);
+
+            selectionBox.style.left = `${left}px`;
+            selectionBox.style.top = `${top}px`;
+            selectionBox.style.width = `${width}px`;
+            selectionBox.style.height = `${height}px`;
+
+            // 选择框内的节点
+            this.selectNodesInBox(left, top, width, height);
+        };
+
+        // 鼠标释放结束框选
+        const handleMouseUp = () => {
+            if (!isDragging) return;
+            isDragging = false;
+
+            // 隐藏选择框
+            selectionBox.style.display = 'none';
+
+            // 只有在真正移动了鼠标（框选操作）时才显示批量工具栏
+            if (hasMoved) {
+                setTimeout(() => {
+                    this.showBatchToolbar();
+                }, 100);
+            }
+        };
+
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+    }
+
+    /**
+     * 显示批量操作工具栏
+     */
+    private showBatchToolbar(): void {
+        if (!this.cy || !this.container) return;
+
+        const selectedNodes = this.cy.$(':selected').filter('node[!isGroup]');
+        const count = selectedNodes.length;
+
+        if (count < 2) {
+            this.hideBatchToolbar();
+            return;
+        }
+
+        // 保存选中的节点ID（使用 originalNode.IDStr）
+        this.batchSelectedNodeIds = [];
+        selectedNodes.forEach((node: any) => {
+            const data = node.data();
+            if (data.originalNode && data.originalNode.IDStr) {
+                this.batchSelectedNodeIds.push(data.originalNode.IDStr);
+            }
+        });
+
+        let toolbar = document.getElementById('zk-batch-toolbar');
+        if (!toolbar) {
+            toolbar = this.createBatchToolbar();
+            this.container.appendChild(toolbar);
+        }
+
+        // 更新位置到选中区域上方
+        let minY = Infinity;
+        let minX = Infinity;
+        selectedNodes.forEach((node: any) => {
+            const pos = node.renderedPosition();
+            minY = Math.min(minY, pos.y);
+            minX = Math.min(minX, pos.x);
+        });
+
+        toolbar.style.top = `${Math.max(10, minY - 60)}px`;
+        toolbar.style.left = `${minX}px`;
+
+        // 更新计数
+        const countLabel = toolbar.querySelector('.zk-batch-count');
+        if (countLabel) {
+            countLabel.textContent = `已选中 ${count} 个节点`;
+        }
+    }
+
+    /**
+     * 隐藏批量操作工具栏
+     */
+    private hideBatchToolbar(): void {
+        const toolbar = document.getElementById('zk-batch-toolbar');
+        if (toolbar) {
+            toolbar.remove();
+        }
+    }
+
+    /**
+     * 创建批量操作工具栏
+     */
+    private createBatchToolbar(): HTMLElement {
+        const toolbar = document.createElement('div');
+        toolbar.id = 'zk-batch-toolbar';
+        toolbar.style.cssText = `
+            position: absolute;
+            background-color: var(--background-secondary);
+            border: 1px solid var(--background-modifier-border);
+            border-radius: 8px;
+            padding: 8px 12px;
+            display: flex;
+            gap: 8px;
+            z-index: 10000;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        `;
+
+        // 计数标签
+        const countLabel = document.createElement('span');
+        countLabel.className = 'zk-batch-count';
+        countLabel.style.cssText = `
+            font-size: 13px;
+            color: var(--text-normal);
+            font-weight: 500;
+            padding-right: 8px;
+            border-right: 1px solid var(--background-modifier-border);
+        `;
+        countLabel.textContent = '已选中 0 个节点';
+        toolbar.appendChild(countLabel);
+
+        // 分组按钮
+        const groupBtn = this.createToolbarButton('📦 分组', () => this.batchCreateGroup());
+        toolbar.appendChild(groupBtn);
+
+        // 删除按钮
+        const deleteBtn = this.createToolbarButton('🗑️ 删除', () => this.batchDeleteNodes());
+        toolbar.appendChild(deleteBtn);
+
+        // 改颜色按钮
+        const colorBtn = this.createToolbarButton('🎨 改颜色', () => this.batchChangeColor());
+        toolbar.appendChild(colorBtn);
+
+        // 取消按钮
+        const cancelBtn = this.createToolbarButton('✕ 取消', () => {
+            if (this.cy) {
+                this.cy.$(':selected').unselect();
+            }
+            this.hideBatchToolbar();
+        });
+        toolbar.appendChild(cancelBtn);
+
+        return toolbar;
+    }
+
+    /**
+     * 创建工具栏按钮
+     */
+    private createToolbarButton(text: string, onClick: () => void): HTMLElement {
+        const btn = document.createElement('button');
+        btn.textContent = text;
+        btn.style.cssText = `
+            padding: 6px 12px;
+            background-color: var(--interactive-normal);
+            color: var(--text-normal);
+            border: 1px solid var(--background-modifier-border);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        `;
+        btn.onmouseover = () => btn.style.backgroundColor = 'var(--interactive-hover)';
+        btn.onmouseout = () => btn.style.backgroundColor = 'var(--interactive-normal)';
+
+        btn.onclick = () => onClick();
+
+        return btn;
+    }
+
+    /**
+     * 批量创建分组
+     */
+    private batchCreateGroup(): void {
+        if (this.batchSelectedNodeIds.length === 0) {
+            return;
+        }
+
+        // 先隐藏工具栏，避免遮挡对话框
+        this.hideBatchToolbar();
+
+        // 根据 IDStr 获取 Cytoscape 节点对象
+        if (!this.cy) return;
+
+        const nodes = this.batchSelectedNodeIds
+            .map(idStr => {
+                // 通过 originalNode.IDStr 查找节点
+                const node = this.cy!.$('node').filter((n: any) =>
+                    n.data('originalNode') && n.data('originalNode').IDStr === idStr
+                );
+                return node;
+            })
+            .filter((node: any) => node.length > 0);
+
+        if (nodes.length === 0) {
+            console.warn('No valid nodes found');
+            this.showBatchToolbar();
+            return;
+        }
+
+        // 直接调用现有的 createGroupFromNodes 方法
+        this.createGroupFromNodes(nodes);
+
+        // 清空保存的节点ID
+        this.batchSelectedNodeIds = [];
+    }
+
+    /**
+     * 批量删除节点
+     */
+    private batchDeleteNodes(): void {
+        if (this.batchSelectedNodeIds.length === 0) return;
+
+        // 先隐藏工具栏，避免遮挡对话框
+        this.hideBatchToolbar();
+
+        // 创建确认对话框
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10001;
+        `;
+
+        const dialog = document.createElement('div');
+        dialog.style.cssText = `
+            background-color: var(--background-primary);
+            border: 1px solid var(--background-modifier-border);
+            border-radius: 8px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            min-width: 300px;
+        `;
+
+        const title = document.createElement('h3');
+        title.textContent = '确认删除';
+        title.style.margin = '0';
+        dialog.appendChild(title);
+
+        const message = document.createElement('p');
+        message.textContent = `确认删除 ${this.batchSelectedNodeIds.length} 个节点？`;
+        message.style.margin = '0';
+        dialog.appendChild(message);
+
+        const buttonContainer = document.createElement('div');
+        buttonContainer.style.display = 'flex';
+        buttonContainer.style.gap = '10px';
+        buttonContainer.style.justifyContent = 'flex-end';
+
+        const confirmBtn = document.createElement('button');
+        confirmBtn.textContent = '确认';
+        confirmBtn.onclick = () => {
+            // 触发批量删除事件
+            this.container?.dispatchEvent(new CustomEvent('batch-delete-nodes', {
+                detail: { nodeIds: this.batchSelectedNodeIds }
+            }));
+
+            overlay.remove();
+
+            // 清除选择并清空节点ID
+            if (this.cy) {
+                this.cy.$(':selected').unselect();
+            }
+            this.batchSelectedNodeIds = [];
+        };
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = '取消';
+        cancelBtn.onclick = () => {
+            overlay.remove();
+            // 用户取消，重新显示工具栏
+            this.showBatchToolbar();
+        };
+
+        buttonContainer.appendChild(confirmBtn);
+        buttonContainer.appendChild(cancelBtn);
+        dialog.appendChild(buttonContainer);
+
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+    }
+
+    /**
+     * 批量改变颜色
+     */
+    private batchChangeColor(): void {
+        if (this.batchSelectedNodeIds.length === 0) return;
+
+        // 先隐藏工具栏
+        this.hideBatchToolbar();
+
+        // 触发批量颜色选择事件
+        this.container?.dispatchEvent(new CustomEvent('batch-show-color-picker', {
+            detail: { nodeIds: this.batchSelectedNodeIds }
+        }));
     }
 }

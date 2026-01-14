@@ -196,4 +196,36 @@ export class MOCHandler {
             mocData.edgeCurvatures[edgeId] = curvature;
         });
     }
+
+    /**
+     * 批量创建分组
+     * @param mocFile - MOC 文件
+     * @param nodeIds - 要包含在分组中的节点 ID 列表
+     * @param groupName - 分组名称
+     */
+    async createGroupInMOC(
+        mocFile: TFile,
+        nodeIds: string[],
+        groupName: string
+    ): Promise<void> {
+        await this.modifyMOCData(mocFile, (mocData) => {
+            // 初始化 groups 数组
+            if (!mocData.groups) {
+                mocData.groups = [];
+            }
+
+            // 生成唯一的分组 ID
+            const groupId = `group_${Date.now()}`;
+
+            // 创建分组，包含所有指定的节点
+            const newGroup: any = {
+                id: groupId,
+                label: groupName,
+                nodeIds: nodeIds
+            };
+
+            // 添加到分组列表
+            mocData.groups.push(newGroup);
+        });
+    }
 }
