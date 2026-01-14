@@ -53,6 +53,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private currentOptions: RenderOptions | null = null;
     private edgeControlPoints: Map<string, { distance: number; weight: number }> = new Map();
     private batchSelectedNodeIds: string[] = []; // 保存批量选中的节点ID
+    private batchSelectedNodes: any[] = []; // 保存批量选中的完整节点数据（包含 isCrossDomain 等信息）
+    private isSpacePressed = false; // 标记空格键是否被按下
 
     /**
      * 渲染图形
@@ -2824,6 +2826,7 @@ case 'dagre':
         const handleKeyDown = (event: KeyboardEvent) => {
             // 空格键：启用画板拖动
             if (event.code === 'Space' && !event.repeat) {
+                this.isSpacePressed = true;
                 if (this.cy) {
                     this.cy.userPanningEnabled(true);
                     const container = this.cy.container();
@@ -2850,12 +2853,19 @@ case 'dagre':
 
                     // 如果选中的节点 >= 2个，使用批量删除
                     if (selectedNodes.length >= 2) {
-                        // 保存选中的节点 ID
+                        // 保存选中的节点 ID 和完整节点数据
                         this.batchSelectedNodeIds = [];
+                        this.batchSelectedNodes = [];
                         selectedNodes.forEach((node: any) => {
                             const data = node.data();
                             if (data.originalNode && data.originalNode.IDStr) {
                                 this.batchSelectedNodeIds.push(data.originalNode.IDStr);
+                                // 保存完整节点数据，包含 isCrossDomain 等信息
+                                this.batchSelectedNodes.push({
+                                    IDStr: data.originalNode.IDStr,
+                                    isCrossDomain: data.originalNode.isCrossDomain || false,
+                                    originalNode: data.originalNode
+                                });
                             }
                         });
 
@@ -2946,6 +2956,7 @@ case 'dagre':
         const handleKeyUp = (event: KeyboardEvent) => {
             // 空格键：禁用画板拖动
             if (event.code === 'Space') {
+                this.isSpacePressed = false;
                 if (this.cy) {
                     this.cy.userPanningEnabled(false);
                     const container = this.cy.container();
@@ -3430,6 +3441,9 @@ case 'dagre':
             // 只在 canvas 上点击时才开始框选
             if (target.tagName !== 'CANVAS') return;
 
+            // 如果空格键被按下（画板拖动模式），不开始框选
+            if (this.isSpacePressed) return;
+
             // 检查点击位置是否有节点
             if (this.cy) {
                 const rect = (this.container?.getBoundingClientRect() as DOMRect) ?? new DOMRect(0, 0, 0, 0);
@@ -3537,10 +3551,17 @@ case 'dagre':
 
         // 保存选中的节点ID（使用 originalNode.IDStr）
         this.batchSelectedNodeIds = [];
+        this.batchSelectedNodes = [];
         selectedNodes.forEach((node: any) => {
             const data = node.data();
             if (data.originalNode && data.originalNode.IDStr) {
                 this.batchSelectedNodeIds.push(data.originalNode.IDStr);
+                // 保存完整节点数据，包含 isCrossDomain 等信息
+                this.batchSelectedNodes.push({
+                    IDStr: data.originalNode.IDStr,
+                    isCrossDomain: data.originalNode.isCrossDomain || false,
+                    originalNode: data.originalNode
+                });
             }
         });
 
@@ -3750,7 +3771,10 @@ case 'dagre':
         confirmBtn.onclick = () => {
             // 触发批量删除事件
             this.container?.dispatchEvent(new CustomEvent('batch-delete-nodes', {
-                detail: { nodeIds: this.batchSelectedNodeIds }
+                detail: {
+                    nodeIds: this.batchSelectedNodeIds,
+                    nodes: this.batchSelectedNodes
+                }
             }));
 
             overlay.remove();
@@ -3760,6 +3784,7 @@ case 'dagre':
                 this.cy.$(':selected').unselect();
             }
             this.batchSelectedNodeIds = [];
+            this.batchSelectedNodes = [];
         };
 
         const cancelBtn = document.createElement('button');
