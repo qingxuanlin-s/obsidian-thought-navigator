@@ -80,10 +80,7 @@ export class MermaidSerializer {
             metadata.cross_domain_links = data.crossDomainLinks;
         }
 
-        // 调试日志：检查要序列化的 node_colors
-        if (data.nodeColors && Object.keys(data.nodeColors).length > 0) {
-            console.log(`[MermaidSerializer] 序列化 node_colors:`, data.nodeColors);
-        }
+
 
         const jsonStr = JSON.stringify(metadata);
         return `%% ext:${jsonStr} %%`;

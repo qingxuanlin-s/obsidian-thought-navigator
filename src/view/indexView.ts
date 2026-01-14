@@ -1749,6 +1749,51 @@ export class ZKIndexView extends ItemView {
             modal.open();
         });
 
+        // 监听批量分组事件
+        this.addTrackedListener(branchGraphDiv, 'batch-create-group', async (event: any) => {
+            const { nodeIds, groupName } = event.detail;
+
+            try {
+                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                if (mocFile) {
+                    await this.mocHandler.createGroupInMOC(mocFile, nodeIds, groupName);
+                    await this.refreshBranchMermaid();
+                    new Notice(`已创建分组 "${groupName}"，包含 ${nodeIds.length} 个节点`);
+                } else {
+                    console.error('MOC file not found:', currentMOCPath);
+                }
+            } catch (error) {
+                console.error('Failed to create batch group:', error);
+                new Notice(`批量分组失败: ${error.message}`);
+            }
+        });
+
+        // 监听批量删除节点事件
+        this.addTrackedListener(branchGraphDiv, 'batch-delete-nodes', async (event: any) => {
+            const { nodeIds } = event.detail;
+
+            try {
+                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                if (mocFile) {
+                    // 逐个删除节点
+                    for (const nodeId of nodeIds) {
+                        await this.mocHandler.deleteNodeFromMOC(mocFile, nodeId);
+                    }
+                    await this.refreshBranchMermaid();
+                    new Notice(`已删除 ${nodeIds.length} 个节点`);
+                }
+            } catch (error) {
+                console.error('Failed to batch delete nodes:', error);
+                new Notice(`批量删除失败: ${error.message}`);
+            }
+        });
+
+        // 监听批量显示颜色选择器事件
+        this.addTrackedListener(branchGraphDiv, 'batch-show-color-picker', async (event: any) => {
+            const { nodeIds } = event.detail;
+            await this.batchChangeNodeColor(nodeIds);
+        });
+
         this.plugin.indexViewOffsetWidth = this.containerEl.offsetWidth;
         this.plugin.indexViewOffsetHeight = this.containerEl.offsetHeight;
     }
@@ -4143,8 +4188,183 @@ export class ZKIndexView extends ItemView {
     }
 
     /**
-     * 显示颜色选择对话框
+     * 批量修改节点颜色
      */
+    async batchChangeNodeColor(nodeIds: string[]) {
+        // 预设颜色
+        const colors = [
+            { name: '青色', value: '#0891b2' },
+            { name: '蓝色', value: '#2563eb' },
+            { name: '深紫', value: '#7c3aed' },
+            { name: '紫红', value: '#c026d3' },
+            { name: '玫红', value: '#db2777' },
+            { name: '绿色', value: '#16a34a' },
+            { name: '深绿', value: '#047857' },
+            { name: '橙色', value: '#ea580c' },
+            { name: '深橙', value: '#dc2626' },
+            { name: '红色', value: '#dc2626' },
+            { name: '默认', value: '' }
+        ];
+
+        // 显示批量颜色选择对话框
+        const selectedColor = await this.showBatchColorPickerDialog(colors, nodeIds);
+
+        if (selectedColor === null) {
+            return; // 取消
+        }
+
+        // 在刷新前保存所有节点的当前位置
+        await this.saveAllNodePositionsBeforeRefresh();
+
+        try {
+            const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+            if (mocFile) {
+                // 批量更新节点颜色
+                for (const nodeId of nodeIds) {
+                    await this.mocHandler.updateNodeColorInMOC(mocFile, nodeId, selectedColor);
+                }
+
+                // 刷新视图
+                await this.refreshBranchMermaid();
+
+                if (selectedColor) {
+                    new Notice(`已修改 ${nodeIds.length} 个节点的颜色`);
+                } else {
+                    new Notice(`已重置 ${nodeIds.length} 个节点的颜色`);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to batch change node color:', error);
+            new Notice(`批量修改节点颜色失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 显示批量颜色选择对话框
+     */
+    private showBatchColorPickerDialog(colors: Array<{ name: string; value: string }>, nodeIds: string[]): Promise<string | null> {
+        return new Promise((resolve) => {
+            const modal = new Modal(this.app);
+            modal.titleEl.setText('批量修改节点颜色');
+
+            const { contentEl } = modal;
+            contentEl.empty();
+            contentEl.style.padding = '20px';
+
+            const infoDiv = contentEl.createDiv();
+            infoDiv.style.marginBottom = '15px';
+            infoDiv.style.padding = '10px';
+            infoDiv.style.backgroundColor = 'var(--background-secondary)';
+            infoDiv.style.borderRadius = '4px';
+            infoDiv.style.color = 'var(--text-muted)';
+            infoDiv.innerHTML = `
+                <div>选中节点: <strong>${nodeIds.length} 个</strong></div>
+                <div style="font-size: 0.9em; margin-top: 5px;">选择一个颜色应用到所有选中的节点</div>
+            `;
+
+            const colorGrid = contentEl.createDiv();
+            colorGrid.style.display = 'grid';
+            colorGrid.style.gridTemplateColumns = 'repeat(5, 1fr)';
+            colorGrid.style.gap = '10px';
+            colorGrid.style.marginBottom = '20px';
+
+            let selectedColor: string | null = null;
+
+            colors.forEach((color) => {
+                const colorButton = colorGrid.createDiv();
+                colorButton.style.cssText = `
+                    width: 80px;
+                    height: 80px;
+                    border-radius: 16px;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 14px;
+                    font-weight: 600;
+                    color: white;
+                    transition: all 0.2s;
+                    border: 3px solid transparent;
+                `;
+
+                if (color.value) {
+                    colorButton.style.backgroundColor = color.value;
+                } else {
+                    colorButton.style.backgroundColor = 'var(--background-secondary)';
+                    colorButton.style.border = '3px solid var(--background-modifier-border)';
+                    colorButton.style.color = 'var(--text-normal)';
+                }
+
+                colorButton.textContent = color.name;
+
+                colorButton.addEventListener('mouseenter', () => {
+                    colorButton.style.transform = 'scale(1.1)';
+                    colorButton.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+                });
+
+                colorButton.addEventListener('mouseleave', () => {
+                    if (selectedColor !== color.value) {
+                        colorButton.style.transform = 'scale(1)';
+                        colorButton.style.boxShadow = 'none';
+                    }
+                });
+
+                colorButton.addEventListener('click', () => {
+                    colorGrid.querySelectorAll('div').forEach(btn => {
+                        btn.style.transform = 'scale(1)';
+                        btn.style.border = color.value ? '3px solid transparent' : '3px solid var(--background-modifier-border)';
+                    });
+
+                    selectedColor = color.value;
+                    colorButton.style.transform = 'scale(1.1)';
+                    colorButton.style.border = '3px solid white';
+                    colorButton.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+                });
+
+                colorButton.addEventListener('dblclick', () => {
+                    selectedColor = color.value;
+                    modal.close();
+                    resolve(selectedColor);
+                });
+            });
+
+            const buttonContainer = contentEl.createDiv();
+            buttonContainer.style.display = 'flex';
+            buttonContainer.style.justifyContent = 'flex-end';
+            buttonContainer.style.gap = '10px';
+
+            const cancelButton = buttonContainer.createEl('button', { text: '取消' });
+            cancelButton.style.padding = '6px 16px';
+            cancelButton.style.border = '1px solid var(--background-modifier-border)';
+            cancelButton.style.borderRadius = '4px';
+            cancelButton.style.backgroundColor = 'var(--background-primary)';
+            cancelButton.style.color = 'var(--text-normal)';
+            cancelButton.style.cursor = 'pointer';
+            cancelButton.addEventListener('click', () => {
+                modal.close();
+                resolve(null);
+            });
+
+            const confirmButton = buttonContainer.createEl('button', { text: '确认' });
+            confirmButton.style.padding = '6px 16px';
+            confirmButton.style.border = 'none';
+            confirmButton.style.borderRadius = '4px';
+            confirmButton.style.backgroundColor = '#5b8fd9';
+            confirmButton.style.color = '#ffffff';
+            confirmButton.style.cursor = 'pointer';
+            confirmButton.addEventListener('click', () => {
+                if (selectedColor === null) {
+                    new Notice('请选择一个颜色');
+                    return;
+                }
+                modal.close();
+                resolve(selectedColor);
+            });
+
+            modal.open();
+        });
+    }
+
     private showColorPickerDialog(colors: Array<{ name: string; value: string }>, node: ZKNode): Promise<string | null> {
         return new Promise((resolve) => {
             const modal = new Modal(this.app);
