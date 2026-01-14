@@ -50,6 +50,8 @@ export interface ZKNode {
     gitNodePos: number; // for keeping node's position in gitBranch
     savedPosition?: { x: number; y: number }; // 保存的节点位置（用于 Cytoscape 图形）
     isCrossDomain?: boolean; // 是否为跨领域节点
+    crossDomainSourceNodeId?: string; // 跨领域节点的源节点 ID（用于删除）
+    crossDomainOriginalNodeId?: string; // 跨领域节点的原始节点 ID
 }
 
 interface BrancAllhNodes {
@@ -121,9 +123,6 @@ export class ZKIndexView extends ItemView {
     edgeCurvatureSaveTimeout: NodeJS.Timeout | null = null;
     nodePositionSaveTimeout: NodeJS.Timeout | null = null;
     crossDomainPositionSaveTimeout: NodeJS.Timeout | null = null;
-
-    // 视图状态缓存（缩放和平移）
-    private savedViewState: { zoom: number; pan: { x: number; y: number } } | null = null;
 
     // 事件监听器跟踪（用于清理，防止内存泄漏）
     private registeredEventListeners: Array<{
@@ -1076,29 +1075,33 @@ export class ZKIndexView extends ItemView {
 
         // 创建或复用渲染器
         if (this.branchRenderer) {
-            // 保存当前视图状态
-            const state = this.branchRenderer.getState();
-            this.savedViewState = {
-                zoom: state.zoom,
-                pan: state.pan
-            };
-            
+            // 保存当前MOC文件的视图状态到设置
+            await this.saveMOCViewState();
+
             this.branchRenderer.destroy();
         }
         this.branchRenderer = new CytoscapeRenderer();
 
         // 渲染图形
         await this.branchRenderer.render(branchGraphDiv, graphData, options);
-        
-        // 恢复视图状态
-        if (this.savedViewState) {
+
+        // 尝试从设置中加载该MOC文件的视图状态
+        const savedState = this.loadMOCViewState(currentMOCPath);
+        if (savedState) {
+            // 恢复保存的视图状态
             this.branchRenderer.setState({
-                zoom: this.savedViewState.zoom,
-                pan: this.savedViewState.pan,
+                zoom: savedState.zoom,
+                pan: savedState.pan,
                 selectedNodes: [],
                 expandedNodes: [],
                 timestamp: Date.now()
             });
+        } else {
+            // 没有保存的状态，自动居中
+            const cy = this.branchRenderer.getCytoscapeInstance();
+            if (cy) {
+                cy.fit(undefined, 50); // 50px padding
+            }
         }
 
         // 监听节点位置变化事件（拖动后保存到 MOC 文件）
@@ -1385,7 +1388,22 @@ export class ZKIndexView extends ItemView {
             try {
                 const mocFile = this.app.vault.getFileByPath(currentMOCPath);
                 if (mocFile) {
-                    await this.mocHandler.deleteNodeFromMOC(mocFile, node.IDStr);
+                    // 根据 isCrossDomain 属性选择删除方法
+                    if (node.isCrossDomain) {
+                        // 跨领域节点：使用专门的删除方法
+                        const crossDomainLinkInfo = {
+                            sourceNodeId: node.crossDomainSourceNodeId,
+                            nodeId: node.crossDomainOriginalNodeId
+                        };
+                        await this.mocHandler.deleteCrossDomainNodeFromMOC(
+                            mocFile,
+                            node.IDStr,
+                            crossDomainLinkInfo
+                        );
+                    } else {
+                        // 普通节点：使用常规删除方法
+                        await this.mocHandler.deleteNodeFromMOC(mocFile, node.IDStr);
+                    }
 
                     // 刷新视图
                     await this.refreshBranchMermaid();
@@ -1770,14 +1788,39 @@ export class ZKIndexView extends ItemView {
 
         // 监听批量删除节点事件
         this.addTrackedListener(branchGraphDiv, 'batch-delete-nodes', async (event: any) => {
-            const { nodeIds } = event.detail;
+            const { nodeIds, nodes } = event.detail;
 
             try {
                 const mocFile = this.app.vault.getFileByPath(currentMOCPath);
                 if (mocFile) {
-                    // 逐个删除节点
-                    for (const nodeId of nodeIds) {
-                        await this.mocHandler.deleteNodeFromMOC(mocFile, nodeId);
+                    // 逐个删除节点，根据 isCrossDomain 属性选择删除方法
+                    for (let i = 0; i < nodeIds.length; i++) {
+                        const nodeId = nodeIds[i];
+                        const nodeData = nodes[i];
+
+                        console.log(`[批量删除] 节点ID: ${nodeId}`);
+                        console.log(`[批量删除] nodeData:`, nodeData);
+                        console.log(`[批量删除] isCrossDomain:`, nodeData?.isCrossDomain);
+
+                        if (nodeData && nodeData.isCrossDomain) {
+                            console.log(`[批量删除] 检测到跨领域节点，使用专门删除方法`);
+                            console.log(`[批量删除] crossDomainSourceNodeId:`, nodeData.originalNode.crossDomainSourceNodeId);
+                            console.log(`[批量删除] crossDomainOriginalNodeId:`, nodeData.originalNode.crossDomainOriginalNodeId);
+                            // 跨领域节点：使用专门的删除方法
+                            const crossDomainLinkInfo = {
+                                sourceNodeId: nodeData.originalNode.crossDomainSourceNodeId,
+                                nodeId: nodeData.originalNode.crossDomainOriginalNodeId
+                            };
+                            await this.mocHandler.deleteCrossDomainNodeFromMOC(
+                                mocFile,
+                                nodeId,
+                                crossDomainLinkInfo
+                            );
+                        } else {
+                            console.log(`[批量删除] 普通节点，使用常规删除方法`);
+                            // 普通节点：使用常规删除方法
+                            await this.mocHandler.deleteNodeFromMOC(mocFile, nodeId);
+                        }
                     }
                     await this.refreshBranchMermaid();
                     new Notice(`已删除 ${nodeIds.length} 个节点`);
@@ -5322,9 +5365,6 @@ export class ZKIndexView extends ItemView {
         this.mocReverseRelations.clear();
         this.branchEntranceNodes = [];
         this.indexMermaidContainer = null;
-
-        // 清理视图状态缓存
-        this.savedViewState = null;
     }
 
     /**
@@ -5572,6 +5612,58 @@ export class ZKIndexView extends ItemView {
     /**
      * 在刷新前保存所有节点的当前位置（仅在位置发生变化时）
      */
+    /**
+     * 保存当前MOC文件的视图状态（缩放和平移）
+     * 只保留最近10个MOC文件的状态
+     */
+    private async saveMOCViewState(): Promise<void> {
+        if (!this.branchRenderer) {
+            return;
+        }
+
+        const cy = this.branchRenderer.getCytoscapeInstance();
+        if (!cy) {
+            return;
+        }
+
+        const mocFilePath = this.plugin.settings.mocCurrentFile;
+        if (!mocFilePath) {
+            return;
+        }
+
+        // 获取当前的缩放和平移状态
+        const zoom = cy.zoom();
+        const pan = cy.pan();
+
+        // 保存到设置中
+        const viewStates = this.plugin.settings.mocViewStates || {};
+        viewStates[mocFilePath] = {
+            zoom: zoom,
+            pan: { x: pan.x, y: pan.y }
+        };
+
+        // 限制只保留最近10个MOC文件的状态
+        const mocPaths = Object.keys(viewStates);
+        if (mocPaths.length > 10) {
+            // 按文件路径排序，删除最旧的
+            mocPaths.sort();
+            for (let i = 0; i < mocPaths.length - 10; i++) {
+                delete viewStates[mocPaths[i]];
+            }
+        }
+
+        this.plugin.settings.mocViewStates = viewStates;
+        await this.plugin.saveData(this.plugin.settings);
+    }
+
+    /**
+     * 加载指定MOC文件的视图状态
+     */
+    private loadMOCViewState(mocFilePath: string): { zoom: number; pan: { x: number; y: number } } | null {
+        const viewStates = this.plugin.settings.mocViewStates || {};
+        return viewStates[mocFilePath] || null;
+    }
+
     private async saveAllNodePositionsBeforeRefresh(): Promise<void> {
         if (!this.branchRenderer) {
             return;

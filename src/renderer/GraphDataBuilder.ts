@@ -273,6 +273,8 @@ export class GraphDataBuilder {
                         branchName: '',
                         gitNodePos: 0,
                         isCrossDomain: true,  // 标记为跨领域节点
+                        crossDomainSourceNodeId: sourceNodeId,  // 保存源节点 ID，用于删除时定位
+                        crossDomainOriginalNodeId: link.nodeId,  // 保存原始节点 ID
                         // 使用保存的位置或计算的默认位置
                         savedPosition: finalPosition
                     };
