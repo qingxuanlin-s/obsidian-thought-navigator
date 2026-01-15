@@ -31,10 +31,10 @@ export class GraphDataBuilder {
             if (node.IDArr.length > 1) {
                 const parentIDArr = node.IDArr.slice(0, -1);
                 const parentIDStr = parentIDArr.toString();
-                
+
                 // 查找父节点
                 const parent = Array.from(nodeMap.values()).find(n => n.IDStr === parentIDStr);
-                
+
                 if (parent) {
                     this.edges.push({
                         id: `edge-${parent.ID}-${node.ID}`,
@@ -61,18 +61,20 @@ export class GraphDataBuilder {
         this.nodes.forEach(node => nodeMap.set(node.IDStr, node));
 
         // 只根据 reverseRelations（Mermaid 文件中的箭头）来生成边
-        for (const relNode of reverseRelations.values()) { 
+        for (const relNode of reverseRelations.values()) {
             const sourceNode = nodeMap.get(relNode.sourceID);
-            if (sourceNode === undefined) continue;
+            if (sourceNode === undefined) {
+                continue;
+            }
 
             const targetNode = nodeMap.get(relNode.targetID);
             if (targetNode) {
                 // 判断是否是父子关系：检查 target 的父节点 ID 是否等于 source 的 ID
                 const isParentChild = this.isParentChildRelation(relNode.sourceID, relNode.targetID);
-                
+
                 // 如果是父子关系，使用实线；否则使用虚线
                 const edgeType = isParentChild ? 'parent' : 'reverse';
-                
+
                 this.edges.push({
                     id: `edge-${sourceNode.ID}-${targetNode.ID}`,
                     source: sourceNode.ID,
@@ -80,7 +82,7 @@ export class GraphDataBuilder {
                     type: edgeType,
                     label: relNode.relationText || ''
                 });
-            }              
+            }
         }
 
         return this;
@@ -238,8 +240,8 @@ export class GraphDataBuilder {
                 let crossDomainNode = this.nodes.find(n => n.ID === crossDomainNodeId);
 
                 if (!crossDomainNode) {
-                    // 从 node_positions 中读取保存的位置（使用 link.nodeId 作为键）
-                    const savedPosition = nodePositions[link.nodeId];
+                    // 从 cross_domain_links 的 position 字段读取保存的位置
+                    const savedPosition = link.position;
 
                     // 如果没有保存的位置，计算默认位置
                     let finalPosition = savedPosition;

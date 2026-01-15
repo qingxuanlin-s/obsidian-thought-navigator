@@ -1,6 +1,40 @@
 import { Notice, TFile } from "obsidian";
 import ZKNavigationPlugin from "main";
-import { MOCParseResult, CrossDomainLink } from "src/utils/utils";
+import { MOCParseResult, CrossDomainLink, MOCTreeNode } from "src/utils/utils";
+
+/**
+ * 深拷贝 MOCTreeNode 树结构
+ */
+function deepCopyMOCTreeNode(node: MOCTreeNode): MOCTreeNode {
+    return {
+        wikiLink: node.wikiLink,
+        nodeID: node.nodeID,
+        displayText: node.displayText,
+        depth: node.depth,
+        children: node.children.map(child => deepCopyMOCTreeNode(child)),
+        file: node.file,
+        relationText: node.relationText,
+        isArrowRelation: node.isArrowRelation,
+        arrowSource: node.arrowSource,
+        arrowTarget: node.arrowTarget
+    };
+}
+
+/**
+ * 深拷贝 MOCParseResult，避免修改缓存中的数据
+ */
+function deepCopyMOCResult(original: MOCParseResult): MOCParseResult {
+    return {
+        nodes: original.nodes.map(node => deepCopyMOCTreeNode(node)),
+        reverseRelations: new Map(Array.from(original.reverseRelations.entries())),
+        nodePositions: { ...original.nodePositions },
+        groups: original.groups.map(g => ({ ...g, nodeIds: [...g.nodeIds] })),
+        edgeCurvatures: { ...original.edgeCurvatures },
+        nodeColors: { ...original.nodeColors },
+        crossDomainLinks: original.crossDomainLinks ? JSON.parse(JSON.stringify(original.crossDomainLinks)) : {},
+        metadata: { ...original.metadata }
+    };
+}
 
 /**
  * MOC (Map of Content) 处理器
@@ -25,11 +59,14 @@ export class MOCHandler {
         const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
         const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
 
-        // 调用修改回调
-        await modifyCallback(mocData);
+        // 深拷贝数据，避免修改缓存中的数据
+        const mocDataCopy = deepCopyMOCResult(mocData);
+
+        // 调用修改回调（操作的是拷贝，不影响缓存）
+        await modifyCallback(mocDataCopy);
 
         // 保存更新后的数据（这会保留 crossDomainLinks 等所有 metadata）
-        await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
+        await saveMOCStructure(this.app, mocFile.path, headingTitle, mocDataCopy);
     }
 
     /**
@@ -222,7 +259,12 @@ export class MOCHandler {
      * 从 MOC 文件中删除跨思维树节点
      */
     async deleteCrossDomainNodeFromMOC(mocFile: TFile, nodeID: string, crossDomainLinkInfo: any): Promise<void> {
+        console.log(`[deleteCrossDomainNodeFromMOC] 正在删除文件: ${mocFile.path}`);
+
         await this.modifyMOCData(mocFile, (mocData) => {
+            console.log(`[deleteCrossDomainNodeFromMOC] 文件: ${mocFile.path}`);
+            console.log('[deleteCrossDomainNodeFromMOC] 删除前 crossDomainLinks:', JSON.stringify(mocData.crossDomainLinks, null, 2));
+
             if (!mocData.crossDomainLinks) {
                 throw new Error(`未找到跨领域链接数据`);
             }
@@ -230,6 +272,8 @@ export class MOCHandler {
             // 从 crossDomainLinkInfo 中获取 sourceNodeId 和原始的 link.nodeId
             const sourceNodeId = crossDomainLinkInfo.sourceNodeId;
             const originalNodeId = crossDomainLinkInfo.nodeId;
+
+            console.log(`[deleteCrossDomainNodeFromMOC] 删除: sourceNodeId=${sourceNodeId}, originalNodeId=${originalNodeId}, nodeID=${nodeID}`);
 
             if (!sourceNodeId || !mocData.crossDomainLinks[sourceNodeId]) {
                 throw new Error(`未找到跨领域链接: sourceNodeId=${sourceNodeId}`);
@@ -269,6 +313,8 @@ export class MOCHandler {
                         }
                     });
                 }
+
+                console.log('[deleteCrossDomainNodeFromMOC] 删除后 crossDomainLinks:', JSON.stringify(mocData.crossDomainLinks, null, 2));
             } else {
                 throw new Error(`未找到跨领域节点链接: ${originalNodeId}`);
             }
