@@ -1037,12 +1037,12 @@ export class ZKIndexView extends ItemView {
 
         const mocParseResult = await parseMOCStructure(this.app, currentMOCPath, headingTitle);
 
-
         // 转换为 ZKNode（即使为空也继续）
         this.mocNodes = mocParseResult.nodes.length > 0
             ? await convertMOCToZKNodes(this.plugin, mocParseResult.nodes, mocParseResult.reverseRelations, [], mocParseResult.nodePositions)
             : [];
-        this.mocReverseRelations = mocParseResult.reverseRelations;
+        // 克隆 reverseRelations Map，避免修改缓存中的数据
+        this.mocReverseRelations = new Map(Array.from(mocParseResult.reverseRelations.entries()));
 
 
         // 创建图形容器（即使没有节点也创建，以便支持双击添加）
@@ -1108,7 +1108,25 @@ export class ZKIndexView extends ItemView {
                 try {
                     const mocFile = this.app.vault.getFileByPath(currentMOCPath);
                     if (mocFile) {
-                        await this.saveNodePositionToMOC(mocFile, node.ID, position);
+                        // 检查是否是跨领域节点
+                        if (node.isCrossDomain && node.crossDomainSourceNodeId && node.crossDomainOriginalNodeId) {
+                            // 跨领域节点：保存到 cross_domain_links
+                            const crossDomainLink = {
+                                nodeId: node.crossDomainOriginalNodeId,
+                                mocPath: node.filePath, // 跨领域节点链接到的 MOC 文件
+                                displayText: node.displayText,
+                                filePath: node.filePath
+                            };
+                            await this.saveCrossDomainNodePosition(
+                                mocFile,
+                                node.crossDomainSourceNodeId,
+                                crossDomainLink,
+                                position
+                            );
+                        } else {
+                            // 普通节点：保存到 node_positions
+                            await this.saveNodePositionToMOC(mocFile, node.ID, position);
+                        }
                     }
                 } catch (error) {
                     console.error('Failed to save node position:', error);
@@ -1388,6 +1406,9 @@ export class ZKIndexView extends ItemView {
                         // 普通节点：使用常规删除方法
                         await this.mocHandler.deleteNodeFromMOC(mocFile, node.IDStr);
                     }
+
+                    // 等待一小段时间确保文件保存完成
+                    await new Promise(resolve => setTimeout(resolve, 100));
 
                     // 刷新视图
                     await this.refreshBranchMermaid();
@@ -5619,6 +5640,11 @@ export class ZKIndexView extends ItemView {
             const data = node.data();
             const originalNode = data.originalNode;
             if (originalNode && originalNode.ID) {
+                // 跳过跨领域节点（跨领域节点的位置保存在 cross_domain_links 中）
+                if (originalNode.isCrossDomain || originalNode.ID.startsWith('cd-')) {
+                    return;
+                }
+
                 const pos = node.position();
                 positions[originalNode.ID] = {
                     x: Math.round(pos.x * 100) / 100,
@@ -5670,21 +5696,27 @@ export class ZKIndexView extends ItemView {
      */
     private async saveNodePositionToMOC(mocFile: TFile, nodeID: string, position: { x: number; y: number }): Promise<void> {
         try {
+            // 检查是否是跨领域节点（跨领域节点的 ID 以 "cd-" 开头）
+            if (nodeID.startsWith('cd-')) {
+                console.log('[saveNodePositionToMOC] 跳过跨领域节点:', nodeID);
+                return;
+            }
+
             const headingTitle = this.plugin.settings.mocHeadingTitle;
-            
+
             // 解析当前的 MOC 结构
             const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
             const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
-            
+
             // 更新节点位置
             mocData.nodePositions[nodeID] = {
                 x: Math.round(position.x * 100) / 100, // 保留两位小数
                 y: Math.round(position.y * 100) / 100
             };
-            
+
             // 保存更新后的数据
             await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
-            
+
         } catch (error) {
             console.error('Failed to save node position to MOC:', error);
             new Notice(`保存节点位置失败: ${error.message}`);
@@ -5718,7 +5750,7 @@ export class ZKIndexView extends ItemView {
     }
 
     /**
-     * 保存跨领域节点位置到 node_positions 和 cross_domain_links
+     * 保存跨领域节点位置到 cross_domain_links
      */
     private async saveCrossDomainNodePosition(
         mocFile: TFile,
@@ -5732,10 +5764,7 @@ export class ZKIndexView extends ItemView {
                 y: Math.round(position.y * 100) / 100
             };
 
-            // 1. 保存到 node_positions（用于读取位置）
-            mocData.nodePositions[crossDomainLink.nodeId] = roundedPosition;
-
-            // 2. 初始化 cross_domain_links
+            // 初始化 cross_domain_links
             if (!mocData.crossDomainLinks) {
                 mocData.crossDomainLinks = {};
             }

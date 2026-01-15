@@ -72,15 +72,9 @@ export class MermaidSerializer {
             node_positions: data.nodePositions || {},
             groups: data.groups || [],
             edge_curvatures: data.edgeCurvatures || {},
-            node_colors: data.nodeColors || {}
+            node_colors: data.nodeColors || {},
+            cross_domain_links: data.crossDomainLinks || {}  // 始终包含 cross_domain_links，即使为空
         };
-
-        // 添加跨领域关联（如果存在）
-        if (data.crossDomainLinks && Object.keys(data.crossDomainLinks).length > 0) {
-            metadata.cross_domain_links = data.crossDomainLinks;
-        }
-
-
 
         const jsonStr = JSON.stringify(metadata);
         return `%% ext:${jsonStr} %%`;
@@ -93,12 +87,12 @@ export class MermaidSerializer {
      */
     serialize(data: MOCParseResult): string {
         const lines: string[] = [];
-        
+
         // 添加 graph 声明
         lines.push('```mermaid');
         lines.push('graph LR');
         lines.push('');
-        
+
         // 构建节点 Map
         const nodesMap = new Map<string, MOCTreeNode>();
         const allNodes: MOCTreeNode[] = [];
@@ -163,18 +157,18 @@ export class MermaidSerializer {
         
         // 4. 定义连线关系
         lines.push('%% 4. 定义连线关系');
-        
+
         // 构建父子关系边
         const edges: Array<{ source: string; target: string; label: string; comment: string }> = [];
-        
+
         for (const node of allNodes) {
             const idParts = node.nodeID.split('.');
-            
+
             if (idParts.length > 1) {
                 // 有父节点
                 const parentId = idParts.slice(0, -1).join('.');
                 const parentNode = nodesMap.get(parentId);
-                
+
                 if (parentNode) {
                     edges.push({
                         source: parentId,
@@ -185,14 +179,14 @@ export class MermaidSerializer {
                 }
             }
         }
-        
+
         // 添加反向关系边
-        for (const [_, relation] of data.reverseRelations) {
+        for (const [, relation] of data.reverseRelations) {
             // 检查这是否已经是父子边
             const targetIdParts = relation.targetID.split('.');
-            const isParentChildEdge = targetIdParts.length > 1 && 
+            const isParentChildEdge = targetIdParts.length > 1 &&
                                      targetIdParts.slice(0, -1).join('.') === relation.sourceID;
-            
+
             if (!isParentChildEdge) {
                 edges.push({
                     source: relation.sourceID,

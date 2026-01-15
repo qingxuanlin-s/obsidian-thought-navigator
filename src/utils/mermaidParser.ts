@@ -56,18 +56,11 @@ export class MermaidParser {
      * 清除指定文件的缓存
      */
     static clearCacheForFile(filePath: string): void {
-        let cleared = 0;
-        const keysBefore = Array.from(MermaidParser.parseCache.keys());
-
         for (const key of MermaidParser.parseCache.keys()) {
             if (key.startsWith(`${filePath}:`)) {
                 MermaidParser.parseCache.delete(key);
-                cleared++;
             }
         }
-
-        const keysAfter = Array.from(MermaidParser.parseCache.keys());
-    
     }
 
     /**
@@ -316,10 +309,20 @@ export class MermaidParser {
         const file = this.app.vault.getFileByPath(filePath);
         if (file) {
             const cacheKey = `${filePath}:${file.stat.mtime}`;
-           
+
             const cached = MermaidParser.parseCache.get(cacheKey);
             if (cached) {
-                return cached;
+                // 克隆 reverseRelations Map 和其他可变对象，避免缓存被污染
+                return {
+                    ...cached,
+                    reverseRelations: new Map(Array.from(cached.reverseRelations.entries())),
+                    nodePositions: { ...cached.nodePositions },
+                    groups: cached.groups.map(g => ({ ...g, nodeIds: [...g.nodeIds] })),
+                    edgeCurvatures: { ...cached.edgeCurvatures },
+                    nodeColors: { ...cached.nodeColors },
+                    crossDomainLinks: cached.crossDomainLinks ? JSON.parse(JSON.stringify(cached.crossDomainLinks)) : {},
+                    metadata: { ...cached.metadata }
+                };
             }
 
 
@@ -357,13 +360,13 @@ export class MermaidParser {
         let i = 0;
         while (i < lines.length) {
             const line = lines[i].trim();
-            
+
             // 跳过空行和注释
             if (line === '' || line.startsWith('%%') || line.startsWith('graph ')) {
                 i++;
                 continue;
             }
-            
+
             // 解析 subgraph
             const subgraphResult = this.parseSubgraph(lines, i);
             if (subgraphResult) {
@@ -376,7 +379,7 @@ export class MermaidParser {
                 i = subgraphResult.endIndex + 1;
                 continue;
             }
-            
+
             // 解析节点
             const node = this.parseNode(line);
             if (node) {
@@ -384,7 +387,7 @@ export class MermaidParser {
                 i++;
                 continue;
             }
-            
+
             // 解析边
             const edge = this.parseEdge(line);
             if (edge) {
@@ -392,7 +395,7 @@ export class MermaidParser {
                 i++;
                 continue;
             }
-            
+
             // 未识别的行
             if (line !== 'direction TB' && line !== 'direction LR' && line !== 'end') {
                 this.warnings.push({
@@ -402,7 +405,7 @@ export class MermaidParser {
                     context: line
                 });
             }
-            
+
             i++;
         }
         
@@ -450,7 +453,7 @@ export class MermaidParser {
         // 提取 filePath 的目录部分作为 basePath，用于解析 wikilink
         const basePath = filePath.includes('/') ? filePath.substring(0, filePath.lastIndexOf('/')) : '';
         const mocNodes = await this.buildMOCTreeNodes(nodesMap, validEdges, basePath);
-        
+
         // 构建反向关系 Map
         // 将所有边都添加到 reverseRelations 中（包括无标签的边）
         const reverseRelations = new Map<string, ReverseRelation>();
@@ -462,7 +465,7 @@ export class MermaidParser {
                 relationText: edge.label || ''  // 如果没有标签，使用空字符串
             });
         }
-        
+
         const parseTime = Date.now() - startTime;
 
         const result = {
@@ -482,7 +485,7 @@ export class MermaidParser {
                 headingTitle
             }
         };
-        
+
         // 保存到缓存
         if (file) {
             const cacheKey = `${filePath}:${file.stat.mtime}`;
@@ -494,7 +497,7 @@ export class MermaidParser {
                 MermaidParser.parseCache.delete(firstKey);
             }
         }
-        
+
         return result;
     }
 
