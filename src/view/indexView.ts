@@ -5525,8 +5525,10 @@ export class ZKIndexView extends ItemView {
      * 更新 MOC 文件中箭头关系的标签
      */
     private async updateArrowRelationLabelInMOC(mocFile: TFile, sourceID: string, targetID: string, newLabel: string): Promise<void> {
+        console.log('[updateArrowRelationLabelInMOC] 开始更新关系:', { sourceID, targetID, newLabel });
         try {
             await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
+
                 // 检查箭头关系是否存在
                 const key = `${sourceID}->${targetID}`;
                 const relation = mocData.reverseRelations.get(key);
@@ -5534,9 +5536,16 @@ export class ZKIndexView extends ItemView {
                     throw new Error(`未找到箭头关系: ${sourceID} --> ${targetID}`);
                 }
 
+
                 // 更新关系标签
                 relation.relationText = newLabel;
                 mocData.reverseRelations.set(key, relation);
+
+                // 如果是父子边，还需要更新节点树中的 relationText
+                const targetNode = this.findNodeInTree(mocData.nodes, targetID);
+                if (targetNode && targetNode.relationText !== undefined) {
+                    targetNode.relationText = newLabel;
+                }
             });
 
             new Notice(`已更新关系文本: ${sourceID} → ${targetID}`);
@@ -5544,6 +5553,22 @@ export class ZKIndexView extends ItemView {
             console.error('Failed to update arrow relation label:', error);
             new Notice(`更新关系文本失败: ${error.message}`);
         }
+    }
+
+    /**
+     * 在节点树中查找指定 nodeID 的节点
+     */
+    private findNodeInTree(nodes: any[], nodeID: string): any {
+        for (const node of nodes) {
+            if (node.nodeID === nodeID) {
+                return node;
+            }
+            if (node.children && node.children.length > 0) {
+                const found = this.findNodeInTree(node.children, nodeID);
+                if (found) return found;
+            }
+        }
+        return null;
     }
 
     /**
