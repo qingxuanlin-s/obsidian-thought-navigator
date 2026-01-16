@@ -135,6 +135,9 @@ export class ZKIndexView extends ItemView {
     // MOC 处理器（用于 MOC 文件操作）
     private mocHandler: MOCHandler;
 
+    // MOC 视图状态（缩放和平移）
+    private mocViewStates: Map<string, { zoom: number; pan: { x: number; y: number } }> = new Map();
+
     constructor(leaf: WorkspaceLeaf, plugin: ZKNavigationPlugin) {
         super(leaf);
         this.plugin = plugin;
@@ -1082,11 +1085,25 @@ export class ZKIndexView extends ItemView {
         // 渲染图形
         await this.branchRenderer.render(branchGraphDiv, graphData, options);
 
-        // 每次切换MOC后自动居中
+        // 恢复或自动居中视图
         const cy = this.branchRenderer.getCytoscapeInstance();
         if (cy) {
-            cy.fit(undefined, 50); // 50px padding
+            const savedViewState = this.getMOCViewState(currentMOCPath);
+            if (savedViewState) {
+                // 恢复保存的视图状态
+                cy.zoom(savedViewState.zoom);
+                cy.pan(savedViewState.pan);
+            } else {
+                // 没有保存的状态，自动居中
+                cy.fit(undefined, 50);
+            }
         }
+
+        // 监听视图状态变化事件（缩放和平移）
+        this.addTrackedListener(branchGraphDiv, 'viewStateChanged', async (event: any) => {
+            const { zoom, pan } = event.detail;
+            this.saveMOCViewState(currentMOCPath, zoom, pan);
+        });
 
         // 监听节点位置变化事件（拖动后保存到 MOC 文件）
         this.addTrackedListener(branchGraphDiv, 'node-position-changed', async (event: any) => {
@@ -5344,6 +5361,20 @@ export class ZKIndexView extends ItemView {
             console.error("保存自由节点失败:", error);
             new Notice(`保存失败: ${error.message}`);
         }
+    }
+
+    /**
+     * 获取 MOC 文件的视图状态
+     */
+    private getMOCViewState(mocPath: string): { zoom: number; pan: { x: number; y: number } } | null {
+        return this.mocViewStates.get(mocPath) || null;
+    }
+
+    /**
+     * 保存 MOC 文件的视图状态
+     */
+    private saveMOCViewState(mocPath: string, zoom: number, pan: { x: number; y: number }): void {
+        this.mocViewStates.set(mocPath, { zoom, pan });
     }
 
     async onClose() {

@@ -2814,6 +2814,20 @@ case 'dagre':
                 }
             }
         });
+
+        // 监听视图状态变化（缩放和平移）
+        // 使用防抖避免频繁触发
+        let viewStateTimeout: NodeJS.Timeout | null = null;
+        this.cy.on('zoom pan', () => {
+            if (viewStateTimeout) clearTimeout(viewStateTimeout);
+            viewStateTimeout = setTimeout(() => {
+                const zoom = this.cy!.zoom();
+                const pan = this.cy!.pan();
+                this.container?.dispatchEvent(new CustomEvent('viewStateChanged', {
+                    detail: { zoom, pan }
+                }));
+            }, 300); // 300ms 防抖
+        });
     }
 
     /**
