@@ -1780,58 +1780,61 @@ export class ZKIndexView extends ItemView {
         // 监听创建箭头关系事件（拖动连线到现有节点）
         this.addTrackedListener(branchGraphDiv, 'create-arrow-relation', async (event: any) => {
             const { sourceNode, targetNode } = event.detail;
-            
+
             if (!sourceNode || !targetNode) {
                 console.warn('Invalid nodes for arrow relation:', { sourceNode, targetNode });
                 return;
             }
-            
+
             // 检查目标节点是否是自由节点（ID 以 "free." 开头）
             const isFreeNode = targetNode.IDStr.startsWith('free.');
             let finalTargetID = targetNode.IDStr;
-            
+            let relationText = '';
+
             if (isFreeNode) {
                 // 生成新的子节点 ID
                 const newChildID = this.generateChildNodeID(sourceNode.IDStr);
-                
+
                 // 在刷新前保存所有节点的当前位置
                 await this.saveAllNodePositionsBeforeRefresh();
-                
-                // 重命名自由节点为子节点
+
+                // 将自由节点移动为源节点的子节点（而不是只改 ID）
                 const mocFile = this.app.vault.getFileByPath(currentMOCPath);
                 if (mocFile) {
-                    await this.mocHandler.updateNodeIDInMOC(mocFile, targetNode.IDStr, newChildID);
+                    await this.mocHandler.moveNodeToParent(mocFile, targetNode.IDStr, sourceNode.IDStr, newChildID);
                     finalTargetID = newChildID;
-                    new Notice(`自由节点 ${targetNode.IDStr} 已转换为 ${newChildID}`);
-                }
-            }
-            
-            // 显示关系文本输入对话框
-            const relationText = await this.showRelationTextDialog();
-            
-            // 在刷新前保存所有节点的当前位置（如果之前没保存）
-            if (!isFreeNode) {
-                await this.saveAllNodePositionsBeforeRefresh();
-            }
-            
-            try {
-                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
-                if (mocFile) {
-                    await this.addArrowRelationToMOC(
-                        mocFile,
-                        sourceNode.IDStr,
-                        finalTargetID,
-                        relationText || ''
-                    );
-                    
+                    new Notice(`自由节点 ${targetNode.IDStr} 已转换为子节点 ${newChildID}`);
+
                     // 刷新视图
                     await this.refreshBranchMermaid();
-                    
-                    new Notice(`已创建箭头关系: ${sourceNode.ID} → ${finalTargetID}`);
                 }
-            } catch (error) {
-                console.error('Failed to create arrow relation:', error);
-                new Notice(`创建箭头关系失败: ${error.message}`);
+            } else {
+                // 如果不是自由节点，显示关系文本输入对话框
+                const dialogResult = await this.showRelationTextDialog();
+                relationText = dialogResult || '';
+
+                // 在刷新前保存所有节点的当前位置
+                await this.saveAllNodePositionsBeforeRefresh();
+
+                try {
+                    const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                    if (mocFile) {
+                        await this.addArrowRelationToMOC(
+                            mocFile,
+                            sourceNode.IDStr,
+                            finalTargetID,
+                            relationText
+                        );
+
+                        // 刷新视图
+                        await this.refreshBranchMermaid();
+
+                        new Notice(`已创建箭头关系: ${sourceNode.ID} → ${finalTargetID}`);
+                    }
+                } catch (error) {
+                    console.error('Failed to create arrow relation:', error);
+                    new Notice(`创建箭头关系失败: ${error.message}`);
+                }
             }
         });
 
@@ -5704,23 +5707,27 @@ export class ZKIndexView extends ItemView {
                 return;
             }
 
-            await this.mocHandler.modifyMOCData(mocFile, async (mocData) => {
-                // 检查箭头关系是否存在
-                const key = `${sourceID}->${targetID}`;
-                if (!mocData.reverseRelations.has(key)) {
-                    throw new Error(`未找到箭头关系: ${sourceID} --> ${targetID}`);
-                }
+            // 检查目标节点是否已经是自由节点
+            const isAlreadyFreeNode = targetID.startsWith('free.');
 
-                // 从 reverseRelations 中删除
-                mocData.reverseRelations.delete(key);
+            // 删除反向关系
+            await this.mocHandler.modifyMOCData(mocFile, async (mocData) => {
+                const key = `${sourceID}->${targetID}`;
+                if (mocData.reverseRelations.has(key)) {
+                    mocData.reverseRelations.delete(key);
+                }
             });
 
-            // 约束 2：删除后，将目标节点 ID 转换为自由节点格式
-            const freeNodeID = this.generateNextFreeNodeID();
-            await this.mocHandler.updateNodeIDInMOC(mocFile, targetID, freeNodeID);
-
-            new Notice(`已删除箭头关系: ${sourceID} → ${targetID}`);
-            new Notice(`${targetID} 已转换为自由节点: ${freeNodeID}`);
+            // 只有当目标节点不是自由节点时，才转换为自由节点
+            if (!isAlreadyFreeNode) {
+                new Notice(`已删除箭头关系: ${sourceID} → ${targetID}`);
+                const freeNodeID = this.generateNextFreeNodeID();
+                await this.mocHandler.convertChildToFreeNode(mocFile, targetID, freeNodeID);
+                new Notice(`已删除箭头关系: ${sourceID} → ${targetID}`);
+                new Notice(`${targetID} 已转换为自由节点: ${freeNodeID}`);
+            } else {
+                new Notice(`已删除箭头关系: ${sourceID} → ${targetID}`);
+            }
         } catch (error) {
             console.error('Failed to delete arrow relation:', error);
             new Notice(`删除箭头关系失败: ${error.message}`);

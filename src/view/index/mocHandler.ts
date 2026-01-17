@@ -161,6 +161,210 @@ export class MOCHandler {
     }
 
     /**
+     * 将自由节点移动为指定父节点的子节点
+     * @param mocFile - MOC 文件
+     * @param freeNodeID - 自由节点 ID（以 'free.' 开头）
+     * @param parentID - 父节点 ID
+     * @param newChildID - 新的子节点 ID
+     */
+    async moveNodeToParent(mocFile: TFile, freeNodeID: string, parentID: string, newChildID: string): Promise<void> {
+        await this.modifyMOCData(mocFile, (mocData) => {
+            // 1. 从根节点中找到并移除自由节点
+            let nodeToMove: any = null;
+            let nodeIndex = -1;
+
+            for (let i = 0; i < mocData.nodes.length; i++) {
+                if (mocData.nodes[i].nodeID === freeNodeID) {
+                    nodeToMove = mocData.nodes[i];
+                    nodeIndex = i;
+                    break;
+                }
+            }
+
+            if (!nodeToMove) {
+                throw new Error(`未找到自由节点: ${freeNodeID}`);
+            }
+
+            // 从根节点中移除
+            mocData.nodes.splice(nodeIndex, 1);
+
+            // 2. 更新节点 ID 和深度
+            nodeToMove.nodeID = newChildID;
+
+            // 3. 找到父节点并添加为子节点
+            const findNodeInTree = (nodes: any[], targetID: string): any => {
+                for (const node of nodes) {
+                    if (node.nodeID === targetID) {
+                        return node;
+                    }
+                    if (node.children && node.children.length > 0) {
+                        const found = findNodeInTree(node.children, targetID);
+                        if (found) return found;
+                    }
+                }
+                return null;
+            };
+
+            const parentNode = findNodeInTree(mocData.nodes, parentID);
+            if (!parentNode) {
+                throw new Error(`未找到父节点: ${parentID}`);
+            }
+
+            // 更新深度
+            nodeToMove.depth = parentNode.depth + 1;
+
+            // 添加到父节点的子节点列表
+            if (!parentNode.children) {
+                parentNode.children = [];
+            }
+            parentNode.children.push(nodeToMove);
+
+            // 4. 更新节点位置
+            if (mocData.nodePositions && mocData.nodePositions[freeNodeID]) {
+                mocData.nodePositions[newChildID] = mocData.nodePositions[freeNodeID];
+                delete mocData.nodePositions[freeNodeID];
+            }
+
+            // 5. 更新节点颜色
+            if (mocData.nodeColors && mocData.nodeColors[freeNodeID]) {
+                mocData.nodeColors[newChildID] = mocData.nodeColors[freeNodeID];
+                delete mocData.nodeColors[freeNodeID];
+            }
+
+            // 6. 更新边弧度（需要更新包含该节点的所有边 key）
+            if (mocData.edgeCurvatures) {
+                const newCurvatures: Record<string, any> = {};
+                Object.entries(mocData.edgeCurvatures).forEach(([key, value]) => {
+                    const parts = key.split('-');
+                    const newKey = parts.map(part => part === freeNodeID ? newChildID : part).join('-');
+                    newCurvatures[newKey] = value;
+                });
+                mocData.edgeCurvatures = newCurvatures;
+            }
+
+            // 7. 更新跨领域链接
+            if (mocData.crossDomainLinks && mocData.crossDomainLinks[freeNodeID]) {
+                mocData.crossDomainLinks[newChildID] = mocData.crossDomainLinks[freeNodeID];
+                delete mocData.crossDomainLinks[freeNodeID];
+            }
+
+            // 8. 更新 reverseRelations 中的节点 ID
+            const newReverseRelations = new Map();
+            for (const [, relation] of mocData.reverseRelations) {
+                const newSourceID = relation.sourceID === freeNodeID ? newChildID : relation.sourceID;
+                const newTargetID = relation.targetID === freeNodeID ? newChildID : relation.targetID;
+                const newKey = `${newSourceID}->${newTargetID}`;
+                newReverseRelations.set(newKey, {
+                    sourceID: newSourceID,
+                    targetID: newTargetID,
+                    relationText: relation.relationText
+                });
+            }
+            mocData.reverseRelations = newReverseRelations;
+        });
+    }
+
+    /**
+     * 将子节点转换为自由节点（从父节点的 children 中移除，添加到根节点）
+     * @param mocFile - MOC 文件
+     * @param childID - 子节点 ID
+     * @param newFreeID - 新的自由节点 ID
+     */
+    async convertChildToFreeNode(mocFile: TFile, childID: string, newFreeID: string): Promise<void> {
+        await this.modifyMOCData(mocFile, (mocData) => {
+            let nodeToConvert: any = null;
+
+            // 1. 从父节点的 children 中找到并移除子节点
+            const removeFromParent = (nodes: any[]): boolean => {
+                for (const node of nodes) {
+                    if (node.children && node.children.length > 0) {
+                        const childIndex = node.children.findIndex((child: any) => child.nodeID === childID);
+                        if (childIndex !== -1) {
+                            // 找到子节点，移除它
+                            nodeToConvert = node.children.splice(childIndex, 1)[0];
+                            return true;
+                        }
+                        // 递归查找
+                        if (removeFromParent(node.children)) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            };
+
+            if (!removeFromParent(mocData.nodes)) {
+                throw new Error(`未找到子节点: ${childID}`);
+            }
+
+            if (!nodeToConvert) {
+                throw new Error(`无法提取子节点: ${childID}`);
+            }
+
+            // 2. 更新节点 ID 和深度
+            nodeToConvert.nodeID = newFreeID;
+            nodeToConvert.depth = 0;
+
+            // 3. 添加到根节点
+            mocData.nodes.push(nodeToConvert);
+
+            // 4. 更新节点位置
+            if (mocData.nodePositions && mocData.nodePositions[childID]) {
+                mocData.nodePositions[newFreeID] = mocData.nodePositions[childID];
+                delete mocData.nodePositions[childID];
+            }
+
+            // 5. 更新节点颜色
+            if (mocData.nodeColors && mocData.nodeColors[childID]) {
+                mocData.nodeColors[newFreeID] = mocData.nodeColors[childID];
+                delete mocData.nodeColors[childID];
+            }
+
+            // 6. 更新边弧度（需要更新包含该节点的所有边 key）
+            if (mocData.edgeCurvatures) {
+                const newCurvatures: Record<string, any> = {};
+                Object.entries(mocData.edgeCurvatures).forEach(([key, value]) => {
+                    const parts = key.split('-');
+                    const newKey = parts.map(part => part === childID ? newFreeID : part).join('-');
+                    newCurvatures[newKey] = value;
+                });
+                mocData.edgeCurvatures = newCurvatures;
+            }
+
+            // 7. 更新跨领域链接
+            if (mocData.crossDomainLinks && mocData.crossDomainLinks[childID]) {
+                mocData.crossDomainLinks[newFreeID] = mocData.crossDomainLinks[childID];
+                delete mocData.crossDomainLinks[childID];
+            }
+
+            // 8. 更新 reverseRelations 中的节点 ID，但要移除父节点到该子节点的反向关系
+            const newReverseRelations = new Map();
+
+            // 找到原父节点 ID（从 childID 中提取）
+            const idParts = childID.split('.');
+            const originalParentId = idParts.length > 1 ? idParts.slice(0, -1).join('.') : null;
+
+            for (const [, relation] of mocData.reverseRelations) {
+                const newSourceID = relation.sourceID === childID ? newFreeID : relation.sourceID;
+                const newTargetID = relation.targetID === childID ? newFreeID : relation.targetID;
+
+                // 如果这是原父节点到该子节点的关系，跳过不添加（相当于删除）
+                if (newSourceID === originalParentId && newTargetID === newFreeID) {
+                    continue;
+                }
+
+                const newKey = `${newSourceID}->${newTargetID}`;
+                newReverseRelations.set(newKey, {
+                    sourceID: newSourceID,
+                    targetID: newTargetID,
+                    relationText: relation.relationText
+                });
+            }
+            mocData.reverseRelations = newReverseRelations;
+        });
+    }
+
+    /**
      * 从 MOC 文件中删除节点
      */
     async deleteNodeFromMOC(mocFile: TFile, nodeID: string): Promise<void> {
