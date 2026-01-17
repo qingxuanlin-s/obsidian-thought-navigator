@@ -1,7 +1,7 @@
 {
-	"name": "zettelkasten-navigation",
+	"name": "thought-tree-navigator",
 	"version": "0.0.21",
-	"description": "Luhmann-style notes ID and indexes",
+	"description": "Navigate and visualize the natural growth of your thoughts with Luhmann-style Zettelkasten",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
