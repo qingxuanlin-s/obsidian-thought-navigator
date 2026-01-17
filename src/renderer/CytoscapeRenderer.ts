@@ -2892,6 +2892,9 @@ case 'dagre':
                 e.preventDefault();
                 e.stopPropagation();
                 popover.remove();
+            } else if (e.key === 'Delete' || e.key === 'Backspace') {
+                // 阻止删除键冒泡到 Cytoscape，允许在输入框中正常删除
+                e.stopPropagation();
             }
         };
 
