@@ -531,3 +531,40 @@ align-items: center;
 .zk-moc-button {
     min-width: 180px;
 }
+
+/* Node label editor */
+.node-label-editor {
+    font-family: var(--font-interface);
+    line-height: 1.4;
+}
+
+.node-label-editor:focus {
+    outline: none;
+    border-color: var(--interactive-accent) !important;
+}
+
+/* Node link suggester */
+.node-link-suggester {
+    font-family: var(--font-interface);
+}
+
+.node-link-suggester::-webkit-scrollbar {
+    width: 8px;
+}
+
+.node-link-suggester::-webkit-scrollbar-track {
+    background: var(--background-secondary);
+}
+
+.node-link-suggester::-webkit-scrollbar-thumb {
+    background: var(--background-modifier-border);
+    border-radius: 4px;
+}
+
+.node-link-suggester::-webkit-scrollbar-thumb:hover {
+    background: var(--background-modifier-border-hover);
+}
+
+.suggester-item:hover {
+    background-color: var(--background-modifier-hover);
+}

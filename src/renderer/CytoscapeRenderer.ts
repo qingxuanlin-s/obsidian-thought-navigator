@@ -561,6 +561,17 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'padding': '20px'
             } as any
         },
+        // 占位符节点样式 - 虚线边框，半透明
+        {
+            selector: 'node[?isPlaceholder]',
+            style: {
+                'opacity': 0.7,
+                'border-style': 'dashed',
+                'border-width': '2px',
+                'border-color': colors.nodeBorderSelected,
+                'background-color': colors.nodeBackground
+            } as any
+        },
         // 默认边样式 - 使用 unbundled-bezier 支持自定义控制点
         {
             selector: 'edge',
@@ -1886,8 +1897,16 @@ case 'dagre':
     private createGroupFromNodes(nodes: any[]): void {
         if (nodes.length === 0) return;
 
+        // 过滤掉占位符节点和分组节点
+        const validNodes = nodes.filter(node => {
+            const data = node.data();
+            return !data.isPlaceholder && !data.isGroup && data.originalNode;
+        });
+
+        if (validNodes.length === 0) return;
+
         // 获取节点 ID 列表
-        const nodeIds = nodes.map(node => node.data('originalNode').ID);
+        const nodeIds = validNodes.map(node => node.data('originalNode').ID);
 
         // 检查是否有节点已经在某个分组中
         const existingGroups = this.findGroupsContainingNodes(nodeIds);
@@ -2487,6 +2506,437 @@ case 'dagre':
     }
 
     /**
+     * 显示占位符节点的内联编辑器
+     */
+    private showInlineNodeEditor(node: any): void {
+        if (!this.cy || !this.container) return;
+
+        const data = node.data();
+
+        // 只允许编辑占位符节点
+        if (!data.isPlaceholder) return;
+
+        // 移除已存在的编辑器
+        const existingEditor = this.container.querySelector('.node-label-editor');
+        if (existingEditor) {
+            existingEditor.remove();
+        }
+
+        // 获取节点位置
+        const boundingBox = node.renderedBoundingBox();
+
+        // 创建 textarea，直接覆盖在节点上
+        const textarea = document.createElement('textarea');
+        textarea.value = data.label || '';
+        textarea.className = 'node-label-editor';
+
+        // 重要：在编辑时隐藏节点标签，避免重复显示
+        node.data('label', '');
+
+        textarea.style.cssText = `
+            position: absolute;
+            left: ${boundingBox.x1}px;
+            top: ${boundingBox.y1}px;
+            width: ${boundingBox.x2 - boundingBox.x1}px;
+            height: ${boundingBox.y2 - boundingBox.y1}px;
+            transform: translate(0, 0);
+            padding: 0;
+            border: none;
+            background: transparent;
+            color: inherit;
+            font-size: inherit;
+            font-family: inherit;
+            z-index: 1000;
+            resize: none;
+            overflow: hidden;
+            outline: none;
+            text-align: center;
+            line-height: ${boundingBox.y2 - boundingBox.y1}px;
+            cursor: text;
+        `;
+
+        this.container.appendChild(textarea);
+
+        // 自动聚焦并全选文本（方便删除）
+        setTimeout(() => {
+            textarea.focus();
+            textarea.select();
+        }, 0);
+
+        // 标记是否已保存，避免重复触发
+        let isSaved = false;
+        const suggesterPopoverRef = { value: null as HTMLElement | null };
+
+        // 保存函数
+        const saveNode = async () => {
+            if (isSaved) return;
+            isSaved = true;
+
+            const newLabel = textarea.value.trim();
+
+            // 恢复节点标签
+            node.data('label', newLabel);
+
+            // 触发节点标签编辑事件
+            this.container?.dispatchEvent(new CustomEvent('placeholder-node-edit', {
+                detail: {
+                    nodeId: data.id,
+                    label: newLabel,
+                    position: { x: boundingBox.x1, y: boundingBox.y1 }
+                }
+            }));
+
+            // 清理
+            if (textarea.parentNode) {
+                textarea.remove();
+            }
+            if (suggesterPopoverRef.value && suggesterPopoverRef.value.parentNode) {
+                suggesterPopoverRef.value.remove();
+            }
+        };
+
+        // 取消编辑函数
+        const cancelEdit = () => {
+            isSaved = true;
+            // 恢复原始标签
+            node.data('label', data.label || '');
+            if (textarea.parentNode) {
+                textarea.remove();
+            }
+            if (suggesterPopoverRef.value && suggesterPopoverRef.value.parentNode) {
+                suggesterPopoverRef.value.remove();
+            }
+        };
+
+        // 事件监听器
+        textarea.addEventListener('input', (e) => {
+            // 阻止事件冒泡
+            e.stopPropagation();
+            // 不再实时更新节点标签，避免重复显示
+            this.checkForLinkPattern(textarea, node, boundingBox, suggesterPopoverRef);
+        });
+
+        // 阻止其他事件冒泡到 Cytoscape
+        textarea.addEventListener('keyup', (e) => e.stopPropagation());
+        textarea.addEventListener('keypress', (e) => e.stopPropagation());
+        textarea.addEventListener('click', (e) => e.stopPropagation());
+        textarea.addEventListener('mousedown', (e) => e.stopPropagation());
+
+        textarea.addEventListener('keydown', (e: KeyboardEvent) => {
+            // 阻止事件冒泡到 Cytoscape，避免被其他事件处理器拦截
+            e.stopPropagation();
+
+            // 如果 suggester 正在显示，让 suggester 的键盘处理器处理
+            if (suggesterPopoverRef.value && suggesterPopoverRef.value.parentNode) {
+                // suggester 会处理方向键和 Enter
+                return;
+            }
+
+            if (e.key === 'Enter' && e.shiftKey) {
+                // Shift + Enter 保存节点
+                e.preventDefault();
+                saveNode();
+            } else if (e.key === 'Enter') {
+                // 单独 Enter 允许换行
+                // 不做任何处理，允许默认行为
+            } else if (e.key === 'Escape') {
+                // 取消编辑
+                e.preventDefault();
+                cancelEdit();
+            }
+            // 其他键（包括删除键）允许默认行为，不做任何处理
+        });
+
+        // 失去焦点时不自动保存，只移除 suggester
+        textarea.addEventListener('blur', () => {
+            setTimeout(() => {
+                // 如果焦点不在 suggester 上，关闭 suggester 但不保存节点
+                if (suggesterPopoverRef.value && !(suggesterPopoverRef.value as Node).contains(document.activeElement as Node)) {
+                    suggesterPopoverRef.value.remove();
+                    suggesterPopoverRef.value = null;
+                }
+            }, 200);
+        });
+
+        // 监听图形缩放和平移，更新编辑器位置
+        const updatePosition = () => {
+            if (!this.cy) return;
+
+            const newBoundingBox = node.renderedBoundingBox();
+            const width = newBoundingBox.x2 - newBoundingBox.x1;
+            const height = newBoundingBox.y2 - newBoundingBox.y1;
+
+            textarea.style.left = `${newBoundingBox.x1}px`;
+            textarea.style.top = `${newBoundingBox.y1}px`;
+            textarea.style.width = `${width}px`;
+            textarea.style.height = `${height}px`;
+            textarea.style.lineHeight = `${height}px`;
+        };
+
+        this.cy.on('zoom pan', updatePosition);
+
+        // 编辑器移除时清理事件监听
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                mutation.removedNodes.forEach((removedNode) => {
+                    if (removedNode === textarea && this.cy) {
+                        this.cy.off('zoom pan', updatePosition);
+                    }
+                });
+            });
+        });
+
+        observer.observe(this.container, { childList: true });
+    }
+
+    /**
+     * 检查 [[ 链接模式
+     */
+    private checkForLinkPattern(
+        textarea: HTMLTextAreaElement,
+        node: any,
+        boundingBox: any,
+        suggesterPopoverRef: { value: HTMLElement | null }
+    ): void {
+        const value = textarea.value;
+        const cursorPos = textarea.selectionStart;
+
+        // 检查用户是否刚刚输入了 '['
+        const lastTwoChars = value.substring(cursorPos - 2, cursorPos);
+
+        // 移除现有的 suggester
+        const existingSuggester = this.container?.querySelector('.node-link-suggester');
+        if (existingSuggester) {
+            existingSuggester.remove();
+            suggesterPopoverRef.value = null;
+        }
+
+        // 如果模式匹配，显示 suggester
+        if (lastTwoChars === '[[') {
+            this.showLinkSuggester(textarea, node, boundingBox, suggesterPopoverRef);
+        }
+    }
+
+    /**
+     * 显示链接建议器
+     */
+    private showLinkSuggester(
+        textarea: HTMLTextAreaElement,
+        node: any,
+        boundingBox: any,
+        suggesterPopoverRef: { value: HTMLElement | null }
+    ): void {
+        // 获取所有 markdown 文件
+        const app = (window as any).app;
+        const files = app.vault.getMarkdownFiles();
+
+        // 创建 suggester popover
+        const popover = document.createElement('div');
+        popover.className = 'node-link-suggester';
+        popover.style.cssText = `
+            position: absolute;
+            left: ${boundingBox.x1}px;
+            top: ${boundingBox.y2 + 50}px;
+            max-height: 200px;
+            width: 250px;
+            background-color: var(--background-primary);
+            border: 1px solid var(--background-modifier-border);
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            z-index: 1001;
+            overflow-y: auto;
+            padding: 4px 0;
+        `;
+
+        // 搜索输入框
+        const searchInput = document.createElement('input');
+        searchInput.type = 'text';
+        searchInput.placeholder = 'Search notes...';
+        searchInput.style.cssText = `
+            width: calc(100% - 16px);
+            margin: 4px 8px;
+            padding: 6px 8px;
+            border: 1px solid var(--background-modifier-border);
+            border-radius: 4px;
+            background-color: var(--background-secondary);
+            color: var(--text-normal);
+            font-size: 12px;
+        `;
+
+        // 存储当前的选中索引和文件列表
+        let selectedIndex = 0;
+        let currentFiles: any[] = [];
+
+        // 过滤文件（显示前 10 个）
+        let searchTerm = '';
+        const updateFileList = () => {
+            // 清除现有项目
+            const existingItems = popover.querySelectorAll('.suggester-item');
+            existingItems.forEach(item => item.remove());
+
+            // 过滤并显示文件
+            currentFiles = files
+                .filter((file: any) => {
+                    const lowerPath = file.path.toLowerCase();
+                    const lowerName = file.basename.toLowerCase();
+                    return lowerName.contains(searchTerm.toLowerCase()) ||
+                           lowerPath.contains(searchTerm.toLowerCase());
+                })
+                .slice(0, 10);
+
+            // 重置选中索引
+            selectedIndex = 0;
+
+            currentFiles.forEach((file: any, index: number) => {
+                const item = document.createElement('div');
+                item.className = 'suggester-item';
+                item.dataset.index = index.toString();
+                item.style.cssText = `
+                    padding: 6px 12px;
+                    cursor: pointer;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 2px;
+                `;
+
+                item.innerHTML = `
+                    <span style="font-weight: 500; color: var(--text-normal);">${file.basename}</span>
+                    <span style="font-size: 11px; color: var(--text-muted);">${file.path}</span>
+                `;
+
+                // 高亮选中的项目
+                if (index === selectedIndex) {
+                    item.style.backgroundColor = 'var(--background-modifier-hover)';
+                }
+
+                item.addEventListener('mouseenter', () => {
+                    // 移除所有高亮
+                    popover.querySelectorAll('.suggester-item').forEach(i => {
+                        (i as HTMLElement).style.backgroundColor = '';
+                    });
+                    // 高亮当前项
+                    item.style.backgroundColor = 'var(--background-modifier-hover)';
+                    selectedIndex = index;
+                });
+
+                item.addEventListener('click', () => {
+                    selectFile(file);
+                });
+
+                popover.appendChild(item);
+            });
+        };
+
+        // 选择文件并创建节点
+        const selectFile = (file: any) => {
+            // 移除 suggester
+            popover.remove();
+
+            // 触发事件，调用 addFreeNodeToMOC
+            this.container?.dispatchEvent(new CustomEvent('add-free-node-from-suggester', {
+                detail: {
+                    nodeId: node.data().id,
+                    wikiLink: file.basename,
+                    file: file
+                }
+            }));
+        };
+
+        // 初始文件列表
+        updateFileList();
+
+        // 搜索输入事件
+        searchInput.addEventListener('input', (e) => {
+            e.stopPropagation();
+            searchTerm = (e.target as HTMLInputElement).value;
+            updateFileList();
+        });
+
+        // 阻止搜索框的其他键盘事件冒泡到 Cytoscape（非导航键）
+        searchInput.addEventListener('keyup', (e) => e.stopPropagation());
+        searchInput.addEventListener('keypress', (e) => e.stopPropagation());
+
+        // 更新选中高亮
+        const updateSelection = () => {
+            const items = popover.querySelectorAll('.suggester-item');
+            items.forEach((item: any, index: number) => {
+                if (index === selectedIndex) {
+                    item.style.backgroundColor = 'var(--background-modifier-hover)';
+                    // 滚动到可见区域
+                    item.scrollIntoView({ block: 'nearest' });
+                } else {
+                    item.style.backgroundColor = '';
+                }
+            });
+        };
+
+        // 键盘导航
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                e.stopPropagation();
+                selectedIndex = Math.min(selectedIndex + 1, currentFiles.length - 1);
+                updateSelection();
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                e.stopPropagation();
+                selectedIndex = Math.max(selectedIndex - 1, 0);
+                updateSelection();
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                if (currentFiles[selectedIndex]) {
+                    selectFile(currentFiles[selectedIndex]);
+                }
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                popover.remove();
+            }
+        };
+
+        // 监听键盘事件（在 textarea 和 searchInput 上）
+        textarea.addEventListener('keydown', handleKeyDown);
+        searchInput.addEventListener('keydown', handleKeyDown);
+
+        // 将 popover 引用保存到外部变量，以便其他代码可以访问
+        suggesterPopoverRef.value = popover;
+
+        // suggester 移除时清理事件监听
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                mutation.removedNodes.forEach((removedNode) => {
+                    if (removedNode === popover) {
+                        textarea.removeEventListener('keydown', handleKeyDown);
+                        searchInput.removeEventListener('keydown', handleKeyDown);
+                        if (suggesterPopoverRef.value === popover) {
+                            suggesterPopoverRef.value = null;
+                        }
+                        observer.disconnect();
+                    }
+                });
+            });
+        });
+
+        observer.observe(this.container!, { childList: true });
+
+        if (popover.firstChild) {
+            popover.insertBefore(searchInput, popover.firstChild);
+        } else {
+            popover.appendChild(searchInput);
+        }
+
+        if (this.container) {
+            this.container.appendChild(popover);
+        }
+
+        // 自动聚焦搜索框
+        setTimeout(() => {
+            searchInput.focus();
+        }, 0);
+    }
+
+    /**
      * 绑定事件
      */
     private bindEvents(): void {
@@ -2501,9 +2951,12 @@ case 'dagre':
             const data = node.data();
             const originalEvent = evt.originalEvent as MouseEvent;
 
-            // 如果是分组节点，不触发普通节点点击事件
+            // 如果是分组节点或占位符节点，不触发普通节点点击事件
             if (data.isGroup) {
                 return;
+            }
+            if (data.isPlaceholder) {
+                return;  // 占位符节点不触发点击事件
             }
 
             // 跨领域节点：单击只选中，不跳转（跳转到双击处理）
@@ -2537,6 +2990,12 @@ case 'dagre':
 
             // 如果是分组节点，不触发
             if (data.isGroup) {
+                return;
+            }
+
+            // 占位符节点：双击显示内联编辑器
+            if (data.isPlaceholder) {
+                this.showInlineNodeEditor(node);
                 return;
             }
 
@@ -2678,11 +3137,43 @@ case 'dagre':
             if (evt.target === this.cy) {
                 const position = evt.position;
                 this.container?.dispatchEvent(new CustomEvent('background-dblclick', {
-                    detail: { 
+                    detail: {
                         position: { x: position.x, y: position.y },
-                        event: evt.originalEvent 
+                        event: evt.originalEvent
                     }
                 }));
+            }
+        });
+
+        // 监听添加占位符节点事件
+        this.container?.addEventListener('add-placeholder-node', (event: any) => {
+            const { nodeId, position } = event.detail;
+
+            try {
+                // 直接在 Cytoscape 中添加占位符节点
+                this.cy?.add({
+                    group: 'nodes',
+                    data: {
+                        id: nodeId,
+                        label: '',
+                        isPlaceholder: true,
+                        originalNode: null
+                    },
+                    position: position
+                });
+            } catch (error) {
+                console.error('[CytoscapeRenderer] Error adding placeholder node:', error);
+            }
+        });
+
+        // 监听移除占位符节点事件
+        this.container?.addEventListener('remove-placeholder-node', (event: any) => {
+            const { nodeId } = event.detail;
+
+            // 从 Cytoscape 中移除占位符节点
+            const node = this.cy?.$id(nodeId);
+            if (node && node.length > 0) {
+                this.cy?.remove(node);
             }
         });
 
@@ -2692,8 +3183,9 @@ case 'dagre':
             const node = evt.target;
             const data = node.data();
 
-            // 如果是分组节点，不触发位置保存
+            // 如果是分组节点或占位符节点，不触发位置保存
             if (data.isGroup) return;
+            if (data.isPlaceholder) return;  // 占位符节点不保存位置
 
             const position = node.position();
 
@@ -3248,13 +3740,18 @@ case 'dagre':
                 }
 
                 // 更新分组的节点列表（视觉预览）
-                const newNodeIds = nodesInBounds.map(n => n.data('originalNode').ID);
-            
-                
+                // 过滤掉占位符节点
+                const newNodeIds = nodesInBounds
+                    .filter(n => n.data('originalNode') && !n.data('isPlaceholder'))
+                    .map(n => n.data('originalNode').ID);
+
+
                 // 临时更新分组边界（通过调整子节点）
                 // 注意：这里只是视觉预览，实际更新在 mouseup 时进行
                 nodesInBounds.forEach(node => {
-                    if (!originalNodeIds.includes(node.data('originalNode').ID)) {
+                    if (!node.data('isPlaceholder') &&
+                        node.data('originalNode') &&
+                        !originalNodeIds.includes(node.data('originalNode').ID)) {
                         // 新加入的节点，临时设置为分组的子节点
                         node.data('parent', groupNode.id());
                     }
@@ -3262,9 +3759,11 @@ case 'dagre':
 
                 // 移除不在边界内的节点
                 this.cy.nodes(`[parent="${groupNode.id()}"]`).forEach((node: any) => {
-                    const nodeId = node.data('originalNode').ID;
-                    if (!newNodeIds.includes(nodeId)) {
-                        node.data('parent', undefined);
+                    if (!node.data('isPlaceholder') && node.data('originalNode')) {
+                        const nodeId = node.data('originalNode').ID;
+                        if (!newNodeIds.includes(nodeId)) {
+                            node.data('parent', undefined);
+                        }
                     }
                 });
             };
@@ -3358,8 +3857,10 @@ case 'dagre':
                 // 获取最终的节点列表
                 const finalNodeIds: string[] = [];
                 this.cy?.nodes(`[parent="${groupNode.id()}"]`).forEach((node: any) => {
-                    const nodeId = node.data('originalNode').ID;
-                    finalNodeIds.push(nodeId);
+                    if (!node.data('isPlaceholder') && node.data('originalNode')) {
+                        const nodeId = node.data('originalNode').ID;
+                        finalNodeIds.push(nodeId);
+                    }
                 });
 
 
