@@ -170,12 +170,18 @@ export class MermaidSerializer {
                 const parentNode = nodesMap.get(parentId);
 
                 if (parentNode) {
-                    edges.push({
-                        source: parentId,
-                        target: node.nodeID,
-                        label: node.relationText || '',
-                        comment: `${parentId} 和 ${node.nodeID} 的父子关系`
-                    });
+                    // 检查：只有当节点真正在父节点的 children 中时，才创建父子边
+                    const isReallyChild = parentNode.children &&
+                                          parentNode.children.some((child: MOCTreeNode) => child.nodeID === node.nodeID);
+
+                    if (isReallyChild) {
+                        edges.push({
+                            source: parentId,
+                            target: node.nodeID,
+                            label: node.relationText || '',
+                            comment: `${parentId} 和 ${node.nodeID} 的父子关系`
+                        });
+                    }
                 }
             }
         }
