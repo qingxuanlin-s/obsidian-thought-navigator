@@ -52,6 +52,7 @@ export interface ZKNode {
     isCrossDomain?: boolean; // 是否为跨领域节点
     crossDomainSourceNodeId?: string; // 跨领域节点的源节点 ID（用于删除）
     crossDomainOriginalNodeId?: string; // 跨领域节点的原始节点 ID
+    isPlaceholder?: boolean; // 是否为占位符节点（未完成编辑）
 }
 
 interface BrancAllhNodes {
@@ -137,6 +138,9 @@ export class ZKIndexView extends ItemView {
 
     // MOC 视图状态（缩放和平移）
     private mocViewStates: Map<string, { zoom: number; pan: { x: number; y: number } }> = new Map();
+
+    // 占位符节点追踪（用于未完成编辑的临时节点）
+    private placeholderNodes: Map<string, { position: { x: number; y: number }, timestamp: number }> = new Map();
 
     constructor(leaf: WorkspaceLeaf, plugin: ZKNavigationPlugin) {
         super(leaf);
@@ -1557,12 +1561,102 @@ export class ZKIndexView extends ItemView {
             menu.showAtMouseEvent(mouseEvent);
         });
 
-        // 监听背景双击事件（创建自由节点）
+        // 监听背景双击事件（创建占位符节点）
         this.addTrackedListener(branchGraphDiv, 'background-dblclick', async (event: any) => {
             const { position } = event.detail;
 
-            // 调用添加自由节点方法，传递位置信息
-            await this.addFreeNodeToMOC(position);
+            // 创建占位符节点，而不是直接打开模态框
+            await this.createPlaceholderNode(position);
+        });
+
+        // 监听占位符节点编辑事件
+        this.addTrackedListener(branchGraphDiv, 'placeholder-node-edit', async (event: any) => {
+            const { nodeId, label, position } = event.detail;
+
+            // 检查标签是否包含 [[wiki link]]
+            const linkMatch = label.match(/\[\[([^\]]+)\]\]/);
+
+            if (linkMatch) {
+                // 提取 wiki link 并创建实际节点
+                const wikiLink = linkMatch[1];
+                await this.finalizePlaceholderNode(nodeId, wikiLink, label, position);
+            } else if (label.trim()) {
+                // 有文本但没有 link - 使用文本作为 wiki link 创建节点
+                await this.finalizePlaceholderNode(nodeId, label.trim(), label, position);
+            } else {
+                // 空标签 - 移除占位符
+                await this.removePlaceholderNode(nodeId);
+            }
+        });
+
+        // 监听占位符节点完成事件（从 suggester 选择文件后触发）
+        this.addTrackedListener(branchGraphDiv, 'placeholder-node-complete', async (event: any) => {
+            const { nodeId, wikiLink, file } = event.detail;
+
+            // 查找对应的节点
+            const node = this.mocNodes.find(n => n.ID === nodeId);
+            if (!node) return;
+
+            // 获取占位符信息
+            const placeholderInfo = this.placeholderNodes.get(nodeId);
+            if (!placeholderInfo) return;
+
+            // 生成 ID 并保存
+            const suggestedID = this.generateNextFreeNodeID();
+
+            // 保存到 MOC
+            await this.saveFreeNodeToMOC({
+                wikiLink: wikiLink,
+                nodeID: suggestedID,
+                relationText: '',
+                file: file
+            });
+
+            // 保存位置
+            const mocFilePath = this.plugin.settings.mocCurrentFile;
+            const mocFile = this.app.vault.getFileByPath(mocFilePath);
+            if (mocFile) {
+                await this.saveNodePositionToMOC(mocFile, suggestedID, placeholderInfo.position);
+            }
+
+            // 从占位符追踪中移除
+            this.placeholderNodes.delete(nodeId);
+
+            // 刷新视图
+            await this.refreshBranchMermaid();
+        });
+
+        // 监听从 suggester 添加自由节点事件
+        this.addTrackedListener(branchGraphDiv, 'add-free-node-from-suggester', async (event: any) => {
+            const { nodeId, wikiLink, file } = event.detail;
+
+            // 获取占位符信息
+            const placeholderInfo = this.placeholderNodes.get(nodeId);
+            if (!placeholderInfo) return;
+
+            // 生成节点 ID
+            const suggestedID = this.generateNextFreeNodeID();
+
+            // 直接保存到 MOC，不需要打开模态框
+            await this.saveFreeNodeToMOC({
+                wikiLink: wikiLink,
+                nodeID: suggestedID,
+                relationText: '',
+                file: file
+            });
+
+            // 保存位置
+            const mocFilePath = this.plugin.settings.mocCurrentFile;
+            const mocFile = this.app.vault.getFileByPath(mocFilePath);
+            if (mocFile) {
+                await this.saveNodePositionToMOC(mocFile, suggestedID, placeholderInfo.position);
+            }
+
+            // 从占位符追踪中移除
+            this.placeholderNodes.delete(nodeId);
+
+            // 刷新视图
+            await this.refreshBranchMermaid();
         });
 
         // 监听边点击事件
@@ -5242,6 +5336,87 @@ export class ZKIndexView extends ItemView {
             
             return node.IDStr.startsWith(parentNodeID + '.');
         });
+    }
+
+    /**
+     * 创建占位符节点（临时节点，未完成编辑）
+     * @param position 节点位置
+     */
+    async createPlaceholderNode(position: { x: number; y: number }) {
+        const tempId = `temp_${Date.now()}`;
+
+        // 存储占位符信息
+        this.placeholderNodes.set(tempId, {
+            position,
+            timestamp: Date.now()
+        });
+
+        // 直接通过事件通知 Cytoscape 渲染器添加占位符节点
+        // 注意：要在 branchGraphDiv (zk-graph-cytoscape) 上派发事件，而不是 indexMermaidDiv
+        const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+        if (branchGraphDiv) {
+            branchGraphDiv.dispatchEvent(new CustomEvent('add-placeholder-node', {
+                detail: {
+                    nodeId: tempId,
+                    position: position
+                }
+            }));
+        }
+    }
+
+    /**
+     * 完成占位符节点，创建实际节点
+     */
+    private async finalizePlaceholderNode(
+        tempId: string,
+        wikiLink: string,
+        label: string,
+        position: { x: number; y: number }
+    ): Promise<void> {
+        // 生成 ID
+        const suggestedID = this.generateNextFreeNodeID();
+
+        // 查找文件
+        const file = this.app.metadataCache.getFirstLinkpathDest(wikiLink, '');
+
+        // 保存到 MOC
+        await this.saveFreeNodeToMOC({
+            wikiLink: wikiLink,
+            nodeID: suggestedID,
+            relationText: '',
+            file: file
+        });
+
+        // 保存位置
+        const mocFilePath = this.plugin.settings.mocCurrentFile;
+        const mocFile = this.app.vault.getFileByPath(mocFilePath);
+        if (mocFile) {
+            await this.saveNodePositionToMOC(mocFile, suggestedID, position);
+        }
+
+        // 从占位符追踪中移除
+        this.placeholderNodes.delete(tempId);
+
+        // 刷新视图
+        await this.refreshBranchMermaid();
+    }
+
+    /**
+     * 移除占位符节点
+     */
+    private async removePlaceholderNode(tempId: string): Promise<void> {
+        // 通过事件通知 Cytoscape 渲染器移除占位符节点
+        const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+        if (branchGraphDiv) {
+            branchGraphDiv.dispatchEvent(new CustomEvent('remove-placeholder-node', {
+                detail: {
+                    nodeId: tempId
+                }
+            }));
+        }
+
+        // 从追踪中移除
+        this.placeholderNodes.delete(tempId);
     }
 
     /**
