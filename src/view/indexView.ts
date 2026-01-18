@@ -5707,8 +5707,8 @@ export class ZKIndexView extends ItemView {
                 return;
             }
 
-            // 检查目标节点是否已经是自由节点
-            const isAlreadyFreeNode = targetID.startsWith('free.');
+            // 检查目标节点是否在某个父节点的 children 数组中（而不是在根节点层级）
+            const targetNodeHasParent = await this.mocHandler.checkNodeHasParent(mocFile, targetID);
 
             // 删除反向关系
             await this.mocHandler.modifyMOCData(mocFile, async (mocData) => {
@@ -5718,13 +5718,18 @@ export class ZKIndexView extends ItemView {
                 }
             });
 
-            // 只有当目标节点不是自由节点时，才转换为自由节点
-            if (!isAlreadyFreeNode) {
+            // 只有当目标节点有父节点时，才转换为自由节点
+            if (targetNodeHasParent) {
                 new Notice(`已删除箭头关系: ${sourceID} → ${targetID}`);
-                const freeNodeID = this.generateNextFreeNodeID();
-                await this.mocHandler.convertChildToFreeNode(mocFile, targetID, freeNodeID);
-                new Notice(`已删除箭头关系: ${sourceID} → ${targetID}`);
-                new Notice(`${targetID} 已转换为自由节点: ${freeNodeID}`);
+
+                // 如果目标节点 ID 已经以 free. 开头，直接转换为根节点，不生成新 ID
+                let newFreeID = targetID;
+                if (!targetID.startsWith('free.')) {
+                    newFreeID = this.generateNextFreeNodeID();
+                }
+
+                await this.mocHandler.convertChildToFreeNode(mocFile, targetID, newFreeID);
+                new Notice(`${targetID} 已转换为自由节点: ${newFreeID}`);
             } else {
                 new Notice(`已删除箭头关系: ${sourceID} → ${targetID}`);
             }

@@ -265,6 +265,48 @@ export class MOCHandler {
     }
 
     /**
+     * 检查节点是否有父节点（即在某个父节点的 children 数组中）
+     * @param mocFile - MOC 文件
+     * @param nodeID - 要检查的节点 ID
+     * @returns 是否有父节点
+     */
+    async checkNodeHasParent(mocFile: TFile, nodeID: string): Promise<boolean> {
+        let hasParent = false;
+
+        await this.modifyMOCData(mocFile, (mocData) => {
+            // 检查节点是否在根节点层级
+            const isRootNode = mocData.nodes.some((node: any) => node.nodeID === nodeID);
+
+            if (isRootNode) {
+                // 节点在根层级，没有父节点
+                hasParent = false;
+                return;
+            }
+
+            // 递归查找节点是否在某个父节点的 children 中
+            const findInChildren = (nodes: any[]): boolean => {
+                for (const node of nodes) {
+                    if (node.children && node.children.length > 0) {
+                        // 检查是否在该节点的 children 中
+                        if (node.children.some((child: any) => child.nodeID === nodeID)) {
+                            return true;
+                        }
+                        // 递归查找
+                        if (findInChildren(node.children)) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            };
+
+            hasParent = findInChildren(mocData.nodes);
+        });
+
+        return hasParent;
+    }
+
+    /**
      * 将子节点转换为自由节点（从父节点的 children 中移除，添加到根节点）
      * @param mocFile - MOC 文件
      * @param childID - 子节点 ID
@@ -309,15 +351,23 @@ export class MOCHandler {
             mocData.nodes.push(nodeToConvert);
 
             // 4. 更新节点位置
-            if (mocData.nodePositions && mocData.nodePositions[childID]) {
-                mocData.nodePositions[newFreeID] = mocData.nodePositions[childID];
-                delete mocData.nodePositions[childID];
+            if (mocData.nodePositions) {
+                if (childID !== newFreeID && mocData.nodePositions[childID]) {
+                    // ID 改变了，需要更新位置信息的 key
+                    mocData.nodePositions[newFreeID] = mocData.nodePositions[childID];
+                    delete mocData.nodePositions[childID];
+                }
+                // 如果 ID 没变，位置信息保持不变
             }
 
             // 5. 更新节点颜色
-            if (mocData.nodeColors && mocData.nodeColors[childID]) {
-                mocData.nodeColors[newFreeID] = mocData.nodeColors[childID];
-                delete mocData.nodeColors[childID];
+            if (mocData.nodeColors) {
+                if (childID !== newFreeID && mocData.nodeColors[childID]) {
+                    // ID 改变了，需要更新颜色信息的 key
+                    mocData.nodeColors[newFreeID] = mocData.nodeColors[childID];
+                    delete mocData.nodeColors[childID];
+                }
+                // 如果 ID 没变，颜色信息保持不变
             }
 
             // 6. 更新边弧度（需要更新包含该节点的所有边 key）
