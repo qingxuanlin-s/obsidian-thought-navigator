@@ -2712,7 +2712,7 @@ case 'dagre':
         }
 
         // 如果模式匹配，显示 suggester
-        if (lastTwoChars === '[[') {
+        if (lastTwoChars === '[[' || lastTwoChars === '【【') {
             this.showLinkSuggester(textarea, node, boundingBox, suggesterPopoverRef);
         }
     }
@@ -2736,7 +2736,7 @@ case 'dagre':
         popover.style.cssText = `
             position: absolute;
             left: ${boundingBox.x1}px;
-            top: ${boundingBox.y2 + 50}px;
+            top: ${boundingBox.y2 + 5}px;
             max-height: 200px;
             width: 250px;
             background-color: var(--background-primary);
