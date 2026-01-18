@@ -2626,9 +2626,15 @@ case 'dagre':
             // 阻止事件冒泡到 Cytoscape，避免被其他事件处理器拦截
             e.stopPropagation();
 
-            // 如果 suggester 正在显示，让 suggester 的键盘处理器处理
+            // 如果 suggester 正在显示，ESC 键关闭 suggester，其他键让 suggester 的键盘处理器处理
             if (suggesterPopoverRef.value && suggesterPopoverRef.value.parentNode) {
-                // suggester 会处理方向键和 Enter
+                if (e.key === 'Escape') {
+                    // ESC 键关闭 suggester
+                    e.preventDefault();
+                    (suggesterPopoverRef.value as HTMLElement).remove();
+                    return;
+                }
+                // 其他按键（方向键、Enter、删除键）由 suggester 的 handleKeyDown 处理
                 return;
             }
 
