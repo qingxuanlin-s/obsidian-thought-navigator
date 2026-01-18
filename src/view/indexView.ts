@@ -1114,6 +1114,48 @@ export class ZKIndexView extends ItemView {
             this.saveMOCViewState(currentMOCPath, zoom, pan);
         });
 
+        // 监听自动连接事件（拖动节点到附近节点时触发）
+        this.addTrackedListener(branchGraphDiv, 'auto-connect-node', async (event: any) => {
+            const { childNodeId, parentNodeId, position } = event.detail;
+
+            console.log('[auto-connect-node] 自动连接:', { childNodeId, parentNodeId, position });
+
+            // 查找子节点和父节点
+            const childNode = this.mocNodes.find(n => n.ID === childNodeId || n.IDStr === childNodeId);
+            const parentNode = this.mocNodes.find(n => n.ID === parentNodeId || n.IDStr === parentNodeId);
+
+            if (!childNode || !parentNode) {
+                console.warn('[auto-connect-node] 未找到节点:', { childNode, parentNode });
+                return;
+            }
+
+            // 保存连接关系到 MOC
+            try {
+                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                if (!mocFile) {
+                    new Notice("未找到当前 MOC 文件");
+                    return;
+                }
+
+                // 生成新的子节点 ID
+                const newChildID = this.generateChildNodeID(parentNode.IDStr);
+
+                // 使用 moveNodeToParent 方法移动节点到新的父节点
+                await this.mocHandler.moveNodeToParent(mocFile, childNode.IDStr, parentNode.IDStr, newChildID);
+
+                // 保存位置
+                await this.saveNodePositionToMOC(mocFile, newChildID, position);
+
+                // 刷新视图
+                await this.refreshBranchMermaid();
+
+                new Notice(`已连接节点: ${childNode.displayText} → ${parentNode.displayText} (新 ID: ${newChildID})`);
+            } catch (error) {
+                console.error('[auto-connect-node] 连接失败:', error);
+                new Notice(`连接失败: ${error.message}`);
+            }
+        });
+
         // 监听节点位置变化事件（拖动后保存到 MOC 文件）
         this.addTrackedListener(branchGraphDiv, 'node-position-changed', async (event: any) => {
             const { node, position } = event.detail;

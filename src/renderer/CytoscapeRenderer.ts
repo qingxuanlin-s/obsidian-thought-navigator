@@ -3211,17 +3211,176 @@ case 'dagre':
             }
         });
 
+        // 节点拖动自动连接相关变量
+        let tempConnectionEdge: any = null;
+        let nearbyNodeId: string | null = null;
+        const PROXIMITY_THRESHOLD = 250;  // 250px 范围
+
+        // 节点开始拖动事件
+        this.cy.on('grab', 'node', (evt: any) => {
+            const node = evt.target;
+            const data = node.data();
+
+            // 只对自由节点（根节点）启用自动连接
+            if (!data.isPlaceholder && !data.isGroup && !data.isCrossDomain) {
+                // 检查是否是根节点（没有父节点）
+                const idParts = (data.originalSource || data.id).split('.');
+                if (idParts.length === 1) {
+                    // 这是一个根节点，可以启用自动连接
+                    return;
+                }
+            }
+        });
+
+        // 节点拖动事件
+        this.cy.on('drag', 'node', (evt: any) => {
+            const node = evt.target;
+            const data = node.data();
+
+            // 只对自由节点启用自动连接
+            if (data.isPlaceholder || data.isGroup || data.isCrossDomain) return;
+
+            // 检查是否是自由节点（ID 以 'free.' 开头）
+            const originalNodeId = data.originalNode?.ID || data.originalSource || data.id;
+
+            console.log('[Auto-Connect] 拖动节点:', {
+                id: data.id,
+                originalNodeId: originalNodeId
+            });
+
+            if (!originalNodeId.startsWith('free.')) {
+                console.log('[Auto-Connect] 不是自由节点，跳过自动连接');
+                return;  // 只允许自由节点拖动自动连接
+            }
+
+            // 获取当前节点位置
+            const pos = node.renderedPosition();
+            console.log('[Auto-Connect] 节点位置:', pos);
+
+            // 查找最近的节点
+            let nearestNode: any = null;
+            let minDistance = Infinity;
+            let checkedNodes = 0;
+            let skippedNodes = 0;
+
+            this.cy!.nodes().forEach((otherNode: any) => {
+                checkedNodes++;
+                if (otherNode.id() === node.id()) {
+                    skippedNodes++;
+                    return;  // 跳过自己
+                }
+                if (otherNode.data().isPlaceholder) {
+                    skippedNodes++;
+                    return;  // 跳过占位符
+                }
+                if (otherNode.data().isGroup) {
+                    skippedNodes++;
+                    return;  // 跳过分组
+                }
+
+                // 自由节点可以连接到任何节点（包括子节点）
+                const otherPos = otherNode.renderedPosition();
+                const distance = Math.sqrt(
+                    Math.pow(pos.x - otherPos.x, 2) +
+                    Math.pow(pos.y - otherPos.y, 2)
+                );
+
+                console.log('[Auto-Connect] 检查节点:', otherNode.id(), '距离:', distance);
+
+                if (distance < minDistance && distance < PROXIMITY_THRESHOLD) {
+                    minDistance = distance;
+                    nearestNode = otherNode;
+                }
+            });
+
+            console.log('[Auto-Connect] 总节点数:', checkedNodes, '跳过节点数:', skippedNodes, '最近的节点:', nearestNode ? nearestNode.id() : null, '距离:', minDistance);
+
+            // 移除旧的临时连接
+            if (tempConnectionEdge) {
+                this.cy!.remove(tempConnectionEdge);
+                tempConnectionEdge = null;
+            }
+            nearbyNodeId = null;
+
+            // 如果找到附近的节点，创建虚线连接
+            if (nearestNode) {
+                nearbyNodeId = nearestNode.id();
+                console.log('[Auto-Connect] 创建临时连接:', nearbyNodeId);
+
+                // 创建临时边
+                tempConnectionEdge = this.cy!.add({
+                    group: 'edges',
+                    data: {
+                        source: nearestNode.id(),
+                        target: node.id(),
+                        label: '',  // 临时边没有标签
+                        isTempConnection: true
+                    },
+                    classes: 'temp-connection'
+                });
+
+                // 设置临时边的样式
+                tempConnectionEdge.style({
+                    'line-style': 'dashed',
+                    'line-color': '#5b9bd8',
+                    'width': 2,
+                    'target-arrow-color': '#5b9bd8',
+                    'target-arrow-shape': 'triangle',
+                    'arrow-scale': 1.5,
+                    'curve-style': 'bezier',
+                    'text-opacity': 0  // 隐藏标签
+                });
+            }
+        });
+
         // 节点拖动结束事件
         this.cy.on('dragfree', 'node', (evt: any) => {
             if (!evt || !evt.target) return;
             const node = evt.target;
             const data = node.data();
 
+            // 移除临时连接线
+            if (tempConnectionEdge) {
+                this.cy!.remove(tempConnectionEdge);
+                tempConnectionEdge = null;
+            }
+
             // 如果是分组节点或占位符节点，不触发位置保存
             if (data.isGroup) return;
             if (data.isPlaceholder) return;  // 占位符节点不保存位置
 
             const position = node.position();
+
+            // 检查是否有自动连接
+            if (nearbyNodeId) {
+                const parentData = this.cy!.$id(nearbyNodeId).data();
+
+                // 使用 originalNode.ID（带点的格式）而不是转义后的 ID
+                const childId = data.originalNode?.ID || data.originalSource || data.id;
+                const parentId = parentData.originalNode?.ID || parentData.originalSource || nearbyNodeId;
+
+                console.log('[Auto-Connect] 触发连接事件:', {
+                    childNodeId: childId,
+                    parentNodeId: parentId,
+                    childOriginalNode: data.originalNode,
+                    parentOriginalNode: parentData.originalNode
+                });
+
+                // 触发自动连接事件
+                this.container?.dispatchEvent(new CustomEvent('auto-connect-node', {
+                    detail: {
+                        childNodeId: childId,
+                        parentNodeId: parentId,
+                        position: {
+                            x: position.x,
+                            y: position.y
+                        }
+                    }
+                }));
+
+                nearbyNodeId = null;
+                return;
+            }
 
             // 跨领域节点：触发特殊的位置变化事件
             if (data.isCrossDomain) {
