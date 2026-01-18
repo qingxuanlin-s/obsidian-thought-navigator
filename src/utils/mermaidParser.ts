@@ -87,15 +87,19 @@ export class MermaidParser {
      * @returns 节点信息，如果不是节点定义则返回 null
      */
     parseNode(line: string): NodeDefinition | null {
-        // 首先尝试匹配文件节点格式：nodeId["[[wikilink]]"] 或 nodeId["[[wikilink|displayText]]"]
-        const fileNodeRegex = /^([a-zA-Z0-9.]+)\["?\[\[([^\]|]+)(?:\|([^\]]+))?\]\]"?\]$/;
-        const fileNodeMatch = line.trim().match(fileNodeRegex);
+        const trimmedLine = line.trim();
+
+        // 首先尝试匹配文件节点格式（更严格的匹配）：nodeId["[[wikilink]]"] 或 nodeId["[[wikilink|displayText]]"]
+        // 文件节点必须包含 [[...]]，并且外层有引号
+        const fileNodeRegex = /^([a-zA-Z0-9.]+)\["\[\[([^\]|]+)(?:\|([^\]]+))?\]\]"\]$/;
+        const fileNodeMatch = trimmedLine.match(fileNodeRegex);
 
         if (fileNodeMatch) {
             const id = fileNodeMatch[1];
             const wikiLink = fileNodeMatch[2];
             const displayText = fileNodeMatch[3] || fileNodeMatch[2];
 
+            console.log('[parseNode] 文件节点匹配成功:', { line, id, wikiLink, displayText });
             return {
                 id,
                 wikiLink,
@@ -105,9 +109,8 @@ export class MermaidParser {
         }
 
         // 如果不是文件节点，尝试匹配纯文字节点格式：nodeId["text"]
-        // 纯文字节点内容中不能包含 [[
         const textOnlyNodeRegex = /^([a-zA-Z0-9.]+)\["(.+)"\]$/;
-        const textOnlyNodeMatch = line.trim().match(textOnlyNodeRegex);
+        const textOnlyNodeMatch = trimmedLine.match(textOnlyNodeRegex);
 
         if (textOnlyNodeMatch) {
             const id = textOnlyNodeMatch[1];
@@ -115,6 +118,7 @@ export class MermaidParser {
 
             // 额外检查：确保不包含 [[（防止误匹配文件节点）
             if (!text.includes('[[')) {
+                console.log('[parseNode] 纯文字节点匹配成功:', { line, id, text });
                 return {
                     id,
                     wikiLink: text,
@@ -124,6 +128,7 @@ export class MermaidParser {
             }
         }
 
+        console.log('[parseNode] 无法匹配节点:', line);
         return null;
     }
 

@@ -580,21 +580,17 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'background-color': colors.nodeBackground
             } as any
         },
-        // 文件节点样式 - 类似 Obsidian 内部链接（带下划线）
+        // 文件节点样式 - 类似 Obsidian 内部链接（蓝色文字）
         {
             selector: 'node[?isTextOnly]',
             style: {
-                'color': colors.nodeText,
-                'text-decoration': 'none'
+                'color': colors.nodeText
             } as any
         },
         {
             selector: 'node[!isTextOnly]',
             style: {
-                'color': '#7dd3fc',  // 浅蓝色文字（类似 Obsidian 链接颜色）
-                'text-decoration': 'underline',
-                'text-underline-color': '#5b9bd8',  // 深蓝色下划线
-                'text-underline-style': 'solid'
+                'color': '#5b9bd8'  // 蓝色文字（类似 Obsidian 链接颜色）
             } as any
         },
         // 默认边样式 - 使用 unbundled-bezier 支持自定义控制点

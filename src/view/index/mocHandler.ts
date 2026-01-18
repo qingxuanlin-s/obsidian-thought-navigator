@@ -16,7 +16,8 @@ function deepCopyMOCTreeNode(node: MOCTreeNode): MOCTreeNode {
         relationText: node.relationText,
         isArrowRelation: node.isArrowRelation,
         arrowSource: node.arrowSource,
-        arrowTarget: node.arrowTarget
+        arrowTarget: node.arrowTarget,
+        isTextOnly: node.isTextOnly || false  // 保留纯文字节点标记
     };
 }
 

@@ -5550,6 +5550,7 @@ export class ZKIndexView extends ItemView {
         }
 
         try {
+            console.log('[saveFreeNodeToMOC] 输入参数:', result);
             await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
                 // 创建新节点
                 const newNode: MOCTreeNode = {
@@ -5566,6 +5567,7 @@ export class ZKIndexView extends ItemView {
                     relationText: result.connectionRelation || result.relationText || '',
                     isTextOnly: result.isTextOnly || false  // 新增标记
                 };
+                console.log('[saveFreeNodeToMOC] 创建的节点:', newNode);
 
                 // 如果有父节点，添加为子节点
                 if (result.connectToNodeID) {
