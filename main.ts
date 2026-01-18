@@ -451,26 +451,28 @@ export default class ZKNavigationPlugin extends Plugin {
 
             if (this.settings.MainNoteSuggestMode === "IDOrder") {
                 new mainNoteModal(this.app, this, this.MainNotes, (selectZKNode) =>{
+                    if (!selectZKNode.file) return;
                     this.settings.lastRetrival = {
                         type: 'main',
                         ID: selectZKNode.ID,
                         displayText: selectZKNode.displayText,
                         filePath: selectZKNode.file.path,
                         openTime: moment().format("YYYY-MM-DD HH:mm:ss"),
-                    
+
                     }
                     this.clearShowingSettings();
                     this.app.workspace.trigger("zk-navigation:refresh-index-graph");
                 }).open();
             }else {
                 new mainNoteFuzzyModal(this.app, this, this.MainNotes, (selectZKNode) =>{
+                    if (!selectZKNode.file) return;
                     this.settings.lastRetrival = {
                         type: 'main',
                         ID: selectZKNode.ID,
                         displayText: selectZKNode.displayText,
                         filePath: selectZKNode.file.path,
                         openTime: moment().format("YYYY-MM-DD HH:mm:ss"),
-                    
+
                     }
                     this.clearShowingSettings();
                     this.app.workspace.trigger("zk-navigation:refresh-index-graph");

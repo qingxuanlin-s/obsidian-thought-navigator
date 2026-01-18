@@ -6,8 +6,9 @@ import { MOCTreeNode, MOCParseResult, ReverseRelation, GroupInfo } from "./utils
  */
 interface NodeDefinition {
     id: string;              // 节点 ID，如 "a", "a.1"
-    wikiLink: string;        // Wiki 链接，如 "20251214 波函数"
+    wikiLink: string;        // Wiki 链接，如 "20251214 波函数"（对于纯文字节点，存储原始文本）
     displayText: string;     // 显示文本
+    isTextOnly?: boolean;    // 是否为纯文字节点
 }
 
 /**
@@ -86,23 +87,43 @@ export class MermaidParser {
      * @returns 节点信息，如果不是节点定义则返回 null
      */
     parseNode(line: string): NodeDefinition | null {
-        // 匹配格式：nodeId["[[wikilink]]"] 或 nodeId["[[wikilink|displayText]]"]
-        // 支持带引号和不带引号的情况
-        const nodeRegex = /^([a-zA-Z0-9.]+)\["?\[\[([^\]|]+)(?:\|([^\]]+))?\]\]"?\]$/;
-        const match = line.trim().match(nodeRegex);
-        
-        if (match) {
-            const id = match[1];
-            const wikiLink = match[2];
-            const displayText = match[3] || match[2]; // 如果没有显示文本，使用 wikiLink
-            
+        // 首先尝试匹配文件节点格式：nodeId["[[wikilink]]"] 或 nodeId["[[wikilink|displayText]]"]
+        const fileNodeRegex = /^([a-zA-Z0-9.]+)\["?\[\[([^\]|]+)(?:\|([^\]]+))?\]\]"?\]$/;
+        const fileNodeMatch = line.trim().match(fileNodeRegex);
+
+        if (fileNodeMatch) {
+            const id = fileNodeMatch[1];
+            const wikiLink = fileNodeMatch[2];
+            const displayText = fileNodeMatch[3] || fileNodeMatch[2];
+
             return {
                 id,
                 wikiLink,
-                displayText
+                displayText,
+                isTextOnly: false  // 文件节点
             };
         }
-        
+
+        // 如果不是文件节点，尝试匹配纯文字节点格式：nodeId["text"]
+        // 纯文字节点内容中不能包含 [[
+        const textOnlyNodeRegex = /^([a-zA-Z0-9.]+)\["(.+)"\]$/;
+        const textOnlyNodeMatch = line.trim().match(textOnlyNodeRegex);
+
+        if (textOnlyNodeMatch) {
+            const id = textOnlyNodeMatch[1];
+            const text = textOnlyNodeMatch[2];
+
+            // 额外检查：确保不包含 [[（防止误匹配文件节点）
+            if (!text.includes('[[')) {
+                return {
+                    id,
+                    wikiLink: text,
+                    displayText: text,
+                    isTextOnly: true  // 纯文字节点
+                };
+            }
+        }
+
         return null;
     }
 
@@ -528,7 +549,8 @@ export class MermaidParser {
                 depth,
                 children: [],
                 file,
-                relationText: ''
+                relationText: '',
+                isTextOnly: nodeDef.isTextOnly || false  // 传递纯文字节点标记
             };
 
             nodeMap.set(id, treeNode);

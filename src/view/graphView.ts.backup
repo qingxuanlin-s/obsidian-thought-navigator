@@ -238,11 +238,11 @@ export class ZKGraphView extends ItemView {
                 this.currentFile = this.app.workspace.getActiveFile();
                 if (this.currentFile !== null) {
                     let path = this.currentFile.path;
-                    let nodes = this.familyNodeArr.filter(n => n.file?.path == path);
+                    let nodes = this.familyNodeArr.filter(n => n.file.path == path);
                     if (nodes.length > 0) {
                         this.plugin.retrivalforLocaLgraph.ID = nodes[0].ID;
                     } else {
-                        nodes = this.plugin.MainNotes.filter(n => n.file?.path == path);
+                        nodes = this.plugin.MainNotes.filter(n => n.file.path == path);
 
                         if (nodes.length > 0) {
                             this.plugin.retrivalforLocaLgraph.ID = nodes[0].ID;
@@ -343,9 +343,7 @@ export class ZKGraphView extends ItemView {
                             let nodeArr = this.familyNodeArr.filter(n => n.gitNodePos === j);
                             if (nodeArr.length > 0) {
                                 let node = nodeArr[0];
-                                if (!node.file) return;
                                 circleNodes[j].addEventListener("click", async (event: MouseEvent) => {
-                                    if (!node.file) return;
                                     if (event.ctrlKey) {
                                         this.app.workspace.openLinkText("", node.file.path, 'tab');
                                     } else if (event.shiftKey) {
@@ -371,7 +369,6 @@ export class ZKGraphView extends ItemView {
 
                                 })
                                 circleNodes[j].addEventListener(`mouseover`, (event: MouseEvent) => {
-                                    if (!node.file) return;
                                     this.app.workspace.trigger(`hover-link`, {
                                         event,
                                         source: ZK_NAVIGATION,
@@ -634,7 +631,7 @@ export class ZKGraphView extends ItemView {
                 mermaidStr = mermaidStr + `${node.position}("${this.processDisplayText(node.displayText)}");\n`;
             }
 
-            if (node.file && node.file == currentFile) {
+            if (node.file == currentFile) {
                 mermaidStr = mermaidStr + `style ${node.position} fill:#1a5f8f,stroke:#2a7faf,stroke-width:2px,color:#fff \n`;
             } else {
                 mermaidStr = mermaidStr + `style ${node.position} fill:#2a3446,stroke:#5a6f7f,stroke-width:1px,color:#e0e0e0 \n`;
@@ -658,7 +655,7 @@ export class ZKGraphView extends ItemView {
         if (this.plugin.settings.RedDashLine === true) {
 
             for (let node of this.familyNodeArr) {
-                if (node.file && /^[a-zA-Z]$/.test(node.file.basename.slice(-1))) {
+                if (/^[a-zA-Z]$/.test(node.file.basename.slice(-1))) {
                     //红色虚线边
                     mermaidStr = mermaidStr + `style ${node.position} stroke:#f66,stroke-width:2px,stroke-dasharray: 1 \n`;
                 }
@@ -917,15 +914,13 @@ export class ZKGraphView extends ItemView {
             link.addClass("internal-link");
             const nodePosStr = nodeGArr[i].id.split('-')[1];
             const node = mocNodes.filter(n => n.position == Number(nodePosStr))[0];
-                if (node && !node.file) return;
 
-                if (node) {
+            if (node) {
                 link.textContent = nodeArr[i].getText();
                 nodeArr[i].textContent = "";
                 nodeArr[i].appendChild(link);
 
                 nodeGArr[i].addEventListener("click", (event: MouseEvent) => {
-                    if (!node.file) return;
                     if (event.ctrlKey) {
                         this.app.workspace.openLinkText("", node.file.path, 'tab');
                     } else {
@@ -934,7 +929,6 @@ export class ZKGraphView extends ItemView {
                 });
 
                 nodeGArr[i].addEventListener("mouseover", (event: MouseEvent) => {
-                    if (!node.file) return;
                     this.app.workspace.trigger('hover-link', {
                         event,
                         source: ZK_NAVIGATION,
@@ -1053,7 +1047,7 @@ export class ZKGraphView extends ItemView {
             const nodeText = this.escapeMermaidText(this.processDisplayText(node.displayText));
             mermaidStr += `${node.position}("${nodeText}");\n`;
             // 高亮当前文件对应的节点
-            if (highlightFile && node.file && node.file.path === highlightFile.path) {
+            if (highlightFile && node.file.path === highlightFile.path) {
                 mermaidStr += `style ${node.position} fill:#1a5f8f,stroke:#2a7faf,stroke-width:2px,color:#fff\n`;
             } else {
                 mermaidStr += `style ${node.position} fill:#2a3446,stroke:#5a6f7f,stroke-width:1px,color:#e0e0e0\n`;
@@ -1208,7 +1202,7 @@ export class ZKGraphView extends ItemView {
                 const mocNodes = await convertMOCToZKNodes(this.plugin, mocParseResult.nodes, mocParseResult.reverseRelations, [], mocParseResult.nodePositions);
 
                 // 查找当前文件对应的节点
-                const currentNode = mocNodes.find(n => n.file && n.file.path === file.path);
+                const currentNode = mocNodes.find(n => n.file.path === file.path);
 
                 if (currentNode) {
                     return {
@@ -1335,7 +1329,7 @@ export class ZKGraphView extends ItemView {
                     for (const mocFileCandidate of mocFiles) {
                         const tempParseResult = await parseMOCStructure(this.app, mocFileCandidate.path, headingTitle);
                         const tempNodes = await convertMOCToZKNodes(this.plugin, tempParseResult.nodes, tempParseResult.reverseRelations, [], tempParseResult.nodePositions);
-                        const tempCurrentNode = tempNodes.find(n => n.file && n.file.path === currentFile.path);
+                        const tempCurrentNode = tempNodes.find(n => n.file.path === currentFile.path);
                         const hasCurrentFile = !!tempCurrentNode;
                         availableMOCs.push({
                             file: mocFileCandidate, 
@@ -1469,7 +1463,6 @@ export class ZKGraphView extends ItemView {
                 // 监听节点点击事件
                 mocNodeTreeDiv.addEventListener('node-click', (event: any) => {
                     const { node, ctrlKey, shiftKey, altKey } = event.detail;
-                    if (!node.file) return;
 
                     if (ctrlKey) {
                         this.app.workspace.openLinkText("", node.file.path, 'tab');
@@ -1642,7 +1635,6 @@ export class ZKGraphView extends ItemView {
         // 监听节点点击事件
         familyTreeDiv.addEventListener('node-click', (event: any) => {
             const { node, ctrlKey, shiftKey, altKey } = event.detail;
-                    if (!node.file) return;
 
             if (ctrlKey) {
                 // Ctrl + 点击：在新标签页打开
@@ -1763,7 +1755,6 @@ export class ZKGraphView extends ItemView {
         // 监听节点点击事件
         mocTreeDiv.addEventListener('node-click', (event: any) => {
             const { node, ctrlKey, shiftKey, altKey } = event.detail;
-                    if (!node.file) return;
 
             if (ctrlKey) {
                 // Ctrl + 点击：在新标签页打开
@@ -1874,7 +1865,6 @@ export class ZKGraphView extends ItemView {
         // 监听节点点击事件
         inoutlinksDiv.addEventListener('node-click', (event: any) => {
             const { node, ctrlKey, shiftKey, altKey } = event.detail;
-            if (!node.file) return;
 
             if (ctrlKey) {
                 // Ctrl + 点击：在新标签页打开
@@ -1902,13 +1892,13 @@ export class ZKGraphView extends ItemView {
                     this.plugin.openIndexView();
                 } else {
                     const mainNote = this.plugin.MainNotes.find((n: any) => node.file && n.file.path === node.file.path);
-                    if (mainNote && mainNote.file) {
+                    if (mainNote) {
                         this.plugin.clearShowingSettings();
                         this.plugin.settings.lastRetrival = {
                             type: 'main',
                             ID: mainNote.ID,
                             displayText: mainNote.displayText,
-                            filePath: mainNote.file?.path,
+                            filePath: mainNote.file.path,
                             openTime: '',
                         };
                         this.plugin.RefreshIndexViewFlag = true;

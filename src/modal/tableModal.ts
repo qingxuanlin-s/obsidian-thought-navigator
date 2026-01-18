@@ -62,6 +62,9 @@ export class tableModal extends Modal {
   appendTableLine(){
     this.tableStr = this.headerStr;
     for(let node of this.tableArr){
+        // Skip text-only nodes (no file)
+        if (!node.file) continue;
+
         let inlinksStr:string = "";
         for(let inlink of this.getInlinks(node.file)){
             inlinksStr = inlinksStr + `<li>[[${inlink.basename}]]</li>`;
@@ -71,7 +74,7 @@ export class tableModal extends Modal {
         }
 
         let outlinkStr:string = "";
-        
+
         let outlinks = this.app.metadataCache.getFileCache(node.file)?.links
 
         if(outlinks){
@@ -120,7 +123,7 @@ addLinkAndPreview(){
 
                 let node = this.tableArr.find(n=>n.ID == linkStr)
 
-                if(node){
+                if(node && node.file){
                     linkStr =  node.file.basename;
                 }
 

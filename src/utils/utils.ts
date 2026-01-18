@@ -4,16 +4,17 @@ import { ZKNode } from "src/view/indexView";
 
 // MOC 解析的节点结构
 export interface MOCTreeNode {
-    wikiLink: string;           // wiki链接，如 "20251214-波函数"
+    wikiLink: string;           // wiki链接，如 "20251214-波函数"（对于纯文字节点，存储原始文本）
     nodeID: string;             // 节点ID，如 "a", "a.1", "a.1.a"
     displayText: string;        // 显示文本（链接后的描述）
     depth: number;              // 缩进深度（用于确定父子关系）
     children: MOCTreeNode[];    // 子节点
-    file: TFile | null;         // 对应的文件
+    file: TFile | null;         // 对应的文件（纯文字节点为 null）
     relationText: string;       // 关系描述，如 "引出", "相关"
     isArrowRelation?: boolean;  // 是否是箭头关系节点
     arrowSource?: string;       // 箭头关系的源节点ID
     arrowTarget?: string;       // 箭头关系的目标节点ID
+    isTextOnly?: boolean;       // 是否为纯文字节点（不关联文件）
 }
 
 // 反向关系信息
@@ -127,9 +128,9 @@ export async function convertMOCToZKNodes(
             nodeIDArr.push(index.toString());
         }
 
-        // 只有当文件存在时才创建并添加节点
-        if (!mocNode.file) {
-            // 递归处理子节点（即使当前节点无文件）
+        // 只有当文件存在或是纯文字节点时才创建并添加节点
+        if (!mocNode.file && !mocNode.isTextOnly) {
+            // 既没有文件也不是纯文字节点，跳过但递归处理子节点
             for (let i = 0; i < mocNode.children.length; i++) {
                 await processNode(mocNode.children[i], nodeIDArr, i);
             }
@@ -145,11 +146,11 @@ export async function convertMOCToZKNodes(
             IDArr: nodeIDArr,
             IDStr: idStr,
             position: position++,
-            file: mocNode.file,
+            file: mocNode.file,  // 纯文字节点为 null
             title: mocNode.displayText,
             relationText: mocNode.relationText,
             displayText: getDisplayText(plugin, mocNode),
-            ctime: mocNode.file.stat?.ctime || Date.now(),
+            ctime: mocNode.file?.stat?.ctime || Date.now(),  // 纯文字节点使用当前时间
             randomId: random(16),
             nodeSons: 1,
             startY: 0,
@@ -158,6 +159,7 @@ export async function convertMOCToZKNodes(
             fixWidth: 0,
             branchName: "",
             gitNodePos: 0,
+            isTextOnly: mocNode.isTextOnly || false,  // 传递纯文字节点标记
         };
 
         // 如果有保存的位置信息，添加到节点
@@ -349,7 +351,7 @@ export async function mainNoteInit(plugin: ZKNavigationPlugin) {
 
                 node.IDStr = IDArr.toString();
 
-                if (nodeCache !== null && node.file.extension == 'md') {
+                if (nodeCache !== null && node.file?.extension == 'md') {
                     if (typeof nodeCache.frontmatter !== 'undefined' && plugin.settings.TitleField !== "") {
 
                         let title = nodeCache.frontmatter[plugin.settings.TitleField]?.toString();
@@ -361,7 +363,7 @@ export async function mainNoteInit(plugin: ZKNavigationPlugin) {
 
                 break;
             case "2":
-                if (node.file.extension == 'md') {
+                if (node.file?.extension == 'md') {
                     if (nodeCache !== null) {
                         if (typeof nodeCache.frontmatter !== 'undefined' && plugin.settings.IDField !== "") {
                             let id = nodeCache.frontmatter[plugin.settings.IDField];
@@ -417,7 +419,7 @@ export async function mainNoteInit(plugin: ZKNavigationPlugin) {
             // do nothing
         }
 
-        if (plugin.settings.CustomCreatedTime.length > 0 && node.file.extension == 'md') {
+        if (plugin.settings.CustomCreatedTime.length > 0 && node.file?.extension == 'md') {
 
             let ctime = nodeCache?.frontmatter?.[plugin.settings.CustomCreatedTime];
 
@@ -430,7 +432,7 @@ export async function mainNoteInit(plugin: ZKNavigationPlugin) {
         }
 
         if (node.ctime === 0) {
-            node.ctime = node.file.stat.ctime
+            node.ctime = node.file?.stat?.ctime || Date.now()
         }
 
         plugin.MainNotes.push(node);
@@ -480,7 +482,8 @@ function uniqueByZKNote(arr: ZKNode[]) {
     const map = new Map();
     const result = [];
     for (const item of arr) {
-        const compoundKey = item.ID + '_' + item.file.path;
+        const filePath = item.file?.path || 'text-only';
+        const compoundKey = item.ID + '_' + filePath;
         if (!map.has(compoundKey)) {
             map.set(compoundKey, true);
             result.push(item);

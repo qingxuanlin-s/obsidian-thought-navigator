@@ -76,7 +76,15 @@ export class ZKOutlineView extends ItemView {
     }
     
     async createListTree(item:ZKNode, itemEl:HTMLElement){
-        
+
+        // Skip text-only nodes (no file)
+        if (!item.file) return;
+
+        // Capture file and ID to avoid null issues in event handlers
+        const filePath = item.file.path;
+        const itemId = item.ID;
+        const itemDisplayText = item.displayText;
+
         let children = this.plugin.tableArr.filter(n=>n.IDArr.length === item.IDArr.length + 1 && n.IDStr.startsWith(item.IDStr))
 
         let treeItem = itemEl.createDiv("tree-item");
@@ -89,36 +97,36 @@ export class ZKOutlineView extends ItemView {
                 hoverParent: this,
                 linktext: "",
                 targetEl: treeItemSelf,
-                sourcePath: item.file.path,
+                sourcePath: filePath,
             })
         });
 
-        treeItemSelf.addEventListener("click", async (event: MouseEvent) => {            
+        treeItemSelf.addEventListener("click", async (event: MouseEvent) => {
             if(event.ctrlKey){
-                navigator.clipboard.writeText(item.ID);
-                new Notice(item.ID + " copied");
+                navigator.clipboard.writeText(itemId);
+                new Notice(itemId + " copied");
             }else if(event.shiftKey){
                 this.plugin.settings.lastRetrival =  {
                     type: 'main',
-                    ID: item.ID,
-                    displayText: item.displayText,
-                    filePath: item.file.path,
+                    ID: itemId,
+                    displayText: itemDisplayText,
+                    filePath: filePath,
                     openTime: '',
                 }
                 await this.plugin.clearShowingSettings();
                 this.plugin.RefreshIndexViewFlag = true;
                 this.plugin.openIndexView();
             }else if(event.altKey){
-                
+
                 this.plugin.retrivalforLocaLgraph = {
                     type: '1',
-                    ID: item.ID,
-                    filePath: item.file.path,
+                    ID: itemId,
+                    filePath: filePath,
 
-                }; 
+                };
                 this.plugin.openGraphView();
             }else{
-                this.app.workspace.openLinkText("", item.file.path);
+                this.app.workspace.openLinkText("", filePath);
             }
         })
 

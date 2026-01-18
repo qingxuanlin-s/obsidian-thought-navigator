@@ -71,16 +71,18 @@ export class expandGraphModal extends Modal {
             let nodePosStr = nodeGArr[i].id.split('-')[1];
             let path:string = '';
             if(this.files.length == 0){
-                path = this.mainNotes.filter(n=>n.position == Number(nodePosStr))[0].file.path;
+                const node = this.mainNotes.filter(n=>n.position == Number(nodePosStr))[0];
+                if (!node.file) continue; // Skip text-only nodes
+                path = node.file.path;
             }else{
                 path = this.files[Number(nodePosStr)].path;
             }
-            
+
             link.textContent = nodeArr[i].getText();
             nodeArr[i].textContent = "";
             nodeArr[i].appendChild(link);
             nodeGArr[i].addEventListener("click", (event: MouseEvent) => {
-                this.app.workspace.openLinkText("", path, 'tab');                
+                this.app.workspace.openLinkText("", path, 'tab');
             })
 
             nodeArr[i].addEventListener(`mouseover`, (event: MouseEvent) => {
@@ -111,10 +113,15 @@ export class expandGraphModal extends Modal {
             
             if(nodeArr.length > 0){
                 let node = nodeArr[0];
-                circleNodes[j].addEventListener("click", async (event: MouseEvent) => {  
-                    this.app.workspace.openLinkText("", node.file.path, 'tab');                   
+                if (!node.file) continue; // Skip text-only nodes
+
+                // Capture file path to avoid null issues in event handlers
+                const filePath = node.file.path;
+
+                circleNodes[j].addEventListener("click", async (event: MouseEvent) => {
+                    this.app.workspace.openLinkText("", filePath, 'tab');
                 })
-                
+
                 circleNodes[j].addEventListener(`mouseover`, (event: MouseEvent) => {
                     this.app.workspace.trigger(`hover-link`, {
                         event,
@@ -122,9 +129,9 @@ export class expandGraphModal extends Modal {
                         hoverParent: circleNodes[j],
                         linktext: "",
                         targetEl: circleNodes[j],
-                        sourcePath: node.file.path,
+                        sourcePath: filePath,
                     })
-                });                            
+                });
             }  
         }
     }

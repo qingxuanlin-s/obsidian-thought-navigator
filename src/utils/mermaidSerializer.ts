@@ -11,10 +11,16 @@ export class MermaidSerializer {
      * @returns Mermaid 节点定义字符串
      */
     serializeNode(node: MOCTreeNode): string {
-        // 格式：nodeId["[[wikilink]]"]
         // 转义特殊字符
-        const escapedWikiLink = node.wikiLink.replace(/"/g, '\\"');
-        return `${node.nodeID}["[[${escapedWikiLink}]]"]`;
+        const escapedText = node.wikiLink.replace(/"/g, '\\"');
+
+        // 纯文字节点：显示为纯文本（无 [[]]）
+        if (node.isTextOnly) {
+            return `${node.nodeID}["${escapedText}"]`;
+        }
+
+        // 文件节点：显示为 wiki link
+        return `${node.nodeID}["[[${escapedText}]]"]`;
     }
 
     /**

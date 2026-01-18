@@ -115,7 +115,7 @@ export class GraphDataBuilder {
      */
     buildInOutLinksEdges(currentFile: TFile, inlinks: TFile[], outlinks: TFile[]): this {
         // 创建当前文件节点（如果不存在）
-        const currentNode = this.nodes.find(n => n.file.path === currentFile.path);
+        const currentNode = this.nodes.find(n => n.file?.path === currentFile.path);
         if (!currentNode) {
             // 添加当前文件作为中心节点
             const centerNode: ZKNode = {
