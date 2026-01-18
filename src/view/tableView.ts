@@ -52,9 +52,12 @@ export class ZKTableView extends ItemView{
     }
 
     appendTableLine(){
-        this.tableStr = this.headerStr        
+        this.tableStr = this.headerStr
         this.tableArr =  this.plugin.tableArr.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
         for(let node of this.tableArr){
+            // Skip text-only nodes (no file)
+            if (!node.file) continue;
+
             let inlinksStr:string = "";
             for(let inlink of this.getInlinks(node.file)){
                 inlinksStr = inlinksStr + `<li>[[${inlink.basename}]]</li>`;
@@ -64,7 +67,7 @@ export class ZKTableView extends ItemView{
             }
 
             let outlinkStr:string = "";
-            
+
             let outlinks = this.app.metadataCache.getFileCache(node.file)?.links
 
             if(outlinks){
@@ -135,7 +138,7 @@ export class ZKTableView extends ItemView{
 
                     let node = this.tableArr.find(n=>n.ID == linkStr)
 
-                    if(node){
+                    if(node && node.file){
                         linkStr =  node.file.basename;
                     }
 

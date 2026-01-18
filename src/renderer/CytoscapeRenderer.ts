@@ -328,10 +328,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private convertNodesToElements(nodes: ZKNode[]): any[] {
         // 获取当前文件路径（如果有）
         const currentFilePath = this.currentData?.metadata.currentFile || '';
-        
+
         // 获取节点颜色映射
         const nodeColors = this.currentData?.metadata.nodeColors || {};
-        
+
         const elements = nodes.map(node => {
             const element: any = {
                 group: 'nodes' as const,
@@ -340,13 +340,14 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     label: this.getNodeLabel(node, this.currentOptions),
                     badge: this.getNodeBadge(node, this.currentOptions),
                     title: node.title,
-                    filePath: node.file.path,
+                    filePath: node.file?.path || '',  // 纯文字节点 file 为 null
                     displayText: node.displayText,
                     position: node.position,
-                    isCurrentFile: node.file.path === currentFilePath,
+                    isCurrentFile: node.file?.path === currentFilePath,  // 纯文字节点不匹配
                     originalNode: node,
                     customColor: nodeColors[node.IDStr] || null,  // 添加自定义颜色
-                    isCrossDomain: node.isCrossDomain || false  // 传递跨领域节点标记
+                    isCrossDomain: node.isCrossDomain || false,  // 传递跨领域节点标记
+                    isTextOnly: node.isTextOnly || false  // 传递纯文字节点标记
                 }
             };
 
@@ -404,7 +405,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
      */
     private getNodeLabel(node: ZKNode, options: RenderOptions | null): string {
         const nodeText = options?.nodeText || 'both';
-        
+
         let label = '';
         switch (nodeText) {
             case 'id':
@@ -422,9 +423,16 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 label = node.displayText;
                 break;
         }
-        
+
         // 处理显示文本：去掉时间戳前缀
-        return this.processDisplayText(label, nodeText);
+        label = this.processDisplayText(label, nodeText);
+
+        // 为纯文字节点添加图标
+        if (node.isTextOnly) {
+            label = `📝 ${label}`;
+        }
+
+        return label;
     }
 
     /**
@@ -2638,13 +2646,10 @@ case 'dagre':
                 return;
             }
 
-            if (e.key === 'Enter' && e.shiftKey) {
-                // Shift + Enter 保存节点
+            if (e.key === 'Enter') {
+                // Enter 保存节点
                 e.preventDefault();
                 saveNode();
-            } else if (e.key === 'Enter') {
-                // 单独 Enter 允许换行
-                // 不做任何处理，允许默认行为
             } else if (e.key === 'Escape') {
                 // 取消编辑
                 e.preventDefault();

@@ -308,12 +308,11 @@ export class ZKIndexView extends ItemView {
             mainNoteButton.onClick(() => {
                 if (this.plugin.settings.MainNoteSuggestMode === "IDOrder") {
                     new mainNoteModal(this.app, this.plugin, this.plugin.MainNotes, (selectZKNode) => {
-                        if (!selectZKNode.file) return;
                         this.plugin.settings.lastRetrival = {
                             type: 'main',
                             ID: selectZKNode.ID,
                             displayText: selectZKNode.displayText,
-                            filePath: selectZKNode.file.path,
+                            filePath: selectZKNode.file?.path,
                             openTime: moment().format("YYYY-MM-DD HH:mm:ss"),
 
                         }
@@ -322,12 +321,11 @@ export class ZKIndexView extends ItemView {
                     }).open();
                 } else {
                     new mainNoteFuzzyModal(this.app, this.plugin, this.plugin.MainNotes, (selectZKNode) => {
-                        if (!selectZKNode.file) return;
                         this.plugin.settings.lastRetrival = {
                             type: 'main',
                             ID: selectZKNode.ID,
                             displayText: selectZKNode.displayText,
-                            filePath: selectZKNode.file.path,
+                            filePath: selectZKNode.file?.path,
                             openTime: moment().format("YYYY-MM-DD HH:mm:ss"),
 
                         }
@@ -602,12 +600,11 @@ export class ZKIndexView extends ItemView {
 
                     let randomMainNoteNode = this.plugin.MainNotes[Math.floor(Math.random() * this.plugin.MainNotes.length)];
 
-				if (!randomMainNoteNode.file) return;
                     this.plugin.settings.lastRetrival = {
                         type: 'main',
                         ID: randomMainNoteNode.ID,
                         displayText: randomMainNoteNode.displayText,
-                        filePath: randomMainNoteNode.file.path,
+                        filePath: randomMainNoteNode.file?.path,
                         openTime: moment().format("YYYY-MM-DD HH:mm:ss"),
 
                     }
@@ -832,12 +829,11 @@ export class ZKIndexView extends ItemView {
 
                 let node = this.plugin.MainNotes[Math.floor(Math.random() * (this.plugin.MainNotes.length))];
                 if (node) {
-					if (!node.file) return;
                     this.plugin.settings.lastRetrival = {
                         type: 'main',
                         ID: node.ID,
                         displayText: node.displayText,
-                        filePath: node.file.path,
+                        filePath: node.file?.path,
                         openTime: '',
                     }
                 }
@@ -1303,7 +1299,7 @@ export class ZKIndexView extends ItemView {
                 this.plugin.retrivalforLocaLgraph = {
                     type: '1',
                     ID: node.ID,
-                    filePath: node.file.path,
+                    filePath: node.file?.path,
                 };
                 this.plugin.openGraphView();
             } else {
@@ -2320,7 +2316,7 @@ export class ZKIndexView extends ItemView {
                                     type: 'main',
                                     ID: node.ID,
                                     displayText: node.displayText,
-                                    filePath: node.file.path,
+                                    filePath: node.file?.path,
                                     openTime: moment().format("YYYY-MM-DD HH:mm:ss"),
                                 };
                                 await this.plugin.clearShowingSettings();
@@ -2329,7 +2325,7 @@ export class ZKIndexView extends ItemView {
                                 this.plugin.retrivalforLocaLgraph = {
                                     type: '1',
                                     ID: node.ID,
-                                    filePath: node.file.path,
+                                    filePath: node.file?.path,
                                 };
                                 this.plugin.openGraphView();
                             } else {
@@ -2602,7 +2598,7 @@ export class ZKIndexView extends ItemView {
                                     type: 'main',
                                     ID: node.ID,
                                     displayText: node.displayText,
-                                    filePath: node.file.path,
+                                    filePath: node.file?.path,
                                     openTime: moment().format("YYYY-MM-DD HH:mm:ss"),
                                 }
                                 await this.plugin.clearShowingSettings();
@@ -2611,7 +2607,7 @@ export class ZKIndexView extends ItemView {
                                 this.plugin.retrivalforLocaLgraph = {
                                     type: '1',
                                     ID: node.ID,
-                                    filePath: node.file.path,
+                                    filePath: node.file?.path,
 
                                 };
                                 this.plugin.openGraphView();
@@ -3438,16 +3434,15 @@ export class ZKIndexView extends ItemView {
         let canvasNodeStr: string = "";
         let canvasEdgeStr: string = "";
         for (let i = 0; i < nodes.length; i++) {
-				if (!nodes[i].file) continue;
 
             let positionX: number = (nodes[i].IDArr.length - nodes[0].IDArr.length) * (cardWidth + intervalX);
             let positionY: number = nodes[i].height;
             if (direction === "LR" || direction === "RL") {
                 canvasNodeStr = canvasNodeStr + `
-                {"id":"${nodes[i].randomId}","x":${positionX},"y":${positionY},"width":${Math.abs(cardWidth)},"height":${Math.abs(cardHeight)},"type":"file","file":"${nodes[i].file!.path}"${this.getCanvasCardSetting(nodes[i].file!)},`
+                {"id":"${nodes[i].randomId}","x":${positionX},"y":${positionY},"width":${Math.abs(cardWidth)},"height":${Math.abs(cardHeight)},"type":"file","file":"${nodes[i].file?.path}"${this.getCanvasCardSetting(nodes[i].file)}},`
             } else {
                 canvasNodeStr = canvasNodeStr + `
-                {"id":"${nodes[i].randomId}","x":${positionY},"y":${positionX},"width":${Math.abs(cardWidth)},"height":${Math.abs(cardHeight)},"type":"file","file":"${nodes[i].file!.path}"${this.getCanvasCardSetting(nodes[i].file!)}},`
+                {"id":"${nodes[i].randomId}","x":${positionY},"y":${positionX},"width":${Math.abs(cardWidth)},"height":${Math.abs(cardHeight)},"type":"file","file":"${nodes[i].file?.path}"${this.getCanvasCardSetting(nodes[i].file)}},`
 
             }
             let IDStr = nodes[i].IDStr;
@@ -3601,11 +3596,9 @@ export class ZKIndexView extends ItemView {
         for (let branch of gitBranches) {
 
             for (let i = 0; i < branch.nodes.length; i++) {
-				if (!branch.nodes[i].file) continue;
-				const branchFile = branch.nodes[i].file;
-				canvasNodeStr = canvasNodeStr + `
-				{"id":"${branch.nodes[i].randomId}","x":${branch.positionX + (cardWidth + intervalX) * i},"y":${(cardHeight + intervalY) * branch.order},"width":${cardWidth},"height":${cardHeight},"type":"file","file":"${branchFile!.path}"${this.getCanvasCardSetting(branchFile!)}},`
-			}
+                canvasNodeStr = canvasNodeStr + `
+                {"id":"${branch.nodes[i].randomId}","x":${branch.positionX + (cardWidth + intervalX) * i},"y":${(cardHeight + intervalY) * branch.order},"width":${cardWidth},"height":${cardHeight},"type":"file","file":"${branch.nodes[i].file?.path}"${this.getCanvasCardSetting(branch.nodes[i].file)}},`
+            }
 
             for (let i = 1; i < branch.nodes.length; i++) {
                 canvasEdgeStr = canvasEdgeStr + `
@@ -3801,25 +3794,21 @@ export class ZKIndexView extends ItemView {
                 new Notice(node.ID + " copied");
             }
         } else if (event.shiftKey) {
-				if (!node.file) return;
-				if (!node.file) return;
             this.plugin.settings.lastRetrival = {
                 type: 'main',
                 ID: node.ID,
                 displayText: node.displayText,
-                filePath: node.file.path,
+                filePath: node.file?.path,
                 openTime: moment().format("YYYY-MM-DD HH:mm:ss"),
             };
             this.plugin.clearShowingSettings();
             this.IndexViewInterfaceInit();
         } else if (event.altKey) {
-				if (!node.file) return;
             this.plugin.retrivalforLocaLgraph = {
                 type: '1',
                 ID: node.ID,
-                filePath: node.file.path,
-            }
-            if (!node.file) return;;
+                filePath: node.file?.path,
+            };
             this.plugin.openGraphView();
         } else if (target.classList.contains('internal-link')) {
             if (!node.file) return;
