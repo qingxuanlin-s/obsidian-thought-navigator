@@ -3212,7 +3212,8 @@ case 'dagre':
         });
 
         // 节点拖动自动连接相关变量
-        let tempConnectionEdge: any = null;
+        let tempConnectionLine: SVGLineElement | null = null;
+        let svgOverlay: SVGSVGElement | null = null;
         let nearbyNodeId: string | null = null;
         const PROXIMITY_THRESHOLD = 250;  // 250px 范围
 
@@ -3221,14 +3222,29 @@ case 'dagre':
             const node = evt.target;
             const data = node.data();
 
-            // 只对自由节点（根节点）启用自动连接
-            if (!data.isPlaceholder && !data.isGroup && !data.isCrossDomain) {
-                // 检查是否是根节点（没有父节点）
-                const idParts = (data.originalSource || data.id).split('.');
-                if (idParts.length === 1) {
-                    // 这是一个根节点，可以启用自动连接
-                    return;
-                }
+            // 只对自由节点启用自动连接
+            if (data.isPlaceholder || data.isGroup || data.isCrossDomain) return;
+
+            // 检查是否是自由节点（ID 以 'free.' 开头）
+            const originalNodeId = data.originalNode?.ID || data.originalSource || data.id;
+
+            if (!originalNodeId.startsWith('free.')) {
+                return;  // 只允许自由节点拖动自动连接
+            }
+
+            // 创建 SVG 叠加层用于绘制连线
+            if (!svgOverlay && this.container) {
+                svgOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svgOverlay.style.cssText = `
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    pointer-events: none;
+                    z-index: 2;
+                `;
+                this.container.appendChild(svgOverlay);
             }
         });
 
@@ -3243,40 +3259,21 @@ case 'dagre':
             // 检查是否是自由节点（ID 以 'free.' 开头）
             const originalNodeId = data.originalNode?.ID || data.originalSource || data.id;
 
-            console.log('[Auto-Connect] 拖动节点:', {
-                id: data.id,
-                originalNodeId: originalNodeId
-            });
-
             if (!originalNodeId.startsWith('free.')) {
-                console.log('[Auto-Connect] 不是自由节点，跳过自动连接');
                 return;  // 只允许自由节点拖动自动连接
             }
 
             // 获取当前节点位置
             const pos = node.renderedPosition();
-            console.log('[Auto-Connect] 节点位置:', pos);
 
             // 查找最近的节点
             let nearestNode: any = null;
             let minDistance = Infinity;
-            let checkedNodes = 0;
-            let skippedNodes = 0;
 
             this.cy!.nodes().forEach((otherNode: any) => {
-                checkedNodes++;
-                if (otherNode.id() === node.id()) {
-                    skippedNodes++;
-                    return;  // 跳过自己
-                }
-                if (otherNode.data().isPlaceholder) {
-                    skippedNodes++;
-                    return;  // 跳过占位符
-                }
-                if (otherNode.data().isGroup) {
-                    skippedNodes++;
-                    return;  // 跳过分组
-                }
+                if (otherNode.id() === node.id()) return;  // 跳过自己
+                if (otherNode.data().isPlaceholder) return;  // 跳过占位符
+                if (otherNode.data().isGroup) return;  // 跳过分组
 
                 // 自由节点可以连接到任何节点（包括子节点）
                 const otherPos = otherNode.renderedPosition();
@@ -3285,51 +3282,40 @@ case 'dagre':
                     Math.pow(pos.y - otherPos.y, 2)
                 );
 
-                console.log('[Auto-Connect] 检查节点:', otherNode.id(), '距离:', distance);
-
                 if (distance < minDistance && distance < PROXIMITY_THRESHOLD) {
                     minDistance = distance;
                     nearestNode = otherNode;
                 }
             });
 
-            console.log('[Auto-Connect] 总节点数:', checkedNodes, '跳过节点数:', skippedNodes, '最近的节点:', nearestNode ? nearestNode.id() : null, '距离:', minDistance);
-
             // 移除旧的临时连接
-            if (tempConnectionEdge) {
-                this.cy!.remove(tempConnectionEdge);
-                tempConnectionEdge = null;
+            if (tempConnectionLine && svgOverlay) {
+                svgOverlay.removeChild(tempConnectionLine);
+                tempConnectionLine = null;
             }
+            this.cy!.nodes('.connection-target-hover').removeClass('connection-target-hover');
             nearbyNodeId = null;
 
             // 如果找到附近的节点，创建虚线连接
-            if (nearestNode) {
+            if (nearestNode && svgOverlay) {
                 nearbyNodeId = nearestNode.id();
-                console.log('[Auto-Connect] 创建临时连接:', nearbyNodeId);
 
-                // 创建临时边
-                tempConnectionEdge = this.cy!.add({
-                    group: 'edges',
-                    data: {
-                        source: nearestNode.id(),
-                        target: node.id(),
-                        label: '',  // 临时边没有标签
-                        isTempConnection: true
-                    },
-                    classes: 'temp-connection'
-                });
+                // 获取目标节点位置
+                const targetPos = nearestNode.renderedPosition();
 
-                // 设置临时边的样式
-                tempConnectionEdge.style({
-                    'line-style': 'dashed',
-                    'line-color': '#5b9bd8',
-                    'width': 2,
-                    'target-arrow-color': '#5b9bd8',
-                    'target-arrow-shape': 'triangle',
-                    'arrow-scale': 1.5,
-                    'curve-style': 'bezier',
-                    'text-opacity': 0  // 隐藏标签
-                });
+                // 创建 SVG 连线
+                tempConnectionLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                tempConnectionLine.setAttribute('x1', targetPos.x.toString());
+                tempConnectionLine.setAttribute('y1', targetPos.y.toString());
+                tempConnectionLine.setAttribute('x2', pos.x.toString());
+                tempConnectionLine.setAttribute('y2', pos.y.toString());
+                tempConnectionLine.setAttribute('stroke', '#10b981');  // 绿色表示可以连接
+                tempConnectionLine.setAttribute('stroke-width', '2');
+                tempConnectionLine.setAttribute('stroke-dasharray', '5,5');  // 虚线
+                svgOverlay.appendChild(tempConnectionLine);
+
+                // 高亮目标节点
+                nearestNode.addClass('connection-target-hover');
             }
         });
 
@@ -3339,11 +3325,12 @@ case 'dagre':
             const node = evt.target;
             const data = node.data();
 
-            // 移除临时连接线
-            if (tempConnectionEdge) {
-                this.cy!.remove(tempConnectionEdge);
-                tempConnectionEdge = null;
+            // 移除临时连接线和 SVG 叠加层
+            if (tempConnectionLine && svgOverlay) {
+                svgOverlay.removeChild(tempConnectionLine);
+                tempConnectionLine = null;
             }
+            this.cy!.nodes('.connection-target-hover').removeClass('connection-target-hover');
 
             // 如果是分组节点或占位符节点，不触发位置保存
             if (data.isGroup) return;
@@ -3420,6 +3407,34 @@ case 'dagre':
                     }
                 }
             }));
+        });
+
+        // 节点释放事件（清理 SVG 叠加层）
+        this.cy.on('free', 'node', (evt: any) => {
+            const node = evt.target;
+            const data = node.data();
+
+            // 只对自由节点进行清理
+            const originalNodeId = data.originalNode?.ID || data.originalSource || data.id;
+            if (!originalNodeId.startsWith('free.')) {
+                return;
+            }
+
+            // 延迟清理，确保 dragfree 事件已经处理完成
+            setTimeout(() => {
+                // 移除 SVG 叠加层
+                if (svgOverlay && this.container) {
+                    this.container.removeChild(svgOverlay);
+                    svgOverlay = null;
+                }
+
+                if (tempConnectionLine) {
+                    tempConnectionLine = null;
+                }
+
+                this.cy!.nodes('.connection-target-hover').removeClass('connection-target-hover');
+                nearbyNodeId = null;
+            }, 100);
         });
 
         // 边点击事件（选中边）
