@@ -1,0 +1,9 @@
+@@ -166,7 +166,7 @@
+         // 如果有保存的位置信息，添加到节点
+         const nodeID = mocNode.nodeID || mocNode.wikiLink;
+         if (nodePositions[nodeID]) {
+             zkNode.savedPosition = nodePositions[nodeID];
+-        }
++        }
+ 
+         nodes.push(zkNode);
