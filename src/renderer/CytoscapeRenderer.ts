@@ -427,10 +427,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
         // 处理显示文本：去掉时间戳前缀
         label = this.processDisplayText(label, nodeText);
 
-        // 为纯文字节点添加图标
-        if (node.isTextOnly) {
-            label = `📝 ${label}`;
-        }
+        // 为纯文字节点添加标记（可选）
+        // if (node.isTextOnly) {
+        //     label = `[文本] ${label}`;
+        // }
 
         return label;
     }
@@ -2585,12 +2585,19 @@ case 'dagre':
             // 恢复节点标签
             node.data('label', newLabel);
 
+            // 获取节点的实际位置（使用 position() 而不是 boundingBox）
+            const nodePosition = node.position();
+            const actualPosition = {
+                x: nodePosition.x,
+                y: nodePosition.y
+            };
+
             // 触发节点标签编辑事件
             this.container?.dispatchEvent(new CustomEvent('placeholder-node-edit', {
                 detail: {
                     nodeId: data.id,
                     label: newLabel,
-                    position: { x: boundingBox.x1, y: boundingBox.y1 }
+                    position: actualPosition
                 }
             }));
 
