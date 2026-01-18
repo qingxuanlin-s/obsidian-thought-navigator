@@ -169,24 +169,54 @@ export class MOCHandler {
      */
     async moveNodeToParent(mocFile: TFile, freeNodeID: string, parentID: string, newChildID: string): Promise<void> {
         await this.modifyMOCData(mocFile, (mocData) => {
-            // 1. 从根节点中找到并移除自由节点
+            // 1. 找到并移除节点（可能在根节点，也可能在某个父节点的 children 中）
             let nodeToMove: any = null;
-            let nodeIndex = -1;
+            let foundInRoot = false;
+            let foundInParent = null;
+            let foundIndex = -1;
 
+            // 先在根节点中查找
             for (let i = 0; i < mocData.nodes.length; i++) {
                 if (mocData.nodes[i].nodeID === freeNodeID) {
                     nodeToMove = mocData.nodes[i];
-                    nodeIndex = i;
+                    foundInRoot = true;
+                    foundIndex = i;
                     break;
                 }
             }
 
+            // 如果在根节点中没找到，递归在父节点的 children 中查找
             if (!nodeToMove) {
-                throw new Error(`未找到自由节点: ${freeNodeID}`);
+                const removeFromParent = (nodes: any[]): boolean => {
+                    for (const node of nodes) {
+                        if (node.children && node.children.length > 0) {
+                            const childIndex = node.children.findIndex((child: any) => child.nodeID === freeNodeID);
+                            if (childIndex !== -1) {
+                                nodeToMove = node.children.splice(childIndex, 1)[0];
+                                foundInParent = node;
+                                return true;
+                            }
+                            // 递归查找
+                            if (removeFromParent(node.children)) {
+                                return true;
+                            }
+                        }
+                    }
+                    return false;
+                };
+
+                removeFromParent(mocData.nodes);
             }
 
-            // 从根节点中移除
-            mocData.nodes.splice(nodeIndex, 1);
+            if (!nodeToMove) {
+                throw new Error(`未找到节点: ${freeNodeID}`);
+            }
+
+            // 从原来的位置移除
+            if (foundInRoot) {
+                mocData.nodes.splice(foundIndex, 1);
+            }
+            // 如果 foundInParent 不为 null，节点已经在上面的递归函数中被移除了
 
             // 2. 更新节点 ID 和深度
             nodeToMove.nodeID = newChildID;

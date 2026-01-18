@@ -5722,11 +5722,9 @@ export class ZKIndexView extends ItemView {
             if (targetNodeHasParent) {
                 new Notice(`已删除箭头关系: ${sourceID} → ${targetID}`);
 
-                // 如果目标节点 ID 已经以 free. 开头，直接转换为根节点，不生成新 ID
-                let newFreeID = targetID;
-                if (!targetID.startsWith('free.')) {
-                    newFreeID = this.generateNextFreeNodeID();
-                }
+                // 无论目标节点 ID 是否以 free. 开头，都生成新的自由节点 ID
+                // 例如：free.1.a 会被重命名为 free.2，成为真正的自由节点
+                const newFreeID = this.generateNextFreeNodeID();
 
                 await this.mocHandler.convertChildToFreeNode(mocFile, targetID, newFreeID);
                 new Notice(`${targetID} 已转换为自由节点: ${newFreeID}`);
