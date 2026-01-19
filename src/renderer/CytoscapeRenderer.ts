@@ -3195,6 +3195,14 @@ case 'dagre':
                     },
                     position: position
                 });
+
+                // 自动打开编辑框并聚焦
+                setTimeout(() => {
+                    const node = this.cy?.$id(nodeId);
+                    if (node && node.length > 0) {
+                        this.showInlineNodeEditor(node);
+                    }
+                }, 100);
             } catch (error) {
                 console.error('[CytoscapeRenderer] Error adding placeholder node:', error);
             }
