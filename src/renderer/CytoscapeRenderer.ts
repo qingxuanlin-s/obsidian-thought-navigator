@@ -1793,124 +1793,6 @@ case 'dagre':
         observer.observe(container, { childList: true });
     }
 
-    /**
-     * 绑定分组创建事件（Command/Ctrl + 拖动）
-     */
-    private bindGroupCreationEvents(): void {
-        if (!this.cy || !this.container) return;
-
-        let isDrawing = false;
-        let startPos: { x: number; y: number } | null = null;
-        let selectionBox: HTMLDivElement | null = null;
-
-        // 监听鼠标按下事件
-        this.container.addEventListener('mousedown', (e: MouseEvent) => {
-            // 检查是否按下 Command (Mac) 或 Ctrl (Windows/Linux)
-            if (e.metaKey || e.ctrlKey) {
-                // 阻止默认行为
-                e.preventDefault();
-                e.stopPropagation();
-
-                isDrawing = true;
-                startPos = { x: e.clientX, y: e.clientY };
-
-                // 创建选择框
-                selectionBox = document.createElement('div');
-                selectionBox.style.cssText = `
-                    position: fixed;
-                    border: 2px dashed #5b8fd9;
-                    background-color: rgba(91, 143, 217, 0.1);
-                    pointer-events: none;
-                    z-index: 10000;
-                `;
-                document.body.appendChild(selectionBox);
-
-                // 禁用 Cytoscape 的平移
-                if (this.cy) {
-                    this.cy.userPanningEnabled(false);
-                }
-            }
-        });
-
-        // 监听鼠标移动事件
-        this.container.addEventListener('mousemove', (e: MouseEvent) => {
-            if (isDrawing && startPos && selectionBox) {
-                const currentPos = { x: e.clientX, y: e.clientY };
-
-                // 计算矩形位置和大小
-                const left = Math.min(startPos.x, currentPos.x);
-                const top = Math.min(startPos.y, currentPos.y);
-                const width = Math.abs(currentPos.x - startPos.x);
-                const height = Math.abs(currentPos.y - startPos.y);
-
-                selectionBox.style.left = `${left}px`;
-                selectionBox.style.top = `${top}px`;
-                selectionBox.style.width = `${width}px`;
-                selectionBox.style.height = `${height}px`;
-            }
-        });
-
-        // 监听鼠标释放事件
-        this.container.addEventListener('mouseup', (e: MouseEvent) => {
-            if (isDrawing && startPos && selectionBox) {
-                const endPos = { x: e.clientX, y: e.clientY };
-
-                // 计算选择框的边界
-                const containerRect = this.container!.getBoundingClientRect();
-                const left = Math.min(startPos.x, endPos.x) - containerRect.left;
-                const top = Math.min(startPos.y, endPos.y) - containerRect.top;
-                const right = Math.max(startPos.x, endPos.x) - containerRect.left;
-                const bottom = Math.max(startPos.y, endPos.y) - containerRect.top;
-
-                // 查找矩形内的节点
-                const selectedNodes: any[] = [];
-                if (this.cy) {
-                    this.cy.nodes().forEach((node: any) => {
-                        const pos = node.renderedPosition();
-                        const bb = node.renderedBoundingBox();
-
-                        // 检查节点是否在选择框内
-                        if (bb.x1 >= left && bb.x2 <= right && bb.y1 >= top && bb.y2 <= bottom) {
-                            selectedNodes.push(node);
-                        }
-                    });
-                }
-
-                // 移除选择框
-                selectionBox.remove();
-                selectionBox = null;
-
-                // 恢复 Cytoscape 的平移
-                if (this.cy) {
-                    this.cy.userPanningEnabled(true);
-                }
-
-                // 如果选中了节点，创建分组
-                if (selectedNodes.length > 0) {
-                    this.createGroupFromNodes(selectedNodes);
-                }
-
-                // 重置状态
-                isDrawing = false;
-                startPos = null;
-            }
-        });
-
-        // 监听鼠标离开容器事件（取消绘制）
-        this.container.addEventListener('mouseleave', () => {
-            if (isDrawing && selectionBox) {
-                selectionBox.remove();
-                selectionBox = null;
-                isDrawing = false;
-                startPos = null;
-
-                // 恢复 Cytoscape 的平移
-                if (this.cy) {
-                    this.cy.userPanningEnabled(true);
-                }
-            }
-        });
-    }
 
     /**
      * 从选中的节点创建分组
@@ -2986,8 +2868,8 @@ case 'dagre':
     private bindEvents(): void {
         if (!this.cy || !this.container) return;
 
-        // 绑定分组创建事件（Command + 拖动）
-        this.bindGroupCreationEvents();
+        // 绑定分组创建事件（Command + 拖动）- 已禁用
+        // this.bindGroupCreationEvents();
 
         // 节点点击事件（单击选中，不打开文件）
         this.cy.on('tap', 'node', (evt: any) => {
@@ -3364,12 +3246,7 @@ case 'dagre':
                 const childId = data.originalNode?.ID || data.originalSource || data.id;
                 const parentId = parentData.originalNode?.ID || parentData.originalSource || nearbyNodeId;
 
-                console.log('[Auto-Connect] 触发连接事件:', {
-                    childNodeId: childId,
-                    parentNodeId: parentId,
-                    childOriginalNode: data.originalNode,
-                    parentOriginalNode: parentData.originalNode
-                });
+        
 
                 // 触发自动连接事件
                 this.container?.dispatchEvent(new CustomEvent('auto-connect-node', {
