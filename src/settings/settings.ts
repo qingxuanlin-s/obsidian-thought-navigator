@@ -727,6 +727,8 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
             })
         );
 
+        // 以下功能已禁用（红框内的功能）
+        /*
         new Setting(structureSettingDiv)
             .setName(t("siblings order"))
             .setDesc(t("siblings order description"))
@@ -786,7 +788,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
             .addExtraButton((cb)=>{
                 cb.setIcon("rotate-ccw")
                 .onClick(async()=>{
-                    this.plugin.settings.nodeColor = "#FFFFAA";   
+                    this.plugin.settings.nodeColor = "#FFFFAA";
                     await this.updateSructureSettings(structureSettingDiv);
                 })
             })
@@ -796,6 +798,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                     this.plugin.RefreshIndexViewFlag = true;
                 })
             );
+        */
     }
 
     async hide() {
