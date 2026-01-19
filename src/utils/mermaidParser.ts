@@ -99,7 +99,7 @@ export class MermaidParser {
             const wikiLink = fileNodeMatch[2];
             const displayText = fileNodeMatch[3] || fileNodeMatch[2];
 
-            console.log('[parseNode] 文件节点匹配成功:', { line, id, wikiLink, displayText });
+
             return {
                 id,
                 wikiLink,
@@ -118,7 +118,6 @@ export class MermaidParser {
 
             // 额外检查：确保不包含 [[（防止误匹配文件节点）
             if (!text.includes('[[')) {
-                console.log('[parseNode] 纯文字节点匹配成功:', { line, id, text });
                 return {
                     id,
                     wikiLink: text,
@@ -128,7 +127,6 @@ export class MermaidParser {
             }
         }
 
-        console.log('[parseNode] 无法匹配节点:', line);
         return null;
     }
 

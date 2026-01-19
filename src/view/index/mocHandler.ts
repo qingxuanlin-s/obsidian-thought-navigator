@@ -544,11 +544,8 @@ export class MOCHandler {
      * 从 MOC 文件中删除跨思维树节点
      */
     async deleteCrossDomainNodeFromMOC(mocFile: TFile, nodeID: string, crossDomainLinkInfo: any): Promise<void> {
-        console.log(`[deleteCrossDomainNodeFromMOC] 正在删除文件: ${mocFile.path}`);
 
         await this.modifyMOCData(mocFile, (mocData) => {
-            console.log(`[deleteCrossDomainNodeFromMOC] 文件: ${mocFile.path}`);
-            console.log('[deleteCrossDomainNodeFromMOC] 删除前 crossDomainLinks:', JSON.stringify(mocData.crossDomainLinks, null, 2));
 
             if (!mocData.crossDomainLinks) {
                 throw new Error(`未找到跨领域链接数据`);
@@ -558,7 +555,6 @@ export class MOCHandler {
             const sourceNodeId = crossDomainLinkInfo.sourceNodeId;
             const originalNodeId = crossDomainLinkInfo.nodeId;
 
-            console.log(`[deleteCrossDomainNodeFromMOC] 删除: sourceNodeId=${sourceNodeId}, originalNodeId=${originalNodeId}, nodeID=${nodeID}`);
 
             if (!sourceNodeId || !mocData.crossDomainLinks[sourceNodeId]) {
                 throw new Error(`未找到跨领域链接: sourceNodeId=${sourceNodeId}`);
@@ -599,7 +595,6 @@ export class MOCHandler {
                     });
                 }
 
-                console.log('[deleteCrossDomainNodeFromMOC] 删除后 crossDomainLinks:', JSON.stringify(mocData.crossDomainLinks, null, 2));
             } else {
                 throw new Error(`未找到跨领域节点链接: ${originalNodeId}`);
             }

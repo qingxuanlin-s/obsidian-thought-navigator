@@ -1118,8 +1118,6 @@ export class ZKIndexView extends ItemView {
         this.addTrackedListener(branchGraphDiv, 'auto-connect-node', async (event: any) => {
             const { childNodeId, parentNodeId, position } = event.detail;
 
-            console.log('[auto-connect-node] 自动连接:', { childNodeId, parentNodeId, position });
-
             // 查找子节点和父节点
             const childNode = this.mocNodes.find(n => n.ID === childNodeId || n.IDStr === childNodeId);
             const parentNode = this.mocNodes.find(n => n.ID === parentNodeId || n.IDStr === parentNodeId);
@@ -1378,7 +1376,6 @@ export class ZKIndexView extends ItemView {
         this.addTrackedListener(branchGraphDiv, 'node-select', (event: any) => {
             const { node } = event.detail;
             // 可以在这里添加选中节点的其他逻辑
-            console.log('Node selected:', node.ID);
         });
 
         // 监听节点打开事件（双击）
@@ -1967,14 +1964,8 @@ export class ZKIndexView extends ItemView {
                         const nodeId = nodeIds[i];
                         const nodeData = nodes[i];
 
-                        console.log(`[批量删除] 节点ID: ${nodeId}`);
-                        console.log(`[批量删除] nodeData:`, nodeData);
-                        console.log(`[批量删除] isCrossDomain:`, nodeData?.isCrossDomain);
-
+        
                         if (nodeData && nodeData.isCrossDomain) {
-                            console.log(`[批量删除] 检测到跨领域节点，使用专门删除方法`);
-                            console.log(`[批量删除] crossDomainSourceNodeId:`, nodeData.originalNode.crossDomainSourceNodeId);
-                            console.log(`[批量删除] crossDomainOriginalNodeId:`, nodeData.originalNode.crossDomainOriginalNodeId);
                             // 跨领域节点：使用专门的删除方法
                             const crossDomainLinkInfo = {
                                 sourceNodeId: nodeData.originalNode.crossDomainSourceNodeId,
@@ -1986,7 +1977,6 @@ export class ZKIndexView extends ItemView {
                                 crossDomainLinkInfo
                             );
                         } else {
-                            console.log(`[批量删除] 普通节点，使用常规删除方法`);
                             // 普通节点：使用常规删除方法
                             await this.mocHandler.deleteNodeFromMOC(mocFile, nodeId);
                         }
@@ -5592,7 +5582,6 @@ export class ZKIndexView extends ItemView {
         }
 
         try {
-            console.log('[saveFreeNodeToMOC] 输入参数:', result);
             await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
                 // 创建新节点
                 const newNode: MOCTreeNode = {
@@ -5609,7 +5598,6 @@ export class ZKIndexView extends ItemView {
                     relationText: result.connectionRelation || result.relationText || '',
                     isTextOnly: result.isTextOnly || false  // 新增标记
                 };
-                console.log('[saveFreeNodeToMOC] 创建的节点:', newNode);
 
                 // 如果有父节点，添加为子节点
                 if (result.connectToNodeID) {
@@ -5856,7 +5844,6 @@ export class ZKIndexView extends ItemView {
      * 更新 MOC 文件中箭头关系的标签
      */
     private async updateArrowRelationLabelInMOC(mocFile: TFile, sourceID: string, targetID: string, newLabel: string): Promise<void> {
-        console.log('[updateArrowRelationLabelInMOC] 开始更新关系:', { sourceID, targetID, newLabel });
         try {
             await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
 
@@ -5934,7 +5921,7 @@ export class ZKIndexView extends ItemView {
                 });
             });
 
-            console.log(`已更新边起点: ${oldSource} → ${newSource} --> ${target}`);
+
         } catch (error) {
             console.error('Failed to update edge source:', error);
             throw error;
@@ -5963,7 +5950,6 @@ export class ZKIndexView extends ItemView {
             // 第三步：将 tempID 改为 newTarget
             await this.mocHandler.updateNodeIDInMOC(mocFile, tempID, newTarget);
 
-            console.log(`✅ 已完成 ID 互换: ${oldTarget} <-> ${newTarget}`);
         } catch (error) {
             console.error('Failed to update edge target:', error);
             throw error;
@@ -6036,11 +6022,8 @@ export class ZKIndexView extends ItemView {
 
                 // 只有在位置真正变化时才更新
                 if (hasChanged) {
-                    console.log('[saveAllNodePositionsBeforeRefresh] 检测到位置变化，保存节点位置');
                     mocData.nodePositions = positions;
-                } else {
-                    console.log('[saveAllNodePositionsBeforeRefresh] 位置未变化，跳过保存');
-                }
+                } 
             });
         } catch (error) {
             console.error('[saveAllNodePositions] Failed to save:', error);
@@ -6054,7 +6037,6 @@ export class ZKIndexView extends ItemView {
         try {
             // 检查是否是跨领域节点（跨领域节点的 ID 以 "cd-" 开头）
             if (nodeID.startsWith('cd-')) {
-                console.log('[saveNodePositionToMOC] 跳过跨领域节点:', nodeID);
                 return;
             }
 

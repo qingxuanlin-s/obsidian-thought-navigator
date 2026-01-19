@@ -652,7 +652,6 @@ class OptimizedMermaidRenderer implements IGraphRenderer {
         
         // 检查是否需要重新渲染
         if (mermaidStr === this.currentMermaidStr && this.currentSvg) {
-            console.log('Mermaid: Using cached SVG');
             return;
         }
         
