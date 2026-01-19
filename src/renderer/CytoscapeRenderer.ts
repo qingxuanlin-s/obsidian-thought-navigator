@@ -2678,13 +2678,23 @@ case 'dagre':
             // 其他键（包括删除键）允许默认行为，不做任何处理
         });
 
-        // 失去焦点时不自动保存，只移除 suggester
+        // 失去焦点时自动保存节点
         textarea.addEventListener('blur', () => {
             setTimeout(() => {
-                // 如果焦点不在 suggester 上，关闭 suggester 但不保存节点
-                if (suggesterPopoverRef.value && !(suggesterPopoverRef.value as Node).contains(document.activeElement as Node)) {
+                // 如果焦点移到了 suggester 上，不保存
+                if (suggesterPopoverRef.value && (suggesterPopoverRef.value as Node).contains(document.activeElement as Node)) {
+                    return;
+                }
+
+                // 关闭 suggester
+                if (suggesterPopoverRef.value) {
                     suggesterPopoverRef.value.remove();
                     suggesterPopoverRef.value = null;
+                }
+
+                // 如果还未保存，自动保存
+                if (!isSaved) {
+                    saveNode();
                 }
             }, 200);
         });
