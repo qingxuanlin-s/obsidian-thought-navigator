@@ -4727,30 +4727,33 @@ export class ZKIndexView extends ItemView {
     async renameNodeID(node: ZKNode) {
         // 显示输入对话框
         const newID = await this.showNodeIDInputDialog(node.IDStr);
-        
+
         if (!newID || newID === node.IDStr) {
             return; // 取消或未修改
         }
-        
+
         // 检查新 ID 是否已存在
         const existingNode = this.mocNodes.find(n => n.IDStr === newID);
         if (existingNode) {
             new Notice(`节点 ID "${newID}" 已存在，请使用其他 ID`);
             return;
         }
-        
+
         // 在刷新前保存所有节点的当前位置
         await this.saveAllNodePositionsBeforeRefresh();
-        
+
         try {
             const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
             if (mocFile) {
-                await this.mocHandler.updateNodeIDInMOC(mocFile, node.IDStr, newID);
+                const childCount = await this.mocHandler.updateNodeIDInMOC(mocFile, node.IDStr, newID);
 
                 // 刷新视图
                 await this.refreshBranchMermaid();
 
-                new Notice(`已将节点 ID 从 "${node.IDStr}" 修改为 "${newID}"`);
+                const message = childCount > 0
+                    ? `已将节点 ID 从 "${node.IDStr}" 修改为 "${newID}"，并更新了 ${childCount} 个子节点`
+                    : `已将节点 ID 从 "${node.IDStr}" 修改为 "${newID}"`;
+                new Notice(message);
             }
         } catch (error) {
             console.error('Failed to rename node ID:', error);
@@ -4778,7 +4781,7 @@ export class ZKIndexView extends ItemView {
             infoDiv.style.color = 'var(--text-muted)';
             infoDiv.innerHTML = `
                 <div style="margin-bottom: 5px;">当前 ID: <strong>${currentID}</strong></div>
-                <div style="font-size: 0.9em;">注意：修改 ID 后，所有相关的箭头关系也会自动更新</div>
+                <div style="font-size: 0.9em;">注意：修改 ID 后，所有子节点的 ID 前缀也会自动更新（例如：1.a 改为 1.c，则 1.a.1 会改为 1.c.1）</div>
             `;
             
             const inputContainer = contentEl.createDiv();
