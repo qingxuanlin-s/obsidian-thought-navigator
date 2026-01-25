@@ -723,6 +723,50 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'border-width': '3px',
                 'background-color': 'rgba(16, 185, 129, 0.1)'
             } as any
+        },
+        // 高亮子节点箭头 - 第1级（最深）
+        {
+            selector: 'edge.child-edge-highlight.level-1',
+            style: {
+                'line-color': '#a78b71',  // 深灰橙
+                'target-arrow-color': '#a78b71',
+                'width': 3,
+                'opacity': 1,
+                'z-index': 1001
+            } as any
+        },
+        // 高亮子节点箭头 - 第2级
+        {
+            selector: 'edge.child-edge-highlight.level-2',
+            style: {
+                'line-color': '#c4a88c',  // 中灰橙
+                'target-arrow-color': '#c4a88c',
+                'width': 2.5,
+                'opacity': 0.85,
+                'z-index': 1000
+            } as any
+        },
+        // 高亮子节点箭头 - 第3级
+        {
+            selector: 'edge.child-edge-highlight.level-3',
+            style: {
+                'line-color': '#dec4a8',  // 浅灰橙
+                'target-arrow-color': '#dec4a8',
+                'width': 2,
+                'opacity': 0.7,
+                'z-index': 999
+            } as any
+        },
+        // 高亮子节点箭头 - 第4级及以后（最浅）
+        {
+            selector: 'edge.child-edge-highlight.level-4',
+            style: {
+                'line-color': '#ead4c4',  // 极浅灰橙
+                'target-arrow-color': '#ead4c4',
+                'width': 1.5,
+                'opacity': 0.55,
+                'z-index': 998
+            } as any
         }
     ];
 }
@@ -2904,6 +2948,37 @@ case 'dagre':
                 return;  // 占位符节点不触发点击事件
             }
 
+            // 清除之前的高亮
+            this.cy?.$('edge.child-edge-highlight').removeClass('child-edge-highlight');
+
+            // 递归高亮所有后代节点的边
+            const nodeId = node.id();
+            const highlightChildEdges = (sourceNodeId: string, level: number) => {
+                // 获取从当前节点出发的所有边
+                const outgoingEdges = this.cy?.$(`edge[source="${sourceNodeId}"]`);
+                if (!outgoingEdges || outgoingEdges.length === 0) {
+                    return;
+                }
+
+                // 确定层级类名（最多4级）
+                let levelClass = 'level-4';
+                if (level === 1) levelClass = 'level-1';
+                else if (level === 2) levelClass = 'level-2';
+                else if (level === 3) levelClass = 'level-3';
+
+                // 高亮当前层的边
+                outgoingEdges.addClass('child-edge-highlight').addClass(levelClass);
+
+                // 递归处理子节点
+                outgoingEdges.forEach((edge: any) => {
+                    const targetNodeId = edge.data('target');
+                    highlightChildEdges(targetNodeId, level + 1);
+                });
+            };
+
+            // 从当前节点开始递归高亮
+            highlightChildEdges(nodeId, 1);
+
             // 跨领域节点：单击只选中，不跳转（跳转到双击处理）
             if (data.isCrossDomain) {
                 // 只选中节点，不触发跳转
@@ -3071,6 +3146,9 @@ case 'dagre':
         // 背景点击事件（取消选择）
         this.cy.on('tap', (evt: any) => {
             if (evt.target === this.cy) {
+                // 清除子节点箭头高亮
+                this.cy?.$('edge.child-edge-highlight').removeClass('child-edge-highlight');
+
                 this.container?.dispatchEvent(new CustomEvent('background-click', {
                     detail: { event: evt.originalEvent }
                 }));
