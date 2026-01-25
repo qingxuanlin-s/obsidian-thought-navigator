@@ -54,7 +54,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private edgeControlPoints: Map<string, { distance: number; weight: number }> = new Map();
     private batchSelectedNodeIds: string[] = []; // 保存批量选中的节点ID
     private batchSelectedNodes: any[] = []; // 保存批量选中的完整节点数据（包含 isCrossDomain 等信息）
-    private isSpacePressed = false; // 标记空格键是否被按下
+    private isSpacePressed = false; // 标记空格键是否被按下（画板拖动模式）
+    private isMetaPressed = false; // 标记 Command 键是否被按下（缩放模式）
 
     /**
      * 渲染图形
@@ -100,7 +101,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             pixelRatio: 'auto',
             // 启用节点拖动
             autoungrabify: false,
-            userZoomingEnabled: true,
+            userZoomingEnabled: false,  // 禁用默认滚轮缩放，改为 Command+滚轮
             userPanningEnabled: false,  // 禁用默认拖动，改为空格键+拖动
             // 设置缩放范围
             minZoom: 0.1,
@@ -3538,6 +3539,11 @@ case 'dagre':
                 }
             }
 
+            // Command/Meta 键：启用缩放模式
+            if ((event.key === 'Meta' || event.key === 'Meta') && !event.repeat) {
+                this.isMetaPressed = true;
+            }
+
             // Delete 或 Backspace 键
             if (event.key === 'Delete' || event.key === 'Backspace') {
                 if (!this.cy) return;
@@ -3667,6 +3673,11 @@ case 'dagre':
                     }
                 }
             }
+
+            // Command/Meta 键：禁用缩放模式
+            if (event.key === 'Meta') {
+                this.isMetaPressed = false;
+            }
         };
 
         // 添加事件监听器
@@ -3682,6 +3693,45 @@ case 'dagre':
         this.container.addEventListener('mousedown', () => {
             this.container?.focus();
         });
+
+        // 添加滚轮事件监听（只有按下 Command 键时才允许缩放）
+        this.container.addEventListener('wheel', (event: WheelEvent) => {
+            if (this.isMetaPressed && this.cy) {
+                // Command 键按下时，手动实现缩放
+                event.preventDefault();
+                event.stopPropagation();
+
+                // 获取当前缩放级别
+                const currentZoom = this.cy.zoom();
+                const zoomFactor = 0.001; // 缩放系数
+
+                // 计算新的缩放级别
+                const newZoom = currentZoom - (event.deltaY * zoomFactor);
+
+                // 限制缩放范围
+                const minZoom = this.cy.minZoom() || 0.1;
+                const maxZoom = this.cy.maxZoom() || 1.0;
+                const clampedZoom = Math.max(minZoom, Math.min(maxZoom, newZoom));
+
+                // 获取容器的位置信息
+                const container = this.cy.container();
+                if (!container) return;
+
+                const rect = container.getBoundingClientRect();
+                const mouseX = event.clientX - rect.left;
+                const mouseY = event.clientY - rect.top;
+
+                // 应用缩放，以鼠标位置为中心
+                this.cy.zoom({
+                    level: clampedZoom,
+                    renderedPosition: { x: mouseX, y: mouseY }
+                });
+            } else {
+                // 没有按下 Command 键，阻止滚轮事件
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        }, { passive: false });
     }
 
     /**
@@ -4152,7 +4202,7 @@ case 'dagre':
             // 只在 canvas 上点击时才开始框选
             if (target.tagName !== 'CANVAS') return;
 
-            // 如果空格键被按下（画板拖动模式），不开始框选
+            // 如果 Command 键被按下（画板拖动模式），不开始框选
             if (this.isSpacePressed) return;
 
             // 检查点击位置是否有节点
