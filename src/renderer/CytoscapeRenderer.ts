@@ -2504,7 +2504,8 @@ case 'dagre':
                 detail: {
                     nodeId: data.id,
                     label: newLabel,
-                    position: actualPosition
+                    position: actualPosition,
+                    suggestedNodeId: data.suggestedNodeId  // 传递预生成的节点 ID
                 }
             }));
 
@@ -3085,7 +3086,7 @@ case 'dagre':
 
         // 监听添加占位符节点事件
         this.container?.addEventListener('add-placeholder-node', (event: any) => {
-            const { nodeId, position } = event.detail;
+            const { nodeId, position, suggestedNodeId } = event.detail;
 
             try {
                 // 直接在 Cytoscape 中添加占位符节点
@@ -3093,9 +3094,10 @@ case 'dagre':
                     group: 'nodes',
                     data: {
                         id: nodeId,
-                        label: '',
+                        label: '',  // 不显示预生成的 ID，保持空白
                         isPlaceholder: true,
-                        originalNode: null
+                        originalNode: null,
+                        suggestedNodeId: suggestedNodeId  // 存储预生成的节点 ID
                     },
                     position: position
                 });
