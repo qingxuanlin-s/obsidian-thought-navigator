@@ -969,8 +969,8 @@ case 'dagre':
             handle.className = 'zk-connection-handle';
             handle.style.cssText = `
                 position: absolute;
-                width: 12px;
-                height: 12px;
+                width: 24px;
+                height: 24px;
                 background-color: #5b8fd9;
                 border: 2px solid #ffffff;
                 border-radius: 50%;
@@ -996,8 +996,8 @@ case 'dagre':
                 
                 handle.style.left = `${x}px`;
                 handle.style.top = `${y}px`;
-                handle.style.width = `${12 * zoom}px`;
-                handle.style.height = `${12 * zoom}px`;
+                handle.style.width = `${24 * zoom}px`;
+                handle.style.height = `${24 * zoom}px`;
                 handle.style.borderWidth = `${2 * zoom}px`;
             };
 
