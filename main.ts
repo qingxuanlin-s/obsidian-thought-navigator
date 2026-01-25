@@ -118,6 +118,7 @@ interface ZKNavigationSettings {
     mocHeadingTitle: string;           // 要解析的一级标题名称，如 "思维树"
     mocCurrentFile: string;            // 当前选中的 MOC 文件路径
     mocNodePositions: Record<string, Record<string, { x: number; y: number }>>; // MOC 节点位置存储 {mocFilePath: {nodeId: {x, y}}}
+    smartConnection: boolean;          // 智能连线开关
 }
 
 //Default value for setting field
@@ -194,6 +195,7 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     mocHeadingTitle: '思维树',
     mocCurrentFile: '',
     mocNodePositions: {}, // MOC 节点位置存储
+    smartConnection: false, // 智能连线默认关闭
 }
 
 export default class ZKNavigationPlugin extends Plugin {

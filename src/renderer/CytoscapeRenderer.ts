@@ -2356,16 +2356,29 @@ case 'dagre':
             }
         };
 
-        // Enter 键保存
+        // Enter 键保存，Delete 键（全选时清空），Escape 键取消
         input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
+                e.stopPropagation();
                 saveLabel();
             } else if (e.key === 'Escape') {
                 e.preventDefault();
+                e.stopPropagation();
                 isSaved = true;  // 标记为已处理
                 if (input.parentNode) {
                     input.remove();
+                }
+            } else if (e.key === 'Delete' || e.key === 'Backspace') {
+                // 检查文本框是否全选
+                if (input.selectionStart === 0 && input.selectionEnd === input.value.length) {
+                    // 全选状态：清空输入框
+                    e.preventDefault();
+                    e.stopPropagation();
+                    input.value = '';
+                } else {
+                    // 非全选状态：阻止事件冒泡，允许默认删除行为
+                    e.stopPropagation();
                 }
             }
         });
@@ -3153,6 +3166,63 @@ case 'dagre':
             const node = evt.target;
             const data = node.data();
 
+            // 处理占位符节点的智能连线
+            if (data.isPlaceholder && this.isSmartConnectionEnabled()) {
+                const pos = node.renderedPosition();
+
+                // 查找最近的节点
+                let nearestNode: any = null;
+                let minDistance = Infinity;
+
+                this.cy!.nodes().forEach((otherNode: any) => {
+                    if (otherNode.id() === node.id()) return;  // 跳过自己
+                    if (otherNode.data().isPlaceholder) return;  // 跳过其他占位符
+                    if (otherNode.data().isGroup) return;  // 跳过分组
+
+                    const otherPos = otherNode.renderedPosition();
+                    const distance = Math.sqrt(
+                        Math.pow(pos.x - otherPos.x, 2) +
+                        Math.pow(pos.y - otherPos.y, 2)
+                    );
+
+                    if (distance < minDistance && distance < PROXIMITY_THRESHOLD) {
+                        minDistance = distance;
+                        nearestNode = otherNode;
+                    }
+                });
+
+                // 移除旧的临时连接
+                if (tempConnectionLine && svgOverlay) {
+                    svgOverlay.removeChild(tempConnectionLine);
+                    tempConnectionLine = null;
+                }
+                this.cy!.nodes('.connection-target-hover').removeClass('connection-target-hover');
+                nearbyNodeId = null;
+
+                // 如果找到附近的节点，创建虚线连接
+                if (nearestNode && svgOverlay) {
+                    nearbyNodeId = nearestNode.id();
+
+                    // 获取目标节点位置
+                    const targetPos = nearestNode.renderedPosition();
+
+                    // 创建 SVG 连线
+                    tempConnectionLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    tempConnectionLine.setAttribute('x1', targetPos.x.toString());
+                    tempConnectionLine.setAttribute('y1', targetPos.y.toString());
+                    tempConnectionLine.setAttribute('x2', pos.x.toString());
+                    tempConnectionLine.setAttribute('y2', pos.y.toString());
+                    tempConnectionLine.setAttribute('stroke', '#10b981');  // 绿色表示可以连接
+                    tempConnectionLine.setAttribute('stroke-width', '2');
+                    tempConnectionLine.setAttribute('stroke-dasharray', '5,5');  // 虚线
+                    svgOverlay.appendChild(tempConnectionLine);
+
+                    // 高亮目标节点
+                    nearestNode.addClass('connection-target-hover');
+                }
+                return;  // 处理完占位符节点后返回
+            }
+
             // 只对自由节点启用自动连接
             if (data.isPlaceholder || data.isGroup || data.isCrossDomain) return;
 
@@ -3232,21 +3302,43 @@ case 'dagre':
             }
             this.cy!.nodes('.connection-target-hover').removeClass('connection-target-hover');
 
-            // 如果是分组节点或占位符节点，不触发位置保存
+            // 如果是分组节点，不触发位置保存
             if (data.isGroup) return;
-            if (data.isPlaceholder) return;  // 占位符节点不保存位置
 
             const position = node.position();
 
-            // 检查是否有自动连接
+            // 处理占位符节点的智能连线
+            if (data.isPlaceholder) {
+                // 检查是否启用了智能连线并且有附近的节点
+                if (this.isSmartConnectionEnabled() && nearbyNodeId) {
+                    const parentData = this.cy!.$id(nearbyNodeId).data();
+                    const parentId = parentData.originalNode?.ID || parentData.originalSource || nearbyNodeId;
+                    const placeholderId = data.id;
+
+                    // 触发占位符节点自动连接事件
+                    this.container?.dispatchEvent(new CustomEvent('placeholder-smart-connect', {
+                        detail: {
+                            placeholderId: placeholderId,
+                            parentNodeId: parentId,
+                            position: {
+                                x: position.x,
+                                y: position.y
+                            }
+                        }
+                    }));
+
+                    nearbyNodeId = null;
+                }
+                return;  // 占位符节点不保存位置
+            }
+
+            // 检查是否有自动连接（自由节点）
             if (nearbyNodeId) {
                 const parentData = this.cy!.$id(nearbyNodeId).data();
 
                 // 使用 originalNode.ID（带点的格式）而不是转义后的 ID
                 const childId = data.originalNode?.ID || data.originalSource || data.id;
                 const parentId = parentData.originalNode?.ID || parentData.originalSource || nearbyNodeId;
-
-        
 
                 // 触发自动连接事件
                 this.container?.dispatchEvent(new CustomEvent('auto-connect-node', {
@@ -4434,5 +4526,19 @@ case 'dagre':
         this.container?.dispatchEvent(new CustomEvent('batch-show-color-picker', {
             detail: { nodeIds: this.batchSelectedNodeIds }
         }));
+    }
+
+    /**
+     * 检查智能连线功能是否启用
+     */
+    private isSmartConnectionEnabled(): boolean {
+        // 从全局设置中获取智能连线开关状态
+        const app = (window as any).app;
+        if (!app || !app.plugins) return false;
+
+        const plugin = app.plugins.plugins['thought-tree-navigator'];
+        if (!plugin || !plugin.settings) return false;
+
+        return plugin.settings.smartConnection === true;
     }
 }
