@@ -90,6 +90,44 @@ export class MOCHandler {
     }
 
     /**
+     * 在 MOC 文件中更新文本节点的内容
+     * @param mocFile MOC 文件
+     * @param nodeID 节点 ID
+     * @param newContent 新的内容
+     */
+    async updateTextNodeContentInMOC(mocFile: TFile, nodeID: string, newContent: string): Promise<void> {
+        await this.modifyMOCData(mocFile, (mocData) => {
+            // 更新节点树中的文本内容
+            const updateTextNodeInTree = (nodes: any[]): boolean => {
+                for (const node of nodes) {
+                    if (node.nodeID === nodeID) {
+                        // 找到目标节点
+                        if (node.isTextOnly) {
+                            // 只有纯文字节点才能修改内容
+                            node.wikiLink = newContent;
+                            node.displayText = newContent;
+                            return true;
+                        } else {
+                            console.warn(`[MOCHandler] 节点 ${nodeID} 不是纯文字节点，无法修改内容`);
+                            return false;
+                        }
+                    }
+
+                    // 递归搜索子节点
+                    if (node.children && node.children.length > 0) {
+                        if (updateTextNodeInTree(node.children)) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            };
+
+            updateTextNodeInTree(mocData.nodes);
+        });
+    }
+
+    /**
      * 在 MOC 文件中更新节点 ID
      * 如果节点有子节点，也会递归更新子节点的 ID 前缀
      * 例如：1.a 改为 1.c，则 1.a.1 会改为 1.c.1

@@ -1539,6 +1539,19 @@ export class ZKIndexView extends ItemView {
             // 创建菜单
             const menu = new Menu();
 
+            // 纯文字节点：修改内容选项
+            if (node.isTextOnly) {
+                menu.addItem((item) => {
+                    item.setTitle("📝 修改内容")
+                        .setIcon("pencil")
+                        .onClick(async () => {
+                            await this.editTextNodeContent(node);
+                        });
+                });
+
+                menu.addSeparator();
+            }
+
             // 关联跨领域节点选项
             menu.addItem((item) => {
                 item.setTitle("🌐 关联跨领域节点")
@@ -4740,6 +4753,33 @@ export class ZKIndexView extends ItemView {
     }
 
     /**
+     * 修改纯文字节点的内容
+     */
+    async editTextNodeContent(node: ZKNode) {
+        // 显示输入对话框（使用 title 而不是 displayText，避免显示 ID）
+        const newContent = await this.showTextNodeContentInputDialog(node.title || '');
+
+        if (!newContent || newContent === (node.title || '')) {
+            return; // 取消或未修改
+        }
+
+        try {
+            const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+            if (mocFile) {
+                await this.mocHandler.updateTextNodeContentInMOC(mocFile, node.IDStr, newContent);
+
+                // 刷新视图
+                await this.refreshBranchMermaid();
+
+                new Notice(`已将文本节点内容修改为 "${newContent}"`);
+            }
+        } catch (error) {
+            console.error('Failed to edit text node content:', error);
+            new Notice(`修改文本节点内容失败: ${error.message}`);
+        }
+    }
+
+    /**
      * 显示节点 ID 输入对话框
      */
     private showNodeIDInputDialog(currentID: string): Promise<string | null> {
@@ -4830,6 +4870,94 @@ export class ZKIndexView extends ItemView {
                 }
             });
             
+            modal.open();
+            setTimeout(() => {
+                input.focus();
+                input.select();
+            }, 0);
+        });
+    }
+
+    /**
+     * 显示文本节点内容输入对话框
+     */
+    private showTextNodeContentInputDialog(currentContent: string): Promise<string | null> {
+        return new Promise((resolve) => {
+            const modal = new Modal(this.app);
+            modal.titleEl.setText('修改文本节点内容');
+
+            const { contentEl } = modal;
+            contentEl.empty();
+            contentEl.style.padding = '20px';
+
+            const inputContainer = contentEl.createDiv();
+            inputContainer.style.marginBottom = '15px';
+
+            const label = inputContainer.createEl('label', { text: '新内容：' });
+            label.style.display = 'block';
+            label.style.marginBottom = '5px';
+            label.style.color = 'var(--text-normal)';
+
+            const input = inputContainer.createEl('input', {
+                type: 'text',
+                value: currentContent
+            });
+            input.style.width = '100%';
+            input.style.padding = '8px';
+            input.style.border = '1px solid var(--background-modifier-border)';
+            input.style.borderRadius = '4px';
+            input.style.backgroundColor = 'var(--background-primary)';
+            input.style.color = 'var(--text-normal)';
+
+            const buttonContainer = contentEl.createDiv();
+            buttonContainer.style.display = 'flex';
+            buttonContainer.style.justifyContent = 'flex-end';
+            buttonContainer.style.gap = '10px';
+
+            const cancelButton = buttonContainer.createEl('button', { text: '取消' });
+            cancelButton.style.padding = '6px 16px';
+            cancelButton.style.border = '1px solid var(--background-modifier-border)';
+            cancelButton.style.borderRadius = '4px';
+            cancelButton.style.backgroundColor = 'var(--background-primary)';
+            cancelButton.style.color = 'var(--text-normal)';
+            cancelButton.style.cursor = 'pointer';
+            cancelButton.addEventListener('click', () => {
+                modal.close();
+                resolve(null);
+            });
+
+            const confirmButton = buttonContainer.createEl('button', { text: '确认' });
+            confirmButton.style.padding = '6px 16px';
+            confirmButton.style.border = 'none';
+            confirmButton.style.borderRadius = '4px';
+            confirmButton.style.backgroundColor = '#5b8fd9';
+            confirmButton.style.color = '#ffffff';
+            confirmButton.style.cursor = 'pointer';
+            confirmButton.addEventListener('click', () => {
+                const newContent = input.value.trim();
+                if (!newContent) {
+                    new Notice('文本内容不能为空');
+                    return;
+                }
+                modal.close();
+                resolve(newContent);
+            });
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    const newContent = input.value.trim();
+                    if (!newContent) {
+                        new Notice('文本内容不能为空');
+                        return;
+                    }
+                    modal.close();
+                    resolve(newContent);
+                } else if (e.key === 'Escape') {
+                    modal.close();
+                    resolve(null);
+                }
+            });
+
             modal.open();
             setTimeout(() => {
                 input.focus();
