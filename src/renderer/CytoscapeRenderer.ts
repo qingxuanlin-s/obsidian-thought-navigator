@@ -56,6 +56,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private batchSelectedNodes: any[] = []; // 保存批量选中的完整节点数据（包含 isCrossDomain 等信息）
     private isSpacePressed = false; // 标记空格键是否被按下（画板拖动模式）
     private isMetaPressed = false; // 标记 Command 键是否被按下（缩放模式）
+    private isMiddleMousePressed = false; // 标记中键是否被按下（画板拖动模式）
+    private middleMouseStartPos: { x: number; y: number } | null = null; // 中键拖动起始位置
 
     /**
      * 渲染图形
@@ -113,6 +115,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
         // 绑定键盘事件
         this.bindKeyboardEvents();
+
+        // 绑定中键拖动事件
+        this.bindMiddleMouseEvents();
 
         // 初始化框选功能
         this.initBoxSelection();
@@ -3735,6 +3740,75 @@ case 'dagre':
     }
 
     /**
+     * 绑定中键拖动事件
+     */
+    private bindMiddleMouseEvents(): void {
+        if (!this.container) return;
+
+        // 鼠标按下事件
+        this.container.addEventListener('mousedown', (event: MouseEvent) => {
+            // 检测中键（button === 1）
+            if (event.button === 1) {
+                event.preventDefault();
+                event.stopPropagation();
+
+                this.isMiddleMousePressed = true;
+                this.middleMouseStartPos = { x: event.clientX, y: event.clientY };
+
+                // 启用画板拖动
+                if (this.cy) {
+                    this.cy.userPanningEnabled(true);
+                    const container = this.cy.container();
+                    if (container) {
+                        container.style.cursor = 'grab';
+                    }
+                }
+            }
+        });
+
+        // 鼠标移动事件
+        this.container.addEventListener('mousemove', (event: MouseEvent) => {
+            if (this.isMiddleMousePressed && this.middleMouseStartPos) {
+                event.preventDefault();
+                // 中键拖动时的光标样式
+                const container = this.cy?.container();
+                if (container) {
+                    container.style.cursor = 'grabbing';
+                }
+            }
+        });
+
+        // 鼠标松开事件
+        const handleMouseUp = (event: MouseEvent) => {
+            if (this.isMiddleMousePressed) {
+                this.isMiddleMousePressed = false;
+                this.middleMouseStartPos = null;
+
+                // 禁用画板拖动
+                if (this.cy) {
+                    this.cy.userPanningEnabled(false);
+                    const container = this.cy.container();
+                    if (container) {
+                        container.style.cursor = 'default';
+                    }
+                }
+            }
+        };
+
+        // 在容器上监听鼠标松开
+        this.container.addEventListener('mouseup', handleMouseUp);
+        // 也要在 window 上监听，以防鼠标移出容器后松开
+        window.addEventListener('mouseup', handleMouseUp);
+
+        // 阻止中键的默认滚动行为
+        this.container.addEventListener('mousedown', (event: MouseEvent) => {
+            if (event.button === 1) {
+                event.preventDefault();
+            }
+        }, { passive: false });
+    }
+
+    /**
      * 判断是否需要重新布局
      */
     private shouldRelayout(changes: GraphChanges): boolean {
@@ -4202,8 +4276,14 @@ case 'dagre':
             // 只在 canvas 上点击时才开始框选
             if (target.tagName !== 'CANVAS') return;
 
+            // 只有左键（button === 0）才能触发框选
+            if (e.button !== 0) return;
+
             // 如果 Command 键被按下（画板拖动模式），不开始框选
             if (this.isSpacePressed) return;
+
+            // 如果中键被按下（画板拖动模式），不开始框选
+            if (this.isMiddleMousePressed) return;
 
             // 检查点击位置是否有节点
             if (this.cy) {
