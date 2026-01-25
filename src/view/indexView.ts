@@ -141,7 +141,7 @@ export class ZKIndexView extends ItemView {
     private mocViewStates: Map<string, { zoom: number; pan: { x: number; y: number } }> = new Map();
 
     // 占位符节点追踪（用于未完成编辑的临时节点）
-    private placeholderNodes: Map<string, { position: { x: number; y: number }, timestamp: number }> = new Map();
+    private placeholderNodes: Map<string, { position: { x: number; y: number }, timestamp: number, parentNodeId?: string }> = new Map();
 
     constructor(leaf: WorkspaceLeaf, plugin: ZKNavigationPlugin) {
         super(leaf);
@@ -1651,13 +1651,22 @@ export class ZKIndexView extends ItemView {
             // 生成 ID 并保存
             const suggestedID = this.generateNextFreeNodeID();
 
-            // 保存到 MOC
-            await this.saveFreeNodeToMOC({
-                wikiLink: wikiLink,
-                nodeID: suggestedID,
-                relationText: '',
-                file: file
-            });
+            // 检查是否有智能连线确定的父节点
+            if (placeholderInfo.parentNodeId) {
+                // 移动到父节点下
+                const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+                if (mocFile) {
+                    await this.mocHandler.moveNodeToParent(mocFile, suggestedID, placeholderInfo.parentNodeId, suggestedID);
+                }
+            } else {
+                // 保存到 MOC
+                await this.saveFreeNodeToMOC({
+                    wikiLink: wikiLink,
+                    nodeID: suggestedID,
+                    relationText: '',
+                    file: file
+                });
+            }
 
             // 保存位置
             const mocFilePath = this.plugin.settings.mocCurrentFile;
@@ -1684,13 +1693,22 @@ export class ZKIndexView extends ItemView {
             // 生成节点 ID
             const suggestedID = this.generateNextFreeNodeID();
 
-            // 直接保存到 MOC，不需要打开模态框
-            await this.saveFreeNodeToMOC({
-                wikiLink: wikiLink,
-                nodeID: suggestedID,
-                relationText: '',
-                file: file
-            });
+            // 检查是否有智能连线确定的父节点
+            if (placeholderInfo.parentNodeId) {
+                // 移动到父节点下
+                const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+                if (mocFile) {
+                    await this.mocHandler.moveNodeToParent(mocFile, suggestedID, placeholderInfo.parentNodeId, suggestedID);
+                }
+            } else {
+                // 直接保存到 MOC，不需要打开模态框
+                await this.saveFreeNodeToMOC({
+                    wikiLink: wikiLink,
+                    nodeID: suggestedID,
+                    relationText: '',
+                    file: file
+                });
+            }
 
             // 保存位置
             const mocFilePath = this.plugin.settings.mocCurrentFile;
@@ -5409,10 +5427,49 @@ export class ZKIndexView extends ItemView {
     async createPlaceholderNode(position: { x: number; y: number }) {
         const tempId = `temp_${Date.now()}`;
 
-        // 存储占位符信息
+        // 如果启用了智能连线，查找最近的节点作为父节点
+        let parentNodeId: string | undefined = undefined;
+
+        if (this.plugin.settings.smartConnection) {
+            let nearestNode: ZKNode | null = null;
+            let minDistance = Infinity;
+            const PROXIMITY_THRESHOLD = 250;  // 250px 范围
+
+            // 获取当前 MOC 文件的节点位置
+            const currentMOCPath = this.plugin.settings.mocCurrentFile;
+            const mocNodePositions = this.plugin.settings.mocNodePositions[currentMOCPath] || {};
+
+            // 遍历所有节点，找到最近的节点
+            for (const node of this.mocNodes) {
+                const nodePos = mocNodePositions[node.ID];
+                if (!nodePos) continue;
+
+                const distance = Math.sqrt(
+                    Math.pow(position.x - nodePos.x, 2) +
+                    Math.pow(position.y - nodePos.y, 2)
+                );
+
+                if (distance < minDistance && distance < PROXIMITY_THRESHOLD) {
+                    minDistance = distance;
+                    nearestNode = node;
+                }
+            }
+
+            if (nearestNode) {
+                parentNodeId = nearestNode.IDStr;
+                console.log('[Smart Connection] 占位符节点将连接到父节点:', {
+                    placeholderId: tempId,
+                    parentNodeId: parentNodeId,
+                    distance: minDistance
+                });
+            }
+        }
+
+        // 存储占位符信息（包括潜在的父节点ID）
         this.placeholderNodes.set(tempId, {
             position,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            parentNodeId: parentNodeId  // 保存潜在父节点ID
         });
 
         // 直接通过事件通知 Cytoscape 渲染器添加占位符节点
@@ -5422,7 +5479,8 @@ export class ZKIndexView extends ItemView {
             branchGraphDiv.dispatchEvent(new CustomEvent('add-placeholder-node', {
                 detail: {
                     nodeId: tempId,
-                    position: position
+                    position: position,
+                    parentNodeId: parentNodeId  // 传递父节点ID用于显示连接
                 }
             }));
         }
@@ -5443,14 +5501,26 @@ export class ZKIndexView extends ItemView {
         // 查找文件
         const file = this.app.metadataCache.getFirstLinkpathDest(wikiLink, '');
 
-        // 保存到 MOC
-        await this.saveFreeNodeToMOC({
-            wikiLink: wikiLink,
-            nodeID: suggestedID,
-            relationText: '',
-            file: file,
-            isTextOnly: false  // 标记为文件节点
-        });
+        // 获取占位符信息
+        const placeholderInfo = this.placeholderNodes.get(tempId);
+
+        // 检查是否有智能连线确定的父节点
+        if (placeholderInfo && placeholderInfo.parentNodeId) {
+            // 移动到父节点下
+            const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+            if (mocFile) {
+                await this.mocHandler.moveNodeToParent(mocFile, suggestedID, placeholderInfo.parentNodeId, suggestedID);
+            }
+        } else {
+            // 保存到 MOC
+            await this.saveFreeNodeToMOC({
+                wikiLink: wikiLink,
+                nodeID: suggestedID,
+                relationText: '',
+                file: file,
+                isTextOnly: false  // 标记为文件节点
+            });
+        }
 
         // 保存位置
         const mocFilePath = this.plugin.settings.mocCurrentFile;
@@ -5477,14 +5547,26 @@ export class ZKIndexView extends ItemView {
         // 生成 ID
         const suggestedID = this.generateNextFreeNodeID();
 
-        // 保存到 MOC（不关联文件）
-        await this.saveFreeNodeToMOC({
-            text: text,  // 纯文字内容
-            nodeID: suggestedID,
-            relationText: '',
-            file: null,  // 无文件关联
-            isTextOnly: true  // 标记为纯文字节点
-        });
+        // 获取占位符信息
+        const placeholderInfo = this.placeholderNodes.get(tempId);
+
+        // 检查是否有智能连线确定的父节点
+        if (placeholderInfo && placeholderInfo.parentNodeId) {
+            // 移动到父节点下
+            const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+            if (mocFile) {
+                await this.mocHandler.moveNodeToParent(mocFile, suggestedID, placeholderInfo.parentNodeId, suggestedID);
+            }
+        } else {
+            // 保存到 MOC（不关联文件）
+            await this.saveFreeNodeToMOC({
+                text: text,  // 纯文字内容
+                nodeID: suggestedID,
+                relationText: '',
+                file: null,  // 无文件关联
+                isTextOnly: true  // 标记为纯文字节点
+            });
+        }
 
         // 保存位置
         const mocFilePath = this.plugin.settings.mocCurrentFile;

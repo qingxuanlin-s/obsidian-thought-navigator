@@ -727,6 +727,26 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
             })
         );
 
+        // 添加"快捷操作"展开项
+        const quickActionDetails = structureSettingDiv.createEl('details');
+        quickActionDetails.addClass('zk-details');
+
+        const quickActionSummary = quickActionDetails.createEl('summary');
+        quickActionSummary.setText('快捷操作');
+        quickActionSummary.addClass('zk-details-summary');
+
+        const quickActionContent = quickActionDetails.createDiv('zk-details-content');
+
+        new Setting(quickActionContent)
+            .setName("智能连线")
+            .setDesc("开启后，拖拽占位符节点时如果在某节点200px范围内，会自动成为该节点的子节点")
+            .addToggle(toggle => toggle.setValue(this.plugin.settings.smartConnection)
+                .onChange((value) => {
+                    this.plugin.settings.smartConnection = value;
+                    this.plugin.RefreshIndexViewFlag = true;
+                })
+            );
+
         // 以下功能已禁用（红框内的功能）
         /*
         new Setting(structureSettingDiv)
