@@ -3745,15 +3745,23 @@ case 'dagre':
     private bindMiddleMouseEvents(): void {
         if (!this.container) return;
 
-        // 鼠标按下事件
+        console.log('[CytoscapeRenderer] 绑定中键拖动事件');
+
+        // 鼠标按下事件 - 使用捕获阶段确保优先处理
         this.container.addEventListener('mousedown', (event: MouseEvent) => {
+            console.log('[CytoscapeRenderer] mousedown - button:', event.button, 'isMiddleMousePressed:', this.isMiddleMousePressed);
+
             // 检测中键（button === 1）
             if (event.button === 1) {
+                console.log('[CytoscapeRenderer] 检测到中键按下');
                 event.preventDefault();
                 event.stopPropagation();
+                event.stopImmediatePropagation();
 
                 this.isMiddleMousePressed = true;
                 this.middleMouseStartPos = { x: event.clientX, y: event.clientY };
+
+                console.log('[CytoscapeRenderer] 启用画板拖动');
 
                 // 启用画板拖动
                 if (this.cy) {
@@ -3762,25 +3770,44 @@ case 'dagre':
                     if (container) {
                         container.style.cursor = 'grab';
                     }
+                    console.log('[CytoscapeRenderer] 画板拖动已启用, userPanningEnabled:', this.cy.userPanningEnabled());
                 }
             }
-        });
+        }, { capture: true, passive: false });
 
-        // 鼠标移动事件
+        // 鼠标移动事件 - 使用捕获阶段，手动实现拖动
         this.container.addEventListener('mousemove', (event: MouseEvent) => {
-            if (this.isMiddleMousePressed && this.middleMouseStartPos) {
+            if (this.isMiddleMousePressed && this.middleMouseStartPos && this.cy) {
                 event.preventDefault();
-                // 中键拖动时的光标样式
-                const container = this.cy?.container();
-                if (container) {
-                    container.style.cursor = 'grabbing';
+
+                // 计算鼠标移动的偏移量
+                const deltaX = event.clientX - this.middleMouseStartPos.x;
+                const deltaY = event.clientY - this.middleMouseStartPos.y;
+
+                // 如果有移动，手动更新画板位置
+                if (deltaX !== 0 || deltaY !== 0) {
+                    const currentPan = this.cy.pan();
+                    this.cy.pan({
+                        x: currentPan.x + deltaX,
+                        y: currentPan.y + deltaY
+                    });
+
+                    // 更新起始位置为当前位置
+                    this.middleMouseStartPos = { x: event.clientX, y: event.clientY };
+
+                    // 中键拖动时的光标样式
+                    const container = this.cy.container();
+                    if (container) {
+                        container.style.cursor = 'grabbing';
+                    }
                 }
             }
-        });
+        }, { capture: true });
 
         // 鼠标松开事件
         const handleMouseUp = (event: MouseEvent) => {
             if (this.isMiddleMousePressed) {
+                console.log('[CytoscapeRenderer] 鼠标松开，禁用画板拖动');
                 this.isMiddleMousePressed = false;
                 this.middleMouseStartPos = null;
 
@@ -3795,17 +3822,10 @@ case 'dagre':
             }
         };
 
-        // 在容器上监听鼠标松开
-        this.container.addEventListener('mouseup', handleMouseUp);
+        // 在容器上监听鼠标松开 - 使用捕获阶段
+        this.container.addEventListener('mouseup', handleMouseUp, { capture: true });
         // 也要在 window 上监听，以防鼠标移出容器后松开
         window.addEventListener('mouseup', handleMouseUp);
-
-        // 阻止中键的默认滚动行为
-        this.container.addEventListener('mousedown', (event: MouseEvent) => {
-            if (event.button === 1) {
-                event.preventDefault();
-            }
-        }, { passive: false });
     }
 
     /**
