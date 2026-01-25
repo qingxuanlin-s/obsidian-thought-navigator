@@ -91,14 +91,48 @@ export class MOCHandler {
 
     /**
      * 在 MOC 文件中更新节点 ID
+     * 如果节点有子节点，也会递归更新子节点的 ID 前缀
+     * 例如：1.a 改为 1.c，则 1.a.1 会改为 1.c.1
+     * @returns 返回更新的节点数量（包括父节点和所有子节点）
      */
-    async updateNodeIDInMOC(mocFile: TFile, oldID: string, newID: string): Promise<void> {
+    async updateNodeIDInMOC(mocFile: TFile, oldID: string, newID: string): Promise<number> {
+        let updateCount = 0;
+
         await this.modifyMOCData(mocFile, (mocData) => {
-            // 更新节点树中的 ID
+            // 存储所有需要更新的 ID 映射（包括子节点）
+            const idMappings: Array<{ old: string; new: string }> = [];
+
+            // 更新节点树中的 ID，并收集所有受影响的节点（包括子节点）
             const updateNodeIDInTree = (nodes: any[], oldID: string, newID: string): boolean => {
                 for (const node of nodes) {
                     if (node.nodeID === oldID) {
+                        // 找到直接匹配的节点
                         node.nodeID = newID;
+                        idMappings.push({ old: oldID, new: newID });
+
+                        // 递归更新所有子节点的 ID 前缀
+                        const updateChildrenIDs = (children: any[], parentOldPrefix: string, parentNewPrefix: string) => {
+                            for (const child of children) {
+                                const oldChildID = child.nodeID;
+                                // 检查子节点 ID 是否以父节点旧 ID 为前缀
+                                if (oldChildID.startsWith(parentOldPrefix + '.')) {
+                                    const newChildID = parentNewPrefix + oldChildID.substring(parentOldPrefix.length);
+                                    child.nodeID = newChildID;
+                                    idMappings.push({ old: oldChildID, new: newChildID });
+
+                                    // 递归处理深层子节点
+                                    if (child.children && child.children.length > 0) {
+                                        updateChildrenIDs(child.children, parentOldPrefix, parentNewPrefix);
+                                    }
+                                }
+                            }
+                        };
+
+                        // 更新所有子节点
+                        if (node.children && node.children.length > 0) {
+                            updateChildrenIDs(node.children, oldID, newID);
+                        }
+
                         return true;
                     }
                     if (node.children && node.children.length > 0) {
@@ -116,11 +150,31 @@ export class MOCHandler {
                 throw new Error(`未找到节点: ${oldID}`);
             }
 
-            // 更新 reverseRelations 中的节点 ID
+            // 保存更新数量（不包括父节点本身，只统计子节点）
+            updateCount = idMappings.length - 1;
+
+            // 更新 reverseRelations 中的节点 ID（处理所有映射）
             const newReverseRelations = new Map();
             for (const [, relation] of mocData.reverseRelations) {
-                const newSourceID = relation.sourceID === oldID ? newID : relation.sourceID;
-                const newTargetID = relation.targetID === oldID ? newID : relation.targetID;
+                let newSourceID = relation.sourceID;
+                let newTargetID = relation.targetID;
+
+                // 检查是否需要更新 sourceID
+                for (const mapping of idMappings) {
+                    if (relation.sourceID === mapping.old) {
+                        newSourceID = mapping.new;
+                        break;
+                    }
+                }
+
+                // 检查是否需要更新 targetID
+                for (const mapping of idMappings) {
+                    if (relation.targetID === mapping.old) {
+                        newTargetID = mapping.new;
+                        break;
+                    }
+                }
+
                 const newKey = `${newSourceID}->${newTargetID}`;
                 newReverseRelations.set(newKey, {
                     sourceID: newSourceID,
@@ -130,35 +184,46 @@ export class MOCHandler {
             }
             mocData.reverseRelations = newReverseRelations;
 
-            // 更新节点位置
-            if (mocData.nodePositions && mocData.nodePositions[oldID]) {
-                mocData.nodePositions[newID] = mocData.nodePositions[oldID];
-                delete mocData.nodePositions[oldID];
+            // 更新节点位置（处理所有映射）
+            for (const mapping of idMappings) {
+                if (mocData.nodePositions && mocData.nodePositions[mapping.old]) {
+                    mocData.nodePositions[mapping.new] = mocData.nodePositions[mapping.old];
+                    delete mocData.nodePositions[mapping.old];
+                }
             }
 
             // 更新边弧度（需要更新包含该节点的所有边 key）
             if (mocData.edgeCurvatures) {
                 const newCurvatures: Record<string, any> = {};
                 Object.entries(mocData.edgeCurvatures).forEach(([key, value]) => {
-                    const parts = key.split('-');
-                    const newKey = parts.map(part => part === oldID ? newID : part).join('-');
+                    let newKey = key;
+                    // 对每个映射进行替换
+                    for (const mapping of idMappings) {
+                        newKey = newKey.split('-').map(part => part === mapping.old ? mapping.new : part).join('-');
+                    }
                     newCurvatures[newKey] = value;
                 });
                 mocData.edgeCurvatures = newCurvatures;
             }
 
-            // 更新节点颜色
-            if (mocData.nodeColors && mocData.nodeColors[oldID]) {
-                mocData.nodeColors[newID] = mocData.nodeColors[oldID];
-                delete mocData.nodeColors[oldID];
+            // 更新节点颜色（处理所有映射）
+            for (const mapping of idMappings) {
+                if (mocData.nodeColors && mocData.nodeColors[mapping.old]) {
+                    mocData.nodeColors[mapping.new] = mocData.nodeColors[mapping.old];
+                    delete mocData.nodeColors[mapping.old];
+                }
             }
 
-            // 更新跨领域链接中的节点 ID（如果 oldID 是 sourceNodeId）
-            if (mocData.crossDomainLinks && mocData.crossDomainLinks[oldID]) {
-                mocData.crossDomainLinks[newID] = mocData.crossDomainLinks[oldID];
-                delete mocData.crossDomainLinks[oldID];
+            // 更新跨领域链接中的节点 ID（处理所有映射）
+            for (const mapping of idMappings) {
+                if (mocData.crossDomainLinks && mocData.crossDomainLinks[mapping.old]) {
+                    mocData.crossDomainLinks[mapping.new] = mocData.crossDomainLinks[mapping.old];
+                    delete mocData.crossDomainLinks[mapping.old];
+                }
             }
         });
+
+        return updateCount;
     }
 
     /**
