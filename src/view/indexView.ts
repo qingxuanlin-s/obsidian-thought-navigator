@@ -141,7 +141,12 @@ export class ZKIndexView extends ItemView {
     private mocViewStates: Map<string, { zoom: number; pan: { x: number; y: number } }> = new Map();
 
     // 占位符节点追踪（用于未完成编辑的临时节点）
-    private placeholderNodes: Map<string, { position: { x: number; y: number }, timestamp: number, parentNodeId?: string }> = new Map();
+    private placeholderNodes: Map<string, {
+        position: { x: number; y: number },
+        timestamp: number,
+        parentNodeId?: string,
+        suggestedNodeId?: string  // 预生成的节点 ID
+    }> = new Map();
 
     constructor(leaf: WorkspaceLeaf, plugin: ZKNavigationPlugin) {
         super(leaf);
@@ -1577,7 +1582,15 @@ export class ZKIndexView extends ItemView {
 
         // 监听占位符节点编辑事件
         this.addTrackedListener(branchGraphDiv, 'placeholder-node-edit', async (event: any) => {
-            const { nodeId, label, position } = event.detail;
+            const { nodeId, label, position, suggestedNodeId } = event.detail;
+
+            // 如果有预生成的节点 ID，更新占位符信息
+            if (suggestedNodeId) {
+                const placeholderInfo = this.placeholderNodes.get(nodeId);
+                if (placeholderInfo) {
+                    placeholderInfo.suggestedNodeId = suggestedNodeId;
+                }
+            }
 
             // 检查标签是否包含 [[wiki link]]
             const linkMatch = label.match(/\[\[([^\]]+)\]\]/);
@@ -1862,7 +1875,7 @@ export class ZKIndexView extends ItemView {
             }
         });
 
-        // 监听创建子节点事件（拖动连线到空白处）
+        // 监听创建子节点事件（拖动连线到空白处）- 改为创建占位符节点
         this.addTrackedListener(branchGraphDiv, 'create-child-node', async (event: any) => {
             const { parentNode, position } = event.detail;
 
@@ -1871,43 +1884,8 @@ export class ZKIndexView extends ItemView {
                 return;
             }
 
-            // 生成子节点 ID
-            const suggestedID = this.generateChildNodeID(parentNode.IDStr);
-
-            // 打开对话框
-            const modal = new AddFreeNodeModal(
-                this.app,
-                this.plugin,
-                this.mocNodes,
-                suggestedID,
-                async (result) => {
-                    // 在刷新前保存所有节点的当前位置
-                    await this.saveAllNodePositionsBeforeRefresh();
-
-                    // 添加到 MOC 文件
-                    await this.saveFreeNodeToMOC(result);
-
-                    // 保存新节点的位置
-                    if (position && result.nodeID) {
-                        const mocFile = this.app.vault.getFileByPath(currentMOCPath);
-                        if (mocFile) {
-                            await this.saveNodePositionToMOC(mocFile, result.nodeID, position);
-                        }
-                    }
-
-                    // 刷新视图
-                    await this.refreshBranchMermaid();
-
-                    new Notice(`已创建子节点: ${result.nodeID}`);
-                }
-            );
-
-            // 预设父节点
-            modal.connectToNodeID = parentNode.IDStr;
-            modal.nodeID = suggestedID;
-
-            modal.onOpen();
-            modal.open();
+            // 直接创建占位符节点，而不是打开模态框
+            await this.createPlaceholderNode(position, parentNode.IDStr);
         });
 
         // 监听批量分组事件
@@ -5412,14 +5390,28 @@ export class ZKIndexView extends ItemView {
     /**
      * 创建占位符节点（临时节点，未完成编辑）
      * @param position 节点位置
+     * @param explicitParentId 显式指定的父节点 ID（可选，如果提供则跳过智能连线并预生成节点 ID）
      */
-    async createPlaceholderNode(position: { x: number; y: number }) {
+    async createPlaceholderNode(position: { x: number; y: number }, explicitParentId?: string) {
         const tempId = `temp_${Date.now()}`;
 
-        // 如果启用了智能连线，查找最近的节点作为父节点
+        // 确定父节点 ID 和预生成的节点 ID
         let parentNodeId: string | undefined = undefined;
+        let suggestedNodeId: string | undefined = undefined;
 
-        if (this.plugin.settings.smartConnection) {
+        // 优先使用显式指定的父节点 ID
+        if (explicitParentId) {
+            parentNodeId = explicitParentId;
+            // 预生成子节点 ID
+            suggestedNodeId = this.generateChildNodeID(explicitParentId);
+            console.log('[Explicit Parent] 占位符节点将连接到指定父节点:', {
+                placeholderId: tempId,
+                parentNodeId: parentNodeId,
+                suggestedNodeId: suggestedNodeId
+            });
+        }
+        // 否则，如果启用了智能连线，查找最近的节点作为父节点
+        else if (this.plugin.settings.smartConnection) {
             let nearestNode: ZKNode | null = null;
             let minDistance = Infinity;
             const PROXIMITY_THRESHOLD = 250;  // 250px 范围
@@ -5446,19 +5438,23 @@ export class ZKIndexView extends ItemView {
 
             if (nearestNode) {
                 parentNodeId = nearestNode.IDStr;
+                // 预生成子节点 ID
+                suggestedNodeId = this.generateChildNodeID(parentNodeId);
                 console.log('[Smart Connection] 占位符节点将连接到父节点:', {
                     placeholderId: tempId,
                     parentNodeId: parentNodeId,
+                    suggestedNodeId: suggestedNodeId,
                     distance: minDistance
                 });
             }
         }
 
-        // 存储占位符信息（包括潜在的父节点ID）
+        // 存储占位符信息（包括潜在的父节点ID和预生成的节点ID）
         this.placeholderNodes.set(tempId, {
             position,
             timestamp: Date.now(),
-            parentNodeId: parentNodeId  // 保存潜在父节点ID
+            parentNodeId: parentNodeId,
+            suggestedNodeId: suggestedNodeId  // 保存预生成的节点ID
         });
 
         // 直接通过事件通知 Cytoscape 渲染器添加占位符节点
@@ -5469,7 +5465,8 @@ export class ZKIndexView extends ItemView {
                 detail: {
                     nodeId: tempId,
                     position: position,
-                    parentNodeId: parentNodeId  // 传递父节点ID用于显示连接
+                    parentNodeId: parentNodeId,  // 传递父节点ID用于显示连接
+                    suggestedNodeId: suggestedNodeId  // 传递预生成的节点ID
                 }
             }));
         }
@@ -5484,18 +5481,27 @@ export class ZKIndexView extends ItemView {
         label: string,
         position: { x: number; y: number }
     ): Promise<void> {
-        // 生成 ID
-        const suggestedID = this.generateNextFreeNodeID();
+        // 获取占位符信息
+        const placeholderInfo = this.placeholderNodes.get(tempId);
+
+        // 优先使用预生成的节点 ID，否则生成新的自由节点 ID
+        const suggestedID = placeholderInfo?.suggestedNodeId || this.generateNextFreeNodeID();
 
         // 查找文件
         const file = this.app.metadataCache.getFirstLinkpathDest(wikiLink, '');
 
-        // 获取占位符信息
-        const placeholderInfo = this.placeholderNodes.get(tempId);
-
         // 检查是否有智能连线确定的父节点
         if (placeholderInfo && placeholderInfo.parentNodeId) {
-            // 移动到父节点下
+            // 先创建为自由节点，然后移动到父节点下
+            await this.saveFreeNodeToMOC({
+                wikiLink: wikiLink,
+                nodeID: suggestedID,
+                relationText: '',
+                file: file,
+                isTextOnly: false  // 标记为文件节点
+            });
+
+            // 然后移动到父节点下
             const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
             if (mocFile) {
                 await this.mocHandler.moveNodeToParent(mocFile, suggestedID, placeholderInfo.parentNodeId, suggestedID);
@@ -5533,15 +5539,24 @@ export class ZKIndexView extends ItemView {
         text: string,
         position: { x: number; y: number }
     ): Promise<void> {
-        // 生成 ID
-        const suggestedID = this.generateNextFreeNodeID();
-
         // 获取占位符信息
         const placeholderInfo = this.placeholderNodes.get(tempId);
 
+        // 优先使用预生成的节点 ID，否则生成新的自由节点 ID
+        const suggestedID = placeholderInfo?.suggestedNodeId || this.generateNextFreeNodeID();
+
         // 检查是否有智能连线确定的父节点
         if (placeholderInfo && placeholderInfo.parentNodeId) {
-            // 移动到父节点下
+            // 先创建为自由节点，然后移动到父节点下
+            await this.saveFreeNodeToMOC({
+                text: text,  // 纯文字内容
+                nodeID: suggestedID,
+                relationText: '',
+                file: null,  // 无文件关联
+                isTextOnly: true  // 标记为纯文字节点
+            });
+
+            // 然后移动到父节点下
             const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
             if (mocFile) {
                 await this.mocHandler.moveNodeToParent(mocFile, suggestedID, placeholderInfo.parentNodeId, suggestedID);
