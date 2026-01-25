@@ -1533,26 +1533,6 @@ export class ZKIndexView extends ItemView {
             
             // 创建菜单
             const menu = new Menu();
-            
-            // 添加子节点选项
-            menu.addItem((item) => {
-                item.setTitle("➕ 添加子节点")
-                    .setIcon("plus-circle")
-                    .onClick(async () => {
-                        await this.addChildNodeToMOC(node);
-                    });
-            });
-            
-            // 添加反向连接选项
-            menu.addItem((item) => {
-                item.setTitle("🔗 添加反向连接")
-                    .setIcon("link")
-                    .onClick(async () => {
-                        await this.addReverseNodeToMOC(node);
-                    });
-            });
-            
-            menu.addSeparator();
 
             // 关联跨领域节点选项
             menu.addItem((item) => {
@@ -1583,27 +1563,6 @@ export class ZKIndexView extends ItemView {
                     });
             });
 
-            menu.addSeparator();
-            
-            // 打开文件选项
-            menu.addItem((item) => {
-                item.setTitle("📄 打开文件")
-                    .setIcon("file")
-                    .onClick(() => {
-                        if (!node.file) return;
-                        this.app.workspace.openLinkText("", node.file.path);
-                    });
-            });
-            
-            // 在新标签页打开
-            menu.addItem((item) => {
-                item.setTitle("🗂️ 在新标签页打开")
-                    .setIcon("file-plus")
-                    .onClick(() => {
-                        this.app.workspace.openLinkText("", node.file.path, 'tab');
-                    });
-            });
-            
             // 显示菜单
             menu.showAtMouseEvent(mouseEvent);
         });
