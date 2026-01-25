@@ -1521,8 +1521,8 @@ export class ZKIndexView extends ItemView {
         this.addTrackedListener(branchGraphDiv, 'node-contextmenu', (event: any) => {
             const { node, event: mouseEvent, position } = event.detail;
             
-            // 检查节点是否有效
-            if (!node || !node.file) {
+            // 检查节点是否有效（允许纯文字节点，即 file 为 null 的节点）
+            if (!node) {
                 console.warn('Invalid node for context menu:', node);
                 return;
             }
@@ -2353,20 +2353,46 @@ export class ZKIndexView extends ItemView {
                         });
 
                         circleNodes[j].addEventListener('contextmenu', (event: MouseEvent) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+
                             const menu = new Menu();
-                            
-                            // 添加"添加子节点"选项
+
+                            // 跨领域节点关联选项
                             menu.addItem((item) =>
                                 item
-                                    .setTitle("添加子节点")
-                                    .setIcon("plus-circle")
+                                    .setTitle("🌐 关联跨领域节点")
+                                    .setIcon("network")
                                     .onClick(async () => {
-                                        await this.addChildNodeToMOC(node);
+                                        await this.linkCrossDomainNode(node);
                                     })
                             );
-                            
+
                             menu.addSeparator();
-                            
+
+                            // 修改节点 ID 选项
+                            menu.addItem((item) =>
+                                item
+                                    .setTitle("✏️ 修改节点 ID")
+                                    .setIcon("pencil")
+                                    .onClick(async () => {
+                                        await this.renameNodeID(node);
+                                    })
+                            );
+
+                            // 修改节点颜色选项
+                            menu.addItem((item) =>
+                                item
+                                    .setTitle("🎨 修改节点颜色")
+                                    .setIcon("palette")
+                                    .onClick(async () => {
+                                        await this.changeNodeColor(node);
+                                    })
+                            );
+
+                            menu.addSeparator();
+
+                            // 复制命令选项
                             for (let command of this.plugin.settings.NodeCommands) {
                                 menu.addItem((item) =>
                                     item
@@ -2396,6 +2422,7 @@ export class ZKIndexView extends ItemView {
                                         })
                                 );
                             }
+
                             menu.showAtMouseEvent(event);
                         });
 
