@@ -347,7 +347,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     originalNode: node,
                     customColor: nodeColors[node.IDStr] || null,  // 添加自定义颜色
                     isCrossDomain: node.isCrossDomain || false,  // 传递跨领域节点标记
-                    isTextOnly: node.isTextOnly || false  // 传递纯文字节点标记
+                    isTextOnly: node.isTextOnly || false,  // 传递纯文字节点标记
+                    hasFileIcon: (!node.isTextOnly && node.file) ? true : false  // 文件节点显示图标
                 }
             };
 
@@ -427,10 +428,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         // 处理显示文本：去掉时间戳前缀
         label = this.processDisplayText(label, nodeText);
 
-        // 为纯文字节点添加标记（可选）
-        // if (node.isTextOnly) {
-        //     label = `[文本] ${label}`;
-        // }
+        // 文件图标通过 HTML 叠加层显示，不在这里添加
 
         return label;
     }
@@ -488,7 +486,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         nodeBackgroundSelected: '#2d4a6b',
         nodeBorder: '#3d5a80',
         nodeBorderSelected: '#5b8fd9',
-        nodeText: '#e0e7ff',
+        nodeText: '#ffffff',  // 改为纯白色
         nodeTextMuted: '#94a3b8',
         edgeNormal: '#4a5568',
         edgeForward: '#5b8fd9',
@@ -580,17 +578,18 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'background-color': colors.nodeBackground
             } as any
         },
-        // 文件节点样式 - 类似 Obsidian 内部链接（蓝色文字）
+        // 文件节点样式 - 使用多个背景图在右上角显示文件图标
         {
-            selector: 'node[?isTextOnly]',
+            selector: 'node[?hasFileIcon]',
             style: {
-                'color': colors.nodeText
-            } as any
-        },
-        {
-            selector: 'node[!isTextOnly]',
-            style: {
-                'color': '#5b9bd8'  // 蓝色文字（类似 Obsidian 链接颜色）
+                // 第二个背景图：文件图标（右上角）
+                'background-width': ['100%', '16px'],
+                'background-height': ['100%', '16px'],
+                'background-fit': ['cover', 'none'],
+                'background-clip': ['node', 'none'],
+                'background-position-x': ['50%', '100%'],
+                'background-position-y': ['50%', '0%'],
+                'background-image': ['none', 'url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'16\' height=\'16\' viewBox=\'0 0 16 16\'%3E%3Cpath fill=\'%235b8fd9\' d=\'M14 4H6.5L3 8.5V14h11V4zm-1 9H4V9h1.5l1-1H6v4h7V5z\'/%3E%3C/svg%3E")']
             } as any
         },
         // 默认边样式 - 使用 unbundled-bezier 支持自定义控制点
