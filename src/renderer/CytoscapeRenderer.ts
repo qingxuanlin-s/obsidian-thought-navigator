@@ -2915,14 +2915,21 @@ case 'dagre':
                 return;  // 占位符节点不触发点击事件
             }
 
-            // 清除之前的高亮
-            this.cy?.$('edge.child-edge-highlight').removeClass('child-edge-highlight');
+            // 清除之前的高亮（使用filter避免selector转义问题）
+            this.cy?.edges('.child-edge-highlight').removeClass('child-edge-highlight');
 
             // 递归高亮所有后代节点的边
             const nodeId = node.id();
+            const visited = new Set<string>();  // 防止循环引用导致无限递归
             const highlightChildEdges = (sourceNodeId: string) => {
-                // 获取从当前节点出发的所有边
-                const outgoingEdges = this.cy?.$(`edge[source="${sourceNodeId}"]`);
+                // 检查是否已访问过，避免循环引用
+                if (visited.has(sourceNodeId)) {
+                    return;
+                }
+                visited.add(sourceNodeId);
+
+                // 获取从当前节点出发的所有边（使用filter避免selector转义问题）
+                const outgoingEdges = this.cy?.edges().filter((edge: any) => edge.data('source') === sourceNodeId);
                 if (!outgoingEdges || outgoingEdges.length === 0) {
                     return;
                 }
