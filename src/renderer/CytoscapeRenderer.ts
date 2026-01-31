@@ -61,69 +61,113 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
     /**
      * 渲染图形
+     * @性能优化：支持增量更新，避免每次都销毁重建
      */
     async render(container: HTMLElement, data: GraphData, options: RenderOptions): Promise<void> {
         // 确保扩展已注册
         registerExtensions();
-        
+
+        const containerChanged = this.container !== container;
+
         this.container = container;
         this.currentData = data;
         this.currentOptions = options;
 
-        // 如果已存在实例，先销毁
-        if (this.cy) {
-            this.cy.destroy();
-        }
-
-        // 获取 cytoscape 函数
-        const cytoscape = getCytoscape();
-
         // 转换元素（包含分组）
         const elements = this.convertToElementsWithGroups(data);
 
-        // 初始化 Cytoscape
-        this.cy = cytoscape({
-            container: container,
-            elements: elements,
-            style: [
-                ...this.getStylesheet(options),
-                {
-                    selector: 'core',
-                    style: {
-                        'background-color': 'transparent',
-                        'background-opacity': 0
-                    } as any
+        // 如果没有 Cytoscape 实例或容器变化，需要完全重建
+        if (!this.cy || containerChanged) {
+            // 销毁旧实例（如果存在）
+            if (this.cy) {
+                this.cy.destroy();
+                this.cy = null;
+            }
+
+            // 获取 cytoscape 函数
+            const cytoscape = getCytoscape();
+
+            // 初始化 Cytoscape
+            this.cy = cytoscape({
+                container: container,
+                elements: elements,
+                style: [
+                    ...this.getStylesheet(options),
+                    {
+                        selector: 'core',
+                        style: {
+                            'background-color': 'transparent',
+                            'background-opacity': 0
+                        } as any
+                    }
+                ],
+                layout: { name: 'preset' }, // 先使用 preset，稍后运行布局
+                // 性能优化选项
+                hideEdgesOnViewport: true,
+                textureOnViewport: true,
+                motionBlur: false,
+                pixelRatio: 'auto',
+                // 启用节点拖动
+                autoungrabify: false,
+                userZoomingEnabled: false,  // 禁用默认滚轮缩放，改为 Command+滚轮
+                userPanningEnabled: false,  // 禁用默认拖动，改为空格键+拖动
+                // 设置缩放范围
+                minZoom: 0.1,
+                maxZoom: 1.0
+            });
+
+            // 绑定事件
+            this.bindEvents();
+            this.bindKeyboardEvents();
+            this.bindMiddleMouseEvents();
+            this.initBoxSelection();
+            this.addNodeBadges();
+
+        } else {
+            // 增量更新：复用现有 Cytoscape 实例
+            this.cy.batch(() => {
+                // 获取当前所有节点和边的 ID
+                const currentIds = new Set(this.cy!.elements().map(ele => ele.id()));
+                const newIds = new Set(elements.map(ele => ele.data.id || ''));
+
+                // 找出需要删除的元素
+                const toRemove: string[] = [];
+                currentIds.forEach(id => {
+                    if (!newIds.has(id)) {
+                        toRemove.push(id);
+                    }
+                });
+
+                // 找出需要添加的元素
+                const toAdd = elements.filter(ele => {
+                    const id = ele.data.id;
+                    return id && !currentIds.has(id);
+                });
+
+                // 删除旧元素
+                if (toRemove.length > 0) {
+                    this.cy!.remove(this.cy!.$id(toRemove.join(', ')));
                 }
-            ],
-            layout: { name: 'preset' }, // 先使用 preset，稍后运行布局
-            // 性能优化选项
-            hideEdgesOnViewport: true,
-            textureOnViewport: true,
-            motionBlur: false,
-            pixelRatio: 'auto',
-            // 启用节点拖动
-            autoungrabify: false,
-            userZoomingEnabled: false,  // 禁用默认滚轮缩放，改为 Command+滚轮
-            userPanningEnabled: false,  // 禁用默认拖动，改为空格键+拖动
-            // 设置缩放范围
-            minZoom: 0.1,
-            maxZoom: 1.0
-        });
 
-        // 绑定事件
-        this.bindEvents();
+                // 添加新元素
+                if (toAdd.length > 0) {
+                    this.cy!.add(toAdd);
+                }
 
-        // 绑定键盘事件
-        this.bindKeyboardEvents();
-
-        // 绑定中键拖动事件
-        this.bindMiddleMouseEvents();
-
-        // 初始化框选功能
-        this.initBoxSelection();
-
-        // 添加节点徽章（左上角的 ID）
-        this.addNodeBadges();
+                // 更新现有元素的数据（如果需要）
+                // 这里可以进一步优化，只更新变化的数据
+                elements.forEach(ele => {
+                    const id = ele.data.id;
+                    if (id) {
+                        const existing = this.cy!.$id(id);
+                        if (existing.length > 0) {
+                            // 更新节点数据
+                            existing.data(ele.data);
+                        }
+                    }
+                });
+            });
+        }
 
         // 检查是否有保存的位置
         const hasSavedPositions = data.nodes.some(node => node.savedPosition);

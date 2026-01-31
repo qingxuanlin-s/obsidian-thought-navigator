@@ -148,6 +148,10 @@ export class ZKIndexView extends ItemView {
         suggestedNodeId?: string  // 预生成的节点 ID
     }> = new Map();
 
+    // 性能优化：静态 UI 层标记
+    private staticUICreated: boolean = false;
+    private staticToolbarDiv: HTMLElement | null = null;
+
     constructor(leaf: WorkspaceLeaf, plugin: ZKNavigationPlugin) {
         super(leaf);
         this.plugin = plugin;
@@ -294,18 +298,39 @@ export class ZKIndexView extends ItemView {
 
     async IndexViewInterfaceInit() {
         let { containerEl } = this;
-        containerEl.empty();
-        containerEl.addClass("zk-view-content");
 
-        const toolbarDiv = containerEl.createDiv("zk-index-toolbar");
+        // 性能优化：分离静态 UI 层和动态图形层
+        // 只在首次创建时初始化静态 UI
+        if (!this.staticUICreated) {
+            containerEl.empty();
+            containerEl.addClass("zk-view-content");
 
-        const indexMermaidDiv = containerEl.createDiv("zk-index-mermaid-container");
-        indexMermaidDiv.id = "zk-index-mermaid-container";
+            // 创建静态工具栏（只创建一次）
+            this.staticToolbarDiv = containerEl.createDiv("zk-index-toolbar");
+            await this.createStaticToolbarUI(this.staticToolbarDiv);
 
-        indexMermaidDiv.empty();
+            // 创建动态图形容器（保留引用，后续不清空）
+            const indexMermaidDiv = containerEl.createDiv("zk-index-mermaid-container");
+            indexMermaidDiv.id = "zk-index-mermaid-container";
 
+            this.staticUICreated = true;
+        } else {
+            // 如果已创建过静态 UI，只清空图形容器
+            const indexMermaidDiv = document.getElementById("zk-index-mermaid-container");
+            if (indexMermaidDiv) {
+                indexMermaidDiv.empty();
+            }
+        }
+
+        // 刷新图形内容（动态层）
+        await this.refreshBranchMermaid();
+    }
+
+    /**
+     * 创建静态工具栏 UI（只创建一次）
+     */
+    private async createStaticToolbarUI(toolbarDiv: HTMLElement): Promise<void> {
         if (this.plugin.settings.MainNoteButton == true) {
-
             const mainNoteButtonDiv = toolbarDiv.createDiv("zk-index-toolbar-block");
             const mainNoteButton = new ButtonComponent(mainNoteButtonDiv).setClass("zk-index-toolbar-button");
             mainNoteButton.setButtonText(this.plugin.settings.MainNoteButtonText);
@@ -320,7 +345,6 @@ export class ZKIndexView extends ItemView {
                             displayText: selectZKNode.displayText,
                             filePath: selectZKNode.file.path,
                             openTime: moment().format("YYYY-MM-DD HH:mm:ss"),
-
                         }
                         this.plugin.clearShowingSettings();
                         this.app.workspace.trigger("zk-navigation:refresh-index-graph");
@@ -334,18 +358,15 @@ export class ZKIndexView extends ItemView {
                             displayText: selectZKNode.displayText,
                             filePath: selectZKNode.file.path,
                             openTime: moment().format("YYYY-MM-DD HH:mm:ss"),
-
                         }
                         this.plugin.clearShowingSettings();
                         this.app.workspace.trigger("zk-navigation:refresh-index-graph");
                     }).open()
                 }
             })
-
         }
 
         if (this.plugin.settings.IndexButton == true) {
-
             const indexButtonDiv = toolbarDiv.createDiv("zk-index-toolbar-block");
             const indexButton = new ButtonComponent(indexButtonDiv).setClass("zk-index-toolbar-button");
             indexButton.setButtonText(this.plugin.settings.IndexButtonText);
@@ -359,7 +380,6 @@ export class ZKIndexView extends ItemView {
                             displayText: index.keyword,
                             filePath: index.path,
                             openTime: moment().format("YYYY-MM-DD HH:mm:ss"),
-
                         }
                         this.plugin.clearShowingSettings();
                         this.app.workspace.trigger("zk-navigation:refresh-index-graph");
@@ -372,34 +392,32 @@ export class ZKIndexView extends ItemView {
                             displayText: index.keyword,
                             filePath: index.path,
                             openTime: moment().format("YYYY-MM-DD HH:mm:ss"),
-
                         }
                         this.plugin.clearShowingSettings();
                         this.app.workspace.trigger("zk-navigation:refresh-index-graph");
                     }).open();
                 }
             });
-
         }
 
-        // MOC 选择器（合并MOC按钮和当前MOC显示）
+        // MOC 选择器
         if (this.plugin.settings.mocModeEnabled == true) {
             const mocSelectorDiv = toolbarDiv.createDiv("zk-index-toolbar-block");
             const mocButton = new ButtonComponent(mocSelectorDiv);
             mocButton.buttonEl.addClass("zk-index-toolbar-button");
             mocButton.buttonEl.addClass("zk-moc-button");
-            
+
             // 获取当前MOC名称
             const currentMOCPath = this.plugin.settings.mocCurrentFile;
             const currentMOCFile = currentMOCPath ? this.app.vault.getAbstractFileByPath(currentMOCPath) : null;
             let currentMOCName = currentMOCFile instanceof TFile ? currentMOCFile.basename : "未命名";
-            
+
             // 截断过长的文件名
             const maxLength = 9;
             if (currentMOCName.length > maxLength) {
                 currentMOCName = currentMOCName.substring(0, maxLength) + "...";
             }
-            
+
             mocButton.setButtonText(`🔍 ${currentMOCName}`);
             mocButton.setCta();
             mocButton.onClick(() => {
@@ -444,8 +462,6 @@ export class ZKIndexView extends ItemView {
                 this.app.workspace.trigger("zk-navigation:refresh-index-graph");
                 this.app.workspace.trigger("zk-navigation:refresh-local-graph");
             });
-
-        await this.refreshBranchMermaid();
     }
 
     async onload() {
@@ -1090,13 +1106,13 @@ export class ZKIndexView extends ItemView {
             nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title'
         };
 
-        // 创建或复用渲染器
-        if (this.branchRenderer) {
-            this.branchRenderer.destroy();
+        // 性能优化：复用或创建渲染器，避免每次都销毁重建
+        if (!this.branchRenderer) {
+            this.branchRenderer = new CytoscapeRenderer();
         }
-        this.branchRenderer = new CytoscapeRenderer();
 
-        // 渲染图形
+        // 渲染或更新图形
+        // CytoscapeRenderer 内部会智能判断是否需要完全重建或增量更新
         await this.branchRenderer.render(branchGraphDiv, graphData, options);
 
         // 恢复或自动居中视图
