@@ -1101,7 +1101,7 @@ case 'dagre':
         handle.addEventListener('mousedown', (e: MouseEvent) => {
             e.preventDefault();
             e.stopPropagation();
-            
+
             isDragging = true;
             handle.style.opacity = '1';
 
@@ -1118,11 +1118,12 @@ case 'dagre':
             `;
             this.container!.appendChild(svgOverlay);
 
-            // 创建连线
+            // 创建连线 - 使用淡绿色（与智能连线一致）
             dragLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            dragLine.setAttribute('stroke', '#5b8fd9');
+            dragLine.setAttribute('stroke', '#10b981');  // 淡绿色，表示可以创建子节点
             dragLine.setAttribute('stroke-width', '2');
-            dragLine.setAttribute('stroke-dasharray', '5,5');
+            dragLine.setAttribute('stroke-dasharray', '5,5');  // 虚线
+            dragLine.setAttribute('opacity', '0.8');  // 略微透明
             svgOverlay.appendChild(dragLine);
 
             const sourcePos = sourceNode.renderedPosition();
@@ -1148,13 +1149,18 @@ case 'dagre':
             // 检测鼠标下的节点
             const mousePos = { x: mouseX, y: mouseY };
             const targetNode = this.getNodeAtPosition(mousePos);
-            
+
             if (targetNode && targetNode !== sourceNode) {
-                // 高亮目标节点
-                dragLine.setAttribute('stroke', '#10b981'); // 绿色表示可以连接
+                // 有目标节点 - 高亮显示
+                dragLine.setAttribute('stroke', '#10b981');  // 绿色表示可以连接
+                dragLine.setAttribute('stroke-width', '3');  // 加粗
+                dragLine.setAttribute('opacity', '1');  // 不透明
                 targetNode.addClass('connection-target-hover');
             } else {
-                dragLine.setAttribute('stroke', '#5b8fd9'); // 蓝色
+                // 拖到空白处 - 准备创建子节点（仍然显示绿色，但略细和透明）
+                dragLine.setAttribute('stroke', '#10b981');  // 绿色表示可以创建子节点
+                dragLine.setAttribute('stroke-width', '2');  // 正常宽度
+                dragLine.setAttribute('opacity', '0.8');  // 略微透明
                 this.cy.nodes('.connection-target-hover').removeClass('connection-target-hover');
             }
         };
