@@ -1,4 +1,4 @@
-import { Notice, TFile } from "obsidian";
+import { TFile } from "obsidian";
 import ZKNavigationPlugin from "main";
 import { MOCParseResult, CrossDomainLink, MOCTreeNode } from "src/utils/utils";
 
@@ -639,8 +639,6 @@ export class MOCHandler {
                 });
             }
         });
-
-        new Notice(`已删除节点: ${nodeID}`);
     }
 
     /**
@@ -702,8 +700,6 @@ export class MOCHandler {
                 throw new Error(`未找到跨领域节点链接: ${originalNodeId}`);
             }
         });
-
-        new Notice(`已删除跨思维树节点: ${nodeID}`);
     }
 
     /**
