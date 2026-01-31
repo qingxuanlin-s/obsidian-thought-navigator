@@ -144,9 +144,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     return id && !currentIds.has(id);
                 });
 
-                // 删除旧元素
+                // 删除旧元素（使用 filter 避免选择器语法问题）
                 if (toRemove.length > 0) {
-                    this.cy!.remove(this.cy!.$id(toRemove.join(', ')));
+                    const elementsToRemove = this.cy!.elements().filter(ele => toRemove.includes(ele.id()));
+                    this.cy!.remove(elementsToRemove);
                 }
 
                 // 添加新元素

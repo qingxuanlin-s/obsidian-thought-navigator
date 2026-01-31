@@ -142,11 +142,18 @@ export class ZKIndexView extends ItemView {
 
     // 占位符节点追踪（用于未完成编辑的临时节点）
     private placeholderNodes: Map<string, {
-        position: { x: number; y: number },
-        timestamp: number,
-        parentNodeId?: string,
-        suggestedNodeId?: string  // 预生成的节点 ID
+        nodeId: string;
+        tempId: string;
+        content: string;
+        position: { x: number; y: number };
+        timestamp: number;
+        parentNodeId?: string;
+        suggestedNodeId?: string;  // 预生成的节点 ID
     }> = new Map();
+
+    // 性能优化：防止重复刷新的标志位
+    private isRefreshing: boolean = false;
+    private pendingRefresh: boolean = false;
 
     // 性能优化：静态 UI 层标记
     private staticUICreated: boolean = false;
@@ -180,6 +187,7 @@ export class ZKIndexView extends ItemView {
     ): void {
         element.addEventListener(event, handler, options);
         this.registeredEventListeners.push({ element, event, handler, options });
+        console.log(`[addTrackedListener] 添加监听器: ${event}, 总数=${this.registeredEventListeners.length}`);
     }
 
     /**
@@ -190,6 +198,36 @@ export class ZKIndexView extends ItemView {
             element.removeEventListener(event, handler, options);
         });
         this.registeredEventListeners = [];
+    }
+
+    /**
+     * 清理特定元素上的事件监听器
+     * @param element 要清理监听器的元素
+     */
+    private cleanupElementListeners(element: HTMLElement | Window): void {
+        // 过滤出与该元素相关的监听器
+        const toKeep: Array<{ element: any; event: string; handler: any; options?: any }> = [];
+        const toRemove: Array<{ element: any; event: string; handler: any; options?: any }> = [];
+
+        this.registeredEventListeners.forEach(listener => {
+            if (listener.element === element) {
+                toRemove.push(listener);
+            } else {
+                toKeep.push(listener);
+            }
+        });
+
+        console.log(`[cleanupElementListeners] 清理前: 总监听器=${this.registeredEventListeners.length}, 要清理=${toRemove.length}`);
+
+        // 移除该元素的所有监听器
+        toRemove.forEach(({ event, handler, options }) => {
+            element.removeEventListener(event, handler, options);
+        });
+
+        // 更新监听器列表，保留其他元素的监听器
+        this.registeredEventListeners = toKeep;
+
+        console.log(`[cleanupElementListeners] 清理后: 剩余监听器=${this.registeredEventListeners.length}`);
     }
 
     /**
@@ -525,7 +563,7 @@ export class ZKIndexView extends ItemView {
             this.plugin.RefreshIndexViewFlag = true;
         }));
 
-        const refresh = debounce(this.refreshIndexLayout, 300, true);
+        const refresh = debounce(this.refreshIndexLayout, 500, true);
         this.registerEvent(this.app.workspace.on("zk-navigation:refresh-index-graph", refresh));
 
         // MOC 文件变化事件监听（实时同步）
@@ -577,14 +615,29 @@ export class ZKIndexView extends ItemView {
 
         await mainNoteInit(this.plugin);
 
+        // 性能优化：只清空图形容器，保留其他元素
         indexMermaidDiv.empty();
 
         let branchEntranceNodeArr: ZKNode[] = [];
         let indexFile: any;
 
-        const graphTopContainer = indexMermaidDiv.createDiv("zk-graph-top");
-        const indexLinkDiv = graphTopContainer.createDiv();
-        indexLinkDiv.empty();
+        // 创建图形容器（只创建一次，或复用已存在的）
+        let graphTopContainer = document.getElementById("zk-graph-top-container") as HTMLElement;
+        let indexLinkDiv: HTMLElement;
+
+        if (!graphTopContainer) {
+            // 首次创建
+            graphTopContainer = indexMermaidDiv.createDiv("zk-graph-top");
+            graphTopContainer.id = "zk-graph-top-container";
+            indexLinkDiv = graphTopContainer.createDiv();
+            indexLinkDiv.id = "zk-index-link-div";
+        } else {
+            // 复用已有容器
+            indexLinkDiv = document.getElementById("zk-index-link-div") as HTMLElement;
+            if (indexLinkDiv) {
+                indexLinkDiv.empty();
+            }
+        }
 
         if (this.plugin.settings.BranchToolbra == true) {
             const toolButtonsDiv = graphTopContainer.createDiv("zk-tool-buttons");
@@ -914,7 +967,7 @@ export class ZKIndexView extends ItemView {
                 //do nothing
             }
 
-            await this.addBranchIcon(branchEntranceNodeArr, indexLinkDiv);
+            await this.addBranchIcon(branchEntranceNodeArr, indexLinkDiv as HTMLDivElement);
 
         }
 
@@ -948,14 +1001,30 @@ export class ZKIndexView extends ItemView {
     // MOC 模式专用的刷新方法
     // MOC 模式专用的刷新方法 - 使用 Cytoscape 渲染
     async refreshBranchMermaidMOC(indexMermaidDiv: HTMLElement) {
-        indexMermaidDiv.empty();
+        // 性能优化：不复用整体容器，而是复用各个子容器
 
-        const graphTopContainer = indexMermaidDiv.createDiv("zk-graph-top");
+        // 复用或创建顶部容器
+        let graphTopContainer = document.getElementById("zk-moc-graph-top") as HTMLElement;
+
+        if (!graphTopContainer) {
+            // 首次创建
+            graphTopContainer = indexMermaidDiv.createDiv("zk-graph-top");
+            graphTopContainer.id = "zk-moc-graph-top";
+        }
 
         // 添加工具栏
         if (this.plugin.settings.BranchToolbra === true) {
-            const toolButtonsDiv = graphTopContainer.createDiv("zk-tool-buttons");
-            toolButtonsDiv.empty();
+            // 复用或创建工具栏容器
+            let toolButtonsDiv = document.getElementById("zk-moc-tool-buttons") as HTMLElement;
+
+            if (!toolButtonsDiv) {
+                // 首次创建
+                toolButtonsDiv = graphTopContainer.createDiv("zk-tool-buttons");
+                toolButtonsDiv.id = "zk-moc-tool-buttons";
+            } else {
+                // 复用：清空内容
+                toolButtonsDiv.empty();
+            }
 
             if (this.plugin.settings.settingIcon === true) {
                 const settingBtn = new ExtraButtonComponent(toolButtonsDiv);
@@ -1077,17 +1146,23 @@ export class ZKIndexView extends ItemView {
         // 克隆 reverseRelations Map，避免修改缓存中的数据
         this.mocReverseRelations = new Map(Array.from(mocParseResult.reverseRelations.entries()));
 
+        // 性能优化：复用或创建图形容器（不复用 renderer 内部的 Cytoscape 实例）
+        let branchGraphDiv = document.getElementById("zk-branch-cytoscape") as HTMLElement;
 
-        // 创建图形容器（即使没有节点也创建，以便支持双击添加）
-        const branchGraphContainer = indexMermaidDiv.createDiv("zk-branch-graph-container");
-        const branchGraphDiv = branchGraphContainer.createEl("div", {
-            cls: "zk-graph-cytoscape"
-        });
-        branchGraphDiv.id = "zk-branch-cytoscape";
-        // 为顶部工具栏和底部留出空间
-        branchGraphDiv.style.height = `${this.containerEl.offsetHeight - 150}px`;
-        branchGraphDiv.style.width = "100%";
-        branchGraphDiv.style.marginBottom = "10px"; // 为底部按钮留出空间
+        if (!branchGraphDiv) {
+            // 首次创建：创建容器
+            const branchGraphContainer = indexMermaidDiv.createDiv("zk-branch-graph-container");
+            branchGraphDiv = branchGraphContainer.createEl("div", {
+                cls: "zk-graph-cytoscape"
+            });
+            branchGraphDiv.id = "zk-branch-cytoscape";
+
+            // 为顶部工具栏和底部留出空间
+            branchGraphDiv.style.height = `${this.containerEl.offsetHeight - 150}px`;
+            branchGraphDiv.style.width = "100%";
+            branchGraphDiv.style.marginBottom = "10px"; // 为底部按钮留出空间
+        }
+        // 注意：不再清空 branchGraphDiv，让 CytoscapeRenderer 内部的增量更新逻辑处理
 
         // 构建图形数据（包含分组信息和边弧度信息）
         const groups = mocParseResult.groups || [];
@@ -1128,6 +1203,9 @@ export class ZKIndexView extends ItemView {
                 cy.fit(undefined, 50);
             }
         }
+
+        // 性能优化：清理该图形容器上的旧事件监听器，避免重复绑定
+        this.cleanupElementListeners(branchGraphDiv);
 
         // 监听视图状态变化事件（缩放和平移）
         this.addTrackedListener(branchGraphDiv, 'viewStateChanged', async (event: any) => {
@@ -1938,6 +2016,7 @@ export class ZKIndexView extends ItemView {
 
         // 监听批量删除节点事件
         this.addTrackedListener(branchGraphDiv, 'batch-delete-nodes', async (event: any) => {
+            console.log(`[batch-delete-nodes] 删除事件触发! nodeIds=${event.detail.nodeIds.length}`);
             const { nodeIds, nodes } = event.detail;
 
             try {
@@ -5595,6 +5674,9 @@ export class ZKIndexView extends ItemView {
 
         // 存储占位符信息（包括潜在的父节点ID和预生成的节点ID）
         this.placeholderNodes.set(tempId, {
+            nodeId: tempId,
+            tempId: tempId,
+            content: '',
             position,
             timestamp: Date.now(),
             parentNodeId: parentNodeId,
