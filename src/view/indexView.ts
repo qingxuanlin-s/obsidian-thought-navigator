@@ -159,6 +159,10 @@ export class ZKIndexView extends ItemView {
     private staticUICreated: boolean = false;
     private staticToolbarDiv: HTMLElement | null = null;
 
+    // 性能优化：追踪事件监听器初始化状态，避免重复添加
+    private branchGraphListenersInitialized: boolean = false;
+    private currentBranchGraphDiv: HTMLElement | null = null;
+
     constructor(leaf: WorkspaceLeaf, plugin: ZKNavigationPlugin) {
         super(leaf);
         this.plugin = plugin;
@@ -1204,11 +1208,18 @@ export class ZKIndexView extends ItemView {
             }
         }
 
-        // 性能优化：清理该图形容器上的旧事件监听器，避免重复绑定
-        this.cleanupElementListeners(branchGraphDiv);
+        // 性能优化：只在容器变化或首次初始化时重建事件监听器
+        // Cytoscape 增量更新不会替换容器，所以监听器可以复用
+        const needsListenerInit = !this.branchGraphListenersInitialized || this.currentBranchGraphDiv !== branchGraphDiv;
 
-        // 监听视图状态变化事件（缩放和平移）
-        this.addTrackedListener(branchGraphDiv, 'viewStateChanged', async (event: any) => {
+        if (needsListenerInit) {
+            // 清理该图形容器上的旧事件监听器（如果是新容器）
+            if (this.currentBranchGraphDiv && this.currentBranchGraphDiv !== branchGraphDiv) {
+                this.cleanupElementListeners(this.currentBranchGraphDiv);
+            }
+
+            // 监听视图状态变化事件（缩放和平移）
+            this.addTrackedListener(branchGraphDiv, 'viewStateChanged', async (event: any) => {
             const { zoom, pan } = event.detail;
             this.saveMOCViewState(currentMOCPath, zoom, pan);
         });
@@ -2058,6 +2069,11 @@ export class ZKIndexView extends ItemView {
             const { nodeIds } = event.detail;
             await this.batchChangeNodeColor(nodeIds);
         });
+
+        // 标记监听器已初始化，保存当前容器引用
+        this.branchGraphListenersInitialized = true;
+        this.currentBranchGraphDiv = branchGraphDiv;
+        }
 
         this.plugin.indexViewOffsetWidth = this.containerEl.offsetWidth;
         this.plugin.indexViewOffsetHeight = this.containerEl.offsetHeight;
