@@ -4894,24 +4894,155 @@ case 'dagre':
     }
 
     /**
+     * 获取节点相对于父节点的方向
+     * @param node 当前节点
+     * @returns 方向 'right' | 'left' | 'down' | 'up' | null (如果没有父节点)
+     */
+    private getDirectionFromParent(node: any): 'right' | 'left' | 'down' | 'up' | null {
+        if (!this.cy) return null;
+
+        // 获取所有指向当前节点的边（入边）
+        const incomingEdges = node.incomers('edge');
+
+        if (incomingEdges.length === 0) {
+            return null; // 没有父节点
+        }
+
+        // 获取第一个父节点
+        const parentEdge = incomingEdges.first();
+        const parentNode = parentEdge.source();
+
+        if (!parentNode || parentNode.length === 0) {
+            return null;
+        }
+
+        // 计算当前节点相对于父节点的位置
+        const nodePos = node.position();
+        const parentPos = parentNode.position();
+
+        const dx = nodePos.x - parentPos.x;
+        const dy = nodePos.y - parentPos.y;
+
+        // 计算绝对值以确定主要方向
+        const absDx = Math.abs(dx);
+        const absDy = Math.abs(dy);
+
+        // 判断主要方向（哪个方向的偏移更大）
+        if (absDx > absDy) {
+            // 水平方向为主
+            return dx > 0 ? 'right' : 'left';
+        } else {
+            // 垂直方向为主
+            return dy > 0 ? 'down' : 'up';
+        }
+    }
+
+    /**
+     * 根据方向计算新子节点的偏移
+     * @param direction 当前节点相对于父节点的方向
+     * @returns 新节点的偏移量
+     */
+    private getChildOffset(direction: 'right' | 'left' | 'down' | 'up' | null): { x: number; y: number } {
+        const offset = 200;
+
+        if (!direction) {
+            // 没有父节点，默认向右
+            return { x: offset, y: 0 };
+        }
+
+        // 根据当前节点相对于父节点的方向，决定新子节点的位置（同向延伸）
+        switch (direction) {
+            case 'right':
+                // 当前节点在父节点的右边，新子节点继续在当前节点的右边
+                return { x: offset, y: 0 };
+            case 'left':
+                // 当前节点在父节点的左边，新子节点继续在当前节点的左边
+                return { x: -offset, y: 0 };
+            case 'down':
+                // 当前节点在父节点的下边，新子节点继续在当前节点的下边
+                return { x: 0, y: offset };
+            case 'up':
+                // 当前节点在父节点的上边，新子节点继续在当前节点的上边
+                return { x: 0, y: -offset };
+            default:
+                return { x: offset, y: 0 };
+        }
+    }
+
+    /**
      * 计算新节点的位置
      */
     private calculateNewNodePosition(activeNode: any, type: 'child' | 'sibling' | 'parent'): { x: number; y: number } {
         const nodePos = activeNode.position();
 
-        // 默认偏移量
-        const childOffsetX = 200;
-        const siblingOffsetY = 100;
-        const parentOffsetX = -200;
+        if (type === 'sibling') {
+            // 兄弟节点：根据当前节点相对于其父节点的方向，沿着相同方向延伸
+            const direction = this.getDirectionFromParent(activeNode);
+            const offset = 100;
 
-        switch (type) {
-            case 'child':
-                return { x: nodePos.x + childOffsetX, y: nodePos.y };
-            case 'sibling':
-                return { x: nodePos.x, y: nodePos.y + siblingOffsetY };
-            case 'parent':
-                return { x: nodePos.x + parentOffsetX, y: nodePos.y };
+            if (!direction) {
+                // 没有父节点，默认向下
+                return { x: nodePos.x, y: nodePos.y + offset };
+            }
+
+            // 兄弟节点沿着相同的方向继续延伸
+            switch (direction) {
+                case 'right':
+                    // 当前节点在父节点的右边，新兄弟节点继续向右
+                    return { x: nodePos.x + offset, y: nodePos.y };
+                case 'left':
+                    // 当前节点在父节点的左边，新兄弟节点继续向左
+                    return { x: nodePos.x - offset, y: nodePos.y };
+                case 'down':
+                    // 当前节点在父节点的下边，新兄弟节点继续向下
+                    return { x: nodePos.x, y: nodePos.y + offset };
+                case 'up':
+                    // 当前节点在父节点的上边，新兄弟节点继续向上
+                    return { x: nodePos.x, y: nodePos.y - offset };
+                default:
+                    return { x: nodePos.x, y: nodePos.y + offset };
+            }
         }
+
+        if (type === 'child') {
+            // 获取当前节点相对于其父节点的方向
+            const direction = this.getDirectionFromParent(activeNode);
+            // 计算新子节点的偏移量
+            const offset = this.getChildOffset(direction);
+            return { x: nodePos.x + offset.x, y: nodePos.y + offset.y };
+        }
+
+        if (type === 'parent') {
+            // 父节点：默认向左，或者根据当前节点相对于其父节点的方向反向
+            const direction = this.getDirectionFromParent(activeNode);
+            const offset = 200;
+
+            if (!direction) {
+                // 没有父节点，默认向左
+                return { x: nodePos.x - offset, y: nodePos.y };
+            }
+
+            // 根据当前节点相对于父节点的方向，决定新父节点的位置（继续反向）
+            switch (direction) {
+                case 'right':
+                    // 当前节点在父节点的右边，新父节点继续向左
+                    return { x: nodePos.x - offset, y: nodePos.y };
+                case 'left':
+                    // 当前节点在父节点的左边，新父节点继续向右
+                    return { x: nodePos.x + offset, y: nodePos.y };
+                case 'down':
+                    // 当前节点在父节点的下边，新父节点继续向上
+                    return { x: nodePos.x, y: nodePos.y - offset };
+                case 'up':
+                    // 当前节点在父节点的上边，新父节点继续向下
+                    return { x: nodePos.x, y: nodePos.y + offset };
+                default:
+                    return { x: nodePos.x - offset, y: nodePos.y };
+            }
+        }
+
+        // 默认情况
+        return { x: nodePos.x, y: nodePos.y };
     }
 
     /**
@@ -4933,32 +5064,93 @@ case 'dagre':
             return childIdStr && childIdStr.startsWith(activeNodeId + '.');
         });
 
-        let position;
-        if (childNodes.length > 0) {
-            // 找到 Y 坐标最大的子节点
-            let lastChild: any = childNodes.first();
-            let maxY = (lastChild as any).position().y;
+        // 获取当前节点相对于其父节点的方向
+        const direction = this.getDirectionFromParent(activeNode);
+        const nodePos = activeNode.position();
 
-            childNodes.forEach((node: any) => {
-                const nodeY = node.position().y;
-                if (nodeY > maxY) {
-                    maxY = nodeY;
-                    lastChild = node;
-                }
-            });
+        // 确定子节点的排列方向：
+        // - 如果父节点是左右布局（left/right），子节点往下生长（垂直排列）
+        // - 如果父节点是上下布局（up/down），子节点往右生长（水平排列）
+        let childOffsetX = 0;
+        let childOffsetY = 0;
 
-            // 基于最后一个子节点的位置计算，像兄弟节点一样在下方
-            const lastChildPos = (lastChild as any).position();
-            position = {
-                x: lastChildPos.x,
-                y: lastChildPos.y + 100  // 兄弟节点的偏移量
-            };
-
+        if (direction === 'left' || direction === 'right') {
+            // 左右布局：子节点往下生长
+            childOffsetX = 0;
+            childOffsetY = 100;
+        } else if (direction === 'up' || direction === 'down') {
+            // 上下布局：子节点往右生长
+            childOffsetX = 200;
+            childOffsetY = 0;
         } else {
-            // 如果没有子节点，基于父节点位置计算
-            position = this.calculateNewNodePosition(activeNode, 'child');
+            // 没有父节点：默认向右
+            childOffsetX = 200;
+            childOffsetY = 0;
         }
 
+        let position;
+
+        if (childNodes.length > 0) {
+            // 有子节点：找到在该方向上最靠前的子节点，继续延伸
+            let lastChild: any = childNodes.first();
+
+            if (childOffsetX > 0) {
+                // 向右延伸：找 X 最大的子节点
+                let maxX = lastChild.position().x;
+                childNodes.forEach((node: any) => {
+                    const nodeX = node.position().x;
+                    if (nodeX > maxX) {
+                        maxX = nodeX;
+                        lastChild = node;
+                    }
+                });
+            } else if (childOffsetY > 0) {
+                // 向下延伸：找 Y 最大的子节点
+                let maxY = lastChild.position().y;
+                childNodes.forEach((node: any) => {
+                    const nodeY = node.position().y;
+                    if (nodeY > maxY) {
+                        maxY = nodeY;
+                        lastChild = node;
+                    }
+                });
+            }
+
+            // 在最后一个子节点的基础上继续延伸
+            const lastChildPos = lastChild.position();
+            position = {
+                x: lastChildPos.x + childOffsetX,
+                y: lastChildPos.y + childOffsetY
+            };
+
+            console.log('[handleCreateChildNode] 基于最后一个子节点计算', {
+                activeNodeId,
+                direction,
+                childOffsetX,
+                childOffsetY,
+                lastChildId: lastChild.data().originalNode?.IDStr,
+                lastChildPos,
+                newPosX: position.x,
+                newPosY: position.y
+            });
+
+        } else {
+            // 没有子节点：基于当前节点位置计算
+            position = {
+                x: nodePos.x + childOffsetX,
+                y: nodePos.y + childOffsetY
+            };
+
+            console.log('[handleCreateChildNode] 基于当前节点计算', {
+                activeNodeId,
+                direction,
+                childOffsetX,
+                childOffsetY,
+                nodePos,
+                newPosX: position.x,
+                newPosY: position.y
+            });
+        }
 
         // 触发创建子节点事件
         this.container?.dispatchEvent(new CustomEvent('create-child-node-shortcut', {
