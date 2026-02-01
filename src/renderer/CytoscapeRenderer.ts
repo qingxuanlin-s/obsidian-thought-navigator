@@ -3315,7 +3315,7 @@ case 'dagre':
                 } else {
                     console.warn('[CytoscapeRenderer] 未找到节点', nodeId);
                 }
-            }, 200); // 延迟 200ms 确保视图刷新完成
+            }, 10); // 延迟 200ms 确保视图刷新完成
         });
 
         // 节点拖动自动连接相关变量
@@ -3615,7 +3615,7 @@ case 'dagre':
 
                 this.cy!.nodes('.connection-target-hover').removeClass('connection-target-hover');
                 nearbyNodeId = null;
-            }, 100);
+            }, 0);
         });
 
         // 边点击事件（选中边）
@@ -4605,7 +4605,7 @@ case 'dagre':
             if (hasMoved) {
                 setTimeout(() => {
                     this.showBatchToolbar();
-                }, 100);
+                }, 20);
             }
         };
 

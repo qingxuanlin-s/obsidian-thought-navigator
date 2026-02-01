@@ -1583,7 +1583,7 @@ export class ZKIndexView extends ItemView {
                     }
 
                     // 等待一小段时间确保文件保存完成
-                    await new Promise(resolve => setTimeout(resolve, 100));
+                    await new Promise(resolve => setTimeout(resolve, 20));
 
                     // 刷新视图
                     await this.refreshBranchMermaid();

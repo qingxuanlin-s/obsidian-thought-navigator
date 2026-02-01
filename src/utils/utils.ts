@@ -747,7 +747,7 @@ export async function saveMOCStructure(
     await app.vault.modify(file, updatedContent);
 
     // 等待文件系统更新 mtime
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise(resolve => setTimeout(resolve, 50));
 
 
     // 写入完成后清除该文件的旧缓存（基于旧 mtime 的缓存）

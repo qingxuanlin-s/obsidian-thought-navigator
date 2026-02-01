@@ -6,9 +6,9 @@
  * 防抖延迟时间（毫秒）
  */
 export const DEBOUNCE_DELAY = {
-    RESIZE: 300,              // 窗口调整大小防抖
-    POSITION_SAVE: 500,       // 位置保存防抖
-    EDGE_CURVATURE_SAVE: 500, // 边弧度保存防抖
+    RESIZE: 100,              // 窗口调整大小防抖
+    POSITION_SAVE: 200,       // 位置保存防抖
+    EDGE_CURVATURE_SAVE: 200, // 边弧度保存防抖
 } as const;
 
 /**
