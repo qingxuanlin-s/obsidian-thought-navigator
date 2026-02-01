@@ -3234,8 +3234,15 @@ case 'dagre':
 
         // 监听添加占位符节点事件
         this.container?.addEventListener('add-placeholder-node', (event: any) => {
-            const { nodeId, position, suggestedNodeId } = event.detail;
+            const { nodeId, position, suggestedNodeId, parentNodeId } = event.detail;
 
+            console.log('[CytoscapeRenderer] add-placeholder-node 事件触发', {
+                nodeId,
+                position,
+                suggestedNodeId,
+                parentNodeId,
+                当前选中节点: this.cy?.$(':selected').length
+            });
 
             try {
                 // 直接在 Cytoscape 中添加占位符节点
@@ -3246,26 +3253,57 @@ case 'dagre':
                         label: '',  // 不显示预生成的 ID，保持空白
                         isPlaceholder: true,
                         originalNode: null,
-                        suggestedNodeId: suggestedNodeId  // 存储预生成的节点 ID
+                        suggestedNodeId: suggestedNodeId,  // 存储预生成的节点 ID
+                        parentNodeId: parentNodeId  // 存储父节点 ID
                     },
                     position: position
                 });
 
+                console.log('[CytoscapeRenderer] 节点已添加到 Cytoscape', nodeId);
+
+                // 如果有父节点，创建连接线
+                if (parentNodeId) {
+                    setTimeout(() => {
+                        const placeholderNode = this.cy?.$id(nodeId);
+                        if (placeholderNode && placeholderNode.length > 0) {
+                            this.createPlaceholderConnectionLine(nodeId, parentNodeId);
+                        }
+                    }, 50);
+                }
 
                 // 自动选中并打开编辑框
                 setTimeout(() => {
                     const node = this.cy?.$id(nodeId);
+                    console.log('[CytoscapeRenderer] 准备选中节点', {
+                        nodeId,
+                        nodeFound: node && node.length > 0,
+                        当前选中: this.cy?.$(':selected').map((n: any) => n.id())
+                    });
 
                     if (node && node.length > 0) {
                         // 取消其他节点的选中
                         const previouslySelected = this.cy!.$(':selected');
+                        console.log('[CytoscapeRenderer] 取消选中', {
+                            count: previouslySelected.length,
+                            nodes: previouslySelected.map((n: any) => n.id())
+                        });
                         previouslySelected.unselect();
 
                         // 选中这个节点
                         node.select();
+                        console.log('[CytoscapeRenderer] 节点已选中', {
+                            nodeId,
+                            isPlaceholder: node.data('isPlaceholder'),
+                            选中状态: node.selected(),
+                            当前总选中数: this.cy?.$(':selected').length
+                        });
 
                         // 延迟打开编辑器，确保选中完成
                         setTimeout(() => {
+                            console.log('[CytoscapeRenderer] 准备打开编辑器', {
+                                nodeId,
+                                选中状态: node.selected()
+                            });
                             this.showInlineNodeEditor(node);
                         }, 10);
                     } else {
@@ -3281,10 +3319,57 @@ case 'dagre':
         this.container?.addEventListener('remove-placeholder-node', (event: any) => {
             const { nodeId } = event.detail;
 
+            console.log('[CytoscapeRenderer] remove-placeholder-node 事件触发', { nodeId });
+
+            // 先清理连接线（通过查询选择器，更可靠）
+            const connectionLine = this.container?.querySelector(`.placeholder-connection-line[data-placeholder-id="${nodeId}"]`);
+            if (connectionLine && connectionLine.parentNode) {
+                console.log('[CytoscapeRenderer] 移除占位符连接线', { nodeId });
+                connectionLine.parentNode.removeChild(connectionLine);
+            }
+
             // 从 Cytoscape 中移除占位符节点
             const node = this.cy?.$id(nodeId);
             if (node && node.length > 0) {
+                // 清理连接线（备用方法）
+                const nodeData = node.data();
+                const connectionLineFromData = (nodeData as any).connectionLine;
+
+                if (connectionLineFromData && connectionLineFromData.parentNode) {
+                    console.log('[CytoscapeRenderer] 从节点数据清理连接线', { nodeId });
+                    connectionLineFromData.parentNode.removeChild(connectionLineFromData);
+                }
+
                 this.cy?.remove(node);
+            }
+        });
+
+        // 监听节点移除事件，清理占位符节点的连接线
+        this.cy?.on('remove', 'node', (evt: any) => {
+            const node = evt.target;
+            const data = node.data();
+
+            // 如果是占位符节点，清理连接线
+            if (data.isPlaceholder) {
+                const connectionLine = this.container?.querySelector(`.placeholder-connection-line[data-placeholder-id="${data.id}"]`);
+                if (connectionLine && connectionLine.parentNode) {
+                    console.log('[CytoscapeRenderer] 节点移除时自动清理连接线', { nodeId: data.id });
+                    connectionLine.parentNode.removeChild(connectionLine);
+                }
+            }
+        });
+
+        // 监听清理所有占位符连接线事件（用于视图刷新时）
+        this.container?.addEventListener('cleanup-all-placeholder-connections', () => {
+            console.log('[CytoscapeRenderer] 清理所有占位符连接线');
+            const connectionLines = this.container?.querySelectorAll('.placeholder-connection-line');
+            if (connectionLines) {
+                connectionLines.forEach(line => {
+                    if (line.parentNode) {
+                        line.parentNode.removeChild(line);
+                    }
+                });
+                console.log(`[CytoscapeRenderer] 已清理 ${connectionLines.length} 条占位符连接线`);
             }
         });
 
@@ -4927,6 +5012,116 @@ case 'dagre':
                 position: position
             }
         }));
+    }
+
+    /**
+     * 创建占位符节点到父节点的连接线（绿色虚线）
+     */
+    private createPlaceholderConnectionLine(placeholderNodeId: string, parentNodeId: string): void {
+        if (!this.cy || !this.container) return;
+
+        const placeholderNode = this.cy.$id(placeholderNodeId);
+        const parentNode = this.cy.$('node').filter((node: any) => {
+            const data = node.data();
+            return data.originalNode && data.originalNode.IDStr === parentNodeId;
+        });
+
+        if (!placeholderNode || placeholderNode.length === 0) {
+            console.warn('[CytoscapeRenderer] 未找到占位符节点', placeholderNodeId);
+            return;
+        }
+
+        if (!parentNode || parentNode.length === 0) {
+            console.warn('[CytoscapeRenderer] 未找到父节点', parentNodeId);
+            return;
+        }
+
+        console.log('[CytoscapeRenderer] 创建占位符连接线', { placeholderNodeId, parentNodeId });
+
+        // 创建 SVG 叠加层（如果不存在）
+        let svgOverlay = this.container.querySelector('.placeholder-connections-svg') as SVGSVGElement;
+        if (!svgOverlay) {
+            svgOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svgOverlay.classList.add('placeholder-connections-svg');
+            svgOverlay.style.cssText = `
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                pointer-events: none;
+                z-index: 1;
+            `;
+            this.container.appendChild(svgOverlay);
+        }
+
+        // 创建连接线 - 使用绿色虚线（与智能连线一致）
+        const connectionLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        connectionLine.setAttribute('stroke', '#10b981');  // 淡绿色
+        connectionLine.setAttribute('stroke-width', '2');
+        connectionLine.setAttribute('stroke-dasharray', '5,5');  // 虚线
+        connectionLine.setAttribute('opacity', '0.8');
+        connectionLine.classList.add('placeholder-connection-line');
+        connectionLine.setAttribute('data-placeholder-id', placeholderNodeId);
+
+        // 初始位置
+        const placeholderPos = placeholderNode.renderedPosition();
+        const parentPos = parentNode.renderedPosition();
+        connectionLine.setAttribute('x1', parentPos.x.toString());
+        connectionLine.setAttribute('y1', parentPos.y.toString());
+        connectionLine.setAttribute('x2', placeholderPos.x.toString());
+        connectionLine.setAttribute('y2', placeholderPos.y.toString());
+
+        svgOverlay.appendChild(connectionLine);
+
+        // 保存连接线引用
+        const nodeData = placeholderNode.data();
+        (nodeData as any).connectionLine = connectionLine;
+        (nodeData as any).connectionParentNode = parentNode;
+
+        console.log('[CytoscapeRenderer] 连接线已创建', {
+            from: parentNodeId,
+            to: placeholderNodeId
+        });
+
+        // 更新连接线位置的函数
+        const updateConnectionLine = () => {
+            if (!this.cy || !connectionLine.parentNode) return;
+
+            const currentPlaceholder = this.cy.$id(placeholderNodeId);
+            const currentParent = this.cy.$('node').filter((node: any) => {
+                const data = node.data();
+                return data.originalNode && data.originalNode.IDStr === parentNodeId;
+            });
+
+            if (currentPlaceholder && currentPlaceholder.length > 0 &&
+                currentParent && currentParent.length > 0) {
+                const newPos = currentPlaceholder.renderedPosition();
+                const parentPos = currentParent.renderedPosition();
+
+                connectionLine.setAttribute('x1', parentPos.x.toString());
+                connectionLine.setAttribute('y1', parentPos.y.toString());
+                connectionLine.setAttribute('x2', newPos.x.toString());
+                connectionLine.setAttribute('y2', newPos.y.toString());
+            }
+        };
+
+        // 监听位置变化
+        const updateHandler = () => {
+            requestAnimationFrame(updateConnectionLine);
+        };
+
+        // 监听占位符节点的位置变化
+        placeholderNode.on('position', updateHandler);
+        parentNode.on('position', updateHandler);
+
+        // 监听视图的缩放和平移
+        this.cy.on('zoom pan', updateHandler);
+
+        // 保存更新处理器引用，以便后续清理
+        (nodeData as any).connectionLineUpdater = updateHandler;
+
+        console.log('[CytoscapeRenderer] 连接线监听器已设置');
     }
 
     /**
