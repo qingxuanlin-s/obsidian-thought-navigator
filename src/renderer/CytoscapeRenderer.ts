@@ -170,6 +170,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
             });
         }
 
+        // 更新节点徽章（无论初始化还是增量更新都需要更新）
+        // 这确保已删除节点的徽章也被移除
+        this.addNodeBadges();
+
         // 检查是否有保存的位置
         const hasSavedPositions = data.nodes.some(node => node.savedPosition);
 
