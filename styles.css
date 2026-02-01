@@ -569,6 +569,36 @@ align-items: center;
     background-color: var(--background-modifier-hover);
 }
 
+/* 深色主题下的下拉选择框样式 */
+.zk-index-toolbar-block select,
+.zk-index-toolbar-block .dropdown {
+  background-color: #2a3f5f;
+  color: #e0e0e0;
+  border: 1px solid #1a2f4f;
+  border-radius: 4px;
+  padding: 4px 8px;
+  transition: all 0.2s ease;
+}
+
+.zk-index-toolbar-block select:hover,
+.zk-index-toolbar-block .dropdown:hover {
+  background-color: #3a4f6f;
+  border-color: #00a8ff;
+}
+
+.zk-index-toolbar-block select:focus,
+.zk-index-toolbar-block .dropdown:focus {
+  outline: none;
+  border-color: #00a8ff;
+  box-shadow: 0 0 0 2px rgba(0, 168, 255, 0.3);
+}
+
+/* 深色主题下的下拉选项样式 */
+.zk-index-toolbar-block select option {
+  background-color: #2a3f5f;
+  color: #e0e0e0;
+}
+
 /* ==================== 浅色主题样式 ==================== */
 .zk-theme-light .zk-view-content {
   background-color: #f5f5f5;
@@ -738,4 +768,42 @@ align-items: center;
 
 .zk-theme-light .zk-moc-selector-block:hover {
   background-color: rgba(0, 0, 0, 0.1);
+}
+
+/* 浅色主题下的下拉选择框样式 */
+.zk-theme-light .zk-index-toolbar-block select,
+.zk-theme-light .zk-index-toolbar-block .dropdown {
+  background-color: #f5f5f5;
+  color: #333333;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+
+.zk-theme-light .zk-index-toolbar-block select:hover,
+.zk-theme-light .zk-index-toolbar-block .dropdown:hover {
+  background-color: #e8e8e8;
+  border-color: #0066cc;
+}
+
+.zk-theme-light .zk-index-toolbar-block select:focus,
+.zk-theme-light .zk-index-toolbar-block .dropdown:focus {
+  outline: none;
+  border-color: #0066cc;
+  box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.2);
+}
+
+/* 浅色主题下的下拉选项样式 */
+.zk-theme-light .zk-index-toolbar-block select option {
+  background-color: #ffffff;
+  color: #333333;
+}
+
+.zk-theme-light .zk-index-toolbar-block select option:hover {
+  background-color: #e8e8e8;
+}
+
+/* 浅色主题下标签文字颜色 */
+.zk-theme-light .zk-index-toolbar-block b {
+  color: #000000;
 }
