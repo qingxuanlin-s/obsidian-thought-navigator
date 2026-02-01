@@ -119,6 +119,7 @@ interface ZKNavigationSettings {
     mocCurrentFile: string;            // 当前选中的 MOC 文件路径
     mocNodePositions: Record<string, Record<string, { x: number; y: number }>>; // MOC 节点位置存储 {mocFilePath: {nodeId: {x, y}}}
     smartConnection: boolean;          // 智能连线开关
+    themeMode: 'dark' | 'light';       // 主题模式
 }
 
 //Default value for setting field
@@ -196,6 +197,7 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     mocCurrentFile: '',
     mocNodePositions: {}, // MOC 节点位置存储
     smartConnection: false, // 智能连线默认关闭
+    themeMode: 'dark', // 默认深色主题
 }
 
 export default class ZKNavigationPlugin extends Plugin {
@@ -222,13 +224,29 @@ export default class ZKNavigationPlugin extends Plugin {
             {},
             DEFAULT_SETTINGS,
             await this.loadData()
-        )        
+        )
+    }
+
+    applyTheme() {
+        // 移除所有主题类
+        document.body.removeClass('zk-theme-dark');
+        document.body.removeClass('zk-theme-light');
+
+        // 根据设置添加对应的主题类
+        if (this.settings.themeMode === 'light') {
+            document.body.addClass('zk-theme-light');
+        } else {
+            document.body.addClass('zk-theme-dark');
+        }
     }
 
     async onload() {
 
         await this.loadSettings();
-        
+
+        // 应用主题
+        this.applyTheme();
+
         // 添加全局错误处理来忽略ResizeObserver错误
         const originalError = window.onerror;
         window.onerror = (message, source, lineno, colno, error) => {

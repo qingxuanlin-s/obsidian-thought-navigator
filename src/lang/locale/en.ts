@@ -199,4 +199,7 @@ export default {
     "Current MOC: ": "Current MOC: ",
     "No valid nodes found": "No valid nodes found",
     "Updating...": "Updating...",
+    "Theme mode": "Theme mode",
+    "Dark theme": "Dark theme",
+    "Light theme": "Light theme",
 }

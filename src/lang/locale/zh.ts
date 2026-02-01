@@ -197,5 +197,8 @@ export default {
     "Current MOC: ": "当前 MOC：",
     "No valid nodes found": "找不到有效的节点",
     "Updating...": "更新中...",
+    "Theme mode": "主题模式",
+    "Dark theme": "深色主题",
+    "Light theme": "浅色主题",
 
 }

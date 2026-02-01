@@ -51,6 +51,7 @@ export interface RenderOptions {
     animate?: boolean;
     animationDuration?: number;
     nodeText?: 'id' | 'title' | 'both' | 'id-title';
+    themeMode?: 'dark' | 'light';
 }
 
 /**

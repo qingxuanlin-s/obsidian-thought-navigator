@@ -535,13 +535,33 @@ export class CytoscapeRenderer implements IGraphRenderer {
     }
 
    private getStylesheet(options: RenderOptions): any[] {
-    const colors = {
+    const isLight = options.themeMode === 'light';
+
+    const colors = isLight ? {
+        // 浅色主题颜色
+        nodeBackground: '#f0f0f0',
+        nodeBackgroundHover: '#e0e0e0',
+        nodeBackgroundSelected: '#d0d0d0',
+        nodeBorder: '#b0b0b0',
+        nodeBorderSelected: '#0066cc',
+        nodeText: '#333333',
+        nodeTextMuted: '#666666',
+        edgeNormal: '#999999',
+        edgeForward: '#60a5fa',  // 淡蓝色
+        edgeReverse: '#dc2626',
+        edgeSelected: '#7c3aed',
+        textBackground: '#ffffff',
+        overlayColor: '#60a5fa',
+        badgeBackground: '#60a5fa',
+        badgeText: '#ffffff'
+    } : {
+        // 深色主题颜色（保持原有颜色）
         nodeBackground: '#1a2332',
         nodeBackgroundHover: '#243447',
         nodeBackgroundSelected: '#2d4a6b',
         nodeBorder: '#3d5a80',
         nodeBorderSelected: '#5b8fd9',
-        nodeText: '#ffffff',  // 改为纯白色
+        nodeText: '#ffffff',
         nodeTextMuted: '#94a3b8',
         edgeNormal: '#4a5568',
         edgeForward: '#5b8fd9',
@@ -549,7 +569,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         edgeSelected: '#7c3aed',
         textBackground: '#0f172a',
         overlayColor: '#5b8fd9',
-        badgeBackground: '#5b8fd9',  // 改为蓝色，更柔和
+        badgeBackground: '#5b8fd9',
         badgeText: '#ffffff'
     };
 
@@ -608,17 +628,17 @@ export class CytoscapeRenderer implements IGraphRenderer {
         {
             selector: '.group-node',
             style: {
-                'background-color': 'rgba(30, 41, 59, 0.2)',  // 半透明深色背景
+                'background-color':  isLight ? 'rgba(203, 213, 225, 0.3)' : 'rgba(30, 41, 59, 0.2)',  // 半透明深色背景
                 'background-opacity': 1,
-                'border-width': '0px',  // 移除边框
-                'shape': 'round-rectangle',  // 圆角矩形
+                'border-width': '0px',
+                'shape': 'round-rectangle',
                 'label': 'data(label)',
                 'text-valign': 'top',
                 'text-halign': 'center',
                 'text-margin-y': -10,
                 'font-size': '14px',
                 'font-weight': '600',
-                'color': '#94a3b8',  // 柔和的灰色文字
+                'color': isLight ?  '#94a3b8' : '#666666' ,
                 'padding': '20px'
             } as any
         },

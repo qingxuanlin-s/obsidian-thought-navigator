@@ -411,7 +411,23 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
         )
 
         const experimentalDiv = settingTabDiv.createDiv("zk-setting-section");
-        
+
+        // 主题模式设置
+        new Setting(experimentalDiv)
+            .setName(t("Theme mode"))
+            .addDropdown(options => options
+                .addOption("dark", t("Dark theme"))
+                .addOption("light", t("Light theme"))
+                .setValue(this.plugin.settings.themeMode)
+                .onChange((value) => {
+                    this.plugin.settings.themeMode = value as 'dark' | 'light';
+                    this.plugin.applyTheme();
+                    this.plugin.RefreshIndexViewFlag = true;
+                })
+            );
+
+        experimentalDiv.createEl("hr");
+
         // MOC 模式设置
         new Setting(experimentalDiv)
             .setName(t("MOC Mode"))
