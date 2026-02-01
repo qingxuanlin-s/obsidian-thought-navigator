@@ -5961,8 +5961,14 @@ export class ZKIndexView extends ItemView {
         // 刷新视图
         await this.refreshBranchMermaid();
 
-        // 自动选中新创建的节点
+        // 清理所有占位符连接线（因为视图已经刷新，占位符节点已不存在）
         const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+        if (branchGraphDiv) {
+            branchGraphDiv.dispatchEvent(new CustomEvent('cleanup-all-placeholder-connections'));
+        }
+
+        // 自动选中新创建的节点
+        console.log('[indexView] 文件节点创建完成，准备选中节点', suggestedID);
         if (branchGraphDiv) {
             branchGraphDiv.dispatchEvent(new CustomEvent('select-node-by-id', {
                 detail: {
@@ -6026,8 +6032,14 @@ export class ZKIndexView extends ItemView {
         // 刷新视图
         await this.refreshBranchMermaid();
 
-        // 自动选中新创建的节点
+        // 清理所有占位符连接线（因为视图已经刷新，占位符节点已不存在）
         const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+        if (branchGraphDiv) {
+            branchGraphDiv.dispatchEvent(new CustomEvent('cleanup-all-placeholder-connections'));
+        }
+
+        // 自动选中新创建的节点
+        console.log('[indexView] 文件节点创建完成，准备选中节点', suggestedID);
         if (branchGraphDiv) {
             branchGraphDiv.dispatchEvent(new CustomEvent('select-node-by-id', {
                 detail: {
