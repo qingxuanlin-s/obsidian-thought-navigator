@@ -3,6 +3,7 @@ import * as dagreNamespace from 'cytoscape-dagre';
 import * as coseBilkentNamespace from 'cytoscape-cose-bilkent';
 import { IGraphRenderer, GraphData, RenderOptions, GraphChanges, ViewState, Edge } from './types';
 import { ZKNode } from 'src/view/indexView';
+import { Notice } from 'obsidian';
 
 // 处理 CommonJS 和 ESM 模块的兼容性
 const getCytoscape = (): any => {
@@ -3784,6 +3785,30 @@ case 'dagre':
                     });
                 }
             }
+
+            // Tab 键：创建子节点
+            if (event.key === 'Tab' && !event.shiftKey && !event.repeat) {
+                event.preventDefault();
+                this.handleCreateChildNode();
+                return;
+            }
+
+            // Enter 键：创建兄弟节点（仅在没有打开内联编辑器时）
+            if (event.key === 'Enter' && !event.repeat) {
+                // 检查是否有打开的内联编辑器
+                if (!this.container?.querySelector('.inline-node-editor')) {
+                    event.preventDefault();
+                    this.handleCreateSiblingNode();
+                    return;
+                }
+            }
+
+            // Shift+Tab 键：创建父节点
+            if (event.key === 'Tab' && event.shiftKey && !event.repeat) {
+                event.preventDefault();
+                this.handleCreateParentNode();
+                return;
+            }
         };
 
         // 监听键盘松开事件
@@ -4695,6 +4720,106 @@ case 'dagre':
 
         // 清空保存的节点ID
         this.batchSelectedNodeIds = [];
+    }
+
+    /**
+     * 获取当前活动的节点（第一个选中的节点）
+     */
+    private getActiveNode(): any | null {
+        if (!this.cy) return null;
+
+        const selectedNodes = this.cy.$('node:selected');
+        if (selectedNodes.length === 0) {
+            new Notice('请先选择一个节点');
+            return null;
+        }
+
+        return selectedNodes.first();
+    }
+
+    /**
+     * 计算新节点的位置
+     */
+    private calculateNewNodePosition(activeNode: any, type: 'child' | 'sibling' | 'parent'): { x: number; y: number } {
+        const nodePos = activeNode.position();
+
+        // 默认偏移量
+        const childOffsetX = 200;
+        const siblingOffsetY = 100;
+        const parentOffsetX = -200;
+
+        switch (type) {
+            case 'child':
+                return { x: nodePos.x + childOffsetX, y: nodePos.y };
+            case 'sibling':
+                return { x: nodePos.x, y: nodePos.y + siblingOffsetY };
+            case 'parent':
+                return { x: nodePos.x + parentOffsetX, y: nodePos.y };
+        }
+    }
+
+    /**
+     * 处理创建子节点（Tab 键）
+     */
+    private handleCreateChildNode(): void {
+        const activeNode = this.getActiveNode();
+        if (!activeNode) return;
+
+        const position = this.calculateNewNodePosition(activeNode, 'child');
+        const nodeData = activeNode.data();
+
+        // 获取当前节点的 ZKNode ID
+        const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
+
+        // 触发创建子节点事件
+        this.container?.dispatchEvent(new CustomEvent('create-child-node-shortcut', {
+            detail: {
+                activeNodeId: activeNodeId,
+                position: position
+            }
+        }));
+    }
+
+    /**
+     * 处理创建兄弟节点（Enter 键）
+     */
+    private handleCreateSiblingNode(): void {
+        const activeNode = this.getActiveNode();
+        if (!activeNode) return;
+
+        const position = this.calculateNewNodePosition(activeNode, 'sibling');
+        const nodeData = activeNode.data();
+
+        const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
+
+        // 触发创建兄弟节点事件
+        this.container?.dispatchEvent(new CustomEvent('create-sibling-node-shortcut', {
+            detail: {
+                activeNodeId: activeNodeId,
+                position: position
+            }
+        }));
+    }
+
+    /**
+     * 处理创建父节点（Shift+Tab 键）
+     */
+    private handleCreateParentNode(): void {
+        const activeNode = this.getActiveNode();
+        if (!activeNode) return;
+
+        const position = this.calculateNewNodePosition(activeNode, 'parent');
+        const nodeData = activeNode.data();
+
+        const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
+
+        // 触发创建父节点事件
+        this.container?.dispatchEvent(new CustomEvent('create-parent-node-shortcut', {
+            detail: {
+                activeNodeId: activeNodeId,
+                position: position
+            }
+        }));
     }
 
     /**

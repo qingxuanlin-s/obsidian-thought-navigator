@@ -149,6 +149,7 @@ export class ZKIndexView extends ItemView {
         timestamp: number;
         parentNodeId?: string;
         suggestedNodeId?: string;  // 预生成的节点 ID
+        childNodeId?: string;  // 需要移动到此节点下的子节点 ID（用于创建父节点时）
     }> = new Map();
 
     // 性能优化：防止重复刷新的标志位
@@ -2005,6 +2006,24 @@ export class ZKIndexView extends ItemView {
 
             // 直接创建占位符节点，而不是打开模态框
             await this.createPlaceholderNode(position, parentNode.IDStr);
+        });
+
+        // 监听创建子节点快捷键事件（Tab）
+        this.addTrackedListener(branchGraphDiv, 'create-child-node-shortcut', async (event: any) => {
+            const { activeNodeId, position } = event.detail;
+            await this.createChildNodeFromActive(activeNodeId, position);
+        });
+
+        // 监听创建兄弟节点快捷键事件（Enter）
+        this.addTrackedListener(branchGraphDiv, 'create-sibling-node-shortcut', async (event: any) => {
+            const { activeNodeId, position } = event.detail;
+            await this.createSiblingNodeFromActive(activeNodeId, position);
+        });
+
+        // 监听创建父节点快捷键事件（Shift+Tab）
+        this.addTrackedListener(branchGraphDiv, 'create-parent-node-shortcut', async (event: any) => {
+            const { activeNodeId, position } = event.detail;
+            await this.createParentNodeFromActive(activeNodeId, position);
         });
 
         // 监听批量分组事件
@@ -5625,6 +5644,183 @@ export class ZKIndexView extends ItemView {
             
             return node.IDStr.startsWith(parentNodeID + '.');
         });
+    }
+
+    /**
+     * 获取节点的父节点 ID（从 ID 字符串推断）
+     */
+    private getParentNodeId(node: ZKNode): string | null {
+        // 从 ID 字符串推断
+        const parts = node.IDStr.split('.');
+        if (parts.length > 1) {
+            return parts.slice(0, -1).join('.');
+        }
+
+        return null;
+    }
+
+    /**
+     * 生成兄弟节点 ID
+     */
+    private generateSiblingID(currentNodeId: string): string {
+        // 获取父节点 ID
+        const parts = currentNodeId.split('.');
+        if (parts.length === 1) {
+            // 根节点，需要生成新的根节点
+            // 找到所有根节点并生成下一个
+            const rootNodes = this.mocNodes.filter(n => !n.IDStr.includes('.'));
+            if (rootNodes.length === 0) {
+                return '1';
+            }
+
+            // 检查是否是数字根节点
+            const allNumber = rootNodes.every(n => /^\d+$/.test(n.IDStr));
+            if (allNumber) {
+                const maxNum = Math.max(...rootNodes.map(n => parseInt(n.IDStr, 10)));
+                return String(maxNum + 1);
+            }
+
+            // 混合类型，返回第一个字母
+            return 'a';
+        }
+
+        const parentId = parts.slice(0, -1).join('.');
+
+        // 使用现有的 generateChildNodeID 方法，它会在父节点下生成新的子节点 ID
+        return this.generateChildNodeID(parentId);
+    }
+
+    /**
+     * 生成父节点 ID
+     */
+    private generateParentID(currentNodeId: string): string {
+        const parts = currentNodeId.split('.');
+
+        if (parts.length === 1) {
+            // 根节点，创建一个新的根级别节点
+            return this.generateSiblingID(currentNodeId);
+        }
+
+        if (parts.length === 2) {
+            // 第一层子节点（如 "1.a"），在根级别创建新的父节点
+            const rootId = parts[0];
+            return this.generateChildNodeID(rootId);
+        }
+
+        // 更深层级的节点，创建一个新的分支
+        // 例如："1.1.a" -> 创建 "1.2" 作为新父节点
+        const grandParentId = parts.slice(0, -2).join('.');
+        const newBranchId = this.generateChildNodeID(grandParentId);
+
+        return newBranchId;
+    }
+
+    /**
+     * 从活动节点创建子节点（Tab 键）
+     */
+    async createChildNodeFromActive(activeNodeId: string, position: { x: number; y: number }) {
+        // 查找活动节点
+        const activeNode = this.mocNodes.find(n => n.IDStr === activeNodeId || n.ID === activeNodeId);
+        if (!activeNode) {
+            new Notice('未找到活动节点');
+            return;
+        }
+
+        // 直接创建占位符节点，指定父节点
+        await this.createPlaceholderNode(position, activeNode.IDStr);
+    }
+
+    /**
+     * 从活动节点创建兄弟节点（Enter 键）
+     */
+    async createSiblingNodeFromActive(activeNodeId: string, position: { x: number; y: number }) {
+        // 查找活动节点
+        const activeNode = this.mocNodes.find(n => n.IDStr === activeNodeId || n.ID === activeNodeId);
+        if (!activeNode) {
+            new Notice('未找到活动节点');
+            return;
+        }
+
+        // 获取父节点 ID
+        const parentId = this.getParentNodeId(activeNode);
+        if (!parentId) {
+            new Notice('无法找到父节点，无法创建兄弟节点');
+            return;
+        }
+
+        // 生成兄弟节点 ID
+        const siblingId = this.generateSiblingID(activeNodeId);
+
+        // 创建占位符节点，指定父节点
+        const tempId = `temp_${Date.now()}`;
+
+        // 存储占位符信息
+        this.placeholderNodes.set(tempId, {
+            nodeId: tempId,
+            tempId: tempId,
+            content: '',
+            position,
+            timestamp: Date.now(),
+            parentNodeId: parentId,
+            suggestedNodeId: siblingId
+        });
+
+        // 通知 Cytoscape 渲染器添加占位符节点
+        const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+        if (branchGraphDiv) {
+            branchGraphDiv.dispatchEvent(new CustomEvent('add-placeholder-node', {
+                detail: {
+                    nodeId: tempId,
+                    position: position,
+                    parentNodeId: parentId,
+                    suggestedNodeId: siblingId
+                }
+            }));
+        }
+    }
+
+    /**
+     * 从活动节点创建父节点（Shift+Tab 键）
+     */
+    async createParentNodeFromActive(activeNodeId: string, position: { x: number; y: number }) {
+        // 查找活动节点
+        const activeNode = this.mocNodes.find(n => n.IDStr === activeNodeId || n.ID === activeNodeId);
+        if (!activeNode) {
+            new Notice('未找到活动节点');
+            return;
+        }
+
+        // 生成父节点 ID
+        const parentId = this.generateParentID(activeNodeId);
+
+        // 创建占位符节点（不指定父节点，因为这就是父节点）
+        const tempId = `temp_${Date.now()}`;
+
+        // 存储占位符信息
+        this.placeholderNodes.set(tempId, {
+            nodeId: tempId,
+            tempId: tempId,
+            content: '',
+            position,
+            timestamp: Date.now(),
+            parentNodeId: undefined,  // 新父节点没有父节点
+            suggestedNodeId: parentId,
+            childNodeId: activeNodeId  // 标记当前节点应该成为这个新节点的子节点
+        });
+
+        // 通知 Cytoscape 渲染器添加占位符节点
+        const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+        if (branchGraphDiv) {
+            branchGraphDiv.dispatchEvent(new CustomEvent('add-placeholder-node', {
+                detail: {
+                    nodeId: tempId,
+                    position: position,
+                    parentNodeId: undefined,
+                    suggestedNodeId: parentId,
+                    childNodeId: activeNodeId  // 标记需要将当前节点移到新父节点下
+                }
+            }));
+        }
     }
 
     /**
