@@ -1182,7 +1182,8 @@ export class ZKIndexView extends ItemView {
             layoutType: 'dagre',
             animate: true,
             animationDuration: 500,
-            nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title'
+            nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
+            themeMode: this.plugin.settings.themeMode
         };
 
         // 性能优化：复用或创建渲染器，避免每次都销毁重建

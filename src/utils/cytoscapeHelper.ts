@@ -41,7 +41,8 @@ export async function addCytoscapeGraph(
         layoutType: layoutType as 'dagre' | 'cose' | 'breadthfirst' | 'grid',
         animate: true,
         animationDuration: 500,
-        nodeText: (plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title'
+        nodeText: (plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
+        themeMode: plugin.settings.themeMode
     };
     
     // 创建渲染器

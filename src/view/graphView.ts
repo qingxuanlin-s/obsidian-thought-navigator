@@ -1448,7 +1448,8 @@ export class ZKGraphView extends ItemView {
                     layoutType: 'dagre',
                     animate: true,
                     animationDuration: 500,
-                    nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title'
+                    nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
+                    themeMode: this.plugin.settings.themeMode
                 };
 
                 // 创建或复用渲染器
@@ -1627,7 +1628,8 @@ export class ZKGraphView extends ItemView {
             layoutType: 'dagre',  // 使用 dagre 布局，适合层级结构
             animate: true,
             animationDuration: 500,
-            nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title'
+            nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
+            themeMode: this.plugin.settings.themeMode
         };
 
         // 创建或复用渲染器
@@ -1734,7 +1736,7 @@ export class ZKGraphView extends ItemView {
 
         // 构建图形数据（使用 MOC 树专用方法）
         const graphData = GraphDataBuilder.fromMOCTree(mocNodes, reverseRelations, null);
-        
+
 
         // 配置渲染选项
         const options: RenderOptions = {
@@ -1742,7 +1744,8 @@ export class ZKGraphView extends ItemView {
             layoutType: 'dagre',  // 使用 dagre 布局，适合层级结构
             animate: true,
             animationDuration: 500,
-            nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title'
+            nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
+            themeMode: this.plugin.settings.themeMode
         };
 
         // 创建或复用渲染器（使用 familyGraphRenderer）
@@ -1859,7 +1862,8 @@ export class ZKGraphView extends ItemView {
             layoutType: 'cose',  // 使用力导向布局，适合网络结构
             animate: true,
             animationDuration: 500,
-            nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title'
+            nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
+            themeMode: this.plugin.settings.themeMode
         };
 
         // 创建或复用渲染器
