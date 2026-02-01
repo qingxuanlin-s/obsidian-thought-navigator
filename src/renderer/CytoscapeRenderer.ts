@@ -4891,11 +4891,58 @@ case 'dagre':
         const activeNode = this.getActiveNode();
         if (!activeNode) return;
 
-        const position = this.calculateNewNodePosition(activeNode, 'child');
         const nodeData = activeNode.data();
-
-        // 获取当前节点的 ZKNode ID
         const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
+
+        // 检查是否已有子节点
+        const childNodes = this.cy!.$('node').filter((node: any) => {
+            const data = node.data();
+            if (!data.originalNode) return false;
+            const childIdStr = data.originalNode.IDStr;
+            // 检查是否是当前节点的子节点（ID 以 activeNodeId. 开头）
+            return childIdStr && childIdStr.startsWith(activeNodeId + '.');
+        });
+
+        let position;
+        if (childNodes.length > 0) {
+            // 如果已有子节点，基于最后一个子节点（Y 坐标最大的）的位置计算
+            console.log('[CytoscapeRenderer] 父节点已有子节点，基于最后一个子节点计算位置', {
+                父节点: activeNodeId,
+                子节点数: childNodes.length
+            });
+
+            // 找到 Y 坐标最大的子节点
+            let lastChild: any = childNodes.first();
+            let maxY = (lastChild as any).position().y;
+
+            childNodes.forEach((node: any) => {
+                const nodeY = node.position().y;
+                if (nodeY > maxY) {
+                    maxY = nodeY;
+                    lastChild = node;
+                }
+            });
+
+            // 基于最后一个子节点的位置计算，像兄弟节点一样在下方
+            const lastChildPos = (lastChild as any).position();
+            position = {
+                x: lastChildPos.x,
+                y: lastChildPos.y + 100  // 兄弟节点的偏移量
+            };
+
+            console.log('[CytoscapeRenderer] 基于最后一个子节点计算位置', {
+                lastChildId: lastChild.data().originalNode?.IDStr,
+                lastChildPos: lastChildPos,
+                newPosition: position
+            });
+        } else {
+            // 如果没有子节点，基于父节点位置计算
+            position = this.calculateNewNodePosition(activeNode, 'child');
+            console.log('[CytoscapeRenderer] 父节点无子节点，基于父节点计算位置', {
+                父节点: activeNodeId,
+                position
+            });
+        }
 
         console.log('[CytoscapeRenderer] 触发 create-child-node-shortcut 事件', {
             activeNodeId,
