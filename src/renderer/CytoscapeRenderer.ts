@@ -5047,6 +5047,7 @@ case 'dagre':
 
     /**
      * 处理创建子节点（Tab 键）
+     * 规则：子节点总是往右生长
      */
     private handleCreateChildNode(): void {
         const activeNode = this.getActiveNode();
@@ -5064,59 +5065,28 @@ case 'dagre':
             return childIdStr && childIdStr.startsWith(activeNodeId + '.');
         });
 
-        // 获取当前节点相对于其父节点的方向
-        const direction = this.getDirectionFromParent(activeNode);
         const nodePos = activeNode.position();
 
-        // 确定子节点的排列方向：
-        // - 如果父节点是左右布局（left/right），子节点往下生长（垂直排列）
-        // - 如果父节点是上下布局（up/down），子节点往右生长（水平排列）
-        let childOffsetX = 0;
-        let childOffsetY = 0;
-
-        if (direction === 'left' || direction === 'right') {
-            // 左右布局：子节点往下生长
-            childOffsetX = 0;
-            childOffsetY = 100;
-        } else if (direction === 'up' || direction === 'down') {
-            // 上下布局：子节点往右生长
-            childOffsetX = 200;
-            childOffsetY = 0;
-        } else {
-            // 没有父节点：默认向右
-            childOffsetX = 200;
-            childOffsetY = 0;
-        }
+        // 子节点总是往右生长
+        const childOffsetX = 200;
+        const childOffsetY = 0;
 
         let position;
 
         if (childNodes.length > 0) {
-            // 有子节点：找到在该方向上最靠前的子节点，继续延伸
+            // 有子节点：找到 X 最大的子节点，继续向右延伸
             let lastChild: any = childNodes.first();
+            let maxX = lastChild.position().x;
 
-            if (childOffsetX > 0) {
-                // 向右延伸：找 X 最大的子节点
-                let maxX = lastChild.position().x;
-                childNodes.forEach((node: any) => {
-                    const nodeX = node.position().x;
-                    if (nodeX > maxX) {
-                        maxX = nodeX;
-                        lastChild = node;
-                    }
-                });
-            } else if (childOffsetY > 0) {
-                // 向下延伸：找 Y 最大的子节点
-                let maxY = lastChild.position().y;
-                childNodes.forEach((node: any) => {
-                    const nodeY = node.position().y;
-                    if (nodeY > maxY) {
-                        maxY = nodeY;
-                        lastChild = node;
-                    }
-                });
-            }
+            childNodes.forEach((node: any) => {
+                const nodeX = node.position().x;
+                if (nodeX > maxX) {
+                    maxX = nodeX;
+                    lastChild = node;
+                }
+            });
 
-            // 在最后一个子节点的基础上继续延伸
+            // 在最后一个子节点的基础上继续向右延伸
             const lastChildPos = lastChild.position();
             position = {
                 x: lastChildPos.x + childOffsetX,
@@ -5125,9 +5095,6 @@ case 'dagre':
 
             console.log('[handleCreateChildNode] 基于最后一个子节点计算', {
                 activeNodeId,
-                direction,
-                childOffsetX,
-                childOffsetY,
                 lastChildId: lastChild.data().originalNode?.IDStr,
                 lastChildPos,
                 newPosX: position.x,
@@ -5135,7 +5102,7 @@ case 'dagre':
             });
 
         } else {
-            // 没有子节点：基于当前节点位置计算
+            // 没有子节点：基于当前节点位置向右计算
             position = {
                 x: nodePos.x + childOffsetX,
                 y: nodePos.y + childOffsetY
@@ -5143,9 +5110,6 @@ case 'dagre':
 
             console.log('[handleCreateChildNode] 基于当前节点计算', {
                 activeNodeId,
-                direction,
-                childOffsetX,
-                childOffsetY,
                 nodePos,
                 newPosX: position.x,
                 newPosY: position.y
@@ -5163,17 +5127,30 @@ case 'dagre':
 
     /**
      * 处理创建兄弟节点（Enter 键）
+     * 规则：兄弟节点总是往下生长
      */
     private handleCreateSiblingNode(): void {
-        
+
         const activeNode = this.getActiveNode();
         if (!activeNode) return;
 
-        const position = this.calculateNewNodePosition(activeNode, 'sibling');
         const nodeData = activeNode.data();
-
         const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
 
+        const nodePos = activeNode.position();
+
+        // 兄弟节点总是往下生长（基于当前节点位置）
+        const position = {
+            x: nodePos.x,
+            y: nodePos.y + 100
+        };
+
+        console.log('[handleCreateSiblingNode] 基于当前节点计算', {
+            activeNodeId,
+            nodePos,
+            newPosX: position.x,
+            newPosY: position.y
+        });
 
         // 触发创建兄弟节点事件
         this.container?.dispatchEvent(new CustomEvent('create-sibling-node-shortcut', {
