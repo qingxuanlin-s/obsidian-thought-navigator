@@ -2011,18 +2011,21 @@ export class ZKIndexView extends ItemView {
         // 监听创建子节点快捷键事件（Tab）
         this.addTrackedListener(branchGraphDiv, 'create-child-node-shortcut', async (event: any) => {
             const { activeNodeId, position } = event.detail;
+            console.log('[indexView] create-child-node-shortcut 事件接收', { activeNodeId, position });
             await this.createChildNodeFromActive(activeNodeId, position);
         });
 
         // 监听创建兄弟节点快捷键事件（Enter）
         this.addTrackedListener(branchGraphDiv, 'create-sibling-node-shortcut', async (event: any) => {
             const { activeNodeId, position } = event.detail;
+            console.log('[indexView] create-sibling-node-shortcut 事件接收', { activeNodeId, position });
             await this.createSiblingNodeFromActive(activeNodeId, position);
         });
 
         // 监听创建父节点快捷键事件（Shift+Tab）
         this.addTrackedListener(branchGraphDiv, 'create-parent-node-shortcut', async (event: any) => {
             const { activeNodeId, position } = event.detail;
+            console.log('[indexView] create-parent-node-shortcut 事件接收', { activeNodeId, position });
             await this.createParentNodeFromActive(activeNodeId, position);
         });
 
@@ -5734,9 +5737,12 @@ export class ZKIndexView extends ItemView {
      * 从活动节点创建兄弟节点（Enter 键）
      */
     async createSiblingNodeFromActive(activeNodeId: string, position: { x: number; y: number }) {
+        console.log('[indexView] createSiblingNodeFromActive 调用', { activeNodeId, position });
+
         // 查找活动节点
         const activeNode = this.mocNodes.find(n => n.IDStr === activeNodeId || n.ID === activeNodeId);
         if (!activeNode) {
+            console.error('[indexView] 未找到活动节点', activeNodeId);
             new Notice('未找到活动节点');
             return;
         }
@@ -5744,6 +5750,7 @@ export class ZKIndexView extends ItemView {
         // 获取父节点 ID
         const parentId = this.getParentNodeId(activeNode);
         if (!parentId) {
+            console.error('[indexView] 无法找到父节点', activeNodeId);
             new Notice('无法找到父节点，无法创建兄弟节点');
             return;
         }
@@ -5753,6 +5760,13 @@ export class ZKIndexView extends ItemView {
 
         // 创建占位符节点，指定父节点
         const tempId = `temp_${Date.now()}`;
+
+        console.log('[indexView] 准备创建占位符节点', {
+            tempId,
+            parentId,
+            siblingId,
+            position
+        });
 
         // 存储占位符信息
         this.placeholderNodes.set(tempId, {
@@ -5768,6 +5782,12 @@ export class ZKIndexView extends ItemView {
         // 通知 Cytoscape 渲染器添加占位符节点
         const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
         if (branchGraphDiv) {
+            console.log('[indexView] 派发 add-placeholder-node 事件', {
+                tempId,
+                position,
+                parentNodeId: parentId,
+                suggestedNodeId: siblingId
+            });
             branchGraphDiv.dispatchEvent(new CustomEvent('add-placeholder-node', {
                 detail: {
                     nodeId: tempId,
@@ -5776,6 +5796,8 @@ export class ZKIndexView extends ItemView {
                     suggestedNodeId: siblingId
                 }
             }));
+        } else {
+            console.error('[indexView] 未找到 branchGraphDiv');
         }
     }
 
@@ -5968,6 +5990,17 @@ export class ZKIndexView extends ItemView {
 
         // 刷新视图
         await this.refreshBranchMermaid();
+
+        // 自动选中新创建的节点
+        console.log('[indexView] 文件节点创建完成，准备选中节点', suggestedID);
+        const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+        if (branchGraphDiv) {
+            branchGraphDiv.dispatchEvent(new CustomEvent('select-node-by-id', {
+                detail: {
+                    nodeId: suggestedID
+                }
+            }));
+        }
     }
 
     /**
@@ -6023,6 +6056,17 @@ export class ZKIndexView extends ItemView {
 
         // 刷新视图
         await this.refreshBranchMermaid();
+
+        // 自动选中新创建的节点
+        console.log('[indexView] 纯文字节点创建完成，准备选中节点', suggestedID);
+        const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+        if (branchGraphDiv) {
+            branchGraphDiv.dispatchEvent(new CustomEvent('select-node-by-id', {
+                detail: {
+                    nodeId: suggestedID
+                }
+            }));
+        }
     }
 
     /**

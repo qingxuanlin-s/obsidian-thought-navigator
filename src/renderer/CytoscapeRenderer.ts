@@ -654,6 +654,20 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'background-color': colors.nodeBackground
             } as any
         },
+        // 占位符节点选中状态 - 更明显的视觉反馈
+        {
+            selector: 'node[?isPlaceholder]:selected',
+            style: {
+                'opacity': 1,
+                'border-style': 'dashed',
+                'border-width': '3px',
+                'border-color': colors.nodeBorderSelected,
+                'background-color': colors.nodeBackgroundSelected,
+                'overlay-color': colors.nodeBorderSelected,
+                'overlay-padding': '4px',
+                'overlay-opacity': 0.3
+            } as any
+        },
         // 文件节点样式 - 使用多个背景图在右上角显示文件图标
         {
             selector: 'node[?hasFileIcon]',
@@ -2609,6 +2623,10 @@ case 'dagre':
             if (suggesterPopoverRef.value && suggesterPopoverRef.value.parentNode) {
                 suggesterPopoverRef.value.remove();
             }
+
+            // 将焦点返回给 container，以便键盘事件能被捕获
+            console.log('[CytoscapeRenderer] 编辑器已关闭，焦点返回 container');
+            this.container?.focus();
         };
 
         // 取消编辑函数
@@ -2622,6 +2640,10 @@ case 'dagre':
             if (suggesterPopoverRef.value && suggesterPopoverRef.value.parentNode) {
                 suggesterPopoverRef.value.remove();
             }
+
+            // 将焦点返回给 container，以便键盘事件能被捕获
+            console.log('[CytoscapeRenderer] 编辑器已取消，焦点返回 container');
+            this.container?.focus();
         };
 
         // 事件监听器
@@ -3216,6 +3238,13 @@ case 'dagre':
         this.container?.addEventListener('add-placeholder-node', (event: any) => {
             const { nodeId, position, suggestedNodeId } = event.detail;
 
+            console.log('[CytoscapeRenderer] add-placeholder-node 事件触发', {
+                nodeId,
+                position,
+                suggestedNodeId,
+                当前选中节点: this.cy?.$(':selected').length
+            });
+
             try {
                 // 直接在 Cytoscape 中添加占位符节点
                 this.cy?.add({
@@ -3230,13 +3259,47 @@ case 'dagre':
                     position: position
                 });
 
-                // 自动打开编辑框并聚焦
+                console.log('[CytoscapeRenderer] 节点已添加到 Cytoscape', nodeId);
+
+                // 自动选中并打开编辑框
                 setTimeout(() => {
                     const node = this.cy?.$id(nodeId);
+                    console.log('[CytoscapeRenderer] 准备选中节点', {
+                        nodeId,
+                        nodeFound: node && node.length > 0,
+                        当前选中: this.cy?.$(':selected').map((n: any) => n.id())
+                    });
+
                     if (node && node.length > 0) {
-                        this.showInlineNodeEditor(node);
+                        // 取消其他节点的选中
+                        const previouslySelected = this.cy!.$(':selected');
+                        console.log('[CytoscapeRenderer] 取消选中', {
+                            count: previouslySelected.length,
+                            nodes: previouslySelected.map((n: any) => n.id())
+                        });
+                        previouslySelected.unselect();
+
+                        // 选中这个节点
+                        node.select();
+                        console.log('[CytoscapeRenderer] 节点已选中', {
+                            nodeId,
+                            isPlaceholder: node.data('isPlaceholder'),
+                            选中状态: node.selected(),
+                            当前总选中数: this.cy?.$(':selected').length
+                        });
+
+                        // 延迟打开编辑器，确保选中完成
+                        setTimeout(() => {
+                            console.log('[CytoscapeRenderer] 准备打开编辑器', {
+                                nodeId,
+                                选中状态: node.selected()
+                            });
+                            this.showInlineNodeEditor(node);
+                        }, 50);
+                    } else {
+                        console.error('[CytoscapeRenderer] 未找到节点', nodeId);
                     }
-                }, 100);
+                }, 150);
             } catch (error) {
                 console.error('[CytoscapeRenderer] Error adding placeholder node:', error);
             }
@@ -3251,6 +3314,49 @@ case 'dagre':
             if (node && node.length > 0) {
                 this.cy?.remove(node);
             }
+        });
+
+        // 监听通过 ID 选中节点事件（用于新建节点后自动选中）
+        this.container?.addEventListener('select-node-by-id', (event: any) => {
+            const { nodeId } = event.detail;
+
+            console.log('[CytoscapeRenderer] select-node-by-id 事件触发', { nodeId });
+
+            // 延迟执行，确保视图刷新完成
+            setTimeout(() => {
+                if (!this.cy) return;
+
+                // 查找对应 ID 的节点
+                const targetNode = this.cy.$('node').filter((node: any) => {
+                    const data = node.data();
+                    return data.originalNode && data.originalNode.IDStr === nodeId;
+                });
+
+                console.log('[CytoscapeRenderer] 查找节点结果', {
+                    targetNodeId: nodeId,
+                    found: targetNode.length > 0,
+                    节点数: targetNode.length
+                });
+
+                if (targetNode.length > 0) {
+                    // 取消其他节点的选中
+                    this.cy.$(':selected').unselect();
+
+                    // 选中目标节点
+                    targetNode.select();
+
+                    console.log('[CytoscapeRenderer] 新节点已选中', {
+                        nodeId,
+                        选中状态: targetNode.selected(),
+                        当前总选中数: this.cy.$(':selected').length
+                    });
+
+                    // 将焦点设置到 container，确保方向键能工作
+                    this.container?.focus();
+                } else {
+                    console.warn('[CytoscapeRenderer] 未找到节点', nodeId);
+                }
+            }, 200); // 延迟 200ms 确保视图刷新完成
         });
 
         // 节点拖动自动连接相关变量
@@ -3808,6 +3914,25 @@ case 'dagre':
                 event.preventDefault();
                 this.handleCreateParentNode();
                 return;
+            }
+
+            // 方向键：切换选中节点
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key) && !event.repeat) {
+                // 检查是否有打开的内联编辑器
+                const hasEditor = this.container?.querySelector('.inline-node-editor');
+                console.log('[CytoscapeRenderer] 方向键按下', {
+                    key: event.key,
+                    hasEditor: !!hasEditor,
+                    containerHasFocus: document.activeElement === this.container
+                });
+
+                if (!hasEditor) {
+                    event.preventDefault();
+                    this.handleArrowKeyNavigation(event.key);
+                    return;
+                } else {
+                    console.log('[CytoscapeRenderer] 方向键被忽略，因为有打开的编辑器');
+                }
             }
         };
 
@@ -4762,6 +4887,7 @@ case 'dagre':
      * 处理创建子节点（Tab 键）
      */
     private handleCreateChildNode(): void {
+        console.log('[CytoscapeRenderer] Tab 键触发 - 创建子节点');
         const activeNode = this.getActiveNode();
         if (!activeNode) return;
 
@@ -4770,6 +4896,11 @@ case 'dagre':
 
         // 获取当前节点的 ZKNode ID
         const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
+
+        console.log('[CytoscapeRenderer] 触发 create-child-node-shortcut 事件', {
+            activeNodeId,
+            position
+        });
 
         // 触发创建子节点事件
         this.container?.dispatchEvent(new CustomEvent('create-child-node-shortcut', {
@@ -4784,6 +4915,7 @@ case 'dagre':
      * 处理创建兄弟节点（Enter 键）
      */
     private handleCreateSiblingNode(): void {
+        console.log('[CytoscapeRenderer] Enter 键触发 - 创建兄弟节点');
         const activeNode = this.getActiveNode();
         if (!activeNode) return;
 
@@ -4791,6 +4923,11 @@ case 'dagre':
         const nodeData = activeNode.data();
 
         const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
+
+        console.log('[CytoscapeRenderer] 触发 create-sibling-node-shortcut 事件', {
+            activeNodeId,
+            position
+        });
 
         // 触发创建兄弟节点事件
         this.container?.dispatchEvent(new CustomEvent('create-sibling-node-shortcut', {
@@ -4805,6 +4942,7 @@ case 'dagre':
      * 处理创建父节点（Shift+Tab 键）
      */
     private handleCreateParentNode(): void {
+        console.log('[CytoscapeRenderer] Shift+Tab 键触发 - 创建父节点');
         const activeNode = this.getActiveNode();
         if (!activeNode) return;
 
@@ -4813,6 +4951,11 @@ case 'dagre':
 
         const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
 
+        console.log('[CytoscapeRenderer] 触发 create-parent-node-shortcut 事件', {
+            activeNodeId,
+            position
+        });
+
         // 触发创建父节点事件
         this.container?.dispatchEvent(new CustomEvent('create-parent-node-shortcut', {
             detail: {
@@ -4820,6 +4963,73 @@ case 'dagre':
                 position: position
             }
         }));
+    }
+
+    /**
+     * 处理方向键导航
+     */
+    private handleArrowKeyNavigation(key: string): void {
+        if (!this.cy) return;
+
+        const activeNode = this.getActiveNode();
+        if (!activeNode) return;
+
+        const nodePosition = activeNode.position();
+        const allNodes = this.cy.nodes().filter(node => !node.data().isPlaceholder);
+
+        // 根据方向键找到最近的节点
+        let targetNode: any | null = null;
+        let minDistance = Infinity;
+
+        allNodes.forEach((node: any) => {
+            // 跳过当前节点
+            if (node.id() === activeNode.id()) return;
+
+            const nodePos = node.position();
+            const dx = nodePos.x - nodePosition.x;
+            const dy = nodePos.y - nodePosition.y;
+
+            // 检查节点是否在指定方向上
+            let isInDirection = false;
+            switch (key) {
+                case 'ArrowUp':
+                    isInDirection = dy < 0 && Math.abs(dx) < Math.abs(dy);
+                    break;
+                case 'ArrowDown':
+                    isInDirection = dy > 0 && Math.abs(dx) < Math.abs(dy);
+                    break;
+                case 'ArrowLeft':
+                    isInDirection = dx < 0 && Math.abs(dx) > Math.abs(dy);
+                    break;
+                case 'ArrowRight':
+                    isInDirection = dx > 0 && Math.abs(dx) > Math.abs(dy);
+                    break;
+            }
+
+            if (isInDirection) {
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    targetNode = node;
+                }
+            }
+        });
+
+        if (targetNode) {
+            // 取消当前选中
+            this.cy.$(':selected').unselect();
+
+            // 选中目标节点
+            targetNode.select();
+
+            // 可选：将视图中心移到选中的节点
+            // this.cy.animate({
+            //     center: { eles: targetNode },
+            //     zoom: this.cy.zoom()
+            // }, {
+            //     duration: 200
+            // });
+        }
     }
 
     /**
