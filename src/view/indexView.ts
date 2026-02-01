@@ -191,8 +191,7 @@ export class ZKIndexView extends ItemView {
         options?: AddEventListenerOptions
     ): void {
         element.addEventListener(event, handler, options);
-        this.registeredEventListeners.push({ element, event, handler, options });
-        console.log(`[addTrackedListener] 添加监听器: ${event}, 总数=${this.registeredEventListeners.length}`);
+        this.registeredEventListeners.push({ element, event, handler, options });    
     }
 
     /**
@@ -222,7 +221,6 @@ export class ZKIndexView extends ItemView {
             }
         });
 
-        console.log(`[cleanupElementListeners] 清理前: 总监听器=${this.registeredEventListeners.length}, 要清理=${toRemove.length}`);
 
         // 移除该元素的所有监听器
         toRemove.forEach(({ event, handler, options }) => {
@@ -231,8 +229,6 @@ export class ZKIndexView extends ItemView {
 
         // 更新监听器列表，保留其他元素的监听器
         this.registeredEventListeners = toKeep;
-
-        console.log(`[cleanupElementListeners] 清理后: 剩余监听器=${this.registeredEventListeners.length}`);
     }
 
     /**
@@ -2011,21 +2007,18 @@ export class ZKIndexView extends ItemView {
         // 监听创建子节点快捷键事件（Tab）
         this.addTrackedListener(branchGraphDiv, 'create-child-node-shortcut', async (event: any) => {
             const { activeNodeId, position } = event.detail;
-            console.log('[indexView] create-child-node-shortcut 事件接收', { activeNodeId, position });
             await this.createChildNodeFromActive(activeNodeId, position);
         });
 
         // 监听创建兄弟节点快捷键事件（Enter）
         this.addTrackedListener(branchGraphDiv, 'create-sibling-node-shortcut', async (event: any) => {
             const { activeNodeId, position } = event.detail;
-            console.log('[indexView] create-sibling-node-shortcut 事件接收', { activeNodeId, position });
             await this.createSiblingNodeFromActive(activeNodeId, position);
         });
 
         // 监听创建父节点快捷键事件（Shift+Tab）
         this.addTrackedListener(branchGraphDiv, 'create-parent-node-shortcut', async (event: any) => {
             const { activeNodeId, position } = event.detail;
-            console.log('[indexView] create-parent-node-shortcut 事件接收', { activeNodeId, position });
             await this.createParentNodeFromActive(activeNodeId, position);
         });
 
@@ -2050,7 +2043,6 @@ export class ZKIndexView extends ItemView {
 
         // 监听批量删除节点事件
         this.addTrackedListener(branchGraphDiv, 'batch-delete-nodes', async (event: any) => {
-            console.log(`[batch-delete-nodes] 删除事件触发! nodeIds=${event.detail.nodeIds.length}`);
             const { nodeIds, nodes } = event.detail;
 
             try {
@@ -5737,7 +5729,6 @@ export class ZKIndexView extends ItemView {
      * 从活动节点创建兄弟节点（Enter 键）
      */
     async createSiblingNodeFromActive(activeNodeId: string, position: { x: number; y: number }) {
-        console.log('[indexView] createSiblingNodeFromActive 调用', { activeNodeId, position });
 
         // 查找活动节点
         const activeNode = this.mocNodes.find(n => n.IDStr === activeNodeId || n.ID === activeNodeId);
@@ -5761,13 +5752,6 @@ export class ZKIndexView extends ItemView {
         // 创建占位符节点，指定父节点
         const tempId = `temp_${Date.now()}`;
 
-        console.log('[indexView] 准备创建占位符节点', {
-            tempId,
-            parentId,
-            siblingId,
-            position
-        });
-
         // 存储占位符信息
         this.placeholderNodes.set(tempId, {
             nodeId: tempId,
@@ -5782,12 +5766,7 @@ export class ZKIndexView extends ItemView {
         // 通知 Cytoscape 渲染器添加占位符节点
         const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
         if (branchGraphDiv) {
-            console.log('[indexView] 派发 add-placeholder-node 事件', {
-                tempId,
-                position,
-                parentNodeId: parentId,
-                suggestedNodeId: siblingId
-            });
+ 
             branchGraphDiv.dispatchEvent(new CustomEvent('add-placeholder-node', {
                 detail: {
                     nodeId: tempId,
@@ -5862,11 +5841,7 @@ export class ZKIndexView extends ItemView {
             parentNodeId = explicitParentId;
             // 预生成子节点 ID
             suggestedNodeId = this.generateChildNodeID(explicitParentId);
-            console.log('[Explicit Parent] 占位符节点将连接到指定父节点:', {
-                placeholderId: tempId,
-                parentNodeId: parentNodeId,
-                suggestedNodeId: suggestedNodeId
-            });
+    
         }
         // 否则，如果启用了智能连线，查找最近的节点作为父节点
         else if (this.plugin.settings.smartConnection) {
@@ -5898,12 +5873,7 @@ export class ZKIndexView extends ItemView {
                 parentNodeId = nearestNode.IDStr;
                 // 预生成子节点 ID
                 suggestedNodeId = this.generateChildNodeID(parentNodeId);
-                console.log('[Smart Connection] 占位符节点将连接到父节点:', {
-                    placeholderId: tempId,
-                    parentNodeId: parentNodeId,
-                    suggestedNodeId: suggestedNodeId,
-                    distance: minDistance
-                });
+
             }
         }
 
@@ -5992,7 +5962,6 @@ export class ZKIndexView extends ItemView {
         await this.refreshBranchMermaid();
 
         // 自动选中新创建的节点
-        console.log('[indexView] 文件节点创建完成，准备选中节点', suggestedID);
         const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
         if (branchGraphDiv) {
             branchGraphDiv.dispatchEvent(new CustomEvent('select-node-by-id', {
@@ -6058,7 +6027,6 @@ export class ZKIndexView extends ItemView {
         await this.refreshBranchMermaid();
 
         // 自动选中新创建的节点
-        console.log('[indexView] 纯文字节点创建完成，准备选中节点', suggestedID);
         const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
         if (branchGraphDiv) {
             branchGraphDiv.dispatchEvent(new CustomEvent('select-node-by-id', {

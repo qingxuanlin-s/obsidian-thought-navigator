@@ -2625,7 +2625,6 @@ case 'dagre':
             }
 
             // 将焦点返回给 container，以便键盘事件能被捕获
-            console.log('[CytoscapeRenderer] 编辑器已关闭，焦点返回 container');
             this.container?.focus();
         };
 
@@ -2642,7 +2641,6 @@ case 'dagre':
             }
 
             // 将焦点返回给 container，以便键盘事件能被捕获
-            console.log('[CytoscapeRenderer] 编辑器已取消，焦点返回 container');
             this.container?.focus();
         };
 
@@ -2706,7 +2704,7 @@ case 'dagre':
                 if (!isSaved) {
                     saveNode();
                 }
-            }, 200);
+            }, 20);
         });
 
         // 监听图形缩放和平移，更新编辑器位置
@@ -3238,12 +3236,6 @@ case 'dagre':
         this.container?.addEventListener('add-placeholder-node', (event: any) => {
             const { nodeId, position, suggestedNodeId } = event.detail;
 
-            console.log('[CytoscapeRenderer] add-placeholder-node 事件触发', {
-                nodeId,
-                position,
-                suggestedNodeId,
-                当前选中节点: this.cy?.$(':selected').length
-            });
 
             try {
                 // 直接在 Cytoscape 中添加占位符节点
@@ -3259,47 +3251,27 @@ case 'dagre':
                     position: position
                 });
 
-                console.log('[CytoscapeRenderer] 节点已添加到 Cytoscape', nodeId);
 
                 // 自动选中并打开编辑框
                 setTimeout(() => {
                     const node = this.cy?.$id(nodeId);
-                    console.log('[CytoscapeRenderer] 准备选中节点', {
-                        nodeId,
-                        nodeFound: node && node.length > 0,
-                        当前选中: this.cy?.$(':selected').map((n: any) => n.id())
-                    });
 
                     if (node && node.length > 0) {
                         // 取消其他节点的选中
                         const previouslySelected = this.cy!.$(':selected');
-                        console.log('[CytoscapeRenderer] 取消选中', {
-                            count: previouslySelected.length,
-                            nodes: previouslySelected.map((n: any) => n.id())
-                        });
                         previouslySelected.unselect();
 
                         // 选中这个节点
                         node.select();
-                        console.log('[CytoscapeRenderer] 节点已选中', {
-                            nodeId,
-                            isPlaceholder: node.data('isPlaceholder'),
-                            选中状态: node.selected(),
-                            当前总选中数: this.cy?.$(':selected').length
-                        });
 
                         // 延迟打开编辑器，确保选中完成
                         setTimeout(() => {
-                            console.log('[CytoscapeRenderer] 准备打开编辑器', {
-                                nodeId,
-                                选中状态: node.selected()
-                            });
                             this.showInlineNodeEditor(node);
-                        }, 50);
+                        }, 10);
                     } else {
                         console.error('[CytoscapeRenderer] 未找到节点', nodeId);
                     }
-                }, 150);
+                }, 10);
             } catch (error) {
                 console.error('[CytoscapeRenderer] Error adding placeholder node:', error);
             }
@@ -3320,8 +3292,6 @@ case 'dagre':
         this.container?.addEventListener('select-node-by-id', (event: any) => {
             const { nodeId } = event.detail;
 
-            console.log('[CytoscapeRenderer] select-node-by-id 事件触发', { nodeId });
-
             // 延迟执行，确保视图刷新完成
             setTimeout(() => {
                 if (!this.cy) return;
@@ -3332,12 +3302,6 @@ case 'dagre':
                     return data.originalNode && data.originalNode.IDStr === nodeId;
                 });
 
-                console.log('[CytoscapeRenderer] 查找节点结果', {
-                    targetNodeId: nodeId,
-                    found: targetNode.length > 0,
-                    节点数: targetNode.length
-                });
-
                 if (targetNode.length > 0) {
                     // 取消其他节点的选中
                     this.cy.$(':selected').unselect();
@@ -3345,11 +3309,6 @@ case 'dagre':
                     // 选中目标节点
                     targetNode.select();
 
-                    console.log('[CytoscapeRenderer] 新节点已选中', {
-                        nodeId,
-                        选中状态: targetNode.selected(),
-                        当前总选中数: this.cy.$(':selected').length
-                    });
 
                     // 将焦点设置到 container，确保方向键能工作
                     this.container?.focus();
@@ -3748,7 +3707,7 @@ case 'dagre':
                 this.container?.dispatchEvent(new CustomEvent('viewStateChanged', {
                     detail: { zoom, pan }
                 }));
-            }, 300); // 300ms 防抖
+            }, 20); // 300ms 防抖
         });
     }
 
@@ -3920,19 +3879,12 @@ case 'dagre':
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key) && !event.repeat) {
                 // 检查是否有打开的内联编辑器
                 const hasEditor = this.container?.querySelector('.inline-node-editor');
-                console.log('[CytoscapeRenderer] 方向键按下', {
-                    key: event.key,
-                    hasEditor: !!hasEditor,
-                    containerHasFocus: document.activeElement === this.container
-                });
 
                 if (!hasEditor) {
                     event.preventDefault();
                     this.handleArrowKeyNavigation(event.key);
                     return;
-                } else {
-                    console.log('[CytoscapeRenderer] 方向键被忽略，因为有打开的编辑器');
-                }
+                } 
             }
         };
 
@@ -4016,15 +3968,12 @@ case 'dagre':
     private bindMiddleMouseEvents(): void {
         if (!this.container) return;
 
-        console.log('[CytoscapeRenderer] 绑定中键拖动事件');
 
         // 鼠标按下事件 - 使用捕获阶段确保优先处理
         this.container.addEventListener('mousedown', (event: MouseEvent) => {
-            console.log('[CytoscapeRenderer] mousedown - button:', event.button, 'isMiddleMousePressed:', this.isMiddleMousePressed);
 
             // 检测中键（button === 1）
             if (event.button === 1) {
-                console.log('[CytoscapeRenderer] 检测到中键按下');
                 event.preventDefault();
                 event.stopPropagation();
                 event.stopImmediatePropagation();
@@ -4032,7 +3981,6 @@ case 'dagre':
                 this.isMiddleMousePressed = true;
                 this.middleMouseStartPos = { x: event.clientX, y: event.clientY };
 
-                console.log('[CytoscapeRenderer] 启用画板拖动');
 
                 // 启用画板拖动
                 if (this.cy) {
@@ -4041,7 +3989,6 @@ case 'dagre':
                     if (container) {
                         container.style.cursor = 'grab';
                     }
-                    console.log('[CytoscapeRenderer] 画板拖动已启用, userPanningEnabled:', this.cy.userPanningEnabled());
                 }
             }
         }, { capture: true, passive: false });
@@ -4078,7 +4025,6 @@ case 'dagre':
         // 鼠标松开事件
         const handleMouseUp = (event: MouseEvent) => {
             if (this.isMiddleMousePressed) {
-                console.log('[CytoscapeRenderer] 鼠标松开，禁用画板拖动');
                 this.isMiddleMousePressed = false;
                 this.middleMouseStartPos = null;
 
@@ -4887,7 +4833,6 @@ case 'dagre':
      * 处理创建子节点（Tab 键）
      */
     private handleCreateChildNode(): void {
-        console.log('[CytoscapeRenderer] Tab 键触发 - 创建子节点');
         const activeNode = this.getActiveNode();
         if (!activeNode) return;
 
@@ -4905,12 +4850,6 @@ case 'dagre':
 
         let position;
         if (childNodes.length > 0) {
-            // 如果已有子节点，基于最后一个子节点（Y 坐标最大的）的位置计算
-            console.log('[CytoscapeRenderer] 父节点已有子节点，基于最后一个子节点计算位置', {
-                父节点: activeNodeId,
-                子节点数: childNodes.length
-            });
-
             // 找到 Y 坐标最大的子节点
             let lastChild: any = childNodes.first();
             let maxY = (lastChild as any).position().y;
@@ -4930,24 +4869,11 @@ case 'dagre':
                 y: lastChildPos.y + 100  // 兄弟节点的偏移量
             };
 
-            console.log('[CytoscapeRenderer] 基于最后一个子节点计算位置', {
-                lastChildId: lastChild.data().originalNode?.IDStr,
-                lastChildPos: lastChildPos,
-                newPosition: position
-            });
         } else {
             // 如果没有子节点，基于父节点位置计算
             position = this.calculateNewNodePosition(activeNode, 'child');
-            console.log('[CytoscapeRenderer] 父节点无子节点，基于父节点计算位置', {
-                父节点: activeNodeId,
-                position
-            });
         }
 
-        console.log('[CytoscapeRenderer] 触发 create-child-node-shortcut 事件', {
-            activeNodeId,
-            position
-        });
 
         // 触发创建子节点事件
         this.container?.dispatchEvent(new CustomEvent('create-child-node-shortcut', {
@@ -4962,7 +4888,7 @@ case 'dagre':
      * 处理创建兄弟节点（Enter 键）
      */
     private handleCreateSiblingNode(): void {
-        console.log('[CytoscapeRenderer] Enter 键触发 - 创建兄弟节点');
+        
         const activeNode = this.getActiveNode();
         if (!activeNode) return;
 
@@ -4971,10 +4897,6 @@ case 'dagre':
 
         const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
 
-        console.log('[CytoscapeRenderer] 触发 create-sibling-node-shortcut 事件', {
-            activeNodeId,
-            position
-        });
 
         // 触发创建兄弟节点事件
         this.container?.dispatchEvent(new CustomEvent('create-sibling-node-shortcut', {
@@ -4989,7 +4911,6 @@ case 'dagre':
      * 处理创建父节点（Shift+Tab 键）
      */
     private handleCreateParentNode(): void {
-        console.log('[CytoscapeRenderer] Shift+Tab 键触发 - 创建父节点');
         const activeNode = this.getActiveNode();
         if (!activeNode) return;
 
@@ -4998,10 +4919,6 @@ case 'dagre':
 
         const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
 
-        console.log('[CytoscapeRenderer] 触发 create-parent-node-shortcut 事件', {
-            activeNodeId,
-            position
-        });
 
         // 触发创建父节点事件
         this.container?.dispatchEvent(new CustomEvent('create-parent-node-shortcut', {
