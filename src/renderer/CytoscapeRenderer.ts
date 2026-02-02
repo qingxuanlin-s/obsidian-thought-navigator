@@ -155,8 +155,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     this.cy!.add(toAdd);
                 }
 
-                // 更新现有元素的数据（如果需要）
-                // 这里可以进一步优化，只更新变化的数据
+                // 更新现有元素的数据（包括 parent 属性）
                 elements.forEach(ele => {
                     const id = ele.data.id;
                     if (id) {
@@ -164,6 +163,19 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         if (existing.length > 0) {
                             // 更新节点数据
                             existing.data(ele.data);
+
+                            // 特殊处理 parent 属性，确保分组关系正确更新
+                            if (ele.group === 'nodes' && 'parent' in ele.data) {
+                                const newParent = ele.data.parent;
+                                const currentParent = existing.data('parent');
+
+                                // 如果 parent 发生变化，需要使用 move() 方法更新
+                                if (newParent !== currentParent) {
+                                    existing.move({
+                                        parent: newParent || null
+                                    });
+                                }
+                            }
                         }
                     }
                 });
