@@ -146,6 +146,19 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
                 // 删除旧元素（使用 filter 避免选择器语法问题）
                 if (toRemove.length > 0) {
+                    // 检查是否删除了分组节点，如果是，先释放子节点
+                    toRemove.forEach(id => {
+                        const ele = this.cy!.$id(id);
+                        if (ele.length > 0 && ele.data('isGroup')) {
+                            // 这是一个分组节点，需要先释放其子节点
+                            const childNodes = this.cy!.nodes(`[parent="${id}"]`);
+                            // 将子节点的 parent 设为 null，使其成为独立节点
+                            childNodes.forEach((child: any) => {
+                                child.move({ parent: null });
+                            });
+                        }
+                    });
+
                     const elementsToRemove = this.cy!.elements().filter(ele => toRemove.includes(ele.id()));
                     this.cy!.remove(elementsToRemove);
                 }
@@ -212,6 +225,23 @@ export class CytoscapeRenderer implements IGraphRenderer {
         this.cy.batch(() => {
             // 删除节点（会自动删除相关的边）
             if (changes.removedNodes.length > 0) {
+                // 检查是否删除了分组节点，如果是，先释放子节点
+                changes.removedNodes.forEach(node => {
+                    const nodeId = this.escapeId(node.ID);
+                    const ele = this.cy!.$id(nodeId);
+
+                    if (ele.length > 0 && ele.data('isGroup')) {
+                        // 这是一个分组节点，需要先释放其子节点
+                        const childNodes = this.cy!.nodes(`[parent="${nodeId}"]`);
+
+                        // 将子节点的 parent 设为 null，使其成为独立节点
+                        childNodes.forEach((child: any) => {
+                            child.move({ parent: null });
+                        });
+                    }
+                });
+
+                // 现在可以安全地删除节点
                 const ids = changes.removedNodes.map(n => `#${this.escapeId(n.ID)}`).join(',');
                 this.cy!.remove(ids);
             }
@@ -1654,6 +1684,15 @@ case 'dagre':
         // 获取节点中心和边界框
         const nodeCenter = node.renderedPosition();
         const boundingBox = node.renderedBoundingBox();
+
+        // 安全检查：确保节点存在且有有效的位置
+        if (!nodeCenter || !boundingBox) {
+            if (handle.parentNode) {
+                handle.style.display = 'none';
+            }
+            return;
+        }
+
         const halfWidth = (boundingBox.x2 - boundingBox.x1) / 2;
         const halfHeight = (boundingBox.y2 - boundingBox.y1) / 2;
 
@@ -1667,7 +1706,23 @@ case 'dagre':
             otherNode = this.cy.$id(edgeData.source);
         }
 
+        // 安全检查：确保另一端节点存在
+        if (!otherNode || !otherNode.length) {
+            if (handle.parentNode) {
+                handle.style.display = 'none';
+            }
+            return;
+        }
+
         const otherPos = otherNode.renderedPosition();
+
+        // 安全检查：确保另一端节点的位置有效
+        if (!otherPos || typeof otherPos.x !== 'number' || typeof otherPos.y !== 'number') {
+            if (handle.parentNode) {
+                handle.style.display = 'none';
+            }
+            return;
+        }
 
         // 计算从当前节点指向另一端的方向
         const dx = otherPos.x - nodeCenter.x;
