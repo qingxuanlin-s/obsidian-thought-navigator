@@ -55,10 +55,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private edgeControlPoints: Map<string, { distance: number; weight: number }> = new Map();
     private batchSelectedNodeIds: string[] = []; // 保存批量选中的节点ID
     private batchSelectedNodes: any[] = []; // 保存批量选中的完整节点数据（包含 isCrossDomain 等信息）
-    private isSpacePressed = false; // 标记空格键是否被按下（画板拖动模式）
-    private isMetaPressed = false; // 标记 Command 键是否被按下（缩放模式）
-    private isMiddleMousePressed = false; // 标记中键是否被按下（画板拖动模式）
-    private middleMouseStartPos: { x: number; y: number } | null = null; // 中键拖动起始位置
+    private isMetaPressed = false; // 标记 Command 键是否被按下（框选模式）
 
     /**
      * 渲染图形
@@ -110,8 +107,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 pixelRatio: 'auto',
                 // 启用节点拖动
                 autoungrabify: false,
-                userZoomingEnabled: false,  // 禁用默认滚轮缩放，改为 Command+滚轮
-                userPanningEnabled: false,  // 禁用默认拖动，改为空格键+拖动
+                // 启用原生缩放和平移
+                userZoomingEnabled: true,   // 启用滚轮/双指缩放
+                userPanningEnabled: true,   // 启用原生拖动画布
+                // 默认禁用框选，需要按 Command 键才启用
+                boxSelectionEnabled: false,
                 // 设置缩放范围
                 minZoom: 0.1,
                 maxZoom: 1.0
@@ -120,7 +120,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
             // 绑定事件
             this.bindEvents();
             this.bindKeyboardEvents();
-            this.bindMiddleMouseEvents();
             this.initBoxSelection();
             this.addNodeBadges();
 
@@ -3804,21 +3803,12 @@ case 'dagre':
 
         // 监听键盘按下事件
         const handleKeyDown = (event: KeyboardEvent) => {
-            // 空格键：启用画板拖动
-            if (event.code === 'Space' && !event.repeat) {
-                this.isSpacePressed = true;
-                if (this.cy) {
-                    this.cy.userPanningEnabled(true);
-                    const container = this.cy.container();
-                    if (container) {
-                        container.style.cursor = 'grab';
-                    }
-                }
-            }
-
-            // Command/Meta 键：启用缩放模式
+            // Command/Meta 键：启用框选模式
             if ((event.key === 'Meta' || event.key === 'Meta') && !event.repeat) {
                 this.isMetaPressed = true;
+                if (this.cy) {
+                    this.cy.boxSelectionEnabled(true);
+                }
             }
 
             // Delete 或 Backspace 键
@@ -3975,21 +3965,12 @@ case 'dagre':
 
         // 监听键盘松开事件
         const handleKeyUp = (event: KeyboardEvent) => {
-            // 空格键：禁用画板拖动
-            if (event.code === 'Space') {
-                this.isSpacePressed = false;
-                if (this.cy) {
-                    this.cy.userPanningEnabled(false);
-                    const container = this.cy.container();
-                    if (container) {
-                        container.style.cursor = 'default';
-                    }
-                }
-            }
-
-            // Command/Meta 键：禁用缩放模式
+            // Command/Meta 键：禁用框选模式
             if (event.key === 'Meta') {
                 this.isMetaPressed = false;
+                if (this.cy) {
+                    this.cy.boxSelectionEnabled(false);
+                }
             }
         };
 
@@ -4006,128 +3987,6 @@ case 'dagre':
         this.container.addEventListener('mousedown', () => {
             this.container?.focus();
         });
-
-        // 添加滚轮事件监听（只有按下 Command 键时才允许缩放）
-        this.container.addEventListener('wheel', (event: WheelEvent) => {
-            if (this.isMetaPressed && this.cy) {
-                // Command 键按下时，手动实现缩放
-                event.preventDefault();
-                event.stopPropagation();
-
-                // 获取当前缩放级别
-                const currentZoom = this.cy.zoom();
-                const zoomFactor = 0.001; // 缩放系数
-
-                // 计算新的缩放级别
-                const newZoom = currentZoom - (event.deltaY * zoomFactor);
-
-                // 限制缩放范围
-                const minZoom = this.cy.minZoom() || 0.1;
-                const maxZoom = this.cy.maxZoom() || 1.0;
-                const clampedZoom = Math.max(minZoom, Math.min(maxZoom, newZoom));
-
-                // 获取容器的位置信息
-                const container = this.cy.container();
-                if (!container) return;
-
-                const rect = container.getBoundingClientRect();
-                const mouseX = event.clientX - rect.left;
-                const mouseY = event.clientY - rect.top;
-
-                // 应用缩放，以鼠标位置为中心
-                this.cy.zoom({
-                    level: clampedZoom,
-                    renderedPosition: { x: mouseX, y: mouseY }
-                });
-            } else {
-                // 没有按下 Command 键，阻止滚轮事件
-                event.preventDefault();
-                event.stopPropagation();
-            }
-        }, { passive: false });
-    }
-
-    /**
-     * 绑定中键拖动事件
-     */
-    private bindMiddleMouseEvents(): void {
-        if (!this.container) return;
-
-
-        // 鼠标按下事件 - 使用捕获阶段确保优先处理
-        this.container.addEventListener('mousedown', (event: MouseEvent) => {
-
-            // 检测中键（button === 1）
-            if (event.button === 1) {
-                event.preventDefault();
-                event.stopPropagation();
-                event.stopImmediatePropagation();
-
-                this.isMiddleMousePressed = true;
-                this.middleMouseStartPos = { x: event.clientX, y: event.clientY };
-
-
-                // 启用画板拖动
-                if (this.cy) {
-                    this.cy.userPanningEnabled(true);
-                    const container = this.cy.container();
-                    if (container) {
-                        container.style.cursor = 'grab';
-                    }
-                }
-            }
-        }, { capture: true, passive: false });
-
-        // 鼠标移动事件 - 使用捕获阶段，手动实现拖动
-        this.container.addEventListener('mousemove', (event: MouseEvent) => {
-            if (this.isMiddleMousePressed && this.middleMouseStartPos && this.cy) {
-                event.preventDefault();
-
-                // 计算鼠标移动的偏移量
-                const deltaX = event.clientX - this.middleMouseStartPos.x;
-                const deltaY = event.clientY - this.middleMouseStartPos.y;
-
-                // 如果有移动，手动更新画板位置
-                if (deltaX !== 0 || deltaY !== 0) {
-                    const currentPan = this.cy.pan();
-                    this.cy.pan({
-                        x: currentPan.x + deltaX,
-                        y: currentPan.y + deltaY
-                    });
-
-                    // 更新起始位置为当前位置
-                    this.middleMouseStartPos = { x: event.clientX, y: event.clientY };
-
-                    // 中键拖动时的光标样式
-                    const container = this.cy.container();
-                    if (container) {
-                        container.style.cursor = 'grabbing';
-                    }
-                }
-            }
-        }, { capture: true });
-
-        // 鼠标松开事件
-        const handleMouseUp = (event: MouseEvent) => {
-            if (this.isMiddleMousePressed) {
-                this.isMiddleMousePressed = false;
-                this.middleMouseStartPos = null;
-
-                // 禁用画板拖动
-                if (this.cy) {
-                    this.cy.userPanningEnabled(false);
-                    const container = this.cy.container();
-                    if (container) {
-                        container.style.cursor = 'default';
-                    }
-                }
-            }
-        };
-
-        // 在容器上监听鼠标松开 - 使用捕获阶段
-        this.container.addEventListener('mouseup', handleMouseUp, { capture: true });
-        // 也要在 window 上监听，以防鼠标移出容器后松开
-        window.addEventListener('mouseup', handleMouseUp);
     }
 
     /**
@@ -4601,11 +4460,8 @@ case 'dagre':
             // 只有左键（button === 0）才能触发框选
             if (e.button !== 0) return;
 
-            // 如果 Command 键被按下（画板拖动模式），不开始框选
-            if (this.isSpacePressed) return;
-
-            // 如果中键被按下（画板拖动模式），不开始框选
-            if (this.isMiddleMousePressed) return;
+            // 必须按住 Command 键才能开始框选
+            if (!e.metaKey && !e.ctrlKey) return;
 
             // 检查点击位置是否有节点
             if (this.cy) {
@@ -4885,6 +4741,16 @@ case 'dagre':
         if (!this.cy) return null;
 
         const selectedNodes = this.cy.$('node:selected');
+
+        console.log('[getActiveNode] 当前选中的节点', {
+            count: selectedNodes.length,
+            nodes: selectedNodes.map((n: any) => ({
+                id: n.id(),
+                IDStr: n.data().originalNode?.IDStr,
+                label: n.data().label
+            }))
+        });
+
         if (selectedNodes.length === 0) {
             new Notice('请先选择一个节点');
             return null;
@@ -5047,7 +4913,7 @@ case 'dagre':
 
     /**
      * 处理创建子节点（Tab 键）
-     * 规则：子节点总是往右生长
+     * 规则：新的子节点在 ID 最大的已有子节点下方
      */
     private handleCreateChildNode(): void {
         const activeNode = this.getActiveNode();
@@ -5067,48 +4933,50 @@ case 'dagre':
 
         const nodePos = activeNode.position();
 
-        // 子节点总是往右生长
-        const childOffsetX = 200;
-        const childOffsetY = 0;
+        // 新的子节点在已有子节点下方（y + 100），保持 x 不变
+        const childOffsetX = 0;
+        const childOffsetY = 100;
 
         let position;
 
         if (childNodes.length > 0) {
-            // 有子节点：找到 X 最大的子节点，继续向右延伸
+            // 有子节点：找到 ID 最大的子节点，在它下方创建新节点
             let lastChild: any = childNodes.first();
-            let maxX = lastChild.position().x;
+            let maxId = lastChild.data().originalNode?.IDStr || '';
 
             childNodes.forEach((node: any) => {
-                const nodeX = node.position().x;
-                if (nodeX > maxX) {
-                    maxX = nodeX;
+                const nodeIdStr = node.data().originalNode?.IDStr || '';
+                // 字符串比较，找到 ID 最大的
+                if (nodeIdStr > maxId) {
+                    maxId = nodeIdStr;
                     lastChild = node;
                 }
             });
 
-            // 在最后一个子节点的基础上继续向右延伸
+            // 在 ID 最大的子节点下方创建新节点
             const lastChildPos = lastChild.position();
             position = {
                 x: lastChildPos.x + childOffsetX,
                 y: lastChildPos.y + childOffsetY
             };
 
-            console.log('[handleCreateChildNode] 基于最后一个子节点计算', {
+            console.log('[handleCreateChildNode] 基于 ID 最大的子节点计算', {
                 activeNodeId,
                 lastChildId: lastChild.data().originalNode?.IDStr,
+                maxId,
                 lastChildPos,
                 newPosX: position.x,
                 newPosY: position.y
             });
 
         } else {
-            // 没有子节点：基于当前节点位置向右计算
+            // 没有子节点：基于当前节点位置向右计算（第一个子节点）
             position = {
-                x: nodePos.x + childOffsetX,
-                y: nodePos.y + childOffsetY
+                x: nodePos.x + 200,
+                y: nodePos.y
             };
 
-            console.log('[handleCreateChildNode] 基于当前节点计算', {
+            console.log('[handleCreateChildNode] 基于当前节点计算（第一个子节点）', {
                 activeNodeId,
                 nodePos,
                 newPosX: position.x,
@@ -5131,11 +4999,20 @@ case 'dagre':
      */
     private handleCreateSiblingNode(): void {
 
+        console.log('[handleCreateSiblingNode] ========== 开始处理兄弟节点创建 ==========');
+
         const activeNode = this.getActiveNode();
         if (!activeNode) return;
 
         const nodeData = activeNode.data();
         const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
+
+        console.log('[handleCreateSiblingNode] 当前选中节点详情', {
+            id: activeNodeId,
+            IDStr: nodeData.originalNode?.IDStr,
+            label: nodeData.label,
+            position: activeNode.position()
+        });
 
         const nodePos = activeNode.position();
 
@@ -5145,7 +5022,7 @@ case 'dagre':
             y: nodePos.y + 100
         };
 
-        console.log('[handleCreateSiblingNode] 基于当前节点计算', {
+        console.log('[handleCreateSiblingNode] 计算结果', {
             activeNodeId,
             nodePos,
             newPosX: position.x,
