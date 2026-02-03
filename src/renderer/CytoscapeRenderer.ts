@@ -24,6 +24,38 @@ const getCoseBilkent = (): any => {
 // 延迟注册扩展的标志
 let extensionsRegistered = false;
 
+/**
+ * 自然比较 Luhmann ID
+ * 例如: "a.11" > "a.9", "a.2.1" > "a.1.9"
+ */
+function compareIds(id1: string, id2: string): number {
+    const parts1 = id1.split('.');
+    const parts2 = id2.split('.');
+
+    // 取两个数组长度的最大值，确保每一层都能比到
+    const maxLength = Math.max(parts1.length, parts2.length);
+
+    for (let i = 0; i < maxLength; i++) {
+        const p1 = parts1[i];
+        const p2 = parts2[i];
+
+        // 情况 1：id2 已经没有这一层级了（如 1.a.1 vs 1.a）
+        // 默认短的更小
+        if (p1 !== undefined && p2 === undefined) return 1;
+        if (p1 === undefined && p2 !== undefined) return -1;
+
+        // 情况 2：两个部分都有值，进行对比
+        // 使用 localeCompare 开启 numeric 模式，可以自动处理 '10' > '2' 的逻辑
+        const cmp = p1.localeCompare(p2, undefined, { numeric: true, sensitivity: 'base' });
+
+        if (cmp !== 0) {
+            return cmp > 0 ? 1 : -1;
+        }
+    }
+
+    return 0;
+}
+
 // 注册布局扩展
 const registerExtensions = () => {
     if (extensionsRegistered) return;
@@ -5013,8 +5045,8 @@ case 'dagre':
 
             childNodes.forEach((node: any) => {
                 const nodeIdStr = node.data().originalNode?.IDStr || '';
-                // 字符串比较，找到 ID 最大的
-                if (nodeIdStr > maxId) {
+                // 使用自然比较，找到 ID 最大的
+                if (compareIds(nodeIdStr, maxId) > 0) {
                     maxId = nodeIdStr;
                     lastChild = node;
                 }
