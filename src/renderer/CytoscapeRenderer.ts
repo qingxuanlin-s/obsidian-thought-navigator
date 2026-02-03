@@ -158,6 +158,37 @@ export class CytoscapeRenderer implements IGraphRenderer {
         } else {
             // 增量更新：复用现有 Cytoscape 实例
             this.cy.batch(() => {
+                // 先删除所有占位符节点（因为它们不在传入的数据中）
+                const placeholderNodes = this.cy!.nodes().filter((node: any) => node.data('isPlaceholder'));
+                if (placeholderNodes.length > 0) {
+                    console.log('[CytoscapeRenderer] 增量更新前删除占位符节点', placeholderNodes.length);
+                    this.cy!.remove(placeholderNodes);
+                }
+
+                // 清理所有占位符连接线
+                const connectionLines = this.container?.querySelectorAll('.placeholder-connection-line');
+                if (connectionLines && connectionLines.length > 0) {
+                    console.log('[CytoscapeRenderer] 增量更新前清理占位符连接线', connectionLines.length);
+                    connectionLines.forEach(line => {
+                        if (line.parentNode) {
+                            line.parentNode.removeChild(line);
+                        }
+                    });
+                }
+
+                // 清理占位符节点的编辑框和链接建议器
+                const editor = this.container?.querySelector('.node-label-editor');
+                if (editor) {
+                    console.log('[CytoscapeRenderer] 增量更新前清理编辑框图层');
+                    editor.remove();
+                }
+
+                const suggester = this.container?.querySelector('.node-link-suggester');
+                if (suggester) {
+                    console.log('[CytoscapeRenderer] 增量更新前清理链接建议器');
+                    suggester.remove();
+                }
+
                 // 获取当前所有节点和边的 ID
                 const currentIds = new Set(this.cy!.elements().map(ele => ele.id()));
                 const newIds = new Set(elements.map(ele => ele.data.id || ''));
