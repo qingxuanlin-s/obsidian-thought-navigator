@@ -152,6 +152,9 @@ export class ZKIndexView extends ItemView {
         childNodeId?: string;  // 需要移动到此节点下的子节点 ID（用于创建父节点时）
     }> = new Map();
 
+    // MOC 按钮引用（用于更新显示）
+    private mocButton: ButtonComponent | null = null;
+
     // 性能优化：防止重复刷新的标志位
     private isRefreshing: boolean = false;
     private pendingRefresh: boolean = false;
@@ -442,9 +445,9 @@ export class ZKIndexView extends ItemView {
         // MOC 选择器
         if (this.plugin.settings.mocModeEnabled == true) {
             const mocSelectorDiv = toolbarDiv.createDiv("zk-index-toolbar-block");
-            const mocButton = new ButtonComponent(mocSelectorDiv);
-            mocButton.buttonEl.addClass("zk-index-toolbar-button");
-            mocButton.buttonEl.addClass("zk-moc-button");
+            this.mocButton = new ButtonComponent(mocSelectorDiv);
+            this.mocButton.buttonEl.addClass("zk-index-toolbar-button");
+            this.mocButton.buttonEl.addClass("zk-moc-button");
 
             // 获取当前MOC名称
             const currentMOCPath = this.plugin.settings.mocCurrentFile;
@@ -457,9 +460,9 @@ export class ZKIndexView extends ItemView {
                 currentMOCName = currentMOCName.substring(0, maxLength) + "...";
             }
 
-            mocButton.setButtonText(`🔍 ${currentMOCName}`);
-            mocButton.setCta();
-            mocButton.onClick(() => {
+            this.mocButton.setButtonText(`🔍 ${currentMOCName}`);
+            this.mocButton.setCta();
+            this.mocButton.onClick(() => {
                 this.openMOCSelectorModal();
             });
         }
@@ -4167,6 +4170,17 @@ export class ZKIndexView extends ItemView {
                 await this.plugin.saveData(this.plugin.settings);
                 this.renderedBranches.clear();
                 await this.plugin.clearShowingSettings();
+
+                // 更新 MOC 按钮显示文本
+                if (this.mocButton) {
+                    let mocName = item.file.basename;
+                    const maxLength = 9;
+                    if (mocName.length > maxLength) {
+                        mocName = mocName.substring(0, maxLength) + "...";
+                    }
+                    this.mocButton.setButtonText(`🔍 ${mocName}`);
+                }
+
                 this.app.workspace.trigger("zk-navigation:refresh-index-graph");
             }
         }).open();
