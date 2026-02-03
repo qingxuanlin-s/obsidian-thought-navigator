@@ -1870,7 +1870,7 @@ export class ZKIndexView extends ItemView {
                         try {
                             const mocFile = this.app.vault.getFileByPath(currentMOCPath);
                             if (mocFile) {
-                                await this.deleteArrowRelationFromMOC(mocFile, source, target, targetNodeSons);
+                                await this.deleteArrowRelationFromMOC(mocFile, source, target, targetNodeSons, type);
                                 // 刷新视图
                                 await this.refreshBranchMermaid();
                             }
@@ -1908,7 +1908,7 @@ export class ZKIndexView extends ItemView {
             try {
                 const mocFile = this.app.vault.getFileByPath(currentMOCPath);
                 if (mocFile) {
-                    await this.deleteArrowRelationFromMOC(mocFile, source, target, targetNodeSons);
+                    await this.deleteArrowRelationFromMOC(mocFile, source, target, targetNodeSons, type);
                     // 刷新视图
                     await this.refreshBranchMermaid();
                 }
@@ -6400,17 +6400,15 @@ export class ZKIndexView extends ItemView {
      * @param sourceID - 源节点 ID
      * @param targetID - 目标节点 ID
      * @param targetNodeSons - 目标节点的子节点数量（用于约束检查）
+     * @param edgeType - 边的类型（'parent' 或 'reverse'）
      */
-    private async deleteArrowRelationFromMOC(mocFile: TFile, sourceID: string, targetID: string, targetNodeSons?: number): Promise<void> {
+    private async deleteArrowRelationFromMOC(mocFile: TFile, sourceID: string, targetID: string, targetNodeSons?: number, edgeType?: string): Promise<void> {
         try {
             // 约束 1：只能删除目标节点没有子节点的关系
             if (targetNodeSons !== undefined && targetNodeSons > 1) {
                 new Notice(`无法删除：目标节点有 ${targetNodeSons} 个子节点`);
                 return;
             }
-
-            // 检查目标节点是否在某个父节点的 children 数组中（而不是在根节点层级）
-            const targetNodeHasParent = await this.mocHandler.checkNodeHasParent(mocFile, targetID);
 
             // 删除反向关系
             await this.mocHandler.modifyMOCData(mocFile, async (mocData) => {
@@ -6420,18 +6418,27 @@ export class ZKIndexView extends ItemView {
                 }
             });
 
-            // 只有当目标节点有父节点时，才转换为自由节点
-            if (targetNodeHasParent) {
-                new Notice(`已删除箭头关系: ${sourceID} → ${targetID}`);
+            // 只有删除正向父子关系（edgeType === 'parent'）且目标节点有父节点时，才转换为自由节点
+            // 删除反向关系（edgeType === 'reverse' 或 'cross-domain'）时，不应该影响目标节点的父子结构
+            if (edgeType === 'parent' || edgeType === 'forward') {
+                const targetNodeHasParent = await this.mocHandler.checkNodeHasParent(mocFile, targetID);
 
-                // 无论目标节点 ID 是否以 free. 开头，都生成新的自由节点 ID
-                // 例如：free.1.a 会被重命名为 free.2，成为真正的自由节点
-                const newFreeID = this.generateNextFreeNodeID();
+                if (targetNodeHasParent) {
+                    new Notice(`已删除箭头关系: ${sourceID} → ${targetID}`);
 
-                await this.mocHandler.convertChildToFreeNode(mocFile, targetID, newFreeID);
-                new Notice(`${targetID} 已转换为自由节点: ${newFreeID}`);
+                    // 无论目标节点 ID 是否以 free. 开头，都生成新的自由节点 ID
+                    // 例如：free.1.a 会被重命名为 free.2，成为真正的自由节点
+                    const newFreeID = this.generateNextFreeNodeID();
+
+                    await this.mocHandler.convertChildToFreeNode(mocFile, targetID, newFreeID);
+                    new Notice(`${targetID} 已转换为自由节点: ${newFreeID}`);
+                } else {
+                    new Notice(`已删除箭头关系: ${sourceID} → ${targetID}`);
+                }
             } else {
-                new Notice(`已删除箭头关系: ${sourceID} → ${targetID}`);
+                // 删除的是反向关系或跨领域关系，不需要转换节点
+                const relationType = edgeType === 'cross-domain' ? '跨领域关系' : '反向关系';
+                new Notice(`已删除${relationType}: ${sourceID} → ${targetID}`);
             }
         } catch (error) {
             console.error('Failed to delete arrow relation:', error);
