@@ -1736,12 +1736,20 @@ export class ZKIndexView extends ItemView {
             const placeholderInfo = this.placeholderNodes.get(nodeId);
             if (!placeholderInfo) return;
 
-            // 生成 ID 并保存
-            const suggestedID = this.generateNextFreeNodeID();
+            // 优先使用预生成的节点 ID，否则生成新的自由节点 ID
+            const suggestedID = placeholderInfo.suggestedNodeId || this.generateNextFreeNodeID();
 
             // 检查是否有智能连线确定的父节点
             if (placeholderInfo.parentNodeId) {
-                // 移动到父节点下
+                // 先保存为自由节点，然后移动到父节点下
+                await this.saveFreeNodeToMOC({
+                    wikiLink: wikiLink,
+                    nodeID: suggestedID,
+                    relationText: '',
+                    file: file
+                });
+
+                // 然后移动到父节点下
                 const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
                 if (mocFile) {
                     await this.mocHandler.moveNodeToParent(mocFile, suggestedID, placeholderInfo.parentNodeId, suggestedID);
@@ -1768,6 +1776,16 @@ export class ZKIndexView extends ItemView {
 
             // 刷新视图
             await this.refreshBranchMermaid();
+
+            // 清理所有占位符连接线（因为视图已经刷新，占位符节点已不存在）
+            branchGraphDiv.dispatchEvent(new CustomEvent('cleanup-all-placeholder-connections'));
+
+            // 自动选中新创建的节点
+            branchGraphDiv.dispatchEvent(new CustomEvent('select-node-by-id', {
+                detail: {
+                    nodeId: suggestedID
+                }
+            }));
         });
 
         // 监听从 suggester 添加自由节点事件
@@ -1778,12 +1796,20 @@ export class ZKIndexView extends ItemView {
             const placeholderInfo = this.placeholderNodes.get(nodeId);
             if (!placeholderInfo) return;
 
-            // 生成节点 ID
-            const suggestedID = this.generateNextFreeNodeID();
+            // 优先使用预生成的节点 ID，否则生成新的自由节点 ID
+            const suggestedID = placeholderInfo.suggestedNodeId || this.generateNextFreeNodeID();
 
             // 检查是否有智能连线确定的父节点
             if (placeholderInfo.parentNodeId) {
-                // 移动到父节点下
+                // 先保存为自由节点，然后移动到父节点下
+                await this.saveFreeNodeToMOC({
+                    wikiLink: wikiLink,
+                    nodeID: suggestedID,
+                    relationText: '',
+                    file: file
+                });
+
+                // 然后移动到父节点下
                 const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
                 if (mocFile) {
                     await this.mocHandler.moveNodeToParent(mocFile, suggestedID, placeholderInfo.parentNodeId, suggestedID);
@@ -1810,6 +1836,16 @@ export class ZKIndexView extends ItemView {
 
             // 刷新视图
             await this.refreshBranchMermaid();
+
+            // 清理所有占位符连接线（因为视图已经刷新，占位符节点已不存在）
+            branchGraphDiv.dispatchEvent(new CustomEvent('cleanup-all-placeholder-connections'));
+
+            // 自动选中新创建的节点
+            branchGraphDiv.dispatchEvent(new CustomEvent('select-node-by-id', {
+                detail: {
+                    nodeId: suggestedID
+                }
+            }));
         });
 
         // 监听边点击事件
