@@ -1328,7 +1328,7 @@ case 'dagre':
                 svgOverlay = null;
             }
             dragLine = null;
-            this.cy.nodes('.connection-target-hover').removeClass('.connection-target-hover');
+            this.cy.nodes('.connection-target-hover').removeClass('connection-target-hover');
 
             const sourceData = sourceNode.data();
             const sourceOriginalNode = sourceData.originalNode;
