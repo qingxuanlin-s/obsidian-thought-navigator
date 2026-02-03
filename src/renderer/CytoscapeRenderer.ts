@@ -1439,6 +1439,11 @@ case 'dagre':
         this.cy.on('unselect', 'edge', () => {
             this.hideEdgeControlPoints(controlPointContainer);
         });
+
+        // 监听边移除事件，确保控制点被清除
+        this.cy.on('remove', 'edge', () => {
+            this.hideEdgeControlPoints(controlPointContainer);
+        });
     }
 
     /**
@@ -1659,6 +1664,11 @@ case 'dagre':
 
         // 监听边取消选中事件
         this.cy.on('unselect', 'edge', () => {
+            this.hideEdgeEndpointHandles(handleContainer);
+        });
+
+        // 监听边移除事件，确保手柄被清除
+        this.cy.on('remove', 'edge', () => {
             this.hideEdgeEndpointHandles(handleContainer);
         });
     }
@@ -2375,136 +2385,7 @@ case 'dagre':
         });
     }
 
-    /**
-     * 显示边标签编辑对话框
-     */
-    private showEdgeLabelDialog(callback: (label: string | null) => void, defaultValue: string = ''): void {
-        // 创建遮罩层
-        const overlay = document.createElement('div');
-        overlay.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            z-index: 10000;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        `;
 
-        // 创建对话框
-        const dialog = document.createElement('div');
-        dialog.style.cssText = `
-            background-color: var(--background-primary);
-            border: 1px solid var(--background-modifier-border);
-            border-radius: 8px;
-            padding: 20px;
-            min-width: 300px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        `;
-
-        // 标题
-        const title = document.createElement('h3');
-        title.textContent = '编辑关系文本';
-        title.style.cssText = `
-            margin: 0 0 15px 0;
-            color: var(--text-normal);
-            font-size: 16px;
-        `;
-
-        // 输入框
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.placeholder = '请输入关系描述（可为空）';
-        input.value = defaultValue;
-        input.style.cssText = `
-            width: 100%;
-            padding: 8px;
-            margin-bottom: 15px;
-            border: 1px solid var(--background-modifier-border);
-            border-radius: 4px;
-            background-color: var(--background-primary);
-            color: var(--text-normal);
-            font-size: 14px;
-            box-sizing: border-box;
-        `;
-
-        // 按钮容器
-        const buttonContainer = document.createElement('div');
-        buttonContainer.style.cssText = `
-            display: flex;
-            justify-content: flex-end;
-            gap: 10px;
-        `;
-
-        // 取消按钮
-        const cancelButton = document.createElement('button');
-        cancelButton.textContent = '取消';
-        cancelButton.style.cssText = `
-            padding: 6px 16px;
-            border: 1px solid var(--background-modifier-border);
-            border-radius: 4px;
-            background-color: var(--background-primary);
-            color: var(--text-normal);
-            cursor: pointer;
-            font-size: 14px;
-        `;
-        cancelButton.addEventListener('click', () => {
-            overlay.remove();
-            callback(null);
-        });
-
-        // 确认按钮
-        const confirmButton = document.createElement('button');
-        confirmButton.textContent = '确认';
-        confirmButton.style.cssText = `
-            padding: 6px 16px;
-            border: none;
-            border-radius: 4px;
-            background-color: #5b8fd9;
-            color: #ffffff;
-            cursor: pointer;
-            font-size: 14px;
-        `;
-        confirmButton.addEventListener('click', () => {
-            const value = input.value.trim();
-            overlay.remove();
-            callback(value);  // 允许空字符串
-        });
-
-        // 组装对话框
-        buttonContainer.appendChild(cancelButton);
-        buttonContainer.appendChild(confirmButton);
-        dialog.appendChild(title);
-        dialog.appendChild(input);
-        dialog.appendChild(buttonContainer);
-        overlay.appendChild(dialog);
-        document.body.appendChild(overlay);
-
-        // 自动聚焦输入框并选中文本
-        setTimeout(() => {
-            input.focus();
-            input.select();
-        }, 0);
-
-        // 支持 Enter 键确认
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                confirmButton.click();
-            } else if (e.key === 'Escape') {
-                cancelButton.click();
-            }
-        });
-
-        // 点击遮罩层关闭
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) {
-                cancelButton.click();
-            }
-        });
-    }
 
     /**
      * 显示内联边标签编辑器

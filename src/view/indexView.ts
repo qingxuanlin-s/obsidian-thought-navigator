@@ -2001,9 +2001,8 @@ export class ZKIndexView extends ItemView {
                     await this.refreshBranchMermaid();
                 }
             } else {
-                // 如果不是自由节点，显示关系文本输入对话框
-                const dialogResult = await this.showRelationTextDialog();
-                relationText = dialogResult || '';
+                // 不是自由节点，直接创建箭头关系（不显示输入对话框）
+                relationText = '';
 
                 // 在刷新前保存所有节点的当前位置
                 await this.saveAllNodePositionsBeforeRefresh();
@@ -5212,80 +5211,7 @@ export class ZKIndexView extends ItemView {
         });
     }
 
-    /**
-     * 显示关系文本输入对话框
-     */
-    private showRelationTextDialog(): Promise<string | null> {
-        return new Promise((resolve) => {
-            const modal = new Modal(this.app);
-            modal.titleEl.setText('输入关系描述');
-            
-            const { contentEl } = modal;
-            contentEl.empty();
-            contentEl.style.padding = '20px';
-            
-            const inputContainer = contentEl.createDiv();
-            inputContainer.style.marginBottom = '15px';
-            
-            const label = inputContainer.createEl('label', { text: '关系描述（可选）：' });
-            label.style.display = 'block';
-            label.style.marginBottom = '5px';
-            label.style.color = 'var(--text-normal)';
-            
-            const input = inputContainer.createEl('input', {
-                type: 'text',
-                placeholder: '例如：引出、相关、应用等'
-            });
-            input.style.width = '100%';
-            input.style.padding = '8px';
-            input.style.border = '1px solid var(--background-modifier-border)';
-            input.style.borderRadius = '4px';
-            input.style.backgroundColor = 'var(--background-primary)';
-            input.style.color = 'var(--text-normal)';
-            
-            const buttonContainer = contentEl.createDiv();
-            buttonContainer.style.display = 'flex';
-            buttonContainer.style.justifyContent = 'flex-end';
-            buttonContainer.style.gap = '10px';
-            
-            const cancelButton = buttonContainer.createEl('button', { text: '取消' });
-            cancelButton.style.padding = '6px 16px';
-            cancelButton.style.border = '1px solid var(--background-modifier-border)';
-            cancelButton.style.borderRadius = '4px';
-            cancelButton.style.backgroundColor = 'var(--background-primary)';
-            cancelButton.style.color = 'var(--text-normal)';
-            cancelButton.style.cursor = 'pointer';
-            cancelButton.addEventListener('click', () => {
-                modal.close();
-                resolve(null);
-            });
-            
-            const confirmButton = buttonContainer.createEl('button', { text: '确认' });
-            confirmButton.style.padding = '6px 16px';
-            confirmButton.style.border = 'none';
-            confirmButton.style.borderRadius = '4px';
-            confirmButton.style.backgroundColor = '#5b8fd9';
-            confirmButton.style.color = '#ffffff';
-            confirmButton.style.cursor = 'pointer';
-            confirmButton.addEventListener('click', () => {
-                modal.close();
-                resolve(input.value.trim());
-            });
-            
-            input.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    modal.close();
-                    resolve(input.value.trim());
-                } else if (e.key === 'Escape') {
-                    modal.close();
-                    resolve(null);
-                }
-            });
-            
-            modal.open();
-            setTimeout(() => input.focus(), 0);
-        });
-    }
+
 
     /**
      * 添加反向连接节点（选择现有节点）
