@@ -47,7 +47,7 @@ export interface ViewState {
  */
 export interface RenderOptions {
     direction?: 'TB' | 'BT' | 'LR' | 'RL';
-    layoutType?: 'breadthfirst' | 'dagre' | 'cose' | 'grid';
+    layoutType?: 'breadthfirst' | 'dagre' | 'cose' | 'cose-bilkent' | 'grid' | 'preset';
     animate?: boolean;
     animationDuration?: number;
     nodeText?: 'id' | 'title' | 'both' | 'id-title';

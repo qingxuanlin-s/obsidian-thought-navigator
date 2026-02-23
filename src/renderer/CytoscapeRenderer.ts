@@ -277,7 +277,14 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 const layout = this.cy.layout({ name: 'preset' });
                 layout.run();
             } else {
-                const layout = this.cy.layout({ name: 'preset' });
+                // 检查是否是入链出链图，并设置初始位置
+                this.setInOutLinksInitialPositions(data);
+
+                // 如果没有保存位置，根据 layoutType 选择布局算法
+                // 默认使用 preset（索引视图等已有位置信息的情况）
+                // 局部关系视图的出入链图会传入 'cose' 等布局类型来自动分散节点
+                const layoutConfig = this.getLayoutConfig(options);
+                const layout = this.cy.layout(layoutConfig);
                 layout.run();
             }
         }
@@ -642,6 +649,153 @@ export class CytoscapeRenderer implements IGraphRenderer {
      */
     private escapeId(id: string): string {
         return id.replace(/[^a-zA-Z0-9_-]/g, '_');
+    }
+
+    /**
+     * 设置入链出链图的初始位置
+     * 入链节点在中心节点上方，出链节点在下方
+     */
+    private setInOutLinksInitialPositions(data: GraphData): void {
+        const cy = this.cy;
+        if (!cy) return;
+
+        // 检查是否有入链或出链节点
+        const hasInOutLinks = data.nodes.some(node =>
+            node.ID.startsWith('inlink-') || node.ID.startsWith('outlink-') || node.ID === 'current'
+        );
+
+        if (!hasInOutLinks) return;
+
+        // 找到中心节点
+        const centerNodeId = this.escapeId('current');
+        const centerNode = cy.$id(centerNodeId);
+
+        if (centerNode.length === 0) return;
+
+        // 将中心节点放在原点
+        centerNode.position({ x: 0, y: 0 });
+
+        // 分离入链和出链节点
+        const inlinks: any[] = [];
+        const outlinks: any[] = [];
+
+        data.nodes.forEach(node => {
+            if (node.ID.startsWith('inlink-')) {
+                inlinks.push(cy.$id(this.escapeId(node.ID)));
+            } else if (node.ID.startsWith('outlink-')) {
+                outlinks.push(cy.$id(this.escapeId(node.ID)));
+            }
+        });
+
+        // 为入链节点设置初始位置（在中心上方）
+        const inlinkSpacing = 150;
+        const inlinkStartY = -150;
+        inlinks.forEach((node, index) => {
+            // 水平分散，垂直固定在上方
+            const x = (index - (inlinks.length - 1) / 2) * inlinkSpacing;
+            node.position({ x, y: inlinkStartY });
+        });
+
+        // 为出链节点设置初始位置（在中心下方）
+        const outlinkSpacing = 150;
+        const outlinkStartY = 150;
+        outlinks.forEach((node, index) => {
+            // 水平分散，垂直固定在下方
+            const x = (index - (outlinks.length - 1) / 2) * outlinkSpacing;
+            node.position({ x, y: outlinkStartY });
+        });
+    }
+
+    /**
+     * 根据 layoutType 获取布局配置
+     * 用于局部关系视图的出入链图等需要自动布局的场景
+     */
+    private getLayoutConfig(options: RenderOptions): any {
+        const layoutType = options.layoutType || 'preset';
+
+        // 默认使用 preset 布局（索引视图等已有位置信息的情况）
+        if (layoutType === 'preset') {
+            return { name: 'preset' };
+        }
+
+        // 根据方向设置布局方向
+        const rankDir = this.directionToRankDir(options.direction || 'TB');
+
+        switch (layoutType) {
+            case 'dagre':
+                // dagre 层级布局，适合家族树结构
+                return {
+                    name: 'dagre',
+                    rankDir: rankDir,
+                    nodeSep: 50,
+                    rankSep: 100,
+                    edgeSep: 10
+                };
+
+            case 'cose':
+                // cose 力导向布局，适合入链出链图
+                return {
+                    name: 'cose',
+                    // 节点间距
+                    nodeRepulsion: 100000,
+                    // 理想边长
+                    idealEdgeLength: 100,
+                    // 边弹性
+                    edgeElasticity: 100,
+                    // 布局迭代次数
+                    nestingFactor: 5,
+                    // 初始布局时的温度
+                    initialTemp: 200,
+                    // 冷却因子
+                    coolingFactor: 0.95,
+                    // 最小温度
+                    minTemp: 1.0
+                };
+
+            case 'cose-bilkent':
+                // cose-bilkent 力导向布局，适合复杂的网络结构
+                return {
+                    name: 'cose-bilkent',
+                    // 布局质量
+                    quality: 'proof',
+                    // 是否为有向图
+                    directed: false,
+                    // 节点间距
+                    nodeRepulsion: 4500,
+                    // 理想边长
+                    idealEdgeLength: 50,
+                    // 边弹性
+                    edgeElasticity: 0.45
+                };
+
+            case 'breadthfirst':
+                return {
+                    name: 'breadthfirst',
+                    directed: false,
+                    spacingFactor: 1.5
+                };
+
+            case 'grid':
+                return {
+                    name: 'grid'
+                };
+
+            default:
+                return { name: 'preset' };
+        }
+    }
+
+    /**
+     * 将方向字符串转换为 dagre 的 rankDir 格式
+     */
+    private directionToRankDir(direction: string): string {
+        switch (direction) {
+            case 'TB': return 'TB'; // Top to Bottom
+            case 'BT': return 'BT'; // Bottom to Top
+            case 'LR': return 'LR'; // Left to Right
+            case 'RL': return 'RL'; // Right to Left
+            default: return 'TB';
+        }
     }
 
    private getStylesheet(options: RenderOptions): any[] {
@@ -3111,7 +3265,7 @@ case 'dagre':
             }
 
             // 普通节点：双击打开文件
-            this.container?.dispatchEvent(new CustomEvent('node-open', {
+            this.container?.dispatchEvent(new CustomEvent('node-click', {
                 detail: {
                     node: data.originalNode,
                     event: originalEvent,
