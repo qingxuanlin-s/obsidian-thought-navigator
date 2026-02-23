@@ -3228,6 +3228,13 @@ case 'dagre':
                 // 清除子节点箭头高亮
                 this.cy?.$('edge.child-edge-highlight').removeClass('child-edge-highlight');
 
+                // 取消批量选择并隐藏工具栏
+                if (this.batchSelectedNodeIds.length > 0) {
+                    this.batchSelectedNodeIds = [];
+                    this.batchSelectedNodes = [];
+                    this.hideBatchToolbar();
+                }
+
                 this.container?.dispatchEvent(new CustomEvent('background-click', {
                     detail: { event: evt.originalEvent }
                 }));
@@ -4708,7 +4715,10 @@ case 'dagre':
         btn.onmouseover = () => btn.style.backgroundColor = 'var(--interactive-hover)';
         btn.onmouseout = () => btn.style.backgroundColor = 'var(--interactive-normal)';
 
-        btn.onclick = () => onClick();
+        btn.onclick = (event: MouseEvent) => {
+            event.stopPropagation(); // 阻止事件冒泡到画布
+            onClick();
+        };
 
         return btn;
     }
@@ -4904,7 +4914,7 @@ case 'dagre':
         // 获取父节点及所有兄弟节点
         const parent = activeNode.incomers('edge').sources();
         if (parent.length > 0) {
-            // SimpleMind 风格：将同层级且在当前节点下方的节点及其子树全部下移
+            // 将同层级且在当前节点下方的节点及其子树全部下移
             const allSiblings = parent.outgoers('edge').targets();
 
             allSiblings.forEach((sib: any) => {
