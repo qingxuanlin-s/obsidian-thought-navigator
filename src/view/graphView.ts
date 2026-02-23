@@ -1346,8 +1346,8 @@ export class ZKGraphView extends ItemView {
                     }
                 }
                 
-                // 显示MOC选择器或文件名
-                if (availableMOCs.length > 1) {
+                // 显示MOC选择器（始终显示下拉框，方便切换）
+                if (availableMOCs.length > 0) {
                     // 创建下拉选择器
                     const mocSelector = mocNodeGraphTextDiv.createEl('select', { cls: 'zk-moc-selector' });
                     mocSelector.style.marginLeft = '10px';
@@ -1358,14 +1358,15 @@ export class ZKGraphView extends ItemView {
                     mocSelector.style.color = 'var(--text-normal)';
                     mocSelector.style.fontSize = '12px';
                     mocSelector.style.minWidth = '120px';
-                    
+                    mocSelector.style.cursor = 'pointer';
+
                     // 优先显示包含当前文件的MOC
                     const sortedMOCs = [...availableMOCs].sort((a, b) => {
                         if (a.hasCurrentFile && !b.hasCurrentFile) return -1;
                         if (!a.hasCurrentFile && b.hasCurrentFile) return 1;
                         return a.file.basename.localeCompare(b.file.basename);
                     });
-                    
+
                     sortedMOCs.forEach((mocInfo) => {
                         const option = mocSelector.createEl('option');
                         option.value = mocInfo.file.path;
@@ -1374,25 +1375,32 @@ export class ZKGraphView extends ItemView {
                             option.selected = true;
                         }
                     });
-                    
+
                     mocSelector.addEventListener('change', async () => {
-                        const selectedMOC = availableMOCs.find(m => m.file.path === mocSelector.value);
-                        if (selectedMOC && selectedMOC.currentNode) {
-                            // 刷新视图显示选中的MOC
-                            await this.refreshLocalGraphMOCNode(
-                                graphMermaidDiv, 
-                                currentFile, 
-                                selectedMOC.allNodes, 
-                                selectedMOC.currentNode, 
-                                selectedMOC.file
-                            );
+                        const selectedMOC = sortedMOCs.find(m => m.file.path === mocSelector.value);
+                        if (selectedMOC) {
+                            if (selectedMOC.currentNode) {
+                                // 刷新视图显示选中的MOC
+                                await this.refreshLocalGraphMOCNode(
+                                    graphMermaidDiv,
+                                    currentFile,
+                                    selectedMOC.allNodes,
+                                    selectedMOC.currentNode,
+                                    selectedMOC.file
+                                );
+                            } else {
+                                // 选中的MOC不包含当前笔记，显示提示
+                                new Notice(`"${selectedMOC.file.basename}" 不包含当前笔记`);
+                            }
+                        } else {
+                            console.error('[graphView] 未找到选中的 MOC:', mocSelector.value);
                         }
                     });
-                    
+
                     // 如果当前文件在多个思维树中，添加提示
                     const mocsWithCurrentFile = availableMOCs.filter(m => m.hasCurrentFile);
                     if (mocsWithCurrentFile.length > 1) {
-                        const hintSpan = mocNodeGraphTextDiv.createEl('small', { 
+                        const hintSpan = mocNodeGraphTextDiv.createEl('small', {
                             text: ` (在${mocsWithCurrentFile.length}个思维树中)`,
                             cls: 'zk-moc-hint'
                         });
@@ -1400,7 +1408,7 @@ export class ZKGraphView extends ItemView {
                         hintSpan.style.marginLeft = '4px';
                     }
                 } else {
-                    // 只有一个MOC文件时，显示输入框
+                    // 没有MOC文件时，显示当前MOC文件名（只读）
                     const mocFileInput = mocNodeGraphTextDiv.createEl('input', {
                         type: 'text',
                         cls: 'zk-moc-file-input',

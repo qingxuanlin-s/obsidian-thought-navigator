@@ -110,7 +110,7 @@ align-items: center;
   background-color: transparent; /* 改为透明 */
 }
 
-.zk-graph-text {  
+.zk-graph-text {
   position: fixed;
   background-color: #1a1f2e;
   margin:5px;
@@ -119,6 +119,14 @@ align-items: center;
   padding: 5px;
   float: left;
   border: 1px solid #2a3f5f;
+  /* 确保下拉框可以正常展开 */
+  z-index: 50;
+}
+
+/* 确保下拉框选项可以正常显示 */
+.zk-graph-text .zk-moc-selector {
+  position: relative;
+  z-index: 100;
 }
 
 .zk-graph-icon {
@@ -346,6 +354,9 @@ align-items: center;
     min-width: 120px;
     cursor: pointer;
     transition: all 0.2s ease;
+    /* 确保下拉框可以正常展开 */
+    position: relative;
+    z-index: 100;
 }
 
 .zk-moc-selector:hover {
@@ -357,6 +368,13 @@ align-items: center;
     outline: none;
     border-color: #00a8ff;
     box-shadow: 0 0 0 2px rgba(0, 168, 255, 0.3);
+}
+
+/* 确保 MOC 选择器的选项可以正常显示 */
+.zk-moc-selector option {
+    background-color: #1a1f2e;
+    color: #e0e0e0;
+    padding: 4px 8px;
 }
 
 /* MOC 提示文本样式 */
