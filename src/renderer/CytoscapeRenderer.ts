@@ -89,6 +89,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private batchSelectedNodes: any[] = []; // 保存批量选中的完整节点数据（包含 isCrossDomain 等信息）
     private isMetaPressed = false; // 标记 Command 键是否被按下（框选模式）
 
+    // SimpleMind 风格布局常量
+    private readonly VERTICAL_GAP = 80;       // 垂直间距
+    private readonly HORIZONTAL_GAP = 200;    // 水平间距
+    private readonly SIBLING_GAP = 100;       // 兄弟节点间距
+
     /**
      * 渲染图形
      * @性能优化：支持增量更新，避免每次都销毁重建
@@ -4771,160 +4776,70 @@ case 'dagre':
     }
 
     /**
-     * 获取节点相对于父节点的方向
+     * 获取节点相对于中心点的水平方向 (SimpleMind 风格)
      * @param node 当前节点
-     * @returns 方向 'right' | 'left' | 'down' | 'up' | null (如果没有父节点)
+     * @returns 1 为右侧, -1 为左侧
      */
-    private getDirectionFromParent(node: any): 'right' | 'left' | 'down' | 'up' | null {
-        if (!this.cy) return null;
-
-        // 获取所有指向当前节点的边（入边）
-        const incomingEdges = node.incomers('edge');
-
-        if (incomingEdges.length === 0) {
-            return null; // 没有父节点
-        }
-
-        // 获取第一个父节点
-        const parentEdge = incomingEdges.first();
-        const parentNode = parentEdge.source();
-
-        if (!parentNode || parentNode.length === 0) {
-            return null;
-        }
-
-        // 计算当前节点相对于父节点的位置
+    private getHorizontalDirection(node: any): number {
         const nodePos = node.position();
-        const parentPos = parentNode.position();
-
-        const dx = nodePos.x - parentPos.x;
-        const dy = nodePos.y - parentPos.y;
-
-        // 计算绝对值以确定主要方向
-        const absDx = Math.abs(dx);
-        const absDy = Math.abs(dy);
-
-        // 判断主要方向（哪个方向的偏移更大）
-        if (absDx > absDy) {
-            // 水平方向为主
-            return dx > 0 ? 'right' : 'left';
-        } else {
-            // 垂直方向为主
-            return dy > 0 ? 'down' : 'up';
-        }
+        // 假设中心节点在 (0,0)，根据 x 坐标判断方向
+        return nodePos.x >= 0 ? 1 : -1;
     }
 
     /**
-     * 根据方向计算新子节点的偏移
-     * @param direction 当前节点相对于父节点的方向
-     * @returns 新节点的偏移量
-     */
-    private getChildOffset(direction: 'right' | 'left' | 'down' | 'up' | null): { x: number; y: number } {
-        const offset = 200;
-
-        if (!direction) {
-            // 没有父节点，默认向右
-            return { x: offset, y: 0 };
-        }
-
-        // 根据当前节点相对于父节点的方向，决定新子节点的位置（同向延伸）
-        switch (direction) {
-            case 'right':
-                // 当前节点在父节点的右边，新子节点继续在当前节点的右边
-                return { x: offset, y: 0 };
-            case 'left':
-                // 当前节点在父节点的左边，新子节点继续在当前节点的左边
-                return { x: -offset, y: 0 };
-            case 'down':
-                // 当前节点在父节点的下边，新子节点继续在当前节点的下边
-                return { x: 0, y: offset };
-            case 'up':
-                // 当前节点在父节点的上边，新子节点继续在当前节点的上边
-                return { x: 0, y: -offset };
-            default:
-                return { x: offset, y: 0 };
-        }
-    }
-
-    /**
-     * 计算新节点的位置
+     * 计算新节点的位置 (SimpleMind 风格布局)
+     * 核心特性：象限感知、方向继承、自动平衡
      */
     private calculateNewNodePosition(activeNode: any, type: 'child' | 'sibling' | 'parent'): { x: number; y: number } {
         const nodePos = activeNode.position();
-
-        if (type === 'sibling') {
-            // 兄弟节点：根据当前节点相对于其父节点的方向，沿着相同方向延伸
-            const direction = this.getDirectionFromParent(activeNode);
-            const offset = 100;
-
-            if (!direction) {
-                // 没有父节点，默认向下
-                return { x: nodePos.x, y: nodePos.y + offset };
-            }
-
-            // 兄弟节点沿着相同的方向继续延伸
-            switch (direction) {
-                case 'right':
-                    // 当前节点在父节点的右边，新兄弟节点继续向右
-                    return { x: nodePos.x + offset, y: nodePos.y };
-                case 'left':
-                    // 当前节点在父节点的左边，新兄弟节点继续向左
-                    return { x: nodePos.x - offset, y: nodePos.y };
-                case 'down':
-                    // 当前节点在父节点的下边，新兄弟节点继续向下
-                    return { x: nodePos.x, y: nodePos.y + offset };
-                case 'up':
-                    // 当前节点在父节点的上边，新兄弟节点继续向上
-                    return { x: nodePos.x, y: nodePos.y - offset };
-                default:
-                    return { x: nodePos.x, y: nodePos.y + offset };
-            }
-        }
+        const isRoot = activeNode.data('isRoot') || activeNode.id() === 'root';
 
         if (type === 'child') {
-            // 获取当前节点相对于其父节点的方向
-            const direction = this.getDirectionFromParent(activeNode);
-            // 计算新子节点的偏移量
-            const offset = this.getChildOffset(direction);
-            return { x: nodePos.x + offset.x, y: nodePos.y + offset.y };
+            // --- 子节点逻辑 ---
+            if (isRoot) {
+                // 根节点创建子节点：左右平衡分配
+                const outgoers = activeNode.outgoers('node');
+                const leftCount = outgoers.filter((n: any) => n.position().x < nodePos.x).length;
+                const rightCount = outgoers.filter((n: any) => n.position().x >= nodePos.x).length;
+                const dir = rightCount <= leftCount ? 1 : -1;
+
+                return {
+                    x: nodePos.x + (dir * this.HORIZONTAL_GAP),
+                    y: nodePos.y + (outgoers.length * 20) // 略微偏移防止重叠
+                };
+            } else {
+                // 普通节点创建子节点：顺着父节点的方向往外伸
+                const dir = this.getHorizontalDirection(activeNode);
+                return {
+                    x: nodePos.x + (dir * this.HORIZONTAL_GAP),
+                    y: nodePos.y
+                };
+            }
         }
 
+        if (type === 'sibling') {
+            // --- 兄弟节点逻辑 ---
+            if (isRoot) return { x: nodePos.x, y: nodePos.y + this.VERTICAL_GAP };
+
+            // 兄弟节点在当前节点正下方
+            return {
+                x: nodePos.x,
+                y: nodePos.y + this.VERTICAL_GAP
+            };
+        }
+
+        // Parent 逻辑通常 SimpleMind 会往中心缩，这里默认为反向
         if (type === 'parent') {
-            // 父节点：默认向左，或者根据当前节点相对于其父节点的方向反向
-            const direction = this.getDirectionFromParent(activeNode);
-            const offset = 200;
-
-            if (!direction) {
-                // 没有父节点，默认向左
-                return { x: nodePos.x - offset, y: nodePos.y };
-            }
-
-            // 根据当前节点相对于父节点的方向，决定新父节点的位置（继续反向）
-            switch (direction) {
-                case 'right':
-                    // 当前节点在父节点的右边，新父节点继续向左
-                    return { x: nodePos.x - offset, y: nodePos.y };
-                case 'left':
-                    // 当前节点在父节点的左边，新父节点继续向右
-                    return { x: nodePos.x + offset, y: nodePos.y };
-                case 'down':
-                    // 当前节点在父节点的下边，新父节点继续向上
-                    return { x: nodePos.x, y: nodePos.y - offset };
-                case 'up':
-                    // 当前节点在父节点的上边，新父节点继续向下
-                    return { x: nodePos.x, y: nodePos.y + offset };
-                default:
-                    return { x: nodePos.x - offset, y: nodePos.y };
-            }
+            const dir = this.getHorizontalDirection(activeNode);
+            return { x: nodePos.x - (dir * this.HORIZONTAL_GAP), y: nodePos.y };
         }
 
-        // 默认情况
-        return { x: nodePos.x, y: nodePos.y };
+        return nodePos;
     }
 
     /**
      * 处理创建子节点（Tab 键）
-     * 规则：新的子节点在 ID 最大的已有子节点下方
+     * SimpleMind 风格：子节点基于视觉位置而非 ID
      */
     private handleCreateChildNode(): void {
         const activeNode = this.getActiveNode();
@@ -4933,80 +4848,40 @@ case 'dagre':
         const nodeData = activeNode.data();
         const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
 
-        // 检查是否已有子节点
-        const childNodes = this.cy!.$('node').filter((node: any) => {
-            const data = node.data();
-            if (!data.originalNode) return false;
-            const childIdStr = data.originalNode.IDStr;
-            // 检查是否是当前节点的子节点（ID 以 activeNodeId. 开头）
-            return childIdStr && childIdStr.startsWith(activeNodeId + '.');
-        });
-
+        // 获取当前节点的直接子节点
+        const children = activeNode.outgoers('edge').targets();
         const nodePos = activeNode.position();
-
-        // 新的子节点在已有子节点下方（y + 100），保持 x 不变
-        const childOffsetX = 0;
-        const childOffsetY = 100;
+        const dir = this.getHorizontalDirection(activeNode);
 
         let position;
 
-        if (childNodes.length > 0) {
-            // 有子节点：找到 ID 最大的子节点，在它下方创建新节点
-            let lastChild: any = childNodes.first();
-            let maxId = lastChild.data().originalNode?.IDStr || '';
-
-            childNodes.forEach((node: any) => {
-                const nodeIdStr = node.data().originalNode?.IDStr || '';
-                // 使用自然比较，找到 ID 最大的
-                if (compareIds(nodeIdStr, maxId) > 0) {
-                    maxId = nodeIdStr;
-                    lastChild = node;
-                }
+        if (children.length > 0) {
+            // 规则：找到 Y 坐标最大的子节点，在它下面创建
+            let maxY = -Infinity;
+            children.forEach((child: any) => {
+                if (child.position().y > maxY) maxY = child.position().y;
             });
 
-            // 在 ID 最大的子节点下方创建新节点
-            const lastChildPos = lastChild.position();
             position = {
-                x: lastChildPos.x + childOffsetX,
-                y: lastChildPos.y + childOffsetY
+                x: nodePos.x + (dir * this.HORIZONTAL_GAP),
+                y: maxY + this.VERTICAL_GAP
             };
-
-            console.log('[handleCreateChildNode] 基于 ID 最大的子节点计算', {
-                activeNodeId,
-                lastChildId: lastChild.data().originalNode?.IDStr,
-                maxId,
-                lastChildPos,
-                newPosX: position.x,
-                newPosY: position.y
-            });
-
         } else {
-            // 没有子节点：基于当前节点位置向右计算（第一个子节点）
+            // 第一个子节点：水平平移
             position = {
-                x: nodePos.x + 200,
+                x: nodePos.x + (dir * this.HORIZONTAL_GAP),
                 y: nodePos.y
             };
-
-            console.log('[handleCreateChildNode] 基于当前节点计算（第一个子节点）', {
-                activeNodeId,
-                nodePos,
-                newPosX: position.x,
-                newPosY: position.y
-            });
         }
 
-        // 触发创建子节点事件
         this.container?.dispatchEvent(new CustomEvent('create-child-node-shortcut', {
-            detail: {
-                activeNodeId: activeNodeId,
-                position: position
-            }
+            detail: { activeNodeId, position }
         }));
     }
 
     /**
      * 处理创建兄弟节点（Enter 键）
-     * 规则：兄弟节点总是往下生长
+     * SimpleMind 风格：自动推开下方的兄弟节点及其子树
      */
     private handleCreateSiblingNode(): void {
 
@@ -5017,20 +4892,42 @@ case 'dagre':
 
         const nodeData = activeNode.data();
         const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
+        const nodePos = activeNode.position();
 
         console.log('[handleCreateSiblingNode] 当前选中节点详情', {
             id: activeNodeId,
             IDStr: nodeData.originalNode?.IDStr,
             label: nodeData.label,
-            position: activeNode.position()
+            position: nodePos
         });
 
-        const nodePos = activeNode.position();
+        // 获取父节点及所有兄弟节点
+        const parent = activeNode.incomers('edge').sources();
+        if (parent.length > 0) {
+            // SimpleMind 风格：将同层级且在当前节点下方的节点及其子树全部下移
+            const allSiblings = parent.outgoers('edge').targets();
 
-        // 兄弟节点总是往下生长（基于当前节点位置）
+            allSiblings.forEach((sib: any) => {
+                if (sib.id() !== activeNode.id() && sib.position().y > nodePos.y - 10) {
+                    // 递归移动该兄弟节点及其所有后代
+                    const subTree = sib.union(sib.descendants());
+                    subTree.positions((node: any) => {
+                        const pos = node.position();
+                        return { x: pos.x, y: pos.y + this.SIBLING_GAP };
+                    });
+
+                    console.log('[handleCreateSiblingNode] 推开兄弟节点及其子树', {
+                        siblingId: sib.id(),
+                        subTreeSize: subTree.length
+                    });
+                }
+            });
+        }
+
+        // 计算新节点位置
         const position = {
             x: nodePos.x,
-            y: nodePos.y + 100
+            y: nodePos.y + this.SIBLING_GAP
         };
 
         console.log('[handleCreateSiblingNode] 计算结果', {
