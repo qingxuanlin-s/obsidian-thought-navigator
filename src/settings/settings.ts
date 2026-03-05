@@ -743,6 +743,16 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
             })
         );
 
+        new Setting(structureSettingDiv)
+            .setName(t("Show note ID in branch view"))
+            .setDesc(t("Display note IDs on cards in branch view"))
+            .addToggle(toggle => toggle.setValue(this.plugin.settings.showNoteIdInBranchView)
+                .onChange((value) => {
+                    this.plugin.settings.showNoteIdInBranchView = value;
+                    this.plugin.RefreshIndexViewFlag = true;
+                })
+            );
+
         // 添加"快捷操作"展开项
         const quickActionDetails = structureSettingDiv.createEl('details');
         quickActionDetails.addClass('zk-details');

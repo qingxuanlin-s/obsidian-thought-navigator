@@ -483,6 +483,19 @@ export class ZKIndexView extends ItemView {
                 this.app.workspace.trigger("zk-navigation:refresh-local-graph");
             });
 
+        const noteIdDiv = toolbarDiv.createDiv("zk-index-toolbar-block");
+        noteIdDiv.createEl("b", { text: t("Note ID : ") });
+        const noteIdToggle = new DropdownComponent(noteIdDiv);
+        noteIdToggle
+            .addOption("show", t("show"))
+            .addOption("hide", t("hide"))
+            .setValue(this.plugin.settings.showNoteIdInBranchView ? "show" : "hide")
+            .onChange((value) => {
+                this.plugin.settings.showNoteIdInBranchView = value === "show";
+                this.plugin.saveData(this.plugin.settings);
+                this.app.workspace.trigger("zk-navigation:refresh-index-graph");
+            });
+
         // 风格选择
         const graphTypeDiv = toolbarDiv.createDiv("zk-index-toolbar-block");
         graphTypeDiv.createEl("b", { text: t("style : ") });
@@ -1183,7 +1196,8 @@ export class ZKIndexView extends ItemView {
             animate: true,
             animationDuration: 500,
             nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
-            themeMode: this.plugin.settings.themeMode
+            themeMode: this.plugin.settings.themeMode,
+            showNoteId: this.plugin.settings.showNoteIdInBranchView
         };
 
         // 性能优化：复用或创建渲染器，避免每次都销毁重建

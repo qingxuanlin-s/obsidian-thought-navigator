@@ -42,7 +42,8 @@ export async function addCytoscapeGraph(
         animate: true,
         animationDuration: 500,
         nodeText: (plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
-        themeMode: plugin.settings.themeMode
+        themeMode: plugin.settings.themeMode,
+        showNoteId: plugin.settings.showNoteIdInBranchView
     };
     
     // 创建渲染器
