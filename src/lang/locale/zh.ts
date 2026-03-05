@@ -104,11 +104,16 @@ export default {
     "string match": "字符串匹配",
     "regex match": "正则匹配",    
     "Add folder": "添加文件夹",
+    "Show note ID in branch view": "分支视图显示笔记编号",
+    "Display note IDs on cards in branch view": "控制分支视图卡片上是否显示笔记编号",
 
     // indexView.ts
     "Display from : ": "起点：",
     "To : ": "终点：",
     "Text : ": "文本：",
+    "Note ID : ": "编号：",
+    "show": "显示",
+    "hide": "隐藏",
     "parent": "父节点",
     "index": "索引点",
     "root": "根节点",

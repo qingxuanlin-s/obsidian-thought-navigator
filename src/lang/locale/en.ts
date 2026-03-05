@@ -105,11 +105,16 @@ export default {
     "string match": "string match",
     "regex match": "regex match",
     "Add folder": "Add folder",
+    "Show note ID in branch view": "Show note ID in branch view",
+    "Display note IDs on cards in branch view": "Display note IDs on cards in branch view",
 
     // indexView.ts
     "Display from : ": "From : ",
     "To : ": "To : ",
     "Text : ": "Text : ",
+    "Note ID : ": "Note ID : ",
+    "show": "show",
+    "hide": "hide",
     "parent": "parent",
     "index": "index",
     "root": "root",

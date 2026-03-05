@@ -578,11 +578,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
      */
     private getNodeLabel(node: ZKNode, options: RenderOptions | null): string {
         const nodeText = options?.nodeText || 'both';
+        const showNoteId = options?.showNoteId ?? true;
 
         let label = '';
         switch (nodeText) {
             case 'id':
-                label = node.ID;
+                label = showNoteId ? node.ID : (node.title || node.displayText);
                 break;
             case 'title':
                 label = node.title || node.displayText;
@@ -593,12 +594,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 break;
             case 'both':
             default:
-                label = node.displayText;
+                label = showNoteId ? node.displayText : (node.title || node.displayText);
                 break;
         }
 
         // 处理显示文本：去掉时间戳前缀
-        label = this.processDisplayText(label, nodeText);
+        label = this.processDisplayText(label, nodeText, showNoteId);
 
         // 文件图标通过 HTML 叠加层显示，不在这里添加
 
@@ -610,6 +611,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
      */
     private getNodeBadge(node: ZKNode, options: RenderOptions | null): string {
         const nodeText = options?.nodeText || 'both';
+        const showNoteId = options?.showNoteId ?? true;
+
+        if (!showNoteId) {
+            return '';
+        }
         
         // 在 id-title 和 both 模式下显示 ID 徽章
         if (nodeText === 'id-title' || nodeText === 'both') {
@@ -627,7 +633,13 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * - YYYY-MM-DD
      * - YYYYMMDD-HHMMSS
      */
-    private processDisplayText(text: string, nodeText: string): string {
+    private processDisplayText(text: string, nodeText: string, showNoteId: boolean): string {
+        if (!showNoteId) {
+            return text
+                .replace(/^[a-zA-Z0-9._]+:\s*/, '')
+                .replace(/^\d+\s+/, '');
+        }
+
         if (nodeText === 'id-title') {
             // id-title 模式：去掉 "ID: " 前缀和时间戳
             // 例如：1: 20251215 nihao -> nihao
