@@ -600,6 +600,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
         // 处理显示文本：去掉时间戳前缀
         label = this.processDisplayText(label, nodeText, showNoteId);
+        label = label.replace(/\\n/g, '\n');
 
         // 文件图标通过 HTML 叠加层显示，不在这里添加
 
@@ -3178,7 +3179,7 @@ case 'dagre':
         // 绑定分组创建事件（Command + 拖动）- 已禁用
         // this.bindGroupCreationEvents();
 
-        // 节点点击事件（单击选中，不打开文件）
+        // 节点点击事件（单击选中；Command/Ctrl + 单击打开文件节点）
         this.cy.on('tap', 'node', (evt: any) => {
             const node = evt.target;
             const data = node.data();
@@ -3224,6 +3225,21 @@ case 'dagre':
             // 从当前节点开始递归高亮
             highlightChildEdges(nodeId);
 
+            // Command/Ctrl + 单击：打开文件节点
+            if ((originalEvent.metaKey || originalEvent.ctrlKey) && data.originalNode?.file && !data.isCrossDomain) {
+                this.container?.dispatchEvent(new CustomEvent('node-click', {
+                    detail: {
+                        node: data.originalNode,
+                        event: originalEvent,
+                        ctrlKey: originalEvent.ctrlKey,
+                        metaKey: originalEvent.metaKey,
+                        shiftKey: originalEvent.shiftKey,
+                        altKey: originalEvent.altKey
+                    }
+                }));
+                return;
+            }
+
             // 跨领域节点：单击只选中，不跳转（跳转到双击处理）
             if (data.isCrossDomain) {
                 // 只选中节点，不触发跳转
@@ -3247,7 +3263,7 @@ case 'dagre':
             }));
         });
 
-        // 节点双击事件（打开文件）
+        // 节点双击事件（编辑内容）
         this.cy.on('dbltap', 'node', (evt: any) => {
             const node = evt.target;
             const data = node.data();
@@ -3276,12 +3292,13 @@ case 'dagre':
                 return;
             }
 
-            // 普通节点：双击打开文件
-            this.container?.dispatchEvent(new CustomEvent('node-click', {
+            // 普通节点：双击进入内容编辑
+            this.container?.dispatchEvent(new CustomEvent('node-edit', {
                 detail: {
                     node: data.originalNode,
                     event: originalEvent,
                     ctrlKey: originalEvent.ctrlKey,
+                    metaKey: originalEvent.metaKey,
                     shiftKey: originalEvent.shiftKey,
                     altKey: originalEvent.altKey
                 }
