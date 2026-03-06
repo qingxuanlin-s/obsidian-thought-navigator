@@ -90,32 +90,37 @@ export class MOCHandler {
     }
 
     /**
-     * 在 MOC 文件中更新文本节点的内容
-     * @param mocFile MOC 文件
-     * @param nodeID 节点 ID
-     * @param newContent 新的内容
+     * 在 MOC 文件中更新节点内容
+     * - 纯文字节点：更新 wikiLink + displayText
+     * - 文件节点：更新 displayText；若传入 newWikiLink，则同时更新 wikiLink
      */
-    async updateTextNodeContentInMOC(mocFile: TFile, nodeID: string, newContent: string): Promise<void> {
+    async updateNodeContentInMOC(
+        mocFile: TFile,
+        nodeID: string,
+        newContent: string,
+        newWikiLink?: string
+    ): Promise<void> {
         await this.modifyMOCData(mocFile, (mocData) => {
-            // 更新节点树中的文本内容
-            const updateTextNodeInTree = (nodes: any[]): boolean => {
+            const updateNodeContentInTree = (nodes: any[]): boolean => {
                 for (const node of nodes) {
                     if (node.nodeID === nodeID) {
-                        // 找到目标节点
                         if (node.isTextOnly) {
-                            // 只有纯文字节点才能修改内容
                             node.wikiLink = newContent;
                             node.displayText = newContent;
                             return true;
-                        } else {
-                            console.warn(`[MOCHandler] 节点 ${nodeID} 不是纯文字节点，无法修改内容`);
-                            return false;
                         }
+
+                        // 文件节点：只改显示文本，不改 wikiLink
+                        if (typeof newWikiLink === 'string') {
+                            node.wikiLink = newWikiLink;
+                        }
+                        node.displayText = newContent;
+                        return true;
                     }
 
                     // 递归搜索子节点
                     if (node.children && node.children.length > 0) {
-                        if (updateTextNodeInTree(node.children)) {
+                        if (updateNodeContentInTree(node.children)) {
                             return true;
                         }
                     }
@@ -123,8 +128,18 @@ export class MOCHandler {
                 return false;
             };
 
-            updateTextNodeInTree(mocData.nodes);
+            const updated = updateNodeContentInTree(mocData.nodes);
+            if (!updated) {
+                throw new Error(`未找到节点: ${nodeID}`);
+            }
         });
+    }
+
+    /**
+     * 兼容旧调用：更新文本节点内容
+     */
+    async updateTextNodeContentInMOC(mocFile: TFile, nodeID: string, newContent: string): Promise<void> {
+        await this.updateNodeContentInMOC(mocFile, nodeID, newContent);
     }
 
     /**

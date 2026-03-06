@@ -1452,7 +1452,7 @@ export class ZKIndexView extends ItemView {
 
         // 监听节点点击事件
         this.addTrackedListener(branchGraphDiv, 'node-click', (event: any) => {
-            const { node, ctrlKey, shiftKey } = event.detail;
+            const { node, ctrlKey, metaKey, shiftKey } = event.detail;
 
             // 检查节点是否有效
             if (!node || !node.file) {
@@ -1460,8 +1460,8 @@ export class ZKIndexView extends ItemView {
                 return;
             }
 
-            if (ctrlKey) {
-                // Ctrl + 点击：在新标签页打开
+            if (ctrlKey || metaKey) {
+                // Ctrl/Command + 点击：在新标签页打开
                 this.app.workspace.openLinkText("", node.file.path, 'tab');
             } else if (shiftKey) {
                 // Shift + 点击：在图形视图中打开
@@ -1471,10 +1471,6 @@ export class ZKIndexView extends ItemView {
                     filePath: node.file.path,
                 };
                 this.plugin.openGraphView();
-            } else {
-                // 普通点击：打开文件
-                if (!node.file) return;
-                this.app.workspace.openLinkText("", node.file.path);
             }
         });
 
@@ -1503,25 +1499,15 @@ export class ZKIndexView extends ItemView {
             // 可以在这里添加选中节点的其他逻辑
         });
 
-        // 监听节点打开事件（双击）
-        this.addTrackedListener(branchGraphDiv, 'node-open', (event: any) => {
-            const { node, event: mouseEvent, ctrlKey } = event.detail;
+        // 监听节点编辑事件（双击）
+        this.addTrackedListener(branchGraphDiv, 'node-edit', async (event: any) => {
+            const { node } = event.detail;
 
-            // 检查节点是否有效
-            if (!node || !node.file) {
-                console.warn('Invalid node for opening:', node);
+            if (!node) {
                 return;
             }
 
-            // 打开文件
-            if (ctrlKey) {
-                // Ctrl + 双击：在新标签页打开
-                this.app.workspace.openLinkText("", node.file.path, 'tab');
-            } else {
-                // 普通双击：在当前标签页打开
-                if (!node.file) return;
-                this.app.workspace.openLinkText("", node.file.path);
-            }
+            await this.editNodeContent(node);
         });
 
         // 监听跨领域节点点击事件（跳转到关联的 MOC 文件）
@@ -4942,30 +4928,55 @@ export class ZKIndexView extends ItemView {
     }
 
     /**
-     * 修改纯文字节点的内容
+     * 修改节点内容
+     * - 纯文字节点：更新节点文本
+     * - 文件节点：更新显示文本（不改变 wiki link）
      */
-    async editTextNodeContent(node: ZKNode) {
-        // 显示输入对话框（使用 title 而不是 displayText，避免显示 ID）
-        const newContent = await this.showTextNodeContentInputDialog(node.title || '');
+    async editNodeContent(node: ZKNode) {
+        const dialogTitle = node.isTextOnly ? '修改文本节点内容' : '修改文件节点显示文本';
+        const currentContent = node.isTextOnly
+            ? this.decodeMultilineText(node.title || '')
+            : this.buildFileNodeRawWikiText(node);
+        const newContent = await this.showTextNodeContentInputDialog(currentContent, dialogTitle);
 
-        if (!newContent || newContent === (node.title || '')) {
+        if (!newContent || newContent === currentContent) {
             return; // 取消或未修改
         }
 
         try {
             const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
             if (mocFile) {
-                await this.mocHandler.updateTextNodeContentInMOC(mocFile, node.IDStr, newContent);
+                if (node.isTextOnly) {
+                    const contentForSave = this.encodeMultilineText(newContent);
+                    await this.mocHandler.updateNodeContentInMOC(mocFile, node.IDStr, contentForSave);
+                } else {
+                    const parsed = this.parseRawWikiLinkInput(newContent);
+                    if (!parsed) {
+                        new Notice('文件节点请使用 [[链接]] 或 [[链接|显示文本]] 格式');
+                        return;
+                    }
+
+                    await this.mocHandler.updateNodeContentInMOC(
+                        mocFile,
+                        node.IDStr,
+                        parsed.displayText,
+                        parsed.wikiLink
+                    );
+                }
 
                 // 刷新视图
                 await this.refreshBranchMermaid();
 
-                new Notice(`已将文本节点内容修改为 "${newContent}"`);
+                new Notice(`已更新节点内容`);
             }
         } catch (error) {
-            console.error('Failed to edit text node content:', error);
-            new Notice(`修改文本节点内容失败: ${error.message}`);
+            console.error('Failed to edit node content:', error);
+            new Notice(`修改节点内容失败: ${error.message}`);
         }
+    }
+
+    async editTextNodeContent(node: ZKNode) {
+        await this.editNodeContent(node);
     }
 
     /**
@@ -5070,33 +5081,224 @@ export class ZKIndexView extends ItemView {
     /**
      * 显示文本节点内容输入对话框
      */
-    private showTextNodeContentInputDialog(currentContent: string): Promise<string | null> {
+    private showTextNodeContentInputDialog(currentContent: string, title: string = '修改文本节点内容'): Promise<string | null> {
         return new Promise((resolve) => {
             const modal = new Modal(this.app);
-            modal.titleEl.setText('修改文本节点内容');
+            let isResolved = false;
+            const resolveOnce = (value: string | null) => {
+                if (isResolved) return;
+                isResolved = true;
+                resolve(value);
+            };
+            modal.titleEl.setText(title);
 
             const { contentEl } = modal;
             contentEl.empty();
             contentEl.style.padding = '20px';
+            contentEl.style.position = 'relative';
 
             const inputContainer = contentEl.createDiv();
             inputContainer.style.marginBottom = '15px';
+            inputContainer.style.position = 'relative';
 
             const label = inputContainer.createEl('label', { text: '新内容：' });
             label.style.display = 'block';
             label.style.marginBottom = '5px';
             label.style.color = 'var(--text-normal)';
 
-            const input = inputContainer.createEl('input', {
-                type: 'text',
-                value: currentContent
-            });
+            const input = inputContainer.createEl('textarea');
+            input.value = currentContent;
             input.style.width = '100%';
             input.style.padding = '8px';
+            input.style.minHeight = '140px';
             input.style.border = '1px solid var(--background-modifier-border)';
             input.style.borderRadius = '4px';
             input.style.backgroundColor = 'var(--background-primary)';
             input.style.color = 'var(--text-normal)';
+            input.style.resize = 'vertical';
+            input.style.lineHeight = '1.5';
+
+            // [[ 文件候选框状态
+            const suggesterState: {
+                popover: HTMLElement | null;
+                searchInput: HTMLInputElement | null;
+                selectedIndex: number;
+                currentFiles: TFile[];
+                triggerStartPos: number;
+            } = {
+                popover: null,
+                searchInput: null,
+                selectedIndex: 0,
+                currentFiles: [],
+                triggerStartPos: 0
+            };
+
+            const closeWikiLinkSuggester = () => {
+                if (suggesterState.popover?.parentNode) {
+                    suggesterState.popover.remove();
+                }
+                suggesterState.popover = null;
+                suggesterState.searchInput = null;
+                suggesterState.currentFiles = [];
+                suggesterState.selectedIndex = 0;
+            };
+
+            const insertWikiLinkAtCursor = (file: TFile) => {
+                const start = Math.max(0, suggesterState.triggerStartPos);
+                const before = input.value.slice(0, start);
+                const after = input.value.slice(input.selectionStart);
+                const insertion = `[[${file.basename}]]`;
+                const newValue = `${before}${insertion}${after}`;
+                const newCursor = before.length + insertion.length;
+
+                input.value = newValue;
+                input.focus();
+                input.setSelectionRange(newCursor, newCursor);
+                input.trigger("input");
+                closeWikiLinkSuggester();
+            };
+
+            const showWikiLinkSuggester = () => {
+                closeWikiLinkSuggester();
+                const files = this.app.vault.getMarkdownFiles();
+                const inputRect = input.getBoundingClientRect();
+                const viewportBottomPadding = 12;
+                const maxHeight = Math.max(
+                    120,
+                    Math.min(240, window.innerHeight - inputRect.bottom - viewportBottomPadding - 8)
+                );
+
+                const popover = document.createElement('div');
+                popover.className = 'node-link-suggester';
+                popover.style.cssText = `
+                    position: fixed;
+                    left: ${inputRect.left}px;
+                    top: ${inputRect.bottom + 6}px;
+                    max-height: ${maxHeight}px;
+                    width: ${Math.min(420, inputRect.width)}px;
+                    background-color: var(--background-primary);
+                    border: 1px solid var(--background-modifier-border);
+                    border-radius: 6px;
+                    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+                    z-index: 1001;
+                    overflow-y: auto;
+                    padding: 4px 0;
+                `;
+
+                const searchInput = document.createElement('input');
+                searchInput.type = 'text';
+                searchInput.placeholder = 'Search notes...';
+                searchInput.style.cssText = `
+                    width: calc(100% - 16px);
+                    margin: 4px 8px;
+                    padding: 6px 8px;
+                    border: 1px solid var(--background-modifier-border);
+                    border-radius: 4px;
+                    background-color: var(--background-secondary);
+                    color: var(--text-normal);
+                    font-size: 12px;
+                    position: sticky;
+                    top: 0;
+                    z-index: 2;
+                `;
+
+                const updateSelection = () => {
+                    if (!suggesterState.popover) return;
+                    const items = suggesterState.popover.querySelectorAll('.suggester-item');
+                    items.forEach((item: any, index: number) => {
+                        if (index === suggesterState.selectedIndex) {
+                            item.style.backgroundColor = 'var(--background-modifier-hover)';
+                            item.scrollIntoView({ block: 'nearest' });
+                        } else {
+                            item.style.backgroundColor = '';
+                        }
+                    });
+                };
+
+                const updateFileList = () => {
+                    const term = (searchInput.value || '').toLowerCase();
+                    const oldItems = popover.querySelectorAll('.suggester-item');
+                    oldItems.forEach(item => item.remove());
+
+                    suggesterState.currentFiles = files
+                        .filter(file =>
+                            file.basename.toLowerCase().includes(term) ||
+                            file.path.toLowerCase().includes(term)
+                        )
+                        .slice(0, 20);
+
+                    suggesterState.selectedIndex = 0;
+
+                    suggesterState.currentFiles.forEach((file, index) => {
+                        const item = document.createElement('div');
+                        item.className = 'suggester-item';
+                        item.style.cssText = `
+                            padding: 6px 12px;
+                            cursor: pointer;
+                            display: flex;
+                            flex-direction: column;
+                            gap: 2px;
+                        `;
+
+                        item.innerHTML = `
+                            <span style="font-weight: 500; color: var(--text-normal);">${file.basename}</span>
+                            <span style="font-size: 11px; color: var(--text-muted);">${file.path}</span>
+                        `;
+
+                        item.addEventListener('mouseenter', () => {
+                            suggesterState.selectedIndex = index;
+                            updateSelection();
+                        });
+
+                        item.addEventListener('click', () => insertWikiLinkAtCursor(file));
+                        popover.appendChild(item);
+                    });
+
+                    updateSelection();
+                };
+
+                searchInput.addEventListener('input', (e) => {
+                    e.stopPropagation();
+                    updateFileList();
+                });
+
+                searchInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        suggesterState.selectedIndex = Math.min(
+                            suggesterState.selectedIndex + 1,
+                            Math.max(0, suggesterState.currentFiles.length - 1)
+                        );
+                        updateSelection();
+                    } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        suggesterState.selectedIndex = Math.max(suggesterState.selectedIndex - 1, 0);
+                        updateSelection();
+                    } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const file = suggesterState.currentFiles[suggesterState.selectedIndex];
+                        if (file) insertWikiLinkAtCursor(file);
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        closeWikiLinkSuggester();
+                        input.focus();
+                    }
+                });
+
+                popover.appendChild(searchInput);
+                modal.containerEl.appendChild(popover);
+                suggesterState.popover = popover;
+                suggesterState.searchInput = searchInput;
+
+                updateFileList();
+
+                const focusSearchInput = () => {
+                    searchInput.focus();
+                    searchInput.setSelectionRange(0, searchInput.value.length);
+                };
+                setTimeout(focusSearchInput, 0);
+                requestAnimationFrame(() => requestAnimationFrame(focusSearchInput));
+            };
 
             const buttonContainer = contentEl.createDiv();
             buttonContainer.style.display = 'flex';
@@ -5111,8 +5313,9 @@ export class ZKIndexView extends ItemView {
             cancelButton.style.color = 'var(--text-normal)';
             cancelButton.style.cursor = 'pointer';
             cancelButton.addEventListener('click', () => {
+                closeWikiLinkSuggester();
                 modal.close();
-                resolve(null);
+                resolveOnce(null);
             });
 
             const confirmButton = buttonContainer.createEl('button', { text: '确认' });
@@ -5128,31 +5331,118 @@ export class ZKIndexView extends ItemView {
                     new Notice('文本内容不能为空');
                     return;
                 }
+                closeWikiLinkSuggester();
                 modal.close();
-                resolve(newContent);
+                resolveOnce(newContent);
+            });
+
+            input.addEventListener('input', () => {
+                const cursorPos = input.selectionStart;
+                const lastTwoChars = input.value.substring(Math.max(0, cursorPos - 2), cursorPos);
+                if (lastTwoChars === '[[' || lastTwoChars === '【【') {
+                    suggesterState.triggerStartPos = Math.max(0, cursorPos - 2);
+                    showWikiLinkSuggester();
+                }
             });
 
             input.addEventListener('keydown', (e) => {
+                if (suggesterState.popover) {
+                    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        const next = e.key === 'ArrowDown'
+                            ? Math.min(suggesterState.selectedIndex + 1, Math.max(0, suggesterState.currentFiles.length - 1))
+                            : Math.max(suggesterState.selectedIndex - 1, 0);
+                        suggesterState.selectedIndex = next;
+                        const items = suggesterState.popover.querySelectorAll('.suggester-item');
+                        items.forEach((item: any, index: number) => {
+                            item.style.backgroundColor = index === suggesterState.selectedIndex
+                                ? 'var(--background-modifier-hover)'
+                                : '';
+                        });
+                        return;
+                    }
+
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        const file = suggesterState.currentFiles[suggesterState.selectedIndex];
+                        if (file) {
+                            insertWikiLinkAtCursor(file);
+                        }
+                        return;
+                    }
+
+                    if (e.key === 'Escape') {
+                        e.preventDefault();
+                        closeWikiLinkSuggester();
+                        return;
+                    }
+                }
+
                 if (e.key === 'Enter') {
+                    if (e.shiftKey) {
+                        // Shift + Enter：换行
+                        return;
+                    }
+
+                    e.preventDefault();
                     const newContent = input.value.trim();
                     if (!newContent) {
                         new Notice('文本内容不能为空');
                         return;
                     }
                     modal.close();
-                    resolve(newContent);
+                    resolveOnce(newContent);
                 } else if (e.key === 'Escape') {
+                    closeWikiLinkSuggester();
                     modal.close();
-                    resolve(null);
+                    resolveOnce(null);
                 }
             });
+
+            modal.onClose = () => {
+                closeWikiLinkSuggester();
+                resolveOnce(null);
+            };
 
             modal.open();
             setTimeout(() => {
                 input.focus();
-                input.select();
+                input.setSelectionRange(input.value.length, input.value.length);
             }, 0);
         });
+    }
+
+    private encodeMultilineText(content: string): string {
+        return content.replace(/\r\n/g, '\n').replace(/\n/g, '\\n');
+    }
+
+    private decodeMultilineText(content: string): string {
+        return content.replace(/\\n/g, '\n');
+    }
+
+    private buildFileNodeRawWikiText(node: ZKNode): string {
+        const wikiLink = node.file?.basename || node.title || '';
+        const displayText = node.title || wikiLink;
+        if (displayText && displayText !== wikiLink) {
+            return `[[${wikiLink}|${displayText}]]`;
+        }
+        return `[[${wikiLink}]]`;
+    }
+
+    private parseRawWikiLinkInput(input: string): { wikiLink: string; displayText: string } | null {
+        const trimmed = input.trim();
+        const match = trimmed.match(/^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/);
+        if (!match) {
+            return null;
+        }
+
+        const wikiLink = match[1].trim();
+        const displayText = (match[2] || match[1]).trim();
+        if (!wikiLink || !displayText) {
+            return null;
+        }
+
+        return { wikiLink, displayText };
     }
 
     /**

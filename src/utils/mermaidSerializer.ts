@@ -12,15 +12,23 @@ export class MermaidSerializer {
      */
     serializeNode(node: MOCTreeNode): string {
         // 转义特殊字符
-        const escapedText = node.wikiLink.replace(/"/g, '\\"');
+        const escapedWikiLink = node.wikiLink.replace(/"/g, '\\"');
 
         // 纯文字节点：显示为纯文本（无 [[]]）
         if (node.isTextOnly) {
-            return `${node.nodeID}["${escapedText}"]`;
+            return `${node.nodeID}["${escapedWikiLink}"]`;
         }
 
         // 文件节点：显示为 wiki link
-        return `${node.nodeID}["[[${escapedText}]]"]`;
+        const displayText = node.displayText || node.wikiLink;
+        const escapedDisplayText = displayText.replace(/"/g, '\\"');
+
+        // 显示文本和 wikiLink 不同时，使用 alias 语法：[[link|alias]]
+        if (displayText !== node.wikiLink) {
+            return `${node.nodeID}["[[${escapedWikiLink}|${escapedDisplayText}]]"]`;
+        }
+
+        return `${node.nodeID}["[[${escapedWikiLink}]]"]`;
     }
 
     /**
