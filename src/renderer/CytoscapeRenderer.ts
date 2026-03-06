@@ -3079,6 +3079,30 @@ case 'dagre':
         // 初始文件列表
         updateFileList();
 
+        // 滚轮事件：优先滚动候选框，阻止冒泡到 Cytoscape（避免触发全局缩放）
+        const handlePopoverWheel = (e: WheelEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            popover.scrollTop += e.deltaY;
+        };
+
+        popover.addEventListener('wheel', handlePopoverWheel, { passive: false });
+        searchInput.addEventListener('wheel', handlePopoverWheel, { passive: false });
+
+        // 候选框打开期间：拦截容器层滚轮，避免触发 Cytoscape 全局缩放
+        const handleContainerWheelCapture = (e: WheelEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            popover.scrollTop += e.deltaY;
+        };
+        this.container?.addEventListener('wheel', handleContainerWheelCapture, { passive: false, capture: true });
+
+        // 候选框打开期间：临时禁用 Cytoscape 缩放/平移，避免画布交互干扰
+        const prevZoomingEnabled = this.cy?.userZoomingEnabled() ?? true;
+        const prevPanningEnabled = this.cy?.userPanningEnabled() ?? true;
+        this.cy?.userZoomingEnabled(false);
+        this.cy?.userPanningEnabled(false);
+
         // 搜索输入事件
         searchInput.addEventListener('input', (e) => {
             e.stopPropagation();
@@ -3146,6 +3170,11 @@ case 'dagre':
                     if (removedNode === popover) {
                         textarea.removeEventListener('keydown', handleKeyDown);
                         searchInput.removeEventListener('keydown', handleKeyDown);
+                        popover.removeEventListener('wheel', handlePopoverWheel as EventListener);
+                        searchInput.removeEventListener('wheel', handlePopoverWheel as EventListener);
+                        this.container?.removeEventListener('wheel', handleContainerWheelCapture as EventListener, true);
+                        this.cy?.userZoomingEnabled(prevZoomingEnabled);
+                        this.cy?.userPanningEnabled(prevPanningEnabled);
                         if (suggesterPopoverRef.value === popover) {
                             suggesterPopoverRef.value = null;
                         }
