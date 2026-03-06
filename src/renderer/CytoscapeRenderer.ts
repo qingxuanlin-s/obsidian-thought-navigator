@@ -2968,12 +2968,12 @@ case 'dagre':
             position: absolute;
             left: ${boundingBox.x1}px;
             top: ${boundingBox.y2 + 5}px;
-            max-height: 200px;
-            width: 250px;
+            max-height: 240px;
+            width: 320px;
             background-color: var(--background-primary);
             border: 1px solid var(--background-modifier-border);
             border-radius: 6px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
             z-index: 1001;
             overflow-y: auto;
             padding: 4px 0;
@@ -2992,6 +2992,9 @@ case 'dagre':
             background-color: var(--background-secondary);
             color: var(--text-normal);
             font-size: 12px;
+            position: sticky;
+            top: 0;
+            z-index: 2;
         `;
 
         // 存储当前的选中索引和文件列表
@@ -3010,8 +3013,8 @@ case 'dagre':
                 .filter((file: any) => {
                     const lowerPath = file.path.toLowerCase();
                     const lowerName = file.basename.toLowerCase();
-                    return lowerName.contains(searchTerm.toLowerCase()) ||
-                           lowerPath.contains(searchTerm.toLowerCase());
+                    return lowerName.includes(searchTerm.toLowerCase()) ||
+                           lowerPath.includes(searchTerm.toLowerCase());
                 })
                 .slice(0, 10);
 
@@ -3165,9 +3168,12 @@ case 'dagre':
         }
 
         // 自动聚焦搜索框
-        setTimeout(() => {
+        const focusSearchInput = () => {
             searchInput.focus();
-        }, 0);
+            searchInput.setSelectionRange(0, searchInput.value.length);
+        };
+        setTimeout(focusSearchInput, 0);
+        requestAnimationFrame(() => requestAnimationFrame(focusSearchInput));
     }
 
     /**
