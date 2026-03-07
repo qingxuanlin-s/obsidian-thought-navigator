@@ -1,6 +1,6 @@
 {
 	"name": "thought-tree-navigator",
-	"version": "V0.0.3",
+	"version": "V0.0.4",
 	"description": "Navigate and visualize the natural growth of your thoughts with Luhmann-style Zettelkasten",
 	"main": "main.js",
 	"scripts": {
