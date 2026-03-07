@@ -390,6 +390,12 @@ align-items: center;
     transition: opacity 0.2s ease-in-out;
 }
 
+/* 局部关系视图背景与分支视图保持一致 */
+.zk-graph-mermaid-container {
+    background-color: #25303c;
+    border-radius: 5px;
+}
+
 /* 更新中的半透明效果 */
 .zk-updating {
     opacity: 0.7;
@@ -628,6 +634,10 @@ align-items: center;
 }
 
 .zk-theme-light .zk-index-mermaid-container {
+  background-color: #f5f5f5;
+}
+
+.zk-theme-light .zk-graph-mermaid-container {
   background-color: #f5f5f5;
 }
 

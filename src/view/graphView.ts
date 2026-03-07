@@ -1508,6 +1508,7 @@ export class ZKGraphView extends ItemView {
                 // 监听节点悬停事件
                 mocNodeTreeDiv.addEventListener('node-hover', (event: any) => {
                     const { node, event: mouseEvent } = event.detail;
+                    if (!node || !node.file || !mouseEvent) return;
 
                     this.app.workspace.trigger('hover-link', {
                         event: mouseEvent,
@@ -1686,6 +1687,7 @@ export class ZKGraphView extends ItemView {
         // 监听节点悬停事件（显示预览）
         familyTreeDiv.addEventListener('node-hover', (event: any) => {
             const { node, event: mouseEvent } = event.detail;
+            if (!node || !node.file || !mouseEvent) return;
 
             // 触发 Obsidian 的悬停预览
             this.app.workspace.trigger('hover-link', {
@@ -1808,6 +1810,7 @@ export class ZKGraphView extends ItemView {
         // 监听节点悬停事件
         mocTreeDiv.addEventListener('node-hover', (event: any) => {
             const { node, event: mouseEvent } = event.detail;
+            if (!node || !node.file || !mouseEvent) return;
 
             this.app.workspace.trigger('hover-link', {
                 event: mouseEvent,
@@ -1936,6 +1939,7 @@ export class ZKGraphView extends ItemView {
         // 监听节点悬停事件
         inoutlinksDiv.addEventListener('node-hover', (event: any) => {
             const { node, event: mouseEvent } = event.detail;
+            if (!node || !node.file || !mouseEvent) return;
 
             this.app.workspace.trigger('hover-link', {
                 event: mouseEvent,

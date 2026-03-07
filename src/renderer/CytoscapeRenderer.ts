@@ -276,8 +276,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         if (this.cy) {
             if (hasSavedPositions) {
                 // 如果有保存的位置，使用 preset 布局（保持原位置）
-                const layout = this.cy.layout({ name: 'preset' });
-                layout.run();
+                this.runLayoutSafely({ name: 'preset' });
             } else {
                 // 检查是否是入链出链图，并设置初始位置
                 this.setInOutLinksInitialPositions(data);
@@ -286,9 +285,36 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 // 默认使用 preset（索引视图等已有位置信息的情况）
                 // 局部关系视图的出入链图会传入 'cose' 等布局类型来自动分散节点
                 const layoutConfig = this.getLayoutConfig(options);
-                const layout = this.cy.layout(layoutConfig);
-                layout.run();
+                this.runLayoutSafely(layoutConfig);
             }
+        }
+    }
+
+    /**
+     * 安全运行布局：
+     * - 主要用于规避少数数据情况下 cose/cose-bilkent 内部报错导致整图不可用
+     * - 首次布局失败时自动回退到 breadthfirst
+     */
+    private runLayoutSafely(layoutConfig: any): void {
+        if (!this.cy) return;
+
+        try {
+            const layout = this.cy.layout(layoutConfig);
+            layout.run();
+        } catch (error) {
+            console.error('[CytoscapeRenderer] layout run failed, fallback to breadthfirst', {
+                layout: layoutConfig?.name,
+                error
+            });
+
+            const fallbackLayout = this.cy.layout({
+                name: 'breadthfirst',
+                directed: false,
+                spacingFactor: 1.3,
+                fit: true,
+                padding: 40
+            });
+            fallbackLayout.run();
         }
     }
 
