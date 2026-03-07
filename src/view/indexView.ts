@@ -5314,8 +5314,8 @@ export class ZKIndexView extends ItemView {
             cancelButton.style.cursor = 'pointer';
             cancelButton.addEventListener('click', () => {
                 closeWikiLinkSuggester();
-                modal.close();
                 resolveOnce(null);
+                modal.close();
             });
 
             const confirmButton = buttonContainer.createEl('button', { text: '确认' });
@@ -5332,8 +5332,8 @@ export class ZKIndexView extends ItemView {
                     return;
                 }
                 closeWikiLinkSuggester();
-                modal.close();
                 resolveOnce(newContent);
+                modal.close();
             });
 
             input.addEventListener('input', () => {
@@ -5390,12 +5390,12 @@ export class ZKIndexView extends ItemView {
                         new Notice('文本内容不能为空');
                         return;
                     }
-                    modal.close();
                     resolveOnce(newContent);
+                    modal.close();
                 } else if (e.key === 'Escape') {
                     closeWikiLinkSuggester();
-                    modal.close();
                     resolveOnce(null);
+                    modal.close();
                 }
             });
 

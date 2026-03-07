@@ -4949,33 +4949,28 @@ case 'dagre':
             return;
         }
 
-        // 先隐藏工具栏，避免遮挡对话框
+        // 先隐藏工具栏，避免遮挡输入框
         this.hideBatchToolbar();
 
-        // 根据 IDStr 获取 Cytoscape 节点对象
-        if (!this.cy) return;
+        // 批量分组：统一走 batch-create-group 事件链路（由 indexView 持久化）
+        this.showGroupNameDialog((groupName) => {
+            if (!groupName) {
+                // 取消时恢复工具栏
+                this.showBatchToolbar();
+                return;
+            }
 
-        const nodes = this.batchSelectedNodeIds
-            .map(idStr => {
-                // 通过 originalNode.IDStr 查找节点
-                const node = this.cy!.$('node').filter((n: any) =>
-                    n.data('originalNode') && n.data('originalNode').IDStr === idStr
-                );
-                return node;
-            })
-            .filter((node: any) => node.length > 0);
+            this.container?.dispatchEvent(new CustomEvent('batch-create-group', {
+                detail: {
+                    nodeIds: [...this.batchSelectedNodeIds],
+                    groupName
+                }
+            }));
 
-        if (nodes.length === 0) {
-            console.warn('No valid nodes found');
-            this.showBatchToolbar();
-            return;
-        }
-
-        // 直接调用现有的 createGroupFromNodes 方法
-        this.createGroupFromNodes(nodes);
-
-        // 清空保存的节点ID
-        this.batchSelectedNodeIds = [];
+            // 清空选中缓存
+            this.batchSelectedNodeIds = [];
+            this.batchSelectedNodes = [];
+        });
     }
 
     /**
