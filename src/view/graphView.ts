@@ -4,6 +4,7 @@ import { GitBranch, ZKNode, ZK_NAVIGATION } from "./indexView";
 import { t } from "src/lang/helper";
 import { convertMOCToZKNodes, displayWidth, mainNoteInit, parseMOCStructure,ReverseRelation } from "src/utils/utils";
 import { expandGraphModal } from "src/modal/expandGraphModal";
+import { CytoscapeExpandModal } from "src/modal/cytoscapeExpandModal";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
 import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
 import { RenderOptions } from "src/renderer/types";
@@ -1435,9 +1436,6 @@ export class ZKGraphView extends ItemView {
                 graphIconDiv.empty();
                 const expandBtn = new ExtraButtonComponent(graphIconDiv);
                 expandBtn.setIcon("expand").setTooltip(t("expand graph"));
-                expandBtn.onClick(() => {
-                    new Notice("Cytoscape 扩展视图开发中...");
-                });
 
                 // 创建图形容器
                 const mocNodeTreeDiv = mocNodeGraphContainer.createEl("div", {
@@ -1459,6 +1457,9 @@ export class ZKGraphView extends ItemView {
                     nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
                     themeMode: this.plugin.settings.themeMode
                 };
+                expandBtn.onClick(() => {
+                    new CytoscapeExpandModal(this.app, t("mind tree context"), graphData, options).open();
+                });
 
                 // 创建或复用渲染器
                 if (this.familyGraphRenderer) {
@@ -1616,9 +1617,6 @@ export class ZKGraphView extends ItemView {
         graphIconDiv.empty();
         const expandBtn = new ExtraButtonComponent(graphIconDiv);
         expandBtn.setIcon("expand").setTooltip(t("expand graph"));
-        expandBtn.onClick(() => {
-            new Notice("Cytoscape 扩展视图开发中...");
-        });
 
         // 创建图形容器
         const familyTreeDiv = familyGraphContainer.createEl("div", {
@@ -1640,6 +1638,9 @@ export class ZKGraphView extends ItemView {
             nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
             themeMode: this.plugin.settings.themeMode
         };
+        expandBtn.onClick(() => {
+            new CytoscapeExpandModal(this.app, t("close relative"), graphData, options).open();
+        });
 
         // 创建或复用渲染器
         if (this.familyGraphRenderer) {
@@ -1732,9 +1733,6 @@ export class ZKGraphView extends ItemView {
         // 展开按钮
         const expandBtn = new ExtraButtonComponent(graphIconDiv);
         expandBtn.setIcon("expand").setTooltip(t("expand graph"));
-        expandBtn.onClick(() => {
-            new Notice("Cytoscape 扩展视图开发中...");
-        });
 
         // 创建图形容器
         const mocTreeDiv = mocGraphContainer.createEl("div", {
@@ -1757,6 +1755,9 @@ export class ZKGraphView extends ItemView {
             nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
             themeMode: this.plugin.settings.themeMode
         };
+        expandBtn.onClick(() => {
+            new CytoscapeExpandModal(this.app, headingTitle, graphData, options).open();
+        });
 
         // 创建或复用渲染器（使用 familyGraphRenderer）
         if (this.familyGraphRenderer) {
@@ -1842,19 +1843,9 @@ export class ZKGraphView extends ItemView {
         const graphIconDiv = inoutlinksGraphContainer.createDiv("zk-graph-icon");
         graphIconDiv.empty();
         
-        // 全屏按钮
-        const fullscreenBtn = new ExtraButtonComponent(graphIconDiv);
-        fullscreenBtn.setIcon("maximize-2").setTooltip(t("fullscreen"));
-        fullscreenBtn.onClick(() => {
-            this.toggleFullscreen(inoutlinksGraphContainer);
-        });
-        
         // 展开按钮
         const expandBtn = new ExtraButtonComponent(graphIconDiv);
         expandBtn.setIcon("expand").setTooltip(t("expand graph"));
-        expandBtn.onClick(() => {
-            new Notice("Cytoscape 扩展视图开发中...");
-        });
 
         // 创建图形容器
         const inoutlinksDiv = inoutlinksGraphContainer.createEl("div", {
@@ -1876,6 +1867,9 @@ export class ZKGraphView extends ItemView {
             nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
             themeMode: this.plugin.settings.themeMode
         };
+        expandBtn.onClick(() => {
+            new CytoscapeExpandModal(this.app, t("inoutlinks"), graphData, options).open();
+        });
 
         // 创建或复用渲染器
         if (this.inoutlinksRenderer) {
