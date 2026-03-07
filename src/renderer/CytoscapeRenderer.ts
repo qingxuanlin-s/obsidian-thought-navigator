@@ -1216,7 +1216,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04);
                 color: var(--text-normal);
                 overflow: hidden;
-                pointer-events: none;
+                pointer-events: auto;
             `;
 
             const headerEl = document.createElement('div');
@@ -1234,6 +1234,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
+                cursor: move;
+                user-select: none;
             `;
             headerEl.textContent = sourceFile.basename;
 
@@ -1289,7 +1291,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
             };
             const updateInteraction = () => {
                 const isSelected = node.selected();
-                card.style.pointerEvents = isSelected ? 'auto' : 'none';
                 resizeHandle.style.pointerEvents = isSelected ? 'auto' : 'none';
                 resizeHandle.style.opacity = isSelected ? '1' : '0';
                 if (!isSelected) {
@@ -1330,6 +1331,63 @@ export class CytoscapeRenderer implements IGraphRenderer {
             };
             card.addEventListener('wheel', handleWheel, { passive: false });
             contentEl.addEventListener('wheel', handleWheel, { passive: false });
+
+            let draggingFromHeader = false;
+            let dragStartMouseX = 0;
+            let dragStartMouseY = 0;
+            let dragStartRenderedX = 0;
+            let dragStartRenderedY = 0;
+
+            const onHeaderMouseMove = (e: MouseEvent) => {
+                if (!draggingFromHeader || !this.cy) return;
+                const dx = e.clientX - dragStartMouseX;
+                const dy = e.clientY - dragStartMouseY;
+                node.renderedPosition({
+                    x: dragStartRenderedX + dx,
+                    y: dragStartRenderedY + dy
+                });
+            };
+
+            const onHeaderMouseUp = () => {
+                if (!draggingFromHeader) return;
+                draggingFromHeader = false;
+                setCanvasInteractionSuppressed(false);
+                document.removeEventListener('mousemove', onHeaderMouseMove);
+                document.removeEventListener('mouseup', onHeaderMouseUp);
+            };
+
+            headerEl.addEventListener('mousedown', (e: MouseEvent) => {
+                if (!this.cy) return;
+                if (e.button !== 0) return;
+                e.preventDefault();
+                e.stopPropagation();
+                draggingFromHeader = true;
+                setCanvasInteractionSuppressed(true);
+                dragStartMouseX = e.clientX;
+                dragStartMouseY = e.clientY;
+                const renderedPos = node.renderedPosition();
+                dragStartRenderedX = renderedPos.x;
+                dragStartRenderedY = renderedPos.y;
+                document.addEventListener('mousemove', onHeaderMouseMove);
+                document.addEventListener('mouseup', onHeaderMouseUp);
+            });
+
+            card.addEventListener('mousedown', (e: MouseEvent) => {
+                if (!this.cy) return;
+                // 在预览卡片任意位置点击都可命中该节点
+                const toggleSelection = e.metaKey || e.ctrlKey;
+                if (toggleSelection) {
+                    if (node.selected()) {
+                        node.unselect();
+                    } else {
+                        node.select();
+                    }
+                } else if (!node.selected()) {
+                    this.cy.$(':selected').unselect();
+                    node.select();
+                }
+                e.stopPropagation();
+            });
 
             // 右下角拖拽调整尺寸
             let resizing = false;
