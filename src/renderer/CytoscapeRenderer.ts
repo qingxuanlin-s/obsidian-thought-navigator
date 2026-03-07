@@ -140,7 +140,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 layout: { name: 'preset' }, // 先使用 preset，稍后运行布局
                 // 性能优化选项
                 hideEdgesOnViewport: true,
-                textureOnViewport: true,
+                // 关闭拖拽纹理缓存，避免画布拖动时出现半透明色块伪影
+                textureOnViewport: false,
                 motionBlur: false,
                 pixelRatio: 'auto',
                 // 启用节点拖动
