@@ -3338,8 +3338,9 @@ case 'dagre':
         const value = textarea.value;
         const cursorPos = textarea.selectionStart;
 
-        // 检查用户是否刚刚输入了 '['
+        // 检查用户是否刚刚输入了 '[[' / '【【' / '![[ ' / '！【【'
         const lastTwoChars = value.substring(cursorPos - 2, cursorPos);
+        const lastThreeChars = value.substring(cursorPos - 3, cursorPos);
 
         // 移除现有的 suggester
         const existingSuggester = this.container?.querySelector('.node-link-suggester');
@@ -3349,8 +3350,9 @@ case 'dagre':
         }
 
         // 如果模式匹配，显示 suggester
-        if (lastTwoChars === '[[' || lastTwoChars === '【【') {
-            this.showLinkSuggester(textarea, node, boundingBox, suggesterPopoverRef);
+        if (lastTwoChars === '[[' || lastTwoChars === '【【' || lastThreeChars === '![[' || lastThreeChars === '！【【') {
+            const isEmbed = lastThreeChars === '![[' || lastThreeChars === '！【【';
+            this.showLinkSuggester(textarea, node, boundingBox, suggesterPopoverRef, isEmbed);
         }
     }
 
@@ -3361,7 +3363,8 @@ case 'dagre':
         textarea: HTMLTextAreaElement,
         node: any,
         boundingBox: any,
-        suggesterPopoverRef: { value: HTMLElement | null }
+        suggesterPopoverRef: { value: HTMLElement | null },
+        isEmbed: boolean = false
     ): void {
         // 获取所有 markdown 文件
         const app = (window as any).app;
@@ -3477,7 +3480,8 @@ case 'dagre':
                 detail: {
                     nodeId: node.data().id,
                     wikiLink: file.basename,
-                    file: file
+                    file: file,
+                    isEmbed
                 }
             }));
         };
