@@ -1100,6 +1100,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 },
                 'padding': '20px',
                 'shape': 'round-rectangle',
+                'corner-radius': '18px',
                 'border-width': '2px',
                 'border-color': (ele: any) => {
                     // 如果有自定义颜色，使用自定义颜色
@@ -1127,6 +1128,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
         {
             selector: 'node[?isRoot]',
             style: {
+                'background-color': '#66c7ff',
+                'border-color': '#8dd8ff',
                 'font-size': '25px',
                 'font-weight': 'bold',
                 'text-max-width': '400px',
@@ -1153,6 +1156,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     return normalHeight * 2;
                 },
                 'border-width': '4px'
+            } as any
+        },
+        {
+            selector: 'node[?isRoot]:selected',
+            style: {
+                'background-color': '#66c7ff',
+                'border-color': '#8dd8ff',
+                'border-width': '4px',
+                'color': '#ffffff'
             } as any
         },
         // 节点徽章样式已通过 HTML 叠加层实现，这里不需要额外样式
@@ -1339,8 +1351,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
         {
             selector: 'node[?isCurrentFile]',
             style: {
-                'background-color': colors.nodeBackgroundSelected,
-                'border-color': colors.nodeBorderSelected,
+                'background-color': '#66c7ff',
+                'border-color': '#8dd8ff',
                 'border-width': '3px',
                 'font-weight': '600'
             } as any
