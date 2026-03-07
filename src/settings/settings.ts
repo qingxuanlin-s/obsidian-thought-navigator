@@ -135,33 +135,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                     }) 
                 )
     
-        new Setting(branchToolbarDiv)
-            .setName(t("export to canvas"))
-            .then((setting)=>{
-                const parentEl = setting.settingEl.parentElement;
-                if(parentEl){
-                    parentEl.insertBefore(createDiv(), setting.settingEl);
-                }
-                const iconEl = createDiv();
-                setting.settingEl.prepend(iconEl);
-                setIcon(iconEl, "layout-dashboard");
-            })
-            .addExtraButton((cb)=>{
-                cb.setIcon("settings")
-                .onClick(()=>{
-                    this.hideDiv(canvasAdditionSection);
-                });
-            })
-            .addToggle(toggle => toggle.setValue(this.plugin.settings.exportCanvas)
-                .onChange((value) =>{
-                    this.plugin.settings.exportCanvas = value;
-                    this.plugin.RefreshIndexViewFlag = true;
-                }) 
-            )
-        
-        const canvasAdditionSection = branchToolbarDiv.createDiv("zk-local-section zk-hidden")
-
-        await this.updateCanvasAddSettings(canvasAdditionSection);
+        // 导出到白板功能已下线
 
         if(this.plugin.settings.MainNoteButton == true){
             new Setting(branchToolbarDiv)
@@ -239,23 +213,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                 }) 
             )     
         
-        new Setting(branchToolbarDiv)
-            .setName(t("list tree"))
-            .then((setting)=>{
-                const parentEl = setting.settingEl.parentElement;
-                if(parentEl){
-                    parentEl.insertBefore(createDiv(), setting.settingEl);
-                }
-                const iconEl = createDiv();
-                setting.settingEl.prepend(iconEl);
-                setIcon(iconEl, "list-tree");
-            })
-            .addToggle(toggle => toggle.setValue(this.plugin.settings.ListTree)
-                .onChange((value) =>{
-                    this.plugin.settings.ListTree = value;
-                    this.plugin.RefreshIndexViewFlag = true;
-                }) 
-            )
+        // 大纲视图功能已下线
 
         new Setting(branchToolbarDiv)
             .setName(t("History List"))

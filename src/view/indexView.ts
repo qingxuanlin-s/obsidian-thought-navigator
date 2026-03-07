@@ -755,20 +755,6 @@ export class ZKIndexView extends ItemView {
                 })
             }
 
-            if (this.plugin.settings.exportCanvas == true) {
-                const canvasBtn = new ExtraButtonComponent(toolButtonsDiv);
-                canvasBtn.setIcon("layout-dashboard").setTooltip(t("export to canvas"));
-                canvasBtn.onClick(async () => {
-                    if (this.plugin.settings.graphType === "structure") {
-                        await this.generateCanvasStr();
-                    } else {
-                        await this.generateCanvasStrGit();
-                    }
-                    await this.exportToCanvas();
-
-                })
-
-            }
 
             if (this.plugin.settings.RandomMainNote == true && this.plugin.settings.MainNoteButton) {
 
@@ -920,17 +906,6 @@ export class ZKIndexView extends ItemView {
                 })
             }
 
-            if (this.plugin.settings.ListTree == true) {
-                const listBtn = new ExtraButtonComponent(toolButtonsDiv);
-                listBtn.setIcon("list-tree").setTooltip(t("list tree"))
-                listBtn.onClick(async () => {
-                    if (this.branchAllNodes && this.branchAllNodes[this.plugin.settings.BranchTab]) {
-                        this.plugin.tableArr = this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
-                        await this.plugin.openOutlineView();
-                    }
-                })
-
-            }
 
             if (this.plugin.settings.HistoryToggle == true) {
 
@@ -1073,13 +1048,6 @@ export class ZKIndexView extends ItemView {
 
         }
 
-        if (this.plugin.settings.ListTree === true) {
-            if (this.branchAllNodes && this.branchAllNodes[this.plugin.settings.BranchTab]) {
-                this.plugin.tableArr = this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes;
-                this.app.workspace.trigger("zk-navigation:refresh-outline-view");
-            }
-        }
-
         if (this.plugin.settings.HistoryToggle === true) {
             this.app.workspace.trigger("zk-navigation:refresh-recent-view");
         }
@@ -1139,14 +1107,6 @@ export class ZKIndexView extends ItemView {
                 });
             }
 
-            if (this.plugin.settings.exportCanvas === true) {
-                const canvasBtn = new ExtraButtonComponent(toolButtonsDiv);
-                canvasBtn.setIcon("layout-dashboard").setTooltip(t("export to canvas"));
-                canvasBtn.onClick(async () => {
-                    await this.generateCanvasStr();
-                    await this.exportToCanvas();
-                });
-            }
 
             if (this.plugin.settings.TableView === true) {
                 const tableBtn = new ExtraButtonComponent(toolButtonsDiv);
@@ -1159,23 +1119,8 @@ export class ZKIndexView extends ItemView {
                 });
             }
 
-            if (this.plugin.settings.ListTree === true) {
-                const listBtn = new ExtraButtonComponent(toolButtonsDiv);
-                listBtn.setIcon("list-tree").setTooltip(t("list tree"));
-                listBtn.onClick(async () => {
-                    if (this.mocNodes && this.mocNodes.length > 0) {
-                        this.plugin.tableArr = this.mocNodes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
-                        await this.plugin.openOutlineView();
-                    }
-                });
-            }
 
-            // 添加自由节点按钮
-            const addNodeBtn = new ExtraButtonComponent(toolButtonsDiv);
-            addNodeBtn.setIcon("plus-circle").setTooltip("添加自由节点");
-            addNodeBtn.onClick(async () => {
-                await this.addFreeNodeToMOC();
-            });
+            // “添加自由节点”按钮已隐藏（功能保留）
         }
 
         // 添加播放控制器（底部居中）
@@ -3083,13 +3028,6 @@ export class ZKIndexView extends ItemView {
         }
         if (branchTabs[tabNo]) {
             branchTabs[tabNo].addClass("zk-branch-tab-select");
-        }
-
-        if (this.plugin.settings.ListTree === true) {
-            if (this.branchAllNodes && this.branchAllNodes[this.plugin.settings.BranchTab]) {
-                this.plugin.tableArr = this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes;
-                this.app.workspace.trigger("zk-navigation:refresh-outline-view");
-            }
         }
 
         if (this.plugin.settings.TableView === true) {
