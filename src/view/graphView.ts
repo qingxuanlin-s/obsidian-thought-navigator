@@ -1456,7 +1456,8 @@ export class ZKGraphView extends ItemView {
                     animationDuration: 500,
                     nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
                     themeMode: this.plugin.settings.themeMode,
-                    themeStyle: this.plugin.settings.themeStyle || 'default'
+                    themeStyle: this.plugin.settings.themeStyle || 'default',
+                    edgeStyle: this.plugin.settings.edgeStyle || 'bezier'
                 };
                 expandBtn.onClick(() => {
                     try {
@@ -1643,7 +1644,8 @@ export class ZKGraphView extends ItemView {
             animationDuration: 500,
             nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
             themeMode: this.plugin.settings.themeMode,
-            themeStyle: this.plugin.settings.themeStyle || 'default'
+            themeStyle: this.plugin.settings.themeStyle || 'default',
+            edgeStyle: this.plugin.settings.edgeStyle || 'bezier'
         };
         expandBtn.onClick(() => {
             try {
@@ -1766,7 +1768,8 @@ export class ZKGraphView extends ItemView {
             animationDuration: 500,
             nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
             themeMode: this.plugin.settings.themeMode,
-            themeStyle: this.plugin.settings.themeStyle || 'default'
+            themeStyle: this.plugin.settings.themeStyle || 'default',
+            edgeStyle: this.plugin.settings.edgeStyle || 'bezier'
         };
         expandBtn.onClick(() => {
             try {
@@ -1884,7 +1887,8 @@ export class ZKGraphView extends ItemView {
             animationDuration: 500,
             nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
             themeMode: this.plugin.settings.themeMode,
-            themeStyle: this.plugin.settings.themeStyle || 'default'
+            themeStyle: this.plugin.settings.themeStyle || 'default',
+            edgeStyle: this.plugin.settings.edgeStyle || 'bezier'
         };
         expandBtn.onClick(() => {
             try {

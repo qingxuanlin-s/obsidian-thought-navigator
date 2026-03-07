@@ -121,6 +121,7 @@ interface ZKNavigationSettings {
     smartConnection: boolean;          // 智能连线开关
     themeMode: 'dark' | 'light';       // 主题模式
     themeStyle: 'default' | 'vivid';   // 主题风格（默认/绚丽）
+    edgeStyle: 'straight' | 'bezier' | 'polyline'; // 连线风格
     showNoteIdInBranchView: boolean;   // 分支视图是否显示笔记编号
 }
 
@@ -201,6 +202,7 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     smartConnection: false, // 智能连线默认关闭
     themeMode: 'dark', // 默认深色主题
     themeStyle: 'default', // 默认风格
+    edgeStyle: 'bezier', // 默认贝塞尔曲线
     showNoteIdInBranchView: true,
 }
 

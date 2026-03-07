@@ -438,6 +438,19 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                 })
             );
 
+        new Setting(experimentalDiv)
+            .setName(t("Edge style"))
+            .addDropdown(options => options
+                .addOption("straight", t("Straight line"))
+                .addOption("bezier", t("Bezier curve"))
+                .addOption("polyline", t("Polyline"))
+                .setValue(this.plugin.settings.edgeStyle || "bezier")
+                .onChange((value) => {
+                    this.plugin.settings.edgeStyle = value as 'straight' | 'bezier' | 'polyline';
+                    this.plugin.RefreshIndexViewFlag = true;
+                })
+            );
+
         experimentalDiv.createEl("hr");
 
         // MOC 模式设置

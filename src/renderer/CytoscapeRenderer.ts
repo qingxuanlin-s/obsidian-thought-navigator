@@ -168,7 +168,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
             const shouldRefreshStyle =
                 !previousOptions ||
                 previousOptions.themeMode !== options.themeMode ||
-                previousOptions.themeStyle !== options.themeStyle;
+                previousOptions.themeStyle !== options.themeStyle ||
+                previousOptions.edgeStyle !== options.edgeStyle;
             if (shouldRefreshStyle) {
                 this.cy.style([
                     ...this.getStylesheet(options),
@@ -1018,6 +1019,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private getStylesheet(options: RenderOptions): any[] {
     const isLight = options.themeMode === 'light';
     const isVivid = (options.themeStyle || 'default') === 'vivid';
+    const edgeStyle = options.edgeStyle || 'bezier';
 
     const colors = isLight ? {
         // 浅色主题颜色
@@ -1073,7 +1075,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     return colors.nodeBackground;
                 },
                 'color': colors.nodeText,
-                'font-size': '13px',
+                'font-size': '14px',
                 'font-weight': '500',
                 // 使用函数动态计算宽度和高度
                 'width': (ele: any) => {
@@ -1130,7 +1132,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             style: {
                 'background-color': '#66c7ff',
                 'border-color': '#8dd8ff',
-                'font-size': '25px',
+                'font-size': '26px',
                 'font-weight': 'bold',
                 'text-max-width': '400px',
                 'width': (ele: any) => {
@@ -1248,12 +1250,19 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     return colors.edgeNormal;
                 },
                 'target-arrow-shape': 'triangle',
-                'curve-style': 'unbundled-bezier',
+                'curve-style': edgeStyle === 'straight'
+                    ? 'straight'
+                    : (edgeStyle === 'polyline' ? 'taxi' : 'unbundled-bezier'),
+                'taxi-direction': 'auto',
+                'taxi-turn': 40,
                 'control-point-distances': (ele: any) => {
+                    if (edgeStyle !== 'bezier') return 0;
                     const distance = ele.data('controlPointDistance');
-                    return distance !== undefined ? distance : 0;  // 默认为 0（直线）
+                    // 贝塞尔模式下给一个非零默认弯曲量，避免视觉上仍是直线
+                    return distance !== undefined ? distance : 60;
                 },
                 'control-point-weights': (ele: any) => {
+                    if (edgeStyle !== 'bezier') return 0.5;
                     const weight = ele.data('controlPointWeight');
                     return weight !== undefined ? weight : 0.5;
                 },
