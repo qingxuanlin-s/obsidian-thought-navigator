@@ -1490,19 +1490,14 @@ export class ZKIndexView extends ItemView {
                 return;
             }
 
-            const currentMOCPath = this.plugin.settings.mocCurrentFile || node.file.path;
-            const linkTarget = (node.wikiLink || node.file.basename || node.file.path).trim();
-            const linktext = node.isEmbed
-                ? `![[${linkTarget}]]`
-                : `[[${linkTarget}]]`;
-
             this.app.workspace.trigger('hover-link', {
                 event: mouseEvent,
                 source: 'zk-navigation',
                 hoverParent: branchGraphDiv,
-                linktext,
+                // 使用 Obsidian 常规参数组合，避免 [[...]] 解析差异导致误判“未创建”
+                linktext: "",
                 targetEl: mouseEvent.target,
-                sourcePath: currentMOCPath,
+                sourcePath: node.file.path,
             });
         });
 
