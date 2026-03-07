@@ -7,7 +7,6 @@ import { mainNoteInit } from "src/utils/utils";
 import { MOCFileMonitor } from "src/utils/mocMonitor";
 import { ZKGraphView, ZK_GRAPH_TYPE } from "src/view/graphView";
 import { ZKIndexView, ZKNode, ZK_INDEX_TYPE, ZK_NAVIGATION } from "src/view/indexView";
-import { ZK_OUTLINE_TYPE, ZKOutlineView } from "src/view/outlineView";
 import { ZK_RECENT_TYPE, ZKRecentView } from "src/view/recentView";
 import { ZK_TABLE_TYPE, ZKTableView } from "src/view/tableView";
 
@@ -367,8 +366,6 @@ export default class ZKNavigationPlugin extends Plugin {
 
         this.registerView(ZK_GRAPH_TYPE, (leaf) => new ZKGraphView(leaf, this));
 
-        this.registerView(ZK_OUTLINE_TYPE, (leaf) => new ZKOutlineView(leaf, this));
-
         this.registerView(ZK_RECENT_TYPE, (leaf) => new ZKRecentView(leaf, this));
 
         this.registerView(ZK_TABLE_TYPE, (leaf) => new ZKTableView(leaf, this, this.tableArr));
@@ -571,20 +568,6 @@ export default class ZKNavigationPlugin extends Plugin {
         );
         this.app.workspace.trigger("zk-navigation:refresh-table-view");
 
-    }
-
-    async openOutlineView() {
-        if(this.app.workspace.getLeavesOfType(ZK_OUTLINE_TYPE).length === 0){
-         await this.app.workspace.getRightLeaf(false)?.setViewState({
-             type:ZK_OUTLINE_TYPE,
-             active:true,
-         });
-        }
-        this.app.workspace.revealLeaf(
-         this.app.workspace.getLeavesOfType(ZK_OUTLINE_TYPE)[0]
-        );
-        await this.app.workspace.trigger("zk-navigation:refresh-outline-view");
-    
     }
 
     async openRecentView() {
