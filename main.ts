@@ -120,6 +120,7 @@ interface ZKNavigationSettings {
     mocNodePositions: Record<string, Record<string, { x: number; y: number }>>; // MOC 节点位置存储 {mocFilePath: {nodeId: {x, y}}}
     smartConnection: boolean;          // 智能连线开关
     themeMode: 'dark' | 'light';       // 主题模式
+    themeStyle: 'default' | 'vivid';   // 主题风格（默认/绚丽）
     showNoteIdInBranchView: boolean;   // 分支视图是否显示笔记编号
 }
 
@@ -199,6 +200,7 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     mocNodePositions: {}, // MOC 节点位置存储
     smartConnection: false, // 智能连线默认关闭
     themeMode: 'dark', // 默认深色主题
+    themeStyle: 'default', // 默认风格
     showNoteIdInBranchView: true,
 }
 

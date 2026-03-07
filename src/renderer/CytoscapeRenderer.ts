@@ -104,6 +104,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         registerExtensions();
 
         const containerChanged = this.container !== container;
+        const previousOptions = this.currentOptions;
 
         this.container = container;
         this.currentData = data;
@@ -163,6 +164,24 @@ export class CytoscapeRenderer implements IGraphRenderer {
             this.addNodeBadges();
 
         } else {
+            // 复用实例时也要刷新样式，确保主题/风格切换即时生效
+            const shouldRefreshStyle =
+                !previousOptions ||
+                previousOptions.themeMode !== options.themeMode ||
+                previousOptions.themeStyle !== options.themeStyle;
+            if (shouldRefreshStyle) {
+                this.cy.style([
+                    ...this.getStylesheet(options),
+                    {
+                        selector: 'core',
+                        style: {
+                            'background-color': 'transparent',
+                            'background-opacity': 0
+                        } as any
+                    }
+                ]);
+            }
+
             // 增量更新：复用现有 Cytoscape 实例
             this.cy.batch(() => {
                 // 先删除所有占位符节点（因为它们不在传入的数据中）
@@ -549,8 +568,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
         // 获取节点颜色映射
         const nodeColors = this.currentData?.metadata.nodeColors || {};
+        const vividStyleMap = this.buildVividNodeStyleMap(nodes);
 
         const elements = nodes.map(node => {
+            const vividStyle = vividStyleMap.get(node.IDStr);
             const element: any = {
                 group: 'nodes' as const,
                 data: {
@@ -568,7 +589,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     isCrossDomain: node.isCrossDomain || false,  // 传递跨领域节点标记
                     isTextOnly: node.isTextOnly || false,  // 传递纯文字节点标记
                     isEmbed: node.isEmbed || false,  // 嵌入节点标记（![[...]]）
-                    hasFileIcon: (!node.isTextOnly && node.file) ? true : false  // 文件节点显示图标
+                    hasFileIcon: (!node.isTextOnly && node.file) ? true : false, // 文件节点显示图标
+                    branchNodeBackground: vividStyle?.background || null,
+                    branchNodeBorder: vividStyle?.border || null
                 }
             };
 
@@ -591,6 +614,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 转换边为 Cytoscape 元素
      */
     private convertEdgesToElements(edges: Edge[]): any[] {
+        const edgeColorMap = this.buildVividEdgeColorMap();
         const elements = edges.map(edge => {
             const element: any = {
                 group: 'edges' as const,
@@ -602,7 +626,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     type: edge.type,
                     // 保存原始的 source 和 target ID（未转义）
                     originalSource: edge.source,
-                    originalTarget: edge.target
+                    originalTarget: edge.target,
+                    branchEdgeColor: edgeColorMap.get(edge.source) || null
                 }
             };
             
@@ -619,6 +644,82 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
         
         return elements;
+    }
+
+    private isVividThemeStyle(): boolean {
+        return (this.currentOptions?.themeStyle || 'default') === 'vivid';
+    }
+
+    private getTopBranchId(nodeId: string): string {
+        const parts = (nodeId || '').split('.').filter(Boolean);
+        if (parts.length <= 1) return nodeId;
+        return `${parts[0]}.${parts[1]}`;
+    }
+
+    private buildVividNodeStyleMap(nodes: ZKNode[]): Map<string, { background: string; border: string }> {
+        const styleMap = new Map<string, { background: string; border: string }>();
+        if (!this.isVividThemeStyle()) return styleMap;
+
+        const branchIds = Array.from(
+            new Set(
+                nodes
+                    .filter((node) => !node.isRoot)
+                    .map((node) => this.getTopBranchId(node.IDStr))
+                    .filter(Boolean)
+            )
+        ).sort(compareIds);
+
+        const isLight = this.currentOptions?.themeMode === 'light';
+        const branchColorById = new Map<string, { background: string; border: string }>();
+        const darkPalette: Array<{ background: string; border: string }> = [
+            { background: '#3a1f1f', border: '#ff5a5f' },
+            { background: '#3a2818', border: '#ff8a3d' },
+            { background: '#3a3418', border: '#f7c948' },
+            { background: '#1f3a24', border: '#56d364' },
+            { background: '#17363a', border: '#38d9a9' },
+            { background: '#182f45', border: '#4dabf7' },
+            { background: '#221f3a', border: '#9775fa' },
+            { background: '#3a1f33', border: '#f06595' }
+        ];
+        const lightPalette: Array<{ background: string; border: string }> = [
+            { background: '#ffe7e8', border: '#d6333a' },
+            { background: '#ffeddc', border: '#dd6b20' },
+            { background: '#fff6d8', border: '#b7791f' },
+            { background: '#e6f7ea', border: '#2f9e44' },
+            { background: '#e3f8f5', border: '#0f766e' },
+            { background: '#e7f1ff', border: '#1d4ed8' },
+            { background: '#efeaff', border: '#6d28d9' },
+            { background: '#ffe9f3', border: '#be185d' }
+        ];
+        const palette = isLight ? lightPalette : darkPalette;
+
+        branchIds.forEach((branchId, index) => {
+            const color = palette[index % palette.length];
+            const background = color.background;
+            const border = color.border;
+            branchColorById.set(branchId, { background, border });
+        });
+
+        nodes.forEach((node) => {
+            if (node.isRoot) return;
+            const branchId = this.getTopBranchId(node.IDStr);
+            const style = branchColorById.get(branchId);
+            if (style) styleMap.set(node.IDStr, style);
+        });
+
+        return styleMap;
+    }
+
+    private buildVividEdgeColorMap(): Map<string, string> {
+        const colorMap = new Map<string, string>();
+        if (!this.isVividThemeStyle() || !this.currentData?.nodes) return colorMap;
+
+        const nodeStyleMap = this.buildVividNodeStyleMap(this.currentData.nodes);
+        this.currentData.nodes.forEach((node) => {
+            const style = nodeStyleMap.get(node.IDStr);
+            if (style) colorMap.set(node.IDStr, style.border);
+        });
+        return colorMap;
     }
 
     /**
@@ -861,6 +962,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
     private getStylesheet(options: RenderOptions): any[] {
     const isLight = options.themeMode === 'light';
+    const isVivid = (options.themeStyle || 'default') === 'vivid';
 
     const colors = isLight ? {
         // 浅色主题颜色
@@ -909,7 +1011,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'text-wrap': 'wrap',
                 'text-max-width': '200px',
                 'text-overflow-wrap': 'anywhere',
-                'background-color': colors.nodeBackground,
+                'background-color': (ele: any) => {
+                    if (isVivid && ele.data('branchNodeBackground') && !ele.data('isRoot')) {
+                        return ele.data('branchNodeBackground');
+                    }
+                    return colors.nodeBackground;
+                },
                 'color': colors.nodeText,
                 'font-size': '12px',
                 'font-weight': '500',
@@ -942,7 +1049,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'border-color': (ele: any) => {
                     // 如果有自定义颜色，使用自定义颜色
                     const customColor = ele.data('customColor');
-                    return customColor || colors.nodeBorder;
+                    if (customColor) return customColor;
+                    if (isVivid && ele.data('branchNodeBorder') && !ele.data('isRoot')) {
+                        return ele.data('branchNodeBorder');
+                    }
+                    return colors.nodeBorder;
                 },
                 'transition-property': 'background-color, border-color',
                 'transition-duration': '0.2s'
@@ -1052,8 +1163,18 @@ export class CytoscapeRenderer implements IGraphRenderer {
             selector: 'edge',
             style: {
                 'width': 2,
-                'line-color': colors.edgeNormal,
-                'target-arrow-color': colors.edgeNormal,
+                'line-color': (ele: any) => {
+                    if (isVivid && ele.data('branchEdgeColor')) {
+                        return ele.data('branchEdgeColor');
+                    }
+                    return colors.edgeNormal;
+                },
+                'target-arrow-color': (ele: any) => {
+                    if (isVivid && ele.data('branchEdgeColor')) {
+                        return ele.data('branchEdgeColor');
+                    }
+                    return colors.edgeNormal;
+                },
                 'target-arrow-shape': 'triangle',
                 'curve-style': 'unbundled-bezier',
                 'control-point-distances': (ele: any) => {
