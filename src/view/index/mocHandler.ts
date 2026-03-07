@@ -17,7 +17,8 @@ function deepCopyMOCTreeNode(node: MOCTreeNode): MOCTreeNode {
         isArrowRelation: node.isArrowRelation,
         arrowSource: node.arrowSource,
         arrowTarget: node.arrowTarget,
-        isTextOnly: node.isTextOnly || false  // 保留纯文字节点标记
+        isTextOnly: node.isTextOnly || false,  // 保留纯文字节点标记
+        isEmbed: node.isEmbed || false
     };
 }
 
@@ -98,7 +99,8 @@ export class MOCHandler {
         mocFile: TFile,
         nodeID: string,
         newContent: string,
-        newWikiLink?: string
+        newWikiLink?: string,
+        newIsEmbed?: boolean
     ): Promise<void> {
         await this.modifyMOCData(mocFile, (mocData) => {
             const updateNodeContentInTree = (nodes: any[]): boolean => {
@@ -113,6 +115,9 @@ export class MOCHandler {
                         // 文件节点：只改显示文本，不改 wikiLink
                         if (typeof newWikiLink === 'string') {
                             node.wikiLink = newWikiLink;
+                        }
+                        if (typeof newIsEmbed === 'boolean') {
+                            node.isEmbed = newIsEmbed;
                         }
                         node.displayText = newContent;
                         return true;

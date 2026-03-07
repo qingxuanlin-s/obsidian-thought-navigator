@@ -3,7 +3,7 @@ import * as dagreNamespace from 'cytoscape-dagre';
 import * as coseBilkentNamespace from 'cytoscape-cose-bilkent';
 import { IGraphRenderer, GraphData, RenderOptions, GraphChanges, ViewState, Edge } from './types';
 import { ZKNode } from 'src/view/indexView';
-import { Notice } from 'obsidian';
+import { Component, MarkdownRenderer, Notice } from 'obsidian';
 
 // 处理 CommonJS 和 ESM 模块的兼容性
 const getCytoscape = (): any => {
@@ -88,6 +88,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private batchSelectedNodeIds: string[] = []; // 保存批量选中的节点ID
     private batchSelectedNodes: any[] = []; // 保存批量选中的完整节点数据（包含 isCrossDomain 等信息）
     private isMetaPressed = false; // 标记 Command 键是否被按下（框选模式）
+    private embedPreviewCleanup: (() => void) | null = null;
 
     // SimpleMind 风格布局常量
     private readonly VERTICAL_GAP = 80;       // 垂直间距
@@ -266,6 +267,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         // 更新节点徽章（无论初始化还是增量更新都需要更新）
         // 这确保已删除节点的徽章也被移除
         this.addNodeBadges();
+        this.addEmbedNodePreviews();
 
         // 检查是否有保存的位置
         const hasSavedPositions = data.nodes.some(node => node.savedPosition);
@@ -366,6 +368,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 销毁渲染器
      */
     destroy(): void {
+        if (this.embedPreviewCleanup) {
+            this.embedPreviewCleanup();
+            this.embedPreviewCleanup = null;
+        }
         if (this.cy) {
             this.cy.destroy();
             this.cy = null;
@@ -517,9 +523,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     position: node.position,
                     isCurrentFile: node.file?.path === currentFilePath,  // 纯文字节点不匹配
                     originalNode: node,
+                    isRoot: node.isRoot || false,  // 根节点标记
                     customColor: nodeColors[node.IDStr] || null,  // 添加自定义颜色
                     isCrossDomain: node.isCrossDomain || false,  // 传递跨领域节点标记
                     isTextOnly: node.isTextOnly || false,  // 传递纯文字节点标记
+                    isEmbed: node.isEmbed || false,  // 嵌入节点标记（![[...]]）
                     hasFileIcon: (!node.isTextOnly && node.file) ? true : false  // 文件节点显示图标
                 }
             };
@@ -811,7 +819,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         }
     }
 
-   private getStylesheet(options: RenderOptions): any[] {
+    private getStylesheet(options: RenderOptions): any[] {
     const isLight = options.themeMode === 'light';
 
     const colors = isLight ? {
@@ -850,7 +858,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         badgeText: '#ffffff'
     };
 
-    return [
+        return [
         // 节点样式 - 使用函数动态计算大小
         {
             selector: 'node',
@@ -898,6 +906,47 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 },
                 'transition-property': 'background-color, border-color',
                 'transition-duration': '0.2s'
+            } as any
+        },
+        // 嵌入节点：由 HTML 预览卡片承载内容，隐藏 Cytoscape 默认卡片外观
+        {
+            selector: 'node[?isEmbed]',
+            style: {
+                'label': '',
+                'background-opacity': 0,
+                'border-width': 0
+            } as any
+        },
+        // 根节点样式：尺寸放大 2 倍，边框加粗
+        {
+            selector: 'node[?isRoot]',
+            style: {
+                'font-size': '24px',
+                'font-weight': 'bold',
+                'text-max-width': '400px',
+                'width': (ele: any) => {
+                    const label = ele.data('label') || '';
+                    const baseWidth = 80;
+                    const charWidth = 8;
+                    const maxWidth = 220;
+                    const padding = 32;
+                    const textWidth = Math.min(label.length * charWidth, maxWidth);
+                    const normalWidth = Math.max(baseWidth, textWidth + padding);
+                    return normalWidth * 2;
+                },
+                'height': (ele: any) => {
+                    const label = ele.data('label') || '';
+                    const baseHeight = 50 * 2 / 3;
+                    const lineHeight = 18 * 2 / 3;
+                    const maxWidth = 200;
+                    const charWidth = 8;
+                    const padding = 24 * 2 / 3;
+                    const estimatedLines = Math.ceil((label.length * charWidth) / maxWidth);
+                    const textHeight = estimatedLines * lineHeight;
+                    const normalHeight = Math.max(baseHeight, textHeight + padding);
+                    return normalHeight * 2;
+                },
+                'border-width': '4px'
             } as any
         },
         // 节点徽章样式已通过 HTML 叠加层实现，这里不需要额外样式
@@ -1097,6 +1146,151 @@ export class CytoscapeRenderer implements IGraphRenderer {
         }
     ];
 }
+
+    /**
+     * 为 ![[...]] 节点添加常驻预览卡片（类似 Canvas 笔记卡）
+     */
+    private addEmbedNodePreviews(): void {
+        if (!this.cy || !this.container) return;
+
+        if (this.embedPreviewCleanup) {
+            this.embedPreviewCleanup();
+            this.embedPreviewCleanup = null;
+        }
+
+        const embedNodes = this.cy.nodes('[?isEmbed]');
+        if (embedNodes.length === 0) return;
+
+        const app = (window as any).app;
+        if (!app) return;
+
+        const previewContainer = document.createElement('div');
+        previewContainer.className = 'zk-embed-previews';
+        previewContainer.style.cssText = `
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 2;
+        `;
+        this.container.appendChild(previewContainer);
+
+        const rendererComponent = new Component();
+        const updaters: Array<() => void> = [];
+
+        embedNodes.forEach((node: any) => {
+            const data = node.data();
+            const originalNode = data.originalNode as ZKNode | undefined;
+            if (!originalNode?.file) return;
+            const sourceFile = originalNode.file;
+
+            const card = document.createElement('div');
+            card.className = 'zk-embed-preview-card';
+            card.style.cssText = `
+                position: absolute;
+                background: linear-gradient(180deg, rgba(20, 26, 38, 0.98) 0%, rgba(16, 22, 34, 0.98) 100%);
+                border: 1px solid rgba(90, 111, 127, 0.6);
+                border-radius: 12px;
+                box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+                color: var(--text-normal);
+                overflow: hidden;
+                pointer-events: none;
+            `;
+
+            const headerEl = document.createElement('div');
+            headerEl.style.cssText = `
+                height: 36px;
+                padding: 0 12px;
+                display: flex;
+                align-items: center;
+                border-bottom: 1px solid rgba(90, 111, 127, 0.45);
+                background: rgba(11, 16, 25, 0.72);
+                color: var(--text-muted);
+                font-size: 12px;
+                font-weight: 600;
+                letter-spacing: 0.2px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            `;
+            headerEl.textContent = sourceFile.basename;
+
+            const contentEl = document.createElement('div');
+            contentEl.style.cssText = `
+                height: calc(100% - 36px);
+                overflow: auto;
+                padding: 12px 14px;
+                font-size: 14px;
+                line-height: 1.6;
+                color: var(--text-normal);
+                scrollbar-width: thin;
+            `;
+
+            card.appendChild(headerEl);
+            card.appendChild(contentEl);
+            previewContainer.appendChild(card);
+
+            app.vault.cachedRead(sourceFile).then(async (markdown: string) => {
+                if (!contentEl.isConnected) return;
+
+                // 控制渲染量，避免超长笔记影响图形交互
+                const snippet = markdown.length > 3000 ? `${markdown.slice(0, 3000)}\n\n...` : markdown;
+                contentEl.empty?.();
+                contentEl.textContent = '';
+                await MarkdownRenderer.render(app, snippet, contentEl, sourceFile.path, rendererComponent);
+                contentEl.querySelectorAll('h1,h2,h3,h4').forEach((el: any) => {
+                    el.style.marginTop = '0.4em';
+                    el.style.marginBottom = '0.35em';
+                    el.style.lineHeight = '1.35';
+                });
+                contentEl.querySelectorAll('p,li').forEach((el: any) => {
+                    el.style.marginTop = '0.28em';
+                    el.style.marginBottom = '0.28em';
+                });
+            }).catch(() => {
+                contentEl.textContent = sourceFile.basename || '';
+            });
+
+            const updatePosition = () => {
+                if (!this.cy) return;
+                const bb = node.renderedBoundingBox();
+                const zoom = this.cy.zoom();
+
+                card.style.left = `${bb.x1}px`;
+                card.style.top = `${bb.y1}px`;
+                card.style.width = `${Math.max(220, bb.w)}px`;
+                card.style.height = `${Math.max(180, bb.h)}px`;
+                card.style.borderRadius = `${8 * zoom}px`;
+            };
+
+            updaters.push(updatePosition);
+            updatePosition();
+        });
+
+        let scheduled = false;
+        const scheduleUpdate = () => {
+            if (scheduled) return;
+            scheduled = true;
+            requestAnimationFrame(() => {
+                updaters.forEach(fn => fn());
+                scheduled = false;
+            });
+        };
+
+        this.cy.on('zoom pan viewport drag position', scheduleUpdate);
+        this.cy.on('dragfree', scheduleUpdate);
+
+        this.embedPreviewCleanup = () => {
+            if (this.cy) {
+                this.cy.off('zoom pan viewport drag position', scheduleUpdate);
+                this.cy.off('dragfree', scheduleUpdate);
+            }
+            rendererComponent.unload();
+            previewContainer.remove();
+        };
+    }
         /**
      * 获取布局配置
      */
