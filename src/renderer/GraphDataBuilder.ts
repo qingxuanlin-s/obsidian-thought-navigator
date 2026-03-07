@@ -20,6 +20,25 @@ export class GraphDataBuilder {
     }
 
     /**
+     * 推断父节点 ID（兼容不同 ID 编码方式）
+     * - MOC 树：优先使用 IDStr 的点号层级（如 a.1.b -> a.1）
+     * - 旧数据：回退到 IDArr 前缀（逗号拼接）
+     */
+    private getParentId(node: ZKNode): string | null {
+        if (node.IDStr && node.IDStr.includes('.')) {
+            const parentByDot = node.IDStr.split('.').slice(0, -1).join('.');
+            if (parentByDot) return parentByDot;
+        }
+
+        if (node.IDArr && node.IDArr.length > 1) {
+            const parentByArr = node.IDArr.slice(0, -1).toString();
+            if (parentByArr) return parentByArr;
+        }
+
+        return null;
+    }
+
+    /**
      * 从家族节点构建边（父子关系）
      */
     buildFamilyEdges(): this {
@@ -28,22 +47,20 @@ export class GraphDataBuilder {
 
         this.nodes.forEach(node => {
             // 构建父子关系边
-            if (node.IDArr.length > 1) {
-                const parentIDArr = node.IDArr.slice(0, -1);
-                const parentIDStr = parentIDArr.toString();
+            const parentID = this.getParentId(node);
+            if (!parentID) return;
 
-                // 查找父节点
-                const parent = Array.from(nodeMap.values()).find(n => n.IDStr === parentIDStr);
+            // 查找父节点（优先按 IDStr，再按 ID）
+            const parent = Array.from(nodeMap.values()).find(n => n.IDStr === parentID || n.ID === parentID);
 
-                if (parent) {
-                    this.edges.push({
-                        id: `edge-${parent.ID}-${node.ID}`,
-                        source: parent.ID,
-                        target: node.ID,
-                        type: 'parent',
-                        label: node.relationText || ''
-                    });
-                }
+            if (parent) {
+                this.edges.push({
+                    id: `edge-${parent.ID}-${node.ID}`,
+                    source: parent.ID,
+                    target: node.ID,
+                    type: 'parent',
+                    label: node.relationText || ''
+                });
             }
         });
 
@@ -59,6 +76,7 @@ export class GraphDataBuilder {
     buildMOCTreeEdges(reverseRelations: Map<string, any>): this {
         const nodeMap = new Map<string, ZKNode>();
         this.nodes.forEach(node => nodeMap.set(node.IDStr, node));
+        const edgeKeySet = new Set<string>();
 
         // 只根据 reverseRelations（Mermaid 文件中的箭头）来生成边
         for (const relNode of reverseRelations.values()) {
@@ -82,8 +100,30 @@ export class GraphDataBuilder {
                     type: edgeType,
                     label: relNode.relationText || ''
                 });
+                edgeKeySet.add(`${sourceNode.ID}->${targetNode.ID}`);
             }
         }
+
+        // 兜底：补充层级父子边，避免 reverseRelations 为空/不完整时图上无连线
+        this.nodes.forEach(node => {
+            const parentID = this.getParentId(node);
+            if (!parentID) return;
+
+            const parentNode = Array.from(nodeMap.values()).find(n => n.IDStr === parentID || n.ID === parentID);
+            if (!parentNode) return;
+
+            const key = `${parentNode.ID}->${node.ID}`;
+            if (edgeKeySet.has(key)) return;
+
+            this.edges.push({
+                id: `edge-${parentNode.ID}-${node.ID}`,
+                source: parentNode.ID,
+                target: node.ID,
+                type: 'parent',
+                label: node.relationText || ''
+            });
+            edgeKeySet.add(key);
+        });
 
         return this;
     }
