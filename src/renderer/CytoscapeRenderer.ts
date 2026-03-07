@@ -298,6 +298,13 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private runLayoutSafely(layoutConfig: any): void {
         if (!this.cy) return;
 
+        // 空图/单节点图不跑复杂布局，避免布局器内部边界计算异常
+        const nodeCount = this.cy.nodes().length;
+        if (nodeCount <= 1) {
+            this.cy.layout({ name: 'preset' }).run();
+            return;
+        }
+
         try {
             const layout = this.cy.layout(layoutConfig);
             layout.run();
@@ -306,15 +313,21 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 layout: layoutConfig?.name,
                 error
             });
-
-            const fallbackLayout = this.cy.layout({
-                name: 'breadthfirst',
-                directed: false,
-                spacingFactor: 1.3,
-                fit: true,
-                padding: 40
-            });
-            fallbackLayout.run();
+            try {
+                const fallbackGrid = this.cy.layout({
+                    name: 'grid',
+                    fit: true,
+                    padding: 40
+                });
+                fallbackGrid.run();
+            } catch (fallbackError) {
+                console.error('[CytoscapeRenderer] grid fallback failed, fallback to preset', fallbackError);
+                try {
+                    this.cy.layout({ name: 'preset' }).run();
+                } catch (presetError) {
+                    console.error('[CytoscapeRenderer] preset fallback failed', presetError);
+                }
+            }
         }
     }
 
