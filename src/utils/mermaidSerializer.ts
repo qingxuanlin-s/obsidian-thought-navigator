@@ -88,6 +88,7 @@ export class MermaidSerializer {
             groups: data.groups || [],
             edge_curvatures: data.edgeCurvatures || {},
             node_colors: data.nodeColors || {},
+            node_style_colors: (data as any).nodeStyleColors || {},
             cross_domain_links: data.crossDomainLinks || {}  // 始终包含 cross_domain_links，即使为空
         };
 

@@ -275,6 +275,7 @@ export class MermaidParser {
         groups: GroupInfo[];
         edgeCurvatures: Record<string, { distance: number; weight: number }>;
         nodeColors: Record<string, string>;
+        nodeStyleColors: Record<string, string>;
         crossDomainLinks: Record<string, any[]>;  // 跨领域关联
     } {
         const defaultMetadata = {
@@ -282,6 +283,7 @@ export class MermaidParser {
             groups: [],
             edgeCurvatures: {},
             nodeColors: {},
+            nodeStyleColors: {},
             crossDomainLinks: {}
         };
         
@@ -304,6 +306,7 @@ export class MermaidParser {
                 groups: metadata.groups || [],
                 edgeCurvatures: metadata.edge_curvatures || {},
                 nodeColors: parsedNodeColors,
+                nodeStyleColors: metadata.node_style_colors || {},
                 crossDomainLinks: metadata.cross_domain_links || {}
             };
         } catch (e) {
@@ -347,6 +350,7 @@ export class MermaidParser {
                     groups: cached.groups.map(g => ({ ...g, nodeIds: [...g.nodeIds] })),
                     edgeCurvatures: { ...cached.edgeCurvatures },
                     nodeColors: { ...cached.nodeColors },
+                    nodeStyleColors: { ...(cached as any).nodeStyleColors || {} },
                     crossDomainLinks: cached.crossDomainLinks ? JSON.parse(JSON.stringify(cached.crossDomainLinks)) : {},
                     metadata: { ...cached.metadata }
                 };
@@ -502,6 +506,7 @@ export class MermaidParser {
             groups: metadata.groups,
             edgeCurvatures: metadata.edgeCurvatures,
             nodeColors: metadata.nodeColors,
+            nodeStyleColors: metadata.nodeStyleColors,
             crossDomainLinks: metadata.crossDomainLinks,
             metadata: {
                 totalNodes: nodesMap.size,
@@ -637,6 +642,7 @@ export class MermaidParser {
             groups: [],
             edgeCurvatures: {},
             nodeColors: {},
+            nodeStyleColors: {},
             crossDomainLinks: {},
             metadata: {
                 totalNodes: 0,

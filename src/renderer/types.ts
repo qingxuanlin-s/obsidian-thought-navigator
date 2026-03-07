@@ -27,6 +27,7 @@ export interface GraphMetadata {
     groups?: any[];  // 分组信息
     edgeCurvatures?: Record<string, { distance: number; weight: number }>;  // 边弧度信息
     nodeColors?: Record<string, string>;  // 节点颜色信息
+    nodeStyleColors?: Record<string, string>;  // 分支主题色（一级节点）
     crossDomainLinks?: Record<string, any[]>;  // 跨领域关联信息
     nodePositions?: Record<string, { x: number; y: number }>;  // 节点位置信息
 }

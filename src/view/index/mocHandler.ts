@@ -33,6 +33,7 @@ function deepCopyMOCResult(original: MOCParseResult): MOCParseResult {
         groups: original.groups.map(g => ({ ...g, nodeIds: [...g.nodeIds] })),
         edgeCurvatures: { ...original.edgeCurvatures },
         nodeColors: { ...original.nodeColors },
+        nodeStyleColors: { ...(original as any).nodeStyleColors || {} },
         crossDomainLinks: original.crossDomainLinks ? JSON.parse(JSON.stringify(original.crossDomainLinks)) : {},
         metadata: { ...original.metadata }
     };
@@ -44,6 +45,18 @@ function deepCopyMOCResult(original: MOCParseResult): MOCParseResult {
  */
 export class MOCHandler {
     constructor(private plugin: ZKNavigationPlugin, private app: any) {}
+
+    private getBranchStylePalette(): string[] {
+        return ['#ff5a5f', '#ff8a3d', '#f7c948', '#56d364', '#38d9a9', '#4dabf7', '#9775fa', '#f06595'];
+    }
+
+    private pickNextBranchStyleColor(existing: Record<string, string>): string {
+        const palette = this.getBranchStylePalette();
+        const used = new Set(Object.values(existing || {}).filter(Boolean));
+        const unused = palette.find((c) => !used.has(c));
+        if (unused) return unused;
+        return palette[Math.floor(Math.random() * palette.length)];
+    }
 
     /**
      * 通用 MOC 数据修改方法
@@ -270,6 +283,10 @@ export class MOCHandler {
                     mocData.nodeColors[mapping.new] = mocData.nodeColors[mapping.old];
                     delete mocData.nodeColors[mapping.old];
                 }
+                if ((mocData as any).nodeStyleColors && (mocData as any).nodeStyleColors[mapping.old]) {
+                    (mocData as any).nodeStyleColors[mapping.new] = (mocData as any).nodeStyleColors[mapping.old];
+                    delete (mocData as any).nodeStyleColors[mapping.old];
+                }
             }
 
             // 更新跨领域链接中的节点 ID（处理所有映射）
@@ -383,6 +400,20 @@ export class MOCHandler {
             if (mocData.nodeColors && mocData.nodeColors[freeNodeID]) {
                 mocData.nodeColors[newChildID] = mocData.nodeColors[freeNodeID];
                 delete mocData.nodeColors[freeNodeID];
+            }
+            if ((mocData as any).nodeStyleColors && (mocData as any).nodeStyleColors[freeNodeID]) {
+                (mocData as any).nodeStyleColors[newChildID] = (mocData as any).nodeStyleColors[freeNodeID];
+                delete (mocData as any).nodeStyleColors[freeNodeID];
+            }
+
+            // 为新建一级节点自动分配分支主题色
+            if (newChildID.split('.').length === 2) {
+                if (!(mocData as any).nodeStyleColors) {
+                    (mocData as any).nodeStyleColors = {};
+                }
+                if (!(mocData as any).nodeStyleColors[newChildID]) {
+                    (mocData as any).nodeStyleColors[newChildID] = this.pickNextBranchStyleColor((mocData as any).nodeStyleColors);
+                }
             }
 
             // 6. 更新边弧度（需要更新包含该节点的所有边 key）
@@ -523,6 +554,12 @@ export class MOCHandler {
                 }
                 // 如果 ID 没变，颜色信息保持不变
             }
+            if ((mocData as any).nodeStyleColors) {
+                if (childID !== newFreeID && (mocData as any).nodeStyleColors[childID]) {
+                    (mocData as any).nodeStyleColors[newFreeID] = (mocData as any).nodeStyleColors[childID];
+                    delete (mocData as any).nodeStyleColors[childID];
+                }
+            }
 
             // 6. 更新边弧度（需要更新包含该节点的所有边 key）
             if (mocData.edgeCurvatures) {
@@ -648,6 +685,9 @@ export class MOCHandler {
             if (mocData.nodeColors && mocData.nodeColors[nodeID]) {
                 delete mocData.nodeColors[nodeID];
             }
+            if ((mocData as any).nodeStyleColors && (mocData as any).nodeStyleColors[nodeID]) {
+                delete (mocData as any).nodeStyleColors[nodeID];
+            }
 
             // 清理包含该节点的边弧度
             if (mocData.edgeCurvatures) {
@@ -704,6 +744,9 @@ export class MOCHandler {
                 // 清理节点颜色
                 if (mocData.nodeColors && mocData.nodeColors[nodeID]) {
                     delete mocData.nodeColors[nodeID];
+                }
+                if ((mocData as any).nodeStyleColors && (mocData as any).nodeStyleColors[nodeID]) {
+                    delete (mocData as any).nodeStyleColors[nodeID];
                 }
 
                 // 清理边弧度
