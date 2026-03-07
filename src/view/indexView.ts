@@ -168,11 +168,20 @@ export class ZKIndexView extends ItemView {
     // 性能优化：追踪事件监听器初始化状态，避免重复添加
     private branchGraphListenersInitialized: boolean = false;
     private currentBranchGraphDiv: HTMLElement | null = null;
+    private undoStack: Array<{ filePath: string; content: string; timestamp: number }> = [];
+    private readonly MAX_UNDO_STEPS = 7;
+    private isApplyingUndo = false;
+    private undoShortcutBound = false;
 
     constructor(leaf: WorkspaceLeaf, plugin: ZKNavigationPlugin) {
         super(leaf);
         this.plugin = plugin;
-        this.mocHandler = new MOCHandler(plugin, (this.app as any));
+        this.mocHandler = new MOCHandler(plugin, (this.app as any), {
+            onBeforeModify: ({ filePath, content }) => {
+                if (this.isApplyingUndo) return;
+                this.pushUndoSnapshot(filePath, content);
+            }
+        });
     }
 
     getViewType(): string {
@@ -234,6 +243,65 @@ export class ZKIndexView extends ItemView {
 
         // 更新监听器列表，保留其他元素的监听器
         this.registeredEventListeners = toKeep;
+    }
+
+    private pushUndoSnapshot(filePath: string, content: string): void {
+        const last = this.undoStack[this.undoStack.length - 1];
+        if (last && last.filePath === filePath && last.content === content) {
+            return;
+        }
+        this.undoStack.push({
+            filePath,
+            content,
+            timestamp: Date.now()
+        });
+        if (this.undoStack.length > this.MAX_UNDO_STEPS) {
+            this.undoStack = this.undoStack.slice(this.undoStack.length - this.MAX_UNDO_STEPS);
+        }
+    }
+
+    private async undoLastMOCChange(): Promise<void> {
+        const currentMOCPath = this.plugin.settings.mocCurrentFile;
+        if (!currentMOCPath) {
+            new Notice('当前没有可回退的 MOC');
+            return;
+        }
+
+        let targetIndex = -1;
+        for (let i = this.undoStack.length - 1; i >= 0; i--) {
+            if (this.undoStack[i].filePath === currentMOCPath) {
+                targetIndex = i;
+                break;
+            }
+        }
+
+        if (targetIndex < 0) {
+            new Notice('没有可回退的操作');
+            return;
+        }
+
+        const snapshot = this.undoStack.splice(targetIndex, 1)[0];
+        const mocFile = this.app.vault.getFileByPath(snapshot.filePath);
+        if (!mocFile) {
+            new Notice('回退失败：MOC 文件不存在');
+            return;
+        }
+
+        this.isApplyingUndo = true;
+        try {
+            await this.app.vault.modify(mocFile, snapshot.content);
+            // 清理解析缓存，确保读取到最新回退内容
+            const { MermaidParser } = await import('src/utils/mermaidParser');
+            MermaidParser.clearCacheForFile(snapshot.filePath);
+
+            await this.refreshBranchMermaid();
+            new Notice('已回退 1 步');
+        } catch (error) {
+            console.error('Undo failed:', error);
+            new Notice(`回退失败: ${error.message}`);
+        } finally {
+            this.isApplyingUndo = false;
+        }
     }
 
     /**
@@ -600,6 +668,21 @@ export class ZKIndexView extends ItemView {
     }
 
     async onOpen() {
+        if (!this.undoShortcutBound) {
+            this.addTrackedListener(window, 'keydown', async (event: KeyboardEvent) => {
+                const isCmdZ = event.metaKey && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'z';
+                if (!isCmdZ) return;
+
+                // 只在当前激活的是分支视图时生效
+                const activeView = this.app.workspace.getActiveViewOfType(ZKIndexView);
+                if (activeView !== this) return;
+
+                event.preventDefault();
+                event.stopPropagation();
+                await this.undoLastMOCChange();
+            });
+            this.undoShortcutBound = true;
+        }
 
         if (this.app.workspace.layoutReady) {
 
@@ -6540,6 +6623,7 @@ export class ZKIndexView extends ItemView {
 
         // 清理所有DOM事件监听器
         this.cleanupEventListeners();
+        this.undoShortcutBound = false;
 
         // 销毁Cytoscape渲染器
         if (this.branchRenderer) {
