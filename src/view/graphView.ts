@@ -1455,7 +1455,8 @@ export class ZKGraphView extends ItemView {
                     animate: true,
                     animationDuration: 500,
                     nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
-                    themeMode: this.plugin.settings.themeMode
+                    themeMode: this.plugin.settings.themeMode,
+                    themeStyle: this.plugin.settings.themeStyle || 'default'
                 };
                 expandBtn.onClick(() => {
                     try {
@@ -1641,7 +1642,8 @@ export class ZKGraphView extends ItemView {
             animate: true,
             animationDuration: 500,
             nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
-            themeMode: this.plugin.settings.themeMode
+            themeMode: this.plugin.settings.themeMode,
+            themeStyle: this.plugin.settings.themeStyle || 'default'
         };
         expandBtn.onClick(() => {
             try {
@@ -1763,7 +1765,8 @@ export class ZKGraphView extends ItemView {
             animate: true,
             animationDuration: 500,
             nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
-            themeMode: this.plugin.settings.themeMode
+            themeMode: this.plugin.settings.themeMode,
+            themeStyle: this.plugin.settings.themeStyle || 'default'
         };
         expandBtn.onClick(() => {
             try {
@@ -1880,7 +1883,8 @@ export class ZKGraphView extends ItemView {
             animate: true,
             animationDuration: 500,
             nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
-            themeMode: this.plugin.settings.themeMode
+            themeMode: this.plugin.settings.themeMode,
+            themeStyle: this.plugin.settings.themeStyle || 'default'
         };
         expandBtn.onClick(() => {
             try {

@@ -1199,6 +1199,7 @@ export class ZKIndexView extends ItemView {
             animationDuration: 500,
             nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
             themeMode: this.plugin.settings.themeMode,
+            themeStyle: this.plugin.settings.themeStyle || 'default',
             showNoteId: this.plugin.settings.showNoteIdInBranchView
         };
 

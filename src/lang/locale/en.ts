@@ -207,4 +207,7 @@ export default {
     "Theme mode": "Theme mode",
     "Dark theme": "Dark theme",
     "Light theme": "Light theme",
+    "Theme style": "Theme style",
+    "Default style": "Default style",
+    "Vivid style": "Vivid style",
 }

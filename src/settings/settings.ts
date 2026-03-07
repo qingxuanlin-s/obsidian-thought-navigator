@@ -426,6 +426,18 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                 })
             );
 
+        new Setting(experimentalDiv)
+            .setName(t("Theme style"))
+            .addDropdown(options => options
+                .addOption("default", t("Default style"))
+                .addOption("vivid", t("Vivid style"))
+                .setValue(this.plugin.settings.themeStyle || "default")
+                .onChange((value) => {
+                    this.plugin.settings.themeStyle = value as 'default' | 'vivid';
+                    this.plugin.RefreshIndexViewFlag = true;
+                })
+            );
+
         experimentalDiv.createEl("hr");
 
         // MOC 模式设置
