@@ -699,10 +699,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
         branchIds.forEach((branchId) => {
             const storedColor = this.normalizeHexColor(styleColorMap[branchId]);
-            const border = storedColor || palette[this.hashString(branchId) % palette.length];
+            const baseColor = storedColor || palette[this.hashString(branchId) % palette.length];
+            const border = this.softenColor(baseColor, isLight);
             const background = isLight
-                ? this.hexToRgba(border, 0.18)
-                : this.hexToRgba(border, 0.25);
+                ? this.hexToRgba(border, 0.08)
+                : this.hexToRgba(border, 0.12);
             branchColorById.set(branchId, { background, border });
         });
 
@@ -758,6 +759,22 @@ export class CytoscapeRenderer implements IGraphRenderer {
         const g = parseInt(normalized.slice(3, 5), 16);
         const b = parseInt(normalized.slice(5, 7), 16);
         return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+
+    private softenColor(hex: string, isLight: boolean): string {
+        const normalized = this.normalizeHexColor(hex) || '#5b8fd9';
+        const r = parseInt(normalized.slice(1, 3), 16);
+        const g = parseInt(normalized.slice(3, 5), 16);
+        const b = parseInt(normalized.slice(5, 7), 16);
+
+        // 保持色相，降低亮度与对比度
+        const target = isLight ? 98 : 132;
+        const ratio = isLight ? 0.54 : 0.50;
+        const sr = Math.round(r * (1 - ratio) + target * ratio);
+        const sg = Math.round(g * (1 - ratio) + target * ratio);
+        const sb = Math.round(b * (1 - ratio) + target * ratio);
+
+        return `#${sr.toString(16).padStart(2, '0')}${sg.toString(16).padStart(2, '0')}${sb.toString(16).padStart(2, '0')}`;
     }
 
     /**
@@ -1056,7 +1073,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     return colors.nodeBackground;
                 },
                 'color': colors.nodeText,
-                'font-size': '12px',
+                'font-size': '13px',
                 'font-weight': '500',
                 // 使用函数动态计算宽度和高度
                 'width': (ele: any) => {
@@ -1110,7 +1127,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         {
             selector: 'node[?isRoot]',
             style: {
-                'font-size': '24px',
+                'font-size': '25px',
                 'font-weight': 'bold',
                 'text-max-width': '400px',
                 'width': (ele: any) => {
