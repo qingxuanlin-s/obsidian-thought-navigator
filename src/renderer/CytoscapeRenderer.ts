@@ -1179,12 +1179,32 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
         const rendererComponent = new Component();
         const updaters: Array<() => void> = [];
+        const cardSizeMap = new Map<string, { width: number; height: number }>();
+        const interactionUpdaters: Array<() => void> = [];
+        let suppressedCanvasInteractionCount = 0;
+        const setCanvasInteractionSuppressed = (suppressed: boolean) => {
+            if (!this.cy) return;
+            if (suppressed) {
+                suppressedCanvasInteractionCount += 1;
+                if (suppressedCanvasInteractionCount === 1) {
+                    this.cy.userZoomingEnabled(false);
+                    this.cy.userPanningEnabled(false);
+                }
+                return;
+            }
+            suppressedCanvasInteractionCount = Math.max(0, suppressedCanvasInteractionCount - 1);
+            if (suppressedCanvasInteractionCount === 0) {
+                this.cy.userZoomingEnabled(true);
+                this.cy.userPanningEnabled(true);
+            }
+        };
 
         embedNodes.forEach((node: any) => {
             const data = node.data();
             const originalNode = data.originalNode as ZKNode | undefined;
             if (!originalNode?.file) return;
             const sourceFile = originalNode.file;
+            const nodeId = node.id();
 
             const card = document.createElement('div');
             card.className = 'zk-embed-preview-card';
@@ -1221,6 +1241,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             contentEl.style.cssText = `
                 height: calc(100% - 36px);
                 overflow: auto;
+                overscroll-behavior: contain;
                 padding: 12px 14px;
                 font-size: 14px;
                 line-height: 1.6;
@@ -1228,9 +1249,134 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 scrollbar-width: thin;
             `;
 
+            // 右下角 resize 焦点（仅在选中时可用）
+            const resizeHandle = document.createElement('div');
+            resizeHandle.style.cssText = `
+                position: absolute;
+                right: 0;
+                bottom: 0;
+                width: 18px;
+                height: 18px;
+                background: rgba(91, 143, 217, 0.9);
+                border-top-left-radius: 6px;
+                cursor: nwse-resize;
+                pointer-events: none;
+                opacity: 0;
+                color: rgba(255, 255, 255, 0.95);
+                font-size: 11px;
+                font-weight: 700;
+                display: flex;
+                align-items: flex-end;
+                justify-content: flex-end;
+                line-height: 1;
+                padding-right: 2px;
+                transition: opacity 0.15s ease;
+            `;
+            resizeHandle.textContent = '◢';
+
             card.appendChild(headerEl);
             card.appendChild(contentEl);
+            card.appendChild(resizeHandle);
             previewContainer.appendChild(card);
+
+            // 仅选中时允许交互（滚轮滚动/拖拽缩放），避免影响画布操作
+            let isHoveringCard = false;
+            const releaseCanvasSuppression = () => {
+                if (isHoveringCard) {
+                    isHoveringCard = false;
+                    setCanvasInteractionSuppressed(false);
+                }
+            };
+            const updateInteraction = () => {
+                const isSelected = node.selected();
+                card.style.pointerEvents = isSelected ? 'auto' : 'none';
+                resizeHandle.style.pointerEvents = isSelected ? 'auto' : 'none';
+                resizeHandle.style.opacity = isSelected ? '1' : '0';
+                if (!isSelected) {
+                    releaseCanvasSuppression();
+                }
+            };
+            interactionUpdaters.push(updateInteraction);
+            updateInteraction();
+
+            card.addEventListener('mouseenter', () => {
+                if (!node.selected() || isHoveringCard) return;
+                isHoveringCard = true;
+                setCanvasInteractionSuppressed(true);
+            });
+            card.addEventListener('mouseleave', () => {
+                releaseCanvasSuppression();
+            });
+
+            let wheelSuppressTimeout: number | null = null;
+            const handleWheel = (e: WheelEvent) => {
+                if (!node.selected()) return;
+                e.preventDefault();
+                e.stopPropagation();
+                if (!isHoveringCard) {
+                    isHoveringCard = true;
+                    setCanvasInteractionSuppressed(true);
+                }
+                if (wheelSuppressTimeout !== null) {
+                    window.clearTimeout(wheelSuppressTimeout);
+                }
+                wheelSuppressTimeout = window.setTimeout(() => {
+                    if (!isHoveringCard) {
+                        setCanvasInteractionSuppressed(false);
+                    }
+                    wheelSuppressTimeout = null;
+                }, 180);
+                contentEl.scrollTop += e.deltaY;
+            };
+            card.addEventListener('wheel', handleWheel, { passive: false });
+            contentEl.addEventListener('wheel', handleWheel, { passive: false });
+
+            // 右下角拖拽调整尺寸
+            let resizing = false;
+            let startX = 0;
+            let startY = 0;
+            let startW = 0;
+            let startH = 0;
+
+            const onMouseMove = (e: MouseEvent) => {
+                if (!resizing) return;
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                const newWidth = Math.max(220, startW + dx);
+                const newHeight = Math.max(180, startH + dy);
+                cardSizeMap.set(nodeId, { width: newWidth, height: newHeight });
+                card.style.width = `${newWidth}px`;
+                card.style.height = `${newHeight}px`;
+            };
+
+            const onMouseUp = () => {
+                if (!resizing) return;
+                resizing = false;
+                setCanvasInteractionSuppressed(false);
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+            };
+
+            resizeHandle.addEventListener('mousedown', (e: MouseEvent) => {
+                if (!node.selected()) return;
+                e.preventDefault();
+                e.stopPropagation();
+                resizing = true;
+                setCanvasInteractionSuppressed(true);
+                startX = e.clientX;
+                startY = e.clientY;
+                const size = cardSizeMap.get(nodeId);
+                if (size) {
+                    startW = size.width;
+                    startH = size.height;
+                } else {
+                    const bb = node.renderedBoundingBox();
+                    startW = Math.max(220, bb.w);
+                    startH = Math.max(180, bb.h);
+                }
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            });
 
             app.vault.cachedRead(sourceFile).then(async (markdown: string) => {
                 if (!contentEl.isConnected) return;
@@ -1257,12 +1403,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 if (!this.cy) return;
                 const bb = node.renderedBoundingBox();
                 const zoom = this.cy.zoom();
+                const size = cardSizeMap.get(nodeId);
+                const width = size?.width ?? Math.max(220, bb.w);
+                const height = size?.height ?? Math.max(180, bb.h);
 
                 card.style.left = `${bb.x1}px`;
                 card.style.top = `${bb.y1}px`;
-                card.style.width = `${Math.max(220, bb.w)}px`;
-                card.style.height = `${Math.max(180, bb.h)}px`;
-                card.style.borderRadius = `${8 * zoom}px`;
+                card.style.width = `${width}px`;
+                card.style.height = `${height}px`;
+                card.style.borderRadius = `${Math.max(8, 12 * zoom)}px`;
             };
 
             updaters.push(updatePosition);
@@ -1279,13 +1428,18 @@ export class CytoscapeRenderer implements IGraphRenderer {
             });
         };
 
+        const handleSelectionChange = () => interactionUpdaters.forEach(fn => fn());
         this.cy.on('zoom pan viewport drag position', scheduleUpdate);
         this.cy.on('dragfree', scheduleUpdate);
+        this.cy.on('select unselect', handleSelectionChange);
 
         this.embedPreviewCleanup = () => {
             if (this.cy) {
                 this.cy.off('zoom pan viewport drag position', scheduleUpdate);
                 this.cy.off('dragfree', scheduleUpdate);
+                this.cy.off('select unselect', handleSelectionChange);
+                this.cy.userZoomingEnabled(true);
+                this.cy.userPanningEnabled(true);
             }
             rendererComponent.unload();
             previewContainer.remove();
