@@ -22,13 +22,14 @@ export class MermaidSerializer {
         // 文件节点：显示为 wiki link
         const displayText = node.displayText || node.wikiLink;
         const escapedDisplayText = displayText.replace(/"/g, '\\"');
+        const linkPrefix = node.isEmbed ? '!' : '';
 
         // 显示文本和 wikiLink 不同时，使用 alias 语法：[[link|alias]]
         if (displayText !== node.wikiLink) {
-            return `${node.nodeID}["[[${escapedWikiLink}|${escapedDisplayText}]]"]`;
+            return `${node.nodeID}["${linkPrefix}[[${escapedWikiLink}|${escapedDisplayText}]]"]`;
         }
 
-        return `${node.nodeID}["[[${escapedWikiLink}]]"]`;
+        return `${node.nodeID}["${linkPrefix}[[${escapedWikiLink}]]"]`;
     }
 
     /**

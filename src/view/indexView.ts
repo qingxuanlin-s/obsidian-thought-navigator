@@ -54,6 +54,8 @@ export interface ZKNode {
     crossDomainOriginalNodeId?: string; // 跨领域节点的原始节点 ID
     isPlaceholder?: boolean; // 是否为占位符节点（未完成编辑）
     isTextOnly?: boolean; // 是否为纯文字节点（不关联文件）
+    isEmbed?: boolean; // 是否为嵌入节点（![[...]]）
+    wikiLink?: string; // 原始 wikilink（用于官方预览解析）
 }
 
 interface BrancAllhNodes {
@@ -1483,13 +1485,24 @@ export class ZKIndexView extends ItemView {
                 return;
             }
 
+            // Command/Ctrl 多选过程中，不触发悬浮预览
+            if (mouseEvent?.metaKey || mouseEvent?.ctrlKey) {
+                return;
+            }
+
+            const currentMOCPath = this.plugin.settings.mocCurrentFile || node.file.path;
+            const linkTarget = (node.wikiLink || node.file.basename || node.file.path).trim();
+            const linktext = node.isEmbed
+                ? `![[${linkTarget}]]`
+                : `[[${linkTarget}]]`;
+
             this.app.workspace.trigger('hover-link', {
                 event: mouseEvent,
                 source: 'zk-navigation',
                 hoverParent: branchGraphDiv,
-                linktext: "",
+                linktext,
                 targetEl: mouseEvent.target,
-                sourcePath: node.file?.path,
+                sourcePath: currentMOCPath,
             });
         });
 
@@ -4960,7 +4973,8 @@ export class ZKIndexView extends ItemView {
                         mocFile,
                         node.IDStr,
                         parsed.displayText,
-                        parsed.wikiLink
+                        parsed.wikiLink,
+                        parsed.isEmbed
                     );
                 }
 
@@ -5423,26 +5437,28 @@ export class ZKIndexView extends ItemView {
     private buildFileNodeRawWikiText(node: ZKNode): string {
         const wikiLink = node.file?.basename || node.title || '';
         const displayText = node.title || wikiLink;
+        const prefix = node.isEmbed ? '!' : '';
         if (displayText && displayText !== wikiLink) {
-            return `[[${wikiLink}|${displayText}]]`;
+            return `${prefix}[[${wikiLink}|${displayText}]]`;
         }
-        return `[[${wikiLink}]]`;
+        return `${prefix}[[${wikiLink}]]`;
     }
 
-    private parseRawWikiLinkInput(input: string): { wikiLink: string; displayText: string } | null {
+    private parseRawWikiLinkInput(input: string): { wikiLink: string; displayText: string; isEmbed: boolean } | null {
         const trimmed = input.trim();
-        const match = trimmed.match(/^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/);
+        const match = trimmed.match(/^(!)?\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/);
         if (!match) {
             return null;
         }
 
-        const wikiLink = match[1].trim();
-        const displayText = (match[2] || match[1]).trim();
+        const isEmbed = !!match[1];
+        const wikiLink = match[2].trim();
+        const displayText = (match[3] || match[2]).trim();
         if (!wikiLink || !displayText) {
             return null;
         }
 
-        return { wikiLink, displayText };
+        return { wikiLink, displayText, isEmbed };
     }
 
     /**

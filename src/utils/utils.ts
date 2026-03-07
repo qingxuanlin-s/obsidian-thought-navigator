@@ -15,6 +15,7 @@ export interface MOCTreeNode {
     arrowSource?: string;       // 箭头关系的源节点ID
     arrowTarget?: string;       // 箭头关系的目标节点ID
     isTextOnly?: boolean;       // 是否为纯文字节点（不关联文件）
+    isEmbed?: boolean;          // 是否为嵌入节点（![[...]]）
 }
 
 // 反向关系信息
@@ -150,6 +151,7 @@ export async function convertMOCToZKNodes(
             title: mocNode.displayText,
             relationText: mocNode.relationText,
             displayText: getDisplayText(plugin, mocNode),
+            wikiLink: mocNode.wikiLink,
             ctime: mocNode.file?.stat?.ctime || Date.now(),  // 纯文字节点使用当前时间
             randomId: random(16),
             nodeSons: 1,
@@ -160,6 +162,7 @@ export async function convertMOCToZKNodes(
             branchName: "",
             gitNodePos: 0,
             isTextOnly: mocNode.isTextOnly || false,  // 传递纯文字节点标记
+            isEmbed: mocNode.isEmbed || false,
         };
 
         // 如果有保存的位置信息，添加到节点

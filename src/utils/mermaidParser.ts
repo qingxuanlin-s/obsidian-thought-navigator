@@ -9,6 +9,7 @@ interface NodeDefinition {
     wikiLink: string;        // Wiki 链接，如 "20251214 波函数"（对于纯文字节点，存储原始文本）
     displayText: string;     // 显示文本
     isTextOnly?: boolean;    // 是否为纯文字节点
+    isEmbed?: boolean;       // 是否为嵌入节点 ![[...]]
 }
 
 /**
@@ -91,20 +92,22 @@ export class MermaidParser {
 
         // 首先尝试匹配文件节点格式（更严格的匹配）：nodeId["[[wikilink]]"] 或 nodeId["[[wikilink|displayText]]"]
         // 文件节点必须包含 [[...]]，并且外层有引号
-        const fileNodeRegex = /^([a-zA-Z0-9.]+)\["\[\[([^\]|]+)(?:\|([^\]]+))?\]\]"\]$/;
+        const fileNodeRegex = /^([a-zA-Z0-9.]+)\["(!)?\[\[([^\]|]+)(?:\|([^\]]+))?\]\]"\]$/;
         const fileNodeMatch = trimmedLine.match(fileNodeRegex);
 
         if (fileNodeMatch) {
             const id = fileNodeMatch[1];
-            const wikiLink = fileNodeMatch[2];
-            const displayText = fileNodeMatch[3] || fileNodeMatch[2];
+            const isEmbed = !!fileNodeMatch[2];
+            const wikiLink = fileNodeMatch[3];
+            const displayText = fileNodeMatch[4] || fileNodeMatch[3];
 
 
             return {
                 id,
                 wikiLink,
                 displayText,
-                isTextOnly: false  // 文件节点
+                isTextOnly: false,  // 文件节点
+                isEmbed
             };
         }
 
@@ -553,7 +556,8 @@ export class MermaidParser {
                 children: [],
                 file,
                 relationText: '',
-                isTextOnly: nodeDef.isTextOnly || false  // 传递纯文字节点标记
+                isTextOnly: nodeDef.isTextOnly || false,  // 传递纯文字节点标记
+                isEmbed: nodeDef.isEmbed || false
             };
 
             nodeMap.set(id, treeNode);
