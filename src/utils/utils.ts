@@ -33,6 +33,7 @@ export interface MOCParseResult {
     groups: GroupInfo[];        // 分组信息
     edgeCurvatures: Record<string, { distance: number; weight: number }>; // 边弧度信息
     nodeColors: Record<string, string>; // 节点颜色信息
+    nodeStyleColors: Record<string, string>; // 分支主题色（一级节点）
     crossDomainLinks?: Record<string, CrossDomainLink[]>; // 跨领域节点关联信息
     metadata: {                 // 扩展信息
         totalNodes: number;     // 总节点数
@@ -78,6 +79,7 @@ export async function parseMOCStructure(
             groups: [],
             edgeCurvatures: {},
             nodeColors: {},
+            nodeStyleColors: {},
             crossDomainLinks: {},
             metadata: {
                 totalNodes: 0,
@@ -781,7 +783,7 @@ a --> a.2
 %% 可选：添加带标签的关系
 %% a.1 -->|相关| a.2
 
-%% ext:{"node_positions":{},"groups":[],"edge_curvatures":{},"node_colors":{}} %%
+%% ext:{"node_positions":{},"groups":[],"edge_curvatures":{},"node_colors":{},"node_style_colors":{}} %%
 \`\`\`
 
 **使用说明：**

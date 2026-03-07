@@ -1187,9 +1187,10 @@ export class ZKIndexView extends ItemView {
         const groups = mocParseResult.groups || [];
         const edgeCurvatures = mocParseResult.edgeCurvatures || {};
         const nodeColors = mocParseResult.nodeColors || {};
+        const nodeStyleColors = (mocParseResult as any).nodeStyleColors || {};
         const crossDomainLinks = mocParseResult.crossDomainLinks || {};
         const nodePositions = mocParseResult.nodePositions || {};
-        const graphData = GraphDataBuilder.fromMOCTree(this.mocNodes, this.mocReverseRelations, null, groups, edgeCurvatures, nodeColors, crossDomainLinks, nodePositions);
+        const graphData = GraphDataBuilder.fromMOCTree(this.mocNodes, this.mocReverseRelations, null, groups, edgeCurvatures, nodeColors, nodeStyleColors, crossDomainLinks, nodePositions);
 
         // 配置渲染选项
         const options: RenderOptions = {
@@ -5949,6 +5950,18 @@ export class ZKIndexView extends ItemView {
         return null;
     }
 
+    private getBranchStylePalette(): string[] {
+        return ['#ff5a5f', '#ff8a3d', '#f7c948', '#56d364', '#38d9a9', '#4dabf7', '#9775fa', '#f06595'];
+    }
+
+    private pickNextBranchStyleColor(existing: Record<string, string>): string {
+        const palette = this.getBranchStylePalette();
+        const used = new Set(Object.values(existing || {}).filter(Boolean));
+        const unused = palette.find((c) => !used.has(c));
+        if (unused) return unused;
+        return palette[Math.floor(Math.random() * palette.length)];
+    }
+
     /**
      * 生成兄弟节点 ID
      */
@@ -6477,6 +6490,16 @@ export class ZKIndexView extends ItemView {
                     // 作为根节点添加
                     newNode.depth = 0;
                     mocData.nodes.push(newNode);
+                }
+
+                // 新建一级节点时，自动分配并持久化分支主题色（写入 %% ext 的 node_style_colors）
+                if (newNode.nodeID.split('.').length === 2) {
+                    if (!(mocData as any).nodeStyleColors) {
+                        (mocData as any).nodeStyleColors = {};
+                    }
+                    if (!(mocData as any).nodeStyleColors[newNode.nodeID]) {
+                        (mocData as any).nodeStyleColors[newNode.nodeID] = this.pickNextBranchStyleColor((mocData as any).nodeStyleColors);
+                    }
                 }
 
                 // 如果有反向关系，添加到 reverseRelations

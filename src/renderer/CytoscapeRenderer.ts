@@ -615,7 +615,29 @@ export class CytoscapeRenderer implements IGraphRenderer {
      */
     private convertEdgesToElements(edges: Edge[]): any[] {
         const edgeColorMap = this.buildVividEdgeColorMap();
+        const allNodes = this.currentData?.nodes || [];
+        const nodeById = new Map<string, ZKNode>();
+        allNodes.forEach((n) => {
+            nodeById.set(n.ID, n);
+            nodeById.set(n.IDStr, n);
+        });
+        const nodeStyleMap = this.buildVividNodeStyleMap(allNodes);
         const elements = edges.map(edge => {
+            const sourceNode = nodeById.get(edge.source);
+            const targetNode = nodeById.get(edge.target);
+            const sourceLevel = sourceNode?.IDStr ? sourceNode.IDStr.split('.').length : 0;
+            const targetLevel = targetNode?.IDStr ? targetNode.IDStr.split('.').length : 0;
+            const isRootToFirstLevel =
+                !!sourceNode &&
+                !!targetNode &&
+                sourceLevel === 1 &&
+                targetLevel === 2 &&
+                targetNode.IDStr.startsWith(`${sourceNode.IDStr}.`);
+
+            let branchEdgeColor = edgeColorMap.get(edge.source) || null;
+            if (isRootToFirstLevel && targetNode) {
+                branchEdgeColor = nodeStyleMap.get(targetNode.IDStr)?.border || branchEdgeColor;
+            }
             const element: any = {
                 group: 'edges' as const,
                 data: {
@@ -627,7 +649,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     // 保存原始的 source 和 target ID（未转义）
                     originalSource: edge.source,
                     originalTarget: edge.target,
-                    branchEdgeColor: edgeColorMap.get(edge.source) || null
+                    branchEdgeColor,
+                    isRootToFirstLevel
                 }
             };
             
@@ -671,32 +694,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
         const isLight = this.currentOptions?.themeMode === 'light';
         const branchColorById = new Map<string, { background: string; border: string }>();
-        const darkPalette: Array<{ background: string; border: string }> = [
-            { background: '#3a1f1f', border: '#ff5a5f' },
-            { background: '#3a2818', border: '#ff8a3d' },
-            { background: '#3a3418', border: '#f7c948' },
-            { background: '#1f3a24', border: '#56d364' },
-            { background: '#17363a', border: '#38d9a9' },
-            { background: '#182f45', border: '#4dabf7' },
-            { background: '#221f3a', border: '#9775fa' },
-            { background: '#3a1f33', border: '#f06595' }
-        ];
-        const lightPalette: Array<{ background: string; border: string }> = [
-            { background: '#ffe7e8', border: '#d6333a' },
-            { background: '#ffeddc', border: '#dd6b20' },
-            { background: '#fff6d8', border: '#b7791f' },
-            { background: '#e6f7ea', border: '#2f9e44' },
-            { background: '#e3f8f5', border: '#0f766e' },
-            { background: '#e7f1ff', border: '#1d4ed8' },
-            { background: '#efeaff', border: '#6d28d9' },
-            { background: '#ffe9f3', border: '#be185d' }
-        ];
-        const palette = isLight ? lightPalette : darkPalette;
+        const styleColorMap = (this.currentData?.metadata as any)?.nodeStyleColors || {};
+        const palette = this.getBranchStylePalette();
 
-        branchIds.forEach((branchId, index) => {
-            const color = palette[index % palette.length];
-            const background = color.background;
-            const border = color.border;
+        branchIds.forEach((branchId) => {
+            const storedColor = this.normalizeHexColor(styleColorMap[branchId]);
+            const border = storedColor || palette[this.hashString(branchId) % palette.length];
+            const background = isLight
+                ? this.hexToRgba(border, 0.18)
+                : this.hexToRgba(border, 0.25);
             branchColorById.set(branchId, { background, border });
         });
 
@@ -720,6 +726,38 @@ export class CytoscapeRenderer implements IGraphRenderer {
             if (style) colorMap.set(node.IDStr, style.border);
         });
         return colorMap;
+    }
+
+    private getBranchStylePalette(): string[] {
+        return ['#ff5a5f', '#ff8a3d', '#f7c948', '#56d364', '#38d9a9', '#4dabf7', '#9775fa', '#f06595'];
+    }
+
+    private hashString(value: string): number {
+        let hash = 0;
+        for (let i = 0; i < value.length; i++) {
+            hash = ((hash << 5) - hash) + value.charCodeAt(i);
+            hash |= 0;
+        }
+        return Math.abs(hash);
+    }
+
+    private normalizeHexColor(color: string | null | undefined): string | null {
+        if (!color || typeof color !== 'string') return null;
+        const trimmed = color.trim();
+        const isHex3 = /^#([0-9a-fA-F]{3})$/.test(trimmed);
+        const isHex6 = /^#([0-9a-fA-F]{6})$/.test(trimmed);
+        if (!isHex3 && !isHex6) return null;
+        if (isHex6) return trimmed.toLowerCase();
+        const [, shortHex] = trimmed.match(/^#([0-9a-fA-F]{3})$/)!;
+        return `#${shortHex.split('').map((c) => c + c).join('').toLowerCase()}`;
+    }
+
+    private hexToRgba(hex: string, alpha: number): string {
+        const normalized = this.normalizeHexColor(hex) || '#5b8fd9';
+        const r = parseInt(normalized.slice(1, 3), 16);
+        const g = parseInt(normalized.slice(3, 5), 16);
+        const b = parseInt(normalized.slice(5, 7), 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
 
     /**
@@ -1162,7 +1200,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
         {
             selector: 'edge',
             style: {
-                'width': 2,
+                'width': (ele: any) => {
+                    if (isVivid && ele.data('isRootToFirstLevel')) {
+                        return 4;
+                    }
+                    return 2;
+                },
                 'line-color': (ele: any) => {
                     if (isVivid && ele.data('branchEdgeColor')) {
                         return ele.data('branchEdgeColor');

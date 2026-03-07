@@ -390,7 +390,7 @@ export class GraphDataBuilder {
     }
 
     /**
-     * 静态工厂方法：从 MOC 树节点创建（包含 reverseRelations、groups、edgeCurvatures 和 nodeColors）
+     * 静态工厂方法：从 MOC 树节点创建（包含 reverseRelations、groups、edgeCurvatures 和颜色信息）
      */
     static fromMOCTree(
         nodes: ZKNode[],
@@ -399,6 +399,7 @@ export class GraphDataBuilder {
         groups: any[] = [],
         edgeCurvatures: Record<string, { distance: number; weight: number }> = {},
         nodeColors: Record<string, string> = {},
+        nodeStyleColors: Record<string, string> = {},
         crossDomainLinks: Record<string, any[]> = {},
         nodePositions: Record<string, { x: number; y: number }> = {}
     ): GraphData {
@@ -412,6 +413,7 @@ export class GraphDataBuilder {
                 groups: groups,
                 edgeCurvatures: edgeCurvatures,
                 nodeColors: nodeColors,
+                nodeStyleColors: nodeStyleColors,
                 crossDomainLinks: crossDomainLinks,
                 nodePositions: nodePositions
             })
