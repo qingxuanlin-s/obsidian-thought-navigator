@@ -5389,6 +5389,16 @@ case 'dagre':
         btn.onmouseover = () => btn.style.backgroundColor = 'var(--interactive-hover)';
         btn.onmouseout = () => btn.style.backgroundColor = 'var(--interactive-normal)';
 
+        // 防止按下工具栏按钮时触发底层画布点击/取消选中
+        btn.onpointerdown = (event: PointerEvent) => {
+            event.preventDefault();
+            event.stopPropagation();
+        };
+        btn.onmousedown = (event: MouseEvent) => {
+            event.preventDefault();
+            event.stopPropagation();
+        };
+
         btn.onclick = (event: MouseEvent) => {
             event.stopPropagation(); // 阻止事件冒泡到画布
             onClick();
@@ -5829,6 +5839,8 @@ case 'dagre':
      */
     private batchDeleteNodes(): void {
         if (this.batchSelectedNodeIds.length === 0) return;
+        const nodeIdsSnapshot = [...this.batchSelectedNodeIds];
+        const nodesSnapshot = this.batchSelectedNodes.map((n: any) => ({ ...n }));
 
         // 先隐藏工具栏，避免遮挡对话框
         this.hideBatchToolbar();
@@ -5866,7 +5878,7 @@ case 'dagre':
         dialog.appendChild(title);
 
         const message = document.createElement('p');
-        message.textContent = `确认删除 ${this.batchSelectedNodeIds.length} 个节点？`;
+        message.textContent = `确认删除 ${nodeIdsSnapshot.length} 个节点？`;
         message.style.margin = '0';
         dialog.appendChild(message);
 
@@ -5881,8 +5893,8 @@ case 'dagre':
             // 触发批量删除事件
             this.container?.dispatchEvent(new CustomEvent('batch-delete-nodes', {
                 detail: {
-                    nodeIds: this.batchSelectedNodeIds,
-                    nodes: this.batchSelectedNodes
+                    nodeIds: nodeIdsSnapshot,
+                    nodes: nodesSnapshot
                 }
             }));
 
@@ -5917,13 +5929,14 @@ case 'dagre':
      */
     private batchChangeColor(): void {
         if (this.batchSelectedNodeIds.length === 0) return;
+        const nodeIdsSnapshot = [...this.batchSelectedNodeIds];
 
         // 先隐藏工具栏
         this.hideBatchToolbar();
 
         // 触发批量颜色选择事件
         this.container?.dispatchEvent(new CustomEvent('batch-show-color-picker', {
-            detail: { nodeIds: this.batchSelectedNodeIds }
+            detail: { nodeIds: nodeIdsSnapshot }
         }));
     }
 
