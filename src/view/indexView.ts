@@ -1818,6 +1818,12 @@ export class ZKIndexView extends ItemView {
             }
         });
 
+        // 监听占位符节点取消事件（Esc 或点击空白）
+        this.addTrackedListener(branchGraphDiv, 'placeholder-node-cancel', async (event: any) => {
+            const { nodeId } = event.detail;
+            await this.removePlaceholderNode(nodeId);
+        });
+
         // 监听占位符节点完成事件（从 suggester 选择文件后触发）
         this.addTrackedListener(branchGraphDiv, 'placeholder-node-complete', async (event: any) => {
             const { nodeId, wikiLink, file, isEmbed } = event.detail;

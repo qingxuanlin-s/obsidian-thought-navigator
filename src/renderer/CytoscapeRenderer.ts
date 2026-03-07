@@ -3466,9 +3466,15 @@ case 'dagre':
 
         // 取消编辑函数
         const cancelEdit = () => {
+            if (isSaved) return;
             isSaved = true;
-            // 恢复原始标签
-            node.data('label', data.label || '');
+            // 取消创建：清空占位符标签并通知上层删除占位符节点
+            node.data('label', '');
+            this.container?.dispatchEvent(new CustomEvent('placeholder-node-cancel', {
+                detail: {
+                    nodeId: data.id
+                }
+            }));
             if (textarea.parentNode) {
                 textarea.remove();
             }
@@ -3536,12 +3542,23 @@ case 'dagre':
                     suggesterPopoverRef.value = null;
                 }
 
-                // 如果还未保存，自动保存
+                // 点击空白区域离焦时，取消创建（不自动保存）
                 if (!isSaved) {
-                    saveNode();
+                    cancelEdit();
                 }
             }, 20);
         });
+
+        // 点击编辑器外区域时取消创建
+        const handleOutsidePointerDown = (e: MouseEvent) => {
+            if (isSaved) return;
+            const target = e.target as Node | null;
+            if (!target) return;
+            if (textarea.contains(target)) return;
+            if (suggesterPopoverRef.value && suggesterPopoverRef.value.contains(target)) return;
+            cancelEdit();
+        };
+        document.addEventListener('mousedown', handleOutsidePointerDown, true);
 
         // 监听图形缩放和平移，更新编辑器位置
         const updatePosition = () => {
@@ -3566,6 +3583,7 @@ case 'dagre':
                 mutation.removedNodes.forEach((removedNode) => {
                     if (removedNode === textarea && this.cy) {
                         this.cy.off('zoom pan', updatePosition);
+                        document.removeEventListener('mousedown', handleOutsidePointerDown, true);
                     }
                 });
             });
