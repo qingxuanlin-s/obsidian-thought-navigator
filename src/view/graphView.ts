@@ -1458,7 +1458,12 @@ export class ZKGraphView extends ItemView {
                     themeMode: this.plugin.settings.themeMode
                 };
                 expandBtn.onClick(() => {
-                    new CytoscapeExpandModal(this.app, t("mind tree context"), graphData, options).open();
+                    try {
+                        new CytoscapeExpandModal(this.app, t("mind tree context"), graphData, options).open();
+                    } catch (error) {
+                        console.error('[GraphView] expand mind tree failed', error);
+                        new Notice('放大失败：思维树');
+                    }
                 });
 
                 // 创建或复用渲染器
@@ -1639,7 +1644,12 @@ export class ZKGraphView extends ItemView {
             themeMode: this.plugin.settings.themeMode
         };
         expandBtn.onClick(() => {
-            new CytoscapeExpandModal(this.app, t("close relative"), graphData, options).open();
+            try {
+                new CytoscapeExpandModal(this.app, t("close relative"), graphData, options).open();
+            } catch (error) {
+                console.error('[GraphView] expand family failed', error);
+                new Notice('放大失败：思维树');
+            }
         });
 
         // 创建或复用渲染器
@@ -1756,7 +1766,12 @@ export class ZKGraphView extends ItemView {
             themeMode: this.plugin.settings.themeMode
         };
         expandBtn.onClick(() => {
-            new CytoscapeExpandModal(this.app, headingTitle, graphData, options).open();
+            try {
+                new CytoscapeExpandModal(this.app, headingTitle, graphData, options).open();
+            } catch (error) {
+                console.error('[GraphView] expand moc tree failed', error);
+                new Notice('放大失败：思维树');
+            }
         });
 
         // 创建或复用渲染器（使用 familyGraphRenderer）
@@ -1868,7 +1883,12 @@ export class ZKGraphView extends ItemView {
             themeMode: this.plugin.settings.themeMode
         };
         expandBtn.onClick(() => {
-            new CytoscapeExpandModal(this.app, t("inoutlinks"), graphData, options).open();
+            try {
+                new CytoscapeExpandModal(this.app, t("inoutlinks"), graphData, options).open();
+            } catch (error) {
+                console.error('[GraphView] expand inoutlinks failed', error);
+                new Notice('放大失败：出入链');
+            }
         });
 
         // 创建或复用渲染器
