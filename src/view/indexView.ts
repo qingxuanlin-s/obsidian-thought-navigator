@@ -1719,13 +1719,10 @@ export class ZKIndexView extends ItemView {
                 }
             }
 
-            // 检查标签是否包含 [[wiki link]]
-            const linkMatch = label.match(/\[\[([^\]]+)\]\]/);
-
-            if (linkMatch) {
-                // 情况 1：检测到 wiki link → 创建文件节点
-                const wikiLink = linkMatch[1];
-                await this.finalizeFileNode(nodeId, wikiLink, label, position);
+            const parsed = this.parseRawWikiLinkInput(label);
+            if (parsed) {
+                // 情况 1：检测到 wiki link/嵌入 link → 创建文件节点
+                await this.finalizeFileNode(nodeId, parsed.wikiLink, label, position, parsed.isEmbed);
             } else if (label.trim()) {
                 // 情况 2：无 wiki link → 创建纯文字节点
                 await this.finalizeTextOnlyNode(nodeId, label.trim(), position);
@@ -1737,7 +1734,7 @@ export class ZKIndexView extends ItemView {
 
         // 监听占位符节点完成事件（从 suggester 选择文件后触发）
         this.addTrackedListener(branchGraphDiv, 'placeholder-node-complete', async (event: any) => {
-            const { nodeId, wikiLink, file } = event.detail;
+            const { nodeId, wikiLink, file, isEmbed } = event.detail;
 
             // 查找对应的节点
             const node = this.mocNodes.find(n => n.ID === nodeId);
@@ -1757,7 +1754,8 @@ export class ZKIndexView extends ItemView {
                     wikiLink: wikiLink,
                     nodeID: suggestedID,
                     relationText: '',
-                    file: file
+                    file: file,
+                    isEmbed: !!isEmbed
                 });
 
                 // 然后移动到父节点下
@@ -1771,7 +1769,8 @@ export class ZKIndexView extends ItemView {
                     wikiLink: wikiLink,
                     nodeID: suggestedID,
                     relationText: '',
-                    file: file
+                    file: file,
+                    isEmbed: !!isEmbed
                 });
             }
 
@@ -1801,7 +1800,7 @@ export class ZKIndexView extends ItemView {
 
         // 监听从 suggester 添加自由节点事件
         this.addTrackedListener(branchGraphDiv, 'add-free-node-from-suggester', async (event: any) => {
-            const { nodeId, wikiLink, file } = event.detail;
+            const { nodeId, wikiLink, file, isEmbed } = event.detail;
 
             // 获取占位符信息
             const placeholderInfo = this.placeholderNodes.get(nodeId);
@@ -1817,7 +1816,8 @@ export class ZKIndexView extends ItemView {
                     wikiLink: wikiLink,
                     nodeID: suggestedID,
                     relationText: '',
-                    file: file
+                    file: file,
+                    isEmbed: !!isEmbed
                 });
 
                 // 然后移动到父节点下
@@ -1831,7 +1831,8 @@ export class ZKIndexView extends ItemView {
                     wikiLink: wikiLink,
                     nodeID: suggestedID,
                     relationText: '',
-                    file: file
+                    file: file,
+                    isEmbed: !!isEmbed
                 });
             }
 
@@ -5441,7 +5442,9 @@ export class ZKIndexView extends ItemView {
 
     private parseRawWikiLinkInput(input: string): { wikiLink: string; displayText: string; isEmbed: boolean } | null {
         const trimmed = input.trim();
-        const match = trimmed.match(/^(!)?\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/);
+        const normalMatch = trimmed.match(/^(!)?\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/);
+        const fullWidthMatch = trimmed.match(/^(！)?【【([^|】]+)(?:\|([^】]+))?】】$/);
+        const match = normalMatch || fullWidthMatch;
         if (!match) {
             return null;
         }
@@ -6201,7 +6204,8 @@ export class ZKIndexView extends ItemView {
         tempId: string,
         wikiLink: string,
         label: string,
-        position: { x: number; y: number }
+        position: { x: number; y: number },
+        isEmbed: boolean = false
     ): Promise<void> {
         // 获取占位符信息
         const placeholderInfo = this.placeholderNodes.get(tempId);
@@ -6220,7 +6224,8 @@ export class ZKIndexView extends ItemView {
                 nodeID: suggestedID,
                 relationText: '',
                 file: file,
-                isTextOnly: false  // 标记为文件节点
+                isTextOnly: false,  // 标记为文件节点
+                isEmbed
             });
 
             // 然后移动到父节点下
@@ -6235,7 +6240,8 @@ export class ZKIndexView extends ItemView {
                 nodeID: suggestedID,
                 relationText: '',
                 file: file,
-                isTextOnly: false  // 标记为文件节点
+                isTextOnly: false,  // 标记为文件节点
+                isEmbed
             });
         }
 
@@ -6408,6 +6414,7 @@ export class ZKIndexView extends ItemView {
             relationText: string;
         };
         isTextOnly?: boolean;   // 新增：标记纯文字节点
+        isEmbed?: boolean;      // 新增：标记嵌入节点 ![[...]]
     }) {
         const mocFilePath = this.plugin.settings.mocCurrentFile;
         if (!mocFilePath) {
@@ -6436,7 +6443,8 @@ export class ZKIndexView extends ItemView {
                     children: [],
                     file: result.isTextOnly ? null : result.file,  // 纯文字节点无文件
                     relationText: result.connectionRelation || result.relationText || '',
-                    isTextOnly: result.isTextOnly || false  // 新增标记
+                    isTextOnly: result.isTextOnly || false,  // 新增标记
+                    isEmbed: result.isEmbed || false
                 };
 
                 // 如果有父节点，添加为子节点
