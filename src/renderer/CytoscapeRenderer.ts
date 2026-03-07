@@ -89,6 +89,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private batchSelectedNodes: any[] = []; // 保存批量选中的完整节点数据（包含 isCrossDomain 等信息）
     private isMetaPressed = false; // 标记 Command 键是否被按下（框选模式）
     private embedPreviewCleanup: (() => void) | null = null;
+    private collapseHandleCleanup: (() => void) | null = null;
+    private collapsedNodeIds: Set<string> = new Set();
 
     // SimpleMind 风格布局常量
     private readonly VERTICAL_GAP = 80;       // 垂直间距
@@ -309,6 +311,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 this.runLayoutSafely(layoutConfig);
             }
         }
+        this.applyCollapsedState();
     }
 
     /**
@@ -431,6 +434,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
         if (this.embedPreviewCleanup) {
             this.embedPreviewCleanup();
             this.embedPreviewCleanup = null;
+        }
+        if (this.collapseHandleCleanup) {
+            this.collapseHandleCleanup();
+            this.collapseHandleCleanup = null;
         }
         if (this.cy) {
             this.cy.destroy();
@@ -1227,6 +1234,19 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'background-image': ['none', 'url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'16\' height=\'16\' viewBox=\'0 0 16 16\'%3E%3Cpath fill=\'%235b8fd9\' d=\'M14 4H6.5L3 8.5V14h11V4zm-1 9H4V9h1.5l1-1H6v4h7V5z\'/%3E%3C/svg%3E")']
             } as any
         },
+        // 折叠隐藏的子节点/连线
+        {
+            selector: 'node.zk-collapsed-hidden',
+            style: {
+                'display': 'none'
+            } as any
+        },
+        {
+            selector: 'edge.zk-collapsed-hidden',
+            style: {
+                'display': 'none'
+            } as any
+        },
         // 默认边样式 - 使用 unbundled-bezier 支持自定义控制点
         {
             selector: 'edge',
@@ -1942,9 +1962,174 @@ case 'dagre':
 
         // 添加连线手柄
         this.addConnectionHandles();
+
+        // 添加折叠/展开子节点手柄
+        this.addCollapseToggleHandle();
         
         // 添加分组调整大小手柄
         this.addGroupResizeHandles();
+    }
+
+    private addCollapseToggleHandle(): void {
+        if (!this.cy || !this.container) return;
+
+        if (this.collapseHandleCleanup) {
+            this.collapseHandleCleanup();
+            this.collapseHandleCleanup = null;
+        }
+
+        const handleContainer = document.createElement('div');
+        handleContainer.className = 'zk-collapse-toggle-handle';
+        handleContainer.style.cssText = `
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 4;
+        `;
+        this.container.appendChild(handleContainer);
+
+        const handle = document.createElement('div');
+        handle.style.cssText = `
+            position: absolute;
+            width: 22px;
+            height: 22px;
+            border-radius: 11px;
+            background-color: rgba(17, 24, 39, 0.85);
+            border: 1px solid rgba(148, 163, 184, 0.45);
+            color: #e2e8f0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1;
+            cursor: pointer;
+            pointer-events: auto;
+            user-select: none;
+        `;
+        handleContainer.appendChild(handle);
+
+        let activeNode: any = null;
+
+        const updateHandle = () => {
+            if (!this.cy || !activeNode || activeNode.length === 0) {
+                handle.style.display = 'none';
+                return;
+            }
+
+            const data = activeNode.data();
+            const originalId = data?.originalNode?.IDStr;
+            if (!originalId || data.isGroup || data.isPlaceholder) {
+                handle.style.display = 'none';
+                return;
+            }
+
+            const hasChildren = this.cy.nodes().some((n: any) => {
+                const childId = n.data()?.originalNode?.IDStr;
+                return typeof childId === 'string' && childId.startsWith(`${originalId}.`);
+            });
+            if (!hasChildren) {
+                handle.style.display = 'none';
+                return;
+            }
+
+            const isCollapsed = this.collapsedNodeIds.has(originalId);
+            handle.textContent = isCollapsed ? '▶' : '▼';
+            handle.title = isCollapsed ? '展开子节点' : '收起子节点';
+
+            const bb = activeNode.renderedBoundingBox();
+            const zoom = this.cy.zoom();
+            const size = 22 * zoom;
+            const left = bb.x1 - size - (8 * zoom);
+            const top = bb.y1 + (bb.h - size) / 2;
+
+            handle.style.width = `${size}px`;
+            handle.style.height = `${size}px`;
+            handle.style.borderRadius = `${size / 2}px`;
+            handle.style.left = `${left}px`;
+            handle.style.top = `${top}px`;
+            handle.style.fontSize = `${12 * zoom}px`;
+            handle.style.display = 'flex';
+        };
+
+        const refreshActiveNode = () => {
+            if (!this.cy) return;
+            const selected = this.cy.$('node:selected').filter((n: any) => {
+                const d = n.data();
+                return !d?.isGroup && !d?.isPlaceholder;
+            });
+            activeNode = selected.length > 0 ? selected.first() : null;
+            updateHandle();
+        };
+
+        handle.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        });
+
+        handle.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!activeNode || activeNode.length === 0) return;
+            const id = activeNode.data()?.originalNode?.IDStr;
+            if (!id) return;
+            if (this.collapsedNodeIds.has(id)) {
+                this.collapsedNodeIds.delete(id);
+            } else {
+                this.collapsedNodeIds.add(id);
+            }
+            this.applyCollapsedState();
+            updateHandle();
+        });
+
+        this.cy.on('select unselect zoom pan position dragfree viewport', updateHandle);
+        this.cy.on('select unselect', refreshActiveNode);
+        refreshActiveNode();
+
+        this.collapseHandleCleanup = () => {
+            if (this.cy) {
+                this.cy.off('select unselect zoom pan position dragfree viewport', updateHandle);
+                this.cy.off('select unselect', refreshActiveNode);
+            }
+            handleContainer.remove();
+        };
+    }
+
+    private applyCollapsedState(): void {
+        if (!this.cy) return;
+
+        const existingIds = new Set<string>();
+        this.cy.nodes().forEach((node: any) => {
+            const id = node.data()?.originalNode?.IDStr;
+            if (id) existingIds.add(id);
+        });
+        this.collapsedNodeIds = new Set(Array.from(this.collapsedNodeIds).filter((id) => existingIds.has(id)));
+
+        this.cy.nodes().removeClass('zk-collapsed-hidden');
+        this.cy.edges().removeClass('zk-collapsed-hidden');
+
+        const hiddenIds = new Set<string>();
+        this.collapsedNodeIds.forEach((collapsedId) => {
+            this.cy!.nodes().forEach((node: any) => {
+                const id = node.data()?.originalNode?.IDStr;
+                if (!id) return;
+                if (id !== collapsedId && id.startsWith(`${collapsedId}.`)) {
+                    hiddenIds.add(id);
+                    node.addClass('zk-collapsed-hidden');
+                }
+            });
+        });
+
+        this.cy.edges().forEach((edge: any) => {
+            const sourceId = edge.data()?.originalSource;
+            const targetId = edge.data()?.originalTarget;
+            if ((sourceId && hiddenIds.has(sourceId)) || (targetId && hiddenIds.has(targetId))) {
+                edge.addClass('zk-collapsed-hidden');
+            }
+        });
     }
     
     /**
