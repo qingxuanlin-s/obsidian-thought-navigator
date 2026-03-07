@@ -208,5 +208,9 @@ export default {
     "Theme style": "主题风格",
     "Default style": "默认风格",
     "Vivid style": "绚丽风格",
+    "Edge style": "连线风格",
+    "Straight line": "直线",
+    "Bezier curve": "贝塞尔曲线",
+    "Polyline": "折线",
 
 }

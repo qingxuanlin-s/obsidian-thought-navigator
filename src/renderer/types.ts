@@ -54,6 +54,7 @@ export interface RenderOptions {
     nodeText?: 'id' | 'title' | 'both' | 'id-title';
     themeMode?: 'dark' | 'light';
     themeStyle?: 'default' | 'vivid';
+    edgeStyle?: 'straight' | 'bezier' | 'polyline';
     showNoteId?: boolean;
 }
 

@@ -210,4 +210,8 @@ export default {
     "Theme style": "Theme style",
     "Default style": "Default style",
     "Vivid style": "Vivid style",
+    "Edge style": "Edge style",
+    "Straight line": "Straight line",
+    "Bezier curve": "Bezier curve",
+    "Polyline": "Polyline",
 }
