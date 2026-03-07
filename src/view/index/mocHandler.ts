@@ -44,7 +44,13 @@ function deepCopyMOCResult(original: MOCParseResult): MOCParseResult {
  * 负责处理所有与 MOC 文件相关的操作
  */
 export class MOCHandler {
-    constructor(private plugin: ZKNavigationPlugin, private app: any) {}
+    constructor(
+        private plugin: ZKNavigationPlugin,
+        private app: any,
+        private hooks?: {
+            onBeforeModify?: (payload: { filePath: string; content: string }) => void | Promise<void>;
+        }
+    ) {}
 
     private getBranchStylePalette(): string[] {
         return ['#ff5a5f', '#ff8a3d', '#f7c948', '#56d364', '#38d9a9', '#4dabf7', '#9775fa', '#f06595'];
@@ -69,6 +75,10 @@ export class MOCHandler {
         modifyCallback: (data: MOCParseResult) => void | Promise<void>
     ): Promise<void> {
         const headingTitle = this.plugin.settings.mocHeadingTitle;
+        const originalContent = await this.app.vault.read(mocFile);
+        if (this.hooks?.onBeforeModify) {
+            await this.hooks.onBeforeModify({ filePath: mocFile.path, content: originalContent });
+        }
 
         // 使用 Mermaid 格式：通过 parse/modify/save 流程来保留所有 metadata
         const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
