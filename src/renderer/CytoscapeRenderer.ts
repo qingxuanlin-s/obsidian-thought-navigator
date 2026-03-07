@@ -1179,7 +1179,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
         const rendererComponent = new Component();
         const updaters: Array<() => void> = [];
-        const cardSizeMap = new Map<string, { width: number; height: number }>();
+        // 记录用户手动调整后的尺寸（以画布坐标系存储，缩放时按 zoom 换算为像素）
+        const cardSizeMap = new Map<string, { widthModel: number; heightModel: number }>();
         const interactionUpdaters: Array<() => void> = [];
         let suppressedCanvasInteractionCount = 0;
         const setCanvasInteractionSuppressed = (suppressed: boolean) => {
@@ -1402,7 +1403,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 const dy = e.clientY - startY;
                 const newWidth = Math.max(220, startW + dx);
                 const newHeight = Math.max(180, startH + dy);
-                cardSizeMap.set(nodeId, { width: newWidth, height: newHeight });
+                const zoom = this.cy?.zoom() ?? 1;
+                cardSizeMap.set(nodeId, {
+                    widthModel: newWidth / zoom,
+                    heightModel: newHeight / zoom
+                });
                 card.style.width = `${newWidth}px`;
                 card.style.height = `${newHeight}px`;
             };
@@ -1425,8 +1430,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 startY = e.clientY;
                 const size = cardSizeMap.get(nodeId);
                 if (size) {
-                    startW = size.width;
-                    startH = size.height;
+                    const zoom = this.cy?.zoom() ?? 1;
+                    startW = size.widthModel * zoom;
+                    startH = size.heightModel * zoom;
                 } else {
                     const bb = node.renderedBoundingBox();
                     startW = Math.max(220, bb.w);
@@ -1462,8 +1468,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 const bb = node.renderedBoundingBox();
                 const zoom = this.cy.zoom();
                 const size = cardSizeMap.get(nodeId);
-                const width = size?.width ?? Math.max(220, bb.w);
-                const height = size?.height ?? Math.max(180, bb.h);
+                const width = size ? size.widthModel * zoom : Math.max(220, bb.w);
+                const height = size ? size.heightModel * zoom : Math.max(180, bb.h);
 
                 card.style.left = `${bb.x1}px`;
                 card.style.top = `${bb.y1}px`;
