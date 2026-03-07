@@ -5464,66 +5464,73 @@ case 'dagre':
         return selectedNodes.first();
     }
 
-    /**
-     * 获取节点相对于中心点的水平方向 (SimpleMind 风格)
-     * @param node 当前节点
-     * @returns 1 为右侧, -1 为左侧
-     */
-    private getHorizontalDirection(node: any): number {
-        const nodePos = node.position();
-        // 假设中心节点在 (0,0)，根据 x 坐标判断方向
-        return nodePos.x >= 0 ? 1 : -1;
+    private normalizeVector(vx: number, vy: number): { x: number; y: number } {
+        const len = Math.hypot(vx, vy);
+        if (len < 1e-6) return { x: 1, y: 0 };
+        return { x: vx / len, y: vy / len };
     }
 
-    /**
-     * 计算新节点的位置 (SimpleMind 风格布局)
-     * 核心特性：象限感知、方向继承、自动平衡
-     */
-    private calculateNewNodePosition(activeNode: any, type: 'child' | 'sibling' | 'parent'): { x: number; y: number } {
+    private getBranchDirection(activeNode: any): { x: number; y: number } {
         const nodePos = activeNode.position();
-        const isRoot = activeNode.data('isRoot') || activeNode.id() === 'root';
-
-        if (type === 'child') {
-            // --- 子节点逻辑 ---
-            if (isRoot) {
-                // 根节点创建子节点：左右平衡分配
-                const outgoers = activeNode.outgoers('node');
-                const leftCount = outgoers.filter((n: any) => n.position().x < nodePos.x).length;
-                const rightCount = outgoers.filter((n: any) => n.position().x >= nodePos.x).length;
-                const dir = rightCount <= leftCount ? 1 : -1;
-
-                return {
-                    x: nodePos.x + (dir * this.HORIZONTAL_GAP),
-                    y: nodePos.y + (outgoers.length * 20) // 略微偏移防止重叠
-                };
-            } else {
-                // 普通节点创建子节点：顺着父节点的方向往外伸
-                const dir = this.getHorizontalDirection(activeNode);
-                return {
-                    x: nodePos.x + (dir * this.HORIZONTAL_GAP),
-                    y: nodePos.y
-                };
-            }
+        const parent = activeNode.incomers('edge').sources();
+        if (parent.length > 0) {
+            const parentPos = parent.first().position();
+            return this.normalizeVector(nodePos.x - parentPos.x, nodePos.y - parentPos.y);
         }
 
-        if (type === 'sibling') {
-            // --- 兄弟节点逻辑 ---
-            if (isRoot) return { x: nodePos.x, y: nodePos.y + this.VERTICAL_GAP };
+        // 根节点：优先使用占用最少的象限方向
+        const children = activeNode.outgoers('edge').targets();
+        if (children.length === 0) return { x: 1, y: 0 };
 
-            // 兄弟节点在当前节点正下方
-            return {
-                x: nodePos.x,
-                y: nodePos.y + this.VERTICAL_GAP
-            };
+        const cardinal = [
+            { x: 1, y: 0 },   // 右
+            { x: -1, y: 0 },  // 左
+            { x: 0, y: 1 },   // 下
+            { x: 0, y: -1 }   // 上
+        ];
+        const score = [0, 0, 0, 0];
+
+        children.forEach((child: any) => {
+            const cp = child.position();
+            const dir = this.normalizeVector(cp.x - nodePos.x, cp.y - nodePos.y);
+            let bestIndex = 0;
+            let bestDot = -Infinity;
+            cardinal.forEach((c, idx) => {
+                const dot = dir.x * c.x + dir.y * c.y;
+                if (dot > bestDot) {
+                    bestDot = dot;
+                    bestIndex = idx;
+                }
+            });
+            score[bestIndex] += 1;
+        });
+
+        let minIdx = 0;
+        for (let i = 1; i < score.length; i++) {
+            if (score[i] < score[minIdx]) minIdx = i;
         }
+        return cardinal[minIdx];
+    }
 
-        // Parent 逻辑通常 SimpleMind 会往中心缩，这里默认为反向
-        if (type === 'parent') {
-            const dir = this.getHorizontalDirection(activeNode);
-            return { x: nodePos.x - (dir * this.HORIZONTAL_GAP), y: nodePos.y };
+    private getPerpendicular(dir: { x: number; y: number }): { x: number; y: number } {
+        return { x: -dir.y, y: dir.x };
+    }
+
+    private nextOffsetByProjection(points: any[], anchor: { x: number; y: number }, normal: { x: number; y: number }, gap: number): number {
+        const projections = points.map((n: any) => {
+            const p = n.position();
+            return (p.x - anchor.x) * normal.x + (p.y - anchor.y) * normal.y;
+        });
+
+        if (projections.length === 0) return 0;
+
+        // 让新增节点延续当前侧向增长：优先正向堆叠，碰撞则继续外扩
+        let offset = Math.max(...projections) + gap;
+        const isOccupied = (candidate: number) => projections.some(v => Math.abs(v - candidate) < gap * 0.8);
+        while (isOccupied(offset)) {
+            offset += gap;
         }
-
-        return nodePos;
+        return offset;
     }
 
     /**
@@ -5536,32 +5543,20 @@ case 'dagre':
 
         const nodeData = activeNode.data();
         const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
-
-        // 获取当前节点的直接子节点
-        const children = activeNode.outgoers('edge').targets();
         const nodePos = activeNode.position();
-        const dir = this.getHorizontalDirection(activeNode);
+        const children = activeNode.outgoers('edge').targets();
+        const dir = this.getBranchDirection(activeNode);
+        const normal = this.getPerpendicular(dir);
 
-        let position;
-
-        if (children.length > 0) {
-            // 规则：找到 Y 坐标最大的子节点，在它下面创建
-            let maxY = -Infinity;
-            children.forEach((child: any) => {
-                if (child.position().y > maxY) maxY = child.position().y;
-            });
-
-            position = {
-                x: nodePos.x + (dir * this.HORIZONTAL_GAP),
-                y: maxY + this.VERTICAL_GAP
-            };
-        } else {
-            // 第一个子节点：水平平移
-            position = {
-                x: nodePos.x + (dir * this.HORIZONTAL_GAP),
-                y: nodePos.y
-            };
-        }
+        const anchor = {
+            x: nodePos.x + dir.x * this.HORIZONTAL_GAP,
+            y: nodePos.y + dir.y * this.HORIZONTAL_GAP
+        };
+        const offset = this.nextOffsetByProjection(children, anchor, normal, this.VERTICAL_GAP);
+        const position = {
+            x: anchor.x + normal.x * offset,
+            y: anchor.y + normal.y * offset
+        };
 
         this.container?.dispatchEvent(new CustomEvent('create-child-node-shortcut', {
             detail: { activeNodeId, position }
@@ -5573,58 +5568,40 @@ case 'dagre':
      * SimpleMind 风格：自动推开下方的兄弟节点及其子树
      */
     private handleCreateSiblingNode(): void {
-
-        console.log('[handleCreateSiblingNode] ========== 开始处理兄弟节点创建 ==========');
-
         const activeNode = this.getActiveNode();
         if (!activeNode) return;
 
         const nodeData = activeNode.data();
         const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
         const nodePos = activeNode.position();
-
-        console.log('[handleCreateSiblingNode] 当前选中节点详情', {
-            id: activeNodeId,
-            IDStr: nodeData.originalNode?.IDStr,
-            label: nodeData.label,
-            position: nodePos
-        });
-
-        // 获取父节点及所有兄弟节点
         const parent = activeNode.incomers('edge').sources();
-        if (parent.length > 0) {
-            // 将同层级且在当前节点下方的节点及其子树全部下移
-            const allSiblings = parent.outgoers('edge').targets();
+        if (parent.length === 0) return;
 
-            allSiblings.forEach((sib: any) => {
-                if (sib.id() !== activeNode.id() && sib.position().y > nodePos.y - 10) {
-                    // 递归移动该兄弟节点及其所有后代
-                    const subTree = sib.union(sib.descendants());
-                    subTree.positions((node: any) => {
-                        const pos = node.position();
-                        return { x: pos.x, y: pos.y + this.SIBLING_GAP };
-                    });
+        const parentPos = parent.first().position();
+        const siblings = parent.first().outgoers('edge').targets();
+        const dir = this.normalizeVector(nodePos.x - parentPos.x, nodePos.y - parentPos.y);
+        const normal = this.getPerpendicular(dir);
+        const siblingGap = Math.max(this.SIBLING_GAP, this.VERTICAL_GAP + 40);
+        const anchor = {
+            x: parentPos.x + dir.x * this.HORIZONTAL_GAP,
+            y: parentPos.y + dir.y * this.HORIZONTAL_GAP
+        };
+        const activeProj = (nodePos.x - anchor.x) * normal.x + (nodePos.y - anchor.y) * normal.y;
+        let offset = activeProj + siblingGap;
 
-                    console.log('[handleCreateSiblingNode] 推开兄弟节点及其子树', {
-                        siblingId: sib.id(),
-                        subTreeSize: subTree.length
-                    });
-                }
-            });
+        const projections = siblings.map((sib: any) => {
+            const p = sib.position();
+            return (p.x - anchor.x) * normal.x + (p.y - anchor.y) * normal.y;
+        });
+        const isOccupied = (candidate: number) => projections.some((v: number) => Math.abs(v - candidate) < siblingGap * 0.8);
+        while (isOccupied(offset)) {
+            offset += siblingGap;
         }
 
-        // 计算新节点位置
         const position = {
-            x: nodePos.x,
-            y: nodePos.y + this.SIBLING_GAP
+            x: anchor.x + normal.x * offset,
+            y: anchor.y + normal.y * offset
         };
-
-        console.log('[handleCreateSiblingNode] 计算结果', {
-            activeNodeId,
-            nodePos,
-            newPosX: position.x,
-            newPosY: position.y
-        });
 
         // 触发创建兄弟节点事件
         this.container?.dispatchEvent(new CustomEvent('create-sibling-node-shortcut', {
@@ -5642,7 +5619,12 @@ case 'dagre':
         const activeNode = this.getActiveNode();
         if (!activeNode) return;
 
-        const position = this.calculateNewNodePosition(activeNode, 'parent');
+        const nodePos = activeNode.position();
+        const dir = this.getBranchDirection(activeNode);
+        const position = {
+            x: nodePos.x - dir.x * this.HORIZONTAL_GAP,
+            y: nodePos.y - dir.y * this.HORIZONTAL_GAP
+        };
         const nodeData = activeNode.data();
 
         const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
