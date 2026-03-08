@@ -577,9 +577,16 @@ export class CytoscapeRenderer implements IGraphRenderer {
         // 获取节点颜色映射
         const nodeColors = this.currentData?.metadata.nodeColors || {};
         const vividStyleMap = this.buildVividNodeStyleMap(nodes);
+        const parentLinkedNodeIds = new Set<string>();
+        (this.currentData?.edges || []).forEach((edge) => {
+            if (edge.type !== 'parent') return;
+            parentLinkedNodeIds.add(edge.source);
+            parentLinkedNodeIds.add(edge.target);
+        });
 
         const elements = nodes.map(node => {
             const vividStyle = vividStyleMap.get(node.IDStr);
+            const hasParentChildLink = parentLinkedNodeIds.has(node.ID) || parentLinkedNodeIds.has(node.IDStr);
             const element: any = {
                 group: 'nodes' as const,
                 data: {
@@ -596,6 +603,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     customColor: nodeColors[node.IDStr] || null,  // 添加自定义颜色
                     isCrossDomain: node.isCrossDomain || false,  // 传递跨领域节点标记
                     isTextOnly: node.isTextOnly || false,  // 传递纯文字节点标记
+                    isStandaloneText: (node.isTextOnly || false) && !hasParentChildLink, // 无父子关系的文本节点
                     isEmbed: node.isEmbed || false,  // 嵌入节点标记（![[...]]）
                     hasFileIcon: (!node.isTextOnly && node.file) ? true : false, // 文件节点显示图标
                     branchNodeBackground: vividStyle?.background || null,
@@ -1133,6 +1141,17 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'border-width': 0
             } as any
         },
+        // 自由文本节点（无父子关系）：纯文本样式（透明边框与背景）
+        {
+            selector: 'node[?isStandaloneText]',
+            style: {
+                'background-opacity': 0,
+                'border-width': 0,
+                'shape': 'round-rectangle',
+                'padding': '0px',
+                'text-max-width': '320px'
+            } as any
+        },
         // 根节点样式：尺寸放大 2 倍，边框加粗
         {
             selector: 'node[?isRoot]',
@@ -1376,6 +1395,14 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'color': '#ffffff'
             } as any
         },
+        // 自由文本节点选中态仍保持透明卡片，只保留文本
+        {
+            selector: 'node[?isStandaloneText]:selected',
+            style: {
+                'background-opacity': 0,
+                'border-width': 0
+            } as any
+        },
         // 当前文件节点
         {
             selector: 'node[?isCurrentFile]',
@@ -1468,6 +1495,14 @@ export class CytoscapeRenderer implements IGraphRenderer {
             if (!originalNode?.file) return;
             const sourceFile = originalNode.file;
             const nodeId = node.id();
+            const isVivid = this.isVividThemeStyle();
+            const branchBorderColor = typeof data.branchNodeBorder === 'string' ? data.branchNodeBorder : '';
+            const vividHeaderBackground = isVivid && branchBorderColor
+                ? this.hexToRgba(branchBorderColor, this.currentOptions?.themeMode === 'light' ? 0.18 : 0.28)
+                : 'rgba(11, 16, 25, 0.72)';
+            const vividHeaderDivider = isVivid && branchBorderColor
+                ? this.hexToRgba(branchBorderColor, this.currentOptions?.themeMode === 'light' ? 0.55 : 0.7)
+                : 'rgba(90, 111, 127, 0.45)';
 
             const card = document.createElement('div');
             card.className = 'zk-embed-preview-card';
@@ -1488,8 +1523,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 padding: 0 12px;
                 display: flex;
                 align-items: center;
-                border-bottom: 1px solid rgba(90, 111, 127, 0.45);
-                background: rgba(11, 16, 25, 0.72);
+                border-bottom: 1px solid ${vividHeaderDivider};
+                background: ${vividHeaderBackground};
                 color: var(--text-muted);
                 font-size: 12px;
                 font-weight: 600;
