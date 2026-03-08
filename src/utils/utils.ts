@@ -35,6 +35,7 @@ export interface MOCParseResult {
     nodeColors: Record<string, string>; // 节点颜色信息
     nodeStyleColors: Record<string, string>; // 分支主题色（一级节点）
     crossDomainLinks?: Record<string, CrossDomainLink[]>; // 跨领域节点关联信息
+    embedNodeSizes?: Record<string, { width: number; height: number }>; // 预览节点尺寸（模型坐标系）
     metadata: {                 // 扩展信息
         totalNodes: number;     // 总节点数
         maxDepth: number;       // 最大深度
@@ -81,6 +82,7 @@ export async function parseMOCStructure(
             nodeColors: {},
             nodeStyleColors: {},
             crossDomainLinks: {},
+            embedNodeSizes: {},
             metadata: {
                 totalNodes: 0,
                 maxDepth: 0,

@@ -1470,6 +1470,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         const updaters: Array<() => void> = [];
         // 记录用户手动调整后的尺寸（以画布坐标系存储，缩放时按 zoom 换算为像素）
         const cardSizeMap = new Map<string, { widthModel: number; heightModel: number }>();
+        const embedNodeSizes = ((this.currentData?.metadata as any)?.embedNodeSizes || {}) as Record<string, { width: number; height: number }>;
         const interactionUpdaters: Array<() => void> = [];
         let suppressedCanvasInteractionCount = 0;
         const setCanvasInteractionSuppressed = (suppressed: boolean) => {
@@ -1495,6 +1496,13 @@ export class CytoscapeRenderer implements IGraphRenderer {
             if (!originalNode?.file) return;
             const sourceFile = originalNode.file;
             const nodeId = node.id();
+            const persistedSize = embedNodeSizes[originalNode.ID] || embedNodeSizes[originalNode.IDStr];
+            if (persistedSize && persistedSize.width > 0 && persistedSize.height > 0) {
+                cardSizeMap.set(nodeId, {
+                    widthModel: persistedSize.width,
+                    heightModel: persistedSize.height
+                });
+            }
             const isVivid = this.isVividThemeStyle();
             const branchBorderColor = typeof data.branchNodeBorder === 'string' ? data.branchNodeBorder : '';
             const vividHeaderBackground = isVivid && branchBorderColor
@@ -1715,6 +1723,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 setCanvasInteractionSuppressed(false);
                 document.removeEventListener('mousemove', onMouseMove);
                 document.removeEventListener('mouseup', onMouseUp);
+                const modelSize = cardSizeMap.get(nodeId);
+                if (modelSize) {
+                    this.container?.dispatchEvent(new CustomEvent('embed-node-size-changed', {
+                        detail: {
+                            node: data.originalNode,
+                            size: modelSize
+                        }
+                    }));
+                }
             };
 
             resizeHandle.addEventListener('mousedown', (e: MouseEvent) => {
