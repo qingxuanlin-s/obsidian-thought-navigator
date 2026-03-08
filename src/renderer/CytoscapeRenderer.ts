@@ -1271,7 +1271,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             selector: 'edge',
             style: {
                 'width': (ele: any) => {
-                    if (isVivid && ele.data('isRootToFirstLevel')) {
+                    if (ele.data('isRootToFirstLevel')) {
                         return 4;
                     }
                     return 2;
