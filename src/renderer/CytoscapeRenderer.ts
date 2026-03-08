@@ -746,7 +746,22 @@ export class CytoscapeRenderer implements IGraphRenderer {
     }
 
     private getBranchStylePalette(): string[] {
-        return ['#ff5a5f', '#ff8a3d', '#f7c948', '#56d364', '#38d9a9', '#4dabf7', '#9775fa', '#f06595'];
+        return [
+            '#ff5a5f',
+            '#d9793a',
+            '#c8a746',
+            '#56d364',
+            '#38d9a9',
+            '#4dabf7',
+            '#9775fa',
+            '#f06595',
+            '#3fb18f',
+            '#5b8fd9',
+            '#7d6ccf',
+            '#b86fb0',
+            '#c96a6a',
+            '#b8974f'
+        ];
     }
 
     private hashString(value: string): number {
