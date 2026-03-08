@@ -57,6 +57,7 @@ export interface RenderOptions {
     themeStyle?: 'default' | 'vivid';
     edgeStyle?: 'straight' | 'bezier' | 'polyline';
     showNoteId?: boolean;
+    smartConnection?: boolean;
 }
 
 /**

@@ -1251,7 +1251,8 @@ export class ZKIndexView extends ItemView {
             themeMode: this.plugin.settings.themeMode,
             themeStyle: this.plugin.settings.themeStyle || 'default',
             edgeStyle: this.plugin.settings.edgeStyle || 'bezier',
-            showNoteId: this.plugin.settings.showNoteIdInBranchView
+            showNoteId: this.plugin.settings.showNoteIdInBranchView,
+            smartConnection: this.plugin.settings.smartConnection === true
         };
 
         // 性能优化：复用或创建渲染器，避免每次都销毁重建
@@ -1295,6 +1296,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听自动连接事件（拖动节点到附近节点时触发）
         this.addTrackedListener(branchGraphDiv, 'auto-connect-node', async (event: any) => {
+            if (!this.plugin.settings.smartConnection) {
+                return;
+            }
             const { childNodeId, parentNodeId, position } = event.detail;
 
             // 查找子节点和父节点
