@@ -2090,16 +2090,16 @@ case 'dagre':
         const handle = document.createElement('div');
         handle.style.cssText = `
             position: absolute;
-            width: 22px;
-            height: 22px;
-            border-radius: 11px;
+            width: 33px;
+            height: 33px;
+            border-radius: 16.5px;
             background-color: rgba(17, 24, 39, 0.85);
             border: 1px solid rgba(148, 163, 184, 0.45);
             color: #e2e8f0;
             display: none;
             align-items: center;
             justify-content: center;
-            font-size: 12px;
+            font-size: 18px;
             font-weight: 700;
             line-height: 1;
             cursor: pointer;
@@ -2138,7 +2138,7 @@ case 'dagre':
 
             const bb = activeNode.renderedBoundingBox();
             const zoom = this.cy.zoom();
-            const size = 22 * zoom;
+            const size = 33 * zoom;
             const left = bb.x1 - size - (8 * zoom);
             const top = bb.y1 + (bb.h - size) / 2;
 
@@ -2147,7 +2147,7 @@ case 'dagre':
             handle.style.borderRadius = `${size / 2}px`;
             handle.style.left = `${left}px`;
             handle.style.top = `${top}px`;
-            handle.style.fontSize = `${12 * zoom}px`;
+            handle.style.fontSize = `${18 * zoom}px`;
             handle.style.display = 'flex';
         };
 
