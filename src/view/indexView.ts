@@ -127,6 +127,7 @@ export class ZKIndexView extends ItemView {
     edgeCurvatureSaveTimeout: NodeJS.Timeout | null = null;
     nodePositionSaveTimeout: NodeJS.Timeout | null = null;
     crossDomainPositionSaveTimeout: NodeJS.Timeout | null = null;
+    embedNodeSizeSaveTimeout: NodeJS.Timeout | null = null;
 
     // 事件监听器跟踪（用于清理，防止内存泄漏）
     private registeredEventListeners: Array<{
@@ -319,6 +320,14 @@ export class ZKIndexView extends ItemView {
         if (this.nodePositionSaveTimeout) {
             clearTimeout(this.nodePositionSaveTimeout);
             this.nodePositionSaveTimeout = null;
+        }
+        if (this.crossDomainPositionSaveTimeout) {
+            clearTimeout(this.crossDomainPositionSaveTimeout);
+            this.crossDomainPositionSaveTimeout = null;
+        }
+        if (this.embedNodeSizeSaveTimeout) {
+            clearTimeout(this.embedNodeSizeSaveTimeout);
+            this.embedNodeSizeSaveTimeout = null;
         }
     }
 
@@ -1218,7 +1227,19 @@ export class ZKIndexView extends ItemView {
         const nodeStyleColors = (mocParseResult as any).nodeStyleColors || {};
         const crossDomainLinks = mocParseResult.crossDomainLinks || {};
         const nodePositions = mocParseResult.nodePositions || {};
-        const graphData = GraphDataBuilder.fromMOCTree(this.mocNodes, this.mocReverseRelations, null, groups, edgeCurvatures, nodeColors, nodeStyleColors, crossDomainLinks, nodePositions);
+        const embedNodeSizes = (mocParseResult as any).embedNodeSizes || {};
+        const graphData = GraphDataBuilder.fromMOCTree(
+            this.mocNodes,
+            this.mocReverseRelations,
+            null,
+            groups,
+            edgeCurvatures,
+            nodeColors,
+            nodeStyleColors,
+            crossDomainLinks,
+            nodePositions,
+            embedNodeSizes
+        );
 
         // 配置渲染选项
         const options: RenderOptions = {
@@ -1405,6 +1426,27 @@ export class ZKIndexView extends ItemView {
                     console.error('Failed to save edge curvature:', error);
                 }
             }, DEBOUNCE_DELAY.EDGE_CURVATURE_SAVE);
+        });
+
+        // 监听预览节点尺寸变化事件（右下角拖拽后保存到 ext）
+        this.addTrackedListener(branchGraphDiv, 'embed-node-size-changed', async (event: any) => {
+            const { node, size } = event.detail || {};
+            if (!node?.ID || !size) return;
+
+            if (this.embedNodeSizeSaveTimeout) {
+                clearTimeout(this.embedNodeSizeSaveTimeout);
+            }
+
+            this.embedNodeSizeSaveTimeout = setTimeout(async () => {
+                try {
+                    const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                    if (mocFile) {
+                        await this.saveEmbedNodeSizeToMOC(mocFile, node.ID, size);
+                    }
+                } catch (error) {
+                    console.error('Failed to save embed node size:', error);
+                }
+            }, DEBOUNCE_DELAY.POSITION_SAVE);
         });
 
         // 监听分组创建事件
@@ -6992,6 +7034,35 @@ export class ZKIndexView extends ItemView {
         } catch (error) {
             console.error('Failed to save edge curvature:', error);
             new Notice(`保存边弧度失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 保存预览节点尺寸到 MOC 文件 ext（embed_node_sizes）
+     */
+    private async saveEmbedNodeSizeToMOC(
+        mocFile: TFile,
+        nodeID: string,
+        size: { widthModel: number; heightModel: number }
+    ): Promise<void> {
+        try {
+            const headingTitle = this.plugin.settings.mocHeadingTitle;
+            const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
+            const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+
+            if (!(mocData as any).embedNodeSizes) {
+                (mocData as any).embedNodeSizes = {};
+            }
+
+            (mocData as any).embedNodeSizes[nodeID] = {
+                width: Math.round(size.widthModel * 100) / 100,
+                height: Math.round(size.heightModel * 100) / 100
+            };
+
+            await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
+        } catch (error) {
+            console.error('Failed to save embed node size to MOC:', error);
+            new Notice(`保存预览节点尺寸失败: ${error.message}`);
         }
     }
 

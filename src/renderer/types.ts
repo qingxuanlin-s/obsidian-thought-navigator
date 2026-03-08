@@ -30,6 +30,7 @@ export interface GraphMetadata {
     nodeStyleColors?: Record<string, string>;  // 分支主题色（一级节点）
     crossDomainLinks?: Record<string, any[]>;  // 跨领域关联信息
     nodePositions?: Record<string, { x: number; y: number }>;  // 节点位置信息
+    embedNodeSizes?: Record<string, { width: number; height: number }>; // 预览节点尺寸（模型坐标系）
 }
 
 /**
