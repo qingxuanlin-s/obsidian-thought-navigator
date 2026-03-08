@@ -2561,15 +2561,15 @@ case 'dagre':
         controlPoint.className = 'zk-edge-control-point';
         controlPoint.style.cssText = `
             position: absolute;
-            width: 12px;
-            height: 12px;
-            background-color: #5b8fd9;
-            border: 2px solid #ffffff;
+            width: 14px;
+            height: 14px;
+            background-color: rgba(148, 163, 184, 0.95);
+            border: 2px solid rgba(255, 255, 255, 0.95);
             border-radius: 50%;
-            cursor: move;
+            cursor: grab;
             pointer-events: auto;
             transform: translate(-50%, -50%);
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
             z-index: 1000;
         `;
         container.appendChild(controlPoint);
@@ -2593,13 +2593,17 @@ case 'dagre':
             const perpX = -dy / len;
             const perpY = dx / len;
 
-            // 控制点位置
+            // 二次贝塞尔控制点位置（参数意义仍保持不变）
             const currentDistance = edge.data('controlPointDistance') !== undefined ? edge.data('controlPointDistance') : 0;
             const cpX = midX + perpX * currentDistance;
             const cpY = midY + perpY * currentDistance;
 
-            controlPoint.style.left = `${cpX}px`;
-            controlPoint.style.top = `${cpY}px`;
+            // 手柄显示在曲线中点（t=0.5），避免“漂离连线”的视觉问题
+            const curveMidX = sourcePos.x * 0.25 + cpX * 0.5 + targetPos.x * 0.25;
+            const curveMidY = sourcePos.y * 0.25 + cpY * 0.5 + targetPos.y * 0.25;
+
+            controlPoint.style.left = `${curveMidX}px`;
+            controlPoint.style.top = `${curveMidY}px`;
         };
 
         // 使用 requestAnimationFrame 调度更新
@@ -2687,7 +2691,7 @@ case 'dagre':
         const handleMouseUp = () => {
             if (isDragging) {
                 isDragging = false;
-                controlPoint.style.cursor = 'move';
+                controlPoint.style.cursor = 'grab';
             }
         };
 
@@ -2802,6 +2806,8 @@ case 'dagre':
         };
 
         this.cy!.on('zoom pan viewport drag position', scheduleUpdate);
+        // 首帧再同步一次，避免初始渲染时手柄短暂错位
+        requestAnimationFrame(scheduleUpdate);
     }
 
     /**
@@ -2844,6 +2850,45 @@ case 'dagre':
      */
     private updateEndpointHandlePosition(handle: HTMLElement, node: any, edge: any, type: 'source' | 'target'): void {
         if (!this.cy) return;
+
+        // 优先使用 rendered 端点（像素坐标），确保手柄贴合当前连线
+        let endpoint: { x: number; y: number } | null = null;
+        if (type === 'source') {
+            if (typeof edge.renderedSourceEndpoint === 'function') {
+                endpoint = edge.renderedSourceEndpoint();
+            } else if (typeof edge.sourceEndpoint === 'function') {
+                const modelPos = edge.sourceEndpoint();
+                if (modelPos && typeof modelPos.x === 'number' && typeof modelPos.y === 'number') {
+                    const zoom = this.cy.zoom();
+                    const pan = this.cy.pan();
+                    endpoint = {
+                        x: modelPos.x * zoom + pan.x,
+                        y: modelPos.y * zoom + pan.y
+                    };
+                }
+            }
+        } else {
+            if (typeof edge.renderedTargetEndpoint === 'function') {
+                endpoint = edge.renderedTargetEndpoint();
+            } else if (typeof edge.targetEndpoint === 'function') {
+                const modelPos = edge.targetEndpoint();
+                if (modelPos && typeof modelPos.x === 'number' && typeof modelPos.y === 'number') {
+                    const zoom = this.cy.zoom();
+                    const pan = this.cy.pan();
+                    endpoint = {
+                        x: modelPos.x * zoom + pan.x,
+                        y: modelPos.y * zoom + pan.y
+                    };
+                }
+            }
+        }
+
+        if (endpoint && typeof endpoint.x === 'number' && typeof endpoint.y === 'number') {
+            handle.style.display = 'block';
+            handle.style.left = `${endpoint.x}px`;
+            handle.style.top = `${endpoint.y}px`;
+            return;
+        }
 
         // 获取节点中心和边界框
         const nodeCenter = node.renderedPosition();
