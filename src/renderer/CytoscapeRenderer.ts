@@ -4594,6 +4594,17 @@ case 'dagre':
         this.cy.on('grab', 'node', (evt: any) => {
             const node = evt.target;
             const data = node.data();
+            const smartEnabled = this.isSmartConnectionEnabled();
+
+            if (!smartEnabled) {
+                if (tempConnectionLine && svgOverlay) {
+                    svgOverlay.removeChild(tempConnectionLine);
+                    tempConnectionLine = null;
+                }
+                this.cy!.nodes('.connection-target-hover').removeClass('connection-target-hover');
+                nearbyNodeId = null;
+                return;
+            }
 
             // 只对自由节点启用自动连接
             if (data.isPlaceholder || data.isGroup || data.isCrossDomain) return;
@@ -4625,9 +4636,20 @@ case 'dagre':
         this.cy.on('drag', 'node', (evt: any) => {
             const node = evt.target;
             const data = node.data();
+            const smartEnabled = this.isSmartConnectionEnabled();
+
+            if (!smartEnabled) {
+                if (tempConnectionLine && svgOverlay) {
+                    svgOverlay.removeChild(tempConnectionLine);
+                    tempConnectionLine = null;
+                }
+                this.cy!.nodes('.connection-target-hover').removeClass('connection-target-hover');
+                nearbyNodeId = null;
+                return;
+            }
 
             // 处理占位符节点的智能连线
-            if (data.isPlaceholder && this.isSmartConnectionEnabled()) {
+            if (data.isPlaceholder) {
                 const pos = node.renderedPosition();
 
                 // 查找最近的节点
@@ -4754,6 +4776,7 @@ case 'dagre':
             if (!evt || !evt.target) return;
             const node = evt.target;
             const data = node.data();
+            const smartEnabled = this.isSmartConnectionEnabled();
 
             // 移除临时连接线和 SVG 叠加层
             if (tempConnectionLine && svgOverlay) {
@@ -4770,7 +4793,7 @@ case 'dagre':
             // 处理占位符节点的智能连线
             if (data.isPlaceholder) {
                 // 检查是否启用了智能连线并且有附近的节点
-                if (this.isSmartConnectionEnabled() && nearbyNodeId) {
+                if (smartEnabled && nearbyNodeId) {
                     const parentData = this.cy!.$id(nearbyNodeId).data();
                     const parentId = parentData.originalNode?.ID || parentData.originalSource || nearbyNodeId;
                     const placeholderId = data.id;
@@ -4793,7 +4816,7 @@ case 'dagre':
             }
 
             // 检查是否有自动连接（自由节点）
-            if (nearbyNodeId) {
+            if (smartEnabled && nearbyNodeId) {
                 const parentData = this.cy!.$id(nearbyNodeId).data();
 
                 // 使用 originalNode.ID（带点的格式）而不是转义后的 ID
@@ -4815,6 +4838,8 @@ case 'dagre':
                 nearbyNodeId = null;
                 return;
             }
+
+            nearbyNodeId = null;
 
             // 跨领域节点：触发特殊的位置变化事件
             if (data.isCrossDomain) {
@@ -6411,6 +6436,10 @@ case 'dagre':
      * 检查智能连线功能是否启用
      */
     private isSmartConnectionEnabled(): boolean {
+        if (this.currentOptions && typeof this.currentOptions.smartConnection === 'boolean') {
+            return this.currentOptions.smartConnection;
+        }
+
         // 从全局设置中获取智能连线开关状态
         const app = (window as any).app;
         if (!app || !app.plugins) return false;
