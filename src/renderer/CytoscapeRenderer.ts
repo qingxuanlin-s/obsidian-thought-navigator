@@ -1288,7 +1288,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             style: {
                 'width': (ele: any) => {
                     if (ele.data('isRootToFirstLevel')) {
-                        return 4;
+                        return 8;
                     }
                     return 2;
                 },
