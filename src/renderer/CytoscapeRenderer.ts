@@ -605,6 +605,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     isTextOnly: node.isTextOnly || false,  // 传递纯文字节点标记
                     isStandaloneText: (node.isTextOnly || false) && !hasParentChildLink, // 无父子关系的文本节点
                     isEmbed: node.isEmbed || false,  // 嵌入节点标记（![[...]]）
+                    isFreeNode: (node.ID || '').startsWith('free.'),
                     hasFileIcon: (!node.isTextOnly && node.file) ? true : false, // 文件节点显示图标
                     branchNodeBackground: vividStyle?.background || null,
                     branchNodeBorder: vividStyle?.border || null
@@ -1410,12 +1411,24 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'color': '#ffffff'
             } as any
         },
-        // 自由文本节点选中态仍保持透明卡片，只保留文本
+        // 自由节点：非选中态边框透明
         {
-            selector: 'node[?isStandaloneText]:selected',
+            selector: 'node[?isFreeNode]:unselected',
             style: {
                 'background-opacity': 0,
-                'border-width': 0
+                'border-width': 0,
+                'border-color': 'transparent'
+            } as any
+        },
+        // 自由节点选中态：与普通节点保持一致（覆盖 isStandaloneText 选中样式）
+        {
+            selector: 'node[?isFreeNode]:selected',
+            style: {
+                'background-opacity': 1,
+                'background-color': colors.nodeBackgroundSelected,
+                'border-color': colors.nodeBorderSelected,
+                'border-width': '3px',
+                'color': '#ffffff'
             } as any
         },
         // 当前文件节点
