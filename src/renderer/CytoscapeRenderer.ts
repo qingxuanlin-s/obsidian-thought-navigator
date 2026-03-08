@@ -1693,6 +1693,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             headerEl.addEventListener('mousedown', (e: MouseEvent) => {
                 if (!this.cy) return;
                 if (e.button !== 0) return;
+                if (e.detail >= 2) return; // 双击交给编辑逻辑
                 e.preventDefault();
                 e.stopPropagation();
                 draggingFromHeader = true;
@@ -1704,6 +1705,21 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 dragStartRenderedY = renderedPos.y;
                 document.addEventListener('mousemove', onHeaderMouseMove);
                 document.addEventListener('mouseup', onHeaderMouseUp);
+            });
+
+            headerEl.addEventListener('dblclick', (e: MouseEvent) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.container?.dispatchEvent(new CustomEvent('node-edit', {
+                    detail: {
+                        node: data.originalNode,
+                        event: e,
+                        ctrlKey: e.ctrlKey,
+                        metaKey: e.metaKey,
+                        shiftKey: e.shiftKey,
+                        altKey: e.altKey
+                    }
+                }));
             });
 
             card.addEventListener('mousedown', (e: MouseEvent) => {
