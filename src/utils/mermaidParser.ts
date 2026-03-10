@@ -278,6 +278,7 @@ export class MermaidParser {
         nodeStyleColors: Record<string, string>;
         crossDomainLinks: Record<string, any[]>;  // 跨领域关联
         embedNodeSizes: Record<string, { width: number; height: number }>;
+        nodeRemarks: Record<string, string>;
     } {
         const defaultMetadata = {
             nodePositions: {},
@@ -286,7 +287,8 @@ export class MermaidParser {
             nodeColors: {},
             nodeStyleColors: {},
             crossDomainLinks: {},
-            embedNodeSizes: {}
+            embedNodeSizes: {},
+            nodeRemarks: {}
         };
         
         // 匹配元数据注释：%% ext:{JSON} %%
@@ -310,7 +312,8 @@ export class MermaidParser {
                 nodeColors: parsedNodeColors,
                 nodeStyleColors: metadata.node_style_colors || {},
                 crossDomainLinks: metadata.cross_domain_links || {},
-                embedNodeSizes: metadata.embed_node_sizes || {}
+                embedNodeSizes: metadata.embed_node_sizes || {},
+                nodeRemarks: metadata.nodeRemarks || {}
             };
         } catch (e) {
             this.warnings.push({
@@ -356,6 +359,7 @@ export class MermaidParser {
                     nodeStyleColors: { ...(cached as any).nodeStyleColors || {} },
                     crossDomainLinks: cached.crossDomainLinks ? JSON.parse(JSON.stringify(cached.crossDomainLinks)) : {},
                     embedNodeSizes: { ...(cached as any).embedNodeSizes || {} },
+                    nodeRemarks: { ...(cached as any).nodeRemarks || {} },
                     metadata: { ...cached.metadata }
                 };
             }
@@ -513,6 +517,7 @@ export class MermaidParser {
             nodeStyleColors: metadata.nodeStyleColors,
             crossDomainLinks: metadata.crossDomainLinks,
             embedNodeSizes: metadata.embedNodeSizes,
+            nodeRemarks: metadata.nodeRemarks,
             metadata: {
                 totalNodes: nodesMap.size,
                 maxDepth: this.calculateMaxDepth(mocNodes),
@@ -650,6 +655,7 @@ export class MermaidParser {
             nodeStyleColors: {},
             crossDomainLinks: {},
             embedNodeSizes: {},
+            nodeRemarks: {},
             metadata: {
                 totalNodes: 0,
                 maxDepth: 0,

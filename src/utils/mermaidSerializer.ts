@@ -90,7 +90,8 @@ export class MermaidSerializer {
             node_colors: data.nodeColors || {},
             node_style_colors: (data as any).nodeStyleColors || {},
             cross_domain_links: data.crossDomainLinks || {},  // 始终包含 cross_domain_links，即使为空
-            embed_node_sizes: (data as any).embedNodeSizes || {}
+            embed_node_sizes: (data as any).embedNodeSizes || {},
+            nodeRemarks: (data as any).nodeRemarks || {}
         };
 
         const jsonStr = JSON.stringify(metadata);

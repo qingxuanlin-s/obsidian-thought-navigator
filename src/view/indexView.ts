@@ -121,6 +121,7 @@ export class ZKIndexView extends ItemView {
     mocNodes: ZKNode[] = [];                    // MOC 解析后的节点
     mocTreeStructure: MOCTreeNode[] = [];       // MOC 原始树结构
     mocReverseRelations: Map<string, ReverseRelation> = new Map(); // MOC 反向关系
+    private nodeRemarks: Record<string, string> = {};
 
     // 防抖相关属性
     resizeTimeout: NodeJS.Timeout | null = null;
@@ -1228,6 +1229,7 @@ export class ZKIndexView extends ItemView {
         const crossDomainLinks = mocParseResult.crossDomainLinks || {};
         const nodePositions = mocParseResult.nodePositions || {};
         const embedNodeSizes = (mocParseResult as any).embedNodeSizes || {};
+        this.nodeRemarks = (mocParseResult as any).nodeRemarks || {};
         const graphData = GraphDataBuilder.fromMOCTree(
             this.mocNodes,
             this.mocReverseRelations,
@@ -1238,7 +1240,8 @@ export class ZKIndexView extends ItemView {
             nodeStyleColors,
             crossDomainLinks,
             nodePositions,
-            embedNodeSizes
+            embedNodeSizes,
+            this.nodeRemarks
         );
 
         // 配置渲染选项
@@ -1595,6 +1598,14 @@ export class ZKIndexView extends ItemView {
             await this.editNodeContent(node);
         });
 
+        this.addTrackedListener(branchGraphDiv, 'node-remark-edit', async (event: any) => {
+            const { node } = event.detail;
+            if (!node) {
+                return;
+            }
+            await this.editNodeRemark(node);
+        });
+
         // 监听跨领域节点点击事件（跳转到关联的 MOC 文件）
         this.addTrackedListener(branchGraphDiv, 'cross-domain-node-click', async (event: any) => {
             const { node } = event.detail;
@@ -1749,6 +1760,15 @@ export class ZKIndexView extends ItemView {
                     .setIcon("network")
                     .onClick(async () => {
                         await this.linkCrossDomainNode(node);
+                    });
+            });
+
+            menu.addItem((item) => {
+                const hasRemark = !!this.getNodeRemark(node);
+                item.setTitle(hasRemark ? "🗒️ 编辑备注" : "🗒️ 新建备注")
+                    .setIcon("sticky-note")
+                    .onClick(async () => {
+                        await this.editNodeRemark(node);
                     });
             });
 
@@ -5063,6 +5083,31 @@ export class ZKIndexView extends ItemView {
 
     async editTextNodeContent(node: ZKNode) {
         await this.editNodeContent(node);
+    }
+
+    private getNodeRemark(node: ZKNode): string {
+        return this.nodeRemarks[node.IDStr] || this.nodeRemarks[node.ID] || '';
+    }
+
+    async editNodeRemark(node: ZKNode) {
+        const currentRemark = this.getNodeRemark(node);
+        const newRemark = await this.showTextNodeContentInputDialog(currentRemark, '编辑备注');
+
+        if (newRemark === null || newRemark === currentRemark) {
+            return;
+        }
+
+        try {
+            const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+            if (mocFile) {
+                await this.mocHandler.updateNodeRemarkInMOC(mocFile, node.IDStr, newRemark);
+                await this.refreshBranchMermaid();
+                new Notice(newRemark.trim() ? '已更新备注' : '已删除备注');
+            }
+        } catch (error) {
+            console.error('Failed to edit node remark:', error);
+            new Notice(`修改备注失败: ${error.message}`);
+        }
     }
 
     /**

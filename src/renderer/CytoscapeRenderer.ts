@@ -576,6 +576,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
         // 获取节点颜色映射
         const nodeColors = this.currentData?.metadata.nodeColors || {};
+        const nodeRemarks = this.currentData?.metadata.nodeRemarks || {};
         const vividStyleMap = this.buildVividNodeStyleMap(nodes);
         const parentLinkedNodeIds = new Set<string>();
         (this.currentData?.edges || []).forEach((edge) => {
@@ -606,6 +607,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     isStandaloneText: (node.isTextOnly || false) && !hasParentChildLink, // 无父子关系的文本节点
                     isEmbed: node.isEmbed || false,  // 嵌入节点标记（![[...]]）
                     isFreeNode: (node.ID || '').startsWith('free.'),
+                    remark: nodeRemarks[node.IDStr] || nodeRemarks[node.ID] || '',
+                    hasRemark: !!(nodeRemarks[node.IDStr] || nodeRemarks[node.ID]),
                     hasFileIcon: (!node.isTextOnly && node.file) ? true : false, // 文件节点显示图标
                     branchNodeBackground: vividStyle?.background || null,
                     branchNodeBorder: vividStyle?.border || null
@@ -1969,6 +1972,103 @@ case 'dagre':
         // 存储所有徽章的更新函数
         const badgeUpdaters: Array<() => void> = [];
         let updateScheduled = false;
+
+        this.cy.nodes('[?hasRemark]').forEach((node: any) => {
+            const remarkText = node.data('remark') || '';
+            const remarkColor = node.data('branchNodeBorder') || '#ef4444';
+            const remarkEl = document.createElement('div');
+            remarkEl.className = 'zk-node-remark-badge';
+            remarkEl.textContent = 'R';
+            remarkEl.style.cssText = `
+                position: absolute;
+                width: 18px;
+                height: 18px;
+                background-color: ${remarkColor};
+                color: #ffffff;
+                font-size: 11px;
+                font-weight: 700;
+                border-radius: 999px;
+                border: 2px solid rgba(255, 255, 255, 0.95);
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                pointer-events: auto;
+                cursor: pointer;
+                user-select: none;
+            `;
+            badgeContainer.appendChild(remarkEl);
+
+            const tooltipEl = document.createElement('div');
+            tooltipEl.className = 'zk-node-remark-tooltip';
+            tooltipEl.textContent = remarkText;
+            tooltipEl.style.cssText = `
+                position: absolute;
+                max-width: 280px;
+                padding: 8px 10px;
+                background: rgba(15, 23, 42, 0.96);
+                color: #ffffff;
+                font-size: 12px;
+                line-height: 1.45;
+                border-radius: 8px;
+                border: 1px solid rgba(148, 163, 184, 0.28);
+                box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+                white-space: pre-wrap;
+                word-break: break-word;
+                pointer-events: none;
+                opacity: 0;
+                transform: translateY(4px);
+                transition: opacity 0.12s ease, transform 0.12s ease;
+                z-index: 20;
+            `;
+            badgeContainer.appendChild(tooltipEl);
+
+            const updateRemarkPosition = () => {
+                if (!this.cy) return;
+                const zoom = this.cy.zoom();
+                const boundingBox = node.renderedBoundingBox();
+                const size = 18 * zoom;
+                const x = boundingBox.x2 - size * 0.35;
+                const y = boundingBox.y1 - size * 0.35;
+
+                remarkEl.style.left = `${x}px`;
+                remarkEl.style.top = `${y}px`;
+                remarkEl.style.width = `${size}px`;
+                remarkEl.style.height = `${size}px`;
+                remarkEl.style.fontSize = `${11 * zoom}px`;
+                remarkEl.style.borderWidth = `${Math.max(1, 2 * zoom)}px`;
+
+                const tooltipX = x + size + (8 * zoom);
+                const tooltipY = y - (6 * zoom);
+                tooltipEl.style.left = `${tooltipX}px`;
+                tooltipEl.style.top = `${tooltipY}px`;
+            };
+
+            badgeUpdaters.push(updateRemarkPosition);
+            updateRemarkPosition();
+
+            remarkEl.addEventListener('click', (e) => {
+                e.stopPropagation();
+                node.select();
+                this.container?.dispatchEvent(new CustomEvent('node-remark-edit', {
+                    detail: {
+                        node: node.data('originalNode'),
+                        event: e
+                    }
+                }));
+            });
+
+            remarkEl.addEventListener('mouseenter', () => {
+                if (!remarkText) return;
+                tooltipEl.style.opacity = '1';
+                tooltipEl.style.transform = 'translateY(0)';
+            });
+
+            remarkEl.addEventListener('mouseleave', () => {
+                tooltipEl.style.opacity = '0';
+                tooltipEl.style.transform = 'translateY(4px)';
+            });
+        });
 
         // 为每个有 badge 的节点创建徽章元素
         this.cy.nodes('[badge]').forEach((node: any) => {
