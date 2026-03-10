@@ -402,7 +402,8 @@ export class GraphDataBuilder {
         nodeStyleColors: Record<string, string> = {},
         crossDomainLinks: Record<string, any[]> = {},
         nodePositions: Record<string, { x: number; y: number }> = {},
-        embedNodeSizes: Record<string, { width: number; height: number }> = {}
+        embedNodeSizes: Record<string, { width: number; height: number }> = {},
+        nodeRemarks: Record<string, string> = {}
     ): GraphData {
         const graphData = new GraphDataBuilder()
             .addNodes(nodes)
@@ -417,7 +418,8 @@ export class GraphDataBuilder {
                 nodeStyleColors: nodeStyleColors,
                 crossDomainLinks: crossDomainLinks,
                 nodePositions: nodePositions,
-                embedNodeSizes: embedNodeSizes
+                embedNodeSizes: embedNodeSizes,
+                nodeRemarks: nodeRemarks
             })
             .buildCrossDomainEdges(crossDomainLinks)
             .build();

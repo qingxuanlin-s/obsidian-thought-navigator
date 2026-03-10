@@ -36,6 +36,7 @@ function deepCopyMOCResult(original: MOCParseResult): MOCParseResult {
         nodeStyleColors: { ...(original as any).nodeStyleColors || {} },
         crossDomainLinks: original.crossDomainLinks ? JSON.parse(JSON.stringify(original.crossDomainLinks)) : {},
         embedNodeSizes: { ...(original as any).embedNodeSizes || {} },
+        nodeRemarks: { ...(original as any).nodeRemarks || {} },
         metadata: { ...original.metadata }
     };
 }
@@ -169,6 +170,21 @@ export class MOCHandler {
      */
     async updateTextNodeContentInMOC(mocFile: TFile, nodeID: string, newContent: string): Promise<void> {
         await this.updateNodeContentInMOC(mocFile, nodeID, newContent);
+    }
+
+    async updateNodeRemarkInMOC(mocFile: TFile, nodeID: string, remark: string): Promise<void> {
+        await this.modifyMOCData(mocFile, (mocData) => {
+            if (!(mocData as any).nodeRemarks) {
+                (mocData as any).nodeRemarks = {};
+            }
+
+            const trimmedRemark = remark.trim();
+            if (trimmedRemark) {
+                (mocData as any).nodeRemarks[nodeID] = trimmedRemark;
+            } else {
+                delete (mocData as any).nodeRemarks[nodeID];
+            }
+        });
     }
 
     /**
