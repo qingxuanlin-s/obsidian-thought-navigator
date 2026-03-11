@@ -2148,6 +2148,8 @@ case 'dagre':
             this.cy.on('pan zoom viewport drag position', scheduleUpdate);
             // 拖动结束时立即更新
             this.cy.on('dragfree', immediateUpdate);
+            // 收起/展开、分组、重新布局等会改变节点可见性或渲染位置
+            this.cy.on('class data select unselect add remove layoutstop', scheduleUpdate);
         }
         
         // 添加边控制点
@@ -2324,6 +2326,17 @@ case 'dagre':
             const targetId = edge.data()?.originalTarget;
             if ((sourceId && hiddenIds.has(sourceId)) || (targetId && hiddenIds.has(targetId))) {
                 edge.addClass('zk-collapsed-hidden');
+            }
+        });
+
+        // 如果分组内成员全部隐藏，则分组容器也一并隐藏
+        this.cy.nodes('[?isGroup]').forEach((groupNode: any) => {
+            const groupNodeIds: string[] = groupNode.data('nodeIds') || [];
+            if (groupNodeIds.length === 0) return;
+
+            const hasVisibleMember = groupNodeIds.some((nodeId) => !hiddenIds.has(nodeId));
+            if (!hasVisibleMember) {
+                groupNode.addClass('zk-collapsed-hidden');
             }
         });
     }
