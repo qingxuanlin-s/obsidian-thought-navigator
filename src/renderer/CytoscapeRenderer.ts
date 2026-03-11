@@ -2015,11 +2015,11 @@ case 'dagre':
             remarkEl.textContent = 'R';
             remarkEl.style.cssText = `
                 position: absolute;
-                width: 18px;
-                height: 18px;
+                width: 36px;
+                height: 36px;
                 background-color: ${remarkColor};
                 color: #ffffff;
-                font-size: 11px;
+                font-size: 22px;
                 font-weight: 700;
                 border-radius: 999px;
                 border: 2px solid rgba(255, 255, 255, 0.95);
@@ -2076,7 +2076,7 @@ case 'dagre':
                 tooltipEl.style.display = 'block';
                 const zoom = this.cy.zoom();
                 const boundingBox = node.renderedBoundingBox();
-                const size = 18 * zoom;
+                const size = 36 * zoom;
                 const x = boundingBox.x2 - size * 0.35;
                 const y = boundingBox.y1 - size * 0.35;
 
@@ -2084,7 +2084,7 @@ case 'dagre':
                 remarkEl.style.top = `${y}px`;
                 remarkEl.style.width = `${size}px`;
                 remarkEl.style.height = `${size}px`;
-                remarkEl.style.fontSize = `${11 * zoom}px`;
+                remarkEl.style.fontSize = `${22 * zoom}px`;
                 remarkEl.style.borderWidth = `${Math.max(1, 2 * zoom)}px`;
 
                 const tooltipX = x + size + (8 * zoom);
