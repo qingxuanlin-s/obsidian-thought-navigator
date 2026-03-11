@@ -1713,16 +1713,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             headerEl.addEventListener('dblclick', (e: MouseEvent) => {
                 e.preventDefault();
                 e.stopPropagation();
-                this.container?.dispatchEvent(new CustomEvent('node-edit', {
-                    detail: {
-                        node: data.originalNode,
-                        event: e,
-                        ctrlKey: e.ctrlKey,
-                        metaKey: e.metaKey,
-                        shiftKey: e.shiftKey,
-                        altKey: e.altKey
-                    }
-                }));
+                this.showInlineNodeEditor(node);
             });
 
             card.addEventListener('mousedown', (e: MouseEvent) => {
@@ -3826,9 +3817,10 @@ case 'dagre':
         if (!this.cy || !this.container) return;
 
         const data = node.data();
-
-        // 只允许编辑占位符节点
-        if (!data.isPlaceholder) return;
+        const originalNode = data.originalNode;
+        const isPlaceholder = !!data.isPlaceholder;
+        const isExistingNode = !!originalNode && !data.isGroup;
+        if (!isPlaceholder && !isExistingNode) return;
 
         // 移除已存在的编辑器
         const existingEditor = this.container.querySelector('.node-label-editor');
@@ -3841,7 +3833,13 @@ case 'dagre':
 
         // 创建 textarea，直接覆盖在节点上
         const textarea = document.createElement('textarea');
-        textarea.value = data.label || '';
+        const originalDisplayLabel = data.label || '';
+        const initialValue = isPlaceholder
+            ? (data.label || '')
+            : (originalNode?.isTextOnly
+                ? ((originalNode.title || '').replace(/\\n/g, '\n'))
+                : `${originalNode?.isEmbed ? '!' : ''}[[${originalNode?.file?.basename || originalNode?.title || ''}${(originalNode?.title && originalNode?.file?.basename && originalNode.title !== originalNode.file.basename) ? `|${originalNode.title}` : ''}]]`);
+        textarea.value = initialValue;
         textarea.className = 'node-label-editor';
 
         // 重要：在编辑时隐藏节点标签，避免重复显示
@@ -3851,30 +3849,42 @@ case 'dagre':
             position: absolute;
             left: ${boundingBox.x1}px;
             top: ${boundingBox.y1}px;
-            width: ${boundingBox.x2 - boundingBox.x1}px;
-            height: ${boundingBox.y2 - boundingBox.y1}px;
+            width: ${Math.max(boundingBox.x2 - boundingBox.x1, 320)}px;
+            height: ${Math.max(boundingBox.y2 - boundingBox.y1, 140)}px;
             transform: translate(0, 0);
-            padding: 0;
-            border: none;
-            background: transparent;
-            color: inherit;
-            font-size: inherit;
+            padding: 12px 14px;
+            border: 1px solid rgba(148, 163, 184, 0.45);
+            border-radius: 10px;
+            background: rgba(15, 23, 42, 0.96);
+            color: var(--text-normal);
+            font-size: 14px;
             font-family: inherit;
             z-index: 1000;
-            resize: none;
-            overflow: hidden;
+            resize: both;
+            overflow: auto;
             outline: none;
-            text-align: center;
-            line-height: ${boundingBox.y2 - boundingBox.y1}px;
+            text-align: left;
+            line-height: 1.5;
             cursor: text;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
         `;
 
         this.container.appendChild(textarea);
+
+        const resizeEditorToContent = () => {
+            const currentBox = node.renderedBoundingBox();
+            const minWidth = Math.max(currentBox.x2 - currentBox.x1, 320);
+            const minHeight = Math.max(currentBox.y2 - currentBox.y1, 140);
+            textarea.style.width = `${minWidth}px`;
+            textarea.style.height = 'auto';
+            textarea.style.height = `${Math.max(minHeight, textarea.scrollHeight + 4)}px`;
+        };
 
         // 自动聚焦并全选文本（方便删除）
         setTimeout(() => {
             textarea.focus();
             textarea.select();
+            resizeEditorToContent();
         }, 0);
 
         // 标记是否已保存，避免重复触发
@@ -3887,9 +3897,14 @@ case 'dagre':
             isSaved = true;
 
             const newLabel = textarea.value.trim();
+            node.data('label', originalDisplayLabel);
 
-            // 恢复节点标签
-            node.data('label', newLabel);
+            if (!newLabel) {
+                if (isPlaceholder) {
+                    cancelEdit();
+                }
+                return;
+            }
 
             // 获取节点的实际位置（使用 position() 而不是 boundingBox）
             const nodePosition = node.position();
@@ -3898,15 +3913,24 @@ case 'dagre':
                 y: nodePosition.y
             };
 
-            // 触发节点标签编辑事件
-            this.container?.dispatchEvent(new CustomEvent('placeholder-node-edit', {
-                detail: {
-                    nodeId: data.id,
-                    label: newLabel,
-                    position: actualPosition,
-                    suggestedNodeId: data.suggestedNodeId  // 传递预生成的节点 ID
-                }
-            }));
+            if (isPlaceholder) {
+                this.container?.dispatchEvent(new CustomEvent('placeholder-node-edit', {
+                    detail: {
+                        nodeId: data.id,
+                        label: newLabel,
+                        position: actualPosition,
+                        suggestedNodeId: data.suggestedNodeId
+                    }
+                }));
+            } else {
+                this.container?.dispatchEvent(new CustomEvent('node-inline-edit-save', {
+                    detail: {
+                        node: originalNode,
+                        content: newLabel,
+                        position: actualPosition
+                    }
+                }));
+            }
 
             // 清理
             if (textarea.parentNode) {
@@ -3924,13 +3948,14 @@ case 'dagre':
         const cancelEdit = () => {
             if (isSaved) return;
             isSaved = true;
-            // 取消创建：清空占位符标签并通知上层删除占位符节点
-            node.data('label', '');
-            this.container?.dispatchEvent(new CustomEvent('placeholder-node-cancel', {
-                detail: {
-                    nodeId: data.id
-                }
-            }));
+            node.data('label', isPlaceholder ? '' : originalDisplayLabel);
+            if (isPlaceholder) {
+                this.container?.dispatchEvent(new CustomEvent('placeholder-node-cancel', {
+                    detail: {
+                        nodeId: data.id
+                    }
+                }));
+            }
             if (textarea.parentNode) {
                 textarea.remove();
             }
@@ -3948,6 +3973,7 @@ case 'dagre':
             e.stopPropagation();
             // 不再实时更新节点标签，避免重复显示
             this.checkForLinkPattern(textarea, node, boundingBox, suggesterPopoverRef);
+            resizeEditorToContent();
         });
 
         // 阻止其他事件冒泡到 Cytoscape
@@ -3973,7 +3999,9 @@ case 'dagre':
             }
 
             if (e.key === 'Enter') {
-                // Enter 保存节点
+                if (e.shiftKey) {
+                    return;
+                }
                 e.preventDefault();
                 saveNode();
             } else if (e.key === 'Escape') {
@@ -3998,21 +4026,28 @@ case 'dagre':
                     suggesterPopoverRef.value = null;
                 }
 
-                // 点击空白区域离焦时，取消创建（不自动保存）
                 if (!isSaved) {
-                    cancelEdit();
+                    if (isPlaceholder) {
+                        cancelEdit();
+                    } else {
+                        saveNode();
+                    }
                 }
             }, 20);
         });
 
-        // 点击编辑器外区域时取消创建
+        // 点击编辑器外区域：占位符取消，普通节点保存
         const handleOutsidePointerDown = (e: MouseEvent) => {
             if (isSaved) return;
             const target = e.target as Node | null;
             if (!target) return;
             if (textarea.contains(target)) return;
             if (suggesterPopoverRef.value && suggesterPopoverRef.value.contains(target)) return;
-            cancelEdit();
+            if (isPlaceholder) {
+                cancelEdit();
+            } else {
+                saveNode();
+            }
         };
         document.addEventListener('mousedown', handleOutsidePointerDown, true);
 
@@ -4021,14 +4056,9 @@ case 'dagre':
             if (!this.cy) return;
 
             const newBoundingBox = node.renderedBoundingBox();
-            const width = newBoundingBox.x2 - newBoundingBox.x1;
-            const height = newBoundingBox.y2 - newBoundingBox.y1;
-
             textarea.style.left = `${newBoundingBox.x1}px`;
             textarea.style.top = `${newBoundingBox.y1}px`;
-            textarea.style.width = `${width}px`;
-            textarea.style.height = `${height}px`;
-            textarea.style.lineHeight = `${height}px`;
+            resizeEditorToContent();
         };
 
         this.cy.on('zoom pan', updatePosition);
@@ -4459,17 +4489,8 @@ case 'dagre':
                 return;
             }
 
-            // 普通节点：双击进入内容编辑
-            this.container?.dispatchEvent(new CustomEvent('node-edit', {
-                detail: {
-                    node: data.originalNode,
-                    event: originalEvent,
-                    ctrlKey: originalEvent.ctrlKey,
-                    metaKey: originalEvent.metaKey,
-                    shiftKey: originalEvent.shiftKey,
-                    altKey: originalEvent.altKey
-                }
-            }));
+            // 普通节点：双击进入内联编辑
+            this.showInlineNodeEditor(node);
         });
 
         // 分组节点双击事件（修改分组名）

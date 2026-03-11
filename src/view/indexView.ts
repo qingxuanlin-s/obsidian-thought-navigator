@@ -1598,6 +1598,14 @@ export class ZKIndexView extends ItemView {
             await this.editNodeContent(node);
         });
 
+        this.addTrackedListener(branchGraphDiv, 'node-inline-edit-save', async (event: any) => {
+            const { node, content } = event.detail;
+            if (!node) {
+                return;
+            }
+            await this.saveNodeContent(node, content);
+        });
+
         this.addTrackedListener(branchGraphDiv, 'node-remark-edit', async (event: any) => {
             const { node } = event.detail;
             if (!node) {
@@ -5046,6 +5054,17 @@ export class ZKIndexView extends ItemView {
 
         if (!newContent || newContent === currentContent) {
             return; // 取消或未修改
+        }
+
+        await this.saveNodeContent(node, newContent);
+    }
+
+    private async saveNodeContent(node: ZKNode, newContent: string) {
+        const currentContent = node.isTextOnly
+            ? this.decodeMultilineText(node.title || '')
+            : this.buildFileNodeRawWikiText(node);
+        if (!newContent || newContent === currentContent) {
+            return;
         }
 
         try {
