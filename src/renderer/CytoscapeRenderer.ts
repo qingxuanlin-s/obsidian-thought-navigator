@@ -2025,6 +2025,21 @@ case 'dagre':
 
             const updateRemarkPosition = () => {
                 if (!this.cy) return;
+                const isHidden =
+                    node.removed() ||
+                    node.hasClass('zk-collapsed-hidden') ||
+                    node.style('display') === 'none' ||
+                    !node.visible();
+
+                if (isHidden) {
+                    remarkEl.style.display = 'none';
+                    tooltipEl.style.display = 'none';
+                    tooltipEl.style.opacity = '0';
+                    return;
+                }
+
+                remarkEl.style.display = 'flex';
+                tooltipEl.style.display = 'block';
                 const zoom = this.cy.zoom();
                 const boundingBox = node.renderedBoundingBox();
                 const size = 18 * zoom;
