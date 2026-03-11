@@ -547,35 +547,6 @@ export class ZKIndexView extends ItemView {
             });
         }
 
-        // 文本显示模式
-        const nodeTextDiv = toolbarDiv.createDiv("zk-index-toolbar-block");
-        nodeTextDiv.createEl("b", { text: t("Text : ") });
-        const nodeText = new DropdownComponent(nodeTextDiv);
-        nodeText
-            .addOption("id", t("id"))
-            .addOption("title", t("title"))
-            .addOption("both", t("both"))
-            .addOption("id-title", t("id-title"))
-            .setValue(this.plugin.settings.NodeText)
-            .onChange((NodeText) => {
-                this.plugin.settings.NodeText = NodeText;
-                this.app.workspace.trigger("zk-navigation:refresh-index-graph");
-                this.app.workspace.trigger("zk-navigation:refresh-local-graph");
-            });
-
-        const noteIdDiv = toolbarDiv.createDiv("zk-index-toolbar-block");
-        noteIdDiv.createEl("b", { text: t("Note ID : ") });
-        const noteIdToggle = new DropdownComponent(noteIdDiv);
-        noteIdToggle
-            .addOption("show", t("show"))
-            .addOption("hide", t("hide"))
-            .setValue(this.plugin.settings.showNoteIdInBranchView ? "show" : "hide")
-            .onChange((value) => {
-                this.plugin.settings.showNoteIdInBranchView = value === "show";
-                this.plugin.saveData(this.plugin.settings);
-                this.app.workspace.trigger("zk-navigation:refresh-index-graph");
-            });
-
         // 风格选择
         const graphTypeDiv = toolbarDiv.createDiv("zk-index-toolbar-block");
         graphTypeDiv.createEl("b", { text: t("style : ") });
