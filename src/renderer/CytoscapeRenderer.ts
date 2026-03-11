@@ -777,6 +777,43 @@ export class CytoscapeRenderer implements IGraphRenderer {
         return Math.abs(hash);
     }
 
+    private measureNodeLabel(label: string, options?: {
+        baseWidth?: number;
+        minHeight?: number;
+        maxWidth?: number;
+        charWidth?: number;
+        lineHeight?: number;
+        paddingX?: number;
+        paddingY?: number;
+    }): { width: number; height: number } {
+        const {
+            baseWidth = 80,
+            minHeight = 34,
+            maxWidth = 220,
+            charWidth = 8,
+            lineHeight = 12,
+            paddingX = 32,
+            paddingY = 16
+        } = options || {};
+
+        const lines = String(label || '').split('\n');
+        const estimatedWrappedLines = lines.flatMap((line) => {
+            const raw = line || ' ';
+            const estimatedWidth = raw.length * charWidth;
+            const wrappedCount = Math.max(1, Math.ceil(estimatedWidth / maxWidth));
+            return new Array(wrappedCount).fill(raw);
+        });
+
+        const longestLineWidth = Math.min(
+            maxWidth,
+            Math.max(...lines.map((line) => Math.max(1, line.length) * charWidth), charWidth)
+        );
+        const width = Math.max(baseWidth, longestLineWidth + paddingX);
+        const height = Math.max(minHeight, estimatedWrappedLines.length * lineHeight + paddingY);
+
+        return { width, height };
+    }
+
     private normalizeHexColor(color: string | null | undefined): string | null {
         if (!color || typeof color !== 'string') return null;
         const trimmed = color.trim();
@@ -1114,25 +1151,27 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 // 使用函数动态计算宽度和高度
                 'width': (ele: any) => {
                     const label = ele.data('label') || '';
-                    const baseWidth = 80;
-                    const charWidth = 8;
-                    const maxWidth = 220;
-                    const padding = 32;
-                    
-                    const textWidth = Math.min(label.length * charWidth, maxWidth);
-                    return Math.max(baseWidth, textWidth + padding);
+                    return this.measureNodeLabel(label, {
+                        baseWidth: 80,
+                        minHeight: 34,
+                        maxWidth: 220,
+                        charWidth: 8,
+                        lineHeight: 12,
+                        paddingX: 32,
+                        paddingY: 16
+                    }).width;
                 },
                 'height': (ele: any) => {
                     const label = ele.data('label') || '';
-                    const baseHeight = 50 * 2 / 3;  // 改为原来的 2/3
-                    const lineHeight = 18 * 2 / 3;  // 改为原来的 2/3
-                    const maxWidth = 200;
-                    const charWidth = 8;
-                    const padding = 24 * 2 / 3;  // 改为原来的 2/3
-
-                    const estimatedLines = Math.ceil((label.length * charWidth) / maxWidth);
-                    const textHeight = estimatedLines * lineHeight;
-                    return Math.max(baseHeight, textHeight + padding);
+                    return this.measureNodeLabel(label, {
+                        baseWidth: 80,
+                        minHeight: 34,
+                        maxWidth: 220,
+                        charWidth: 8,
+                        lineHeight: 12,
+                        paddingX: 32,
+                        paddingY: 16
+                    }).height;
                 },
                 'padding': '20px',
                 'shape': 'round-rectangle',
@@ -1182,25 +1221,29 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'text-max-width': '400px',
                 'width': (ele: any) => {
                     const label = ele.data('label') || '';
-                    const baseWidth = 80;
-                    const charWidth = 8;
-                    const maxWidth = 220;
-                    const padding = 32;
-                    const textWidth = Math.min(label.length * charWidth, maxWidth);
-                    const normalWidth = Math.max(baseWidth, textWidth + padding);
-                    return normalWidth * 2;
+                    const normalSize = this.measureNodeLabel(label, {
+                        baseWidth: 80,
+                        minHeight: 34,
+                        maxWidth: 220,
+                        charWidth: 8,
+                        lineHeight: 12,
+                        paddingX: 32,
+                        paddingY: 16
+                    });
+                    return normalSize.width * 2;
                 },
                 'height': (ele: any) => {
                     const label = ele.data('label') || '';
-                    const baseHeight = 50 * 2 / 3;
-                    const lineHeight = 18 * 2 / 3;
-                    const maxWidth = 200;
-                    const charWidth = 8;
-                    const padding = 24 * 2 / 3;
-                    const estimatedLines = Math.ceil((label.length * charWidth) / maxWidth);
-                    const textHeight = estimatedLines * lineHeight;
-                    const normalHeight = Math.max(baseHeight, textHeight + padding);
-                    return normalHeight * 2;
+                    const normalSize = this.measureNodeLabel(label, {
+                        baseWidth: 80,
+                        minHeight: 34,
+                        maxWidth: 220,
+                        charWidth: 8,
+                        lineHeight: 12,
+                        paddingX: 32,
+                        paddingY: 16
+                    });
+                    return normalSize.height * 2;
                 },
                 'border-width': '4px'
             } as any
