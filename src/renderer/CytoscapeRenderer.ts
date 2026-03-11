@@ -2188,109 +2188,111 @@ case 'dagre':
             z-index: 4;
         `;
         this.container.appendChild(handleContainer);
+        const handleUpdaters: Array<() => void> = [];
+        let updateScheduled = false;
 
-        const handle = document.createElement('div');
-        handle.style.cssText = `
-            position: absolute;
-            width: 33px;
-            height: 33px;
-            border-radius: 16.5px;
-            background-color: rgba(17, 24, 39, 0.85);
-            border: 1px solid rgba(148, 163, 184, 0.45);
-            color: #e2e8f0;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            font-size: 18px;
-            font-weight: 700;
-            line-height: 1;
-            cursor: pointer;
-            pointer-events: auto;
-            user-select: none;
-        `;
-        handleContainer.appendChild(handle);
-
-        let activeNode: any = null;
-
-        const updateHandle = () => {
-            if (!this.cy || !activeNode || activeNode.length === 0) {
-                handle.style.display = 'none';
-                return;
-            }
-
-            const data = activeNode.data();
-            const originalId = data?.originalNode?.IDStr;
-            if (!originalId || data.isGroup || data.isPlaceholder) {
-                handle.style.display = 'none';
-                return;
-            }
-
-            const hasChildren = this.cy.nodes().some((n: any) => {
+        const hasChildren = (originalId: string): boolean => {
+            return this.cy!.nodes().some((n: any) => {
                 const childId = n.data()?.originalNode?.IDStr;
-                return typeof childId === 'string' && childId.startsWith(`${originalId}.`);
+                return typeof childId === 'string' && childId !== originalId && childId.startsWith(`${originalId}.`);
             });
-            if (!hasChildren) {
-                handle.style.display = 'none';
-                return;
-            }
-
-            const isCollapsed = this.collapsedNodeIds.has(originalId);
-            handle.textContent = isCollapsed ? '▶' : '▼';
-            handle.title = isCollapsed ? '展开子节点' : '收起子节点';
-
-            const bb = activeNode.renderedBoundingBox();
-            const zoom = this.cy.zoom();
-            const size = 33 * zoom;
-            const left = bb.x1 - size - (8 * zoom);
-            const top = bb.y1 + (bb.h - size) / 2;
-
-            handle.style.width = `${size}px`;
-            handle.style.height = `${size}px`;
-            handle.style.borderRadius = `${size / 2}px`;
-            handle.style.left = `${left}px`;
-            handle.style.top = `${top}px`;
-            handle.style.fontSize = `${18 * zoom}px`;
-            handle.style.display = 'flex';
         };
 
-        const refreshActiveNode = () => {
-            if (!this.cy) return;
-            const selected = this.cy.$('node:selected').filter((n: any) => {
-                const d = n.data();
-                return !d?.isGroup && !d?.isPlaceholder;
-            });
-            activeNode = selected.length > 0 ? selected.first() : null;
+        this.cy.nodes().forEach((node: any) => {
+            const data = node.data();
+            const originalId = data?.originalNode?.IDStr;
+            if (!originalId || data?.isGroup || data?.isPlaceholder) return;
+            if (!hasChildren(originalId)) return;
+
+            const handle = document.createElement('div');
+            handle.style.cssText = `
+                position: absolute;
+                width: 33px;
+                height: 33px;
+                border-radius: 16.5px;
+                background-color: rgba(17, 24, 39, 0.85);
+                border: 1px solid rgba(148, 163, 184, 0.45);
+                color: #e2e8f0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 18px;
+                font-weight: 700;
+                line-height: 1;
+                cursor: pointer;
+                pointer-events: auto;
+                user-select: none;
+            `;
+            handleContainer.appendChild(handle);
+
+            const updateHandle = () => {
+                if (!this.cy) return;
+
+                const isHidden = node.hasClass('zk-collapsed-hidden') || !node.visible();
+                if (isHidden) {
+                    handle.style.display = 'none';
+                    return;
+                }
+
+                const bb = node.renderedBoundingBox();
+                const zoom = this.cy.zoom();
+                const size = 33 * zoom;
+                const left = bb.x1 - size - (8 * zoom);
+                const top = bb.y1 + (bb.h - size) / 2;
+                const isCollapsed = this.collapsedNodeIds.has(originalId);
+                const shouldShow = isCollapsed || node.selected();
+
+                if (!shouldShow) {
+                    handle.style.display = 'none';
+                    return;
+                }
+
+                handle.textContent = isCollapsed ? '▶' : '▼';
+                handle.title = isCollapsed ? '展开子节点' : '收起子节点';
+                handle.style.width = `${size}px`;
+                handle.style.height = `${size}px`;
+                handle.style.borderRadius = `${size / 2}px`;
+                handle.style.left = `${left}px`;
+                handle.style.top = `${top}px`;
+                handle.style.fontSize = `${18 * zoom}px`;
+                handle.style.display = 'flex';
+            };
+
+            handleUpdaters.push(updateHandle);
             updateHandle();
+
+            handle.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+
+            handle.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (this.collapsedNodeIds.has(originalId)) {
+                    this.collapsedNodeIds.delete(originalId);
+                } else {
+                    this.collapsedNodeIds.add(originalId);
+                }
+                this.applyCollapsedState();
+                handleUpdaters.forEach((fn) => fn());
+            });
+        });
+
+        const scheduleUpdate = () => {
+            if (updateScheduled) return;
+            updateScheduled = true;
+            requestAnimationFrame(() => {
+                handleUpdaters.forEach((fn) => fn());
+                updateScheduled = false;
+            });
         };
 
-        handle.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-        });
-
-        handle.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (!activeNode || activeNode.length === 0) return;
-            const id = activeNode.data()?.originalNode?.IDStr;
-            if (!id) return;
-            if (this.collapsedNodeIds.has(id)) {
-                this.collapsedNodeIds.delete(id);
-            } else {
-                this.collapsedNodeIds.add(id);
-            }
-            this.applyCollapsedState();
-            updateHandle();
-        });
-
-        this.cy.on('select unselect zoom pan position dragfree viewport', updateHandle);
-        this.cy.on('select unselect', refreshActiveNode);
-        refreshActiveNode();
+        this.cy.on('zoom pan position dragfree viewport class data add remove layoutstop select unselect', scheduleUpdate);
 
         this.collapseHandleCleanup = () => {
             if (this.cy) {
-                this.cy.off('select unselect zoom pan position dragfree viewport', updateHandle);
-                this.cy.off('select unselect', refreshActiveNode);
+                this.cy.off('zoom pan position dragfree viewport class data add remove layoutstop select unselect', scheduleUpdate);
             }
             handleContainer.remove();
         };
