@@ -4187,11 +4187,7 @@ case 'dagre':
 
         // 保存函数
         const saveNode = async () => {
-            if (isSaved) return;
-            isSaved = true;
-
             const newLabel = textarea.value.trim();
-            node.data('label', originalDisplayLabel);
 
             if (!newLabel) {
                 if (isPlaceholder) {
@@ -4199,6 +4195,10 @@ case 'dagre':
                 }
                 return;
             }
+
+            if (isSaved) return;
+            isSaved = true;
+            node.data('label', originalDisplayLabel);
 
             // 获取节点的实际位置（使用 position() 而不是 boundingBox）
             const nodePosition = node.position();
@@ -4322,27 +4322,19 @@ case 'dagre':
                 }
 
                 if (!isSaved) {
-                    if (isPlaceholder) {
-                        cancelEdit();
-                    } else {
-                        saveNode();
-                    }
+                    saveNode();
                 }
             }, 20);
         });
 
-        // 点击编辑器外区域：占位符取消，普通节点保存
+        // 点击编辑器外区域：自动保存；空内容占位符会自动取消创建
         const handleOutsidePointerDown = (e: MouseEvent) => {
             if (isSaved) return;
             const target = e.target as Node | null;
             if (!target) return;
             if (textarea.contains(target)) return;
             if (suggesterPopoverRef.value && suggesterPopoverRef.value.contains(target)) return;
-            if (isPlaceholder) {
-                cancelEdit();
-            } else {
-                saveNode();
-            }
+            saveNode();
         };
         document.addEventListener('mousedown', handleOutsidePointerDown, true);
 
