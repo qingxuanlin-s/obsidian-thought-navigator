@@ -1344,13 +1344,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'overlay-opacity': 0.3
             } as any
         },
-        // 文件节点样式
-        {
-            selector: 'node[?hasFileIcon]',
-            style: {
-                'text-decoration': 'underline'
-            } as any
-        },
         // 折叠隐藏的子节点/连线
         {
             selector: 'node.zk-collapsed-hidden',
@@ -2164,13 +2157,17 @@ case 'dagre':
             updateUnderlinePosition();
         });
 
-        this.cy.nodes('[?hasRemark]').forEach((node: any) => {
-            const remarkText = node.data('remark') || '';
-            const remarkColor = node.data('branchNodeBorder') || '#ef4444';
+        this.cy.nodes().forEach((node: any) => {
+            if (node.data('isGroup') || node.data('isPlaceholder')) {
+                return;
+            }
+
             const remarkEl = document.createElement('div');
             remarkEl.className = 'zk-node-remark-badge';
             remarkEl.textContent = 'R';
-            remarkEl.style.cssText = `
+            const applyRemarkBadgeStyle = () => {
+                const remarkColor = node.data('branchNodeBorder') || '#ef4444';
+                remarkEl.style.cssText = `
                 position: absolute;
                 width: 28px;
                 height: 28px;
@@ -2188,11 +2185,12 @@ case 'dagre':
                 cursor: ${readOnly ? 'default' : 'pointer'};
                 user-select: none;
             `;
+            };
+            applyRemarkBadgeStyle();
             badgeContainer.appendChild(remarkEl);
 
             const tooltipEl = document.createElement('div');
             tooltipEl.className = 'zk-node-remark-tooltip';
-            tooltipEl.textContent = remarkText;
             tooltipEl.style.cssText = `
                 position: absolute;
                 max-width: 280px;
@@ -2216,16 +2214,21 @@ case 'dagre':
 
             const updateRemarkPosition = () => {
                 if (!this.cy) return;
+                const remarkText = node.data('remark') || '';
                 const isHidden =
                     node.removed() ||
                     node.hasClass('zk-collapsed-hidden') ||
                     node.style('display') === 'none' ||
                     !node.visible();
+                const shouldShow = !isHidden && (node.selected() || !!remarkText);
+                tooltipEl.textContent = remarkText;
+                applyRemarkBadgeStyle();
 
-                if (isHidden) {
+                if (!shouldShow) {
                     remarkEl.style.display = 'none';
                     tooltipEl.style.display = 'none';
                     tooltipEl.style.opacity = '0';
+                    tooltipEl.style.transform = 'translateY(4px)';
                     return;
                 }
 
@@ -2268,6 +2271,7 @@ case 'dagre':
             });
 
             remarkEl.addEventListener('mouseenter', () => {
+                const remarkText = node.data('remark') || '';
                 if (!remarkText) return;
                 tooltipEl.style.opacity = '1';
                 tooltipEl.style.transform = 'translateY(0)';
