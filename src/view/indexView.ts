@@ -6226,7 +6226,6 @@ export class ZKIndexView extends ItemView {
      * 从活动节点创建兄弟节点（Enter 键）
      */
     async createSiblingNodeFromActive(activeNodeId: string, position: { x: number; y: number }) {
-
         // 查找活动节点
         const activeNode = this.mocNodes.find(n => n.IDStr === activeNodeId || n.ID === activeNodeId);
         if (!activeNode) {
