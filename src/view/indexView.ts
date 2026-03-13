@@ -5161,7 +5161,7 @@ export class ZKIndexView extends ItemView {
 
     async editNodeRemark(node: ZKNode) {
         const currentRemark = this.getNodeRemark(node);
-        const newRemark = await this.showTextNodeContentInputDialog(currentRemark, '编辑备注');
+        const newRemark = await this.showTextNodeContentInputDialog(currentRemark, '编辑备注', true);
 
         if (newRemark === null || newRemark === currentRemark) {
             return;
@@ -5282,7 +5282,11 @@ export class ZKIndexView extends ItemView {
     /**
      * 显示文本节点内容输入对话框
      */
-    private showTextNodeContentInputDialog(currentContent: string, title: string = '修改文本节点内容'): Promise<string | null> {
+    private showTextNodeContentInputDialog(
+        currentContent: string,
+        title: string = '修改文本节点内容',
+        allowEmpty: boolean = false
+    ): Promise<string | null> {
         return new Promise((resolve) => {
             const modal = new Modal(this.app);
             let isResolved = false;
@@ -5528,7 +5532,7 @@ export class ZKIndexView extends ItemView {
             confirmButton.style.cursor = 'pointer';
             confirmButton.addEventListener('click', () => {
                 const newContent = input.value.trim();
-                if (!newContent) {
+                if (!allowEmpty && !newContent) {
                     new Notice('文本内容不能为空');
                     return;
                 }
@@ -5587,10 +5591,11 @@ export class ZKIndexView extends ItemView {
 
                     e.preventDefault();
                     const newContent = input.value.trim();
-                    if (!newContent) {
+                    if (!allowEmpty && !newContent) {
                         new Notice('文本内容不能为空');
                         return;
                     }
+                    closeWikiLinkSuggester();
                     resolveOnce(newContent);
                     modal.close();
                 } else if (e.key === 'Escape') {
