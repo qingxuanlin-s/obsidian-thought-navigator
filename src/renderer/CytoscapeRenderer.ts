@@ -3913,35 +3913,91 @@ case 'dagre':
             position: absolute;
             left: ${boundingBox.x1}px;
             top: ${boundingBox.y1}px;
-            width: ${Math.max(boundingBox.x2 - boundingBox.x1, 320)}px;
-            height: ${Math.max(boundingBox.y2 - boundingBox.y1, 140)}px;
+            width: ${Math.max(boundingBox.x2 - boundingBox.x1, 80)}px;
+            height: ${Math.max(boundingBox.y2 - boundingBox.y1, 44)}px;
             transform: translate(0, 0);
-            padding: 12px 14px;
-            border: 1px solid rgba(148, 163, 184, 0.45);
-            border-radius: 10px;
+            padding: 10px 12px;
+            border: 2px solid rgba(91, 143, 217, 0.95);
+            border-radius: 16px;
             background: rgba(15, 23, 42, 0.96);
             color: var(--text-normal);
             font-size: 14px;
             font-family: inherit;
             z-index: 1000;
-            resize: both;
-            overflow: auto;
+            resize: none;
+            overflow: hidden;
             outline: none;
             text-align: left;
             line-height: 1.5;
             cursor: text;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
         `;
 
         this.container.appendChild(textarea);
 
+        const measureCanvas = document.createElement('canvas');
+        const measureContext = measureCanvas.getContext('2d');
+        let hasUserEdited = false;
         const resizeEditorToContent = () => {
             const currentBox = node.renderedBoundingBox();
-            const minWidth = Math.max(currentBox.x2 - currentBox.x1, 320);
-            const minHeight = Math.max(currentBox.y2 - currentBox.y1, 140);
-            textarea.style.width = `${minWidth}px`;
-            textarea.style.height = 'auto';
-            textarea.style.height = `${Math.max(minHeight, textarea.scrollHeight + 4)}px`;
+            const minWidth = Math.max(currentBox.x2 - currentBox.x1, 80);
+            const minHeight = Math.max(currentBox.y2 - currentBox.y1, 44);
+
+            if (!hasUserEdited) {
+                textarea.style.width = `${minWidth}px`;
+                textarea.style.height = `${minHeight}px`;
+                return;
+            }
+
+            const containerWidth = this.container?.clientWidth || window.innerWidth;
+            const containerHeight = this.container?.clientHeight || window.innerHeight;
+            const computedStyle = window.getComputedStyle(textarea);
+            const font = computedStyle.font || `${computedStyle.fontSize} ${computedStyle.fontFamily}`;
+            const lines = textarea.value.split('\n');
+            let contentWidth = minWidth;
+
+            if (measureContext) {
+                measureContext.font = font;
+                contentWidth = lines.reduce((maxWidth, line) => {
+                    const metrics = measureContext.measureText(line || ' ');
+                    return Math.max(maxWidth, metrics.width + 28);
+                }, minWidth);
+            }
+
+            const maxWidth = Math.max(minWidth, Math.min(620, containerWidth - currentBox.x1 - 12));
+            const maxHeight = Math.max(minHeight, Math.min(420, containerHeight - currentBox.y1 - 12));
+            const preferredWidth = Math.min(maxWidth, Math.max(minWidth, Math.ceil(contentWidth)));
+            const candidateWidths = Array.from(new Set([
+                minWidth,
+                Math.min(maxWidth, Math.max(minWidth, Math.round(minWidth * 1.2))),
+                Math.min(maxWidth, Math.max(minWidth, Math.round((minWidth + preferredWidth) / 2))),
+                preferredWidth,
+                maxWidth
+            ])).sort((a, b) => a - b);
+
+            let bestWidth = minWidth;
+            let bestHeight = minHeight;
+            let bestScore = Number.POSITIVE_INFINITY;
+            const targetAspect = 0.42;
+
+            candidateWidths.forEach((candidateWidth) => {
+                textarea.style.width = `${candidateWidth}px`;
+                textarea.style.height = 'auto';
+                const measuredHeight = Math.min(maxHeight, Math.max(minHeight, textarea.scrollHeight + 4));
+                const aspect = measuredHeight / candidateWidth;
+                const aspectPenalty = Math.abs(aspect - targetAspect);
+                const areaPenalty = ((candidateWidth - minWidth) / Math.max(1, maxWidth - minWidth)) * 0.08;
+                const score = aspectPenalty + areaPenalty;
+
+                if (score < bestScore) {
+                    bestScore = score;
+                    bestWidth = candidateWidth;
+                    bestHeight = measuredHeight;
+                }
+            });
+
+            textarea.style.width = `${bestWidth}px`;
+            textarea.style.height = `${bestHeight}px`;
         };
 
         // 自动聚焦并全选文本（方便删除）
@@ -4035,6 +4091,7 @@ case 'dagre':
         textarea.addEventListener('input', (e) => {
             // 阻止事件冒泡
             e.stopPropagation();
+            hasUserEdited = true;
             // 不再实时更新节点标签，避免重复显示
             this.checkForLinkPattern(textarea, node, boundingBox, suggesterPopoverRef);
             resizeEditorToContent();
