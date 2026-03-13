@@ -4033,6 +4033,10 @@ case 'dagre':
 
         // 获取节点位置
         const boundingBox = node.renderedBoundingBox();
+        const lockedBoxLeft = boundingBox.x1;
+        const lockedBoxTop = boundingBox.y1;
+        const initialBoxWidth = Math.max(boundingBox.w, 80);
+        const initialBoxHeight = Math.max(boundingBox.h, 44);
 
         // 创建 textarea，直接覆盖在节点上
         const textarea = document.createElement('textarea');
@@ -4050,10 +4054,10 @@ case 'dagre':
 
         textarea.style.cssText = `
             position: absolute;
-            left: ${boundingBox.x1}px;
-            top: ${boundingBox.y1}px;
-            width: ${Math.max(boundingBox.x2 - boundingBox.x1, 80)}px;
-            height: ${Math.max(boundingBox.y2 - boundingBox.y1, 44)}px;
+            left: ${lockedBoxLeft}px;
+            top: ${lockedBoxTop}px;
+            width: ${initialBoxWidth}px;
+            height: ${initialBoxHeight}px;
             transform: translate(0, 0);
             padding: 10px 12px;
             border: 2px solid rgba(91, 143, 217, 0.95);
@@ -4066,6 +4070,7 @@ case 'dagre':
             resize: none;
             overflow: hidden;
             outline: none;
+            box-sizing: border-box;
             text-align: left;
             line-height: 1.5;
             cursor: text;
@@ -4078,9 +4083,8 @@ case 'dagre':
         const measureContext = measureCanvas.getContext('2d');
         let hasUserEdited = false;
         const resizeEditorToContent = () => {
-            const currentBox = node.renderedBoundingBox();
-            const minWidth = Math.max(currentBox.x2 - currentBox.x1, 80);
-            const minHeight = Math.max(currentBox.y2 - currentBox.y1, 44);
+            const minWidth = initialBoxWidth;
+            const minHeight = initialBoxHeight;
 
             if (!hasUserEdited) {
                 textarea.style.width = `${minWidth}px`;
@@ -4103,8 +4107,8 @@ case 'dagre':
                 }, minWidth);
             }
 
-            const maxWidth = Math.max(minWidth, Math.min(620, containerWidth - currentBox.x1 - 12));
-            const maxHeight = Math.max(minHeight, Math.min(420, containerHeight - currentBox.y1 - 12));
+            const maxWidth = Math.max(minWidth, Math.min(620, containerWidth - lockedBoxLeft - 12));
+            const maxHeight = Math.max(minHeight, Math.min(420, containerHeight - lockedBoxTop - 12));
             const preferredWidth = Math.min(maxWidth, Math.max(minWidth, Math.ceil(contentWidth)));
             const candidateWidths = Array.from(new Set([
                 minWidth,
@@ -4339,8 +4343,8 @@ case 'dagre':
             if (!this.cy) return;
 
             const newBoundingBox = node.renderedBoundingBox();
-            textarea.style.left = `${newBoundingBox.x1}px`;
-            textarea.style.top = `${newBoundingBox.y1}px`;
+            textarea.style.left = `${lockedBoxLeft + (newBoundingBox.x1 - boundingBox.x1)}px`;
+            textarea.style.top = `${lockedBoxTop + (newBoundingBox.y1 - boundingBox.y1)}px`;
             resizeEditorToContent();
         };
 
