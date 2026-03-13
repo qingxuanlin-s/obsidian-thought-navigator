@@ -5154,12 +5154,259 @@ case 'dagre':
         let svgOverlay: SVGSVGElement | null = null;
         let nearbyNodeId: string | null = null;
         const PROXIMITY_THRESHOLD = 250;  // 250px 范围
+        let alignmentOverlay: SVGSVGElement | null = null;
+        let verticalAlignmentLine: SVGLineElement | null = null;
+        let horizontalAlignmentLine: SVGLineElement | null = null;
+        let spacingGuideLineA: SVGLineElement | null = null;
+        let spacingGuideLineB: SVGLineElement | null = null;
+        const ALIGNMENT_THRESHOLD = 10;
+        const SPACING_THRESHOLD = 14;
+        const AXIS_GROUP_THRESHOLD = 24;
+
+        const ensureAlignmentOverlay = () => {
+            if (alignmentOverlay || !this.container) return;
+            alignmentOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            alignmentOverlay.style.cssText = `
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                pointer-events: none;
+                z-index: 3;
+            `;
+
+            verticalAlignmentLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            horizontalAlignmentLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            spacingGuideLineA = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            spacingGuideLineB = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+
+            [verticalAlignmentLine, horizontalAlignmentLine].forEach((line) => {
+                if (!line) return;
+                line.setAttribute('stroke', '#f8fafc');
+                line.setAttribute('stroke-width', '1.5');
+                line.setAttribute('stroke-dasharray', '4,4');
+                line.setAttribute('opacity', '0.85');
+                line.style.display = 'none';
+                alignmentOverlay!.appendChild(line);
+            });
+
+            [spacingGuideLineA, spacingGuideLineB].forEach((line) => {
+                if (!line) return;
+                line.setAttribute('stroke', '#38bdf8');
+                line.setAttribute('stroke-width', '1.5');
+                line.setAttribute('stroke-dasharray', '3,3');
+                line.setAttribute('opacity', '0.9');
+                line.style.display = 'none';
+                alignmentOverlay!.appendChild(line);
+            });
+
+            this.container.appendChild(alignmentOverlay);
+        };
+
+        const hideAlignmentGuides = () => {
+            if (verticalAlignmentLine) verticalAlignmentLine.style.display = 'none';
+            if (horizontalAlignmentLine) horizontalAlignmentLine.style.display = 'none';
+            if (spacingGuideLineA) spacingGuideLineA.style.display = 'none';
+            if (spacingGuideLineB) spacingGuideLineB.style.display = 'none';
+        };
+
+        const getRenderedMetrics = (node: any) => {
+            const pos = node.renderedPosition();
+            const width = typeof node.renderedWidth === 'function'
+                ? node.renderedWidth()
+                : node.width() * this.cy!.zoom();
+            const height = typeof node.renderedHeight === 'function'
+                ? node.renderedHeight()
+                : node.height() * this.cy!.zoom();
+            return {
+                x: pos.x,
+                y: pos.y,
+                x1: pos.x - width / 2,
+                x2: pos.x + width / 2,
+                y1: pos.y - height / 2,
+                y2: pos.y + height / 2,
+                width,
+                height
+            };
+        };
+
+        const updateAlignmentGuides = (draggedNode: any) => {
+            if (!this.cy || !this.container) return;
+            ensureAlignmentOverlay();
+            if (!verticalAlignmentLine || !horizontalAlignmentLine || !spacingGuideLineA || !spacingGuideLineB) return;
+
+            const originalMetrics = getRenderedMetrics(draggedNode);
+            let snappedX = originalMetrics.x;
+            let snappedY = originalMetrics.y;
+
+            let verticalGuide: { x: number; y1: number; y2: number } | null = null;
+            let horizontalGuide: { y: number; x1: number; x2: number } | null = null;
+            let verticalBest = Number.POSITIVE_INFINITY;
+            let horizontalBest = Number.POSITIVE_INFINITY;
+            let horizontalSpacing: { left: any; right: any; y: number } | null = null;
+            let verticalSpacing: { top: any; bottom: any; x: number } | null = null;
+
+            this.cy.nodes('[!isGroup]').forEach((otherNode: any) => {
+                if (otherNode.id() === draggedNode.id()) return;
+                if (otherNode.data('isPlaceholder')) return;
+                if (otherNode.removed() || !otherNode.visible()) return;
+                if (otherNode.hasClass('zk-collapsed-hidden')) return;
+
+                const other = getRenderedMetrics(otherNode);
+                const verticalCandidates = [
+                    { delta: Math.abs(originalMetrics.x - other.x), snapX: other.x, guideX: other.x, y1: Math.min(originalMetrics.y1, other.y1) - 40, y2: Math.max(originalMetrics.y2, other.y2) + 40 },
+                    { delta: Math.abs(originalMetrics.x1 - other.x1), snapX: other.x1 + originalMetrics.width / 2, guideX: other.x1, y1: Math.min(originalMetrics.y1, other.y1) - 40, y2: Math.max(originalMetrics.y2, other.y2) + 40 },
+                    { delta: Math.abs(originalMetrics.x2 - other.x2), snapX: other.x2 - originalMetrics.width / 2, guideX: other.x2, y1: Math.min(originalMetrics.y1, other.y1) - 40, y2: Math.max(originalMetrics.y2, other.y2) + 40 }
+                ];
+                const horizontalCandidates = [
+                    { delta: Math.abs(originalMetrics.y - other.y), snapY: other.y, guideY: other.y, x1: Math.min(originalMetrics.x1, other.x1) - 40, x2: Math.max(originalMetrics.x2, other.x2) + 40 },
+                    { delta: Math.abs(originalMetrics.y1 - other.y1), snapY: other.y1 + originalMetrics.height / 2, guideY: other.y1, x1: Math.min(originalMetrics.x1, other.x1) - 40, x2: Math.max(originalMetrics.x2, other.x2) + 40 },
+                    { delta: Math.abs(originalMetrics.y2 - other.y2), snapY: other.y2 - originalMetrics.height / 2, guideY: other.y2, x1: Math.min(originalMetrics.x1, other.x1) - 40, x2: Math.max(originalMetrics.x2, other.x2) + 40 }
+                ];
+
+                verticalCandidates.forEach((candidate) => {
+                    if (candidate.delta <= ALIGNMENT_THRESHOLD && candidate.delta < verticalBest) {
+                        verticalBest = candidate.delta;
+                        snappedX = candidate.snapX;
+                        verticalGuide = { x: candidate.guideX, y1: candidate.y1, y2: candidate.y2 };
+                    }
+                });
+
+                horizontalCandidates.forEach((candidate) => {
+                    if (candidate.delta <= ALIGNMENT_THRESHOLD && candidate.delta < horizontalBest) {
+                        horizontalBest = candidate.delta;
+                        snappedY = candidate.snapY;
+                        horizontalGuide = { y: candidate.guideY, x1: candidate.x1, x2: candidate.x2 };
+                    }
+                });
+            });
+
+            const peers = this.cy.nodes('[!isGroup]').filter((otherNode: any) => {
+                if (otherNode.id() === draggedNode.id()) return false;
+                if (otherNode.data('isPlaceholder')) return false;
+                if (otherNode.removed() || !otherNode.visible()) return false;
+                if (otherNode.hasClass('zk-collapsed-hidden')) return false;
+                return true;
+            });
+
+            const horizontalPeers = peers
+                .map((node: any) => ({ node, metrics: getRenderedMetrics(node) }))
+                .filter(({ metrics }) => Math.abs(metrics.y - originalMetrics.y) <= AXIS_GROUP_THRESHOLD)
+                .sort((a, b) => a.metrics.x - b.metrics.x);
+
+            for (let i = 0; i < horizontalPeers.length - 1; i++) {
+                const left = horizontalPeers[i];
+                const right = horizontalPeers[i + 1];
+                if (left.metrics.x >= originalMetrics.x || right.metrics.x <= originalMetrics.x) continue;
+                const midpoint = (left.metrics.x + right.metrics.x) / 2;
+                const delta = Math.abs(originalMetrics.x - midpoint);
+                if (delta <= SPACING_THRESHOLD) {
+                    snappedX = midpoint;
+                    verticalGuide = null;
+                    horizontalSpacing = {
+                        left: left.metrics,
+                        right: right.metrics,
+                        y: (left.metrics.y + right.metrics.y + originalMetrics.y) / 3
+                    };
+                    break;
+                }
+            }
+
+            const verticalPeers = peers
+                .map((node: any) => ({ node, metrics: getRenderedMetrics(node) }))
+                .filter(({ metrics }) => Math.abs(metrics.x - originalMetrics.x) <= AXIS_GROUP_THRESHOLD)
+                .sort((a, b) => a.metrics.y - b.metrics.y);
+
+            for (let i = 0; i < verticalPeers.length - 1; i++) {
+                const top = verticalPeers[i];
+                const bottom = verticalPeers[i + 1];
+                if (top.metrics.y >= originalMetrics.y || bottom.metrics.y <= originalMetrics.y) continue;
+                const midpoint = (top.metrics.y + bottom.metrics.y) / 2;
+                const delta = Math.abs(originalMetrics.y - midpoint);
+                if (delta <= SPACING_THRESHOLD) {
+                    snappedY = midpoint;
+                    horizontalGuide = null;
+                    verticalSpacing = {
+                        top: top.metrics,
+                        bottom: bottom.metrics,
+                        x: (top.metrics.x + bottom.metrics.x + originalMetrics.x) / 3
+                    };
+                    break;
+                }
+            }
+
+            if (snappedX !== originalMetrics.x || snappedY !== originalMetrics.y) {
+                const zoom = this.cy.zoom();
+                const pan = this.cy.pan();
+                draggedNode.position({
+                    x: (snappedX - pan.x) / zoom,
+                    y: (snappedY - pan.y) / zoom
+                });
+            }
+
+            const draggedPos = draggedNode.renderedPosition();
+            const draggedMetrics = getRenderedMetrics(draggedNode);
+            const currentVerticalGuide: any = verticalGuide;
+            const currentHorizontalGuide: any = horizontalGuide;
+
+            if (currentVerticalGuide) {
+                verticalAlignmentLine.setAttribute('x1', `${currentVerticalGuide.x}`);
+                verticalAlignmentLine.setAttribute('y1', `${currentVerticalGuide.y1}`);
+                verticalAlignmentLine.setAttribute('x2', `${currentVerticalGuide.x}`);
+                verticalAlignmentLine.setAttribute('y2', `${currentVerticalGuide.y2}`);
+                verticalAlignmentLine.style.display = 'block';
+            } else {
+                verticalAlignmentLine.style.display = 'none';
+            }
+
+            if (currentHorizontalGuide) {
+                horizontalAlignmentLine.setAttribute('x1', `${currentHorizontalGuide.x1}`);
+                horizontalAlignmentLine.setAttribute('y1', `${currentHorizontalGuide.y}`);
+                horizontalAlignmentLine.setAttribute('x2', `${currentHorizontalGuide.x2}`);
+                horizontalAlignmentLine.setAttribute('y2', `${currentHorizontalGuide.y}`);
+                horizontalAlignmentLine.style.display = 'block';
+            } else {
+                horizontalAlignmentLine.style.display = 'none';
+            }
+
+            if (horizontalSpacing) {
+                spacingGuideLineA.setAttribute('x1', `${horizontalSpacing.left.x2}`);
+                spacingGuideLineA.setAttribute('y1', `${draggedPos.y}`);
+                spacingGuideLineA.setAttribute('x2', `${draggedMetrics.x1}`);
+                spacingGuideLineA.setAttribute('y2', `${draggedPos.y}`);
+                spacingGuideLineA.style.display = 'block';
+
+                spacingGuideLineB.setAttribute('x1', `${draggedMetrics.x2}`);
+                spacingGuideLineB.setAttribute('y1', `${draggedPos.y}`);
+                spacingGuideLineB.setAttribute('x2', `${horizontalSpacing.right.x1}`);
+                spacingGuideLineB.setAttribute('y2', `${draggedPos.y}`);
+                spacingGuideLineB.style.display = 'block';
+            } else if (verticalSpacing) {
+                spacingGuideLineA.setAttribute('x1', `${draggedPos.x}`);
+                spacingGuideLineA.setAttribute('y1', `${verticalSpacing.top.y2}`);
+                spacingGuideLineA.setAttribute('x2', `${draggedPos.x}`);
+                spacingGuideLineA.setAttribute('y2', `${draggedMetrics.y1}`);
+                spacingGuideLineA.style.display = 'block';
+
+                spacingGuideLineB.setAttribute('x1', `${draggedPos.x}`);
+                spacingGuideLineB.setAttribute('y1', `${draggedMetrics.y2}`);
+                spacingGuideLineB.setAttribute('x2', `${draggedPos.x}`);
+                spacingGuideLineB.setAttribute('y2', `${verticalSpacing.bottom.y1}`);
+                spacingGuideLineB.style.display = 'block';
+            } else {
+                spacingGuideLineA.style.display = 'none';
+                spacingGuideLineB.style.display = 'none';
+            }
+        };
 
         // 节点开始拖动事件
         this.cy.on('grab', 'node', (evt: any) => {
             const node = evt.target;
             const data = node.data();
             const smartEnabled = this.isSmartConnectionEnabled();
+            ensureAlignmentOverlay();
+            hideAlignmentGuides();
 
             if (!smartEnabled) {
                 if (tempConnectionLine && svgOverlay) {
@@ -5202,6 +5449,10 @@ case 'dagre':
             const node = evt.target;
             const data = node.data();
             const smartEnabled = this.isSmartConnectionEnabled();
+
+             if (!data.isGroup) {
+                updateAlignmentGuides(node);
+            }
 
             if (!smartEnabled) {
                 if (tempConnectionLine && svgOverlay) {
@@ -5342,6 +5593,7 @@ case 'dagre':
             const node = evt.target;
             const data = node.data();
             const smartEnabled = this.isSmartConnectionEnabled();
+            hideAlignmentGuides();
 
             // 移除临时连接线和 SVG 叠加层
             if (tempConnectionLine && svgOverlay) {
@@ -5450,6 +5702,7 @@ case 'dagre':
         this.cy.on('free', 'node', (evt: any) => {
             const node = evt.target;
             const data = node.data();
+            hideAlignmentGuides();
 
             // 只对自由节点进行清理
             const originalNodeId = data.originalNode?.ID || data.originalSource || data.id;
