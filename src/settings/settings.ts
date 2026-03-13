@@ -751,6 +751,19 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                 })
             );
 
+        new Setting(structureSettingDiv)
+            .setName("节点布局风格")
+            .setDesc("自由节点保留当前自由放置逻辑；自动节点按固定思维导图布局创建新节点")
+            .addDropdown(options => options
+                .addOption("free", "自由节点")
+                .addOption("auto", "自动节点")
+                .setValue(this.plugin.settings.nodeLayoutStyle || "free")
+                .onChange((value) => {
+                    this.plugin.settings.nodeLayoutStyle = value as 'free' | 'auto';
+                    this.plugin.RefreshIndexViewFlag = true;
+                })
+            );
+
         // 添加"快捷操作"展开项
         const quickActionDetails = structureSettingDiv.createEl('details');
         quickActionDetails.addClass('zk-details');

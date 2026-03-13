@@ -6909,6 +6909,10 @@ case 'dagre':
         return offset;
     }
 
+    private isAutoNodeLayoutStyle(): boolean {
+        return (this.currentOptions?.nodeLayoutStyle || 'free') === 'auto';
+    }
+
     private estimateCollisionBox(referenceNode: any): { width: number; height: number } {
         const box = referenceNode.boundingBox();
         return {
@@ -6993,7 +6997,7 @@ case 'dagre':
         const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
         const nodePos = activeNode.position();
         const children = activeNode.outgoers('edge').targets();
-        const dir = this.getBranchDirection(activeNode);
+        const dir = this.isAutoNodeLayoutStyle() ? { x: 1, y: 0 } : this.getBranchDirection(activeNode);
         const normal = this.getPerpendicular(dir);
 
         const anchor = {
@@ -7012,9 +7016,10 @@ case 'dagre':
             this.VERTICAL_GAP,
             dir
         );
+        const finalPosition = this.isAutoNodeLayoutStyle() ? rawPosition : position;
 
         this.container?.dispatchEvent(new CustomEvent('create-child-node-shortcut', {
-            detail: { activeNodeId, position }
+            detail: { activeNodeId, position: finalPosition }
         }));
     }
 
@@ -7034,7 +7039,9 @@ case 'dagre':
 
         const parentPos = parent.first().position();
         const siblings = parent.first().outgoers('edge').targets();
-        const dir = this.normalizeVector(nodePos.x - parentPos.x, nodePos.y - parentPos.y);
+        const dir = this.isAutoNodeLayoutStyle()
+            ? { x: 1, y: 0 }
+            : this.normalizeVector(nodePos.x - parentPos.x, nodePos.y - parentPos.y);
         const normal = this.getPerpendicular(dir);
         const siblingGap = Math.max(this.SIBLING_GAP, this.VERTICAL_GAP + 40);
         const anchor = {
@@ -7064,12 +7071,13 @@ case 'dagre':
             siblingGap,
             dir
         );
+        const finalPosition = this.isAutoNodeLayoutStyle() ? rawPosition : position;
 
         // 触发创建兄弟节点事件
         this.container?.dispatchEvent(new CustomEvent('create-sibling-node-shortcut', {
             detail: {
                 activeNodeId: activeNodeId,
-                position: position
+                position: finalPosition
             }
         }));
     }
@@ -7094,6 +7102,7 @@ case 'dagre':
             this.VERTICAL_GAP,
             { x: -dir.x, y: -dir.y }
         );
+        const finalPosition = this.isAutoNodeLayoutStyle() ? rawPosition : position;
         const nodeData = activeNode.data();
 
         const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
@@ -7103,7 +7112,7 @@ case 'dagre':
         this.container?.dispatchEvent(new CustomEvent('create-parent-node-shortcut', {
             detail: {
                 activeNodeId: activeNodeId,
-                position: position
+                position: finalPosition
             }
         }));
     }

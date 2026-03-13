@@ -121,6 +121,7 @@ interface ZKNavigationSettings {
     themeMode: 'dark' | 'light';       // 主题模式
     themeStyle: 'default' | 'vivid';   // 主题风格（默认/绚丽）
     edgeStyle: 'straight' | 'bezier' | 'polyline'; // 连线风格
+    nodeLayoutStyle: 'free' | 'auto';  // 节点布局风格（自由/自动）
     showNoteIdInBranchView: boolean;   // 分支视图是否显示笔记编号
 }
 
@@ -202,6 +203,7 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     themeMode: 'dark', // 默认深色主题
     themeStyle: 'default', // 默认风格
     edgeStyle: 'bezier', // 默认贝塞尔曲线
+    nodeLayoutStyle: 'free', // 默认自由节点布局
     showNoteIdInBranchView: true,
 }
 

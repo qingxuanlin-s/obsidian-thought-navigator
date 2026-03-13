@@ -57,6 +57,7 @@ export interface RenderOptions {
     themeMode?: 'dark' | 'light';
     themeStyle?: 'default' | 'vivid';
     edgeStyle?: 'straight' | 'bezier' | 'polyline';
+    nodeLayoutStyle?: 'free' | 'auto';
     showNoteId?: boolean;
     smartConnection?: boolean;
     readOnly?: boolean;
