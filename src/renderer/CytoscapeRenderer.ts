@@ -4150,6 +4150,29 @@ case 'dagre':
         let isSaved = false;
         const suggesterPopoverRef = { value: null as HTMLElement | null };
 
+        const insertWikiLinkAtCursor = (file: any, embed: boolean) => {
+            const cursorPos = textarea.selectionStart ?? textarea.value.length;
+            const value = textarea.value;
+            const triggerPatterns = ['![[', '！【【', '[[', '【【'];
+            let triggerStart = -1;
+
+            for (const pattern of triggerPatterns) {
+                const idx = value.lastIndexOf(pattern, cursorPos);
+                if (idx > triggerStart) {
+                    triggerStart = idx;
+                }
+            }
+
+            const before = triggerStart >= 0 ? value.slice(0, triggerStart) : value.slice(0, cursorPos);
+            const after = triggerStart >= 0 ? value.slice(cursorPos) : value.slice(cursorPos);
+            const wikiText = `${embed ? '!' : ''}[[${file.basename}]]`;
+
+            textarea.value = `${before}${wikiText}${after}`;
+            const newCursor = before.length + wikiText.length;
+            textarea.setSelectionRange(newCursor, newCursor);
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+
         // 保存函数
         const saveNode = async () => {
             if (isSaved) return;
@@ -4232,7 +4255,7 @@ case 'dagre':
             e.stopPropagation();
             hasUserEdited = true;
             // 不再实时更新节点标签，避免重复显示
-            this.checkForLinkPattern(textarea, node, boundingBox, suggesterPopoverRef);
+            this.checkForLinkPattern(textarea, node, boundingBox, suggesterPopoverRef, handleLinkSelect);
             resizeEditorToContent();
         });
 
@@ -4336,6 +4359,31 @@ case 'dagre':
         });
 
         observer.observe(this.container, { childList: true });
+
+        const handleLinkSelect = (file: any, embed: boolean) => {
+            if (isPlaceholder) {
+                isSaved = true;
+                if (textarea.parentNode) {
+                    textarea.remove();
+                }
+                if (suggesterPopoverRef.value && suggesterPopoverRef.value.parentNode) {
+                    suggesterPopoverRef.value.remove();
+                }
+                this.container?.dispatchEvent(new CustomEvent('placeholder-node-complete', {
+                    detail: {
+                        nodeId: data.id,
+                        wikiLink: file.basename,
+                        file,
+                        isEmbed: embed
+                    }
+                }));
+                this.container?.focus();
+                return;
+            }
+
+            insertWikiLinkAtCursor(file, embed);
+            saveNode();
+        };
     }
 
     /**
@@ -4345,7 +4393,8 @@ case 'dagre':
         textarea: HTMLTextAreaElement,
         node: any,
         boundingBox: any,
-        suggesterPopoverRef: { value: HTMLElement | null }
+        suggesterPopoverRef: { value: HTMLElement | null },
+        onSelectFile?: (file: any, isEmbed: boolean) => void
     ): void {
         const value = textarea.value;
         const cursorPos = textarea.selectionStart;
@@ -4364,7 +4413,7 @@ case 'dagre':
         // 如果模式匹配，显示 suggester
         if (lastTwoChars === '[[' || lastTwoChars === '【【' || lastThreeChars === '![[' || lastThreeChars === '！【【') {
             const isEmbed = lastThreeChars === '![[' || lastThreeChars === '！【【';
-            this.showLinkSuggester(textarea, node, boundingBox, suggesterPopoverRef, isEmbed);
+            this.showLinkSuggester(textarea, node, boundingBox, suggesterPopoverRef, isEmbed, onSelectFile);
         }
     }
 
@@ -4376,7 +4425,8 @@ case 'dagre':
         node: any,
         boundingBox: any,
         suggesterPopoverRef: { value: HTMLElement | null },
-        isEmbed: boolean = false
+        isEmbed: boolean = false,
+        onSelectFile?: (file: any, isEmbed: boolean) => void
     ): void {
         // 获取所有 markdown 文件
         const app = (window as any).app;
@@ -4486,8 +4536,12 @@ case 'dagre':
         const selectFile = (file: any) => {
             // 移除 suggester
             popover.remove();
+            if (onSelectFile) {
+                onSelectFile(file, isEmbed);
+                return;
+            }
 
-            // 触发事件，调用 addFreeNodeToMOC
+            // 兼容旧逻辑
             this.container?.dispatchEvent(new CustomEvent('add-free-node-from-suggester', {
                 detail: {
                     nodeId: node.data().id,
