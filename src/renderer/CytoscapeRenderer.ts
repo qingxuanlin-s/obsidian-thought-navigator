@@ -4054,6 +4054,8 @@ case 'dagre':
                 : `${originalNode?.isEmbed ? '!' : ''}[[${originalNode?.file?.basename || originalNode?.title || ''}${(originalNode?.title && originalNode?.file?.basename && originalNode.title !== originalNode.file.basename) ? `|${originalNode.title}` : ''}]]`);
         textarea.value = initialValue;
         textarea.className = 'node-label-editor';
+        const nodeFontSize = node.style('font-size') || '14px';
+        const nodeLineHeight = node.style('line-height') || '1.5';
 
         // 重要：在编辑时隐藏节点标签，避免重复显示
         node.data('label', '');
@@ -4070,7 +4072,7 @@ case 'dagre':
             border-radius: 16px;
             background: rgba(15, 23, 42, 0.96);
             color: var(--text-normal);
-            font-size: 14px;
+            font-size: ${nodeFontSize};
             font-family: inherit;
             z-index: 1000;
             resize: none;
@@ -4078,7 +4080,7 @@ case 'dagre':
             outline: none;
             box-sizing: border-box;
             text-align: left;
-            line-height: 1.5;
+            line-height: ${nodeLineHeight};
             cursor: text;
             box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
         `;
