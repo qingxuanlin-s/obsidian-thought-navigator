@@ -6662,6 +6662,78 @@ case 'dagre':
         return offset;
     }
 
+    private estimateCollisionBox(referenceNode: any): { width: number; height: number } {
+        const box = referenceNode.boundingBox();
+        return {
+            width: Math.max(box.w, 120),
+            height: Math.max(box.h, 64)
+        };
+    }
+
+    private isPositionColliding(
+        candidate: { x: number; y: number },
+        size: { width: number; height: number },
+        excludeNodeIds: string[] = []
+    ): boolean {
+        if (!this.cy) return false;
+
+        const marginX = 24;
+        const marginY = 20;
+
+        return this.cy.nodes('[!isGroup]').some((node: any) => {
+            if (node.removed() || !node.visible()) return false;
+            if (node.hasClass('zk-collapsed-hidden')) return false;
+            if (node.data('isPlaceholder')) return false;
+            if (excludeNodeIds.includes(node.id())) return false;
+
+            const pos = node.position();
+            const box = node.boundingBox();
+            const otherWidth = Math.max(box.w, 80);
+            const otherHeight = Math.max(box.h, 44);
+
+            return (
+                Math.abs(candidate.x - pos.x) < (size.width + otherWidth) / 2 + marginX &&
+                Math.abs(candidate.y - pos.y) < (size.height + otherHeight) / 2 + marginY
+            );
+        });
+    }
+
+    private resolveShortcutPosition(
+        basePosition: { x: number; y: number },
+        referenceNode: any,
+        primaryAxis: { x: number; y: number },
+        step: number,
+        secondaryAxis?: { x: number; y: number },
+        maxAttempts: number = 7
+    ): { x: number; y: number } {
+        const size = this.estimateCollisionBox(referenceNode);
+        const excludeNodeIds = [referenceNode.id()];
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            let candidate = { ...basePosition };
+
+            if (attempt > 0) {
+                const ring = Math.ceil(attempt / 2);
+                const sign = attempt % 2 === 1 ? 1 : -1;
+                candidate = {
+                    x: basePosition.x + primaryAxis.x * step * ring * sign,
+                    y: basePosition.y + primaryAxis.y * step * ring * sign
+                };
+
+                if (secondaryAxis && attempt >= 3) {
+                    candidate.x += secondaryAxis.x * step * 0.35 * ring;
+                    candidate.y += secondaryAxis.y * step * 0.35 * ring;
+                }
+            }
+
+            if (!this.isPositionColliding(candidate, size, excludeNodeIds)) {
+                return candidate;
+            }
+        }
+
+        return basePosition;
+    }
+
     /**
      * 处理创建子节点（Tab 键）
      * SimpleMind 风格：子节点基于视觉位置而非 ID
@@ -6682,10 +6754,17 @@ case 'dagre':
             y: nodePos.y + dir.y * this.HORIZONTAL_GAP
         };
         const offset = this.nextOffsetByProjection(children, anchor, normal, this.VERTICAL_GAP);
-        const position = {
+        const rawPosition = {
             x: anchor.x + normal.x * offset,
             y: anchor.y + normal.y * offset
         };
+        const position = this.resolveShortcutPosition(
+            rawPosition,
+            activeNode,
+            normal,
+            this.VERTICAL_GAP,
+            dir
+        );
 
         this.container?.dispatchEvent(new CustomEvent('create-child-node-shortcut', {
             detail: { activeNodeId, position }
@@ -6727,10 +6806,17 @@ case 'dagre':
             offset += siblingGap;
         }
 
-        const position = {
+        const rawPosition = {
             x: anchor.x + normal.x * offset,
             y: anchor.y + normal.y * offset
         };
+        const position = this.resolveShortcutPosition(
+            rawPosition,
+            activeNode,
+            normal,
+            siblingGap,
+            dir
+        );
 
         // 触发创建兄弟节点事件
         this.container?.dispatchEvent(new CustomEvent('create-sibling-node-shortcut', {
@@ -6750,10 +6836,17 @@ case 'dagre':
 
         const nodePos = activeNode.position();
         const dir = this.getBranchDirection(activeNode);
-        const position = {
+        const rawPosition = {
             x: nodePos.x - dir.x * this.HORIZONTAL_GAP,
             y: nodePos.y - dir.y * this.HORIZONTAL_GAP
         };
+        const position = this.resolveShortcutPosition(
+            rawPosition,
+            activeNode,
+            this.getPerpendicular(dir),
+            this.VERTICAL_GAP,
+            { x: -dir.x, y: -dir.y }
+        );
         const nodeData = activeNode.data();
 
         const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
