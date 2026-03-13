@@ -828,6 +828,35 @@ export class CytoscapeRenderer implements IGraphRenderer {
         return { width, height };
     }
 
+    private estimateWrappedLines(label: string, options?: {
+        maxWidth?: number;
+        charWidth?: number;
+    }): string[] {
+        const {
+            maxWidth = 220,
+            charWidth = 8
+        } = options || {};
+
+        const lines = String(label || '').split('\n');
+        const wrappedLines: string[] = [];
+
+        lines.forEach((line) => {
+            const raw = line || ' ';
+            const maxCharsPerLine = Math.max(1, Math.floor(maxWidth / charWidth));
+
+            if (raw.length <= maxCharsPerLine) {
+                wrappedLines.push(raw);
+                return;
+            }
+
+            for (let i = 0; i < raw.length; i += maxCharsPerLine) {
+                wrappedLines.push(raw.slice(i, i + maxCharsPerLine));
+            }
+        });
+
+        return wrappedLines.length > 0 ? wrappedLines : [' '];
+    }
+
     private normalizeHexColor(color: string | null | undefined): string | null {
         if (!color || typeof color !== 'string') return null;
         const trimmed = color.trim();
@@ -2017,6 +2046,123 @@ case 'dagre':
         const badgeUpdaters: Array<() => void> = [];
         let updateScheduled = false;
         const readOnly = this.isReadOnlyMode();
+        const underlineMeasure = document.createElement('canvas');
+        const underlineMeasureCtx = underlineMeasure.getContext('2d');
+
+        this.cy.nodes('[?hasFileIcon]').forEach((node: any) => {
+            const underlineGroupEl = document.createElement('div');
+            underlineGroupEl.className = 'zk-node-file-underline-group';
+            underlineGroupEl.style.cssText = `
+                position: absolute;
+                pointer-events: none;
+            `;
+            badgeContainer.appendChild(underlineGroupEl);
+
+            const updateUnderlinePosition = () => {
+                if (!this.cy) return;
+
+                const isHidden =
+                    node.removed() ||
+                    node.hasClass('zk-collapsed-hidden') ||
+                    node.style('display') === 'none' ||
+                    !node.visible();
+
+                if (isHidden) {
+                    underlineGroupEl.style.display = 'none';
+                    return;
+                }
+
+                const label = String(node.data('label') || '').trim();
+                if (!label) {
+                    underlineGroupEl.style.display = 'none';
+                    return;
+                }
+
+                const zoom = this.cy.zoom();
+                const box = node.renderedBoundingBox();
+                const isRoot = !!node.data('isRoot');
+                const metrics = this.measureNodeLabel(label, isRoot ? {
+                    baseWidth: 80,
+                    minHeight: 34,
+                    maxWidth: 220,
+                    charWidth: 8,
+                    lineHeight: 12,
+                    paddingX: 32,
+                    paddingY: 16
+                } : undefined);
+                const fontPx = isRoot ? 26 : 14;
+                const fontWeight = isRoot ? '700' : '500';
+                const estimatedLines = this.estimateWrappedLines(label, isRoot ? {
+                    maxWidth: 220,
+                    charWidth: 8
+                } : undefined);
+                const lineHeight = (isRoot ? 24 : 14) * zoom;
+                const centerX = box.x1 + box.w / 2;
+                const centerY = box.y1 + box.h / 2;
+                const textBlockHeight = estimatedLines.length * lineHeight;
+                const firstLineCenterY = centerY - textBlockHeight / 2 + lineHeight / 2;
+
+                underlineGroupEl.style.display = 'block';
+                underlineGroupEl.style.left = '0px';
+                underlineGroupEl.style.top = '0px';
+                underlineGroupEl.replaceChildren();
+
+                if (underlineMeasureCtx) {
+                    underlineMeasureCtx.font = `${fontWeight} ${fontPx * zoom}px sans-serif`;
+                }
+
+                estimatedLines.forEach((line, index) => {
+                    const lineWidth = underlineMeasureCtx
+                        ? underlineMeasureCtx.measureText(line || ' ').width
+                        : Math.max(24 * zoom, (metrics.width - 32) * zoom);
+                    const underlineWidth = Math.min(box.w - 24 * zoom, Math.max(24 * zoom, lineWidth));
+                    const lineCenterY = firstLineCenterY + index * lineHeight;
+                    const hitHeight = Math.max(16 * zoom, lineHeight);
+                    const hitEl = document.createElement('div');
+                    hitEl.className = 'zk-node-file-link-hit';
+                    hitEl.style.cssText = `
+                        position: absolute;
+                        width: ${underlineWidth}px;
+                        height: ${hitHeight}px;
+                        left: ${centerX - underlineWidth / 2}px;
+                        top: ${lineCenterY - hitHeight / 2}px;
+                        background: transparent;
+                        pointer-events: auto;
+                        cursor: pointer;
+                    `;
+                    hitEl.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        this.container?.dispatchEvent(new CustomEvent('node-click', {
+                            detail: {
+                                node: node.data('originalNode'),
+                                event: e
+                            }
+                        }));
+                    });
+                    underlineGroupEl.appendChild(hitEl);
+
+                    const underlineEl = document.createElement('div');
+                    const underlineY = lineCenterY + (fontPx * 0.36 * zoom);
+
+                    underlineEl.className = 'zk-node-file-underline';
+                    underlineEl.style.cssText = `
+                        position: absolute;
+                        width: ${underlineWidth}px;
+                        height: ${Math.max(1, 2 * zoom)}px;
+                        left: ${centerX - underlineWidth / 2}px;
+                        top: ${underlineY}px;
+                        background: rgba(255, 255, 255, 0.58);
+                        border-radius: 999px;
+                        pointer-events: none;
+                    `;
+                    underlineGroupEl.appendChild(underlineEl);
+                });
+            };
+
+            badgeUpdaters.push(updateUnderlinePosition);
+            updateUnderlinePosition();
+        });
 
         this.cy.nodes('[?hasRemark]').forEach((node: any) => {
             const remarkText = node.data('remark') || '';
@@ -4535,21 +4681,6 @@ case 'dagre':
 
             // 从当前节点开始递归高亮
             highlightChildEdges(nodeId);
-
-            // 文件节点：单击直接打开
-            if (data.originalNode?.file && !data.isCrossDomain) {
-                this.container?.dispatchEvent(new CustomEvent('node-click', {
-                    detail: {
-                        node: data.originalNode,
-                        event: originalEvent,
-                        ctrlKey: originalEvent.ctrlKey,
-                        metaKey: originalEvent.metaKey,
-                        shiftKey: originalEvent.shiftKey,
-                        altKey: originalEvent.altKey
-                    }
-                }));
-                return;
-            }
 
             // 跨领域节点：单击只选中，不跳转（跳转到双击处理）
             if (data.isCrossDomain) {
