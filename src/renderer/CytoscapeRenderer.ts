@@ -4029,6 +4029,8 @@ case 'dagre':
         const isExistingNode = !!originalNode && !data.isGroup;
         if (!isPlaceholder && !isExistingNode) return;
 
+        this.ensureNodeVisibleInViewport(node);
+
         // 移除已存在的编辑器
         const existingEditor = this.container.querySelector('.node-label-editor');
         if (existingEditor) {
@@ -4392,6 +4394,39 @@ case 'dagre':
             insertWikiLinkAtCursor(file, embed);
             saveNode();
         };
+    }
+
+    private ensureNodeVisibleInViewport(node: any, padding: number = 40): void {
+        if (!this.cy || !this.container || !node || node.length === 0) return;
+
+        const box = node.renderedBoundingBox();
+        const containerWidth = this.container.clientWidth;
+        const containerHeight = this.container.clientHeight;
+
+        let dx = 0;
+        let dy = 0;
+
+        if (box.x1 < padding) {
+            dx = padding - box.x1;
+        } else if (box.x2 > containerWidth - padding) {
+            dx = (containerWidth - padding) - box.x2;
+        }
+
+        if (box.y1 < padding) {
+            dy = padding - box.y1;
+        } else if (box.y2 > containerHeight - padding) {
+            dy = (containerHeight - padding) - box.y2;
+        }
+
+        if (dx === 0 && dy === 0) {
+            return;
+        }
+
+        const pan = this.cy.pan();
+        this.cy.pan({
+            x: pan.x + dx,
+            y: pan.y + dy
+        });
     }
 
     /**
@@ -5109,6 +5144,7 @@ case 'dagre':
 
                     // 选中目标节点
                     targetNode.select();
+                    this.ensureNodeVisibleInViewport(targetNode);
 
 
                     // 将焦点设置到 container，确保方向键能工作
