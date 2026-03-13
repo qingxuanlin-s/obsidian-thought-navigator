@@ -59,6 +59,7 @@ export interface RenderOptions {
     edgeStyle?: 'straight' | 'bezier' | 'polyline';
     showNoteId?: boolean;
     smartConnection?: boolean;
+    readOnly?: boolean;
 }
 
 /**
