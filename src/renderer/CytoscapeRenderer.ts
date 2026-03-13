@@ -5612,6 +5612,44 @@ case 'dagre':
                 }
             }
 
+            // Space 键：选中单个节点时进入编辑态
+            if ((event.key === ' ' || event.code === 'Space') && !event.repeat) {
+                if (!this.cy || this.isReadOnlyMode()) return;
+
+                const activeElement = document.activeElement as HTMLElement | null;
+                const isTypingIntoInput = !!activeElement && (
+                    activeElement.tagName === 'INPUT' ||
+                    activeElement.tagName === 'TEXTAREA' ||
+                    activeElement.isContentEditable
+                );
+                if (isTypingIntoInput) {
+                    return;
+                }
+
+                const hasExistingEditor =
+                    !!this.container?.querySelector('.node-label-editor') ||
+                    !!this.container?.querySelector('.edge-label-editor');
+                if (hasExistingEditor) {
+                    return;
+                }
+
+                const selectedNodes = this.cy.$(':selected').filter('node[!isGroup]');
+                if (selectedNodes.length !== 1) {
+                    return;
+                }
+
+                const node = selectedNodes.first();
+                const data = node.data();
+                if (!data || data.isCrossDomain) {
+                    return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+                this.showInlineNodeEditor(node);
+                return;
+            }
+
             // Tab 键：创建子节点
             if (event.key === 'Tab' && !event.shiftKey && !event.repeat) {
                 event.preventDefault();
