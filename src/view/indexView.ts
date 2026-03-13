@@ -1236,6 +1236,7 @@ export class ZKIndexView extends ItemView {
             themeMode: this.plugin.settings.themeMode,
             themeStyle: this.plugin.settings.themeStyle || 'default',
             edgeStyle: this.plugin.settings.edgeStyle || 'bezier',
+            nodeLayoutStyle: this.plugin.settings.nodeLayoutStyle || 'free',
             showNoteId: this.plugin.settings.showNoteIdInBranchView,
             smartConnection: this.plugin.settings.smartConnection === true,
             readOnly: this.isMobileReadOnly()
@@ -6423,6 +6424,8 @@ export class ZKIndexView extends ItemView {
         // 查找文件
         const file = this.app.metadataCache.getFirstLinkpathDest(wikiLink, '');
 
+        const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+
         // 检查是否有智能连线确定的父节点
         if (placeholderInfo && placeholderInfo.parentNodeId) {
             // 先创建为自由节点，然后移动到父节点下
@@ -6436,7 +6439,6 @@ export class ZKIndexView extends ItemView {
             });
 
             // 然后移动到父节点下
-            const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
             if (mocFile) {
                 await this.mocHandler.moveNodeToParent(mocFile, suggestedID, placeholderInfo.parentNodeId, suggestedID);
             }
@@ -6452,9 +6454,13 @@ export class ZKIndexView extends ItemView {
             });
         }
 
+        if (placeholderInfo?.childNodeId && mocFile) {
+            const newChildID = this.generateChildNodeID(suggestedID);
+            await this.mocHandler.moveNodeToParent(mocFile, placeholderInfo.childNodeId, suggestedID, newChildID);
+        }
+
         // 保存位置
         const mocFilePath = this.plugin.settings.mocCurrentFile;
-        const mocFile = this.app.vault.getFileByPath(mocFilePath);
         if (mocFile) {
             await this.saveNodePositionToMOC(mocFile, suggestedID, position);
         }
@@ -6464,6 +6470,12 @@ export class ZKIndexView extends ItemView {
 
         // 刷新视图
         await this.refreshBranchMermaid();
+
+        if (placeholderInfo?.childNodeId) {
+            await this.relayoutAutoLayoutSiblings(suggestedID);
+        } else if (placeholderInfo?.parentNodeId) {
+            await this.relayoutAutoLayoutSiblings(placeholderInfo.parentNodeId);
+        }
 
         // 清理所有占位符连接线（因为视图已经刷新，占位符节点已不存在）
         const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
@@ -6496,6 +6508,8 @@ export class ZKIndexView extends ItemView {
         // 优先使用预生成的节点 ID，否则生成新的自由节点 ID
         const suggestedID = placeholderInfo?.suggestedNodeId || this.generateNextFreeNodeID();
 
+        const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+
         // 检查是否有智能连线确定的父节点
         if (placeholderInfo && placeholderInfo.parentNodeId) {
             // 先创建为自由节点，然后移动到父节点下
@@ -6508,7 +6522,6 @@ export class ZKIndexView extends ItemView {
             });
 
             // 然后移动到父节点下
-            const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
             if (mocFile) {
                 await this.mocHandler.moveNodeToParent(mocFile, suggestedID, placeholderInfo.parentNodeId, suggestedID);
             }
@@ -6523,9 +6536,13 @@ export class ZKIndexView extends ItemView {
             });
         }
 
+        if (placeholderInfo?.childNodeId && mocFile) {
+            const newChildID = this.generateChildNodeID(suggestedID);
+            await this.mocHandler.moveNodeToParent(mocFile, placeholderInfo.childNodeId, suggestedID, newChildID);
+        }
+
         // 保存位置
         const mocFilePath = this.plugin.settings.mocCurrentFile;
-        const mocFile = this.app.vault.getFileByPath(mocFilePath);
         if (mocFile) {
             await this.saveNodePositionToMOC(mocFile, suggestedID, position);
         }
@@ -6535,6 +6552,12 @@ export class ZKIndexView extends ItemView {
 
         // 刷新视图
         await this.refreshBranchMermaid();
+
+        if (placeholderInfo?.childNodeId) {
+            await this.relayoutAutoLayoutSiblings(suggestedID);
+        } else if (placeholderInfo?.parentNodeId) {
+            await this.relayoutAutoLayoutSiblings(placeholderInfo.parentNodeId);
+        }
 
         // 清理所有占位符连接线（因为视图已经刷新，占位符节点已不存在）
         const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
@@ -6551,6 +6574,179 @@ export class ZKIndexView extends ItemView {
                 }
             }));
         }
+    }
+
+    private isAutoNodeLayoutStyle(): boolean {
+        return (this.plugin.settings.nodeLayoutStyle || 'free') === 'auto';
+    }
+
+    private normalizeLayoutVector(x: number, y: number): { x: number; y: number } {
+        const length = Math.hypot(x, y);
+        if (!length) return { x: 1, y: 0 };
+        return { x: x / length, y: y / length };
+    }
+
+    private snapToCardinalDirection(dir: { x: number; y: number }): { x: number; y: number } {
+        if (Math.abs(dir.x) >= Math.abs(dir.y)) {
+            return { x: dir.x >= 0 ? 1 : -1, y: 0 };
+        }
+        return { x: 0, y: dir.y >= 0 ? 1 : -1 };
+    }
+
+    private getDefaultAutoLayoutDirection(): { x: number; y: number } {
+        switch (this.plugin.settings.DirectionOfBranchGraph) {
+            case 'RL':
+                return { x: -1, y: 0 };
+            case 'TB':
+                return { x: 0, y: 1 };
+            case 'BT':
+                return { x: 0, y: -1 };
+            case 'LR':
+            default:
+                return { x: 1, y: 0 };
+        }
+    }
+
+    private async relayoutAutoLayoutSiblings(parentNodeId: string): Promise<void> {
+        if (!this.isAutoNodeLayoutStyle() || !this.branchRenderer) {
+            return;
+        }
+
+        const cy = this.branchRenderer.getCytoscapeInstance();
+        if (!cy) {
+            return;
+        }
+
+        const parentNode: any = cy.$('node').filter((node: any) => {
+            const originalNode = node.data('originalNode');
+            return originalNode && (originalNode.IDStr === parentNodeId || originalNode.ID === parentNodeId);
+        }).first();
+
+        if (!parentNode || parentNode.length === 0) {
+            return;
+        }
+
+        const children: any = parentNode.outgoers('edge').targets().filter((node: any) => {
+            const data = node.data();
+            return !data.isGroup && !data.isPlaceholder;
+        });
+
+        if (children.length === 0) {
+            return;
+        }
+
+        const HORIZONTAL_GAP = 200;
+        const SUBTREE_GAP = 48;
+        const parentPos = parentNode.position();
+        const dir = { x: 1, y: 0 };
+
+        const normal = { x: -dir.y, y: dir.x };
+        const anchor = {
+            x: parentPos.x + dir.x * HORIZONTAL_GAP,
+            y: parentPos.y + dir.y * HORIZONTAL_GAP
+        };
+
+        const getSubtreeNodes = (rootNode: any): any[] => {
+            const nodes: any[] = [rootNode];
+            const seen = new Set<string>([rootNode.id()]);
+            rootNode.successors().forEach((ele: any) => {
+                if (!ele.isNode || !ele.isNode()) return;
+                if (ele.data('isGroup') || ele.data('isPlaceholder')) return;
+                if (seen.has(ele.id())) return;
+                seen.add(ele.id());
+                nodes.push(ele);
+            });
+            return nodes;
+        };
+
+        const getSubtreeBounds = (nodes: any[]) => {
+            let minX = Number.POSITIVE_INFINITY;
+            let maxX = Number.NEGATIVE_INFINITY;
+            let minY = Number.POSITIVE_INFINITY;
+            let maxY = Number.NEGATIVE_INFINITY;
+
+            nodes.forEach((node: any) => {
+                const pos = node.position();
+                const width = Math.max(Number(node.width?.() || 0), 80);
+                const height = Math.max(Number(node.height?.() || 0), 44);
+                minX = Math.min(minX, pos.x - width / 2);
+                maxX = Math.max(maxX, pos.x + width / 2);
+                minY = Math.min(minY, pos.y - height / 2);
+                maxY = Math.max(maxY, pos.y + height / 2);
+            });
+
+            return {
+                minX,
+                maxX,
+                minY,
+                maxY,
+                width: maxX - minX,
+                height: maxY - minY,
+                centerY: (minY + maxY) / 2
+            };
+        };
+
+        const childEntries = children
+            .map((child: any) => {
+                const subtreeNodes = getSubtreeNodes(child);
+                const bounds = getSubtreeBounds(subtreeNodes);
+                return {
+                    child,
+                    subtreeNodes,
+                    bounds,
+                    projection: bounds.centerY
+                };
+            })
+            .sort((a: any, b: any) => a.projection - b.projection);
+
+        const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+        if (!mocFile) {
+            return;
+        }
+
+        const nodePositions: Record<string, { x: number; y: number }> = {};
+
+        const totalSpan = childEntries.reduce((sum: number, entry: any) => sum + entry.bounds.height, 0)
+            + Math.max(0, childEntries.length - 1) * SUBTREE_GAP;
+        let cursorY = parentPos.y - totalSpan / 2;
+
+        cy.batch(() => {
+            childEntries.forEach((entry: any) => {
+                const desiredSubtreeCenterY = cursorY + entry.bounds.height / 2;
+                const deltaX = anchor.x - entry.child.position().x;
+                const deltaY = desiredSubtreeCenterY - entry.bounds.centerY;
+
+                entry.subtreeNodes.forEach((subtreeNode: any) => {
+                    const oldPos = subtreeNode.position();
+                    const nextPos = {
+                        x: oldPos.x + deltaX,
+                        y: oldPos.y + deltaY
+                    };
+
+                    subtreeNode.position(nextPos);
+
+                    const originalNode = subtreeNode.data('originalNode');
+                    const nodeId = originalNode?.IDStr || originalNode?.ID;
+                    if (nodeId) {
+                        nodePositions[nodeId] = {
+                            x: Math.round(nextPos.x * 100) / 100,
+                            y: Math.round(nextPos.y * 100) / 100
+                        };
+                    }
+                });
+
+                cursorY += entry.bounds.height + SUBTREE_GAP;
+            });
+        });
+
+        await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
+            if (!mocData.nodePositions) {
+                mocData.nodePositions = {};
+            }
+            Object.entries(nodePositions).forEach(([nodeId, pos]) => {
+                mocData.nodePositions[nodeId] = pos;
+            });
+        });
     }
 
     /**
