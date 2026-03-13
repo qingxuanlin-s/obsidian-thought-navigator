@@ -337,6 +337,27 @@ export class MOCHandler {
      */
     async moveNodeToParent(mocFile: TFile, freeNodeID: string, parentID: string, newChildID: string): Promise<void> {
         await this.modifyMOCData(mocFile, (mocData) => {
+            const idMappings: Array<{ old: string; new: string }> = [];
+            const remapSubtreeIDs = (node: any, oldPrefix: string, newPrefix: string, depth: number) => {
+                const currentOldID = node.nodeID;
+                const currentNewID = currentOldID === oldPrefix
+                    ? newPrefix
+                    : currentOldID.startsWith(`${oldPrefix}.`)
+                        ? `${newPrefix}${currentOldID.substring(oldPrefix.length)}`
+                        : currentOldID;
+
+                if (currentOldID !== currentNewID) {
+                    idMappings.push({ old: currentOldID, new: currentNewID });
+                    node.nodeID = currentNewID;
+                }
+
+                node.depth = depth;
+
+                if (node.children && node.children.length > 0) {
+                    node.children.forEach((child: any) => remapSubtreeIDs(child, oldPrefix, newPrefix, depth + 1));
+                }
+            };
+
             // 1. 找到并移除节点（可能在根节点，也可能在某个父节点的 children 中）
             let nodeToMove: any = null;
             let foundInRoot = false;
@@ -386,10 +407,7 @@ export class MOCHandler {
             }
             // 如果 foundInParent 不为 null，节点已经在上面的递归函数中被移除了
 
-            // 2. 更新节点 ID 和深度
-            nodeToMove.nodeID = newChildID;
-
-            // 3. 找到父节点并添加为子节点
+            // 2. 找到父节点并添加为子节点
             const findNodeInTree = (nodes: any[], targetID: string): any => {
                 for (const node of nodes) {
                     if (node.nodeID === targetID) {
@@ -408,8 +426,8 @@ export class MOCHandler {
                 throw new Error(`未找到父节点: ${parentID}`);
             }
 
-            // 更新深度
-            nodeToMove.depth = parentNode.depth + 1;
+            // 更新当前节点和整棵子树的 ID / 深度
+            remapSubtreeIDs(nodeToMove, freeNodeID, newChildID, parentNode.depth + 1);
 
             // 添加到父节点的子节点列表
             if (!parentNode.children) {
@@ -417,21 +435,33 @@ export class MOCHandler {
             }
             parentNode.children.push(nodeToMove);
 
-            // 4. 更新节点位置
-            if (mocData.nodePositions && mocData.nodePositions[freeNodeID]) {
-                mocData.nodePositions[newChildID] = mocData.nodePositions[freeNodeID];
-                delete mocData.nodePositions[freeNodeID];
-            }
-
-            // 5. 更新节点颜色
-            if (mocData.nodeColors && mocData.nodeColors[freeNodeID]) {
-                mocData.nodeColors[newChildID] = mocData.nodeColors[freeNodeID];
-                delete mocData.nodeColors[freeNodeID];
-            }
-            if ((mocData as any).nodeStyleColors && (mocData as any).nodeStyleColors[freeNodeID]) {
-                (mocData as any).nodeStyleColors[newChildID] = (mocData as any).nodeStyleColors[freeNodeID];
-                delete (mocData as any).nodeStyleColors[freeNodeID];
-            }
+            // 4. 更新节点位置、颜色和扩展信息
+            idMappings.forEach((mapping) => {
+                if (mocData.nodePositions && mocData.nodePositions[mapping.old]) {
+                    mocData.nodePositions[mapping.new] = mocData.nodePositions[mapping.old];
+                    delete mocData.nodePositions[mapping.old];
+                }
+                if (mocData.nodeColors && mocData.nodeColors[mapping.old]) {
+                    mocData.nodeColors[mapping.new] = mocData.nodeColors[mapping.old];
+                    delete mocData.nodeColors[mapping.old];
+                }
+                if ((mocData as any).nodeStyleColors && (mocData as any).nodeStyleColors[mapping.old]) {
+                    (mocData as any).nodeStyleColors[mapping.new] = (mocData as any).nodeStyleColors[mapping.old];
+                    delete (mocData as any).nodeStyleColors[mapping.old];
+                }
+                if ((mocData as any).embedNodeSizes && (mocData as any).embedNodeSizes[mapping.old]) {
+                    (mocData as any).embedNodeSizes[mapping.new] = (mocData as any).embedNodeSizes[mapping.old];
+                    delete (mocData as any).embedNodeSizes[mapping.old];
+                }
+                if ((mocData as any).nodeRemarks && (mocData as any).nodeRemarks[mapping.old]) {
+                    (mocData as any).nodeRemarks[mapping.new] = (mocData as any).nodeRemarks[mapping.old];
+                    delete (mocData as any).nodeRemarks[mapping.old];
+                }
+                if (mocData.crossDomainLinks && mocData.crossDomainLinks[mapping.old]) {
+                    mocData.crossDomainLinks[mapping.new] = mocData.crossDomainLinks[mapping.old];
+                    delete mocData.crossDomainLinks[mapping.old];
+                }
+            });
 
             // 为新建一级节点自动分配分支主题色
             if (newChildID.split('.').length === 2) {
@@ -443,28 +473,34 @@ export class MOCHandler {
                 }
             }
 
-            // 6. 更新边弧度（需要更新包含该节点的所有边 key）
+            // 5. 更新边弧度（需要更新包含该节点的所有边 key）
             if (mocData.edgeCurvatures) {
                 const newCurvatures: Record<string, any> = {};
                 Object.entries(mocData.edgeCurvatures).forEach(([key, value]) => {
-                    const parts = key.split('-');
-                    const newKey = parts.map(part => part === freeNodeID ? newChildID : part).join('-');
+                    let newKey = key;
+                    for (const mapping of idMappings) {
+                        newKey = newKey.split('-').map(part => part === mapping.old ? mapping.new : part).join('-');
+                    }
                     newCurvatures[newKey] = value;
                 });
                 mocData.edgeCurvatures = newCurvatures;
             }
 
-            // 7. 更新跨领域链接
-            if (mocData.crossDomainLinks && mocData.crossDomainLinks[freeNodeID]) {
-                mocData.crossDomainLinks[newChildID] = mocData.crossDomainLinks[freeNodeID];
-                delete mocData.crossDomainLinks[freeNodeID];
-            }
-
-            // 8. 更新 reverseRelations 中的节点 ID
+            // 6. 更新 reverseRelations 中的节点 ID
             const newReverseRelations = new Map();
             for (const [, relation] of mocData.reverseRelations) {
-                const newSourceID = relation.sourceID === freeNodeID ? newChildID : relation.sourceID;
-                const newTargetID = relation.targetID === freeNodeID ? newChildID : relation.targetID;
+                let newSourceID = relation.sourceID;
+                let newTargetID = relation.targetID;
+
+                for (const mapping of idMappings) {
+                    if (newSourceID === mapping.old) {
+                        newSourceID = mapping.new;
+                    }
+                    if (newTargetID === mapping.old) {
+                        newTargetID = mapping.new;
+                    }
+                }
+
                 const newKey = `${newSourceID}->${newTargetID}`;
                 newReverseRelations.set(newKey, {
                     sourceID: newSourceID,
@@ -527,6 +563,26 @@ export class MOCHandler {
     async convertChildToFreeNode(mocFile: TFile, childID: string, newFreeID: string): Promise<void> {
         await this.modifyMOCData(mocFile, (mocData) => {
             let nodeToConvert: any = null;
+            const idMappings: Array<{ old: string; new: string }> = [];
+            const remapSubtreeIDs = (node: any, oldPrefix: string, newPrefix: string, depth: number) => {
+                const currentOldID = node.nodeID;
+                const currentNewID = currentOldID === oldPrefix
+                    ? newPrefix
+                    : currentOldID.startsWith(`${oldPrefix}.`)
+                        ? `${newPrefix}${currentOldID.substring(oldPrefix.length)}`
+                        : currentOldID;
+
+                if (currentOldID !== currentNewID) {
+                    idMappings.push({ old: currentOldID, new: currentNewID });
+                    node.nodeID = currentNewID;
+                }
+
+                node.depth = depth;
+
+                if (node.children && node.children.length > 0) {
+                    node.children.forEach((child: any) => remapSubtreeIDs(child, oldPrefix, newPrefix, depth + 1));
+                }
+            };
 
             // 1. 从父节点的 children 中找到并移除子节点
             const removeFromParent = (nodes: any[]): boolean => {
@@ -555,57 +611,54 @@ export class MOCHandler {
                 throw new Error(`无法提取子节点: ${childID}`);
             }
 
-            // 2. 更新节点 ID 和深度
-            nodeToConvert.nodeID = newFreeID;
-            nodeToConvert.depth = 0;
+            // 2. 更新节点 ID 和深度（整棵子树一起更新）
+            remapSubtreeIDs(nodeToConvert, childID, newFreeID, 0);
 
             // 3. 添加到根节点
             mocData.nodes.push(nodeToConvert);
 
-            // 4. 更新节点位置
-            if (mocData.nodePositions) {
-                if (childID !== newFreeID && mocData.nodePositions[childID]) {
-                    // ID 改变了，需要更新位置信息的 key
-                    mocData.nodePositions[newFreeID] = mocData.nodePositions[childID];
-                    delete mocData.nodePositions[childID];
+            // 4. 更新节点位置、颜色和扩展信息
+            idMappings.forEach((mapping) => {
+                if (mocData.nodePositions && mocData.nodePositions[mapping.old]) {
+                    mocData.nodePositions[mapping.new] = mocData.nodePositions[mapping.old];
+                    delete mocData.nodePositions[mapping.old];
                 }
-                // 如果 ID 没变，位置信息保持不变
-            }
+                if (mocData.nodeColors && mocData.nodeColors[mapping.old]) {
+                    mocData.nodeColors[mapping.new] = mocData.nodeColors[mapping.old];
+                    delete mocData.nodeColors[mapping.old];
+                }
+                if ((mocData as any).nodeStyleColors && (mocData as any).nodeStyleColors[mapping.old]) {
+                    (mocData as any).nodeStyleColors[mapping.new] = (mocData as any).nodeStyleColors[mapping.old];
+                    delete (mocData as any).nodeStyleColors[mapping.old];
+                }
+                if ((mocData as any).embedNodeSizes && (mocData as any).embedNodeSizes[mapping.old]) {
+                    (mocData as any).embedNodeSizes[mapping.new] = (mocData as any).embedNodeSizes[mapping.old];
+                    delete (mocData as any).embedNodeSizes[mapping.old];
+                }
+                if ((mocData as any).nodeRemarks && (mocData as any).nodeRemarks[mapping.old]) {
+                    (mocData as any).nodeRemarks[mapping.new] = (mocData as any).nodeRemarks[mapping.old];
+                    delete (mocData as any).nodeRemarks[mapping.old];
+                }
+                if (mocData.crossDomainLinks && mocData.crossDomainLinks[mapping.old]) {
+                    mocData.crossDomainLinks[mapping.new] = mocData.crossDomainLinks[mapping.old];
+                    delete mocData.crossDomainLinks[mapping.old];
+                }
+            });
 
-            // 5. 更新节点颜色
-            if (mocData.nodeColors) {
-                if (childID !== newFreeID && mocData.nodeColors[childID]) {
-                    // ID 改变了，需要更新颜色信息的 key
-                    mocData.nodeColors[newFreeID] = mocData.nodeColors[childID];
-                    delete mocData.nodeColors[childID];
-                }
-                // 如果 ID 没变，颜色信息保持不变
-            }
-            if ((mocData as any).nodeStyleColors) {
-                if (childID !== newFreeID && (mocData as any).nodeStyleColors[childID]) {
-                    (mocData as any).nodeStyleColors[newFreeID] = (mocData as any).nodeStyleColors[childID];
-                    delete (mocData as any).nodeStyleColors[childID];
-                }
-            }
-
-            // 6. 更新边弧度（需要更新包含该节点的所有边 key）
+            // 5. 更新边弧度（需要更新包含该节点的所有边 key）
             if (mocData.edgeCurvatures) {
                 const newCurvatures: Record<string, any> = {};
                 Object.entries(mocData.edgeCurvatures).forEach(([key, value]) => {
-                    const parts = key.split('-');
-                    const newKey = parts.map(part => part === childID ? newFreeID : part).join('-');
+                    let newKey = key;
+                    for (const mapping of idMappings) {
+                        newKey = newKey.split('-').map(part => part === mapping.old ? mapping.new : part).join('-');
+                    }
                     newCurvatures[newKey] = value;
                 });
                 mocData.edgeCurvatures = newCurvatures;
             }
 
-            // 7. 更新跨领域链接
-            if (mocData.crossDomainLinks && mocData.crossDomainLinks[childID]) {
-                mocData.crossDomainLinks[newFreeID] = mocData.crossDomainLinks[childID];
-                delete mocData.crossDomainLinks[childID];
-            }
-
-            // 8. 更新 reverseRelations 中的节点 ID，但要移除父节点到该子节点的反向关系
+            // 6. 更新 reverseRelations 中的节点 ID，但要移除父节点到该子节点的反向关系
             const newReverseRelations = new Map();
 
             // 找到原父节点 ID（从 childID 中提取）
@@ -613,8 +666,17 @@ export class MOCHandler {
             const originalParentId = idParts.length > 1 ? idParts.slice(0, -1).join('.') : null;
 
             for (const [, relation] of mocData.reverseRelations) {
-                const newSourceID = relation.sourceID === childID ? newFreeID : relation.sourceID;
-                const newTargetID = relation.targetID === childID ? newFreeID : relation.targetID;
+                let newSourceID = relation.sourceID;
+                let newTargetID = relation.targetID;
+
+                for (const mapping of idMappings) {
+                    if (newSourceID === mapping.old) {
+                        newSourceID = mapping.new;
+                    }
+                    if (newTargetID === mapping.old) {
+                        newTargetID = mapping.new;
+                    }
+                }
 
                 // 如果这是原父节点到该子节点的关系，跳过不添加（相当于删除）
                 if (newSourceID === originalParentId && newTargetID === newFreeID) {
