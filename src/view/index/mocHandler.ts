@@ -96,22 +96,192 @@ export class MOCHandler {
         await saveMOCStructure(this.app, mocFile.path, headingTitle, mocDataCopy);
     }
 
+    async modifyMOCDataBatch(
+        mocFile: TFile,
+        modifyCallbacks: Array<(data: MOCParseResult) => void | Promise<void>>
+    ): Promise<void> {
+        await this.modifyMOCData(mocFile, async (mocData) => {
+            for (const modifyCallback of modifyCallbacks) {
+                await modifyCallback(mocData);
+            }
+        });
+    }
+
+    private updateNodeColorInData(mocData: MOCParseResult, nodeID: string, color: string): void {
+        if (!mocData.nodeColors) {
+            mocData.nodeColors = {};
+        }
+
+        if (color) {
+            mocData.nodeColors[nodeID] = color;
+        } else {
+            delete mocData.nodeColors[nodeID];
+        }
+    }
+
+    private deleteNodeFromData(mocData: MOCParseResult, nodeID: string): void {
+        let deleted = false;
+
+        const deleteNodeFromTree = (nodes: any[], targetID: string): boolean => {
+            for (let i = 0; i < nodes.length; i++) {
+                const node = nodes[i];
+                if (node.nodeID === targetID) {
+                    nodes.splice(i, 1);
+                    return true;
+                }
+                if (node.children && node.children.length > 0) {
+                    if (deleteNodeFromTree(node.children, targetID)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        };
+
+        deleted = deleteNodeFromTree(mocData.nodes, nodeID);
+
+        if (!deleted && mocData.crossDomainLinks) {
+            const isCrossDomainNode = nodeID.startsWith('cd-');
+
+            for (const sourceNodeId in mocData.crossDomainLinks) {
+                const links = mocData.crossDomainLinks[sourceNodeId];
+                const initialLength = links.length;
+
+                mocData.crossDomainLinks[sourceNodeId] = links.filter((link: CrossDomainLink) => {
+                    if (link.nodeId === nodeID) {
+                        return false;
+                    }
+                    if (isCrossDomainNode) {
+                        const originalNodeId = nodeID.substring(3);
+                        if (link.nodeId === originalNodeId) {
+                            return false;
+                        }
+                    }
+                    return true;
+                });
+
+                if (mocData.crossDomainLinks[sourceNodeId].length < initialLength) {
+                    deleted = true;
+                    if (mocData.crossDomainLinks[sourceNodeId].length === 0) {
+                        delete mocData.crossDomainLinks[sourceNodeId];
+                    }
+                    break;
+                }
+            }
+        }
+
+        if (!deleted) {
+            throw new Error(`未找到节点: ${nodeID}`);
+        }
+
+        if (mocData.nodePositions && mocData.nodePositions[nodeID]) {
+            delete mocData.nodePositions[nodeID];
+        }
+        if (mocData.nodeColors && mocData.nodeColors[nodeID]) {
+            delete mocData.nodeColors[nodeID];
+        }
+        if ((mocData as any).nodeStyleColors && (mocData as any).nodeStyleColors[nodeID]) {
+            delete (mocData as any).nodeStyleColors[nodeID];
+        }
+        if ((mocData as any).embedNodeSizes && (mocData as any).embedNodeSizes[nodeID]) {
+            delete (mocData as any).embedNodeSizes[nodeID];
+        }
+        if ((mocData as any).nodeRemarks && (mocData as any).nodeRemarks[nodeID]) {
+            delete (mocData as any).nodeRemarks[nodeID];
+        }
+
+        if (mocData.edgeCurvatures) {
+            Object.keys(mocData.edgeCurvatures).forEach((key) => {
+                const parts = key.split('-');
+                if (parts.includes(nodeID)) {
+                    delete mocData.edgeCurvatures[key];
+                }
+            });
+        }
+
+        const newReverseRelations = new Map();
+        for (const [key, relation] of mocData.reverseRelations) {
+            if (relation.sourceID !== nodeID && relation.targetID !== nodeID) {
+                newReverseRelations.set(key, relation);
+            }
+        }
+        mocData.reverseRelations = newReverseRelations;
+
+        if (mocData.groups) {
+            mocData.groups.forEach((group: any) => {
+                if (Array.isArray(group.nodeIds)) {
+                    group.nodeIds = group.nodeIds.filter((id: string) => id !== nodeID);
+                }
+            });
+            mocData.groups = mocData.groups.filter((group: any) => group.nodeIds && group.nodeIds.length > 0);
+        }
+    }
+
+    private deleteCrossDomainNodeFromData(mocData: MOCParseResult, nodeID: string, crossDomainLinkInfo: any): void {
+        if (!mocData.crossDomainLinks) {
+            throw new Error(`未找到跨领域链接数据`);
+        }
+
+        const sourceNodeId = crossDomainLinkInfo.sourceNodeId;
+        const originalNodeId = crossDomainLinkInfo.nodeId;
+
+        if (!sourceNodeId || !mocData.crossDomainLinks[sourceNodeId]) {
+            throw new Error(`未找到跨领域链接: sourceNodeId=${sourceNodeId}`);
+        }
+
+        const links = mocData.crossDomainLinks[sourceNodeId];
+        const initialLength = links.length;
+
+        mocData.crossDomainLinks[sourceNodeId] = links.filter(
+            (link: CrossDomainLink) => link.nodeId !== originalNodeId
+        );
+
+        if (mocData.crossDomainLinks[sourceNodeId].length < initialLength) {
+            if (mocData.crossDomainLinks[sourceNodeId].length === 0) {
+                delete mocData.crossDomainLinks[sourceNodeId];
+            }
+
+            if (mocData.nodePositions && mocData.nodePositions[nodeID]) {
+                delete mocData.nodePositions[nodeID];
+            }
+            if (mocData.nodeColors && mocData.nodeColors[nodeID]) {
+                delete mocData.nodeColors[nodeID];
+            }
+            if ((mocData as any).nodeStyleColors && (mocData as any).nodeStyleColors[nodeID]) {
+                delete (mocData as any).nodeStyleColors[nodeID];
+            }
+            if ((mocData as any).embedNodeSizes && (mocData as any).embedNodeSizes[nodeID]) {
+                delete (mocData as any).embedNodeSizes[nodeID];
+            }
+            if ((mocData as any).nodeRemarks && (mocData as any).nodeRemarks[nodeID]) {
+                delete (mocData as any).nodeRemarks[nodeID];
+            }
+
+            if (mocData.edgeCurvatures) {
+                Object.keys(mocData.edgeCurvatures).forEach(key => {
+                    const parts = key.split('-');
+                    if (parts.includes(nodeID)) {
+                        delete mocData.edgeCurvatures[key];
+                    }
+                });
+            }
+        } else {
+            throw new Error(`未找到跨领域节点链接: ${originalNodeId}`);
+        }
+    }
+
     /**
      * 在 MOC 文件中更新节点颜色
      */
     async updateNodeColorInMOC(mocFile: TFile, nodeID: string, color: string): Promise<void> {
         await this.modifyMOCData(mocFile, (mocData) => {
-            // 初始化 nodeColors 对象
-            if (!mocData.nodeColors) {
-                mocData.nodeColors = {};
-            }
+            this.updateNodeColorInData(mocData, nodeID, color);
+        });
+    }
 
-            // 设置或删除颜色
-            if (color) {
-                mocData.nodeColors[nodeID] = color;
-            } else {
-                delete mocData.nodeColors[nodeID];
-            }
+    async updateNodeColorsInMOC(mocFile: TFile, nodeIDs: string[], color: string): Promise<void> {
+        await this.modifyMOCData(mocFile, (mocData) => {
+            nodeIDs.forEach((nodeID) => this.updateNodeColorInData(mocData, nodeID, color));
         });
     }
 
@@ -699,93 +869,27 @@ export class MOCHandler {
      */
     async deleteNodeFromMOC(mocFile: TFile, nodeID: string): Promise<void> {
         await this.modifyMOCData(mocFile, (mocData) => {
-            let deleted = false;
+            this.deleteNodeFromData(mocData, nodeID);
+        });
+    }
 
-            // 1. 先尝试在节点树中查找并删除
-            const deleteNodeFromTree = (nodes: any[], targetID: string): boolean => {
-                for (let i = 0; i < nodes.length; i++) {
-                    const node = nodes[i];
-                    if (node.nodeID === targetID) {
-                        nodes.splice(i, 1);
-                        return true;
-                    }
-                    if (node.children && node.children.length > 0) {
-                        if (deleteNodeFromTree(node.children, targetID)) {
-                            return true;
-                        }
-                    }
+    async deleteNodesFromMOC(
+        mocFile: TFile,
+        nodes: Array<{ nodeId: string; nodeData?: any }>
+    ): Promise<void> {
+        const sortedNodes = [...nodes].sort((a, b) => b.nodeId.split('.').length - a.nodeId.split('.').length);
+
+        await this.modifyMOCData(mocFile, (mocData) => {
+            for (const { nodeId, nodeData } of sortedNodes) {
+                if (nodeData && nodeData.isCrossDomain) {
+                    const crossDomainLinkInfo = {
+                        sourceNodeId: nodeData.originalNode.crossDomainSourceNodeId,
+                        nodeId: nodeData.originalNode.crossDomainOriginalNodeId
+                    };
+                    this.deleteCrossDomainNodeFromData(mocData, nodeId, crossDomainLinkInfo);
+                } else {
+                    this.deleteNodeFromData(mocData, nodeId);
                 }
-                return false;
-            };
-
-            deleted = deleteNodeFromTree(mocData.nodes, nodeID);
-
-            // 2. 如果在节点树中没找到，尝试从跨领域链接中删除
-            if (!deleted && mocData.crossDomainLinks) {
-                // 检查是否为跨思维树节点 ID（格式：cd-{nodeId}-{mocName}）
-                const isCrossDomainNode = nodeID.startsWith('cd-');
-
-                for (const sourceNodeId in mocData.crossDomainLinks) {
-                    const links = mocData.crossDomainLinks[sourceNodeId];
-                    const initialLength = links.length;
-
-                    // 过滤掉匹配的跨领域节点（匹配 nodeId 或完整 ID）
-                    mocData.crossDomainLinks[sourceNodeId] = links.filter(
-                        (link: CrossDomainLink) => {
-                            // 检查是否匹配
-                            if (link.nodeId === nodeID) {
-                                return false;  // 删除这个链接
-                            }
-                            // 如果是跨思维树节点，尝试提取原始 nodeId 并匹配
-                            if (isCrossDomainNode) {
-                                // cd-a-测试 -> a-测试
-                                const originalNodeId = nodeID.substring(3);
-                                if (link.nodeId === originalNodeId) {
-                                    return false;  // 删除这个链接
-                                }
-                            }
-                            return true;
-                        }
-                    );
-
-                    // 如果删除了链接，说明找到了
-                    if (mocData.crossDomainLinks[sourceNodeId].length < initialLength) {
-                        deleted = true;
-
-                        // 如果该源节点的所有跨领域链接都被删除了，删除这个键
-                        if (mocData.crossDomainLinks[sourceNodeId].length === 0) {
-                            delete mocData.crossDomainLinks[sourceNodeId];
-                        }
-
-                        break;
-                    }
-                }
-            }
-
-            if (!deleted) {
-                throw new Error(`未找到节点: ${nodeID}`);
-            }
-
-            // 清理相关数据
-            if (mocData.nodePositions && mocData.nodePositions[nodeID]) {
-                delete mocData.nodePositions[nodeID];
-            }
-
-            if (mocData.nodeColors && mocData.nodeColors[nodeID]) {
-                delete mocData.nodeColors[nodeID];
-            }
-            if ((mocData as any).nodeStyleColors && (mocData as any).nodeStyleColors[nodeID]) {
-                delete (mocData as any).nodeStyleColors[nodeID];
-            }
-
-            // 清理包含该节点的边弧度
-            if (mocData.edgeCurvatures) {
-                Object.keys(mocData.edgeCurvatures).forEach(key => {
-                    const parts = key.split('-');
-                    if (parts.includes(nodeID)) {
-                        delete mocData.edgeCurvatures[key];
-                    }
-                });
             }
         });
     }
@@ -796,61 +900,7 @@ export class MOCHandler {
     async deleteCrossDomainNodeFromMOC(mocFile: TFile, nodeID: string, crossDomainLinkInfo: any): Promise<void> {
 
         await this.modifyMOCData(mocFile, (mocData) => {
-
-            if (!mocData.crossDomainLinks) {
-                throw new Error(`未找到跨领域链接数据`);
-            }
-
-            // 从 crossDomainLinkInfo 中获取 sourceNodeId 和原始的 link.nodeId
-            const sourceNodeId = crossDomainLinkInfo.sourceNodeId;
-            const originalNodeId = crossDomainLinkInfo.nodeId;
-
-
-            if (!sourceNodeId || !mocData.crossDomainLinks[sourceNodeId]) {
-                throw new Error(`未找到跨领域链接: sourceNodeId=${sourceNodeId}`);
-            }
-
-            const links = mocData.crossDomainLinks[sourceNodeId];
-            const initialLength = links.length;
-
-            // 根据 nodeId 过滤删除对应的链接
-            mocData.crossDomainLinks[sourceNodeId] = links.filter(
-                (link: CrossDomainLink) => link.nodeId !== originalNodeId
-            );
-
-            // 如果删除了链接
-            if (mocData.crossDomainLinks[sourceNodeId].length < initialLength) {
-                // 如果该源节点的所有跨领域链接都被删除了，删除这个键
-                if (mocData.crossDomainLinks[sourceNodeId].length === 0) {
-                    delete mocData.crossDomainLinks[sourceNodeId];
-                }
-
-                // 清理节点位置
-                if (mocData.nodePositions && mocData.nodePositions[nodeID]) {
-                    delete mocData.nodePositions[nodeID];
-                }
-
-                // 清理节点颜色
-                if (mocData.nodeColors && mocData.nodeColors[nodeID]) {
-                    delete mocData.nodeColors[nodeID];
-                }
-                if ((mocData as any).nodeStyleColors && (mocData as any).nodeStyleColors[nodeID]) {
-                    delete (mocData as any).nodeStyleColors[nodeID];
-                }
-
-                // 清理边弧度
-                if (mocData.edgeCurvatures) {
-                    Object.keys(mocData.edgeCurvatures).forEach(key => {
-                        const parts = key.split('-');
-                        if (parts.includes(nodeID)) {
-                            delete mocData.edgeCurvatures[key];
-                        }
-                    });
-                }
-
-            } else {
-                throw new Error(`未找到跨领域节点链接: ${originalNodeId}`);
-            }
+            this.deleteCrossDomainNodeFromData(mocData, nodeID, crossDomainLinkInfo);
         });
     }
 

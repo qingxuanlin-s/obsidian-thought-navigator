@@ -2285,28 +2285,11 @@ export class ZKIndexView extends ItemView {
             try {
                 const mocFile = this.app.vault.getFileByPath(currentMOCPath);
                 if (mocFile) {
-                    // 逐个删除节点，根据 isCrossDomain 属性选择删除方法
-                    for (let i = 0; i < nodeIds.length; i++) {
-                        const nodeId = nodeIds[i];
-                        const nodeData = nodes[i];
-
-        
-                        if (nodeData && nodeData.isCrossDomain) {
-                            // 跨领域节点：使用专门的删除方法
-                            const crossDomainLinkInfo = {
-                                sourceNodeId: nodeData.originalNode.crossDomainSourceNodeId,
-                                nodeId: nodeData.originalNode.crossDomainOriginalNodeId
-                            };
-                            await this.mocHandler.deleteCrossDomainNodeFromMOC(
-                                mocFile,
-                                nodeId,
-                                crossDomainLinkInfo
-                            );
-                        } else {
-                            // 普通节点：使用常规删除方法
-                            await this.mocHandler.deleteNodeFromMOC(mocFile, nodeId);
-                        }
-                    }
+                    const batchNodes = nodeIds.map((nodeId: string, index: number): { nodeId: string; nodeData: any } => ({
+                        nodeId,
+                        nodeData: nodes[index]
+                    }));
+                    await this.mocHandler.deleteNodesFromMOC(mocFile, batchNodes);
                     await this.refreshBranchMermaid();
                     new Notice(`已删除 ${nodeIds.length} 个节点`);
                 }
@@ -4807,10 +4790,7 @@ export class ZKIndexView extends ItemView {
         try {
             const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
             if (mocFile) {
-                // 批量更新节点颜色
-                for (const nodeId of nodeIds) {
-                    await this.mocHandler.updateNodeColorInMOC(mocFile, nodeId, selectedColor);
-                }
+                await this.mocHandler.updateNodeColorsInMOC(mocFile, nodeIds, selectedColor);
 
                 // 刷新视图
                 await this.refreshBranchMermaid();
