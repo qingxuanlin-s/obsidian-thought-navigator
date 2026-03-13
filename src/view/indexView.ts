@@ -6686,6 +6686,31 @@ export class ZKIndexView extends ItemView {
             };
         };
 
+        const getNodeBox = (node: any) => {
+            const pos = node.position();
+            const width = Math.max(Number(node.width?.() || 0), 80);
+            const height = Math.max(Number(node.height?.() || 0), 44);
+            return {
+                minX: pos.x - width / 2,
+                maxX: pos.x + width / 2,
+                minY: pos.y - height / 2,
+                maxY: pos.y + height / 2
+            };
+        };
+
+        const boxesOverlap = (
+            a: { minX: number; maxX: number; minY: number; maxY: number },
+            b: { minX: number; maxX: number; minY: number; maxY: number }
+        ) => {
+            const margin = 24;
+            return !(
+                a.maxX + margin <= b.minX ||
+                a.minX >= b.maxX + margin ||
+                a.maxY + margin <= b.minY ||
+                a.minY >= b.maxY + margin
+            );
+        };
+
         const childEntries = children
             .map((child: any) => {
                 const subtreeNodes = getSubtreeNodes(child);
@@ -6705,6 +6730,13 @@ export class ZKIndexView extends ItemView {
         }
 
         const nodePositions: Record<string, { x: number; y: number }> = {};
+        const occupiedBoxes = cy.nodes('[!isGroup]').filter((node: any) => {
+            const data = node.data();
+            return !data.isPlaceholder && node.id() !== parentNode.id();
+        }).map((node: any) => ({
+            nodeId: node.id(),
+            box: getNodeBox(node)
+        }));
 
         const totalSpan = childEntries.reduce((sum: number, entry: any) => sum + entry.bounds.height, 0)
             + Math.max(0, childEntries.length - 1) * SUBTREE_GAP;
@@ -6712,8 +6744,34 @@ export class ZKIndexView extends ItemView {
 
         cy.batch(() => {
             childEntries.forEach((entry: any) => {
-                const desiredSubtreeCenterY = cursorY + entry.bounds.height / 2;
+                let desiredSubtreeCenterY = cursorY + entry.bounds.height / 2;
+                const subtreeNodeIds = new Set(entry.subtreeNodes.map((node: any) => node.id()));
                 const deltaX = anchor.x - entry.child.position().x;
+                let candidateBounds = {
+                    minX: entry.bounds.minX + deltaX,
+                    maxX: entry.bounds.maxX + deltaX,
+                    minY: entry.bounds.minY + (desiredSubtreeCenterY - entry.bounds.centerY),
+                    maxY: entry.bounds.maxY + (desiredSubtreeCenterY - entry.bounds.centerY)
+                };
+
+                let attempts = 0;
+                while (attempts < 24) {
+                    const hasCollision = occupiedBoxes.some(({ nodeId, box }: any) => {
+                        if (subtreeNodeIds.has(nodeId)) return false;
+                        return boxesOverlap(candidateBounds, box);
+                    });
+                    if (!hasCollision) {
+                        break;
+                    }
+                    desiredSubtreeCenterY += SUBTREE_GAP;
+                    candidateBounds = {
+                        ...candidateBounds,
+                        minY: candidateBounds.minY + SUBTREE_GAP,
+                        maxY: candidateBounds.maxY + SUBTREE_GAP
+                    };
+                    attempts += 1;
+                }
+
                 const deltaY = desiredSubtreeCenterY - entry.bounds.centerY;
 
                 entry.subtreeNodes.forEach((subtreeNode: any) => {
@@ -6735,7 +6793,17 @@ export class ZKIndexView extends ItemView {
                     }
                 });
 
-                cursorY += entry.bounds.height + SUBTREE_GAP;
+                occupiedBoxes.push({
+                    nodeId: entry.child.id(),
+                    box: {
+                        minX: entry.bounds.minX + deltaX,
+                        maxX: entry.bounds.maxX + deltaX,
+                        minY: entry.bounds.minY + deltaY,
+                        maxY: entry.bounds.maxY + deltaY
+                    }
+                });
+
+                cursorY = desiredSubtreeCenterY + entry.bounds.height / 2 + SUBTREE_GAP;
             });
         });
 
