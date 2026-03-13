@@ -1315,18 +1315,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'overlay-opacity': 0.3
             } as any
         },
-        // 文件节点样式 - 使用多个背景图在右上角显示文件图标
+        // 文件节点样式
         {
             selector: 'node[?hasFileIcon]',
             style: {
-                // 第二个背景图：文件图标（右上角）
-                'background-width': ['100%', '16px'],
-                'background-height': ['100%', '16px'],
-                'background-fit': ['cover', 'none'],
-                'background-clip': ['node', 'none'],
-                'background-position-x': ['50%', '100%'],
-                'background-position-y': ['50%', '0%'],
-                'background-image': ['none', 'url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'16\' height=\'16\' viewBox=\'0 0 16 16\'%3E%3Cpath fill=\'%235b8fd9\' d=\'M14 4H6.5L3 8.5V14h11V4zm-1 9H4V9h1.5l1-1H6v4h7V5z\'/%3E%3C/svg%3E")']
+                'text-decoration': 'underline'
             } as any
         },
         // 折叠隐藏的子节点/连线
@@ -4543,8 +4536,8 @@ case 'dagre':
             // 从当前节点开始递归高亮
             highlightChildEdges(nodeId);
 
-            // Command/Ctrl + 单击：打开文件节点
-            if ((originalEvent.metaKey || originalEvent.ctrlKey) && data.originalNode?.file && !data.isCrossDomain) {
+            // 文件节点：单击直接打开
+            if (data.originalNode?.file && !data.isCrossDomain) {
                 this.container?.dispatchEvent(new CustomEvent('node-click', {
                     detail: {
                         node: data.originalNode,

@@ -1544,7 +1544,7 @@ export class ZKIndexView extends ItemView {
 
         // 监听节点点击事件
         this.addTrackedListener(branchGraphDiv, 'node-click', (event: any) => {
-            const { node, ctrlKey, metaKey, shiftKey } = event.detail;
+            const { node } = event.detail;
 
             // 检查节点是否有效
             if (!node || !node.file) {
@@ -1552,18 +1552,7 @@ export class ZKIndexView extends ItemView {
                 return;
             }
 
-            if (ctrlKey || metaKey) {
-                // Ctrl/Command + 点击：在新标签页打开
-                this.app.workspace.openLinkText("", node.file.path, 'tab');
-            } else if (shiftKey) {
-                // Shift + 点击：在图形视图中打开
-                this.plugin.retrivalforLocaLgraph = {
-                    type: '1',
-                    ID: node.ID,
-                    filePath: node.file.path,
-                };
-                this.plugin.openGraphView();
-            }
+            this.app.workspace.getLeaf(false).openFile(node.file);
         });
 
         // 监听节点悬停事件
