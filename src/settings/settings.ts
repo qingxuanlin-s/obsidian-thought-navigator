@@ -736,6 +736,21 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                 })
             );
 
+        new Setting(structureSettingDiv)
+            .setName("文本显示模式")
+            .setDesc("控制分支视图节点显示 ID、标题或组合文本")
+            .addDropdown(options => options
+                .addOption("id", t("id"))
+                .addOption("title", t("title"))
+                .addOption("both", t("both"))
+                .addOption("id-title", t("id-title"))
+                .setValue(this.plugin.settings.NodeText || "both")
+                .onChange((value) => {
+                    this.plugin.settings.NodeText = value;
+                    this.plugin.RefreshIndexViewFlag = true;
+                })
+            );
+
         // 添加"快捷操作"展开项
         const quickActionDetails = structureSettingDiv.createEl('details');
         quickActionDetails.addClass('zk-details');

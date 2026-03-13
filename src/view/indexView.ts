@@ -1,5 +1,5 @@
 import ZKNavigationPlugin, { Retrival } from "main";
-import { ButtonComponent, DropdownComponent, ExtraButtonComponent, FuzzySuggestModal, HeadingCache, ItemView, Menu, Modal, Notice, Setting, TFile, WorkspaceLeaf, debounce, moment, setTooltip } from "obsidian";
+import { ButtonComponent, DropdownComponent, ExtraButtonComponent, FuzzySuggestModal, HeadingCache, ItemView, Menu, Modal, Notice, Platform, Setting, TFile, WorkspaceLeaf, debounce, moment, setTooltip } from "obsidian";
 import { t } from "src/lang/helper";
 import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
 import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
@@ -1190,6 +1190,17 @@ export class ZKIndexView extends ItemView {
             branchGraphDiv.style.width = "100%";
             branchGraphDiv.style.marginBottom = "10px"; // 为底部按钮留出空间
         }
+
+        if (this.isMobileReadOnly()) {
+            branchGraphDiv.style.border = 'none';
+            branchGraphDiv.style.boxShadow = 'none';
+            branchGraphDiv.style.outline = 'none';
+        } else {
+            branchGraphDiv.style.border = '';
+            branchGraphDiv.style.boxShadow = '';
+            branchGraphDiv.style.outline = '';
+        }
+
         // 注意：不再清空 branchGraphDiv，让 CytoscapeRenderer 内部的增量更新逻辑处理
 
         // 构建图形数据（包含分组信息和边弧度信息）
@@ -1226,7 +1237,8 @@ export class ZKIndexView extends ItemView {
             themeStyle: this.plugin.settings.themeStyle || 'default',
             edgeStyle: this.plugin.settings.edgeStyle || 'bezier',
             showNoteId: this.plugin.settings.showNoteIdInBranchView,
-            smartConnection: this.plugin.settings.smartConnection === true
+            smartConnection: this.plugin.settings.smartConnection === true,
+            readOnly: this.isMobileReadOnly()
         };
 
         // 性能优化：复用或创建渲染器，避免每次都销毁重建
@@ -1270,6 +1282,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听自动连接事件（拖动节点到附近节点时触发）
         this.addTrackedListener(branchGraphDiv, 'auto-connect-node', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             if (!this.plugin.settings.smartConnection) {
                 return;
             }
@@ -1313,6 +1328,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听节点位置变化事件（拖动后保存到 MOC 文件）
         this.addTrackedListener(branchGraphDiv, 'node-position-changed', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { node, position } = event.detail;
 
             // 检查节点是否有效
@@ -1359,6 +1377,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听跨领域节点位置变化事件（拖动后保存到 cross_domain_links）
         this.addTrackedListener(branchGraphDiv, 'cross-domain-node-position-changed', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { node, position, crossDomainLink, sourceNodeId } = event.detail;
 
             // 检查是否有效
@@ -1386,6 +1407,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听边弧度变化事件（拖动控制点后保存到 MOC 文件）
         this.addTrackedListener(branchGraphDiv, 'edge-curvature-changed', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { edgeId, source, target, distance, weight } = event.detail;
 
             // 使用防抖，避免拖动时频繁保存
@@ -1408,6 +1432,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听预览节点尺寸变化事件（右下角拖拽后保存到 ext）
         this.addTrackedListener(branchGraphDiv, 'embed-node-size-changed', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { node, size } = event.detail || {};
             if (!node?.ID || !size) return;
 
@@ -1429,6 +1456,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听分组创建事件
         this.addTrackedListener(branchGraphDiv, 'group-create', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { groupId, groupLabel, nodeIds } = event.detail;
             
             try {
@@ -1445,6 +1475,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听分组重命名事件
         this.addTrackedListener(branchGraphDiv, 'group-rename', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { groupId, oldLabel, newLabel } = event.detail;
 
             try {
@@ -1461,6 +1494,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听分组调整大小事件
         this.addTrackedListener(branchGraphDiv, 'group-resize', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { groupId, groupLabel, nodeIds } = event.detail;
 
             try {
@@ -1478,6 +1514,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听分组右键菜单事件
         this.addTrackedListener(branchGraphDiv, 'group-contextmenu', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { groupId, groupLabel, position } = event.detail;
 
             // 创建右键菜单
@@ -1560,6 +1599,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听节点编辑事件（双击）
         this.addTrackedListener(branchGraphDiv, 'node-edit', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { node } = event.detail;
 
             if (!node) {
@@ -1570,6 +1612,9 @@ export class ZKIndexView extends ItemView {
         });
 
         this.addTrackedListener(branchGraphDiv, 'node-inline-edit-save', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { node, content } = event.detail;
             if (!node) {
                 return;
@@ -1578,6 +1623,9 @@ export class ZKIndexView extends ItemView {
         });
 
         this.addTrackedListener(branchGraphDiv, 'node-remark-edit', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { node } = event.detail;
             if (!node) {
                 return;
@@ -1621,6 +1669,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听节点删除键事件
         this.addTrackedListener(branchGraphDiv, 'node-delete-key', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { node, relationCount } = event.detail;
 
             if (!node || !node.ID) {
@@ -1705,6 +1756,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听节点右键菜单事件
         this.addTrackedListener(branchGraphDiv, 'node-contextmenu', (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { node, event: mouseEvent, position } = event.detail;
             
             // 检查节点是否有效（允许纯文字节点，即 file 为 null 的节点）
@@ -1777,6 +1831,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听背景双击事件（创建占位符节点）
         this.addTrackedListener(branchGraphDiv, 'background-dblclick', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { position } = event.detail;
 
             // 创建占位符节点，而不是直接打开模态框
@@ -1785,6 +1842,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听占位符节点编辑事件
         this.addTrackedListener(branchGraphDiv, 'placeholder-node-edit', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { nodeId, label, position, suggestedNodeId } = event.detail;
 
             // 如果有预生成的节点 ID，更新占位符信息
@@ -1810,12 +1870,18 @@ export class ZKIndexView extends ItemView {
 
         // 监听占位符节点取消事件（Esc 或点击空白）
         this.addTrackedListener(branchGraphDiv, 'placeholder-node-cancel', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { nodeId } = event.detail;
             await this.removePlaceholderNode(nodeId);
         });
 
         // 监听占位符节点完成事件（从 suggester 选择文件后触发）
         this.addTrackedListener(branchGraphDiv, 'placeholder-node-complete', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { nodeId, wikiLink, file, isEmbed } = event.detail;
 
             // 查找对应的节点
@@ -1882,6 +1948,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听从 suggester 添加自由节点事件
         this.addTrackedListener(branchGraphDiv, 'add-free-node-from-suggester', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { nodeId, wikiLink, file, isEmbed } = event.detail;
 
             // 获取占位符信息
@@ -1950,6 +2019,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听边右键菜单事件（删除边）
         this.addTrackedListener(branchGraphDiv, 'edge-contextmenu', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { edgeId, source, target, type, label, position, targetNodeSons } = event.detail;
             // 创建右键菜单
             const menu = new Menu();
@@ -1977,6 +2049,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听分组删除键事件（Delete/Backspace）
         this.addTrackedListener(branchGraphDiv, 'group-delete-key', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { groupId, groupLabel } = event.detail;
 
             try {
@@ -1994,6 +2069,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听边删除键事件（Delete/Backspace）
         this.addTrackedListener(branchGraphDiv, 'edge-delete-key', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { edgeId, source, target, type, label, targetNodeSons } = event.detail;
 
             try {
@@ -2011,6 +2089,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听边标签编辑事件（双击边）
         this.addTrackedListener(branchGraphDiv, 'edge-label-edit', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { edgeId, source, target, oldLabel, newLabel } = event.detail;
 
             try {
@@ -2028,6 +2109,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听边起点修改事件
         this.addTrackedListener(branchGraphDiv, 'edge-source-changed', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { edgeId, oldSource, newSource, target, label } = event.detail;
 
             try {
@@ -2045,6 +2129,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听边终点修改事件
         this.addTrackedListener(branchGraphDiv, 'edge-target-changed', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { edgeId, source, oldTarget, newTarget, label } = event.detail;
 
             try {
@@ -2062,6 +2149,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听创建箭头关系事件（拖动连线到现有节点）
         this.addTrackedListener(branchGraphDiv, 'create-arrow-relation', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { sourceNode, targetNode } = event.detail;
 
             if (!sourceNode || !targetNode) {
@@ -2122,6 +2212,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听创建子节点事件（拖动连线到空白处）- 改为创建占位符节点
         this.addTrackedListener(branchGraphDiv, 'create-child-node', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { parentNode, position } = event.detail;
 
             if (!parentNode) {
@@ -2135,24 +2228,36 @@ export class ZKIndexView extends ItemView {
 
         // 监听创建子节点快捷键事件（Tab）
         this.addTrackedListener(branchGraphDiv, 'create-child-node-shortcut', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { activeNodeId, position } = event.detail;
             await this.createChildNodeFromActive(activeNodeId, position);
         });
 
         // 监听创建兄弟节点快捷键事件（Enter）
         this.addTrackedListener(branchGraphDiv, 'create-sibling-node-shortcut', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { activeNodeId, position } = event.detail;
             await this.createSiblingNodeFromActive(activeNodeId, position);
         });
 
         // 监听创建父节点快捷键事件（Shift+Tab）
         this.addTrackedListener(branchGraphDiv, 'create-parent-node-shortcut', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { activeNodeId, position } = event.detail;
             await this.createParentNodeFromActive(activeNodeId, position);
         });
 
         // 监听批量分组事件
         this.addTrackedListener(branchGraphDiv, 'batch-create-group', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { nodeIds, groupName } = event.detail;
 
             try {
@@ -2172,6 +2277,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听批量删除节点事件
         this.addTrackedListener(branchGraphDiv, 'batch-delete-nodes', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { nodeIds, nodes } = event.detail;
 
             try {
@@ -2210,6 +2318,9 @@ export class ZKIndexView extends ItemView {
 
         // 监听批量显示颜色选择器事件
         this.addTrackedListener(branchGraphDiv, 'batch-show-color-picker', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
             const { nodeIds } = event.detail;
             await this.batchChangeNodeColor(nodeIds);
         });
@@ -7177,5 +7288,9 @@ export class ZKIndexView extends ItemView {
             console.error('Failed to open cross-domain MOC:', error);
             new Notice(`打开跨界思维树失败: ${error.message}`);
         }
+    }
+
+    private isMobileReadOnly(): boolean {
+        return Platform.isMobile;
     }
 }

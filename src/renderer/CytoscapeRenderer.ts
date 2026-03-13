@@ -3,7 +3,7 @@ import * as dagreNamespace from 'cytoscape-dagre';
 import * as coseBilkentNamespace from 'cytoscape-cose-bilkent';
 import { IGraphRenderer, GraphData, RenderOptions, GraphChanges, ViewState, Edge } from './types';
 import { ZKNode } from 'src/view/indexView';
-import { Component, MarkdownRenderer, Notice } from 'obsidian';
+import { Component, MarkdownRenderer, Notice, Platform } from 'obsidian';
 
 // 处理 CommonJS 和 ESM 模块的兼容性
 const getCytoscape = (): any => {
@@ -97,6 +97,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private readonly HORIZONTAL_GAP = 200;    // 水平间距
     private readonly SIBLING_GAP = 100;       // 兄弟节点间距
 
+    private isReadOnlyMode(): boolean {
+        return this.currentOptions?.readOnly === true || Platform.isMobile;
+    }
+
     /**
      * 渲染图形
      * @性能优化：支持增量更新，避免每次都销毁重建
@@ -148,7 +152,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 motionBlur: false,
                 pixelRatio: 'auto',
                 // 启用节点拖动
-                autoungrabify: false,
+                autoungrabify: options.readOnly === true,
                 // 启用原生缩放和平移
                 userZoomingEnabled: true,   // 启用滚轮/双指缩放
                 userPanningEnabled: true,   // 启用原生拖动画布
@@ -164,8 +168,18 @@ export class CytoscapeRenderer implements IGraphRenderer {
             this.bindKeyboardEvents();
             this.initBoxSelection();
             this.addNodeBadges();
+            if (this.isReadOnlyMode()) {
+                this.hideBatchToolbar();
+            }
 
         } else {
+            if (typeof (this.cy as any).autoungrabify === 'function') {
+                (this.cy as any).autoungrabify(options.readOnly === true);
+            }
+            if (this.isReadOnlyMode()) {
+                this.hideBatchToolbar();
+            }
+
             // 复用实例时也要刷新样式，确保主题/风格切换即时生效
             const shouldRefreshStyle =
                 !previousOptions ||
@@ -1754,6 +1768,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
             });
 
             headerEl.addEventListener('dblclick', (e: MouseEvent) => {
+                if (this.isReadOnlyMode()) {
+                    return;
+                }
                 e.preventDefault();
                 e.stopPropagation();
                 this.showInlineNodeEditor(node);
@@ -2006,6 +2023,7 @@ case 'dagre':
         // 存储所有徽章的更新函数
         const badgeUpdaters: Array<() => void> = [];
         let updateScheduled = false;
+        const readOnly = this.isReadOnlyMode();
 
         this.cy.nodes('[?hasRemark]').forEach((node: any) => {
             const remarkText = node.data('remark') || '';
@@ -2028,7 +2046,7 @@ case 'dagre':
                 align-items: center;
                 justify-content: center;
                 pointer-events: auto;
-                cursor: pointer;
+                cursor: ${readOnly ? 'default' : 'pointer'};
                 user-select: none;
             `;
             badgeContainer.appendChild(remarkEl);
@@ -2097,6 +2115,9 @@ case 'dagre':
             updateRemarkPosition();
 
             remarkEl.addEventListener('click', (e) => {
+                if (this.isReadOnlyMode()) {
+                    return;
+                }
                 e.stopPropagation();
                 node.select();
                 this.container?.dispatchEvent(new CustomEvent('node-remark-edit', {
@@ -3707,7 +3728,7 @@ case 'dagre':
      * 显示内联边标签编辑器
      */
     private showInlineEdgeLabelEditor(edge: any): void {
-        if (!this.cy || !this.container) return;
+        if (!this.cy || !this.container || this.isReadOnlyMode()) return;
 
         const data = edge.data();
         const currentLabel = data.label || '';
@@ -3857,7 +3878,7 @@ case 'dagre':
      * 显示占位符节点的内联编辑器
      */
     private showInlineNodeEditor(node: any): void {
-        if (!this.cy || !this.container) return;
+        if (!this.cy || !this.container || this.isReadOnlyMode()) return;
 
         const data = node.data();
         const originalNode = data.originalNode;
@@ -4532,12 +4553,19 @@ case 'dagre':
                 return;
             }
 
+            if (this.isReadOnlyMode()) {
+                return;
+            }
+
             // 普通节点：双击进入内联编辑
             this.showInlineNodeEditor(node);
         });
 
         // 分组节点双击事件（修改分组名）
         this.cy.on('dbltap', 'node[?isGroup]', (evt: any) => {
+            if (this.isReadOnlyMode()) {
+                return;
+            }
             const node = evt.target;
             const data = node.data();
             
@@ -4557,6 +4585,9 @@ case 'dagre':
 
         // 分组节点右键菜单事件（删除分组）
         this.cy.on('cxttap', 'node[?isGroup]', (evt: any) => {
+            if (this.isReadOnlyMode()) {
+                return;
+            }
             const node = evt.target;
             const data = node.data();
             const originalEvent = evt.originalEvent as MouseEvent;
@@ -4603,6 +4634,9 @@ case 'dagre':
 
         // 节点右键菜单事件
         this.cy.on('cxttap', 'node', (evt: any) => {
+            if (this.isReadOnlyMode()) {
+                return;
+            }
             const node = evt.target;
             const data = node.data();
             const originalEvent = evt.originalEvent as MouseEvent;
@@ -4658,6 +4692,9 @@ case 'dagre':
         // 背景双击事件（创建自由节点）
         this.cy.on('dbltap', (evt: any) => {
             if (evt.target === this.cy) {
+                if (this.isReadOnlyMode()) {
+                    return;
+                }
                 const position = evt.position;
                 this.container?.dispatchEvent(new CustomEvent('background-dblclick', {
                     detail: {
@@ -5185,6 +5222,9 @@ case 'dagre':
 
         // 边双击事件（编辑关系文本）
         this.cy.on('dbltap', 'edge', (evt: any) => {
+            if (this.isReadOnlyMode()) {
+                return;
+            }
             const edge = evt.target;
             const data = edge.data();
 
@@ -5194,6 +5234,9 @@ case 'dagre':
 
         // 边右键菜单事件（删除边）
         this.cy.on('cxttap', 'edge', (evt: any) => {
+            if (this.isReadOnlyMode()) {
+                return;
+            }
             const edge = evt.target;
             const data = edge.data();
             const originalEvent = evt.originalEvent as MouseEvent;
@@ -6021,6 +6064,10 @@ case 'dagre':
      */
     private showBatchToolbar(): void {
         if (!this.cy || !this.container) return;
+        if (this.isReadOnlyMode()) {
+            this.hideBatchToolbar();
+            return;
+        }
 
         const selectedNodes = this.cy.$(':selected').filter('node[!isGroup]');
         const count = selectedNodes.length;
