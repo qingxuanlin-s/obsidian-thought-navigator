@@ -3063,10 +3063,11 @@ case 'dagre':
         this.cy.nodes('[!isGroup]').forEach((node: any) => {
             const handle = document.createElement('div');
             handle.className = 'zk-connection-handle';
+            const baseHandleSize = 36;
             handle.style.cssText = `
                 position: absolute;
-                width: 48px;
-                height: 48px;
+                width: ${baseHandleSize}px;
+                height: ${baseHandleSize}px;
                 background-color: #5b8fd9;
                 border: 2px solid #ffffff;
                 border-radius: 50%;
@@ -3092,8 +3093,8 @@ case 'dagre':
                 
                 handle.style.left = `${x}px`;
                 handle.style.top = `${y}px`;
-                handle.style.width = `${48 * zoom}px`;
-                handle.style.height = `${48 * zoom}px`;
+                handle.style.width = `${baseHandleSize * zoom}px`;
+                handle.style.height = `${baseHandleSize * zoom}px`;
                 handle.style.borderWidth = `${2 * zoom}px`;
             };
 
