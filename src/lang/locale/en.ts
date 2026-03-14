@@ -216,4 +216,10 @@ export default {
     "Polyline": "Polyline",
     "Paste image success": "Image pasted successfully",
     "Paste image failed": "Failed to paste image",
+    // Batch toolbar
+    "batch selected count": "{count} selected",
+    "batch group": "Group",
+    "batch delete": "Delete",
+    "batch change color": "Color",
+    "batch cancel": "Deselect",
 }

@@ -214,5 +214,10 @@ export default {
     "Polyline": "折线",
     "Paste image success": "图片已粘贴",
     "Paste image failed": "图片粘贴失败",
-
+    // 批量操作工具栏
+    "batch selected count": "已选中 {count} 个",
+    "batch group": "分组",
+    "batch delete": "删除",
+    "batch change color": "颜色",
+    "batch cancel": "取消",
 }

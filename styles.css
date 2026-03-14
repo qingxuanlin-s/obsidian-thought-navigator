@@ -841,3 +841,188 @@ align-items: center;
 .zk-theme-light .zk-index-toolbar-block b {
   color: #000000;
 }
+
+/* ==================== 批量操作工具栏 ==================== */
+
+@keyframes zk-batch-toolbar-enter {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes zk-batch-toolbar-exit {
+  0% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(12px);
+  }
+}
+
+.zk-batch-toolbar {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px;
+  background: rgba(26, 31, 46, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid #2a3f5f;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45),
+              0 0 0 1px rgba(0, 168, 255, 0.08);
+  animation: zk-batch-toolbar-enter 0.25s ease-out forwards;
+  pointer-events: auto;
+  user-select: none;
+}
+
+.zk-batch-toolbar.zk-batch-toolbar-exiting {
+  animation: zk-batch-toolbar-exit 0.18s ease-in forwards;
+}
+
+.zk-batch-toolbar-count {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  margin-right: 4px;
+  background: rgba(0, 168, 255, 0.15);
+  border-radius: 8px;
+  border: 1px solid rgba(0, 168, 255, 0.25);
+  font-size: 12px;
+  font-weight: 600;
+  color: #00a8ff;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.zk-batch-toolbar-divider {
+  width: 1px;
+  height: 20px;
+  background: #2a3f5f;
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.zk-batch-toolbar-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: #e0e8f0;
+  white-space: nowrap;
+  line-height: 1;
+  transition: all 0.2s ease;
+}
+
+.zk-batch-toolbar-btn:hover {
+  background: #2a3f5f;
+  border-color: rgba(0, 168, 255, 0.3);
+  color: #00a8ff;
+}
+
+.zk-batch-toolbar-btn:active {
+  background: #3a4f6f;
+  transform: scale(0.96);
+}
+
+.zk-batch-toolbar-btn .zk-batch-toolbar-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.zk-batch-toolbar-btn .zk-batch-toolbar-icon svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2;
+}
+
+.zk-batch-toolbar-btn.zk-batch-btn-delete:hover {
+  background: rgba(255, 80, 80, 0.15);
+  border-color: rgba(255, 80, 80, 0.3);
+  color: #ff5050;
+}
+
+.zk-batch-toolbar-btn.zk-batch-btn-delete:hover .zk-batch-toolbar-icon svg {
+  stroke: #ff5050;
+}
+
+.zk-batch-toolbar-btn.zk-batch-btn-cancel {
+  color: #808a96;
+}
+
+.zk-batch-toolbar-btn.zk-batch-btn-cancel:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #e0e8f0;
+}
+
+/* 浅色主题 */
+.zk-theme-light .zk-batch-toolbar {
+  background: rgba(232, 232, 232, 0.9);
+  border: 1px solid #d0d0d0;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12),
+              0 0 0 1px rgba(0, 102, 204, 0.08);
+}
+
+.zk-theme-light .zk-batch-toolbar-count {
+  background: rgba(0, 102, 204, 0.1);
+  border-color: rgba(0, 102, 204, 0.2);
+  color: #0066cc;
+}
+
+.zk-theme-light .zk-batch-toolbar-divider {
+  background: #d0d0d0;
+}
+
+.zk-theme-light .zk-batch-toolbar-btn {
+  color: #333333;
+}
+
+.zk-theme-light .zk-batch-toolbar-btn:hover {
+  background: #d0d0d0;
+  border-color: rgba(0, 102, 204, 0.3);
+  color: #0066cc;
+}
+
+.zk-theme-light .zk-batch-toolbar-btn:active {
+  background: #c0c0c0;
+}
+
+.zk-theme-light .zk-batch-toolbar-btn.zk-batch-btn-delete:hover {
+  background: rgba(220, 50, 50, 0.1);
+  border-color: rgba(220, 50, 50, 0.25);
+  color: #dc3232;
+}
+
+.zk-theme-light .zk-batch-toolbar-btn.zk-batch-btn-cancel {
+  color: #808080;
+}
+
+.zk-theme-light .zk-batch-toolbar-btn.zk-batch-btn-cancel:hover {
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: #333333;
+}
