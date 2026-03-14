@@ -214,4 +214,6 @@ export default {
     "Straight line": "Straight line",
     "Bezier curve": "Bezier curve",
     "Polyline": "Polyline",
+    "Paste image success": "Image pasted successfully",
+    "Paste image failed": "Failed to paste image",
 }
