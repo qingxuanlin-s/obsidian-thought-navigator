@@ -1187,8 +1187,8 @@ export class ZKIndexView extends ItemView {
 
         const mocParseResult = await parseMOCStructure(this.app, currentMOCPath, headingTitle);
 
-        // 读取 MOC 文件中持久化的节点布局风格；若未记录则默认为自由节点
-        this.currentNodeLayoutStyle = mocParseResult.nodeLayoutStyle || 'free';
+        // 读取 MOC 文件中持久化的节点布局风格；若未记录则使用全局设置
+        this.currentNodeLayoutStyle = mocParseResult.nodeLayoutStyle || this.plugin.settings.nodeLayoutStyle || 'free';
 
         // 转换为 ZKNode（即使为空也继续）
         this.mocNodes = mocParseResult.nodes.length > 0
@@ -6785,6 +6785,29 @@ export class ZKIndexView extends ItemView {
         }
     }
 
+    private getAutoLayoutDirectionForNode(cy: any, node: any): { x: number; y: number } {
+        // 沿边向上找到根节点
+        let current = node;
+        while (true) {
+            const parents = current.incomers('edge').sources().filter((n: any) => !n.data('isGroup'));
+            if (parents.length === 0) break;
+            current = parents.first();
+        }
+        const root = current;
+
+        // 如果 node 就是根节点，使用默认方向
+        if (root.id() === node.id()) {
+            return this.getDefaultAutoLayoutDirection();
+        }
+
+        // 从根节点到当前节点的向量，snap 到四方向
+        const rootPos = root.position();
+        const nodePos = node.position();
+        return this.snapToCardinalDirection(
+            this.normalizeLayoutVector(nodePos.x - rootPos.x, nodePos.y - rootPos.y)
+        );
+    }
+
     private async relayoutAutoLayoutSiblings(parentNodeId: string): Promise<void> {
         if (!this.isAutoNodeLayoutStyle() || !this.branchRenderer) {
             return;
@@ -6813,15 +6836,15 @@ export class ZKIndexView extends ItemView {
             return;
         }
 
-        const HORIZONTAL_GAP = 200;
+        const MAIN_GAP = 200;
         const SUBTREE_GAP = 48;
         const parentPos = parentNode.position();
-        const dir = { x: 1, y: 0 };
+        const dir = this.getAutoLayoutDirectionForNode(cy, parentNode);
+        const isHorizontalDir = Math.abs(dir.x) > 0.5;
 
-        const normal = { x: -dir.y, y: dir.x };
         const anchor = {
-            x: parentPos.x + dir.x * HORIZONTAL_GAP,
-            y: parentPos.y + dir.y * HORIZONTAL_GAP
+            x: parentPos.x + dir.x * MAIN_GAP,
+            y: parentPos.y + dir.y * MAIN_GAP
         };
 
         const getSubtreeNodes = (rootNode: any): any[] => {
@@ -6860,6 +6883,7 @@ export class ZKIndexView extends ItemView {
                 maxY,
                 width: maxX - minX,
                 height: maxY - minY,
+                centerX: (minX + maxX) / 2,
                 centerY: (minY + maxY) / 2
             };
         };
@@ -6889,6 +6913,10 @@ export class ZKIndexView extends ItemView {
             );
         };
 
+        // 根据方向选择扩展轴上的投影和跨度
+        const getSpreadCenter = (bounds: any) => isHorizontalDir ? bounds.centerY : bounds.centerX;
+        const getSpreadSpan = (bounds: any) => isHorizontalDir ? bounds.height : bounds.width;
+
         const childEntries = children
             .map((child: any) => {
                 const subtreeNodes = getSubtreeNodes(child);
@@ -6897,7 +6925,7 @@ export class ZKIndexView extends ItemView {
                     child,
                     subtreeNodes,
                     bounds,
-                    projection: bounds.centerY
+                    projection: getSpreadCenter(bounds)
                 };
             })
             .sort((a: any, b: any) => a.projection - b.projection);
@@ -6916,20 +6944,31 @@ export class ZKIndexView extends ItemView {
             box: getNodeBox(node)
         }));
 
-        const totalSpan = childEntries.reduce((sum: number, entry: any) => sum + entry.bounds.height, 0)
+        // 父节点在扩展轴上的坐标
+        const parentSpreadPos = isHorizontalDir ? parentPos.y : parentPos.x;
+        const totalSpan = childEntries.reduce((sum: number, entry: any) => sum + getSpreadSpan(entry.bounds), 0)
             + Math.max(0, childEntries.length - 1) * SUBTREE_GAP;
-        let cursorY = parentPos.y - totalSpan / 2;
+        let cursor = parentSpreadPos - totalSpan / 2;
 
         cy.batch(() => {
             childEntries.forEach((entry: any) => {
-                let desiredSubtreeCenterY = cursorY + entry.bounds.height / 2;
+                const spreadSpan = getSpreadSpan(entry.bounds);
+                const spreadCenter = getSpreadCenter(entry.bounds);
+                let desiredCenter = cursor + spreadSpan / 2;
                 const subtreeNodeIds = new Set(entry.subtreeNodes.map((node: any) => node.id()));
-                const deltaX = anchor.x - entry.child.position().x;
+
+                // 沿主轴对齐到 anchor
+                const childMainPos = isHorizontalDir ? entry.child.position().x : entry.child.position().y;
+                const anchorMainPos = isHorizontalDir ? anchor.x : anchor.y;
+                const deltaMain = anchorMainPos - childMainPos;
+
+                // 计算候选边界
+                const deltaSpreadInit = desiredCenter - spreadCenter;
                 let candidateBounds = {
-                    minX: entry.bounds.minX + deltaX,
-                    maxX: entry.bounds.maxX + deltaX,
-                    minY: entry.bounds.minY + (desiredSubtreeCenterY - entry.bounds.centerY),
-                    maxY: entry.bounds.maxY + (desiredSubtreeCenterY - entry.bounds.centerY)
+                    minX: entry.bounds.minX + (isHorizontalDir ? deltaMain : deltaSpreadInit),
+                    maxX: entry.bounds.maxX + (isHorizontalDir ? deltaMain : deltaSpreadInit),
+                    minY: entry.bounds.minY + (isHorizontalDir ? deltaSpreadInit : deltaMain),
+                    maxY: entry.bounds.maxY + (isHorizontalDir ? deltaSpreadInit : deltaMain)
                 };
 
                 let attempts = 0;
@@ -6941,22 +6980,25 @@ export class ZKIndexView extends ItemView {
                     if (!hasCollision) {
                         break;
                     }
-                    desiredSubtreeCenterY += SUBTREE_GAP;
-                    candidateBounds = {
-                        ...candidateBounds,
-                        minY: candidateBounds.minY + SUBTREE_GAP,
-                        maxY: candidateBounds.maxY + SUBTREE_GAP
-                    };
+                    desiredCenter += SUBTREE_GAP;
+                    // 沿扩展轴移动候选边界
+                    if (isHorizontalDir) {
+                        candidateBounds.minY += SUBTREE_GAP;
+                        candidateBounds.maxY += SUBTREE_GAP;
+                    } else {
+                        candidateBounds.minX += SUBTREE_GAP;
+                        candidateBounds.maxX += SUBTREE_GAP;
+                    }
                     attempts += 1;
                 }
 
-                const deltaY = desiredSubtreeCenterY - entry.bounds.centerY;
+                const deltaSpread = desiredCenter - spreadCenter;
 
                 entry.subtreeNodes.forEach((subtreeNode: any) => {
                     const oldPos = subtreeNode.position();
                     const nextPos = {
-                        x: oldPos.x + deltaX,
-                        y: oldPos.y + deltaY
+                        x: oldPos.x + (isHorizontalDir ? deltaMain : deltaSpread),
+                        y: oldPos.y + (isHorizontalDir ? deltaSpread : deltaMain)
                     };
 
                     subtreeNode.position(nextPos);
@@ -6971,17 +7013,19 @@ export class ZKIndexView extends ItemView {
                     }
                 });
 
+                const finalDeltaX = isHorizontalDir ? deltaMain : deltaSpread;
+                const finalDeltaY = isHorizontalDir ? deltaSpread : deltaMain;
                 occupiedBoxes.push({
                     nodeId: entry.child.id(),
                     box: {
-                        minX: entry.bounds.minX + deltaX,
-                        maxX: entry.bounds.maxX + deltaX,
-                        minY: entry.bounds.minY + deltaY,
-                        maxY: entry.bounds.maxY + deltaY
+                        minX: entry.bounds.minX + finalDeltaX,
+                        maxX: entry.bounds.maxX + finalDeltaX,
+                        minY: entry.bounds.minY + finalDeltaY,
+                        maxY: entry.bounds.maxY + finalDeltaY
                     }
                 });
 
-                cursorY = desiredSubtreeCenterY + entry.bounds.height / 2 + SUBTREE_GAP;
+                cursor = desiredCenter + spreadSpan / 2 + SUBTREE_GAP;
             });
         });
 

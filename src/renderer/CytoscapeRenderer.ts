@@ -7325,6 +7325,29 @@ case 'dagre':
         return cardinal[minIdx];
     }
 
+    private getAutoLayoutDirection(node: any): { x: number; y: number } {
+        // 沿边向上找到根节点
+        let current = node;
+        while (true) {
+            const parents = current.incomers('edge').sources().filter((n: any) => !n.data('isGroup'));
+            if (parents.length === 0) break;
+            current = parents.first();
+        }
+        // 如果 node 就是根节点，使用默认方向
+        if (current.id() === node.id()) {
+            return { x: 1, y: 0 };
+        }
+        // 从根节点到当前节点的向量，snap 到四方向
+        const rootPos = current.position();
+        const nodePos = node.position();
+        const dx = nodePos.x - rootPos.x;
+        const dy = nodePos.y - rootPos.y;
+        if (Math.abs(dx) >= Math.abs(dy)) {
+            return { x: dx >= 0 ? 1 : -1, y: 0 };
+        }
+        return { x: 0, y: dy >= 0 ? 1 : -1 };
+    }
+
     private getPerpendicular(dir: { x: number; y: number }): { x: number; y: number } {
         return { x: -dir.y, y: dir.x };
     }
@@ -7434,7 +7457,7 @@ case 'dagre':
         const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
         const nodePos = activeNode.position();
         const children = activeNode.outgoers('edge').targets();
-        const dir = this.isAutoNodeLayoutStyle() ? { x: 1, y: 0 } : this.getBranchDirection(activeNode);
+        const dir = this.isAutoNodeLayoutStyle() ? this.getAutoLayoutDirection(activeNode) : this.getBranchDirection(activeNode);
         const normal = this.getPerpendicular(dir);
 
         const anchor = {
@@ -7477,7 +7500,7 @@ case 'dagre':
         const parentPos = parent.first().position();
         const siblings = parent.first().outgoers('edge').targets();
         const dir = this.isAutoNodeLayoutStyle()
-            ? { x: 1, y: 0 }
+            ? this.getAutoLayoutDirection(activeNode)
             : this.normalizeVector(nodePos.x - parentPos.x, nodePos.y - parentPos.y);
         const normal = this.getPerpendicular(dir);
         const siblingGap = Math.max(this.SIBLING_GAP, this.VERTICAL_GAP + 40);
