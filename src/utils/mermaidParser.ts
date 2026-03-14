@@ -117,10 +117,12 @@ export class MermaidParser {
 
         if (textOnlyNodeMatch) {
             const id = textOnlyNodeMatch[1];
-            const text = textOnlyNodeMatch[2];
+            const rawText = textOnlyNodeMatch[2];
 
             // 额外检查：确保不包含 [[（防止误匹配文件节点）
-            if (!text.includes('[[')) {
+            if (!rawText.includes('[[')) {
+                // 解码换行符：存储时 \\n 表示实际换行
+                const text = rawText.replace(/\\n/g, '\n');
                 return {
                     id,
                     wikiLink: text,
@@ -279,16 +281,18 @@ export class MermaidParser {
         crossDomainLinks: Record<string, any[]>;  // 跨领域关联
         embedNodeSizes: Record<string, { width: number; height: number }>;
         nodeRemarks: Record<string, string>;
+        nodeLayoutStyle?: 'free' | 'auto';
     } {
         const defaultMetadata = {
-            nodePositions: {},
-            groups: [],
-            edgeCurvatures: {},
-            nodeColors: {},
-            nodeStyleColors: {},
-            crossDomainLinks: {},
-            embedNodeSizes: {},
-            nodeRemarks: {}
+            nodePositions: {} as Record<string, { x: number; y: number }>,
+            groups: [] as GroupInfo[],
+            edgeCurvatures: {} as Record<string, { distance: number; weight: number }>,
+            nodeColors: {} as Record<string, string>,
+            nodeStyleColors: {} as Record<string, string>,
+            crossDomainLinks: {} as Record<string, any[]>,
+            embedNodeSizes: {} as Record<string, { width: number; height: number }>,
+            nodeRemarks: {} as Record<string, string>,
+            nodeLayoutStyle: undefined as ('free' | 'auto' | undefined)
         };
         
         // 匹配元数据注释：%% ext:{JSON} %%
@@ -313,7 +317,8 @@ export class MermaidParser {
                 nodeStyleColors: metadata.node_style_colors || {},
                 crossDomainLinks: metadata.cross_domain_links || {},
                 embedNodeSizes: metadata.embed_node_sizes || {},
-                nodeRemarks: metadata.nodeRemarks || {}
+                nodeRemarks: metadata.nodeRemarks || {},
+                nodeLayoutStyle: metadata.node_layout_style || undefined
             };
         } catch (e) {
             this.warnings.push({
@@ -518,6 +523,7 @@ export class MermaidParser {
             crossDomainLinks: metadata.crossDomainLinks,
             embedNodeSizes: metadata.embedNodeSizes,
             nodeRemarks: metadata.nodeRemarks,
+            nodeLayoutStyle: metadata.nodeLayoutStyle,
             metadata: {
                 totalNodes: nodesMap.size,
                 maxDepth: this.calculateMaxDepth(mocNodes),
