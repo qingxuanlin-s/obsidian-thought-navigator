@@ -222,4 +222,6 @@ export default {
     "batch delete": "Delete",
     "batch change color": "Color",
     "batch cancel": "Deselect",
+    // Search
+    "search placeholder": "Search nodes...",
 }

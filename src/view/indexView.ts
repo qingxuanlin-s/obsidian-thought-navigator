@@ -1928,10 +1928,6 @@ export class ZKIndexView extends ItemView {
             }
             const { nodeId, wikiLink, file, isEmbed } = event.detail;
 
-            // 查找对应的节点
-            const node = this.mocNodes.find(n => n.ID === nodeId);
-            if (!node) return;
-
             // 获取占位符信息
             const placeholderInfo = this.placeholderNodes.get(nodeId);
             if (!placeholderInfo) return;

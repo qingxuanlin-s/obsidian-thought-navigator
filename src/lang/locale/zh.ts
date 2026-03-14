@@ -220,4 +220,6 @@ export default {
     "batch delete": "删除",
     "batch change color": "颜色",
     "batch cancel": "取消",
+    // 搜索
+    "search placeholder": "搜索节点...",
 }
