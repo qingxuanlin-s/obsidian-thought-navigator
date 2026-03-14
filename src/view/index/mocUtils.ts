@@ -21,6 +21,7 @@ export interface MOCExtData {
     nodeRemarks?: Record<string, string>;
     groups?: Array<{ id: string; label: string; nodeIds: string[]; color?: string }>;
     edge_curvatures?: Record<string, { distance: number; weight: number }>;
+    node_layout_style?: 'free' | 'auto';
 }
 
 /**
@@ -91,6 +92,7 @@ export class MOCFileUtils {
                     extData.nodeRemarks = parsed.nodeRemarks || {};
                     extData.groups = parsed.groups || [];
                     extData.edge_curvatures = parsed.edge_curvatures || {};
+                    extData.node_layout_style = parsed.node_layout_style || undefined;
                     extLineIndex = i;
                     break;
                 } catch (e) {
@@ -138,6 +140,9 @@ export class MOCFileUtils {
         }
         if (Object.keys(extData.edge_curvatures || {}).length > 0) {
             cleanData.edge_curvatures = extData.edge_curvatures;
+        }
+        if (extData.node_layout_style) {
+            cleanData.node_layout_style = extData.node_layout_style;
         }
 
         const extLine = Object.keys(cleanData).length > 0

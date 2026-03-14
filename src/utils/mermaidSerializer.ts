@@ -14,9 +14,10 @@ export class MermaidSerializer {
         // 转义特殊字符
         const escapedWikiLink = node.wikiLink.replace(/"/g, '\\"');
 
-        // 纯文字节点：显示为纯文本（无 [[]]）
+        // 纯文字节点：显示为纯文本（无 [[]]），换行符编码为 \\n 保持单行存储
         if (node.isTextOnly) {
-            return `${node.nodeID}["${escapedWikiLink}"]`;
+            const singleLineText = escapedWikiLink.replace(/\r\n/g, '\n').replace(/\n/g, '\\n');
+            return `${node.nodeID}["${singleLineText}"]`;
         }
 
         // 文件节点：显示为 wiki link
@@ -93,6 +94,11 @@ export class MermaidSerializer {
             embed_node_sizes: (data as any).embedNodeSizes || {},
             nodeRemarks: (data as any).nodeRemarks || {}
         };
+
+        // 持久化节点布局风格（新建时锁定，后续不受全局设置影响）
+        if (data.nodeLayoutStyle) {
+            metadata.node_layout_style = data.nodeLayoutStyle;
+        }
 
         const jsonStr = JSON.stringify(metadata);
         return `%% ext:${jsonStr} %%`;

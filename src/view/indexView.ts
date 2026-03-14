@@ -122,6 +122,7 @@ export class ZKIndexView extends ItemView {
     mocTreeStructure: MOCTreeNode[] = [];       // MOC 原始树结构
     mocReverseRelations: Map<string, ReverseRelation> = new Map(); // MOC 反向关系
     private nodeRemarks: Record<string, string> = {};
+    private currentNodeLayoutStyle: 'free' | 'auto' = 'free'; // 当前 MOC 文件的节点布局风格（从 ext 读取，新建时锁定）
 
     // 防抖相关属性
     resizeTimeout: NodeJS.Timeout | null = null;
@@ -1167,6 +1168,9 @@ export class ZKIndexView extends ItemView {
 
         const mocParseResult = await parseMOCStructure(this.app, currentMOCPath, headingTitle);
 
+        // 读取 MOC 文件中持久化的节点布局风格；若未记录则默认为自由节点
+        this.currentNodeLayoutStyle = mocParseResult.nodeLayoutStyle || 'free';
+
         // 转换为 ZKNode（即使为空也继续）
         this.mocNodes = mocParseResult.nodes.length > 0
             ? await convertMOCToZKNodes(this.plugin, mocParseResult.nodes, mocParseResult.reverseRelations, [], mocParseResult.nodePositions)
@@ -1236,7 +1240,7 @@ export class ZKIndexView extends ItemView {
             themeMode: this.plugin.settings.themeMode,
             themeStyle: this.plugin.settings.themeStyle || 'default',
             edgeStyle: this.plugin.settings.edgeStyle || 'bezier',
-            nodeLayoutStyle: this.plugin.settings.nodeLayoutStyle || 'free',
+            nodeLayoutStyle: this.currentNodeLayoutStyle || 'free',
             showNoteId: this.plugin.settings.showNoteIdInBranchView,
             smartConnection: this.plugin.settings.smartConnection === true,
             readOnly: this.isMobileReadOnly()
@@ -6577,7 +6581,7 @@ export class ZKIndexView extends ItemView {
     }
 
     private isAutoNodeLayoutStyle(): boolean {
-        return (this.plugin.settings.nodeLayoutStyle || 'free') === 'auto';
+        return (this.currentNodeLayoutStyle || 'free') === 'auto';
     }
 
     private normalizeLayoutVector(x: number, y: number): { x: number; y: number } {
