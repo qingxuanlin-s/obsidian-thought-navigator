@@ -590,11 +590,7 @@ align-items: center;
     font-size: 11px;
 }
 
-/* 平滑过渡效果 */
-.zk-index-mermaid-container,
-.zk-graph-mermaid-container {
-    transition: opacity 0.2s ease-in-out;
-}
+/* 容器无过渡（避免刷新闪烁） */
 
 /* 局部关系视图背景与分支视图保持一致 */
 .zk-graph-mermaid-container {

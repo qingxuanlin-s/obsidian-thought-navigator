@@ -414,25 +414,14 @@ export class ZKIndexView extends ItemView {
     private async smoothUpdateView(container: HTMLElement, updateFn: () => Promise<void>): Promise<void> {
         // 显示加载指示器
         const indicator = this.showLoadingIndicator(container);
-        
-        // 添加淡出效果
-        container.style.opacity = '0.7';
-        container.style.transition = 'opacity 0.2s ease-in-out';
-        
+
         try {
-            // 执行更新
+            // 执行更新（不做 opacity 动画，避免闪烁）
             await updateFn();
-            
-            // 淡入效果
-            container.style.opacity = '1';
         } catch (error) {
             console.error("Index View: Error during smooth update", error);
-            container.style.opacity = '1';
         } finally {
-            // 移除加载指示器
-            setTimeout(() => {
-                indicator.remove();
-            }, 200);
+            indicator.remove();
         }
     }
 
