@@ -2074,25 +2074,47 @@ case 'dagre':
                 const zoom = this.cy.zoom();
                 const box = node.renderedBoundingBox();
                 const isRoot = !!node.data('isRoot');
-                const metrics = this.measureNodeLabel(label, isRoot ? {
-                    baseWidth: 80,
-                    minHeight: 34,
-                    maxWidth: 220,
-                    charWidth: 8,
-                    lineHeight: 12,
-                    paddingX: 32,
-                    paddingY: 16
-                } : undefined);
                 const fontPx = isRoot ? 26 : 14;
                 const fontWeight = isRoot ? '700' : '500';
-                const estimatedLines = this.estimateWrappedLines(label, isRoot ? {
-                    maxWidth: 220,
-                    charWidth: 8
-                } : undefined);
+                const textMaxWidth = isRoot ? 400 : 200; // 匹配 Cytoscape text-max-width
+
+                // 使用 canvas measureText 精确计算换行，匹配 Cytoscape 的 text-overflow-wrap: anywhere
+                let wrappedLines: string[];
+                if (underlineMeasureCtx) {
+                    underlineMeasureCtx.font = `${fontWeight} ${fontPx}px sans-serif`;
+                    wrappedLines = [];
+                    const explicitLines = label.split('\n');
+                    for (const explicitLine of explicitLines) {
+                        if (!explicitLine) {
+                            wrappedLines.push(' ');
+                            continue;
+                        }
+                        let currentLine = '';
+                        for (const char of explicitLine) {
+                            const testLine = currentLine + char;
+                            if (underlineMeasureCtx.measureText(testLine).width > textMaxWidth && currentLine.length > 0) {
+                                wrappedLines.push(currentLine);
+                                currentLine = char;
+                            } else {
+                                currentLine = testLine;
+                            }
+                        }
+                        if (currentLine) {
+                            wrappedLines.push(currentLine);
+                        }
+                    }
+                    if (wrappedLines.length === 0) wrappedLines = [' '];
+                } else {
+                    wrappedLines = this.estimateWrappedLines(label, isRoot ? {
+                        maxWidth: 220,
+                        charWidth: 8
+                    } : undefined);
+                }
+
                 const lineHeight = (isRoot ? 24 : 14) * zoom;
                 const centerX = box.x1 + box.w / 2;
                 const centerY = box.y1 + box.h / 2;
-                const textBlockHeight = estimatedLines.length * lineHeight;
+                const textBlockHeight = wrappedLines.length * lineHeight;
                 const firstLineCenterY = centerY - textBlockHeight / 2 + lineHeight / 2;
 
                 underlineGroupEl.style.display = 'block';
@@ -2100,14 +2122,15 @@ case 'dagre':
                 underlineGroupEl.style.top = '0px';
                 underlineGroupEl.replaceChildren();
 
+                // 设置缩放后的字体用于测量每行下划线宽度
                 if (underlineMeasureCtx) {
                     underlineMeasureCtx.font = `${fontWeight} ${fontPx * zoom}px sans-serif`;
                 }
 
-                estimatedLines.forEach((line, index) => {
+                wrappedLines.forEach((line, index) => {
                     const lineWidth = underlineMeasureCtx
                         ? underlineMeasureCtx.measureText(line || ' ').width
-                        : Math.max(24 * zoom, (metrics.width - 32) * zoom);
+                        : Math.max(24 * zoom, wrappedLines.length > 1 ? (textMaxWidth * zoom) : (label.length * 8 * zoom));
                     const underlineWidth = Math.min(box.w - 24 * zoom, Math.max(24 * zoom, lineWidth));
                     const lineCenterY = firstLineCenterY + index * lineHeight;
                     const hitHeight = Math.max(16 * zoom, lineHeight);
@@ -2136,7 +2159,7 @@ case 'dagre':
                     underlineGroupEl.appendChild(hitEl);
 
                     const underlineEl = document.createElement('div');
-                    const underlineY = lineCenterY + (fontPx * 0.36 * zoom);
+                    const underlineY = lineCenterY + (fontPx * 0.58 * zoom);
 
                     underlineEl.className = 'zk-node-file-underline';
                     underlineEl.style.cssText = `
