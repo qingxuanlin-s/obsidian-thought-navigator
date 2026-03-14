@@ -429,7 +429,6 @@ export default class ZKNavigationPlugin extends Plugin {
             }
         })
 
-
         this.registerHoverLinkSource(
         ZK_NAVIGATION,
         {

@@ -6302,8 +6302,8 @@ case 'dagre':
 
         // 监听键盘按下事件
         const handleKeyDown = (event: KeyboardEvent) => {
-            // Cmd/Ctrl+F：搜索节点
-            if (event.key === 'f' && (event.metaKey || event.ctrlKey) && !event.repeat) {
+            // Cmd+F：搜索节点
+            if (event.key === 'f' && event.metaKey && !event.ctrlKey && !event.repeat) {
                 event.preventDefault();
                 event.stopPropagation();
                 this.showSearchBar();
@@ -6522,6 +6522,9 @@ case 'dagre':
         // 添加事件监听器
         this.container.addEventListener('keydown', handleKeyDown);
         this.container.addEventListener('keyup', handleKeyUp);
+        this.container.addEventListener('zk-open-search-bar', () => {
+            this.showSearchBar();
+        });
 
         // 确保容器可以接收键盘事件
         if (!this.container.hasAttribute('tabindex')) {

@@ -1,5 +1,5 @@
 import ZKNavigationPlugin, { Retrival } from "main";
-import { ButtonComponent, DropdownComponent, ExtraButtonComponent, FuzzySuggestModal, HeadingCache, ItemView, Menu, Modal, Notice, Platform, Setting, TFile, WorkspaceLeaf, debounce, moment, setTooltip } from "obsidian";
+import { ButtonComponent, DropdownComponent, ExtraButtonComponent, FuzzySuggestModal, HeadingCache, ItemView, Menu, Modal, Notice, Platform, Scope, Setting, TFile, WorkspaceLeaf, debounce, moment, setTooltip } from "obsidian";
 import { t } from "src/lang/helper";
 import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
 import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
@@ -134,7 +134,7 @@ export class ZKIndexView extends ItemView {
 
     // 事件监听器跟踪（用于清理，防止内存泄漏）
     private registeredEventListeners: Array<{
-        element: HTMLElement | Window;
+        element: HTMLElement | Window | Document;
         event: string;
         handler: EventListenerOrEventListenerObject;
         options?: AddEventListenerOptions;
@@ -177,10 +177,25 @@ export class ZKIndexView extends ItemView {
     private isApplyingUndo = false;
     private undoShortcutBound = false;
     private pasteListenerBound = false;
-
     constructor(leaf: WorkspaceLeaf, plugin: ZKNavigationPlugin) {
         super(leaf);
         this.plugin = plugin;
+        this.scope = new Scope(this.app.scope);
+        this.scope.register(['Mod'], 'f', (event: KeyboardEvent) => {
+            const activeEl = document.activeElement as HTMLElement | null;
+            if (activeEl && (
+                activeEl.tagName === 'INPUT' ||
+                activeEl.tagName === 'TEXTAREA' ||
+                activeEl.isContentEditable
+            )) {
+                return false;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            this.openBranchSearchBar();
+            return false;
+        });
         this.mocHandler = new MOCHandler(plugin, (this.app as any), {
             onBeforeModify: ({ filePath, content }) => {
                 if (this.isApplyingUndo) return;
@@ -203,7 +218,7 @@ export class ZKIndexView extends ItemView {
     /**
      * 添加可跟踪的事件监听器（用于后续清理，防止内存泄漏）
      */
-    private addTrackedListener<T extends HTMLElement | Window>(
+    private addTrackedListener<T extends HTMLElement | Window | Document>(
         element: T,
         event: string,
         handler: EventListenerOrEventListenerObject,
@@ -695,6 +710,12 @@ export class ZKIndexView extends ItemView {
 
             });
         }
+    }
+
+    public openBranchSearchBar(): void {
+        const branchGraphDiv = this.currentBranchGraphDiv || document.getElementById('zk-branch-cytoscape');
+        if (!branchGraphDiv) return;
+        branchGraphDiv.dispatchEvent(new CustomEvent('zk-open-search-bar'));
     }
 
     refreshIndexLayout = async () => {
