@@ -89,6 +89,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private batchSelectedNodes: any[] = []; // 保存批量选中的完整节点数据（包含 isCrossDomain 等信息）
     private isMetaPressed = false; // 标记 Command 键是否被按下（框选模式）
     private embedPreviewCleanup: (() => void) | null = null;
+    private imagePreviewCleanup: (() => void) | null = null;
     private collapseHandleCleanup: (() => void) | null = null;
     private collapsedNodeIds: Set<string> = new Set();
 
@@ -305,6 +306,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         // 这确保已删除节点的徽章也被移除
         this.addNodeBadges();
         this.addEmbedNodePreviews();
+        this.addImageNodePreviews();
 
         // 检查是否有保存的位置
         const hasSavedPositions = data.nodes.some(node => node.savedPosition);
@@ -1506,6 +1508,22 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'color': '#ffffff'
             } as any
         },
+        // 嵌入节点选中态：保持隐藏（由 HTML 预览卡片处理选中视觉）
+        {
+            selector: 'node[?isEmbed]:selected',
+            style: {
+                'background-opacity': 0,
+                'border-width': 0,
+                'overlay-opacity': 0
+            } as any
+        },
+        // 嵌入节点激活态：保持隐藏
+        {
+            selector: 'node[?isEmbed]:active',
+            style: {
+                'overlay-opacity': 0
+            } as any
+        },
         // 当前文件节点
         {
             selector: 'node[?isCurrentFile]',
@@ -1550,7 +1568,14 @@ export class CytoscapeRenderer implements IGraphRenderer {
             this.embedPreviewCleanup = null;
         }
 
-        const embedNodes = this.cy.nodes('[?isEmbed]');
+        const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
+        // 排除图片文件的嵌入节点（图片由 addImageNodePreviews 处理）
+        const embedNodes = this.cy.nodes('[?isEmbed]').filter((node: any) => {
+            const filePath = node.data('filePath');
+            if (!filePath) return true; // 无路径的保留
+            const ext = filePath.split('.').pop()?.toLowerCase() || '';
+            return !IMAGE_EXTENSIONS.has(ext);
+        });
         if (embedNodes.length === 0) return;
 
         const app = (window as any).app;
@@ -1936,6 +1961,377 @@ export class CytoscapeRenderer implements IGraphRenderer {
             previewContainer.remove();
         };
     }
+    /**
+     * 为图片文件节点添加图片预览
+     * 检测 [[]] 中引用的文件是否为图片格式，如果是则渲染图片
+     */
+    private addImageNodePreviews(): void {
+        if (!this.cy || !this.container) return;
+
+        if (this.imagePreviewCleanup) {
+            this.imagePreviewCleanup();
+            this.imagePreviewCleanup = null;
+        }
+
+        const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
+        const app = (window as any).app;
+        if (!app) return;
+
+        // 查找所有 ![[]] 嵌入节点且文件路径为图片格式的节点
+        // [[image.png]] 普通文件节点不渲染图片，保持为普通可点击节点
+        const imageNodes = this.cy.nodes('[?isEmbed]').filter((node: any) => {
+            const filePath = node.data('filePath');
+            if (!filePath) return false;
+            const ext = filePath.split('.').pop()?.toLowerCase() || '';
+            return IMAGE_EXTENSIONS.has(ext);
+        });
+
+        if (imageNodes.length === 0) return;
+
+        const previewContainer = document.createElement('div');
+        previewContainer.className = 'zk-image-previews';
+        previewContainer.style.cssText = `
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 2;
+        `;
+        this.container.appendChild(previewContainer);
+
+        const updaters: Array<() => void> = [];
+        const interactionUpdaters: Array<() => void> = [];
+        // 以模型坐标存储卡片尺寸，缩放时按 zoom 换算为像素
+        const cardSizeMap = new Map<string, { widthModel: number; heightModel: number }>();
+        const embedNodeSizes = ((this.currentData?.metadata as any)?.embedNodeSizes || {}) as Record<string, { width: number; height: number }>;
+        let suppressedCanvasInteractionCount = 0;
+        const setCanvasInteractionSuppressed = (suppressed: boolean) => {
+            if (!this.cy) return;
+            if (suppressed) {
+                suppressedCanvasInteractionCount += 1;
+                if (suppressedCanvasInteractionCount === 1) {
+                    this.cy.userZoomingEnabled(false);
+                    this.cy.userPanningEnabled(false);
+                }
+                return;
+            }
+            suppressedCanvasInteractionCount = Math.max(0, suppressedCanvasInteractionCount - 1);
+            if (suppressedCanvasInteractionCount === 0) {
+                this.cy.userZoomingEnabled(true);
+                this.cy.userPanningEnabled(true);
+            }
+        };
+
+        imageNodes.forEach((node: any) => {
+            const data = node.data();
+            const originalNode = data.originalNode as any;
+            const filePath = data.filePath;
+            const file = app.vault.getAbstractFileByPath(filePath);
+            if (!file) return;
+
+            const resourcePath = app.vault.getResourcePath(file);
+            const nodeId = node.id();
+
+            // 恢复持久化的尺寸
+            const nodeIdKey = originalNode?.ID || originalNode?.IDStr || nodeId;
+            const persistedSize = embedNodeSizes[nodeIdKey] || embedNodeSizes[originalNode?.IDStr];
+            if (persistedSize && persistedSize.width > 0 && persistedSize.height > 0) {
+                cardSizeMap.set(nodeId, {
+                    widthModel: persistedSize.width,
+                    heightModel: persistedSize.height
+                });
+            }
+
+            const isVivid = this.isVividThemeStyle();
+            const branchBorderColor = typeof data.branchNodeBorder === 'string' ? data.branchNodeBorder : '';
+            const vividHeaderBackground = isVivid && branchBorderColor
+                ? this.hexToRgba(branchBorderColor, this.currentOptions?.themeMode === 'light' ? 0.18 : 0.28)
+                : 'rgba(11, 16, 25, 0.72)';
+            const vividHeaderDivider = isVivid && branchBorderColor
+                ? this.hexToRgba(branchBorderColor, this.currentOptions?.themeMode === 'light' ? 0.55 : 0.7)
+                : 'rgba(90, 111, 127, 0.45)';
+
+            // 完全隐藏 Cytoscape 节点（缩至 1px，去除所有视觉效果）
+            node.style({
+                'label': '',
+                'background-opacity': 0,
+                'border-width': 0,
+                'width': 1,
+                'height': 1,
+                'overlay-opacity': 0,
+                'padding': 0
+            });
+
+            // 创建卡片容器
+            const card = document.createElement('div');
+            card.className = 'zk-image-preview-card';
+            card.style.cssText = `
+                position: absolute;
+                background: linear-gradient(180deg, rgba(20, 26, 38, 0.98) 0%, rgba(16, 22, 34, 0.98) 100%);
+                border: 1px solid rgba(90, 111, 127, 0.6);
+                border-radius: 12px;
+                box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+                overflow: hidden;
+                pointer-events: auto;
+            `;
+
+            // 标题栏：显示文件名
+            const headerEl = document.createElement('div');
+            headerEl.style.cssText = `
+                height: 36px;
+                padding: 0 12px;
+                display: flex;
+                align-items: center;
+                border-bottom: 1px solid ${vividHeaderDivider};
+                background: ${vividHeaderBackground};
+                color: var(--text-muted);
+                font-size: 12px;
+                font-weight: 600;
+                letter-spacing: 0.2px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                cursor: move;
+                user-select: none;
+            `;
+            headerEl.textContent = file.basename || file.name;
+
+            // 图片内容区
+            const contentEl = document.createElement('div');
+            contentEl.style.cssText = `
+                height: calc(100% - 36px);
+                overflow: hidden;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: var(--background-secondary);
+            `;
+
+            const img = document.createElement('img');
+            img.src = resourcePath;
+            img.style.cssText = `
+                max-width: 100%;
+                max-height: 100%;
+                object-fit: contain;
+                display: block;
+            `;
+            contentEl.appendChild(img);
+
+            // 右下角 resize 手柄（仅选中时可见）
+            const resizeHandle = document.createElement('div');
+            resizeHandle.style.cssText = `
+                position: absolute;
+                right: 0;
+                bottom: 0;
+                width: 18px;
+                height: 18px;
+                background: rgba(91, 143, 217, 0.9);
+                border-top-left-radius: 6px;
+                cursor: nwse-resize;
+                pointer-events: none;
+                opacity: 0;
+                color: rgba(255, 255, 255, 0.95);
+                font-size: 11px;
+                font-weight: 700;
+                display: flex;
+                align-items: flex-end;
+                justify-content: flex-end;
+                line-height: 1;
+                padding-right: 2px;
+                transition: opacity 0.15s ease;
+            `;
+            resizeHandle.textContent = '◢';
+
+            card.appendChild(headerEl);
+            card.appendChild(contentEl);
+            card.appendChild(resizeHandle);
+            previewContainer.appendChild(card);
+
+            // 仅选中时允许交互
+            const updateInteraction = () => {
+                const isSelected = node.selected();
+                resizeHandle.style.pointerEvents = isSelected ? 'auto' : 'none';
+                resizeHandle.style.opacity = isSelected ? '1' : '0';
+            };
+            interactionUpdaters.push(updateInteraction);
+            updateInteraction();
+
+            // 标题栏拖拽移动节点
+            let draggingFromHeader = false;
+            let dragStartMouseX = 0;
+            let dragStartMouseY = 0;
+            let dragStartRenderedX = 0;
+            let dragStartRenderedY = 0;
+
+            const onHeaderMouseMove = (e: MouseEvent) => {
+                if (!draggingFromHeader || !this.cy) return;
+                const dx = e.clientX - dragStartMouseX;
+                const dy = e.clientY - dragStartMouseY;
+                node.renderedPosition({
+                    x: dragStartRenderedX + dx,
+                    y: dragStartRenderedY + dy
+                });
+            };
+
+            const onHeaderMouseUp = () => {
+                if (!draggingFromHeader) return;
+                draggingFromHeader = false;
+                setCanvasInteractionSuppressed(false);
+                document.removeEventListener('mousemove', onHeaderMouseMove);
+                document.removeEventListener('mouseup', onHeaderMouseUp);
+                // header 拖拽不触发 Cytoscape dragfree，手动派发位置保存事件
+                const pos = node.position();
+                this.container?.dispatchEvent(new CustomEvent('node-position-changed', {
+                    detail: {
+                        node: data.originalNode,
+                        nodeId: node.id(),
+                        position: { x: pos.x, y: pos.y }
+                    }
+                }));
+            };
+
+            headerEl.addEventListener('mousedown', (e: MouseEvent) => {
+                if (!this.cy) return;
+                if (e.button !== 0) return;
+                if (e.detail >= 2) return;
+                e.preventDefault();
+                e.stopPropagation();
+                draggingFromHeader = true;
+                setCanvasInteractionSuppressed(true);
+                dragStartMouseX = e.clientX;
+                dragStartMouseY = e.clientY;
+                const renderedPos = node.renderedPosition();
+                dragStartRenderedX = renderedPos.x;
+                dragStartRenderedY = renderedPos.y;
+                document.addEventListener('mousemove', onHeaderMouseMove);
+                document.addEventListener('mouseup', onHeaderMouseUp);
+            });
+
+            // 点击卡片选中节点
+            card.addEventListener('mousedown', (e: MouseEvent) => {
+                if (!this.cy) return;
+                const toggleSelection = e.metaKey || e.ctrlKey;
+                if (toggleSelection) {
+                    if (node.selected()) {
+                        node.unselect();
+                    } else {
+                        node.select();
+                    }
+                } else if (!node.selected()) {
+                    this.cy.$(':selected').unselect();
+                    node.select();
+                }
+                e.stopPropagation();
+            });
+
+            // 右下角拖拽调整尺寸
+            let resizing = false;
+            let startX = 0;
+            let startY = 0;
+            let startW = 0;
+            let startH = 0;
+
+            const onMouseMove = (e: MouseEvent) => {
+                if (!resizing) return;
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                const newWidth = Math.max(120, startW + dx);
+                const newHeight = Math.max(100, startH + dy);
+                const zoom = this.cy?.zoom() ?? 1;
+                cardSizeMap.set(nodeId, {
+                    widthModel: newWidth / zoom,
+                    heightModel: newHeight / zoom
+                });
+                card.style.width = `${newWidth}px`;
+                card.style.height = `${newHeight}px`;
+            };
+
+            const onMouseUp = () => {
+                if (!resizing) return;
+                resizing = false;
+                setCanvasInteractionSuppressed(false);
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+                const modelSize = cardSizeMap.get(nodeId);
+                if (modelSize) {
+                    this.container?.dispatchEvent(new CustomEvent('embed-node-size-changed', {
+                        detail: {
+                            node: data.originalNode,
+                            size: modelSize
+                        }
+                    }));
+                }
+            };
+
+            resizeHandle.addEventListener('mousedown', (e: MouseEvent) => {
+                if (!node.selected()) return;
+                e.preventDefault();
+                e.stopPropagation();
+                resizing = true;
+                setCanvasInteractionSuppressed(true);
+                startX = e.clientX;
+                startY = e.clientY;
+                const size = cardSizeMap.get(nodeId);
+                if (size) {
+                    const zoom = this.cy?.zoom() ?? 1;
+                    startW = size.widthModel * zoom;
+                    startH = size.heightModel * zoom;
+                } else {
+                    startW = 360;
+                    startH = 270;
+                }
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            });
+
+            const updatePosition = () => {
+                if (!this.cy) return;
+                const zoom = this.cy.zoom();
+                const rp = node.renderedPosition();
+                const size = cardSizeMap.get(nodeId);
+                const width = size ? size.widthModel * zoom : 360 * zoom;
+                const height = size ? size.heightModel * zoom : 270 * zoom;
+
+                card.style.left = `${rp.x - width / 2}px`;
+                card.style.top = `${rp.y - height / 2}px`;
+                card.style.width = `${width}px`;
+                card.style.height = `${height}px`;
+                card.style.borderRadius = `${Math.max(8, 12 * zoom)}px`;
+            };
+
+            updaters.push(updatePosition);
+            updatePosition();
+        });
+
+        let scheduled = false;
+        const scheduleUpdate = () => {
+            if (scheduled) return;
+            scheduled = true;
+            requestAnimationFrame(() => {
+                updaters.forEach(fn => fn());
+                scheduled = false;
+            });
+        };
+
+        const handleSelectionChange = () => interactionUpdaters.forEach(fn => fn());
+        this.cy.on('zoom pan viewport drag position', scheduleUpdate);
+        this.cy.on('dragfree', scheduleUpdate);
+        this.cy.on('select unselect', handleSelectionChange);
+
+        this.imagePreviewCleanup = () => {
+            if (this.cy) {
+                this.cy.off('zoom pan viewport drag position', scheduleUpdate);
+                this.cy.off('dragfree', scheduleUpdate);
+                this.cy.off('select unselect', handleSelectionChange);
+                this.cy.userZoomingEnabled(true);
+                this.cy.userPanningEnabled(true);
+            }
+            previewContainer.remove();
+        };
+    }
+
         /**
      * 获取布局配置
      */
@@ -2042,7 +2438,14 @@ case 'dagre':
         const underlineMeasure = document.createElement('canvas');
         const underlineMeasureCtx = underlineMeasure.getContext('2d');
 
+        const IMAGE_EXTS_BADGE = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
         this.cy.nodes('[?hasFileIcon]').forEach((node: any) => {
+            // 跳过 ![[]] 图片嵌入节点（由 addImageNodePreviews 渲染）
+            if (node.data('isEmbed')) {
+                const fp = node.data('filePath') || '';
+                const ext = fp.split('.').pop()?.toLowerCase() || '';
+                if (IMAGE_EXTS_BADGE.has(ext)) return;
+            }
             const underlineGroupEl = document.createElement('div');
             underlineGroupEl.className = 'zk-node-file-underline-group';
             underlineGroupEl.style.cssText = `

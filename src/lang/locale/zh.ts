@@ -212,5 +212,7 @@ export default {
     "Straight line": "直线",
     "Bezier curve": "贝塞尔曲线",
     "Polyline": "折线",
+    "Paste image success": "图片已粘贴",
+    "Paste image failed": "图片粘贴失败",
 
 }

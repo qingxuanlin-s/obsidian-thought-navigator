@@ -176,6 +176,7 @@ export class ZKIndexView extends ItemView {
     private readonly MAX_UNDO_STEPS = 7;
     private isApplyingUndo = false;
     private undoShortcutBound = false;
+    private pasteListenerBound = false;
 
     constructor(leaf: WorkspaceLeaf, plugin: ZKNavigationPlugin) {
         super(leaf);
@@ -665,6 +666,23 @@ export class ZKIndexView extends ItemView {
                 await this.undoLastMOCChange();
             });
             this.undoShortcutBound = true;
+        }
+
+        if (!this.pasteListenerBound) {
+            this.addTrackedListener(window, 'paste', async (event: Event) => {
+                // 只在当前激活的是分支视图时生效
+                const activeView = this.app.workspace.getActiveViewOfType(ZKIndexView);
+                if (activeView !== this) return;
+
+                // 如果焦点在文本输入框内（如 textarea、input），不拦截粘贴
+                const activeEl = document.activeElement;
+                if (activeEl && (activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'INPUT' || (activeEl as HTMLElement).isContentEditable)) {
+                    return;
+                }
+
+                await this.handleImagePaste(event as ClipboardEvent);
+            });
+            this.pasteListenerBound = true;
         }
 
         if (this.app.workspace.layoutReady) {
@@ -1734,6 +1752,9 @@ export class ZKIndexView extends ItemView {
                         await this.mocHandler.deleteNodeFromMOC(mocFile, node.IDStr);
                     }
 
+                    // 如果是嵌入图片节点，删除对应的图片文件
+                    await this.deleteImageFileIfNeeded(node);
+
                     // 等待一小段时间确保文件保存完成
                     await new Promise(resolve => setTimeout(resolve, 20));
 
@@ -2313,6 +2334,14 @@ export class ZKIndexView extends ItemView {
                         nodeData: nodes[index]
                     }));
                     await this.mocHandler.deleteNodesFromMOC(mocFile, batchNodes);
+
+                    // 删除嵌入图片节点对应的图片文件
+                    for (const n of nodes) {
+                        if (n.originalNode) {
+                            await this.deleteImageFileIfNeeded(n.originalNode);
+                        }
+                    }
+
                     await this.refreshBranchMermaid();
                     new Notice(`已删除 ${nodeIds.length} 个节点`);
                 }
@@ -6609,6 +6638,122 @@ export class ZKIndexView extends ItemView {
         }
     }
 
+    /**
+     * 如果节点是 ![[image]] 嵌入图片节点，删除 attachments 中对应的图片文件
+     */
+    private async deleteImageFileIfNeeded(node: ZKNode): Promise<void> {
+        if (!node.isEmbed || !node.file) return;
+
+        const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
+        const ext = node.file.path.split('.').pop()?.toLowerCase() || '';
+        if (!IMAGE_EXTENSIONS.has(ext)) return;
+
+        try {
+            const file = this.app.vault.getAbstractFileByPath(node.file.path);
+            if (file) {
+                await this.app.vault.delete(file);
+            }
+        } catch (error) {
+            console.error('Failed to delete image file:', error);
+        }
+    }
+
+    /**
+     * 处理剪贴板粘贴图片事件
+     * 将图片保存到 attachments 子目录，并创建文件节点
+     */
+    private async handleImagePaste(event: ClipboardEvent): Promise<void> {
+        if (this.isMobileReadOnly()) return;
+
+        const items = event.clipboardData?.items;
+        if (!items) return;
+
+        // 查找剪贴板中的图片
+        let imageItem: DataTransferItem | null = null;
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.startsWith('image/')) {
+                imageItem = items[i];
+                break;
+            }
+        }
+        if (!imageItem) return;
+
+        // 阻止默认粘贴行为
+        event.preventDefault();
+
+        const blob = imageItem.getAsFile();
+        if (!blob) return;
+
+        // 根据 MIME 类型确定扩展名
+        const mimeToExt: Record<string, string> = {
+            'image/png': 'png',
+            'image/jpeg': 'jpg',
+            'image/gif': 'gif',
+            'image/webp': 'webp',
+            'image/bmp': 'bmp'
+        };
+        const ext = mimeToExt[imageItem.type] || 'png';
+
+        // 获取 MOC 文件信息
+        const mocFilePath = this.plugin.settings.mocCurrentFile;
+        if (!mocFilePath) return;
+        const mocFile = this.app.vault.getFileByPath(mocFilePath);
+        if (!mocFile) return;
+
+        // 构建保存路径: {mocFileDir}/attachments/{mocBasename}-{timestamp}.{ext}
+        const mocDir = mocFile.parent?.path || '';
+        const attachDir = mocDir ? `${mocDir}/attachments` : 'attachments';
+        const timestamp = Date.now();
+        const mocBasename = mocFile.basename;
+        const fileName = `${mocBasename}-${timestamp}.${ext}`;
+        const savePath = `${attachDir}/${fileName}`;
+
+        try {
+            // 确保 attachments 文件夹存在
+            if (!this.app.vault.getAbstractFileByPath(attachDir)) {
+                await this.app.vault.createFolder(attachDir);
+            }
+
+            // 保存图片文件
+            const arrayBuffer = await blob.arrayBuffer();
+            const savedFile = await this.app.vault.createBinary(savePath, arrayBuffer);
+
+            // 计算视口中心位置（模型坐标）
+            const cy = this.branchRenderer?.getCytoscapeInstance();
+            let position = { x: 0, y: 0 };
+            if (cy) {
+                const pan = cy.pan();
+                const zoom = cy.zoom();
+                position = {
+                    x: (cy.width() / 2 - pan.x) / zoom,
+                    y: (cy.height() / 2 - pan.y) / zoom
+                };
+            }
+
+            // 生成节点 ID 并保存到 MOC
+            const nodeID = this.generateNextFreeNodeID();
+            await this.saveFreeNodeToMOC({
+                wikiLink: savedFile.path,
+                nodeID: nodeID,
+                relationText: '',
+                file: savedFile as TFile,
+                isTextOnly: false,
+                isEmbed: true
+            });
+
+            // 保存节点位置
+            await this.saveNodePositionToMOC(mocFile, nodeID, position);
+
+            // 刷新视图
+            await this.refreshBranchMermaid();
+
+            new Notice(t('Paste image success'));
+        } catch (error) {
+            console.error('Failed to paste image:', error);
+            new Notice(t('Paste image failed'));
+        }
+    }
+
     private isAutoNodeLayoutStyle(): boolean {
         return (this.currentNodeLayoutStyle || 'free') === 'auto';
     }
@@ -7030,6 +7175,7 @@ export class ZKIndexView extends ItemView {
         // 清理所有DOM事件监听器
         this.cleanupEventListeners();
         this.undoShortcutBound = false;
+        this.pasteListenerBound = false;
 
         // 销毁Cytoscape渲染器
         if (this.branchRenderer) {
