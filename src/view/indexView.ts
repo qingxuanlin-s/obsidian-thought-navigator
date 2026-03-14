@@ -7376,9 +7376,13 @@ export class ZKIndexView extends ItemView {
                 mocData.reverseRelations.set(key, relation);
 
                 // 如果是父子边，还需要更新节点树中的 relationText
-                const targetNode = this.findNodeInTree(mocData.nodes, targetID);
-                if (targetNode && targetNode.relationText !== undefined) {
-                    targetNode.relationText = newLabel;
+                const targetParts = targetID.split('.');
+                const isParentChild = targetParts.length > 1 && targetParts.slice(0, -1).join('.') === sourceID;
+                if (isParentChild) {
+                    const targetNode = this.findNodeInTree(mocData.nodes, targetID);
+                    if (targetNode) {
+                        targetNode.relationText = newLabel;
+                    }
                 }
             });
 
