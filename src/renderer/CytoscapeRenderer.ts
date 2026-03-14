@@ -93,6 +93,17 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private collapseHandleCleanup: (() => void) | null = null;
     private collapsedNodeIds: Set<string> = new Set();
 
+    // 统一 overlay rAF 调度器
+    private overlayUpdaters: Set<() => void> = new Set();
+    private overlayImmediateUpdaters: Set<() => void> = new Set();
+    private overlayExtraUpdaters: Set<() => void> = new Set(); // class/data/select 等额外事件触发的 updaters
+    private overlaySelectionUpdaters: Set<() => void> = new Set(); // select/unselect 独占 updaters
+    private overlayUpdateScheduled = false;
+    private overlayListenerBound = false;
+    // 边控制点/端点手柄的 updaters（生命周期跟随选中边，需单独追踪清理）
+    private edgeControlPointUpdaters: Set<() => void> = new Set();
+    private edgeEndpointUpdaters: Set<() => void> = new Set();
+
     // SimpleMind 风格布局常量
     private readonly VERTICAL_GAP = 80;       // 垂直间距
     private readonly HORIZONTAL_GAP = 200;    // 水平间距
@@ -100,6 +111,75 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
     private isReadOnlyMode(): boolean {
         return this.currentOptions?.readOnly === true || Platform.isMobile;
+    }
+
+    /**
+     * 统一 overlay 更新调度：将所有 overlay 系统的 rAF 合并为单一调度
+     * 减少每帧 8 个独立 rAF → 1 个 rAF，事件监听数量减少 80%
+     */
+    private scheduleOverlayUpdate(): void {
+        if (this.overlayUpdateScheduled) return;
+        this.overlayUpdateScheduled = true;
+        requestAnimationFrame(() => {
+            this.overlayUpdaters.forEach(fn => fn());
+            this.overlayUpdateScheduled = false;
+        });
+    }
+
+    /** dragfree 等需要立即同步的场景，跳过 rAF */
+    private immediateOverlayUpdate(): void {
+        this.overlayUpdaters.forEach(fn => fn());
+        this.overlayImmediateUpdaters.forEach(fn => fn());
+        this.overlayUpdateScheduled = false;
+    }
+
+    /** class/data/add/remove/layoutstop 等额外事件触发调度 */
+    private scheduleOverlayExtraUpdate(): void {
+        if (this.overlayUpdateScheduled) return;
+        this.overlayUpdateScheduled = true;
+        requestAnimationFrame(() => {
+            this.overlayUpdaters.forEach(fn => fn());
+            this.overlayExtraUpdaters.forEach(fn => fn());
+            this.overlayUpdateScheduled = false;
+        });
+    }
+
+    /** select/unselect 专用更新（同步，不经过 rAF） */
+    private handleOverlaySelectionChange(): void {
+        this.overlaySelectionUpdaters.forEach(fn => fn());
+    }
+
+    /**
+     * 绑定统一的 overlay 事件监听（只绑定一次）
+     * 覆盖所有 overlay 系统需要的事件
+     */
+    private bindOverlayListeners(): void {
+        if (this.overlayListenerBound || !this.cy) return;
+        this.overlayListenerBound = true;
+
+        // 核心视口/拖动事件 → 单一 rAF 调度
+        this.cy.on('zoom pan viewport drag position', () => this.scheduleOverlayUpdate());
+        // 拖动结束 → 立即同步
+        this.cy.on('dragfree', () => this.immediateOverlayUpdate());
+        // 结构/状态变化事件 → 额外 updaters
+        this.cy.on('class data add remove layoutstop', () => this.scheduleOverlayExtraUpdate());
+        // 选择变化 → 同步 selection updaters + 调度位置更新
+        this.cy.on('select unselect', () => {
+            this.handleOverlaySelectionChange();
+            this.scheduleOverlayExtraUpdate();
+        });
+    }
+
+    /** 清理统一 overlay 调度器 */
+    private cleanupOverlayScheduler(): void {
+        this.overlayUpdaters.clear();
+        this.overlayImmediateUpdaters.clear();
+        this.overlayExtraUpdaters.clear();
+        this.overlaySelectionUpdaters.clear();
+        this.edgeControlPointUpdaters.clear();
+        this.edgeEndpointUpdaters.clear();
+        this.overlayUpdateScheduled = false;
+        this.overlayListenerBound = false;
     }
 
     /**
@@ -1934,26 +2014,16 @@ export class CytoscapeRenderer implements IGraphRenderer {
             updatePosition();
         });
 
-        let scheduled = false;
-        const scheduleUpdate = () => {
-            if (scheduled) return;
-            scheduled = true;
-            requestAnimationFrame(() => {
-                updaters.forEach(fn => fn());
-                scheduled = false;
-            });
-        };
-
-        const handleSelectionChange = () => interactionUpdaters.forEach(fn => fn());
-        this.cy.on('zoom pan viewport drag position', scheduleUpdate);
-        this.cy.on('dragfree', scheduleUpdate);
-        this.cy.on('select unselect', handleSelectionChange);
+        // 注册到统一 overlay 调度器
+        const embedPositionUpdater = () => updaters.forEach(fn => fn());
+        const embedSelectionUpdater = () => interactionUpdaters.forEach(fn => fn());
+        this.overlayUpdaters.add(embedPositionUpdater);
+        this.overlaySelectionUpdaters.add(embedSelectionUpdater);
 
         this.embedPreviewCleanup = () => {
+            this.overlayUpdaters.delete(embedPositionUpdater);
+            this.overlaySelectionUpdaters.delete(embedSelectionUpdater);
             if (this.cy) {
-                this.cy.off('zoom pan viewport drag position', scheduleUpdate);
-                this.cy.off('dragfree', scheduleUpdate);
-                this.cy.off('select unselect', handleSelectionChange);
                 this.cy.userZoomingEnabled(true);
                 this.cy.userPanningEnabled(true);
             }
@@ -2305,26 +2375,16 @@ export class CytoscapeRenderer implements IGraphRenderer {
             updatePosition();
         });
 
-        let scheduled = false;
-        const scheduleUpdate = () => {
-            if (scheduled) return;
-            scheduled = true;
-            requestAnimationFrame(() => {
-                updaters.forEach(fn => fn());
-                scheduled = false;
-            });
-        };
-
-        const handleSelectionChange = () => interactionUpdaters.forEach(fn => fn());
-        this.cy.on('zoom pan viewport drag position', scheduleUpdate);
-        this.cy.on('dragfree', scheduleUpdate);
-        this.cy.on('select unselect', handleSelectionChange);
+        // 注册到统一 overlay 调度器
+        const imagePositionUpdater = () => updaters.forEach(fn => fn());
+        const imageSelectionUpdater = () => interactionUpdaters.forEach(fn => fn());
+        this.overlayUpdaters.add(imagePositionUpdater);
+        this.overlaySelectionUpdaters.add(imageSelectionUpdater);
 
         this.imagePreviewCleanup = () => {
+            this.overlayUpdaters.delete(imagePositionUpdater);
+            this.overlaySelectionUpdaters.delete(imageSelectionUpdater);
             if (this.cy) {
-                this.cy.off('zoom pan viewport drag position', scheduleUpdate);
-                this.cy.off('dragfree', scheduleUpdate);
-                this.cy.off('select unselect', handleSelectionChange);
                 this.cy.userZoomingEnabled(true);
                 this.cy.userPanningEnabled(true);
             }
@@ -2411,6 +2471,9 @@ case 'dagre':
     private addNodeBadges(): void {
         if (!this.cy || !this.container) return;
 
+        // 清理旧的统一 overlay 调度器（badge 重建时所有子系统也会重建）
+        this.cleanupOverlayScheduler();
+
         // 移除旧的徽章容器
         const oldBadgeContainer = this.container.querySelector('.zk-node-badges');
         if (oldBadgeContainer) {
@@ -2433,7 +2496,6 @@ case 'dagre':
 
         // 存储所有徽章的更新函数
         const badgeUpdaters: Array<() => void> = [];
-        let updateScheduled = false;
         const readOnly = this.isReadOnlyMode();
         const underlineMeasure = document.createElement('canvas');
         const underlineMeasureCtx = underlineMeasure.getContext('2d');
@@ -2765,32 +2827,12 @@ case 'dagre':
             });
         });
 
-        // 统一的更新函数，使用 requestAnimationFrame 确保在下一帧更新
-        const scheduleUpdate = () => {
-            if (updateScheduled) return;
-            updateScheduled = true;
-            
-            requestAnimationFrame(() => {
-                badgeUpdaters.forEach(updater => updater());
-                updateScheduled = false;
-            });
-        };
+        // 注册到统一 overlay 调度器
+        const badgePositionUpdater = () => badgeUpdaters.forEach(updater => updater());
+        this.overlayUpdaters.add(badgePositionUpdater);
+        this.overlayImmediateUpdaters.add(badgePositionUpdater);
+        this.overlayExtraUpdaters.add(badgePositionUpdater);
 
-        // 立即更新函数（用于拖动结束等需要立即同步的场景）
-        const immediateUpdate = () => {
-            badgeUpdaters.forEach(updater => updater());
-            updateScheduled = false;
-        };
-
-        // 监听全局事件
-        if (this.cy) {
-            this.cy.on('pan zoom viewport drag position', scheduleUpdate);
-            // 拖动结束时立即更新
-            this.cy.on('dragfree', immediateUpdate);
-            // 收起/展开、分组、重新布局等会改变节点可见性或渲染位置
-            this.cy.on('class data select unselect add remove layoutstop', scheduleUpdate);
-        }
-        
         // 添加边控制点
         this.addEdgeControlPoints();
 
@@ -2805,6 +2847,9 @@ case 'dagre':
         
         // 添加分组调整大小手柄
         this.addGroupResizeHandles();
+
+        // 所有 overlay 子系统注册完毕后，绑定统一事件监听
+        this.bindOverlayListeners();
     }
 
     private addCollapseToggleHandle(): void {
@@ -2828,7 +2873,6 @@ case 'dagre':
         `;
         this.container.appendChild(handleContainer);
         const handleUpdaters: Array<() => void> = [];
-        let updateScheduled = false;
 
         const hasChildren = (originalId: string): boolean => {
             return this.cy!.nodes().some((n: any) => {
@@ -2918,21 +2962,14 @@ case 'dagre':
             });
         });
 
-        const scheduleUpdate = () => {
-            if (updateScheduled) return;
-            updateScheduled = true;
-            requestAnimationFrame(() => {
-                handleUpdaters.forEach((fn) => fn());
-                updateScheduled = false;
-            });
-        };
-
-        this.cy.on('zoom pan position dragfree viewport class data add remove layoutstop select unselect', scheduleUpdate);
+        // 注册到统一 overlay 调度器
+        const collapsePositionUpdater = () => handleUpdaters.forEach((fn) => fn());
+        this.overlayUpdaters.add(collapsePositionUpdater);
+        this.overlayExtraUpdaters.add(collapsePositionUpdater);
 
         this.collapseHandleCleanup = () => {
-            if (this.cy) {
-                this.cy.off('zoom pan position dragfree viewport class data add remove layoutstop select unselect', scheduleUpdate);
-            }
+            this.overlayUpdaters.delete(collapsePositionUpdater);
+            this.overlayExtraUpdaters.delete(collapsePositionUpdater);
             handleContainer.remove();
         };
     }
@@ -3010,7 +3047,6 @@ case 'dagre':
 
         // 存储所有手柄的更新函数
         const handleUpdaters: Array<() => void> = [];
-        let updateScheduled = false;
 
         // 为每个节点创建连线手柄
         this.cy.nodes('[!isGroup]').forEach((node: any) => {
@@ -3068,29 +3104,10 @@ case 'dagre':
             this.bindConnectionDrag(handle, node, handleContainer);
         });
 
-        // 统一的更新函数，使用 requestAnimationFrame 确保在下一帧更新
-        const scheduleUpdate = () => {
-            if (updateScheduled) return;
-            updateScheduled = true;
-            
-            requestAnimationFrame(() => {
-                handleUpdaters.forEach(updater => updater());
-                updateScheduled = false;
-            });
-        };
-
-        // 立即更新函数（用于拖动结束等需要立即同步的场景）
-        const immediateUpdate = () => {
-            handleUpdaters.forEach(updater => updater());
-            updateScheduled = false;
-        };
-
-        // 监听全局事件
-        if (this.cy) {
-            this.cy.on('pan zoom viewport drag position', scheduleUpdate);
-            // 拖动结束时立即更新
-            this.cy.on('dragfree', immediateUpdate);
-        }
+        // 注册到统一 overlay 调度器
+        const connectionPositionUpdater = () => handleUpdaters.forEach(updater => updater());
+        this.overlayUpdaters.add(connectionPositionUpdater);
+        this.overlayImmediateUpdaters.add(connectionPositionUpdater);
     }
 
     /**
@@ -3376,31 +3393,13 @@ case 'dagre':
             controlPoint.style.top = `${curveMidY}px`;
         };
 
-        // 使用 requestAnimationFrame 调度更新
-        let updateScheduled = false;
-        const scheduleUpdate = () => {
-            if (updateScheduled) return;
-            updateScheduled = true;
-            
-            requestAnimationFrame(() => {
-                updateControlPointPosition();
-                updateScheduled = false;
-            });
-        };
-
-        // 立即更新函数（用于拖动结束等需要立即同步的场景）
-        const immediateUpdate = () => {
-            updateControlPointPosition();
-            updateScheduled = false;
-        };
-
         // 初始位置
         updateControlPointPosition();
 
-        // 监听图形缩放、平移和节点位置变化
-        this.cy.on('zoom pan position drag viewport', scheduleUpdate);
-        // 拖动结束时立即更新
-        this.cy.on('dragfree', immediateUpdate);
+        // 注册到统一 overlay 调度器
+        this.overlayUpdaters.add(updateControlPointPosition);
+        this.overlayImmediateUpdaters.add(updateControlPointPosition);
+        this.edgeControlPointUpdaters.add(updateControlPointPosition);
 
         // 拖动控制点
         let isDragging = false;
@@ -3472,10 +3471,7 @@ case 'dagre':
         const cleanup = () => {
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
-            if (this.cy) {
-                this.cy.off('zoom pan position drag viewport', scheduleUpdate);
-                this.cy.off('dragfree', immediateUpdate);
-            }
+            // updater 清理由 hideEdgeControlPoints 统一处理
         };
 
         // 当控制点被移除时清理
@@ -3497,6 +3493,13 @@ case 'dagre':
      * 隐藏边控制点
      */
     private hideEdgeControlPoints(container: HTMLElement): void {
+        // 从统一调度器中移除边控制点的 updaters
+        this.edgeControlPointUpdaters.forEach(fn => {
+            this.overlayUpdaters.delete(fn);
+            this.overlayImmediateUpdaters.delete(fn);
+        });
+        this.edgeControlPointUpdaters.clear();
+
         const controlPoints = container.querySelectorAll('.zk-edge-control-point');
         controlPoints.forEach(cp => cp.remove());
     }
@@ -3565,19 +3568,18 @@ case 'dagre':
             targetHandle = this.createEndpointHandle('target', targetNode, edge, container);
         }
 
-        // 在视口变化时更新位置
-        const scheduleUpdate = () => {
-            requestAnimationFrame(() => {
-                this.updateEndpointHandlePosition(sourceHandle, sourceNode, edge, 'source');
-                if (targetHandle) {
-                    this.updateEndpointHandlePosition(targetHandle, targetNode, edge, 'target');
-                }
-            });
+        // 注册到统一 overlay 调度器
+        const endpointUpdater = () => {
+            this.updateEndpointHandlePosition(sourceHandle, sourceNode, edge, 'source');
+            if (targetHandle) {
+                this.updateEndpointHandlePosition(targetHandle, targetNode, edge, 'target');
+            }
         };
+        this.overlayUpdaters.add(endpointUpdater);
+        this.edgeEndpointUpdaters.add(endpointUpdater);
 
-        this.cy!.on('zoom pan viewport drag position', scheduleUpdate);
-        // 首帧再同步一次，避免初始渲染时手柄短暂错位
-        requestAnimationFrame(scheduleUpdate);
+        // 首帧同步一次，避免初始渲染时手柄短暂错位
+        requestAnimationFrame(endpointUpdater);
     }
 
     /**
@@ -3744,6 +3746,12 @@ case 'dagre':
      * 隐藏边端点手柄
      */
     private hideEdgeEndpointHandles(container: HTMLElement): void {
+        // 从统一调度器中移除边端点手柄的 updaters
+        this.edgeEndpointUpdaters.forEach(fn => {
+            this.overlayUpdaters.delete(fn);
+        });
+        this.edgeEndpointUpdaters.clear();
+
         const handles = container.querySelectorAll('.zk-edge-endpoint-handle');
         handles.forEach(h => h.remove());
     }
@@ -6637,19 +6645,8 @@ case 'dagre':
             clearHandles();
         });
 
-        // 监听视图变化，更新手柄位置
-        this.cy.on('pan zoom viewport', () => {
-            if (selectedGroup) {
-                updateHandlePositions();
-            }
-        });
-
-        // 监听分组节点移动
-        this.cy.on('position', 'node[?isGroup]', (evt: any) => {
-            if (evt.target === selectedGroup) {
-                updateHandlePositions();
-            }
-        });
+        // 注册到统一 overlay 调度器
+        this.overlayUpdaters.add(updateHandlePositions);
     }
 
     /**
