@@ -1,5 +1,5 @@
 import ZKNavigationPlugin from "main";
-import { ExtraButtonComponent, FileView, ItemView, Notice, TFile, WorkspaceLeaf, debounce, loadMermaid } from "obsidian";
+import { ExtraButtonComponent, FileView, ItemView, Notice, TFile, WorkspaceLeaf, debounce, loadMermaid, setIcon } from "obsidian";
 import { GitBranch, ZKNode, ZK_NAVIGATION } from "./indexView";
 import { t } from "src/lang/helper";
 import { convertMOCToZKNodes, displayWidth, mainNoteInit, parseMOCStructure,ReverseRelation } from "src/utils/utils";
@@ -1857,124 +1857,123 @@ export class ZKGraphView extends ItemView {
         inlinkArr: TFile[],
         outlinkArr: TFile[]
     ): Promise<void> {
-        // 创建入链出链图容器
+        // 创建入链出链图容器（带标题和展开按钮）
         const inoutlinksGraphContainer = container.createDiv("zk-inoutlinks-graph-container");
         const inoutlinksGraphTextDiv = inoutlinksGraphContainer.createDiv("zk-graph-text");
         inoutlinksGraphTextDiv.empty();
         inoutlinksGraphTextDiv.createEl('span', { text: t("inoutlinks") });
 
-        // 添加图标按钮
+        // 添加展开按钮
         const graphIconDiv = inoutlinksGraphContainer.createDiv("zk-graph-icon");
         graphIconDiv.empty();
-        
-        // 展开按钮
         const expandBtn = new ExtraButtonComponent(graphIconDiv);
         expandBtn.setIcon("expand").setTooltip(t("expand graph"));
 
-        // 创建图形容器
-        const inoutlinksDiv = inoutlinksGraphContainer.createEl("div", {
-            cls: "zk-graph-cytoscape"
-        });
-        inoutlinksDiv.id = "zk-inoutlinks-cytoscape";
-        inoutlinksDiv.style.height = `${this.graphHeight}px`;
-        inoutlinksDiv.style.width = "100%";
-        inoutlinksDiv.style.backgroundColor = this.plugin.settings.themeMode === 'light' ? '#f5f5f5' : '#2a2a2a';
+        // 创建卡片内容容器
+        const inoutlinksContainer = inoutlinksGraphContainer.createDiv("zk-inoutlinks-container");
 
-        // 构建图形数据
-        const graphData = GraphDataBuilder.fromInOutLinks(currentFile, inlinkArr, outlinkArr);
-
-        // 配置渲染选项
-        const options: RenderOptions = {
-            direction: (this.plugin.settings.DirectionOfInlinksGraph || 'TB') as 'TB' | 'BT' | 'LR' | 'RL',
-            layoutType: 'cose',  // 使用力导向布局，适合网络结构
-            animate: true,
-            animationDuration: 500,
-            nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
-            themeMode: this.plugin.settings.themeMode,
-            themeStyle: this.plugin.settings.themeStyle || 'default',
-            edgeStyle: this.plugin.settings.edgeStyle || 'bezier'
+        // 通用点击处理
+        const handleFileClick = (file: TFile, e: MouseEvent) => {
+            if (e.ctrlKey || e.metaKey) {
+                this.app.workspace.openLinkText("", file.path, 'tab');
+            } else if (e.shiftKey) {
+                this.plugin.retrivalforLocaLgraph = { type: '1', ID: '', filePath: file.path };
+                this.plugin.openGraphView();
+            } else {
+                this.app.workspace.openLinkText("", file.path);
+            }
         };
+
+        // 悬停预览处理
+        const handleFileHover = (file: TFile, e: MouseEvent, parent: HTMLElement) => {
+            this.app.workspace.trigger('hover-link', {
+                event: e,
+                source: 'zk-navigation',
+                hoverParent: parent,
+                linktext: "",
+                targetEl: e.target,
+                sourcePath: file.path,
+            });
+        };
+
+        // 获取文件图标名
+        const getFileIcon = (file: TFile): string => {
+            const ext = file.extension;
+            if (ext === 'excalidraw' || file.basename.endsWith('.excalidraw')) return 'pen-tool';
+            if (ext === 'canvas') return 'layout-dashboard';
+            if (ext === 'pdf') return 'file-text';
+            return 'file-text';
+        };
+
+        // 创建节点卡片
+        const createNodeCard = (file: TFile, type: 'inlink' | 'outlink'): HTMLElement => {
+            const card = document.createElement('div');
+            card.className = `zk-iol-card zk-iol-card-${type}`;
+            card.addEventListener('click', (e) => handleFileClick(file, e));
+            card.addEventListener('mouseover', (e) => handleFileHover(file, e, inoutlinksContainer));
+
+            const iconEl = card.createDiv('zk-iol-card-icon');
+            setIcon(iconEl, getFileIcon(file));
+
+            card.createEl('span', { cls: 'zk-iol-card-name', text: file.basename });
+
+            return card;
+        };
+
+        // === 入链区域 ===
+        if (inlinkArr.length > 0) {
+            // 入链标题
+            const inHeader = inoutlinksContainer.createDiv('zk-iol-header zk-iol-header-inlink');
+            inHeader.createEl('span', { text: `${t("inlinks")} · ${inlinkArr.length}` });
+
+            // 入链卡片网格
+            const inGrid = inoutlinksContainer.createDiv('zk-iol-grid');
+            inlinkArr.forEach((file) => inGrid.appendChild(createNodeCard(file, 'inlink')));
+
+            // 连接线
+            inoutlinksContainer.createDiv('zk-iol-connector');
+        }
+
+        // === 当前文件卡片 ===
+        const centerCard = inoutlinksContainer.createDiv('zk-iol-center');
+        const centerIcon = centerCard.createDiv('zk-iol-center-icon');
+        setIcon(centerIcon, 'git-branch');
+        centerCard.createEl('div', { cls: 'zk-iol-center-title', text: currentFile.basename });
+        centerCard.addEventListener('click', (e) => handleFileClick(currentFile, e));
+
+        // === 出链区域 ===
+        if (outlinkArr.length > 0) {
+            // 连接线
+            inoutlinksContainer.createDiv('zk-iol-connector');
+
+            // 出链卡片网格
+            const outGrid = inoutlinksContainer.createDiv('zk-iol-grid');
+            outlinkArr.forEach((file) => outGrid.appendChild(createNodeCard(file, 'outlink')));
+
+            // 出链标题
+            const outHeader = inoutlinksContainer.createDiv('zk-iol-header zk-iol-header-outlink');
+            outHeader.createEl('span', { text: `${t("outlinks")} · ${outlinkArr.length}` });
+        }
+
+        // 展开按钮：用 Cytoscape 渲染放大视图
         expandBtn.onClick(() => {
             try {
+                const graphData = GraphDataBuilder.fromInOutLinks(currentFile, inlinkArr, outlinkArr);
+                const options: RenderOptions = {
+                    direction: (this.plugin.settings.DirectionOfInlinksGraph || 'TB') as 'TB' | 'BT' | 'LR' | 'RL',
+                    layoutType: 'preset',
+                    animate: true,
+                    animationDuration: 500,
+                    nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
+                    themeMode: this.plugin.settings.themeMode,
+                    themeStyle: this.plugin.settings.themeStyle || 'default',
+                    edgeStyle: this.plugin.settings.edgeStyle || 'bezier'
+                };
                 new CytoscapeExpandModal(this.app, t("inoutlinks"), graphData, options).open();
             } catch (error) {
                 console.error('[GraphView] expand inoutlinks failed', error);
                 new Notice('放大失败：出入链');
             }
-        });
-
-        // 创建或复用渲染器
-        if (this.inoutlinksRenderer) {
-            this.inoutlinksRenderer.destroy();
-        }
-        this.inoutlinksRenderer = new CytoscapeRenderer();
-
-        // 渲染图形
-        await this.inoutlinksRenderer.render(inoutlinksDiv, graphData, options);
-
-        // 监听节点点击事件
-        inoutlinksDiv.addEventListener('node-click', (event: any) => {
-            const { node, ctrlKey, shiftKey, altKey } = event.detail;
-            if (!node.file) return;
-
-            if (ctrlKey) {
-                // Ctrl + 点击：在新标签页打开
-                this.app.workspace.openLinkText("", node.file.path, 'tab');
-            } else if (shiftKey) {
-                // Shift + 点击：在图形视图中打开
-                this.plugin.retrivalforLocaLgraph = {
-                    type: '1',
-                    ID: '',
-                    filePath: node.file.path,
-                };
-                this.plugin.openGraphView();
-            } else if (altKey) {
-                // Alt + 点击：在索引视图中打开
-                if (this.plugin.settings.FolderOfIndexes !== '' && node.file && node.file.path.startsWith(this.plugin.settings.FolderOfIndexes)) {
-                    this.plugin.clearShowingSettings();
-                    this.plugin.settings.lastRetrival = {
-                        type: 'index',
-                        ID: '',
-                        displayText: '',
-                        filePath: node.file.path,
-                        openTime: '',
-                    };
-                    this.plugin.RefreshIndexViewFlag = true;
-                    this.plugin.openIndexView();
-                } else {
-                    const mainNote = this.plugin.MainNotes.find((n: any) => node.file && n.file.path === node.file.path);
-                    if (mainNote && mainNote.file) {
-                        this.plugin.clearShowingSettings();
-                        this.plugin.settings.lastRetrival = {
-                            type: 'main',
-                            ID: mainNote.ID,
-                            displayText: mainNote.displayText,
-                            filePath: mainNote.file?.path,
-                            openTime: '',
-                        };
-                        this.plugin.RefreshIndexViewFlag = true;
-                        this.plugin.openIndexView();
-                    }
-                }
-            } else {
-                // 普通点击：打开文件
-                this.app.workspace.openLinkText("", node.file.path);
-            }
-        });
-
-        // 监听节点悬停事件
-        inoutlinksDiv.addEventListener('node-hover', (event: any) => {
-            const { node, event: mouseEvent } = event.detail;
-            if (!node || !node.file || !mouseEvent) return;
-
-            this.app.workspace.trigger('hover-link', {
-                event: mouseEvent,
-                source: 'zk-navigation',
-                hoverParent: inoutlinksDiv,
-                linktext: "",
-                targetEl: mouseEvent.target,
-                sourcePath: node.file.path,
-            });
         });
     }
 

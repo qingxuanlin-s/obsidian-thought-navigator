@@ -243,6 +243,206 @@ align-items: center;
   background-color: #2a2a2a;
 }
 
+/* ========== 出入链卡片布局 ========== */
+.zk-inoutlinks-graph-container {
+  margin: 0;
+  border-radius: 0;
+  position: relative;
+  background: transparent;
+}
+.zk-inoutlinks-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 12px;
+  gap: 0;
+  border-radius: 5px;
+}
+
+/* 区域标题 */
+.zk-iol-header {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  padding: 6px 0;
+  text-align: center;
+}
+.zk-iol-header-inlink {
+  color: #34d399;
+}
+.zk-iol-header-outlink {
+  color: #f59e0b;
+}
+
+/* 连接线 */
+.zk-iol-connector {
+  width: 2px;
+  height: 28px;
+  background: rgba(148, 163, 184, 0.25);
+  margin: 4px auto;
+}
+
+/* 节点卡片网格 */
+.zk-iol-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 520px;
+  padding: 4px 0;
+}
+
+/* 节点卡片 */
+.zk-iol-card {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+  max-width: 240px;
+  overflow: hidden;
+  border: 1.5px solid transparent;
+}
+.zk-iol-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.zk-iol-card:active {
+  transform: scale(0.97);
+}
+
+/* 入链卡片 */
+.zk-iol-card-inlink {
+  background: rgba(52, 211, 153, 0.08);
+  border-color: rgba(52, 211, 153, 0.25);
+}
+.zk-iol-card-inlink:hover {
+  background: rgba(52, 211, 153, 0.15);
+  border-color: rgba(52, 211, 153, 0.45);
+}
+
+/* 出链卡片 */
+.zk-iol-card-outlink {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.25);
+}
+.zk-iol-card-outlink:hover {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.45);
+}
+
+/* 卡片图标 */
+.zk-iol-card-icon {
+  flex-shrink: 0;
+  color: rgba(148, 163, 184, 0.7);
+  display: flex;
+  align-items: center;
+}
+.zk-iol-card-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* 卡片文件名 */
+.zk-iol-card-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(226, 232, 240, 0.9);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 中心当前文件卡片 */
+.zk-iol-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 32px;
+  border-radius: 16px;
+  background: rgba(30, 58, 95, 0.3);
+  border: 2px solid rgba(42, 79, 122, 0.6);
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  max-width: 400px;
+  width: 100%;
+  margin: 4px 0;
+}
+.zk-iol-center:hover {
+  border-color: rgba(42, 79, 122, 0.9);
+  box-shadow: 0 0 20px rgba(30, 58, 95, 0.4);
+}
+.zk-iol-center-icon {
+  color: rgba(148, 163, 184, 0.5);
+  display: flex;
+  align-items: center;
+}
+.zk-iol-center-icon svg {
+  width: 18px;
+  height: 18px;
+}
+.zk-iol-center-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #e2e8f0;
+  text-align: center;
+  word-break: break-word;
+}
+
+/* ========== 出入链卡片布局 - 亮色主题 ========== */
+.zk-theme-light .zk-iol-connector {
+  background: rgba(100, 116, 139, 0.25);
+}
+.zk-theme-light .zk-iol-card-inlink {
+  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.25);
+}
+.zk-theme-light .zk-iol-card-inlink:hover {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.45);
+}
+.zk-theme-light .zk-iol-card-outlink {
+  background: rgba(217, 119, 6, 0.08);
+  border-color: rgba(217, 119, 6, 0.25);
+}
+.zk-theme-light .zk-iol-card-outlink:hover {
+  background: rgba(217, 119, 6, 0.15);
+  border-color: rgba(217, 119, 6, 0.45);
+}
+.zk-theme-light .zk-iol-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+.zk-theme-light .zk-iol-card-icon {
+  color: rgba(100, 116, 139, 0.7);
+}
+.zk-theme-light .zk-iol-card-name {
+  color: #334155;
+}
+.zk-theme-light .zk-iol-center {
+  background: rgba(30, 58, 95, 0.06);
+  border-color: rgba(30, 58, 95, 0.25);
+}
+.zk-theme-light .zk-iol-center:hover {
+  border-color: rgba(30, 58, 95, 0.5);
+  box-shadow: 0 0 20px rgba(30, 58, 95, 0.1);
+}
+.zk-theme-light .zk-iol-center-icon {
+  color: rgba(100, 116, 139, 0.5);
+}
+.zk-theme-light .zk-iol-center-title {
+  color: #1e293b;
+}
+.zk-theme-light .zk-iol-header-inlink {
+  color: #059669;
+}
+.zk-theme-light .zk-iol-header-outlink {
+  color: #d97706;
+}
+
 .recent-item{
   position: relative;
 }
@@ -398,7 +598,7 @@ align-items: center;
 
 /* 局部关系视图背景与分支视图保持一致 */
 .zk-graph-mermaid-container {
-    background-color: #2a2a2a;
+    background-color: transparent;
     border-radius: 5px;
 }
 
@@ -644,7 +844,7 @@ align-items: center;
 }
 
 .zk-theme-light .zk-graph-mermaid-container {
-  background-color: #f5f5f5;
+  background-color: transparent;
 }
 
 .zk-theme-light .zk-index-mermaid {

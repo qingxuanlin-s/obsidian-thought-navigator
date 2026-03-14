@@ -198,6 +198,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
         this.currentData = data;
         this.currentOptions = options;
 
+        // 出入链预设网格位置（必须在转换元素之前，确保 savedPosition 生效）
+        this.presetInOutLinksPositions(data);
+
         // 转换元素（包含分组）
         const elements = this.convertToElementsWithGroups(data);
 
@@ -398,9 +401,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 // 如果有保存的位置，使用 preset 布局（保持原位置）
                 this.runLayoutSafely({ name: 'preset' });
             } else {
-                // 检查是否是入链出链图，并设置初始位置
-                this.setInOutLinksInitialPositions(data);
-
                 // 如果没有保存位置，根据 layoutType 选择布局算法
                 // 默认使用 preset（索引视图等已有位置信息的情况）
                 // 局部关系视图的出入链图会传入 'cose' 等布局类型来自动分散节点
@@ -703,6 +703,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     isTextOnly: node.isTextOnly || false,  // 传递纯文字节点标记
                     isStandaloneText: (node.isTextOnly || false) && !hasParentChildLink, // 无父子关系的文本节点
                     isEmbed: node.isEmbed || false,  // 嵌入节点标记（![[...]]）
+                    isInlink: (node.ID || '').startsWith('inlink-'),
+                    isOutlink: (node.ID || '').startsWith('outlink-'),
                     isFreeNode: (node.ID || '').startsWith('free.'),
                     remark: nodeRemarks[node.IDStr] || nodeRemarks[node.ID] || '',
                     hasRemark: !!(nodeRemarks[node.IDStr] || nodeRemarks[node.ID]),
@@ -1070,55 +1072,49 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 设置入链出链图的初始位置
      * 入链节点在中心节点上方，出链节点在下方
      */
-    private setInOutLinksInitialPositions(data: GraphData): void {
-        const cy = this.cy;
-        if (!cy) return;
-
-        // 检查是否有入链或出链节点
+    /**
+     * 为出入链节点预设网格位置（在 Cytoscape 初始化前调用）
+     * 直接设置 savedPosition，避免节点堆叠在原点导致 edge 无法绘制
+     */
+    private presetInOutLinksPositions(data: GraphData): void {
         const hasInOutLinks = data.nodes.some(node =>
             node.ID.startsWith('inlink-') || node.ID.startsWith('outlink-') || node.ID === 'current'
         );
-
         if (!hasInOutLinks) return;
 
-        // 找到中心节点
-        const centerNodeId = this.escapeId('current');
-        const centerNode = cy.$id(centerNodeId);
-
-        if (centerNode.length === 0) return;
-
-        // 将中心节点放在原点
-        centerNode.position({ x: 0, y: 0 });
-
-        // 分离入链和出链节点
-        const inlinks: any[] = [];
-        const outlinks: any[] = [];
+        const inlinks: ZKNode[] = [];
+        const outlinks: ZKNode[] = [];
 
         data.nodes.forEach(node => {
-            if (node.ID.startsWith('inlink-')) {
-                inlinks.push(cy.$id(this.escapeId(node.ID)));
-            } else if (node.ID.startsWith('outlink-')) {
-                outlinks.push(cy.$id(this.escapeId(node.ID)));
+            if (node.ID.startsWith('inlink-')) inlinks.push(node);
+            else if (node.ID.startsWith('outlink-')) outlinks.push(node);
+            else if (node.ID === 'current') node.savedPosition = { x: 0, y: 0 };
+        });
+
+        // 网格布局参数
+        const COLS = 3;
+        const COL_GAP = 180;
+        const ROW_GAP = 100;
+        const CENTER_GAP = 120;
+
+        const assignGrid = (nodes: ZKNode[], startY: number, direction: 1 | -1) => {
+            for (let i = 0; i < nodes.length; i++) {
+                const row = Math.floor(i / COLS);
+                const col = i % COLS;
+                const colsInRow = Math.min(COLS, nodes.length - row * COLS);
+                const x = (col - (colsInRow - 1) / 2) * COL_GAP;
+                const y = startY + direction * row * ROW_GAP;
+                nodes[i].savedPosition = { x, y };
             }
-        });
+        };
 
-        // 为入链节点设置初始位置（在中心上方）
-        const inlinkSpacing = 150;
-        const inlinkStartY = -150;
-        inlinks.forEach((node, index) => {
-            // 水平分散，垂直固定在上方
-            const x = (index - (inlinks.length - 1) / 2) * inlinkSpacing;
-            node.position({ x, y: inlinkStartY });
-        });
+        // 出链在上方
+        const outlinkRows = Math.ceil(outlinks.length / COLS);
+        const outlinkStartY = -CENTER_GAP - (outlinkRows - 1) * ROW_GAP;
+        assignGrid(outlinks, outlinkStartY, 1);
 
-        // 为出链节点设置初始位置（在中心下方）
-        const outlinkSpacing = 150;
-        const outlinkStartY = 150;
-        outlinks.forEach((node, index) => {
-            // 水平分散，垂直固定在下方
-            const x = (index - (outlinks.length - 1) / 2) * outlinkSpacing;
-            node.position({ x, y: outlinkStartY });
-        });
+        // 入链在下方
+        assignGrid(inlinks, CENTER_GAP, 1);
     }
 
     /**
@@ -1605,14 +1601,34 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'overlay-opacity': 0
             } as any
         },
-        // 当前文件节点
+        // 当前文件节点（与分支视图根节点颜色一致）
         {
             selector: 'node[?isCurrentFile]',
             style: {
-                'background-color': '#66c7ff',
-                'border-color': '#8dd8ff',
+                'background-color': '#1e3a5f',
+                'border-color': '#2a4f7a',
                 'border-width': '3px',
                 'font-weight': '600'
+            } as any
+        },
+        // 出链节点样式（蓝色）
+        {
+            selector: 'node[?isOutlink]',
+            style: {
+                'background-color': isLight ? '#bfdbfe' : '#3b82c8',
+                'border-color': isLight ? '#93c5fd' : '#5ba0e0',
+                'border-width': '2px',
+                'color': isLight ? '#1e3a5f' : '#e0ecf8'
+            } as any
+        },
+        // 入链节点样式（黄色）
+        {
+            selector: 'node[?isInlink]',
+            style: {
+                'background-color': isLight ? '#fef3c7' : '#c8a832',
+                'border-color': isLight ? '#fcd34d' : '#dab840',
+                'border-width': '2px',
+                'color': isLight ? '#78350f' : '#fef3c7'
             } as any
         },
         // 连接目标悬停状态
