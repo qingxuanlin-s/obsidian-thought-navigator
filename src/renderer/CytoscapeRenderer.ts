@@ -5231,8 +5231,17 @@ case 'dagre':
             };
         };
 
+        const GUIDE_PROXIMITY = 400; // 只对 400px 内的节点触发辅助线
+
         const updateAlignmentGuides = (draggedNode: any) => {
             if (!this.cy || !this.container) return;
+
+            // 多节点拖动时不触发辅助线
+            if (this.cy.nodes(':selected').length > 1) {
+                hideAlignmentGuides();
+                return;
+            }
+
             ensureAlignmentOverlay();
             if (!verticalAlignmentLine || !horizontalAlignmentLine || !spacingGuideLineA || !spacingGuideLineB) return;
 
@@ -5252,6 +5261,11 @@ case 'dagre':
                 if (otherNode.data('isPlaceholder')) return;
                 if (otherNode.removed() || !otherNode.visible()) return;
                 if (otherNode.hasClass('zk-collapsed-hidden')) return;
+
+                // 只对附近 400px 内的节点做辅助
+                const otherPos = otherNode.renderedPosition();
+                const dist = Math.hypot(originalMetrics.x - otherPos.x, originalMetrics.y - otherPos.y);
+                if (dist > GUIDE_PROXIMITY) return;
 
                 const other = getRenderedMetrics(otherNode);
                 const verticalCandidates = [
@@ -5287,6 +5301,10 @@ case 'dagre':
                 if (otherNode.data('isPlaceholder')) return false;
                 if (otherNode.removed() || !otherNode.visible()) return false;
                 if (otherNode.hasClass('zk-collapsed-hidden')) return false;
+                // 只对附近 400px 内的节点做等距辅助
+                const otherPos = otherNode.renderedPosition();
+                const dist = Math.hypot(originalMetrics.x - otherPos.x, originalMetrics.y - otherPos.y);
+                if (dist > GUIDE_PROXIMITY) return false;
                 return true;
             });
 
