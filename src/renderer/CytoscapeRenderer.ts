@@ -2279,8 +2279,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     startW = size.widthModel * zoom;
                     startH = size.heightModel * zoom;
                 } else {
-                    startW = 360;
-                    startH = 270;
+                    startW = 720;
+                    startH = 540;
                 }
                 document.addEventListener('mousemove', onMouseMove);
                 document.addEventListener('mouseup', onMouseUp);
@@ -2291,8 +2291,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 const zoom = this.cy.zoom();
                 const rp = node.renderedPosition();
                 const size = cardSizeMap.get(nodeId);
-                const width = size ? size.widthModel * zoom : 360 * zoom;
-                const height = size ? size.heightModel * zoom : 270 * zoom;
+                const width = size ? size.widthModel * zoom : 720 * zoom;
+                const height = size ? size.heightModel * zoom : 540 * zoom;
 
                 card.style.left = `${rp.x - width / 2}px`;
                 card.style.top = `${rp.y - height / 2}px`;
