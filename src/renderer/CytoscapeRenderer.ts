@@ -5162,6 +5162,7 @@ case 'dagre':
         const ALIGNMENT_THRESHOLD = 10;
         const SPACING_THRESHOLD = 14;
         const AXIS_GROUP_THRESHOLD = 24;
+        let isMultiNodeDrag = false; // grab 时缓存，避免 drag 高频查选择器
 
         const ensureAlignmentOverlay = () => {
             if (alignmentOverlay || !this.container) return;
@@ -5236,9 +5237,8 @@ case 'dagre':
         const updateAlignmentGuides = (draggedNode: any) => {
             if (!this.cy || !this.container) return;
 
-            // 多节点拖动时不触发辅助线
-            if (this.cy.nodes(':selected').length > 1) {
-                hideAlignmentGuides();
+            // 多节点拖动时不触发辅助线（使用 grab 时缓存的标志，避免高频查选择器）
+            if (isMultiNodeDrag) {
                 return;
             }
 
@@ -5423,6 +5423,7 @@ case 'dagre':
             const node = evt.target;
             const data = node.data();
             const smartEnabled = this.isSmartConnectionEnabled();
+            isMultiNodeDrag = this.cy!.nodes(':selected').length > 1;
             ensureAlignmentOverlay();
             hideAlignmentGuides();
 
@@ -5466,6 +5467,10 @@ case 'dagre':
         this.cy.on('drag', 'node', (evt: any) => {
             const node = evt.target;
             const data = node.data();
+
+            // 多节点拖动时跳过辅助线和智能连线，避免 N 个节点 × 每帧的重复计算
+            if (isMultiNodeDrag) return;
+
             const smartEnabled = this.isSmartConnectionEnabled();
 
              if (!data.isGroup) {
