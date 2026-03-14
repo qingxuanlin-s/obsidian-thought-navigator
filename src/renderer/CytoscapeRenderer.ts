@@ -4482,7 +4482,6 @@ case 'dagre':
             existingEditor.remove();
         }
 
-        // 只使用节点本体尺寸，避免 renderedBoundingBox 把标签/选中态一起算进去
         const renderedPosition = node.renderedPosition();
         const initialBoxWidth = Math.max(Number(node.renderedWidth?.() || 0), 80);
         const initialBoxHeight = Math.max(Number(node.renderedHeight?.() || 0), 44);
@@ -7562,10 +7561,11 @@ case 'dagre':
     }
 
     private estimateCollisionBox(referenceNode: any): { width: number; height: number } {
-        const box = referenceNode.boundingBox();
+        const width = Math.max(Number(referenceNode.width?.() || 0), 120);
+        const height = Math.max(Number(referenceNode.height?.() || 0), 64);
         return {
-            width: Math.max(box.w, 120),
-            height: Math.max(box.h, 64)
+            width: width + 36,
+            height: height + 30
         };
     }
 
@@ -7588,8 +7588,14 @@ case 'dagre':
     ): boolean {
         if (!this.cy) return false;
 
-        const marginX = 24;
-        const marginY = 20;
+        const marginX = 26;
+        const marginY = 22;
+        const candidateRect = {
+            x1: candidate.x - size.width / 2 - marginX,
+            x2: candidate.x + size.width / 2 + marginX,
+            y1: candidate.y - size.height / 2 - marginY,
+            y2: candidate.y + size.height / 2 + marginY
+        };
 
         return this.cy.nodes('[!isGroup]').some((node: any) => {
             if (node.removed() || !node.visible()) return false;
@@ -7598,14 +7604,22 @@ case 'dagre':
             if (excludeNodeIds.includes(node.id())) return false;
 
             const pos = node.position();
-            const box = node.boundingBox();
-            const otherWidth = Math.max(box.w, 80);
-            const otherHeight = Math.max(box.h, 44);
+            const otherWidth = Math.max(Number(node.width?.() || 0), 80);
+            const otherHeight = Math.max(Number(node.height?.() || 0), 44);
+            const otherRect = {
+                x1: pos.x - otherWidth / 2 - marginX,
+                x2: pos.x + otherWidth / 2 + marginX,
+                y1: pos.y - otherHeight / 2 - marginY,
+                y2: pos.y + otherHeight / 2 + marginY
+            };
 
-            return (
-                Math.abs(candidate.x - pos.x) < (size.width + otherWidth) / 2 + marginX &&
-                Math.abs(candidate.y - pos.y) < (size.height + otherHeight) / 2 + marginY
-            );
+            const separated =
+                candidateRect.x2 <= otherRect.x1 ||
+                candidateRect.x1 >= otherRect.x2 ||
+                candidateRect.y2 <= otherRect.y1 ||
+                candidateRect.y1 >= otherRect.y2;
+
+            return !separated;
         });
     }
 
@@ -7619,6 +7633,8 @@ case 'dagre':
     ): { x: number; y: number } {
         const size = this.estimateCollisionBox(referenceNode);
         const excludeNodeIds = [referenceNode.id()];
+        const tryCandidate = (candidate: { x: number; y: number }) =>
+            !this.isPositionColliding(candidate, size, excludeNodeIds);
 
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
             let candidate = { ...basePosition };
@@ -7637,12 +7653,39 @@ case 'dagre':
                 }
             }
 
-            if (!this.isPositionColliding(candidate, size, excludeNodeIds)) {
+            if (tryCandidate(candidate)) {
                 return candidate;
             }
         }
 
-        return basePosition;
+        const secondary = secondaryAxis || { x: -primaryAxis.y, y: primaryAxis.x };
+        for (let ring = 1; ring <= maxAttempts + 14; ring++) {
+            const offsets = [
+                { a: ring, b: 0 },
+                { a: ring, b: 1 },
+                { a: ring, b: -1 },
+                { a: ring, b: 2 },
+                { a: ring, b: -2 },
+                { a: -ring, b: 0 },
+                { a: -ring, b: 1 },
+                { a: -ring, b: -1 }
+            ];
+
+            for (const offset of offsets) {
+                const candidate = {
+                    x: basePosition.x + primaryAxis.x * step * offset.a + secondary.x * step * 0.7 * offset.b,
+                    y: basePosition.y + primaryAxis.y * step * offset.a + secondary.y * step * 0.7 * offset.b
+                };
+                if (tryCandidate(candidate)) {
+                    return candidate;
+                }
+            }
+        }
+
+        return {
+            x: basePosition.x + primaryAxis.x * step * (maxAttempts + 16) + secondary.x * step * 1.4,
+            y: basePosition.y + primaryAxis.y * step * (maxAttempts + 16) + secondary.y * step * 1.4
+        };
     }
 
     /**
@@ -7729,13 +7772,14 @@ case 'dagre':
      */
     private getFreeSiblingShortcutPosition(activeNode: any): { x: number; y: number } {
         const nodePos = activeNode.position();
-        const NEARBY_GAP = 100;
-        const basePosition = { x: nodePos.x, y: nodePos.y + NEARBY_GAP };
+        const downDir = { x: 0, y: 1 };
+        const directionalDistance = this.getDirectionalDistance(activeNode, downDir, 36);
+        const basePosition = { x: nodePos.x, y: nodePos.y + directionalDistance };
         return this.resolveShortcutPosition(
             basePosition,
             activeNode,
-            { x: 0, y: 1 },
-            NEARBY_GAP,
+            downDir,
+            Math.max(100, directionalDistance * 0.85),
             { x: 1, y: 0 },
             12
         );
