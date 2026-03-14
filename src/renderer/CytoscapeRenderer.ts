@@ -3,7 +3,8 @@ import * as dagreNamespace from 'cytoscape-dagre';
 import * as coseBilkentNamespace from 'cytoscape-cose-bilkent';
 import { IGraphRenderer, GraphData, RenderOptions, GraphChanges, ViewState, Edge } from './types';
 import { ZKNode } from 'src/view/indexView';
-import { Component, MarkdownRenderer, Notice, Platform } from 'obsidian';
+import { Component, MarkdownRenderer, Notice, Platform, setIcon } from 'obsidian';
+import { t } from 'src/lang/helper';
 
 // 处理 CommonJS 和 ESM 模块的兼容性
 const getCytoscape = (): any => {
@@ -1271,31 +1272,31 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     return colors.nodeBackground;
                 },
                 'color': colors.nodeText,
-                'font-size': '14px',
+                'font-size': '16px',
                 'font-weight': '500',
                 // 使用函数动态计算宽度和高度
                 'width': (ele: any) => {
                     const label = ele.data('label') || '';
                     return this.measureNodeLabel(label, {
                         baseWidth: 80,
-                        minHeight: 34,
-                        maxWidth: 220,
-                        charWidth: 8,
-                        lineHeight: 12,
-                        paddingX: 32,
-                        paddingY: 16
+                        minHeight: 36,
+                        maxWidth: 240,
+                        charWidth: 9,
+                        lineHeight: 14,
+                        paddingX: 36,
+                        paddingY: 18
                     }).width;
                 },
                 'height': (ele: any) => {
                     const label = ele.data('label') || '';
                     return this.measureNodeLabel(label, {
                         baseWidth: 80,
-                        minHeight: 34,
-                        maxWidth: 220,
-                        charWidth: 8,
-                        lineHeight: 12,
-                        paddingX: 32,
-                        paddingY: 16
+                        minHeight: 36,
+                        maxWidth: 240,
+                        charWidth: 9,
+                        lineHeight: 14,
+                        paddingX: 36,
+                        paddingY: 18
                     }).height;
                 },
                 'padding': '20px',
@@ -7094,7 +7095,6 @@ case 'dagre':
             const data = node.data();
             if (data.originalNode && data.originalNode.IDStr) {
                 this.batchSelectedNodeIds.push(data.originalNode.IDStr);
-                // 保存完整节点数据，包含 isCrossDomain 等信息
                 this.batchSelectedNodes.push({
                     IDStr: data.originalNode.IDStr,
                     isCrossDomain: data.originalNode.isCrossDomain || false,
@@ -7103,28 +7103,21 @@ case 'dagre':
             }
         });
 
-        let toolbar = document.getElementById('zk-batch-toolbar');
+        // 如果正在退出动画中，先移除
+        let toolbar = this.container.querySelector('.zk-batch-toolbar') as HTMLElement | null;
+        if (toolbar && toolbar.classList.contains('zk-batch-toolbar-exiting')) {
+            toolbar.remove();
+            toolbar = null;
+        }
         if (!toolbar) {
             toolbar = this.createBatchToolbar();
             this.container.appendChild(toolbar);
         }
 
-        // 更新位置到选中区域上方
-        let minY = Infinity;
-        let minX = Infinity;
-        selectedNodes.forEach((node: any) => {
-            const pos = node.renderedPosition();
-            minY = Math.min(minY, pos.y);
-            minX = Math.min(minX, pos.x);
-        });
-
-        toolbar.style.top = `${Math.max(10, minY - 60)}px`;
-        toolbar.style.left = `${minX}px`;
-
         // 更新计数
-        const countLabel = toolbar.querySelector('.zk-batch-count');
+        const countLabel = toolbar.querySelector('.zk-batch-toolbar-count');
         if (countLabel) {
-            countLabel.textContent = `已选中 ${count} 个节点`;
+            countLabel.textContent = t('batch selected count').replace('{count}', String(count));
         }
     }
 
@@ -7132,10 +7125,22 @@ case 'dagre':
      * 隐藏批量操作工具栏
      */
     private hideBatchToolbar(): void {
-        const toolbar = document.getElementById('zk-batch-toolbar');
-        if (toolbar) {
+        const toolbar = this.container?.querySelector('.zk-batch-toolbar') as HTMLElement | null;
+        if (!toolbar) return;
+
+        if (toolbar.classList.contains('zk-batch-toolbar-exiting')) return;
+
+        toolbar.classList.add('zk-batch-toolbar-exiting');
+        toolbar.addEventListener('animationend', () => {
             toolbar.remove();
-        }
+        }, { once: true });
+
+        // 兜底：动画未触发时也能移除
+        setTimeout(() => {
+            if (toolbar.parentNode) {
+                toolbar.remove();
+            }
+        }, 250);
     }
 
     /**
@@ -7143,86 +7148,72 @@ case 'dagre':
      */
     private createBatchToolbar(): HTMLElement {
         const toolbar = document.createElement('div');
-        toolbar.id = 'zk-batch-toolbar';
-        toolbar.style.cssText = `
-            position: absolute;
-            background-color: var(--background-secondary);
-            border: 1px solid var(--background-modifier-border);
-            border-radius: 8px;
-            padding: 8px 12px;
-            display: flex;
-            gap: 8px;
-            z-index: 10000;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-        `;
+        toolbar.className = 'zk-batch-toolbar';
 
-        // 计数标签
-        const countLabel = document.createElement('span');
-        countLabel.className = 'zk-batch-count';
-        countLabel.style.cssText = `
-            font-size: 13px;
-            color: var(--text-normal);
-            font-weight: 500;
-            padding-right: 8px;
-            border-right: 1px solid var(--background-modifier-border);
-        `;
-        countLabel.textContent = '已选中 0 个节点';
-        toolbar.appendChild(countLabel);
+        // 防止事件穿透到画布
+        const stopPropagation = (e: Event) => {
+            e.preventDefault();
+            e.stopPropagation();
+        };
+        toolbar.addEventListener('pointerdown', stopPropagation);
+        toolbar.addEventListener('mousedown', stopPropagation);
+
+        // 计数徽章
+        const countBadge = document.createElement('span');
+        countBadge.className = 'zk-batch-toolbar-count';
+        countBadge.textContent = t('batch selected count').replace('{count}', '0');
+        toolbar.appendChild(countBadge);
+
+        // 分隔线
+        const divider1 = document.createElement('div');
+        divider1.className = 'zk-batch-toolbar-divider';
+        toolbar.appendChild(divider1);
 
         // 分组按钮
-        const groupBtn = this.createToolbarButton('📦 分组', () => this.batchCreateGroup());
-        toolbar.appendChild(groupBtn);
+        toolbar.appendChild(this.createToolbarButton('group', t('batch group'), '', () => this.batchCreateGroup()));
 
         // 删除按钮
-        const deleteBtn = this.createToolbarButton('🗑️ 删除', () => this.batchDeleteNodes());
-        toolbar.appendChild(deleteBtn);
+        toolbar.appendChild(this.createToolbarButton('trash-2', t('batch delete'), 'zk-batch-btn-delete', () => this.batchDeleteNodes()));
 
         // 改颜色按钮
-        const colorBtn = this.createToolbarButton('🎨 改颜色', () => this.batchChangeColor());
-        toolbar.appendChild(colorBtn);
+        toolbar.appendChild(this.createToolbarButton('palette', t('batch change color'), '', () => this.batchChangeColor()));
+
+        // 分隔线
+        const divider2 = document.createElement('div');
+        divider2.className = 'zk-batch-toolbar-divider';
+        toolbar.appendChild(divider2);
 
         // 取消按钮
-        const cancelBtn = this.createToolbarButton('✕ 取消', () => {
+        toolbar.appendChild(this.createToolbarButton('x', t('batch cancel'), 'zk-batch-btn-cancel', () => {
             if (this.cy) {
                 this.cy.$(':selected').unselect();
             }
             this.hideBatchToolbar();
-        });
-        toolbar.appendChild(cancelBtn);
+        }));
 
         return toolbar;
     }
 
     /**
-     * 创建工具栏按钮
+     * 创建工具栏按钮（带 Lucide 图标）
      */
-    private createToolbarButton(text: string, onClick: () => void): HTMLElement {
+    private createToolbarButton(iconName: string, label: string, extraClass: string, onClick: () => void): HTMLElement {
         const btn = document.createElement('button');
-        btn.textContent = text;
-        btn.style.cssText = `
-            padding: 6px 12px;
-            background-color: var(--interactive-normal);
-            color: var(--text-normal);
-            border: 1px solid var(--background-modifier-border);
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 13px;
-        `;
-        btn.onmouseover = () => btn.style.backgroundColor = 'var(--interactive-hover)';
-        btn.onmouseout = () => btn.style.backgroundColor = 'var(--interactive-normal)';
+        btn.className = `zk-batch-toolbar-btn ${extraClass}`.trim();
 
-        // 防止按下工具栏按钮时触发底层画布点击/取消选中
-        btn.onpointerdown = (event: PointerEvent) => {
-            event.preventDefault();
-            event.stopPropagation();
-        };
-        btn.onmousedown = (event: MouseEvent) => {
-            event.preventDefault();
-            event.stopPropagation();
-        };
+        // 图标
+        const iconEl = document.createElement('span');
+        iconEl.className = 'zk-batch-toolbar-icon';
+        setIcon(iconEl, iconName);
+        btn.appendChild(iconEl);
+
+        // 文字
+        const labelEl = document.createElement('span');
+        labelEl.textContent = label;
+        btn.appendChild(labelEl);
 
         btn.onclick = (event: MouseEvent) => {
-            event.stopPropagation(); // 阻止事件冒泡到画布
+            event.stopPropagation();
             onClick();
         };
 
