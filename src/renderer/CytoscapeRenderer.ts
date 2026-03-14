@@ -1263,7 +1263,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'text-valign': 'center',
                 'text-halign': 'center',
                 'text-wrap': 'wrap',
-                'text-max-width': '200px',
+                'text-max-width': '280px',
                 'text-overflow-wrap': 'anywhere',
                 'background-color': (ele: any) => {
                     if (isVivid && ele.data('branchNodeBackground') && !ele.data('isRoot')) {
@@ -1272,31 +1272,31 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     return colors.nodeBackground;
                 },
                 'color': colors.nodeText,
-                'font-size': '16px',
+                'font-size': '20px',
                 'font-weight': '500',
                 // 使用函数动态计算宽度和高度
                 'width': (ele: any) => {
                     const label = ele.data('label') || '';
                     return this.measureNodeLabel(label, {
-                        baseWidth: 80,
-                        minHeight: 36,
-                        maxWidth: 240,
-                        charWidth: 9,
-                        lineHeight: 14,
-                        paddingX: 36,
-                        paddingY: 18
+                        baseWidth: 90,
+                        minHeight: 42,
+                        maxWidth: 280,
+                        charWidth: 11,
+                        lineHeight: 18,
+                        paddingX: 40,
+                        paddingY: 20
                     }).width;
                 },
                 'height': (ele: any) => {
                     const label = ele.data('label') || '';
                     return this.measureNodeLabel(label, {
-                        baseWidth: 80,
-                        minHeight: 36,
-                        maxWidth: 240,
-                        charWidth: 9,
-                        lineHeight: 14,
-                        paddingX: 36,
-                        paddingY: 18
+                        baseWidth: 90,
+                        minHeight: 42,
+                        maxWidth: 280,
+                        charWidth: 11,
+                        lineHeight: 18,
+                        paddingX: 40,
+                        paddingY: 20
                     }).height;
                 },
                 'padding': '20px',
@@ -1340,8 +1340,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
         {
             selector: 'node[?isRoot]',
             style: {
-                'background-color': '#66c7ff',
-                'border-color': '#8dd8ff',
+                'background-color': '#1e3a5f',
+                'border-color': '#2a4f7a',
                 'font-size': '26px',
                 'font-weight': 'bold',
                 'text-max-width': '400px',
@@ -1377,8 +1377,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
         {
             selector: 'node[?isRoot]:selected',
             style: {
-                'background-color': '#66c7ff',
-                'border-color': '#8dd8ff',
+                'background-color': '#244a6f',
+                'border-color': '#3a6a9f',
                 'border-width': '4px',
                 'color': '#ffffff'
             } as any
@@ -2550,9 +2550,9 @@ case 'dagre':
                 const zoom = this.cy.zoom();
                 const box = node.renderedBoundingBox();
                 const isRoot = !!node.data('isRoot');
-                const fontPx = isRoot ? 26 : 14;
+                const fontPx = isRoot ? 26 : 20;
                 const fontWeight = isRoot ? '700' : '500';
-                const textMaxWidth = isRoot ? 400 : 200; // 匹配 Cytoscape text-max-width
+                const textMaxWidth = isRoot ? 400 : 280; // 匹配 Cytoscape text-max-width
 
                 // 使用 canvas measureText 精确计算换行，匹配 Cytoscape 的 text-overflow-wrap: anywhere
                 let wrappedLines: string[];
@@ -2587,7 +2587,7 @@ case 'dagre':
                     } : undefined);
                 }
 
-                const lineHeight = (isRoot ? 24 : 14) * zoom;
+                const lineHeight = (isRoot ? 24 : 18) * zoom;
                 const centerX = box.x1 + box.w / 2;
                 const centerY = box.y1 + box.h / 2;
                 const textBlockHeight = wrappedLines.length * lineHeight;
@@ -4499,7 +4499,7 @@ case 'dagre':
                 : `${originalNode?.isEmbed ? '!' : ''}[[${originalNode?.file?.basename || originalNode?.title || ''}${(originalNode?.title && originalNode?.file?.basename && originalNode.title !== originalNode.file.basename) ? `|${originalNode.title}` : ''}]]`);
         textarea.value = initialValue;
         textarea.className = 'node-label-editor';
-        const nodeFontSize = node.style('font-size') || '14px';
+        const nodeFontSize = node.style('font-size') || '20px';
         const nodeLineHeight = node.style('line-height') || '1.5';
 
         // 重要：在编辑时隐藏节点标签，避免重复显示
