@@ -7,7 +7,7 @@ import { tableModal } from "src/modal/tableModal";
 import { AddFreeNodeModal } from "src/modal/addFreeNodeModal";
 import { expandGraphModal } from "src/modal/expandGraphModal";
 import { MOCSelectorModal } from "src/modal/mocSelectorModal";
-import { convertMOCToZKNodes, displayWidth, mainNoteInit, MOCTreeNode, parseMOCStructure, random, addSvgPanZoom } from "src/utils/utils";
+import { convertMOCToZKNodes, displayWidth, mainNoteInit, MOCParseResult, MOCTreeNode, parseMOCStructure, random, addSvgPanZoom } from "src/utils/utils";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
 import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
 import { RenderOptions } from "src/renderer/types";
@@ -718,6 +718,244 @@ export class ZKIndexView extends ItemView {
         branchGraphDiv.dispatchEvent(new CustomEvent('zk-open-search-bar'));
     }
 
+    private getGraphModelPositionFromClientPoint(
+        clientX: number,
+        clientY: number,
+        branchGraphDiv: HTMLElement
+    ): { x: number; y: number } {
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        const rect = branchGraphDiv.getBoundingClientRect();
+
+        if (!cy) {
+            return {
+                x: clientX - rect.left,
+                y: clientY - rect.top
+            };
+        }
+
+        const pan = cy.pan();
+        const zoom = cy.zoom() || 1;
+        return {
+            x: (clientX - rect.left - pan.x) / zoom,
+            y: (clientY - rect.top - pan.y) / zoom
+        };
+    }
+
+    private resolveDroppedVaultFiles(event: DragEvent): TFile[] {
+        const dt = event.dataTransfer;
+        if (!dt) return [];
+
+        const candidateValues = new Set<string>();
+        const addCandidate = (value?: string | null) => {
+            if (!value) return;
+            const trimmed = value.trim();
+            if (!trimmed) return;
+            candidateValues.add(trimmed);
+        };
+
+        addCandidate(dt.getData('text/plain'));
+        addCandidate(dt.getData('text/uri-list'));
+        addCandidate(dt.getData('text/x-obsidian-uri'));
+        addCandidate(dt.getData('application/x-obsidian-uri'));
+        addCandidate(dt.getData('application/x-obsidian-file'));
+
+        for (const type of Array.from(dt.types || [])) {
+            try {
+                addCandidate(dt.getData(type));
+            } catch (_) {
+                // 某些类型不可读，忽略即可
+            }
+        }
+
+        const vaultFiles = this.app.vault.getFiles();
+        const tryResolvePath = (raw: string): TFile | null => {
+            const normalized = decodeURIComponent(raw)
+                .replace(/^file:\/\//, '')
+                .replace(/^obsidian:\/\/open\?file=/, '')
+                .replace(/^obsidian:\/\/advanced-uri\?.*?file=/, '')
+                .replace(/^\//, '');
+
+            if (!normalized) return null;
+
+            const exact = this.app.vault.getFileByPath(normalized);
+            if (exact instanceof TFile) return exact;
+
+            const withoutVaultPrefix = normalized.replace(/^.*?\/(?=[^/]+\/[^/]+$)/, '');
+            const maybeExact = this.app.vault.getFileByPath(withoutVaultPrefix);
+            if (maybeExact instanceof TFile) return maybeExact;
+
+            const basename = normalized
+                .replace(/\[\[|\]\]/g, '')
+                .split('|')[0]
+                .split('#')[0]
+                .split('/')
+                .pop();
+            if (!basename) return null;
+
+            return vaultFiles.find(f =>
+                f.path === basename ||
+                f.basename === basename ||
+                f.path.endsWith(`/${basename}`)
+            ) || null;
+        };
+
+        const resolvedFiles: TFile[] = [];
+        const seenPaths = new Set<string>();
+        const pushResolved = (file: TFile | null) => {
+            if (!file) return;
+            if (seenPaths.has(file.path)) return;
+            seenPaths.add(file.path);
+            resolvedFiles.push(file);
+        };
+
+        for (const value of candidateValues) {
+            const resolved = tryResolvePath(value);
+            if (resolved) {
+                pushResolved(resolved);
+                continue;
+            }
+
+            try {
+                const parsed = JSON.parse(value);
+                if (typeof parsed === 'string') {
+                    pushResolved(tryResolvePath(parsed));
+                } else if (parsed && typeof parsed === 'object') {
+                    const pathLike = parsed.path || parsed.file || parsed.filePath || parsed.sourcePath;
+                    pushResolved(tryResolvePath(pathLike));
+                }
+            } catch (_) {
+                // 非 JSON，忽略
+            }
+        }
+
+        return resolvedFiles;
+    }
+
+    private async createDroppedFileNode(file: TFile, position: { x: number; y: number }): Promise<void> {
+        const nodeID = this.generateNextFreeNodeID();
+        const mocFilePath = this.plugin.settings.mocCurrentFile;
+        if (!mocFilePath) return;
+
+        const mocFile = this.app.vault.getFileByPath(mocFilePath);
+        if (!mocFile) return;
+
+        await this.saveFreeNodeToMOC({
+            wikiLink: file.basename,
+            nodeID,
+            relationText: '',
+            file,
+            isEmbed: false
+        });
+
+        await this.saveNodePositionToMOC(mocFile, nodeID, position);
+        await this.refreshBranchMermaid();
+
+        const branchGraphDiv = this.currentBranchGraphDiv || document.getElementById('zk-branch-cytoscape');
+        if (branchGraphDiv) {
+            branchGraphDiv.dispatchEvent(new CustomEvent('select-node-by-id', {
+                detail: { nodeId: nodeID }
+            }));
+        }
+    }
+
+    private getDroppedFileNodePositions(
+        anchor: { x: number; y: number },
+        count: number
+    ): Array<{ x: number; y: number }> {
+        if (count <= 1) {
+            return [anchor];
+        }
+
+        const positions: Array<{ x: number; y: number }> = [];
+        const verticalGap = 110;
+        const horizontalGap = 220;
+        const columns = count > 6 ? 2 : 1;
+        const rowsPerColumn = Math.ceil(count / columns);
+        const startYOffset = -((rowsPerColumn - 1) * verticalGap) / 2;
+
+        for (let index = 0; index < count; index++) {
+            const column = Math.floor(index / rowsPerColumn);
+            const row = index % rowsPerColumn;
+            positions.push({
+                x: anchor.x + column * horizontalGap,
+                y: anchor.y + startYOffset + row * verticalGap
+            });
+        }
+
+        return positions;
+    }
+
+    private async createDroppedFileNodes(files: TFile[], anchorPosition: { x: number; y: number }): Promise<void> {
+        const uniqueFiles = files.filter((file, index, arr) => arr.findIndex(other => other.path === file.path) === index);
+        if (uniqueFiles.length === 0) return;
+
+        if (uniqueFiles.length === 1) {
+            await this.createDroppedFileNode(uniqueFiles[0], anchorPosition);
+            return;
+        }
+
+        const mocFilePath = this.plugin.settings.mocCurrentFile;
+        if (!mocFilePath) return;
+        const mocFile = this.app.vault.getFileByPath(mocFilePath);
+        if (!mocFile) return;
+
+        const positions = this.getDroppedFileNodePositions(anchorPosition, uniqueFiles.length);
+        const createdNodeIds: string[] = [];
+
+        await this.mocHandler.modifyMOCData(mocFile, async (mocData: MOCParseResult) => {
+            const collectNodeIds = (nodes: MOCTreeNode[]): string[] => {
+                return nodes.flatMap((node) => [node.nodeID, ...collectNodeIds(node.children || [])]);
+            };
+
+            const existingNodeIds = new Set(collectNodeIds(mocData.nodes));
+            const freeNums = Array.from(existingNodeIds)
+                .map((id) => {
+                    const match = id?.match(/^free\.(\d+)$/);
+                    return match ? parseInt(match[1], 10) : 0;
+                })
+                .filter((num) => num > 0);
+            let nextFreeNum = freeNums.length > 0 ? Math.max(...freeNums) + 1 : 1;
+
+            uniqueFiles.forEach((file, index) => {
+                let nodeID = `free.${nextFreeNum}`;
+                while (existingNodeIds.has(nodeID)) {
+                    nextFreeNum += 1;
+                    nodeID = `free.${nextFreeNum}`;
+                }
+                existingNodeIds.add(nodeID);
+                nextFreeNum += 1;
+                createdNodeIds.push(nodeID);
+
+                const newNode: MOCTreeNode = {
+                    wikiLink: file.basename,
+                    nodeID,
+                    displayText: file.basename,
+                    depth: 0,
+                    children: [],
+                    file,
+                    relationText: '',
+                    isTextOnly: false,
+                    isEmbed: false
+                };
+
+                mocData.nodes.push(newNode);
+                if (!mocData.nodePositions) {
+                    mocData.nodePositions = {};
+                }
+                mocData.nodePositions[nodeID] = positions[index];
+            });
+        });
+
+        await this.refreshBranchMermaid();
+
+        const branchGraphDiv = this.currentBranchGraphDiv || document.getElementById('zk-branch-cytoscape');
+        if (branchGraphDiv && createdNodeIds[0]) {
+            branchGraphDiv.dispatchEvent(new CustomEvent('select-node-by-id', {
+                detail: { nodeId: createdNodeIds[0] }
+            }));
+        }
+    }
+
     refreshIndexLayout = async () => {
 
         await this.IndexViewInterfaceInit();
@@ -1318,6 +1556,60 @@ export class ZKIndexView extends ItemView {
             if (this.currentBranchGraphDiv && this.currentBranchGraphDiv !== branchGraphDiv) {
                 this.cleanupElementListeners(this.currentBranchGraphDiv);
             }
+
+            const setDropHover = (active: boolean) => {
+                branchGraphDiv.classList.toggle('zk-branch-drop-hover', active);
+                if (active) {
+                    branchGraphDiv.style.boxShadow = 'inset 0 0 0 2px rgba(91, 143, 217, 0.9)';
+                } else if (this.isMobileReadOnly()) {
+                    branchGraphDiv.style.boxShadow = 'none';
+                } else {
+                    branchGraphDiv.style.boxShadow = '';
+                }
+            };
+
+            this.addTrackedListener(branchGraphDiv, 'dragenter', (event: DragEvent) => {
+                if (this.isMobileReadOnly()) return;
+                if (this.resolveDroppedVaultFiles(event).length === 0) return;
+                event.preventDefault();
+                setDropHover(true);
+            });
+
+            this.addTrackedListener(branchGraphDiv, 'dragover', (event: DragEvent) => {
+                if (this.isMobileReadOnly()) return;
+                if (this.resolveDroppedVaultFiles(event).length === 0) return;
+                event.preventDefault();
+                if (event.dataTransfer) {
+                    event.dataTransfer.dropEffect = 'copy';
+                }
+                setDropHover(true);
+            });
+
+            this.addTrackedListener(branchGraphDiv, 'dragleave', (event: DragEvent) => {
+                const relatedTarget = event.relatedTarget as Node | null;
+                if (relatedTarget && branchGraphDiv.contains(relatedTarget)) {
+                    return;
+                }
+                setDropHover(false);
+            });
+
+            this.addTrackedListener(branchGraphDiv, 'drop', async (event: DragEvent) => {
+                if (this.isMobileReadOnly()) return;
+                setDropHover(false);
+
+                const droppedFiles = this.resolveDroppedVaultFiles(event);
+                if (droppedFiles.length === 0) return;
+
+                event.preventDefault();
+                event.stopPropagation();
+
+                const position = this.getGraphModelPositionFromClientPoint(
+                    event.clientX,
+                    event.clientY,
+                    branchGraphDiv
+                );
+                await this.createDroppedFileNodes(droppedFiles, position);
+            });
 
             // 监听视图状态变化事件（缩放和平移）
             this.addTrackedListener(branchGraphDiv, 'viewStateChanged', async (event: any) => {
@@ -6775,56 +7067,6 @@ export class ZKIndexView extends ItemView {
         return (this.currentNodeLayoutStyle || 'free') === 'auto';
     }
 
-    private normalizeLayoutVector(x: number, y: number): { x: number; y: number } {
-        const length = Math.hypot(x, y);
-        if (!length) return { x: 1, y: 0 };
-        return { x: x / length, y: y / length };
-    }
-
-    private snapToCardinalDirection(dir: { x: number; y: number }): { x: number; y: number } {
-        if (Math.abs(dir.x) >= Math.abs(dir.y)) {
-            return { x: dir.x >= 0 ? 1 : -1, y: 0 };
-        }
-        return { x: 0, y: dir.y >= 0 ? 1 : -1 };
-    }
-
-    private getDefaultAutoLayoutDirection(): { x: number; y: number } {
-        switch (this.plugin.settings.DirectionOfBranchGraph) {
-            case 'RL':
-                return { x: -1, y: 0 };
-            case 'TB':
-                return { x: 0, y: 1 };
-            case 'BT':
-                return { x: 0, y: -1 };
-            case 'LR':
-            default:
-                return { x: 1, y: 0 };
-        }
-    }
-
-    private getAutoLayoutDirectionForNode(cy: any, node: any): { x: number; y: number } {
-        // 沿边向上找到根节点
-        let current = node;
-        while (true) {
-            const parents = current.incomers('edge').sources().filter((n: any) => !n.data('isGroup'));
-            if (parents.length === 0) break;
-            current = parents.first();
-        }
-        const root = current;
-
-        // 如果 node 就是根节点，使用默认方向
-        if (root.id() === node.id()) {
-            return this.getDefaultAutoLayoutDirection();
-        }
-
-        // 从根节点到当前节点的向量，snap 到四方向
-        const rootPos = root.position();
-        const nodePos = node.position();
-        return this.snapToCardinalDirection(
-            this.normalizeLayoutVector(nodePos.x - rootPos.x, nodePos.y - rootPos.y)
-        );
-    }
-
     private async relayoutAutoLayoutSiblings(parentNodeId: string): Promise<void> {
         if (!this.isAutoNodeLayoutStyle() || !this.branchRenderer) {
             return;
@@ -6835,216 +7077,226 @@ export class ZKIndexView extends ItemView {
             return;
         }
 
-        const parentNode: any = cy.$('node').filter((node: any) => {
+        const startNode: any = cy.$('node').filter((node: any) => {
             const originalNode = node.data('originalNode');
             return originalNode && (originalNode.IDStr === parentNodeId || originalNode.ID === parentNodeId);
         }).first();
 
-        if (!parentNode || parentNode.length === 0) {
+        if (!startNode || startNode.length === 0) {
             return;
         }
 
-        const children: any = parentNode.outgoers('edge').targets().filter((node: any) => {
-            const data = node.data();
-            return !data.isGroup && !data.isPlaceholder;
+        const HORIZONTAL_GAP = 150;
+        const VERTICAL_GAP = 56;
+        const getNodeSize = (node: any) => ({
+            width: Math.max(Number(node.width?.() || 0), 80),
+            height: Math.max(Number(node.height?.() || 0), 44)
         });
 
-        if (children.length === 0) {
-            return;
-        }
-
-        const MAIN_GAP = 200;
-        const SUBTREE_GAP = 48;
-        const parentPos = parentNode.position();
-        const dir = this.getAutoLayoutDirectionForNode(cy, parentNode);
-        const isHorizontalDir = Math.abs(dir.x) > 0.5;
-
-        const anchor = {
-            x: parentPos.x + dir.x * MAIN_GAP,
-            y: parentPos.y + dir.y * MAIN_GAP
+        const getChildNodes = (node: any): any[] => {
+            return node.outgoers('edge').targets().filter((child: any) => {
+                const data = child.data();
+                return !data.isGroup && !data.isPlaceholder;
+            }).toArray();
         };
 
-        const getSubtreeNodes = (rootNode: any): any[] => {
-            const nodes: any[] = [rootNode];
-            const seen = new Set<string>([rootNode.id()]);
-            rootNode.successors().forEach((ele: any) => {
-                if (!ele.isNode || !ele.isNode()) return;
-                if (ele.data('isGroup') || ele.data('isPlaceholder')) return;
-                if (seen.has(ele.id())) return;
-                seen.add(ele.id());
-                nodes.push(ele);
-            });
-            return nodes;
+        const getColorKey = (node: any): string => {
+            return node?.data?.('branchNodeBorder')
+                || node?.data?.('branchNodeBackground')
+                || '__default__';
         };
 
-        const getSubtreeBounds = (nodes: any[]) => {
-            let minX = Number.POSITIVE_INFINITY;
-            let maxX = Number.NEGATIVE_INFINITY;
-            let minY = Number.POSITIVE_INFINITY;
-            let maxY = Number.NEGATIVE_INFINITY;
+        const getDirectParent = (node: any): any | null => {
+            const parents = node.incomers('edge').sources().filter((parent: any) => {
+                const data = parent.data();
+                return !data.isGroup && !data.isPlaceholder;
+            });
+            return parents && parents.length > 0 ? parents.first() : null;
+        };
 
-            nodes.forEach((node: any) => {
-                const pos = node.position();
-                const width = Math.max(Number(node.width?.() || 0), 80);
-                const height = Math.max(Number(node.height?.() || 0), 44);
-                minX = Math.min(minX, pos.x - width / 2);
-                maxX = Math.max(maxX, pos.x + width / 2);
-                minY = Math.min(minY, pos.y - height / 2);
-                maxY = Math.max(maxY, pos.y + height / 2);
+        const quantizeDirection = (fromPos: { x: number; y: number }, toPos: { x: number; y: number }): { x: number; y: number } => {
+            const dx = toPos.x - fromPos.x;
+            const dy = toPos.y - fromPos.y;
+            if (Math.abs(dx) >= Math.abs(dy)) {
+                return { x: dx >= 0 ? 1 : -1, y: 0 };
+            }
+            return { x: 0, y: dy >= 0 ? 1 : -1 };
+        };
+
+        const getLayoutDirection = (node: any): { x: number; y: number } => {
+            const parent = getDirectParent(node);
+            if (!parent) {
+                return { x: 1, y: 0 };
+            }
+
+            const grandParent = getDirectParent(parent);
+            if (!grandParent) {
+                return quantizeDirection(parent.position(), node.position());
+            }
+
+            return getLayoutDirection(parent);
+        };
+
+        const getStackAxis = (dir: { x: number; y: number }): { x: number; y: number } => {
+            return Math.abs(dir.x) > 0.5 ? { x: 0, y: 1 } : { x: 1, y: 0 };
+        };
+
+        const getNodeSpan = (size: { width: number; height: number }, dir: { x: number; y: number }): number => {
+            return Math.abs(dir.x) > 0.5 ? size.height : size.width;
+        };
+
+        const directionKey = (dir: { x: number; y: number }): 'right' | 'left' | 'down' | 'up' => {
+            if (Math.abs(dir.x) >= Math.abs(dir.y)) {
+                return dir.x >= 0 ? 'right' : 'left';
+            }
+            return dir.y >= 0 ? 'down' : 'up';
+        };
+
+        const sortChildren = (children: any[], stackAxis: { x: number; y: number }, center: { x: number; y: number }): any[] => {
+            const sorted = [...children].sort((a, b) => {
+                const ap = a.position();
+                const bp = b.position();
+                const aproj = (ap.x - center.x) * stackAxis.x + (ap.y - center.y) * stackAxis.y;
+                const bproj = (bp.x - center.x) * stackAxis.x + (bp.y - center.y) * stackAxis.y;
+                return aproj - bproj;
+            });
+            const colorOrder = new Map<string, number>();
+            sorted.forEach((child) => {
+                const colorKey = getColorKey(child);
+                if (!colorOrder.has(colorKey)) {
+                    colorOrder.set(colorKey, colorOrder.size);
+                }
             });
 
+            return sorted.sort((a, b) => {
+                const colorRankA = colorOrder.get(getColorKey(a)) ?? Number.MAX_SAFE_INTEGER;
+                const colorRankB = colorOrder.get(getColorKey(b)) ?? Number.MAX_SAFE_INTEGER;
+                if (colorRankA !== colorRankB) {
+                    return colorRankA - colorRankB;
+                }
+                const ap = a.position();
+                const bp = b.position();
+                const aproj = (ap.x - center.x) * stackAxis.x + (ap.y - center.y) * stackAxis.y;
+                const bproj = (bp.x - center.x) * stackAxis.x + (bp.y - center.y) * stackAxis.y;
+                return aproj - bproj;
+            });
+        };
+
+        const buildLayout = (node: any, inheritedDir?: { x: number; y: number }): any => {
+            const size = getNodeSize(node);
+            const parents = node.incomers('edge').sources().filter((parent: any) => {
+                const data = parent.data();
+                return !data.isGroup && !data.isPlaceholder;
+            });
+            const isRoot = !parents || parents.length === 0;
+            const dir = isRoot ? { x: 1, y: 0 } : (inheritedDir || getLayoutDirection(node));
+            const stackAxis = getStackAxis(dir);
+            const center = node.position();
+            const children = sortChildren(getChildNodes(node), stackAxis, center).map((child) => buildLayout(child, dir));
+            const childrenSpan = children.reduce((sum: number, child: any) => sum + child.subtreeSpan, 0)
+                + Math.max(0, children.length - 1) * VERTICAL_GAP;
             return {
-                minX,
-                maxX,
-                minY,
-                maxY,
-                width: maxX - minX,
-                height: maxY - minY,
-                centerX: (minX + maxX) / 2,
-                centerY: (minY + maxY) / 2
+                node,
+                dir,
+                stackAxis,
+                size,
+                children,
+                isRoot,
+                subtreeSpan: Math.max(getNodeSpan(size, dir), childrenSpan)
             };
         };
 
-        const getNodeBox = (node: any) => {
-            const pos = node.position();
-            const width = Math.max(Number(node.width?.() || 0), 80);
-            const height = Math.max(Number(node.height?.() || 0), 44);
-            return {
-                minX: pos.x - width / 2,
-                maxX: pos.x + width / 2,
-                minY: pos.y - height / 2,
-                maxY: pos.y + height / 2
-            };
-        };
+        const layoutTree = buildLayout(startNode);
+        const rootPos = startNode.position();
+        const nodePositions: Record<string, { x: number; y: number }> = {};
 
-        const boxesOverlap = (
-            a: { minX: number; maxX: number; minY: number; maxY: number },
-            b: { minX: number; maxX: number; minY: number; maxY: number }
-        ) => {
-            const margin = 24;
-            return !(
-                a.maxX + margin <= b.minX ||
-                a.minX >= b.maxX + margin ||
-                a.maxY + margin <= b.minY ||
-                a.minY >= b.maxY + margin
-            );
-        };
+        const placeLayout = (layoutNode: any, centerX: number, centerY: number) => {
+            const { node, size, children, dir, stackAxis, isRoot } = layoutNode;
+            node.position({ x: centerX, y: centerY });
 
-        // 根据方向选择扩展轴上的投影和跨度
-        const getSpreadCenter = (bounds: any) => isHorizontalDir ? bounds.centerY : bounds.centerX;
-        const getSpreadSpan = (bounds: any) => isHorizontalDir ? bounds.height : bounds.width;
-
-        const childEntries = children
-            .map((child: any) => {
-                const subtreeNodes = getSubtreeNodes(child);
-                const bounds = getSubtreeBounds(subtreeNodes);
-                return {
-                    child,
-                    subtreeNodes,
-                    bounds,
-                    projection: getSpreadCenter(bounds)
+            const originalNode = node.data('originalNode');
+            const nodeId = originalNode?.IDStr || originalNode?.ID;
+            if (nodeId) {
+                nodePositions[nodeId] = {
+                    x: Math.round(centerX * 100) / 100,
+                    y: Math.round(centerY * 100) / 100
                 };
-            })
-            .sort((a: any, b: any) => a.projection - b.projection);
+            }
+
+            if (children.length === 0) {
+                return;
+            }
+
+            if (isRoot) {
+                const groups: Record<'right' | 'left' | 'down' | 'up', any[]> = {
+                    right: [],
+                    left: [],
+                    down: [],
+                    up: []
+                };
+
+                children.forEach((childLayout: any) => {
+                    groups[directionKey(childLayout.dir)].push(childLayout);
+                });
+
+                const placeGroup = (groupDir: 'right' | 'left' | 'down' | 'up', groupChildren: any[]) => {
+                    if (groupChildren.length === 0) return;
+
+                    const groupVector =
+                        groupDir === 'right' ? { x: 1, y: 0 } :
+                        groupDir === 'left' ? { x: -1, y: 0 } :
+                        groupDir === 'down' ? { x: 0, y: 1 } :
+                        { x: 0, y: -1 };
+                    const groupStackAxis = getStackAxis(groupVector);
+                    const totalGroupSpan = groupChildren.reduce((sum: number, child: any) => sum + child.subtreeSpan, 0)
+                        + Math.max(0, groupChildren.length - 1) * VERTICAL_GAP;
+                    let groupCursor = (Math.abs(groupStackAxis.x) > 0.5 ? centerX : centerY) - totalGroupSpan / 2;
+
+                    groupChildren.forEach((childLayout: any) => {
+                        const childSpanCenter = groupCursor + childLayout.subtreeSpan / 2;
+                        const childCenterX = Math.abs(groupVector.x) > 0.5
+                            ? centerX + groupVector.x * (size.width / 2 + HORIZONTAL_GAP + childLayout.size.width / 2)
+                            : childSpanCenter;
+                        const childCenterY = Math.abs(groupVector.y) > 0.5
+                            ? centerY + groupVector.y * (size.height / 2 + HORIZONTAL_GAP + childLayout.size.height / 2)
+                            : childSpanCenter;
+                        placeLayout(childLayout, childCenterX, childCenterY);
+                        groupCursor += childLayout.subtreeSpan + VERTICAL_GAP;
+                    });
+                };
+
+                placeGroup('right', groups.right);
+                placeGroup('left', groups.left);
+                placeGroup('down', groups.down);
+                placeGroup('up', groups.up);
+                return;
+            }
+
+            const totalChildrenSpan = children.reduce((sum: number, child: any) => sum + child.subtreeSpan, 0)
+                + Math.max(0, children.length - 1) * VERTICAL_GAP;
+            let cursor = (Math.abs(stackAxis.x) > 0.5 ? centerX : centerY) - totalChildrenSpan / 2;
+
+            children.forEach((childLayout: any) => {
+                const childSpanCenter = cursor + childLayout.subtreeSpan / 2;
+                const childCenterX = Math.abs(dir.x) > 0.5
+                    ? centerX + dir.x * (size.width / 2 + HORIZONTAL_GAP + childLayout.size.width / 2)
+                    : childSpanCenter;
+                const childCenterY = Math.abs(dir.y) > 0.5
+                    ? centerY + dir.y * (size.height / 2 + HORIZONTAL_GAP + childLayout.size.height / 2)
+                    : childSpanCenter;
+                placeLayout(childLayout, childCenterX, childCenterY);
+                cursor += childLayout.subtreeSpan + VERTICAL_GAP;
+            });
+        };
+
+        cy.batch(() => {
+            placeLayout(layoutTree, rootPos.x, rootPos.y);
+        });
 
         const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
         if (!mocFile) {
             return;
         }
-
-        const nodePositions: Record<string, { x: number; y: number }> = {};
-        const occupiedBoxes = cy.nodes('[!isGroup]').filter((node: any) => {
-            const data = node.data();
-            return !data.isPlaceholder && node.id() !== parentNode.id();
-        }).map((node: any) => ({
-            nodeId: node.id(),
-            box: getNodeBox(node)
-        }));
-
-        // 父节点在扩展轴上的坐标
-        const parentSpreadPos = isHorizontalDir ? parentPos.y : parentPos.x;
-        const totalSpan = childEntries.reduce((sum: number, entry: any) => sum + getSpreadSpan(entry.bounds), 0)
-            + Math.max(0, childEntries.length - 1) * SUBTREE_GAP;
-        let cursor = parentSpreadPos - totalSpan / 2;
-
-        cy.batch(() => {
-            childEntries.forEach((entry: any) => {
-                const spreadSpan = getSpreadSpan(entry.bounds);
-                const spreadCenter = getSpreadCenter(entry.bounds);
-                let desiredCenter = cursor + spreadSpan / 2;
-                const subtreeNodeIds = new Set(entry.subtreeNodes.map((node: any) => node.id()));
-
-                // 沿主轴对齐到 anchor
-                const childMainPos = isHorizontalDir ? entry.child.position().x : entry.child.position().y;
-                const anchorMainPos = isHorizontalDir ? anchor.x : anchor.y;
-                const deltaMain = anchorMainPos - childMainPos;
-
-                // 计算候选边界
-                const deltaSpreadInit = desiredCenter - spreadCenter;
-                let candidateBounds = {
-                    minX: entry.bounds.minX + (isHorizontalDir ? deltaMain : deltaSpreadInit),
-                    maxX: entry.bounds.maxX + (isHorizontalDir ? deltaMain : deltaSpreadInit),
-                    minY: entry.bounds.minY + (isHorizontalDir ? deltaSpreadInit : deltaMain),
-                    maxY: entry.bounds.maxY + (isHorizontalDir ? deltaSpreadInit : deltaMain)
-                };
-
-                let attempts = 0;
-                while (attempts < 24) {
-                    const hasCollision = occupiedBoxes.some(({ nodeId, box }: any) => {
-                        if (subtreeNodeIds.has(nodeId)) return false;
-                        return boxesOverlap(candidateBounds, box);
-                    });
-                    if (!hasCollision) {
-                        break;
-                    }
-                    desiredCenter += SUBTREE_GAP;
-                    // 沿扩展轴移动候选边界
-                    if (isHorizontalDir) {
-                        candidateBounds.minY += SUBTREE_GAP;
-                        candidateBounds.maxY += SUBTREE_GAP;
-                    } else {
-                        candidateBounds.minX += SUBTREE_GAP;
-                        candidateBounds.maxX += SUBTREE_GAP;
-                    }
-                    attempts += 1;
-                }
-
-                const deltaSpread = desiredCenter - spreadCenter;
-
-                entry.subtreeNodes.forEach((subtreeNode: any) => {
-                    const oldPos = subtreeNode.position();
-                    const nextPos = {
-                        x: oldPos.x + (isHorizontalDir ? deltaMain : deltaSpread),
-                        y: oldPos.y + (isHorizontalDir ? deltaSpread : deltaMain)
-                    };
-
-                    subtreeNode.position(nextPos);
-
-                    const originalNode = subtreeNode.data('originalNode');
-                    const nodeId = originalNode?.IDStr || originalNode?.ID;
-                    if (nodeId) {
-                        nodePositions[nodeId] = {
-                            x: Math.round(nextPos.x * 100) / 100,
-                            y: Math.round(nextPos.y * 100) / 100
-                        };
-                    }
-                });
-
-                const finalDeltaX = isHorizontalDir ? deltaMain : deltaSpread;
-                const finalDeltaY = isHorizontalDir ? deltaSpread : deltaMain;
-                occupiedBoxes.push({
-                    nodeId: entry.child.id(),
-                    box: {
-                        minX: entry.bounds.minX + finalDeltaX,
-                        maxX: entry.bounds.maxX + finalDeltaX,
-                        minY: entry.bounds.minY + finalDeltaY,
-                        maxY: entry.bounds.maxY + finalDeltaY
-                    }
-                });
-
-                cursor = desiredCenter + spreadSpan / 2 + SUBTREE_GAP;
-            });
-        });
 
         await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
             if (!mocData.nodePositions) {

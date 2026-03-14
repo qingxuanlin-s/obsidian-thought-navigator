@@ -4482,12 +4482,12 @@ case 'dagre':
             existingEditor.remove();
         }
 
-        // 获取节点位置
-        const boundingBox = node.renderedBoundingBox();
-        const lockedBoxLeft = boundingBox.x1;
-        const lockedBoxTop = boundingBox.y1;
-        const initialBoxWidth = Math.max(boundingBox.w, 80);
-        const initialBoxHeight = Math.max(boundingBox.h, 44);
+        // 只使用节点本体尺寸，避免 renderedBoundingBox 把标签/选中态一起算进去
+        const renderedPosition = node.renderedPosition();
+        const initialBoxWidth = Math.max(Number(node.renderedWidth?.() || 0), 80);
+        const initialBoxHeight = Math.max(Number(node.renderedHeight?.() || 0), 44);
+        const lockedBoxLeft = renderedPosition.x - initialBoxWidth / 2;
+        const lockedBoxTop = renderedPosition.y - initialBoxHeight / 2;
 
         // 创建 textarea，直接覆盖在节点上
         const textarea = document.createElement('textarea');
@@ -4712,7 +4712,12 @@ case 'dagre':
             e.stopPropagation();
             hasUserEdited = true;
             // 不再实时更新节点标签，避免重复显示
-            this.checkForLinkPattern(textarea, node, boundingBox, suggesterPopoverRef, handleLinkSelect);
+            this.checkForLinkPattern(textarea, node, {
+                x1: lockedBoxLeft,
+                y1: lockedBoxTop,
+                w: initialBoxWidth,
+                h: initialBoxHeight
+            }, suggesterPopoverRef, handleLinkSelect);
             resizeEditorToContent();
         });
 
@@ -4787,9 +4792,11 @@ case 'dagre':
         const updatePosition = () => {
             if (!this.cy) return;
 
-            const newBoundingBox = node.renderedBoundingBox();
-            textarea.style.left = `${lockedBoxLeft + (newBoundingBox.x1 - boundingBox.x1)}px`;
-            textarea.style.top = `${lockedBoxTop + (newBoundingBox.y1 - boundingBox.y1)}px`;
+            const currentRenderedPosition = node.renderedPosition();
+            const currentBoxWidth = Math.max(Number(node.renderedWidth?.() || 0), 80);
+            const currentBoxHeight = Math.max(Number(node.renderedHeight?.() || 0), 44);
+            textarea.style.left = `${currentRenderedPosition.x - currentBoxWidth / 2}px`;
+            textarea.style.top = `${currentRenderedPosition.y - currentBoxHeight / 2}px`;
             resizeEditorToContent();
         };
 
@@ -7497,22 +7504,25 @@ case 'dagre':
     }
 
     private getAutoLayoutDirection(node: any): { x: number; y: number } {
-        // 沿边向上找到根节点
+        const lineage: any[] = [node];
         let current = node;
         while (true) {
             const parents = current.incomers('edge').sources().filter((n: any) => !n.data('isGroup'));
-            if (parents.length === 0) break;
+            if (!parents || parents.length === 0) break;
             current = parents.first();
+            lineage.push(current);
         }
-        // 如果 node 就是根节点，使用默认方向
-        if (current.id() === node.id()) {
+
+        const root = lineage[lineage.length - 1];
+        if (root.id() === node.id()) {
             return { x: 1, y: 0 };
         }
-        // 从根节点到当前节点的向量，snap 到四方向
-        const rootPos = current.position();
-        const nodePos = node.position();
-        const dx = nodePos.x - rootPos.x;
-        const dy = nodePos.y - rootPos.y;
+
+        const branchAnchor = lineage.length >= 2 ? lineage[lineage.length - 2] : node;
+        const rootPos = root.position();
+        const anchorPos = branchAnchor.position();
+        const dx = anchorPos.x - rootPos.x;
+        const dy = anchorPos.y - rootPos.y;
         if (Math.abs(dx) >= Math.abs(dy)) {
             return { x: dx >= 0 ? 1 : -1, y: 0 };
         }
@@ -7521,6 +7531,13 @@ case 'dagre':
 
     private getPerpendicular(dir: { x: number; y: number }): { x: number; y: number } {
         return { x: -dir.y, y: dir.x };
+    }
+
+    private getAutoLayoutStackDirection(dir: { x: number; y: number }): { x: number; y: number } {
+        if (Math.abs(dir.x) > 0.5) {
+            return { x: 0, y: 1 };
+        }
+        return { x: 1, y: 0 };
     }
 
     private nextOffsetByProjection(points: any[], anchor: { x: number; y: number }, normal: { x: number; y: number }, gap: number): number {
@@ -7550,6 +7567,18 @@ case 'dagre':
             width: Math.max(box.w, 120),
             height: Math.max(box.h, 64)
         };
+    }
+
+    private getAxisSpan(size: { width: number; height: number }, dir: { x: number; y: number }): number {
+        return Math.abs(dir.x) >= Math.abs(dir.y) ? size.width : size.height;
+    }
+
+    private getDirectionalDistance(referenceNode: any, dir: { x: number; y: number }, extraGap: number = 48): number {
+        const referenceSize = this.estimateCollisionBox(referenceNode);
+        const estimatedNewSize = referenceSize;
+        const referenceSpan = this.getAxisSpan(referenceSize, dir);
+        const newSpan = this.getAxisSpan(estimatedNewSize, dir);
+        return referenceSpan / 2 + newSpan / 2 + extraGap;
     }
 
     private isPositionColliding(
@@ -7620,23 +7649,37 @@ case 'dagre':
      * 处理创建子节点（Tab 键）
      * SimpleMind 风格：子节点基于视觉位置而非 ID
      */
-    private handleCreateChildNode(): void {
-        const activeNode = this.getActiveNode();
-        if (!activeNode) return;
-
-        const nodeData = activeNode.data();
-        const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
+    private getFreeChildShortcutPosition(activeNode: any): { x: number; y: number } {
         const nodePos = activeNode.position();
         const children = activeNode.outgoers('edge').targets();
-        const dir = this.isAutoNodeLayoutStyle() ? this.getAutoLayoutDirection(activeNode) : this.getBranchDirection(activeNode);
+        const dir = this.getBranchDirection(activeNode);
         const normal = this.getPerpendicular(dir);
+        const directionalDistance = this.getDirectionalDistance(activeNode, dir);
+        const anchor = {
+            x: nodePos.x + dir.x * directionalDistance,
+            y: nodePos.y + dir.y * directionalDistance
+        };
+        const offset = this.nextOffsetByProjection(children, anchor, normal, this.VERTICAL_GAP);
+        const rawPosition = {
+            x: anchor.x + normal.x * offset,
+            y: anchor.y + normal.y * offset
+        };
+        return this.resolveShortcutPosition(
+            rawPosition,
+            activeNode,
+            normal,
+            this.VERTICAL_GAP,
+            dir
+        );
+    }
 
-        let finalPosition: { x: number; y: number };
+    private getAutoChildShortcutPosition(activeNode: any): { x: number; y: number } {
+        const nodePos = activeNode.position();
+        const children = activeNode.outgoers('edge').targets();
+        const dir = this.getAutoLayoutDirection(activeNode);
+        const normal = this.getAutoLayoutStackDirection(dir);
 
-        // 自动布局 + 父节点是根节点（无父边）：1级节点在最后一个兄弟附近生成
-        const isRoot = activeNode.incomers('edge').sources().filter((n: any) => !n.data('isGroup')).length === 0;
-        if (this.isAutoNodeLayoutStyle() && isRoot && children.length > 0) {
-            // 找到最后一个子节点（沿 normal 方向投影最大的）
+        if (children.length > 0) {
             let lastChild: any = null;
             let maxProj = -Infinity;
             children.forEach((child: any) => {
@@ -7648,29 +7691,32 @@ case 'dagre':
                 }
             });
             const lastPos = lastChild.position();
-            finalPosition = {
+            return {
                 x: lastPos.x + normal.x * this.SIBLING_GAP,
                 y: lastPos.y + normal.y * this.SIBLING_GAP
             };
-        } else {
-            const anchor = {
-                x: nodePos.x + dir.x * this.HORIZONTAL_GAP,
-                y: nodePos.y + dir.y * this.HORIZONTAL_GAP
-            };
-            const offset = this.nextOffsetByProjection(children, anchor, normal, this.VERTICAL_GAP);
-            const rawPosition = {
-                x: anchor.x + normal.x * offset,
-                y: anchor.y + normal.y * offset
-            };
-            const position = this.resolveShortcutPosition(
-                rawPosition,
-                activeNode,
-                normal,
-                this.VERTICAL_GAP,
-                dir
-            );
-            finalPosition = this.isAutoNodeLayoutStyle() ? rawPosition : position;
         }
+
+        const anchor = {
+            x: nodePos.x + dir.x * this.HORIZONTAL_GAP,
+            y: nodePos.y + dir.y * this.HORIZONTAL_GAP
+        };
+        const offset = this.nextOffsetByProjection(children, anchor, normal, this.VERTICAL_GAP);
+        return {
+            x: anchor.x + normal.x * offset,
+            y: anchor.y + normal.y * offset
+        };
+    }
+
+    private handleCreateChildNode(): void {
+        const activeNode = this.getActiveNode();
+        if (!activeNode) return;
+
+        const nodeData = activeNode.data();
+        const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
+        const finalPosition = this.isAutoNodeLayoutStyle()
+            ? this.getAutoChildShortcutPosition(activeNode)
+            : this.getFreeChildShortcutPosition(activeNode);
 
         this.container?.dispatchEvent(new CustomEvent('create-child-node-shortcut', {
             detail: { activeNodeId, position: finalPosition }
@@ -7681,6 +7727,50 @@ case 'dagre':
      * 处理创建兄弟节点（Enter 键）
      * SimpleMind 风格：自动推开下方的兄弟节点及其子树
      */
+    private getFreeSiblingShortcutPosition(activeNode: any): { x: number; y: number } {
+        const nodePos = activeNode.position();
+        const NEARBY_GAP = 100;
+        const basePosition = { x: nodePos.x, y: nodePos.y + NEARBY_GAP };
+        return this.resolveShortcutPosition(
+            basePosition,
+            activeNode,
+            { x: 0, y: 1 },
+            NEARBY_GAP,
+            { x: 1, y: 0 },
+            12
+        );
+    }
+
+    private getAutoSiblingShortcutPosition(activeNode: any): { x: number; y: number } {
+        const nodePos = activeNode.position();
+        const parent = activeNode.incomers('edge').sources();
+        const parentPos = parent.first().position();
+        const siblings = parent.first().outgoers('edge').targets();
+        const dir = this.getAutoLayoutDirection(activeNode);
+        const normal = this.getAutoLayoutStackDirection(dir);
+        const siblingGap = Math.max(this.SIBLING_GAP, this.VERTICAL_GAP + 40);
+        const anchor = {
+            x: parentPos.x + dir.x * this.HORIZONTAL_GAP,
+            y: parentPos.y + dir.y * this.HORIZONTAL_GAP
+        };
+        const activeProj = (nodePos.x - anchor.x) * normal.x + (nodePos.y - anchor.y) * normal.y;
+        let offset = activeProj + siblingGap;
+
+        const projections = siblings.map((sib: any) => {
+            const p = sib.position();
+            return (p.x - anchor.x) * normal.x + (p.y - anchor.y) * normal.y;
+        });
+        const isOccupied = (candidate: number) => projections.some((v: number) => Math.abs(v - candidate) < siblingGap * 0.8);
+        while (isOccupied(offset)) {
+            offset += siblingGap;
+        }
+
+        return {
+            x: anchor.x + normal.x * offset,
+            y: anchor.y + normal.y * offset
+        };
+    }
+
     private handleCreateSiblingNode(): void {
         const activeNode = this.getActiveNode();
         if (!activeNode) return;
@@ -7691,48 +7781,9 @@ case 'dagre':
         const parent = activeNode.incomers('edge').sources();
         if (parent.length === 0) return;
 
-        let finalPosition: { x: number; y: number };
-
-        if (this.isAutoNodeLayoutStyle()) {
-            // 自动布局：按原有锚点+投影逻辑
-            const parentPos = parent.first().position();
-            const siblings = parent.first().outgoers('edge').targets();
-            const dir = this.getAutoLayoutDirection(activeNode);
-            const normal = this.getPerpendicular(dir);
-            const siblingGap = Math.max(this.SIBLING_GAP, this.VERTICAL_GAP + 40);
-            const anchor = {
-                x: parentPos.x + dir.x * this.HORIZONTAL_GAP,
-                y: parentPos.y + dir.y * this.HORIZONTAL_GAP
-            };
-            const activeProj = (nodePos.x - anchor.x) * normal.x + (nodePos.y - anchor.y) * normal.y;
-            let offset = activeProj + siblingGap;
-
-            const projections = siblings.map((sib: any) => {
-                const p = sib.position();
-                return (p.x - anchor.x) * normal.x + (p.y - anchor.y) * normal.y;
-            });
-            const isOccupied = (candidate: number) => projections.some((v: number) => Math.abs(v - candidate) < siblingGap * 0.8);
-            while (isOccupied(offset)) {
-                offset += siblingGap;
-            }
-
-            finalPosition = {
-                x: anchor.x + normal.x * offset,
-                y: anchor.y + normal.y * offset
-            };
-        } else {
-            // 自由节点：优先在当前节点正下方 100px 附近创建，碰撞则螺旋搜索
-            const NEARBY_GAP = 100;
-            const basePosition = { x: nodePos.x, y: nodePos.y + NEARBY_GAP };
-            finalPosition = this.resolveShortcutPosition(
-                basePosition,
-                activeNode,
-                { x: 0, y: 1 },   // 沿 Y 轴搜索
-                NEARBY_GAP,
-                { x: 1, y: 0 },   // X 轴作为次轴
-                12                 // 更多尝试次数
-            );
-        }
+        const finalPosition = this.isAutoNodeLayoutStyle()
+            ? this.getAutoSiblingShortcutPosition(activeNode)
+            : this.getFreeSiblingShortcutPosition(activeNode);
 
         // 触发创建兄弟节点事件
         this.container?.dispatchEvent(new CustomEvent('create-sibling-node-shortcut', {
@@ -7746,24 +7797,39 @@ case 'dagre':
     /**
      * 处理创建父节点（Shift+Tab 键）
      */
-    private handleCreateParentNode(): void {
-        const activeNode = this.getActiveNode();
-        if (!activeNode) return;
-
+    private getFreeParentShortcutPosition(activeNode: any): { x: number; y: number } {
         const nodePos = activeNode.position();
         const dir = this.getBranchDirection(activeNode);
+        const directionalDistance = this.getDirectionalDistance(activeNode, dir);
         const rawPosition = {
-            x: nodePos.x - dir.x * this.HORIZONTAL_GAP,
-            y: nodePos.y - dir.y * this.HORIZONTAL_GAP
+            x: nodePos.x - dir.x * directionalDistance,
+            y: nodePos.y - dir.y * directionalDistance
         };
-        const position = this.resolveShortcutPosition(
+        return this.resolveShortcutPosition(
             rawPosition,
             activeNode,
             this.getPerpendicular(dir),
             this.VERTICAL_GAP,
             { x: -dir.x, y: -dir.y }
         );
-        const finalPosition = this.isAutoNodeLayoutStyle() ? rawPosition : position;
+    }
+
+    private getAutoParentShortcutPosition(activeNode: any): { x: number; y: number } {
+        const nodePos = activeNode.position();
+        const dir = this.getBranchDirection(activeNode);
+        return {
+            x: nodePos.x - dir.x * this.HORIZONTAL_GAP,
+            y: nodePos.y - dir.y * this.HORIZONTAL_GAP
+        };
+    }
+
+    private handleCreateParentNode(): void {
+        const activeNode = this.getActiveNode();
+        if (!activeNode) return;
+
+        const finalPosition = this.isAutoNodeLayoutStyle()
+            ? this.getAutoParentShortcutPosition(activeNode)
+            : this.getFreeParentShortcutPosition(activeNode);
         const nodeData = activeNode.data();
 
         const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
