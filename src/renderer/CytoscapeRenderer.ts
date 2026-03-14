@@ -1634,6 +1634,16 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'opacity': 0.8,
                 'z-index': 1000
             } as any
+        },
+        // 搜索高亮
+        {
+            selector: 'node.zk-search-highlight',
+            style: {
+                'border-width': '4px',
+                'border-color': '#00a8ff',
+                'border-opacity': 1,
+                'z-index': 9999
+            } as any
         }
     ];
 }
@@ -3055,8 +3065,8 @@ case 'dagre':
             handle.className = 'zk-connection-handle';
             handle.style.cssText = `
                 position: absolute;
-                width: 24px;
-                height: 24px;
+                width: 48px;
+                height: 48px;
                 background-color: #5b8fd9;
                 border: 2px solid #ffffff;
                 border-radius: 50%;
@@ -3082,8 +3092,8 @@ case 'dagre':
                 
                 handle.style.left = `${x}px`;
                 handle.style.top = `${y}px`;
-                handle.style.width = `${24 * zoom}px`;
-                handle.style.height = `${24 * zoom}px`;
+                handle.style.width = `${48 * zoom}px`;
+                handle.style.height = `${48 * zoom}px`;
                 handle.style.borderWidth = `${2 * zoom}px`;
             };
 
@@ -5594,8 +5604,8 @@ case 'dagre':
         let horizontalAlignmentLine: SVGLineElement | null = null;
         let spacingGuideLineA: SVGLineElement | null = null;
         let spacingGuideLineB: SVGLineElement | null = null;
-        const ALIGNMENT_THRESHOLD = 10;
-        const SPACING_THRESHOLD = 14;
+        const ALIGNMENT_THRESHOLD = 5;
+        const SPACING_THRESHOLD = 8;
         const AXIS_GROUP_THRESHOLD = 24;
         let isMultiNodeDrag = false; // grab 时缓存，避免 drag 高频查选择器
 
@@ -6292,6 +6302,14 @@ case 'dagre':
 
         // 监听键盘按下事件
         const handleKeyDown = (event: KeyboardEvent) => {
+            // Cmd/Ctrl+F：搜索节点
+            if (event.key === 'f' && (event.metaKey || event.ctrlKey) && !event.repeat) {
+                event.preventDefault();
+                event.stopPropagation();
+                this.showSearchBar();
+                return;
+            }
+
             // Command/Meta 键：启用框选模式
             if ((event.key === 'Meta' || event.key === 'Meta') && !event.repeat) {
                 this.isMetaPressed = true;
@@ -6463,7 +6481,7 @@ case 'dagre':
             // Enter 键：创建兄弟节点（仅在没有打开内联编辑器时）
             if (event.key === 'Enter' && !event.repeat) {
                 // 检查是否有打开的内联编辑器
-                if (!this.container?.querySelector('.inline-node-editor')) {
+                if (!this.container?.querySelector('.node-label-editor')) {
                     event.preventDefault();
                     this.handleCreateSiblingNode();
                     return;
@@ -6480,7 +6498,7 @@ case 'dagre':
             // 方向键：切换选中节点
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key) && !event.repeat) {
                 // 检查是否有打开的内联编辑器
-                const hasEditor = this.container?.querySelector('.inline-node-editor');
+                const hasEditor = this.container?.querySelector('.node-label-editor');
 
                 if (!hasEditor) {
                     event.preventDefault();
@@ -7122,6 +7140,156 @@ case 'dagre':
     }
 
     /**
+     * 显示搜索栏（Cmd+F）
+     */
+    private showSearchBar(): void {
+        if (!this.cy || !this.container) return;
+
+        // 如果已有搜索栏，聚焦输入框
+        const existing = this.container.querySelector('.zk-search-bar');
+        if (existing) {
+            const input = existing.querySelector('.zk-search-bar-input') as HTMLInputElement;
+            input?.focus();
+            input?.select();
+            return;
+        }
+
+        let matchedNodes: any[] = [];
+        let currentIndex = -1;
+
+        const bar = document.createElement('div');
+        bar.className = 'zk-search-bar';
+
+        // 阻止事件穿透到画布
+        bar.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+        bar.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+
+        // 搜索输入框
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'zk-search-bar-input';
+        input.placeholder = t('search placeholder');
+        bar.appendChild(input);
+
+        // 计数
+        const countLabel = document.createElement('span');
+        countLabel.className = 'zk-search-bar-count';
+        countLabel.textContent = '';
+        bar.appendChild(countLabel);
+
+        // 上一个
+        const prevBtn = document.createElement('button');
+        prevBtn.className = 'zk-search-bar-btn';
+        setIcon(prevBtn, 'chevron-up');
+        prevBtn.title = 'Previous';
+        bar.appendChild(prevBtn);
+
+        // 下一个
+        const nextBtn = document.createElement('button');
+        nextBtn.className = 'zk-search-bar-btn';
+        setIcon(nextBtn, 'chevron-down');
+        nextBtn.title = 'Next';
+        bar.appendChild(nextBtn);
+
+        // 关闭
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'zk-search-bar-btn';
+        setIcon(closeBtn, 'x');
+        bar.appendChild(closeBtn);
+
+        this.container.appendChild(bar);
+
+        const clearHighlights = () => {
+            this.cy?.nodes().forEach((n: any) => n.removeClass('zk-search-highlight'));
+        };
+
+        const highlightCurrent = () => {
+            clearHighlights();
+            if (matchedNodes.length === 0 || currentIndex < 0) return;
+            const node = matchedNodes[currentIndex];
+            node.addClass('zk-search-highlight');
+            this.cy?.animate({ center: { eles: node }, duration: 200 });
+            node.select();
+        };
+
+        const updateCount = () => {
+            if (!input.value.trim()) {
+                countLabel.textContent = '';
+            } else if (matchedNodes.length === 0) {
+                countLabel.textContent = '0/0';
+            } else {
+                countLabel.textContent = `${currentIndex + 1}/${matchedNodes.length}`;
+            }
+        };
+
+        const doSearch = () => {
+            const term = input.value.trim().toLowerCase();
+            clearHighlights();
+            matchedNodes = [];
+            currentIndex = -1;
+
+            if (!term || !this.cy) {
+                updateCount();
+                return;
+            }
+
+            this.cy.nodes('[!isGroup]').forEach((node: any) => {
+                const label = (node.data('label') || '').toLowerCase();
+                const origNode = node.data('originalNode');
+                const idStr = (origNode?.IDStr || '').toLowerCase();
+                const title = (origNode?.title || '').toLowerCase();
+                if (label.includes(term) || idStr.includes(term) || title.includes(term)) {
+                    matchedNodes.push(node);
+                }
+            });
+
+            if (matchedNodes.length > 0) {
+                currentIndex = 0;
+                highlightCurrent();
+            }
+            updateCount();
+        };
+
+        const goNext = () => {
+            if (matchedNodes.length === 0) return;
+            currentIndex = (currentIndex + 1) % matchedNodes.length;
+            highlightCurrent();
+            updateCount();
+        };
+
+        const goPrev = () => {
+            if (matchedNodes.length === 0) return;
+            currentIndex = (currentIndex - 1 + matchedNodes.length) % matchedNodes.length;
+            highlightCurrent();
+            updateCount();
+        };
+
+        const closeSearch = () => {
+            clearHighlights();
+            bar.remove();
+            this.container?.focus();
+        };
+
+        input.addEventListener('input', doSearch);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (e.shiftKey) { goPrev(); } else { goNext(); }
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                closeSearch();
+            }
+        });
+
+        prevBtn.addEventListener('click', goPrev);
+        nextBtn.addEventListener('click', goNext);
+        closeBtn.addEventListener('click', closeSearch);
+
+        // 自动聚焦
+        setTimeout(() => input.focus(), 50);
+    }
+
+    /**
      * 隐藏批量操作工具栏
      */
     private hideBatchToolbar(): void {
@@ -7460,23 +7628,46 @@ case 'dagre':
         const dir = this.isAutoNodeLayoutStyle() ? this.getAutoLayoutDirection(activeNode) : this.getBranchDirection(activeNode);
         const normal = this.getPerpendicular(dir);
 
-        const anchor = {
-            x: nodePos.x + dir.x * this.HORIZONTAL_GAP,
-            y: nodePos.y + dir.y * this.HORIZONTAL_GAP
-        };
-        const offset = this.nextOffsetByProjection(children, anchor, normal, this.VERTICAL_GAP);
-        const rawPosition = {
-            x: anchor.x + normal.x * offset,
-            y: anchor.y + normal.y * offset
-        };
-        const position = this.resolveShortcutPosition(
-            rawPosition,
-            activeNode,
-            normal,
-            this.VERTICAL_GAP,
-            dir
-        );
-        const finalPosition = this.isAutoNodeLayoutStyle() ? rawPosition : position;
+        let finalPosition: { x: number; y: number };
+
+        // 自动布局 + 父节点是根节点（无父边）：1级节点在最后一个兄弟附近生成
+        const isRoot = activeNode.incomers('edge').sources().filter((n: any) => !n.data('isGroup')).length === 0;
+        if (this.isAutoNodeLayoutStyle() && isRoot && children.length > 0) {
+            // 找到最后一个子节点（沿 normal 方向投影最大的）
+            let lastChild: any = null;
+            let maxProj = -Infinity;
+            children.forEach((child: any) => {
+                const cp = child.position();
+                const proj = (cp.x - nodePos.x) * normal.x + (cp.y - nodePos.y) * normal.y;
+                if (proj > maxProj) {
+                    maxProj = proj;
+                    lastChild = child;
+                }
+            });
+            const lastPos = lastChild.position();
+            finalPosition = {
+                x: lastPos.x + normal.x * this.SIBLING_GAP,
+                y: lastPos.y + normal.y * this.SIBLING_GAP
+            };
+        } else {
+            const anchor = {
+                x: nodePos.x + dir.x * this.HORIZONTAL_GAP,
+                y: nodePos.y + dir.y * this.HORIZONTAL_GAP
+            };
+            const offset = this.nextOffsetByProjection(children, anchor, normal, this.VERTICAL_GAP);
+            const rawPosition = {
+                x: anchor.x + normal.x * offset,
+                y: anchor.y + normal.y * offset
+            };
+            const position = this.resolveShortcutPosition(
+                rawPosition,
+                activeNode,
+                normal,
+                this.VERTICAL_GAP,
+                dir
+            );
+            finalPosition = this.isAutoNodeLayoutStyle() ? rawPosition : position;
+        }
 
         this.container?.dispatchEvent(new CustomEvent('create-child-node-shortcut', {
             detail: { activeNodeId, position: finalPosition }
@@ -7497,41 +7688,48 @@ case 'dagre':
         const parent = activeNode.incomers('edge').sources();
         if (parent.length === 0) return;
 
-        const parentPos = parent.first().position();
-        const siblings = parent.first().outgoers('edge').targets();
-        const dir = this.isAutoNodeLayoutStyle()
-            ? this.getAutoLayoutDirection(activeNode)
-            : this.normalizeVector(nodePos.x - parentPos.x, nodePos.y - parentPos.y);
-        const normal = this.getPerpendicular(dir);
-        const siblingGap = Math.max(this.SIBLING_GAP, this.VERTICAL_GAP + 40);
-        const anchor = {
-            x: parentPos.x + dir.x * this.HORIZONTAL_GAP,
-            y: parentPos.y + dir.y * this.HORIZONTAL_GAP
-        };
-        const activeProj = (nodePos.x - anchor.x) * normal.x + (nodePos.y - anchor.y) * normal.y;
-        let offset = activeProj + siblingGap;
+        let finalPosition: { x: number; y: number };
 
-        const projections = siblings.map((sib: any) => {
-            const p = sib.position();
-            return (p.x - anchor.x) * normal.x + (p.y - anchor.y) * normal.y;
-        });
-        const isOccupied = (candidate: number) => projections.some((v: number) => Math.abs(v - candidate) < siblingGap * 0.8);
-        while (isOccupied(offset)) {
-            offset += siblingGap;
+        if (this.isAutoNodeLayoutStyle()) {
+            // 自动布局：按原有锚点+投影逻辑
+            const parentPos = parent.first().position();
+            const siblings = parent.first().outgoers('edge').targets();
+            const dir = this.getAutoLayoutDirection(activeNode);
+            const normal = this.getPerpendicular(dir);
+            const siblingGap = Math.max(this.SIBLING_GAP, this.VERTICAL_GAP + 40);
+            const anchor = {
+                x: parentPos.x + dir.x * this.HORIZONTAL_GAP,
+                y: parentPos.y + dir.y * this.HORIZONTAL_GAP
+            };
+            const activeProj = (nodePos.x - anchor.x) * normal.x + (nodePos.y - anchor.y) * normal.y;
+            let offset = activeProj + siblingGap;
+
+            const projections = siblings.map((sib: any) => {
+                const p = sib.position();
+                return (p.x - anchor.x) * normal.x + (p.y - anchor.y) * normal.y;
+            });
+            const isOccupied = (candidate: number) => projections.some((v: number) => Math.abs(v - candidate) < siblingGap * 0.8);
+            while (isOccupied(offset)) {
+                offset += siblingGap;
+            }
+
+            finalPosition = {
+                x: anchor.x + normal.x * offset,
+                y: anchor.y + normal.y * offset
+            };
+        } else {
+            // 自由节点：优先在当前节点正下方 100px 附近创建，碰撞则螺旋搜索
+            const NEARBY_GAP = 100;
+            const basePosition = { x: nodePos.x, y: nodePos.y + NEARBY_GAP };
+            finalPosition = this.resolveShortcutPosition(
+                basePosition,
+                activeNode,
+                { x: 0, y: 1 },   // 沿 Y 轴搜索
+                NEARBY_GAP,
+                { x: 1, y: 0 },   // X 轴作为次轴
+                12                 // 更多尝试次数
+            );
         }
-
-        const rawPosition = {
-            x: anchor.x + normal.x * offset,
-            y: anchor.y + normal.y * offset
-        };
-        const position = this.resolveShortcutPosition(
-            rawPosition,
-            activeNode,
-            normal,
-            siblingGap,
-            dir
-        );
-        const finalPosition = this.isAutoNodeLayoutStyle() ? rawPosition : position;
 
         // 触发创建兄弟节点事件
         this.container?.dispatchEvent(new CustomEvent('create-sibling-node-shortcut', {

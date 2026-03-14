@@ -1026,3 +1026,123 @@ align-items: center;
   border-color: rgba(0, 0, 0, 0.1);
   color: #333333;
 }
+
+/* ==================== 搜索栏 ==================== */
+
+@keyframes zk-search-bar-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.zk-search-bar {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(26, 31, 46, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid #2a3f5f;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  animation: zk-search-bar-enter 0.2s ease-out;
+  pointer-events: auto;
+}
+
+.zk-search-bar-input {
+  width: 200px;
+  padding: 5px 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #e0e8f0;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.zk-search-bar-input:focus {
+  border-color: #00a8ff;
+  box-shadow: 0 0 0 2px rgba(0, 168, 255, 0.2);
+}
+
+.zk-search-bar-input::placeholder {
+  color: #808a96;
+}
+
+.zk-search-bar-count {
+  font-size: 11px;
+  color: #808a96;
+  white-space: nowrap;
+  min-width: 40px;
+  text-align: center;
+}
+
+.zk-search-bar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #e0e8f0;
+  transition: all 0.15s ease;
+}
+
+.zk-search-bar-btn:hover {
+  background: #2a3f5f;
+  border-color: rgba(0, 168, 255, 0.3);
+  color: #00a8ff;
+}
+
+.zk-search-bar-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2;
+}
+
+/* 搜索高亮节点 */
+.zk-search-highlight {
+  box-shadow: 0 0 0 3px #00a8ff, 0 0 12px rgba(0, 168, 255, 0.4) !important;
+}
+
+/* 浅色主题 */
+.zk-theme-light .zk-search-bar {
+  background: rgba(232, 232, 232, 0.92);
+  border: 1px solid #d0d0d0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.zk-theme-light .zk-search-bar-input {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: #333;
+}
+
+.zk-theme-light .zk-search-bar-input:focus {
+  border-color: #0066cc;
+  box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.2);
+}
+
+.zk-theme-light .zk-search-bar-btn {
+  color: #333;
+}
+
+.zk-theme-light .zk-search-bar-btn:hover {
+  background: #d0d0d0;
+  color: #0066cc;
+}
