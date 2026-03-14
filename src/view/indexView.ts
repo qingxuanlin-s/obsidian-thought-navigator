@@ -128,6 +128,7 @@ export class ZKIndexView extends ItemView {
     resizeTimeout: NodeJS.Timeout | null = null;
     edgeCurvatureSaveTimeout: NodeJS.Timeout | null = null;
     nodePositionSaveTimeout: NodeJS.Timeout | null = null;
+    pendingPositionChanges: Map<string, { node: any; position: { x: number; y: number } }> = new Map();
     crossDomainPositionSaveTimeout: NodeJS.Timeout | null = null;
     embedNodeSizeSaveTimeout: NodeJS.Timeout | null = null;
 
@@ -1332,6 +1333,7 @@ export class ZKIndexView extends ItemView {
         });
 
         // 监听节点位置变化事件（拖动后保存到 MOC 文件）
+        // 多节点拖动时 dragfree 会对每个节点触发，先累积到 pendingPositionChanges，防抖后批量保存
         this.addTrackedListener(branchGraphDiv, 'node-position-changed', async (event: any) => {
             if (this.isMobileReadOnly()) {
                 return;
@@ -1344,38 +1346,65 @@ export class ZKIndexView extends ItemView {
                 return;
             }
 
-            // 使用防抖，避免拖动时频繁保存
+            // 累积待保存的位置变化
+            this.pendingPositionChanges.set(node.ID, { node, position });
+
+            // 使用防抖，等所有 dragfree 事件到达后一次性保存
             if (this.nodePositionSaveTimeout) {
                 clearTimeout(this.nodePositionSaveTimeout);
             }
 
             this.nodePositionSaveTimeout = setTimeout(async () => {
-                // 保存位置到 MOC 文件
+                const changes = new Map(this.pendingPositionChanges);
+                this.pendingPositionChanges.clear();
+
                 try {
                     const mocFile = this.app.vault.getFileByPath(currentMOCPath);
-                    if (mocFile) {
-                        // 检查是否是跨领域节点
-                        if (node.isCrossDomain && node.crossDomainSourceNodeId && node.crossDomainOriginalNodeId) {
-                            // 跨领域节点：保存到 cross_domain_links
-                            const crossDomainLink = {
-                                nodeId: node.crossDomainOriginalNodeId,
-                                mocPath: node.filePath, // 跨领域节点链接到的 MOC 文件
-                                displayText: node.displayText,
-                                filePath: node.filePath
-                            };
-                            await this.saveCrossDomainNodePosition(
-                                mocFile,
-                                node.crossDomainSourceNodeId,
-                                crossDomainLink,
-                                position
-                            );
+                    if (!mocFile) return;
+
+                    // 分离跨领域节点和普通节点
+                    const crossDomainChanges: Array<{ node: any; position: { x: number; y: number } }> = [];
+                    const normalChanges: Map<string, { x: number; y: number }> = new Map();
+
+                    for (const [nodeID, { node: n, position: pos }] of changes) {
+                        if (n.isCrossDomain && n.crossDomainSourceNodeId && n.crossDomainOriginalNodeId) {
+                            crossDomainChanges.push({ node: n, position: pos });
                         } else {
-                            // 普通节点：保存到 node_positions
-                            await this.saveNodePositionToMOC(mocFile, node.ID, position);
+                            normalChanges.set(nodeID, pos);
                         }
                     }
+
+                    // 批量保存普通节点位置（一次 parse-modify-save）
+                    if (normalChanges.size > 0) {
+                        const headingTitle = this.plugin.settings.mocHeadingTitle;
+                        const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
+                        const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+                        for (const [nodeID, pos] of normalChanges) {
+                            mocData.nodePositions[nodeID] = {
+                                x: Math.round(pos.x * 100) / 100,
+                                y: Math.round(pos.y * 100) / 100
+                            };
+                        }
+                        await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
+                    }
+
+                    // 跨领域节点逐个保存（数量通常很少）
+                    for (const { node: n, position: pos } of crossDomainChanges) {
+                        const crossDomainLink = {
+                            nodeId: n.crossDomainOriginalNodeId,
+                            mocPath: n.filePath,
+                            displayText: n.displayText,
+                            filePath: n.filePath
+                        };
+                        await this.saveCrossDomainNodePosition(
+                            mocFile,
+                            n.crossDomainSourceNodeId,
+                            crossDomainLink,
+                            pos
+                        );
+                    }
                 } catch (error) {
-                    console.error('Failed to save node position:', error);
+                    console.error('Failed to save node positions:', error);
                 }
             }, DEBOUNCE_DELAY.POSITION_SAVE);
         });
