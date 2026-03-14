@@ -1,13 +1,13 @@
 .zk-view-content{
-  background-color: #25303c;
+  background-color: #2a2a2a;
 }
 
 .zk-index-toolbar{
-background-color: #1a1f2e;
+background-color: #242424;
 margin:10px;
 margin-bottom: 5px;
 border-radius: 5px;
-border: 1px solid #2a3f5f;
+border: 1px solid #3a3a3a;
 padding: 8px;
 display: flex;
 align-items: center;
@@ -30,12 +30,12 @@ align-items: center;
   margin-bottom: 0px;
   border-radius: 5px;
   position: relative;
-  background-color: #25303c;
+  background-color: #2a2a2a;
 }
 
 .zk-index-mermaid{
  border-radius: 5px;
- background-color: #25303c;
+ background-color: #2a2a2a;
 }
 .zk-index-mermaid svg{
   margin-top: 30px;
@@ -59,30 +59,30 @@ align-items: center;
 }
 
 .zk-tool-buttons > .clickable-icon {
-  background-color: #1a1f2e;
+  background-color: #27313b;
   margin-left: 2px;
   padding: 2px;
-  border: 1px solid #2a3f5f;
+  border: 1px solid #3e4a57;
   color: #00a8ff;
 }
 
 .zk-tool-buttons > .clickable-icon:hover {
-  background-color: #2a3f5f;
+  background-color: #384452;
   border-color: #00a8ff;
 }
 
 .zk-extra-buttons{
-  background-color: #1a1f2e;
+  background-color: #27313b;
 }
 
 .zk-branch-tab-select{ 
-  background-color: #2a3f5f;
+  background-color: #384452;
   border-radius: 3px;
   border: 1px solid #00a8ff;
  }
  
-.zk-graph-mermaid { 
-  background-color: #25303c;
+.zk-graph-mermaid {
+  background-color: #2a2a2a;
   margin: 5px;
   border-radius: 5px;
 }
@@ -99,7 +99,7 @@ align-items: center;
 
 /* 全屏模式下的背景色 */
 .zk-graph-cytoscape:fullscreen {
-  background-color: #25303c; /* 与正常模式保持一致 */
+  background-color: #2a2a2a; /* 与正常模式保持一致 */
 }
 
 /* 分支图形容器 */
@@ -112,7 +112,7 @@ align-items: center;
 
 .zk-graph-text {
   position: fixed;
-  background-color: #1a1f2e;
+  background-color: #27313b;
   margin:5px;
   margin-top: 0px;
   border-radius: 5px;
@@ -239,8 +239,8 @@ align-items: center;
   height: 100%;
   pointer-events: auto;
 }
-.zk-expand-graph{  
-  background-color: #25303c;
+.zk-expand-graph{
+  background-color: #2a2a2a;
 }
 
 .recent-item{
@@ -287,17 +287,17 @@ align-items: center;
 }
 
 .zk-play-controller > .clickable-icon {
-  background-color: #1a1f2e;
+  background-color: #27313b;
   margin: 0;
   padding: 4px;
-  border: 1px solid #2a3f5f;
+  border: 1px solid #3e4a57;
   color: #00a8ff;
   width: 28px;
   height: 28px;
 }
 
 .zk-play-controller > .clickable-icon:hover {
-  background-color: #2a3f5f;
+  background-color: #384452;
   border-color: #00a8ff;
 }
 
@@ -320,11 +320,11 @@ align-items: center;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    background: #1a1f2e;
+    background: #27313b;
     padding: 20px;
     border-radius: 8px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    border: 1px solid #2a3f5f;
+    border: 1px solid #3e4a57;
     z-index: 1000;
     display: flex;
     align-items: center;
@@ -336,7 +336,7 @@ align-items: center;
 .zk-spinner {
     width: 20px;
     height: 20px;
-    border: 3px solid #2a3f5f;
+    border: 3px solid #3e4a57;
     border-top-color: #00a8ff;
     border-radius: 50%;
     animation: zk-spin 0.8s linear infinite;
@@ -398,7 +398,7 @@ align-items: center;
 
 /* 局部关系视图背景与分支视图保持一致 */
 .zk-graph-mermaid-container {
-    background-color: #25303c;
+    background-color: #2a2a2a;
     border-radius: 5px;
 }
 

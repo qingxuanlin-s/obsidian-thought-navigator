@@ -1482,6 +1482,7 @@ export class ZKIndexView extends ItemView {
             branchGraphDiv.style.boxShadow = '';
             branchGraphDiv.style.outline = '';
         }
+        branchGraphDiv.style.backgroundColor = this.plugin.settings.themeMode === 'light' ? '#f5f5f5' : '#2a2a2a';
 
         // 注意：不再清空 branchGraphDiv，让 CytoscapeRenderer 内部的增量更新逻辑处理
 

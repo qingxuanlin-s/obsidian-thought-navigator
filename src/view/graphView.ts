@@ -1444,6 +1444,7 @@ export class ZKGraphView extends ItemView {
                 mocNodeTreeDiv.id = "zk-moc-node-tree-cytoscape";
                 mocNodeTreeDiv.style.height = `${graphHeight}px`;
                 mocNodeTreeDiv.style.width = "100%";
+                mocNodeTreeDiv.style.backgroundColor = this.plugin.settings.themeMode === 'light' ? '#f5f5f5' : '#2a2a2a';
 
                 // 构建图形数据
                 const graphData = GraphDataBuilder.fromFamilyNodes(relatedNodes, currentFile);
@@ -1632,6 +1633,7 @@ export class ZKGraphView extends ItemView {
         familyTreeDiv.id = "zk-family-tree-cytoscape";
         familyTreeDiv.style.height = `${this.graphHeight}px`;
         familyTreeDiv.style.width = "100%";
+        familyTreeDiv.style.backgroundColor = this.plugin.settings.themeMode === 'light' ? '#f5f5f5' : '#2a2a2a';
 
         // 构建图形数据
         const graphData = GraphDataBuilder.fromFamilyNodes(this.familyNodeArr, currentFile);
@@ -1755,6 +1757,7 @@ export class ZKGraphView extends ItemView {
         mocTreeDiv.id = "zk-moc-tree-cytoscape";
         mocTreeDiv.style.height = `${graphHeight}px`;
         mocTreeDiv.style.width = "100%";
+        mocTreeDiv.style.backgroundColor = this.plugin.settings.themeMode === 'light' ? '#f5f5f5' : '#2a2a2a';
 
         // 构建图形数据（使用 MOC 树专用方法）
         const graphData = GraphDataBuilder.fromMOCTree(mocNodes, reverseRelations, null);
@@ -1875,6 +1878,7 @@ export class ZKGraphView extends ItemView {
         inoutlinksDiv.id = "zk-inoutlinks-cytoscape";
         inoutlinksDiv.style.height = `${this.graphHeight}px`;
         inoutlinksDiv.style.width = "100%";
+        inoutlinksDiv.style.backgroundColor = this.plugin.settings.themeMode === 'light' ? '#f5f5f5' : '#2a2a2a';
 
         // 构建图形数据
         const graphData = GraphDataBuilder.fromInOutLinks(currentFile, inlinkArr, outlinkArr);
