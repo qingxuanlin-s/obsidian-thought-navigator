@@ -174,28 +174,31 @@ align-items: center;
 .zk-toolbar-right-buttons {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
 }
 
 .zk-toolbar-right-buttons > .clickable-icon {
-  background-color: #27313b;
-  padding: 2px;
-  border: 1px solid #3e4a57;
-  color: #00a8ff;
-  border-radius: 4px;
+  background: transparent;
+  padding: 5px 8px;
+  border: 1.5px solid #4a4a6a;
+  color: #c8c8e0;
+  border-radius: 20px;
+  transition: all 0.15s ease;
 }
 
 .zk-toolbar-right-buttons > .clickable-icon:hover {
-  background-color: #384452;
-  border-color: #00a8ff;
+  border-color: #7b7baa;
+  background: rgba(120, 120, 180, 0.1);
+  color: #e0e0f0;
 }
 
 .zk-toolbar-separator {
   width: 1px;
-  height: 20px;
-  background-color: #3e4a57;
-  margin: 0 4px;
+  height: 18px;
+  background-color: #4a4a6a;
+  margin: 0 2px;
   align-self: center;
+  opacity: 0.5;
 }
 
 .zk-extra-buttons{
@@ -976,18 +979,19 @@ align-items: center;
 }
 
 .zk-theme-light .zk-toolbar-separator {
-  background-color: #d0d0d0;
+  background-color: #c0c0d0;
 }
 
 .zk-theme-light .zk-toolbar-right-buttons > .clickable-icon {
-  background-color: #e8e8e8;
-  border: 1px solid #d0d0d0;
-  color: #0066cc;
+  background: transparent;
+  border: 1.5px solid #c0c0d0;
+  color: #555;
 }
 
 .zk-theme-light .zk-toolbar-right-buttons > .clickable-icon:hover {
-  background-color: #d0d0d0;
-  border-color: #0066cc;
+  border-color: #8080b0;
+  background: rgba(100, 100, 160, 0.08);
+  color: #333;
 }
 
 .zk-theme-light .zk-tool-buttons > .clickable-icon:hover {
