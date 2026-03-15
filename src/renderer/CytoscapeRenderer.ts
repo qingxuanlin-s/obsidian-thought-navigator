@@ -742,29 +742,18 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
         const nodeStyleMap = this.buildVividNodeStyleMap(allNodes);
 
-        // DEBUG: 打印所有根节点到一级子节点的边
-        const rootEdges = edges.filter(e => {
-            const src = nodeById.get(e.source);
-            const tgt = nodeById.get(e.target);
-            const srcLevel = src?.IDStr ? src.IDStr.split('.').length : 0;
-            const tgtLevel = tgt?.IDStr ? tgt.IDStr.split('.').length : 0;
-            return srcLevel === 1 && tgtLevel === 2;
-        });
-        console.log('[DEBUG] 根→一级子节点 边数:', rootEdges.length, rootEdges.map(e => `${e.source}->${e.target} (id:${e.id})`));
-        console.log('[DEBUG] 所有节点 ID:', allNodes.map(n => `${n.ID}(IDStr:${n.IDStr})`));
-        console.log('[DEBUG] 所有边:', edges.map(e => `${e.source}->${e.target}`));
-
         const elements = edges.map(edge => {
             const sourceNode = nodeById.get(edge.source);
             const targetNode = nodeById.get(edge.target);
-            const sourceLevel = sourceNode?.IDStr ? sourceNode.IDStr.split('.').length : 0;
-            const targetLevel = targetNode?.IDStr ? targetNode.IDStr.split('.').length : 0;
+            // 判断是否为根节点→直接子节点的边：
+            // 使用 isRoot 标记（支持 sa.1 等非顶层根节点），
+            // 并检查 target 是 source 的直接子节点（IDStr 去掉最后一段等于 source 的 IDStr）
             const isRootToFirstLevel =
                 !!sourceNode &&
                 !!targetNode &&
-                sourceLevel === 1 &&
-                targetLevel === 2 &&
-                targetNode.IDStr.startsWith(`${sourceNode.IDStr}.`);
+                !!sourceNode.isRoot &&
+                targetNode.IDStr.includes('.') &&
+                targetNode.IDStr.substring(0, targetNode.IDStr.lastIndexOf('.')) === sourceNode.IDStr;
 
             let branchEdgeColor = edgeColorMap.get(edge.source) || null;
             if (isRootToFirstLevel && targetNode) {

@@ -552,7 +552,6 @@ export class ZKIndexView extends ItemView {
 
         // 风格选择
         const graphTypeDiv = toolbarDiv.createDiv("zk-index-toolbar-block");
-        graphTypeDiv.createEl("b", { text: t("style : ") });
         const graphType = new DropdownComponent(graphTypeDiv);
         graphType
             .addOption("structure", t("structure"))
