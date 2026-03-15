@@ -2650,6 +2650,17 @@ case 'dagre':
                             }
                         }));
                     });
+                    // 移动端触摸支持
+                    hitEl.addEventListener('touchend', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        this.container?.dispatchEvent(new CustomEvent('node-click', {
+                            detail: {
+                                node: node.data('originalNode'),
+                                event: e
+                            }
+                        }));
+                    }, { passive: false });
                     underlineGroupEl.appendChild(hitEl);
 
                     const underlineEl = document.createElement('div');
