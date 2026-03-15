@@ -20,6 +20,102 @@ display: flex;
 align-items: center;
 }
 
+/* ==================== 面包屑芯片导航 ==================== */
+.zk-breadcrumb-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.zk-breadcrumb-sep {
+  color: #666;
+  font-size: 16px;
+  user-select: none;
+  line-height: 1;
+}
+
+/* 芯片基础样式 */
+.zk-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+/* 描边芯片（主笔记、结构图） */
+.zk-chip-outlined {
+  background: transparent;
+  border: 1.5px solid #4a4a6a;
+  color: #c8c8e0;
+}
+
+.zk-chip-outlined:hover {
+  border-color: #7b7baa;
+  background: rgba(120, 120, 180, 0.1);
+}
+
+/* 填充芯片（MOC 选择器） */
+.zk-chip-filled {
+  background: #5b3d8f;
+  border: 1.5px solid #7b52b8;
+  color: #e8ddf5;
+}
+
+.zk-chip-filled:hover {
+  background: #6b4da0;
+  border-color: #9068cc;
+}
+
+/* 芯片图标 */
+.zk-chip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.zk-chip-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* 芯片标签文字 */
+.zk-chip-label {
+  line-height: 1;
+}
+
+/* 下拉芯片 */
+.zk-chip-dropdown {
+  position: relative;
+  padding-right: 10px;
+}
+
+.zk-chip-chevron {
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.7;
+}
+
+.zk-chip-chevron svg {
+  width: 12px;
+  height: 12px;
+}
+
+.zk-chip-select {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 13px;
+}
+
 .show-graph-div {
   display: flex;
 }
@@ -784,11 +880,6 @@ align-items: center;
     user-select: none;
 }
 
-/* MOC 按钮宽度 */
-.zk-moc-button {
-    min-width: 180px;
-}
-
 /* Node label editor */
 .node-label-editor {
     font-family: var(--font-interface);
@@ -1082,6 +1173,32 @@ align-items: center;
 /* 浅色主题下标签文字颜色 */
 .zk-theme-light .zk-index-toolbar-block b {
   color: #000000;
+}
+
+/* 浅色主题芯片 */
+.zk-theme-light .zk-breadcrumb-sep {
+  color: #999;
+}
+
+.zk-theme-light .zk-chip-outlined {
+  border-color: #c0c0d0;
+  color: #444;
+}
+
+.zk-theme-light .zk-chip-outlined:hover {
+  border-color: #8080b0;
+  background: rgba(100, 100, 160, 0.08);
+}
+
+.zk-theme-light .zk-chip-filled {
+  background: #7c5db8;
+  border-color: #9070cc;
+  color: #fff;
+}
+
+.zk-theme-light .zk-chip-filled:hover {
+  background: #8d6ec8;
+  border-color: #a080dd;
 }
 
 /* ==================== 批量操作工具栏 ==================== */
