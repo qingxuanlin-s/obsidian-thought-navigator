@@ -3228,6 +3228,7 @@ case 'dagre':
             dragLine.setAttribute('y2', sourcePos.y.toString());
         });
 
+        let dragMoveRafId: number | null = null;
         const handleMouseMove = (e: MouseEvent) => {
             if (!isDragging || !dragLine || !this.cy) return;
 
@@ -3235,29 +3236,34 @@ case 'dagre':
             const mouseX = e.clientX - containerRect.left;
             const mouseY = e.clientY - containerRect.top;
 
+            // 线条位置立即更新（轻量操作）
             const sourcePos = sourceNode.renderedPosition();
             dragLine.setAttribute('x1', sourcePos.x.toString());
             dragLine.setAttribute('y1', sourcePos.y.toString());
             dragLine.setAttribute('x2', mouseX.toString());
             dragLine.setAttribute('y2', mouseY.toString());
 
-            // 检测鼠标下的节点
-            const mousePos = { x: mouseX, y: mouseY };
-            const targetNode = this.getNodeAtPosition(mousePos);
+            // 节点命中检测通过 RAF 节流（遍历所有节点较重）
+            if (dragMoveRafId !== null) return;
+            dragMoveRafId = requestAnimationFrame(() => {
+                dragMoveRafId = null;
+                if (!isDragging || !dragLine || !this.cy) return;
 
-            if (targetNode && targetNode !== sourceNode) {
-                // 有目标节点 - 高亮显示
-                dragLine.setAttribute('stroke', '#10b981');  // 绿色表示可以连接
-                dragLine.setAttribute('stroke-width', '3');  // 加粗
-                dragLine.setAttribute('opacity', '1');  // 不透明
-                targetNode.addClass('connection-target-hover');
-            } else {
-                // 拖到空白处 - 准备创建子节点（仍然显示绿色，但略细和透明）
-                dragLine.setAttribute('stroke', '#10b981');  // 绿色表示可以创建子节点
-                dragLine.setAttribute('stroke-width', '2');  // 正常宽度
-                dragLine.setAttribute('opacity', '0.8');  // 略微透明
-                this.cy.nodes('.connection-target-hover').removeClass('connection-target-hover');
-            }
+                const mousePos = { x: mouseX, y: mouseY };
+                const targetNode = this.getNodeAtPosition(mousePos);
+
+                if (targetNode && targetNode !== sourceNode) {
+                    dragLine.setAttribute('stroke', '#10b981');
+                    dragLine.setAttribute('stroke-width', '3');
+                    dragLine.setAttribute('opacity', '1');
+                    targetNode.addClass('connection-target-hover');
+                } else {
+                    dragLine.setAttribute('stroke', '#10b981');
+                    dragLine.setAttribute('stroke-width', '2');
+                    dragLine.setAttribute('opacity', '0.8');
+                    this.cy!.nodes('.connection-target-hover').removeClass('connection-target-hover');
+                }
+            });
         };
 
         const handleMouseUp = async (e: MouseEvent) => {
@@ -3891,6 +3897,7 @@ case 'dagre':
             dragLine.setAttribute('y2', startPos.y.toString());
         });
 
+        let endpointMoveRafId: number | null = null;
         const handleMouseMove = (e: MouseEvent) => {
             if (!isDragging || !dragLine || !this.cy) return;
 
@@ -3898,38 +3905,38 @@ case 'dagre':
             const mouseX = e.clientX - containerRect.left;
             const mouseY = e.clientY - containerRect.top;
 
-            // 获取父级起始位置
+            // 线条位置立即更新
             const edgeData = edge.data();
             let startPos: { x: number; y: number };
-
             if (type === 'source') {
-                // 拖动起点时，从终点位置开始
                 const targetNode = this.cy!.$id(edgeData.target);
                 startPos = targetNode.renderedPosition();
             } else {
-                // 拖动终点时，从起点位置开始
                 const sourceNode = this.cy!.$id(edgeData.source);
                 startPos = sourceNode.renderedPosition();
             }
-
             dragLine.setAttribute('x1', startPos.x.toString());
             dragLine.setAttribute('y1', startPos.y.toString());
             dragLine.setAttribute('x2', mouseX.toString());
             dragLine.setAttribute('y2', mouseY.toString());
 
-            // 检查是否悬停在有效的目标节点上
-            const mousePos = { x: mouseX, y: mouseY };
-            const targetNode = this.getNodeAtPosition(mousePos);
+            // 节点命中检测通过 RAF 节流
+            if (endpointMoveRafId !== null) return;
+            endpointMoveRafId = requestAnimationFrame(() => {
+                endpointMoveRafId = null;
+                if (!isDragging || !dragLine || !this.cy) return;
 
-            if (targetNode && targetNode !== sourceOrTargetNode) {
-                // 绿色表示有效连接
-                dragLine.setAttribute('stroke', '#10b981');
-                targetNode.addClass('connection-target-hover');
-            } else {
-                // 蓝色表示拖动中
-                dragLine.setAttribute('stroke', '#3b82f6');
-                this.cy.nodes('.connection-target-hover').removeClass('connection-target-hover');
-            }
+                const mousePos = { x: mouseX, y: mouseY };
+                const targetNode = this.getNodeAtPosition(mousePos);
+
+                if (targetNode && targetNode !== sourceOrTargetNode) {
+                    dragLine.setAttribute('stroke', '#10b981');
+                    targetNode.addClass('connection-target-hover');
+                } else {
+                    dragLine.setAttribute('stroke', '#3b82f6');
+                    this.cy!.nodes('.connection-target-hover').removeClass('connection-target-hover');
+                }
+            });
         };
 
         const handleMouseUp = async (e: MouseEvent) => {
@@ -5242,8 +5249,7 @@ case 'dagre':
             searchInput.focus();
             searchInput.setSelectionRange(0, searchInput.value.length);
         };
-        setTimeout(focusSearchInput, 0);
-        requestAnimationFrame(() => requestAnimationFrame(focusSearchInput));
+        requestAnimationFrame(focusSearchInput);
     }
 
     /**
@@ -5611,6 +5617,12 @@ case 'dagre':
                 if (connectionLineFromData && connectionLineFromData.parentNode) {
                     console.log('[CytoscapeRenderer] 从节点数据清理连接线', { nodeId });
                     connectionLineFromData.parentNode.removeChild(connectionLineFromData);
+                }
+
+                // 从 overlay 调度器移除连接线更新器
+                const lineUpdater = (nodeData as any).connectionLineUpdater;
+                if (lineUpdater) {
+                    this.overlayUpdaters.delete(lineUpdater);
                 }
 
                 this.cy?.remove(node);
@@ -6373,7 +6385,7 @@ case 'dagre':
                 this.container?.dispatchEvent(new CustomEvent('viewStateChanged', {
                     detail: { zoom, pan }
                 }));
-            }, 20); // 300ms 防抖
+            }, 150);
         });
     }
 
@@ -6802,57 +6814,25 @@ case 'dagre':
             }
 
             // 添加全局鼠标移动和释放监听器
+            let groupResizeRafId: number | null = null;
+            let lastResizeMouseX = 0;
+            let lastResizeMouseY = 0;
             const handleMouseMove = (e: MouseEvent) => {
                 if (!isDragging || !startMousePos || !startBoundingBox || !this.cy) return;
+                lastResizeMouseX = e.clientX;
+                lastResizeMouseY = e.clientY;
 
-                // 将屏幕坐标转换为渲染坐标
-                const zoom = this.cy.zoom();
-                const pan = this.cy.pan();
-                
+                // 预览框位置立即更新（轻量 DOM 操作）
                 const deltaX = (e.clientX - startMousePos.x);
                 const deltaY = (e.clientY - startMousePos.y);
-
-                // 计算新的边界框
                 let newX1 = startBoundingBox.x1;
                 let newY1 = startBoundingBox.y1;
                 let newX2 = startBoundingBox.x2;
                 let newY2 = startBoundingBox.y2;
-
-                // 根据手柄位置调整边界
-                if (position.x === 0) {
-                    newX1 += deltaX;  // 左边
-                } else {
-                    newX2 += deltaX;  // 右边
-                }
-
-                if (position.y === 0) {
-                    newY1 += deltaY;  // 上边
-                } else {
-                    newY2 += deltaY;  // 下边
-                }
-
-                // 确保最小尺寸
+                if (position.x === 0) { newX1 += deltaX; } else { newX2 += deltaX; }
+                if (position.y === 0) { newY1 += deltaY; } else { newY2 += deltaY; }
                 const minSize = 50;
-                if (newX2 - newX1 < minSize || newY2 - newY1 < minSize) {
-                    return;
-                }
-
-                // 查找新边界内的所有节点
-                const nodesInBounds: any[] = [];
-                this.cy.nodes('[!isGroup]').forEach((node: any) => {
-                    const nodeBB = node.renderedBoundingBox();
-                    const nodeCenterX = (nodeBB.x1 + nodeBB.x2) / 2;
-                    const nodeCenterY = (nodeBB.y1 + nodeBB.y2) / 2;
-
-                    // 检查节点中心是否在新边界内
-                    if (nodeCenterX >= newX1 && nodeCenterX <= newX2 &&
-                        nodeCenterY >= newY1 && nodeCenterY <= newY2) {
-                        nodesInBounds.push(node);
-                    }
-                });
-
-
-                // 更新预览框位置
+                if (newX2 - newX1 < minSize || newY2 - newY1 < minSize) return;
                 if (resizePreview) {
                     resizePreview.style.left = `${newX1}px`;
                     resizePreview.style.top = `${newY1}px`;
@@ -6860,32 +6840,53 @@ case 'dagre':
                     resizePreview.style.height = `${newY2 - newY1}px`;
                 }
 
-                // 更新分组的节点列表（视觉预览）
-                // 过滤掉占位符节点
-                const newNodeIds = nodesInBounds
-                    .filter(n => n.data('originalNode') && !n.data('isPlaceholder'))
-                    .map(n => n.data('originalNode').ID);
+                // 节点遍历和分组更新通过 RAF 节流（重操作）
+                if (groupResizeRafId !== null) return;
+                groupResizeRafId = requestAnimationFrame(() => {
+                    groupResizeRafId = null;
+                    if (!isDragging || !startMousePos || !startBoundingBox || !this.cy) return;
 
+                    const dx = (lastResizeMouseX - startMousePos.x);
+                    const dy = (lastResizeMouseY - startMousePos.y);
+                    let x1 = startBoundingBox.x1;
+                    let y1 = startBoundingBox.y1;
+                    let x2 = startBoundingBox.x2;
+                    let y2 = startBoundingBox.y2;
+                    if (position.x === 0) { x1 += dx; } else { x2 += dx; }
+                    if (position.y === 0) { y1 += dy; } else { y2 += dy; }
+                    if (x2 - x1 < minSize || y2 - y1 < minSize) return;
 
-                // 临时更新分组边界（通过调整子节点）
-                // 注意：这里只是视觉预览，实际更新在 mouseup 时进行
-                nodesInBounds.forEach(node => {
-                    if (!node.data('isPlaceholder') &&
-                        node.data('originalNode') &&
-                        !originalNodeIds.includes(node.data('originalNode').ID)) {
-                        // 新加入的节点，临时设置为分组的子节点
-                        node.data('parent', groupNode.id());
-                    }
-                });
-
-                // 移除不在边界内的节点
-                this.cy.nodes(`[parent="${groupNode.id()}"]`).forEach((node: any) => {
-                    if (!node.data('isPlaceholder') && node.data('originalNode')) {
-                        const nodeId = node.data('originalNode').ID;
-                        if (!newNodeIds.includes(nodeId)) {
-                            node.data('parent', undefined);
+                    const nodesInBounds: any[] = [];
+                    this.cy!.nodes('[!isGroup]').forEach((node: any) => {
+                        const nodeBB = node.renderedBoundingBox();
+                        const nodeCenterX = (nodeBB.x1 + nodeBB.x2) / 2;
+                        const nodeCenterY = (nodeBB.y1 + nodeBB.y2) / 2;
+                        if (nodeCenterX >= x1 && nodeCenterX <= x2 &&
+                            nodeCenterY >= y1 && nodeCenterY <= y2) {
+                            nodesInBounds.push(node);
                         }
-                    }
+                    });
+
+                    const newNodeIds = nodesInBounds
+                        .filter(n => n.data('originalNode') && !n.data('isPlaceholder'))
+                        .map(n => n.data('originalNode').ID);
+
+                    nodesInBounds.forEach(node => {
+                        if (!node.data('isPlaceholder') &&
+                            node.data('originalNode') &&
+                            !originalNodeIds.includes(node.data('originalNode').ID)) {
+                            node.data('parent', groupNode.id());
+                        }
+                    });
+
+                    this.cy!.nodes(`[parent="${groupNode.id()}"]`).forEach((node: any) => {
+                        if (!node.data('isPlaceholder') && node.data('originalNode')) {
+                            const nodeId = node.data('originalNode').ID;
+                            if (!newNodeIds.includes(nodeId)) {
+                                node.data('parent', undefined);
+                            }
+                        }
+                    });
                 });
             };
 
@@ -7128,6 +7129,8 @@ case 'dagre':
         });
 
         // 鼠标移动更新选择框
+        let boxSelectRafId: number | null = null;
+        let lastBoxLeft = 0, lastBoxTop = 0, lastBoxWidth = 0, lastBoxHeight = 0;
         const handleMouseMove = (e: MouseEvent) => {
             if (!isDragging) return;
 
@@ -7135,23 +7138,28 @@ case 'dagre':
             const currentX = e.clientX - rect.left;
             const currentY = e.clientY - rect.top;
 
-            // 检查是否移动了足够的距离（避免误触）
             if (Math.abs(currentX - startX) > 5 || Math.abs(currentY - startY) > 5) {
                 hasMoved = true;
             }
 
-            const left = Math.min(startX, currentX);
-            const top = Math.min(startY, currentY);
-            const width = Math.abs(currentX - startX);
-            const height = Math.abs(currentY - startY);
+            lastBoxLeft = Math.min(startX, currentX);
+            lastBoxTop = Math.min(startY, currentY);
+            lastBoxWidth = Math.abs(currentX - startX);
+            lastBoxHeight = Math.abs(currentY - startY);
 
-            selectionBox.style.left = `${left}px`;
-            selectionBox.style.top = `${top}px`;
-            selectionBox.style.width = `${width}px`;
-            selectionBox.style.height = `${height}px`;
+            // 选择框视觉立即更新
+            selectionBox.style.left = `${lastBoxLeft}px`;
+            selectionBox.style.top = `${lastBoxTop}px`;
+            selectionBox.style.width = `${lastBoxWidth}px`;
+            selectionBox.style.height = `${lastBoxHeight}px`;
 
-            // 选择框内的节点
-            this.selectNodesInBox(left, top, width, height);
+            // 节点选择检测通过 RAF 节流
+            if (boxSelectRafId !== null) return;
+            boxSelectRafId = requestAnimationFrame(() => {
+                boxSelectRafId = null;
+                if (!isDragging) return;
+                this.selectNodesInBox(lastBoxLeft, lastBoxTop, lastBoxWidth, lastBoxHeight);
+            });
         };
 
         // 鼠标释放结束框选
@@ -8061,20 +8069,21 @@ case 'dagre':
             to: placeholderNodeId
         });
 
-        // 更新连接线位置的函数
+        // 缓存父节点引用，避免每次都遍历所有节点
+        const cachedParent = this.cy.$('node').filter((node: any) => {
+            const data = node.data();
+            return data.originalNode && data.originalNode.IDStr === parentNodeId;
+        });
+
+        // 更新连接线位置的函数（轻量，只读取两个节点的位置）
         const updateConnectionLine = () => {
             if (!this.cy || !connectionLine.parentNode) return;
 
             const currentPlaceholder = this.cy.$id(placeholderNodeId);
-            const currentParent = this.cy.$('node').filter((node: any) => {
-                const data = node.data();
-                return data.originalNode && data.originalNode.IDStr === parentNodeId;
-            });
-
             if (currentPlaceholder && currentPlaceholder.length > 0 &&
-                currentParent && currentParent.length > 0) {
+                cachedParent && cachedParent.length > 0) {
                 const newPos = currentPlaceholder.renderedPosition();
-                const parentPos = currentParent.renderedPosition();
+                const parentPos = cachedParent.renderedPosition();
 
                 connectionLine.setAttribute('x1', parentPos.x.toString());
                 connectionLine.setAttribute('y1', parentPos.y.toString());
@@ -8083,22 +8092,11 @@ case 'dagre':
             }
         };
 
-        // 监听位置变化
-        const updateHandler = () => {
-            requestAnimationFrame(updateConnectionLine);
-        };
-
-        // 监听占位符节点的位置变化
-        placeholderNode.on('position', updateHandler);
-        parentNode.on('position', updateHandler);
-
-        // 监听视图的缩放和平移
-        this.cy.on('zoom pan', updateHandler);
+        // 注册到统一 overlay 调度器，而非单独绑定事件
+        this.overlayUpdaters.add(updateConnectionLine);
 
         // 保存更新处理器引用，以便后续清理
-        (nodeData as any).connectionLineUpdater = updateHandler;
-
-        console.log('[CytoscapeRenderer] 连接线监听器已设置');
+        (nodeData as any).connectionLineUpdater = updateConnectionLine;
     }
 
     /**

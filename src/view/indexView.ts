@@ -5847,8 +5847,7 @@ export class ZKIndexView extends ItemView {
                     searchInput.focus();
                     searchInput.setSelectionRange(0, searchInput.value.length);
                 };
-                setTimeout(focusSearchInput, 0);
-                requestAnimationFrame(() => requestAnimationFrame(focusSearchInput));
+                requestAnimationFrame(focusSearchInput);
             };
 
             const buttonContainer = contentEl.createDiv();
