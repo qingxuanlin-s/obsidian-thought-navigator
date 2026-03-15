@@ -444,11 +444,7 @@ export class ZKIndexView extends ItemView {
 
             this.staticUICreated = true;
         } else {
-            // 如果已创建过静态 UI，只清空图形容器
-            const indexMermaidDiv = document.getElementById("zk-index-mermaid-container");
-            if (indexMermaidDiv) {
-                indexMermaidDiv.empty();
-            }
+            // 已创建过静态 UI，不清空图形容器（由各渲染函数内部增量更新）
         }
 
         // 刷新图形内容（动态层）

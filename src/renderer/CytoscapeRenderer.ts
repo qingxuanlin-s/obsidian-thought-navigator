@@ -741,6 +741,19 @@ export class CytoscapeRenderer implements IGraphRenderer {
             nodeById.set(n.IDStr, n);
         });
         const nodeStyleMap = this.buildVividNodeStyleMap(allNodes);
+
+        // DEBUG: 打印所有根节点到一级子节点的边
+        const rootEdges = edges.filter(e => {
+            const src = nodeById.get(e.source);
+            const tgt = nodeById.get(e.target);
+            const srcLevel = src?.IDStr ? src.IDStr.split('.').length : 0;
+            const tgtLevel = tgt?.IDStr ? tgt.IDStr.split('.').length : 0;
+            return srcLevel === 1 && tgtLevel === 2;
+        });
+        console.log('[DEBUG] 根→一级子节点 边数:', rootEdges.length, rootEdges.map(e => `${e.source}->${e.target} (id:${e.id})`));
+        console.log('[DEBUG] 所有节点 ID:', allNodes.map(n => `${n.ID}(IDStr:${n.IDStr})`));
+        console.log('[DEBUG] 所有边:', edges.map(e => `${e.source}->${e.target}`));
+
         const elements = edges.map(edge => {
             const sourceNode = nodeById.get(edge.source);
             const targetNode = nodeById.get(edge.target);
@@ -4500,10 +4513,11 @@ case 'dagre':
         }
 
         const renderedPosition = node.renderedPosition();
-        const initialBoxWidth = Math.max(Number(node.renderedWidth?.() || 0), 80);
-        const initialBoxHeight = Math.max(Number(node.renderedHeight?.() || 0), 44);
-        const lockedBoxLeft = renderedPosition.x - initialBoxWidth / 2;
-        const lockedBoxTop = renderedPosition.y - initialBoxHeight / 2;
+        const bb = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
+        const initialBoxWidth = Math.max(bb.w, 80);
+        const initialBoxHeight = Math.max(bb.h, 44);
+        const lockedBoxLeft = bb.x1;
+        const lockedBoxTop = bb.y1;
 
         // 创建 textarea，直接覆盖在节点上
         const textarea = document.createElement('textarea');
@@ -4517,6 +4531,11 @@ case 'dagre':
         textarea.className = 'node-label-editor';
         const nodeFontSize = node.style('font-size') || '20px';
         const nodeLineHeight = node.style('line-height') || '1.5';
+
+        // 锁定节点尺寸，防止清空标签后节点缩小
+        const lockedWidth = node.width();
+        const lockedHeight = node.height();
+        node.style({ 'width': lockedWidth, 'height': lockedHeight });
 
         // 重要：在编辑时隐藏节点标签，避免重复显示
         node.data('label', '');
@@ -4576,8 +4595,8 @@ case 'dagre':
                 }, minWidth);
             }
 
-            const maxWidth = Math.max(minWidth, Math.min(620, containerWidth - lockedBoxLeft - 12));
-            const maxHeight = Math.max(minHeight, Math.min(420, containerHeight - lockedBoxTop - 12));
+            const maxWidth = Math.max(minWidth, Math.min(620, containerWidth - 24));
+            const maxHeight = Math.max(minHeight, Math.min(420, containerHeight - 24));
             const preferredWidth = Math.min(maxWidth, Math.max(minWidth, Math.ceil(contentWidth)));
             const candidateWidths = Array.from(new Set([
                 minWidth,
@@ -4610,6 +4629,9 @@ case 'dagre':
 
             textarea.style.width = `${bestWidth}px`;
             textarea.style.height = `${bestHeight}px`;
+            // 重新居中：以节点中心为基准
+            textarea.style.left = `${renderedPosition.x - bestWidth / 2}px`;
+            textarea.style.top = `${renderedPosition.y - bestHeight / 2}px`;
         };
 
         // 自动聚焦并全选文本（方便删除）
@@ -4659,6 +4681,9 @@ case 'dagre':
 
             if (isSaved) return;
             isSaved = true;
+            // 恢复节点自动尺寸
+            node.removeCss('width');
+            node.removeCss('height');
             node.data('label', originalDisplayLabel);
 
             // 获取节点的实际位置（使用 position() 而不是 boundingBox）
@@ -4703,6 +4728,9 @@ case 'dagre':
         const cancelEdit = () => {
             if (isSaved) return;
             isSaved = true;
+            // 恢复节点自动尺寸
+            node.removeCss('width');
+            node.removeCss('height');
             node.data('label', isPlaceholder ? '' : originalDisplayLabel);
             if (isPlaceholder) {
                 this.container?.dispatchEvent(new CustomEvent('placeholder-node-cancel', {
