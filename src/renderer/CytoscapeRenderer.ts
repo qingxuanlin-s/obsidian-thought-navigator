@@ -7849,16 +7849,42 @@ case 'dagre':
      */
     private getFreeSiblingShortcutPosition(activeNode: any): { x: number; y: number } {
         const nodePos = activeNode.position();
-        const downDir = { x: 0, y: 1 };
-        const directionalDistance = this.getDirectionalDistance(activeNode, downDir, 36);
-        const basePosition = { x: nodePos.x, y: nodePos.y + directionalDistance };
+        const parent = activeNode.incomers('edge').sources();
+        if (parent.length === 0) {
+            // 无父节点，直接在下方生成
+            const downDir = { x: 0, y: 1 };
+            const directionalDistance = this.getDirectionalDistance(activeNode, downDir, 36);
+            const basePosition = { x: nodePos.x, y: nodePos.y + directionalDistance };
+            return this.resolveShortcutPosition(
+                basePosition,
+                activeNode,
+                downDir,
+                directionalDistance,
+                { x: 1, y: 0 },
+                5
+            );
+        }
+
+        // 有父节点时，沿垂直于父→子方向排列兄弟
+        const parentPos = parent.first().position();
+        const dir = this.getBranchDirection(activeNode);
+        const normal = this.getPerpendicular(dir);
+        const siblings = parent.first().outgoers('edge').targets();
+        const siblingGap = this.getDirectionalDistance(activeNode, normal, 28);
+
+        // 基础位置：在活动节点的法线方向偏移一个间距
+        const basePosition = {
+            x: nodePos.x + normal.x * siblingGap,
+            y: nodePos.y + normal.y * siblingGap
+        };
+
         return this.resolveShortcutPosition(
             basePosition,
             activeNode,
-            downDir,
-            Math.max(100, directionalDistance * 0.85),
-            { x: 1, y: 0 },
-            12
+            normal,
+            siblingGap,
+            dir,
+            5
         );
     }
 
