@@ -1,5 +1,5 @@
 import ZKNavigationPlugin, { Retrival } from "main";
-import { ButtonComponent, DropdownComponent, ExtraButtonComponent, FuzzySuggestModal, HeadingCache, ItemView, Menu, Modal, Notice, Platform, Scope, Setting, TFile, WorkspaceLeaf, debounce, moment, setTooltip } from "obsidian";
+import { ExtraButtonComponent, FuzzySuggestModal, HeadingCache, ItemView, Menu, Modal, Notice, Platform, Scope, Setting, TFile, WorkspaceLeaf, debounce, moment, setIcon, setTooltip } from "obsidian";
 import { t } from "src/lang/helper";
 import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
 import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
@@ -158,8 +158,8 @@ export class ZKIndexView extends ItemView {
         childNodeId?: string;  // 需要移动到此节点下的子节点 ID（用于创建父节点时）
     }> = new Map();
 
-    // MOC 按钮引用（用于更新显示）
-    private mocButton: ButtonComponent | null = null;
+    // MOC 芯片标签引用（用于更新显示）
+    private mocChipLabel: HTMLElement | null = null;
 
     // 性能优化：防止重复刷新的标志位
     private isRefreshing: boolean = false;
@@ -455,12 +455,14 @@ export class ZKIndexView extends ItemView {
      * 创建静态工具栏 UI（只创建一次）
      */
     private async createStaticToolbarUI(toolbarDiv: HTMLElement): Promise<void> {
+        // 面包屑导航区域
+        const breadcrumbNav = toolbarDiv.createDiv("zk-breadcrumb-nav");
+
         if (this.plugin.settings.MainNoteButton == true) {
-            const mainNoteButtonDiv = toolbarDiv.createDiv("zk-index-toolbar-block");
-            const mainNoteButton = new ButtonComponent(mainNoteButtonDiv).setClass("zk-index-toolbar-button");
-            mainNoteButton.setButtonText(this.plugin.settings.MainNoteButtonText);
-            mainNoteButton.setCta();
-            mainNoteButton.onClick(() => {
+            const mainNoteChip = breadcrumbNav.createDiv("zk-chip zk-chip-outlined");
+            setIcon(mainNoteChip.createSpan("zk-chip-icon"), "file-text");
+            mainNoteChip.createSpan("zk-chip-label").setText(this.plugin.settings.MainNoteButtonText);
+            mainNoteChip.addEventListener("click", () => {
                 if (this.plugin.settings.MainNoteSuggestMode === "IDOrder") {
                     new mainNoteModal(this.app, this.plugin, this.plugin.MainNotes, (selectZKNode) => {
                         if (!selectZKNode.file) return;
@@ -488,15 +490,17 @@ export class ZKIndexView extends ItemView {
                         this.app.workspace.trigger("zk-navigation:refresh-index-graph");
                     }).open()
                 }
-            })
+            });
+
+            // 面包屑分隔符
+            breadcrumbNav.createSpan("zk-breadcrumb-sep").setText("\u203A");
         }
 
         if (this.plugin.settings.IndexButton == true) {
-            const indexButtonDiv = toolbarDiv.createDiv("zk-index-toolbar-block");
-            const indexButton = new ButtonComponent(indexButtonDiv).setClass("zk-index-toolbar-button");
-            indexButton.setButtonText(this.plugin.settings.IndexButtonText);
-            indexButton.setCta();
-            indexButton.onClick(() => {
+            const indexChip = breadcrumbNav.createDiv("zk-chip zk-chip-outlined");
+            setIcon(indexChip.createSpan("zk-chip-icon"), "search");
+            indexChip.createSpan("zk-chip-label").setText(this.plugin.settings.IndexButtonText);
+            indexChip.addEventListener("click", () => {
                 if (this.plugin.settings.SuggestMode === "keywordOrder") {
                     new indexModal(this.app, this.plugin, this.plugin.MainNotes, (index) => {
                         this.plugin.settings.lastRetrival = {
@@ -523,53 +527,59 @@ export class ZKIndexView extends ItemView {
                     }).open();
                 }
             });
+
+            breadcrumbNav.createSpan("zk-breadcrumb-sep").setText("\u203A");
         }
 
         // MOC 选择器
         if (this.plugin.settings.mocModeEnabled == true) {
-            const mocSelectorDiv = toolbarDiv.createDiv("zk-index-toolbar-block");
-            this.mocButton = new ButtonComponent(mocSelectorDiv);
-            this.mocButton.buttonEl.addClass("zk-index-toolbar-button");
-            this.mocButton.buttonEl.addClass("zk-moc-button");
+            const mocChip = breadcrumbNav.createDiv("zk-chip zk-chip-filled");
+            setIcon(mocChip.createSpan("zk-chip-icon"), "git-fork");
+            const mocLabel = mocChip.createSpan("zk-chip-label");
 
             // 获取当前MOC名称
             const currentMOCPath = this.plugin.settings.mocCurrentFile;
             const currentMOCFile = currentMOCPath ? this.app.vault.getAbstractFileByPath(currentMOCPath) : null;
             let currentMOCName = currentMOCFile instanceof TFile ? currentMOCFile.basename : "未命名";
-
-            // 截断过长的文件名
-            const maxLength = 9;
+            const maxLength = 12;
             if (currentMOCName.length > maxLength) {
                 currentMOCName = currentMOCName.substring(0, maxLength) + "...";
             }
+            mocLabel.setText(currentMOCName);
 
-            this.mocButton.setButtonText(`🔍 ${currentMOCName}`);
-            this.mocButton.setCta();
-            this.mocButton.onClick(() => {
+            // 保存引用以便后续更新
+            this.mocChipLabel = mocLabel;
+            mocChip.addEventListener("click", () => {
                 this.openMOCSelectorModal();
             });
+
+            breadcrumbNav.createSpan("zk-breadcrumb-sep").setText("\u203A");
         }
 
-        // 风格选择
-        const graphTypeDiv = toolbarDiv.createDiv("zk-index-toolbar-block");
-        const graphType = new DropdownComponent(graphTypeDiv);
-        graphType
-            .addOption("structure", t("structure"))
-            .addOption("roadmap", t("roadmap") + " (Future)")
-            .setValue(this.plugin.settings.graphType || "structure")
-            .onChange((graphType) => {
-                // 路线图功能暂未实现，保持为结构图
-                if (graphType === "roadmap") {
-                    new Notice("路线图功能即将推出");
-                    graphType = "structure";
-                    this.plugin.settings.graphType = "structure";
-                } else {
-                    this.plugin.settings.graphType = graphType;
-                }
-                this.plugin.clearShowingSettings(this.plugin.settings.BranchTab);
-                this.app.workspace.trigger("zk-navigation:refresh-index-graph");
-                this.app.workspace.trigger("zk-navigation:refresh-local-graph");
-            });
+        // 风格选择（药丸下拉）
+        const graphTypeChip = breadcrumbNav.createDiv("zk-chip zk-chip-outlined zk-chip-dropdown");
+        const graphTypeLabel = graphTypeChip.createSpan("zk-chip-label");
+        graphTypeLabel.setText(t("structure"));
+        setIcon(graphTypeChip.createSpan("zk-chip-chevron"), "chevron-down");
+
+        const graphTypeSelect = graphTypeChip.createEl("select", { cls: "zk-chip-select" });
+        graphTypeSelect.createEl("option", { value: "structure", text: t("structure") });
+        graphTypeSelect.createEl("option", { value: "roadmap", text: t("roadmap") + " (Future)" });
+        graphTypeSelect.value = this.plugin.settings.graphType || "structure";
+        graphTypeLabel.setText(graphTypeSelect.options[graphTypeSelect.selectedIndex].text);
+        graphTypeSelect.addEventListener("change", () => {
+            let val = graphTypeSelect.value;
+            if (val === "roadmap") {
+                new Notice("路线图功能即将推出");
+                val = "structure";
+                graphTypeSelect.value = "structure";
+            }
+            this.plugin.settings.graphType = val;
+            graphTypeLabel.setText(graphTypeSelect.options[graphTypeSelect.selectedIndex].text);
+            this.plugin.clearShowingSettings(this.plugin.settings.BranchTab);
+            this.app.workspace.trigger("zk-navigation:refresh-index-graph");
+            this.app.workspace.trigger("zk-navigation:refresh-local-graph");
+        });
 
         // 右侧工具按钮（用 spacer 推到右边）
         const spacer = toolbarDiv.createDiv("zk-toolbar-spacer");
@@ -4684,13 +4694,13 @@ export class ZKIndexView extends ItemView {
                 await this.plugin.clearShowingSettings();
 
                 // 更新 MOC 按钮显示文本
-                if (this.mocButton) {
+                if (this.mocChipLabel) {
                     let mocName = item.file.basename;
-                    const maxLength = 9;
+                    const maxLength = 12;
                     if (mocName.length > maxLength) {
                         mocName = mocName.substring(0, maxLength) + "...";
                     }
-                    this.mocButton.setButtonText(`🔍 ${mocName}`);
+                    this.mocChipLabel.setText(mocName);
                 }
 
                 this.app.workspace.trigger("zk-navigation:refresh-index-graph");
