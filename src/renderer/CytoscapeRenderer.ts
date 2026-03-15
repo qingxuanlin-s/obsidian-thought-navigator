@@ -2989,7 +2989,7 @@ case 'dagre':
                 e.stopPropagation();
             });
 
-            handle.addEventListener('click', (e) => {
+            const toggleCollapse = (e: Event) => {
                 e.preventDefault();
                 e.stopPropagation();
                 if (this.collapsedNodeIds.has(originalId)) {
@@ -2999,7 +2999,9 @@ case 'dagre':
                 }
                 this.applyCollapsedState();
                 handleUpdaters.forEach((fn) => fn());
-            });
+            };
+            handle.addEventListener('click', toggleCollapse);
+            handle.addEventListener('touchend', toggleCollapse, { passive: false });
         });
 
         // 注册到统一 overlay 调度器
