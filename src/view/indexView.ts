@@ -1933,7 +1933,6 @@ export class ZKIndexView extends ItemView {
         // 监听节点选中事件（单击）
         this.addTrackedListener(branchGraphDiv, 'node-select', (event: any) => {
             const { node } = event.detail;
-            // 可以在这里添加选中节点的其他逻辑
         });
 
         // 监听节点编辑事件（双击）
