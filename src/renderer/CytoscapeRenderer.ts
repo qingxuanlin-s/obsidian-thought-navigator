@@ -897,17 +897,33 @@ export class CytoscapeRenderer implements IGraphRenderer {
             paddingY = 16
         } = options || {};
 
+        // 计算字符串的实际估算宽度（CJK 字符按 2 倍宽度计算）
+        const estimateTextWidth = (text: string): number => {
+            let w = 0;
+            for (const ch of text) {
+                const code = ch.codePointAt(0) || 0;
+                // CJK 统一表意文字 + 全角标点
+                const isCJK = (code >= 0x4E00 && code <= 0x9FFF) ||
+                    (code >= 0x3000 && code <= 0x303F) ||
+                    (code >= 0xFF00 && code <= 0xFFEF) ||
+                    (code >= 0x3400 && code <= 0x4DBF) ||
+                    (code >= 0x20000 && code <= 0x2A6DF);
+                w += isCJK ? charWidth * 2 : charWidth;
+            }
+            return w;
+        };
+
         const lines = String(label || '').split('\n');
         const estimatedWrappedLines = lines.flatMap((line) => {
             const raw = line || ' ';
-            const estimatedWidth = raw.length * charWidth;
+            const estimatedWidth = estimateTextWidth(raw);
             const wrappedCount = Math.max(1, Math.ceil(estimatedWidth / maxWidth));
             return new Array(wrappedCount).fill(raw);
         });
 
         const longestLineWidth = Math.min(
             maxWidth,
-            Math.max(...lines.map((line) => Math.max(1, line.length) * charWidth), charWidth)
+            Math.max(...lines.map((line) => estimateTextWidth(line || ' ')), charWidth)
         );
         const width = Math.max(baseWidth, longestLineWidth + paddingX);
         const height = Math.max(minHeight, estimatedWrappedLines.length * lineHeight + paddingY);
@@ -924,21 +940,35 @@ export class CytoscapeRenderer implements IGraphRenderer {
             charWidth = 8
         } = options || {};
 
+        const isCJKChar = (ch: string): boolean => {
+            const code = ch.codePointAt(0) || 0;
+            return (code >= 0x4E00 && code <= 0x9FFF) ||
+                (code >= 0x3000 && code <= 0x303F) ||
+                (code >= 0xFF00 && code <= 0xFFEF) ||
+                (code >= 0x3400 && code <= 0x4DBF) ||
+                (code >= 0x20000 && code <= 0x2A6DF);
+        };
+
         const lines = String(label || '').split('\n');
         const wrappedLines: string[] = [];
 
         lines.forEach((line) => {
             const raw = line || ' ';
-            const maxCharsPerLine = Math.max(1, Math.floor(maxWidth / charWidth));
+            let currentLine = '';
+            let currentWidth = 0;
 
-            if (raw.length <= maxCharsPerLine) {
-                wrappedLines.push(raw);
-                return;
+            for (const ch of raw) {
+                const w = isCJKChar(ch) ? charWidth * 2 : charWidth;
+                if (currentWidth + w > maxWidth && currentLine.length > 0) {
+                    wrappedLines.push(currentLine);
+                    currentLine = ch;
+                    currentWidth = w;
+                } else {
+                    currentLine += ch;
+                    currentWidth += w;
+                }
             }
-
-            for (let i = 0; i < raw.length; i += maxCharsPerLine) {
-                wrappedLines.push(raw.slice(i, i + maxCharsPerLine));
-            }
+            if (currentLine) wrappedLines.push(currentLine);
         });
 
         return wrappedLines.length > 0 ? wrappedLines : [' '];
