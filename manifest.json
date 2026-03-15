@@ -1,7 +1,7 @@
 {
 	"id": "thought tree navigator",
 	"name": "Thought Tree Navigator",
-	"version": "V0.0.4",
+	"version": "v0.0.5",
 	"minAppVersion": "1.8.5",
 	"description": "Navigate and visualize the natural growth of your thoughts with Luhmann-style Zettelkasten. Features hierarchical graphs, view state memory, and dynamic tree visualization.",
 	"author": "qingxuanlin-s",
