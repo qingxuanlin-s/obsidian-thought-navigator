@@ -570,6 +570,55 @@ export class ZKIndexView extends ItemView {
                 this.app.workspace.trigger("zk-navigation:refresh-index-graph");
                 this.app.workspace.trigger("zk-navigation:refresh-local-graph");
             });
+
+        // 右侧工具按钮（用 spacer 推到右边）
+        const spacer = toolbarDiv.createDiv("zk-toolbar-spacer");
+
+        // 创建右侧按钮容器
+        const rightBtns = toolbarDiv.createDiv("zk-toolbar-right-buttons");
+
+        if (this.plugin.settings.settingIcon === true) {
+            const settingBtn = new ExtraButtonComponent(rightBtns);
+            settingBtn.setIcon("settings").setTooltip(t("settings"));
+            settingBtn.onClick(() => {
+                //@ts-ignore
+                this.app.setting.open();
+                //@ts-ignore
+                this.app.setting.openTabById("zettelkasten-navigation");
+            });
+        }
+
+        if (this.plugin.settings.TableView === true) {
+            const tableBtn = new ExtraButtonComponent(rightBtns);
+            tableBtn.setIcon("table").setTooltip(t("table view"));
+            tableBtn.onClick(async () => {
+                if (this.mocNodes && this.mocNodes.length > 0) {
+                    this.plugin.tableArr = this.mocNodes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
+                    await this.plugin.openTableView();
+                }
+            });
+        }
+
+        const sep = document.createElement("span");
+        sep.className = "zk-toolbar-separator";
+        rightBtns.appendChild(sep);
+
+        const centerBtn = new ExtraButtonComponent(rightBtns);
+        centerBtn.setIcon("target").setTooltip("center");
+        centerBtn.onClick(() => {
+            if (this.branchRenderer) {
+                this.branchRenderer.fitAndCenter();
+            }
+        });
+
+        const expandBtn = new ExtraButtonComponent(rightBtns);
+        expandBtn.setIcon("expand").setTooltip(t("expand graph"));
+        expandBtn.onClick(() => {
+            const div = document.getElementById("zk-branch-cytoscape");
+            if (div && div.requestFullscreen) {
+                div.requestFullscreen();
+            }
+        });
     }
 
     async onload() {
@@ -1160,6 +1209,27 @@ export class ZKIndexView extends ItemView {
                 })
             }
 
+            const sep1 = document.createElement("span");
+            sep1.className = "zk-toolbar-separator";
+            toolButtonsDiv.appendChild(sep1);
+
+            const cBtn = new ExtraButtonComponent(toolButtonsDiv);
+            cBtn.setIcon("target").setTooltip("center");
+            cBtn.onClick(() => {
+                if (this.branchRenderer) {
+                    this.branchRenderer.fitAndCenter();
+                }
+            });
+
+            const eBtn = new ExtraButtonComponent(toolButtonsDiv);
+            eBtn.setIcon("expand").setTooltip(t("expand graph"));
+            eBtn.onClick(() => {
+                const div = document.getElementById("zk-branch-cytoscape");
+                if (div && div.requestFullscreen) {
+                    div.requestFullscreen();
+                }
+            });
+
         }
 
         switch (this.plugin.settings.lastRetrival.type) {
@@ -1315,85 +1385,6 @@ export class ZKIndexView extends ItemView {
     // MOC 模式专用的刷新方法
     // MOC 模式专用的刷新方法 - 使用 Cytoscape 渲染
     async refreshBranchMermaidMOC(indexMermaidDiv: HTMLElement) {
-        // 性能优化：不复用整体容器，而是复用各个子容器
-
-        // 复用或创建顶部容器
-        let graphTopContainer = document.getElementById("zk-moc-graph-top") as HTMLElement;
-
-        if (!graphTopContainer) {
-            // 首次创建
-            graphTopContainer = indexMermaidDiv.createDiv("zk-graph-top");
-            graphTopContainer.id = "zk-moc-graph-top";
-        }
-
-        // 添加工具栏
-        if (this.plugin.settings.BranchToolbra === true) {
-            // 复用或创建工具栏容器
-            let toolButtonsDiv = document.getElementById("zk-moc-tool-buttons") as HTMLElement;
-
-            if (!toolButtonsDiv) {
-                // 首次创建
-                toolButtonsDiv = graphTopContainer.createDiv("zk-tool-buttons");
-                toolButtonsDiv.id = "zk-moc-tool-buttons";
-            } else {
-                // 复用：清空内容
-                toolButtonsDiv.empty();
-            }
-
-            if (this.plugin.settings.settingIcon === true) {
-                const settingBtn = new ExtraButtonComponent(toolButtonsDiv);
-                settingBtn.setIcon("settings").setTooltip(t("settings"));
-                settingBtn.onClick(() => {
-                    //@ts-ignore
-                    this.app.setting.open();
-                    //@ts-ignore
-                    this.app.setting.openTabById("zettelkasten-navigation");
-                });
-            }
-
-
-            if (this.plugin.settings.TableView === true) {
-                const tableBtn = new ExtraButtonComponent(toolButtonsDiv);
-                tableBtn.setIcon("table").setTooltip(t("table view"));
-                tableBtn.onClick(async () => {
-                    if (this.mocNodes && this.mocNodes.length > 0) {
-                        this.plugin.tableArr = this.mocNodes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
-                        await this.plugin.openTableView();
-                    }
-                });
-            }
-
-
-            // “添加自由节点”按钮已隐藏（功能保留）
-        }
-
-        // 添加播放控制器（底部居中）
-        if (this.plugin.settings.playControllerToggle === true) {
-            const playControllerDiv = indexMermaidDiv.createDiv("zk-play-controller");
-
-            // 居中按钮
-            const centerBtn = new ExtraButtonComponent(playControllerDiv);
-            centerBtn.setIcon("target").setTooltip("居中");
-            centerBtn.onClick(() => {
-                if (this.branchRenderer) {
-                    this.branchRenderer.fitAndCenter();
-                }
-            });
-
-            // 放大按钮
-            const expandBtn = new ExtraButtonComponent(playControllerDiv);
-            expandBtn.setIcon("expand").setTooltip(t("expand graph"));
-            expandBtn.onClick(() => {
-                // 使用 Cytoscape 的全屏功能
-                const branchGraphDiv = document.getElementById('zk-branch-cytoscape');
-                if (branchGraphDiv) {
-                    if (branchGraphDiv.requestFullscreen) {
-                        branchGraphDiv.requestFullscreen();
-                    }
-                }
-            });
-        }
-
         // 获取 MOC 配置
         const mocFolder = this.plugin.settings.mocFolderPath;
         const headingTitle = this.plugin.settings.mocHeadingTitle;
@@ -1451,10 +1442,9 @@ export class ZKIndexView extends ItemView {
             });
             branchGraphDiv.id = "zk-branch-cytoscape";
 
-            // 为顶部工具栏和底部留出空间
-            branchGraphDiv.style.height = `${this.containerEl.offsetHeight - 150}px`;
+            // 为顶部工具栏留出空间
+            branchGraphDiv.style.height = `${this.containerEl.offsetHeight - 80}px`;
             branchGraphDiv.style.width = "100%";
-            branchGraphDiv.style.marginBottom = "10px"; // 为底部按钮留出空间
         }
 
         if (this.isMobileReadOnly()) {
@@ -1923,7 +1913,7 @@ export class ZKIndexView extends ItemView {
                 event: mouseEvent,
                 source: 'zk-navigation',
                 hoverParent: branchGraphDiv,
-                // 使用 Obsidian 常规参数组合，避免 [[...]] 解析差异导致误判“未创建”
+                // 使用 Obsidian 常规参数组合，避免 [[...]] 解析差异导致误判"未创建"
                 linktext: "",
                 targetEl: mouseEvent.target,
                 sourcePath: node.file.path,

@@ -71,6 +71,37 @@ align-items: center;
   border-color: #00a8ff;
 }
 
+.zk-toolbar-spacer {
+  flex: 1;
+}
+
+.zk-toolbar-right-buttons {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.zk-toolbar-right-buttons > .clickable-icon {
+  background-color: #27313b;
+  padding: 2px;
+  border: 1px solid #3e4a57;
+  color: #00a8ff;
+  border-radius: 4px;
+}
+
+.zk-toolbar-right-buttons > .clickable-icon:hover {
+  background-color: #384452;
+  border-color: #00a8ff;
+}
+
+.zk-toolbar-separator {
+  width: 1px;
+  height: 20px;
+  background-color: #3e4a57;
+  margin: 0 4px;
+  align-self: center;
+}
+
 .zk-extra-buttons{
   background-color: #27313b;
 }
@@ -105,9 +136,9 @@ align-items: center;
 /* 分支图形容器 */
 .zk-branch-graph-container {
   position: relative;
-  margin-top: 30px; /* 为工具栏留出空间 */
-  z-index: 1; /* 确保在工具栏下方 */
-  background-color: transparent; /* 改为透明 */
+  margin-top: 0px;
+  z-index: 1;
+  background-color: transparent;
 }
 
 .zk-graph-text {
@@ -851,6 +882,21 @@ align-items: center;
   background-color: #e8e8e8;
   border: 1px solid #d0d0d0;
   color: #0066cc;
+}
+
+.zk-theme-light .zk-toolbar-separator {
+  background-color: #d0d0d0;
+}
+
+.zk-theme-light .zk-toolbar-right-buttons > .clickable-icon {
+  background-color: #e8e8e8;
+  border: 1px solid #d0d0d0;
+  color: #0066cc;
+}
+
+.zk-theme-light .zk-toolbar-right-buttons > .clickable-icon:hover {
+  background-color: #d0d0d0;
+  border-color: #0066cc;
 }
 
 .zk-theme-light .zk-tool-buttons > .clickable-icon:hover {
