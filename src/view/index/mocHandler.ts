@@ -90,6 +90,11 @@ export class MOCHandler {
         // 深拷贝数据，避免修改缓存中的数据
         const mocDataCopy = deepCopyMOCResult(mocData);
 
+        // 锁定文件级布局风格：若该 MOC 尚未持久化 nodeLayoutStyle，则在首次写入时补齐
+        if (mocDataCopy.nodeLayoutStyle !== 'free' && mocDataCopy.nodeLayoutStyle !== 'auto') {
+            mocDataCopy.nodeLayoutStyle = this.plugin.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free';
+        }
+
         // 调用修改回调（操作的是拷贝，不影响缓存）
         await modifyCallback(mocDataCopy);
 
