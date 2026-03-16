@@ -201,6 +201,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
         // 出入链预设网格位置（必须在转换元素之前，确保 savedPosition 生效）
         this.presetInOutLinksPositions(data);
+        // 检查是否有保存的位置
+        const hasSavedPositions = data.nodes.some(node => node.savedPosition);
 
         // 转换元素（包含分组）
         const elements = this.convertToElementsWithGroups(data);
@@ -230,7 +232,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         } as any
                     }
                 ],
-                layout: { name: 'preset' }, // 先使用 preset，稍后运行布局
+                // 没有保存位置时，先用轻量网格打散，避免首帧节点重叠导致边端点无效
+                layout: hasSavedPositions
+                    ? { name: 'preset' }
+                    : { name: 'grid', fit: false, avoidOverlap: true, padding: 30 },
                 // 性能优化选项
                 hideEdgesOnViewport: true,
                 // 关闭拖拽纹理缓存，避免画布拖动时出现半透明色块伪影
@@ -393,14 +398,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
         this.addEmbedNodePreviews();
         this.addImageNodePreviews();
 
-        // 检查是否有保存的位置
-        const hasSavedPositions = data.nodes.some(node => node.savedPosition);
-
         // 运行布局
         if (this.cy) {
             if (hasSavedPositions) {
                 // 如果有保存的位置，使用 preset 布局（保持原位置）
                 this.runLayoutSafely({ name: 'preset' });
+                this.resolveExactNodeOverlaps();
             } else {
                 // 如果没有保存位置，根据 layoutType 选择布局算法
                 // 默认使用 preset（索引视图等已有位置信息的情况）
@@ -410,6 +413,42 @@ export class CytoscapeRenderer implements IGraphRenderer {
             }
         }
         this.applyCollapsedState();
+    }
+
+    /**
+     * 轻微打散完全重叠的节点，避免边端点重合导致 "invalid endpoints" 警告。
+     * 仅处理非分组节点，且只在坐标几乎完全一致时生效。
+     */
+    private resolveExactNodeOverlaps(): void {
+        if (!this.cy) return;
+
+        const buckets = new Map<string, any[]>();
+        this.cy.nodes().forEach((node: any) => {
+            if (node.data('isGroup')) return;
+            const pos = node.position();
+            const key = `${Math.round(pos.x * 10) / 10}:${Math.round(pos.y * 10) / 10}`;
+            const bucket = buckets.get(key);
+            if (bucket) {
+                bucket.push(node);
+            } else {
+                buckets.set(key, [node]);
+            }
+        });
+
+        this.cy.batch(() => {
+            buckets.forEach((nodes) => {
+                if (nodes.length <= 1) return;
+                const basePos = nodes[0].position();
+                for (let i = 1; i < nodes.length; i++) {
+                    const angle = (2 * Math.PI * i) / (nodes.length - 1);
+                    const radius = 14 + i * 6;
+                    nodes[i].position({
+                        x: basePos.x + Math.cos(angle) * radius,
+                        y: basePos.y + Math.sin(angle) * radius
+                    });
+                }
+            });
+        });
     }
 
     /**

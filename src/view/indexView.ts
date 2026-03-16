@@ -1552,6 +1552,10 @@ export class ZKIndexView extends ItemView {
                     branchGraphDiv.style.boxShadow = '';
                 }
             };
+            const getLatestMOCFile = () => {
+                const latestMOCPath = this.plugin.settings.mocCurrentFile;
+                return latestMOCPath ? this.app.vault.getFileByPath(latestMOCPath) : null;
+            };
 
             this.addTrackedListener(branchGraphDiv, 'dragenter', (event: DragEvent) => {
                 if (this.isMobileReadOnly()) return;
@@ -1598,9 +1602,12 @@ export class ZKIndexView extends ItemView {
 
             // 监听视图状态变化事件（缩放和平移）
             this.addTrackedListener(branchGraphDiv, 'viewStateChanged', async (event: any) => {
-            const { zoom, pan } = event.detail;
-            this.saveMOCViewState(currentMOCPath, zoom, pan);
-        });
+                const { zoom, pan } = event.detail;
+                // 监听器可能复用，保存时读取最新当前文件路径，避免写入旧 MOC 的视图状态
+                const latestMOCPath = this.plugin.settings.mocCurrentFile;
+                if (!latestMOCPath) return;
+                this.saveMOCViewState(latestMOCPath, zoom, pan);
+            });
 
         // 监听自动连接事件（拖动节点到附近节点时触发）
         this.addTrackedListener(branchGraphDiv, 'auto-connect-node', async (event: any) => {
@@ -1623,7 +1630,7 @@ export class ZKIndexView extends ItemView {
 
             // 保存连接关系到 MOC
             try {
-                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                const mocFile = getLatestMOCFile();
                 if (!mocFile) {
                     new Notice("未找到当前 MOC 文件");
                     return;
@@ -1655,15 +1662,16 @@ export class ZKIndexView extends ItemView {
                 return;
             }
             const { node, position } = event.detail;
+            const nodeKey = node?.ID || node?.IDStr;
 
             // 检查节点是否有效
-            if (!node || !node.ID) {
+            if (!node || !nodeKey) {
                 console.warn('Invalid node in position-changed event:', node);
                 return;
             }
 
             // 累积待保存的位置变化
-            this.pendingPositionChanges.set(node.ID, { node, position });
+            this.pendingPositionChanges.set(nodeKey, { node, position });
 
             // 使用防抖，等所有 dragfree 事件到达后一次性保存
             if (this.nodePositionSaveTimeout) {
@@ -1675,7 +1683,9 @@ export class ZKIndexView extends ItemView {
                 this.pendingPositionChanges.clear();
 
                 try {
-                    const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                    // 监听器可能复用，保存时读取最新当前文件路径，避免写入旧 MOC
+                    const latestMOCPath = this.plugin.settings.mocCurrentFile;
+                    const mocFile = this.app.vault.getFileByPath(latestMOCPath);
                     if (!mocFile) return;
 
                     // 分离跨领域节点和普通节点
@@ -1695,6 +1705,9 @@ export class ZKIndexView extends ItemView {
                         const headingTitle = this.plugin.settings.mocHeadingTitle;
                         const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
                         const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+                        if (!mocData.nodePositions) {
+                            mocData.nodePositions = {};
+                        }
                         for (const [nodeID, pos] of normalChanges) {
                             mocData.nodePositions[nodeID] = {
                                 x: Math.round(pos.x * 100) / 100,
@@ -1745,7 +1758,9 @@ export class ZKIndexView extends ItemView {
             this.crossDomainPositionSaveTimeout = setTimeout(async () => {
                 // 保存跨领域节点位置到 MOC 文件
                 try {
-                    const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                    // 监听器可能复用，保存时读取最新当前文件路径，避免写入旧 MOC
+                    const latestMOCPath = this.plugin.settings.mocCurrentFile;
+                    const mocFile = this.app.vault.getFileByPath(latestMOCPath);
                     if (mocFile) {
                         await this.saveCrossDomainNodePosition(mocFile, sourceNodeId, crossDomainLink, position);
                     }
@@ -1770,7 +1785,7 @@ export class ZKIndexView extends ItemView {
             this.edgeCurvatureSaveTimeout = setTimeout(async () => {
                 // 保存弧度到 MOC 文件
                 try {
-                    const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                    const mocFile = getLatestMOCFile();
                     if (mocFile) {
                         await this.saveEdgeCurvatureToMOC(mocFile, edgeId, { distance, weight });
                     }
@@ -1794,7 +1809,7 @@ export class ZKIndexView extends ItemView {
 
             this.embedNodeSizeSaveTimeout = setTimeout(async () => {
                 try {
-                    const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                    const mocFile = getLatestMOCFile();
                     if (mocFile) {
                         await this.saveEmbedNodeSizeToMOC(mocFile, node.ID, size);
                     }
@@ -1812,7 +1827,7 @@ export class ZKIndexView extends ItemView {
             const { groupId, groupLabel, nodeIds } = event.detail;
             
             try {
-                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                const mocFile = getLatestMOCFile();
                 if (mocFile) {
                     await this.saveGroupToMOC(mocFile, { id: groupId, label: groupLabel, nodeIds });
                     // 刷新视图以显示新分组
@@ -1831,7 +1846,7 @@ export class ZKIndexView extends ItemView {
             const { groupId, oldLabel, newLabel } = event.detail;
 
             try {
-                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                const mocFile = getLatestMOCFile();
                 if (mocFile) {
                     await this.renameGroupInMOC(mocFile, groupId, newLabel);
                     // 刷新视图以显示更新后的分组名
@@ -1850,7 +1865,7 @@ export class ZKIndexView extends ItemView {
             const { groupId, groupLabel, nodeIds } = event.detail;
 
             try {
-                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                const mocFile = getLatestMOCFile();
                 if (mocFile) {
                     // 更新分组的节点列表
                     await this.updateGroupNodesInMOC(mocFile, groupId, nodeIds);
@@ -1877,7 +1892,7 @@ export class ZKIndexView extends ItemView {
                     .setIcon('trash')
                     .onClick(async () => {
                         try {
-                            const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                            const mocFile = getLatestMOCFile();
                             if (mocFile) {
                                 await this.deleteGroupFromMOC(mocFile, groupId);
                                 // 刷新视图
@@ -2030,7 +2045,7 @@ export class ZKIndexView extends ItemView {
 
             // 删除节点
             try {
-                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                const mocFile = getLatestMOCFile();
                 if (mocFile) {
                     // 根据 isCrossDomain 属性选择删除方法
                     if (node.isCrossDomain) {
@@ -2368,7 +2383,7 @@ export class ZKIndexView extends ItemView {
                     .setIcon('trash')
                     .onClick(async () => {
                         try {
-                            const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                            const mocFile = getLatestMOCFile();
                             if (mocFile) {
                                 await this.deleteArrowRelationFromMOC(mocFile, source, target, targetNodeSons, type);
                                 // 刷新视图
@@ -2392,7 +2407,7 @@ export class ZKIndexView extends ItemView {
             const { groupId, groupLabel } = event.detail;
 
             try {
-                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                const mocFile = getLatestMOCFile();
                 if (mocFile) {
                     await this.deleteGroupFromMOC(mocFile, groupId);
                     // 刷新视图
@@ -2412,7 +2427,7 @@ export class ZKIndexView extends ItemView {
             const { edgeId, source, target, type, label, targetNodeSons } = event.detail;
 
             try {
-                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                const mocFile = getLatestMOCFile();
                 if (mocFile) {
                     await this.deleteArrowRelationFromMOC(mocFile, source, target, targetNodeSons, type);
                     // 刷新视图
@@ -2432,7 +2447,7 @@ export class ZKIndexView extends ItemView {
             const { edgeId, source, target, oldLabel, newLabel } = event.detail;
 
             try {
-                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                const mocFile = getLatestMOCFile();
                 if (mocFile) {
                     await this.updateArrowRelationLabelInMOC(mocFile, source, target, newLabel);
                     // 刷新视图
@@ -2452,7 +2467,7 @@ export class ZKIndexView extends ItemView {
             const { edgeId, oldSource, newSource, target, label } = event.detail;
 
             try {
-                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                const mocFile = getLatestMOCFile();
                 if (mocFile) {
                     await this.updateEdgeSourceInMOC(mocFile, oldSource, newSource, target, label);
                     await this.refreshBranchMermaid();
@@ -2472,7 +2487,7 @@ export class ZKIndexView extends ItemView {
             const { edgeId, source, oldTarget, newTarget, label } = event.detail;
 
             try {
-                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                const mocFile = getLatestMOCFile();
                 if (mocFile) {
                     await this.updateEdgeTargetInMOC(mocFile, source, oldTarget, newTarget, label);
                     await this.refreshBranchMermaid();
@@ -2509,7 +2524,7 @@ export class ZKIndexView extends ItemView {
                 await this.saveAllNodePositionsBeforeRefresh();
 
                 // 将自由节点移动为源节点的子节点（而不是只改 ID）
-                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                const mocFile = getLatestMOCFile();
                 if (mocFile) {
                     await this.mocHandler.moveNodeToParent(mocFile, targetNode.IDStr, sourceNode.IDStr, newChildID);
                     finalTargetID = newChildID;
@@ -2526,7 +2541,7 @@ export class ZKIndexView extends ItemView {
                 await this.saveAllNodePositionsBeforeRefresh();
 
                 try {
-                    const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                    const mocFile = getLatestMOCFile();
                     if (mocFile) {
                         await this.addArrowRelationToMOC(
                             mocFile,
@@ -2598,13 +2613,13 @@ export class ZKIndexView extends ItemView {
             const { nodeIds, groupName } = event.detail;
 
             try {
-                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                const mocFile = getLatestMOCFile();
                 if (mocFile) {
                     await this.mocHandler.createGroupInMOC(mocFile, nodeIds, groupName);
                     await this.refreshBranchMermaid();
                     new Notice(`已创建分组 "${groupName}"，包含 ${nodeIds.length} 个节点`);
                 } else {
-                    console.error('MOC file not found:', currentMOCPath);
+                    console.error('MOC file not found:', this.plugin.settings.mocCurrentFile);
                 }
             } catch (error) {
                 console.error('Failed to create batch group:', error);
@@ -2620,7 +2635,7 @@ export class ZKIndexView extends ItemView {
             const { nodeIds, nodes } = event.detail;
 
             try {
-                const mocFile = this.app.vault.getFileByPath(currentMOCPath);
+                const mocFile = getLatestMOCFile();
                 if (mocFile) {
                     const batchNodes = nodeIds.map((nodeId: string, index: number): { nodeId: string; nodeData: any } => ({
                         nodeId,
