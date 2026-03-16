@@ -1432,7 +1432,10 @@ export class ZKIndexView extends ItemView {
         const mocParseResult = await parseMOCStructure(this.app, currentMOCPath, headingTitle);
 
         // 读取 MOC 文件中持久化的节点布局风格；若未记录则使用全局设置
-        this.currentNodeLayoutStyle = mocParseResult.nodeLayoutStyle || this.plugin.settings.nodeLayoutStyle || 'free';
+        this.currentNodeLayoutStyle = this.normalizeNodeLayoutStyle(
+            mocParseResult.nodeLayoutStyle,
+            this.plugin.settings.nodeLayoutStyle
+        );
 
         // 转换为 ZKNode（即使为空也继续）
         this.mocNodes = mocParseResult.nodes.length > 0
@@ -1503,7 +1506,7 @@ export class ZKIndexView extends ItemView {
             themeMode: this.plugin.settings.themeMode,
             themeStyle: this.plugin.settings.themeStyle || 'default',
             edgeStyle: this.plugin.settings.edgeStyle || 'bezier',
-            nodeLayoutStyle: this.currentNodeLayoutStyle || 'free',
+            nodeLayoutStyle: this.currentNodeLayoutStyle,
             showNoteId: this.plugin.settings.showNoteIdInBranchView,
             smartConnection: this.plugin.settings.smartConnection === true,
             readOnly: this.isMobileReadOnly()
@@ -1705,6 +1708,7 @@ export class ZKIndexView extends ItemView {
                         const headingTitle = this.plugin.settings.mocHeadingTitle;
                         const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
                         const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+                        this.ensureMOCNodeLayoutStyle(mocData);
                         if (!mocData.nodePositions) {
                             mocData.nodePositions = {};
                         }
@@ -6714,37 +6718,53 @@ export class ZKIndexView extends ItemView {
             suggestedNodeId = this.generateChildNodeID(explicitParentId);
     
         }
-        // 否则，如果启用了智能连线，查找最近的节点作为父节点
-        else if (this.plugin.settings.smartConnection) {
+        // 否则，在以下场景查找最近节点并作为父节点：
+        // 1) 启用了智能连线
+        // 2) 当前文件是自动布局风格（auto 模式下新增节点应优先遵循层级规则）
+        else if (this.plugin.settings.smartConnection || this.isAutoNodeLayoutStyle()) {
             let nearestNode: ZKNode | null = null;
             let minDistance = Infinity;
             const PROXIMITY_THRESHOLD = 250;  // 250px 范围
 
-            // 获取当前 MOC 文件的节点位置
-            const currentMOCPath = this.plugin.settings.mocCurrentFile;
-            const mocNodePositions = this.plugin.settings.mocNodePositions[currentMOCPath] || {};
+            // 优先使用 Cytoscape 实时坐标（最准确），回退到解析后的 savedPosition
+            const cy = this.branchRenderer?.getCytoscapeInstance();
+            if (cy) {
+                cy.nodes('[!isGroup]').forEach((cyNode: any) => {
+                    const data = cyNode.data();
+                    const originalNode = data?.originalNode as ZKNode | undefined;
+                    if (!originalNode || originalNode.isCrossDomain) return;
+                    if (data?.isPlaceholder) return;
 
-            // 遍历所有节点，找到最近的节点
-            for (const node of this.mocNodes) {
-                const nodePos = mocNodePositions[node.ID];
-                if (!nodePos) continue;
-
-                const distance = Math.sqrt(
-                    Math.pow(position.x - nodePos.x, 2) +
-                    Math.pow(position.y - nodePos.y, 2)
-                );
-
-                if (distance < minDistance && distance < PROXIMITY_THRESHOLD) {
-                    minDistance = distance;
-                    nearestNode = node;
+                    const nodePos = cyNode.position();
+                    const distance = Math.hypot(position.x - nodePos.x, position.y - nodePos.y);
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        nearestNode = originalNode;
+                    }
+                });
+            } else {
+                for (const node of this.mocNodes) {
+                    if (!node.savedPosition) continue;
+                    const distance = Math.hypot(
+                        position.x - node.savedPosition.x,
+                        position.y - node.savedPosition.y
+                    );
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        nearestNode = node;
+                    }
                 }
             }
 
+            // auto 模式：只要存在可用节点就挂载到最近节点，避免回落到 free.*
+            // free 模式 + smartConnection：继续沿用阈值限制
             if (nearestNode) {
-                parentNodeId = nearestNode.IDStr;
-                // 预生成子节点 ID
-                suggestedNodeId = this.generateChildNodeID(parentNodeId);
-
+                const shouldAttachByDistance = this.isAutoNodeLayoutStyle() || minDistance < PROXIMITY_THRESHOLD;
+                if (shouldAttachByDistance) {
+                    parentNodeId = nearestNode.IDStr;
+                    // 预生成子节点 ID
+                    suggestedNodeId = this.generateChildNodeID(parentNodeId);
+                }
             }
         }
 
@@ -7062,7 +7082,28 @@ export class ZKIndexView extends ItemView {
     }
 
     private isAutoNodeLayoutStyle(): boolean {
-        return (this.currentNodeLayoutStyle || 'free') === 'auto';
+        return this.currentNodeLayoutStyle === 'auto';
+    }
+
+    private normalizeNodeLayoutStyle(
+        style: unknown,
+        fallback: unknown = 'free'
+    ): 'free' | 'auto' {
+        const normalize = (value: unknown): 'free' | 'auto' | null => {
+            if (typeof value !== 'string') return null;
+            const v = value.trim().toLowerCase();
+            if (v === 'auto') return 'auto';
+            if (v === 'free') return 'free';
+            return null;
+        };
+        return normalize(style) || normalize(fallback) || 'free';
+    }
+
+    private ensureMOCNodeLayoutStyle(mocData: MOCParseResult): void {
+        if (mocData.nodeLayoutStyle === 'auto' || mocData.nodeLayoutStyle === 'free') {
+            return;
+        }
+        mocData.nodeLayoutStyle = this.normalizeNodeLayoutStyle(undefined, this.currentNodeLayoutStyle);
     }
 
     private async relayoutAutoLayoutSiblings(parentNodeId: string): Promise<void> {
@@ -7876,6 +7917,7 @@ export class ZKIndexView extends ItemView {
             // 解析当前的 MOC 结构
             const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
             const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+            this.ensureMOCNodeLayoutStyle(mocData);
 
             // 更新节点位置
             mocData.nodePositions[nodeID] = {
@@ -7902,6 +7944,7 @@ export class ZKIndexView extends ItemView {
             // 解析当前的 MOC 结构
             const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
             const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+            this.ensureMOCNodeLayoutStyle(mocData);
 
             // 更新边弧度
             mocData.edgeCurvatures[edgeId] = {
@@ -7930,6 +7973,7 @@ export class ZKIndexView extends ItemView {
             const headingTitle = this.plugin.settings.mocHeadingTitle;
             const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
             const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+            this.ensureMOCNodeLayoutStyle(mocData);
 
             if (!(mocData as any).embedNodeSizes) {
                 (mocData as any).embedNodeSizes = {};

@@ -7810,7 +7810,9 @@ case 'dagre':
     }
 
     private isAutoNodeLayoutStyle(): boolean {
-        return (this.currentOptions?.nodeLayoutStyle || 'free') === 'auto';
+        const style = this.currentOptions?.nodeLayoutStyle;
+        if (typeof style !== 'string') return false;
+        return style.trim().toLowerCase() === 'auto';
     }
 
     private estimateCollisionBox(referenceNode: any): { width: number; height: number } {
