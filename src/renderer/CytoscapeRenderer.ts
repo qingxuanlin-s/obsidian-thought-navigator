@@ -1960,11 +1960,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 setCanvasInteractionSuppressed(false);
                 document.removeEventListener('mousemove', onHeaderMouseMove);
                 document.removeEventListener('mouseup', onHeaderMouseUp);
-                // 保存拖动后的位置
+                // 保存拖动后的位置（取最新 data，增量更新可能已替换）
+                const currentData = node.data();
                 const pos = node.position();
                 this.container?.dispatchEvent(new CustomEvent('node-position-changed', {
                     detail: {
-                        node: data.originalNode,
+                        node: currentData.originalNode,
                         nodeId: node.id(),
                         position: { x: pos.x, y: pos.y }
                     }
@@ -2361,10 +2362,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 setCanvasInteractionSuppressed(false);
                 document.removeEventListener('mousemove', onCardMouseMove);
                 document.removeEventListener('mouseup', onCardMouseUp);
+                // 取最新 data，增量更新可能已替换闭包中的旧引用
+                const currentData = node.data();
                 const pos = node.position();
                 this.container?.dispatchEvent(new CustomEvent('node-position-changed', {
                     detail: {
-                        node: data.originalNode,
+                        node: currentData.originalNode,
                         nodeId: node.id(),
                         position: { x: pos.x, y: pos.y }
                     }
