@@ -171,7 +171,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
     }
 
-    /** 清理统一 overlay 调度器 */
+    /** 清理统一 overlay 调度器（只清空 updater 集合，不重置事件监听标记） */
     private cleanupOverlayScheduler(): void {
         this.overlayUpdaters.clear();
         this.overlayImmediateUpdaters.clear();
@@ -180,7 +180,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
         this.edgeControlPointUpdaters.clear();
         this.edgeEndpointUpdaters.clear();
         this.overlayUpdateScheduled = false;
-        this.overlayListenerBound = false;
+        // 不重置 overlayListenerBound：事件监听器绑定在 cy 实例上未被移除
+        // 重置会导致 bindOverlayListeners 重复绑定，事件累积
     }
 
     /**
@@ -1796,6 +1797,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
             const card = document.createElement('div');
             card.className = 'zk-embed-preview-card';
+            card.dataset.nodeId = nodeId;
             card.style.cssText = `
                 position: absolute;
                 background: linear-gradient(180deg, rgba(20, 26, 38, 0.98) 0%, rgba(16, 22, 34, 0.98) 100%);
@@ -1889,11 +1891,27 @@ export class CytoscapeRenderer implements IGraphRenderer {
             updateInteraction();
 
             card.addEventListener('mouseenter', () => {
+                // 显示连线手柄并更新位置
+                const handle = this.container?.querySelector(`.zk-connection-handle[data-embed-node-id="${nodeId}"]`) as HTMLElement;
+                if (handle && this.cy) {
+                    const bb = node.renderedBoundingBox();
+                    const cardW = card.offsetWidth;
+                    handle.style.left = `${bb.x1 + cardW}px`;
+                    handle.style.top = `${(bb.y1 + bb.y2) / 2}px`;
+                    handle.style.opacity = '1';
+                }
                 if (!node.selected() || isHoveringCard) return;
                 isHoveringCard = true;
                 setCanvasInteractionSuppressed(true);
             });
-            card.addEventListener('mouseleave', () => {
+            card.addEventListener('mouseleave', (e: MouseEvent) => {
+                // 鼠标移到蓝点上时不隐藏
+                const handle = this.container?.querySelector(`.zk-connection-handle[data-embed-node-id="${nodeId}"]`) as HTMLElement;
+                if (handle) {
+                    if (!(e.relatedTarget === handle || handle.contains(e.relatedTarget as Node))) {
+                        handle.style.opacity = '0';
+                    }
+                }
                 releaseCanvasSuppression();
             });
 
@@ -1942,6 +1960,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 setCanvasInteractionSuppressed(false);
                 document.removeEventListener('mousemove', onHeaderMouseMove);
                 document.removeEventListener('mouseup', onHeaderMouseUp);
+                // 保存拖动后的位置
+                const pos = node.position();
+                this.container?.dispatchEvent(new CustomEvent('node-position-changed', {
+                    detail: {
+                        node: data.originalNode,
+                        nodeId: node.id(),
+                        position: { x: pos.x, y: pos.y }
+                    }
+                }));
             };
 
             headerEl.addEventListener('mousedown', (e: MouseEvent) => {
@@ -2820,8 +2847,38 @@ case 'dagre':
                 const zoom = this.cy.zoom();
                 const boundingBox = node.renderedBoundingBox();
                 const size = 28 * zoom;
-                const x = boundingBox.x2 - size * 0.35;
-                const y = boundingBox.y1 - size * 0.35;
+
+                let x: number, y: number;
+                const curIsImageNode = node.data('isImageNode');
+                const curIsEmbedNode = node.data('isEmbed');
+                if (curIsImageNode) {
+                    // 图片节点：用卡片宽度计算右上角
+                    const rp = node.renderedPosition();
+                    const imageCard = this.container?.querySelector(`.zk-image-preview-card[data-node-id="${node.id()}"]`) as HTMLElement;
+                    if (imageCard && imageCard.dataset.renderedWidth && imageCard.dataset.renderedHeight) {
+                        const cardW = parseFloat(imageCard.dataset.renderedWidth);
+                        const cardH = parseFloat(imageCard.dataset.renderedHeight);
+                        x = rp.x + cardW / 2 - size * 0.35;
+                        y = rp.y - cardH / 2 - size * 0.35;
+                    } else {
+                        x = boundingBox.x2 - size * 0.35;
+                        y = boundingBox.y1 - size * 0.35;
+                    }
+                } else if (curIsEmbedNode) {
+                    // 嵌入预览节点：用卡片实际宽度计算右上角
+                    const embedCard = this.container?.querySelector(`.zk-embed-preview-card[data-node-id="${node.id()}"]`) as HTMLElement;
+                    if (embedCard) {
+                        const cardW = embedCard.offsetWidth;
+                        x = boundingBox.x1 + cardW - size * 0.35;
+                        y = boundingBox.y1 - size * 0.35;
+                    } else {
+                        x = boundingBox.x2 - size * 0.35;
+                        y = boundingBox.y1 - size * 0.35;
+                    }
+                } else {
+                    x = boundingBox.x2 - size * 0.35;
+                    y = boundingBox.y1 - size * 0.35;
+                }
 
                 remarkEl.style.left = `${x}px`;
                 remarkEl.style.top = `${y}px`;
@@ -3166,18 +3223,21 @@ case 'dagre':
             `;
             handleContainer.appendChild(handle);
 
-            const isImageNode = node.data('isImageNode');
+            // 动态检查节点类型（isImageNode 可能在 addImageNodePreviews 中延迟设置）
+            const nodeId = node.id();
 
             // 更新手柄位置的函数
             const updateHandlePosition = () => {
                 if (!this.cy) return;
                 const zoom = this.cy.zoom();
+                const curIsImageNode = node.data('isImageNode');
+                const curIsEmbedNode = node.data('isEmbed');
 
                 let x: number, y: number;
-                if (isImageNode) {
+                if (curIsImageNode) {
                     // 图片节点：节点位置 + 卡片半宽 = 卡片右边缘
                     const rp = node.renderedPosition();
-                    const imageCard = this.container?.querySelector(`.zk-image-preview-card[data-node-id="${node.id()}"]`) as HTMLElement;
+                    const imageCard = this.container?.querySelector(`.zk-image-preview-card[data-node-id="${nodeId}"]`) as HTMLElement;
                     if (imageCard && imageCard.dataset.renderedWidth) {
                         const cardW = parseFloat(imageCard.dataset.renderedWidth);
                         x = rp.x + cardW / 2;
@@ -3185,6 +3245,17 @@ case 'dagre':
                     } else {
                         x = rp.x; y = rp.y;
                     }
+                } else if (curIsEmbedNode) {
+                    // 嵌入预览节点：使用卡片实际宽度计算右边缘
+                    const boundingBox = node.renderedBoundingBox();
+                    const embedCard = this.container?.querySelector(`.zk-embed-preview-card[data-node-id="${nodeId}"]`) as HTMLElement;
+                    if (embedCard) {
+                        const cardW = embedCard.offsetWidth;
+                        x = boundingBox.x1 + cardW;
+                    } else {
+                        x = boundingBox.x2;
+                    }
+                    y = (boundingBox.y1 + boundingBox.y2) / 2;
                 } else {
                     const boundingBox = node.renderedBoundingBox();
                     x = boundingBox.x2;
@@ -3203,24 +3274,28 @@ case 'dagre':
             // 初始位置
             updateHandlePosition();
 
-            if (isImageNode) {
-                // 图片节点：通过卡片 hover 触发手柄显示
-                handle.dataset.imageNodeId = node.id();
-                // 鼠标离开蓝点且不回到卡片时隐藏
-                handle.addEventListener('mouseleave', (e: MouseEvent) => {
-                    const imageCard = this.container?.querySelector(`.zk-image-preview-card[data-node-id="${node.id()}"]`);
-                    if (e.relatedTarget === imageCard || (imageCard && imageCard.contains(e.relatedTarget as Node))) return;
-                    handle.style.opacity = '0';
-                });
-            } else {
-                // 普通节点：Cytoscape mouseover 触发
-                node.on('mouseover', () => {
-                    handle.style.opacity = '1';
-                });
-                node.on('mouseout', () => {
-                    handle.style.opacity = '0';
-                });
-            }
+            // 为所有节点类型统一设置 data 属性和 hover 逻辑
+            // isImageNode 可能在 addConnectionHandles 之后才由 addImageNodePreviews 设置
+            // 所以需要同时设置 imageNodeId 和 embedNodeId，运行时动态判断
+            handle.dataset.imageNodeId = nodeId;
+            handle.dataset.embedNodeId = nodeId;
+
+            // Cytoscape mouseover/mouseout（对普通节点和嵌入预览节点有效）
+            node.on('mouseover', () => {
+                handle.style.opacity = '1';
+            });
+            node.on('mouseout', () => {
+                handle.style.opacity = '0';
+            });
+
+            // 鼠标离开蓝点时：如果移向对应的卡片则不隐藏
+            handle.addEventListener('mouseleave', (e: MouseEvent) => {
+                const imageCard = this.container?.querySelector(`.zk-image-preview-card[data-node-id="${nodeId}"]`);
+                if (imageCard && (e.relatedTarget === imageCard || imageCard.contains(e.relatedTarget as Node))) return;
+                const embedCard = this.container?.querySelector(`.zk-embed-preview-card[data-node-id="${nodeId}"]`);
+                if (embedCard && (e.relatedTarget === embedCard || embedCard.contains(e.relatedTarget as Node))) return;
+                handle.style.opacity = '0';
+            });
 
             // 拖动创建连接
             this.bindConnectionDrag(handle, node, handleContainer);
