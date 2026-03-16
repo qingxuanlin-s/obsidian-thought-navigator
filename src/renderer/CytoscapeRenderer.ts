@@ -400,6 +400,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
         // 运行布局
         if (this.cy) {
+            // 容器尺寸变化后显式通知 Cytoscape 重算 viewport/canvas 尺寸
+            this.cy.resize();
             if (hasSavedPositions) {
                 // 如果有保存的位置，使用 preset 布局（保持原位置）
                 this.runLayoutSafely({ name: 'preset' });
