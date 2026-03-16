@@ -1451,11 +1451,11 @@ export class ZKIndexView extends ItemView {
                 cls: "zk-graph-cytoscape"
             });
             branchGraphDiv.id = "zk-branch-cytoscape";
-
-            // 为顶部工具栏留出空间
-            branchGraphDiv.style.height = `${this.containerEl.offsetHeight - 80}px`;
-            branchGraphDiv.style.width = "100%";
         }
+        // 每次刷新都同步容器尺寸，避免窗口缩放后沿用旧高度
+        const graphHeight = Math.max(220, this.containerEl.offsetHeight - 80);
+        branchGraphDiv.style.height = `${graphHeight}px`;
+        branchGraphDiv.style.width = "100%";
 
         if (this.isMobileReadOnly()) {
             branchGraphDiv.style.border = 'none';
