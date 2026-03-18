@@ -4966,6 +4966,8 @@ case 'dagre':
             this.checkForLinkPattern(textarea, node, {
                 x1: lockedBoxLeft,
                 y1: lockedBoxTop,
+                x2: lockedBoxLeft + initialBoxWidth,
+                y2: lockedBoxTop + initialBoxHeight,
                 w: initialBoxWidth,
                 h: initialBoxHeight
             }, suggesterPopoverRef, handleLinkSelect);
@@ -5175,10 +5177,13 @@ case 'dagre':
         // 创建 suggester popover
         const popover = document.createElement('div');
         popover.className = 'node-link-suggester';
+        // 使用 textarea 的实际位置定位，避免 boundingBox 缺少 y2 或尺寸过期
+        const suggesterLeft = textarea.offsetLeft;
+        const suggesterTop = textarea.offsetTop + textarea.offsetHeight + 5;
         popover.style.cssText = `
             position: absolute;
-            left: ${boundingBox.x1}px;
-            top: ${boundingBox.y2 + 5}px;
+            left: ${suggesterLeft}px;
+            top: ${suggesterTop}px;
             max-height: 240px;
             width: 320px;
             background-color: var(--background-primary);
