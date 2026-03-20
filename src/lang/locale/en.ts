@@ -144,7 +144,9 @@ export default {
     "style : ": "style : ",
     "playPrevious":"previous",
     "playNext": "playNext",
+    "back": "back",
     "fullscreen": "fullscreen",
+    "exit fullscreen": "exit fullscreen",
 
 
     // localView.ts

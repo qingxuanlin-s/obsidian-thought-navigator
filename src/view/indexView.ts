@@ -172,11 +172,49 @@ export class ZKIndexView extends ItemView {
     // 性能优化：追踪事件监听器初始化状态，避免重复添加
     private branchGraphListenersInitialized: boolean = false;
     private currentBranchGraphDiv: HTMLElement | null = null;
+    private fullscreenBackButtonListenerBound: boolean = false;
     private undoStack: Array<{ filePath: string; content: string; timestamp: number }> = [];
     private readonly MAX_UNDO_STEPS = 7;
     private isApplyingUndo = false;
     private undoShortcutBound = false;
     private pasteListenerBound = false;
+
+    private syncBranchFullscreenBackButtonVisibility(): void {
+        const branchGraphDiv = this.currentBranchGraphDiv || document.getElementById('zk-branch-cytoscape');
+        if (!branchGraphDiv) return;
+
+        const backBtn = branchGraphDiv.querySelector('.zk-branch-fullscreen-back-btn') as HTMLButtonElement | null;
+        if (!backBtn) return;
+
+        backBtn.style.display = document.fullscreenElement === branchGraphDiv ? 'inline-flex' : 'none';
+    }
+
+    private ensureBranchFullscreenBackButton(branchGraphDiv: HTMLElement): void {
+        let backBtn = branchGraphDiv.querySelector('.zk-branch-fullscreen-back-btn') as HTMLButtonElement | null;
+        if (!backBtn) {
+            backBtn = branchGraphDiv.createEl('button', {
+                cls: 'zk-branch-fullscreen-back-btn',
+                attr: {
+                    type: 'button',
+                    'aria-label': t("exit fullscreen")
+                }
+            });
+
+            const iconEl = backBtn.createSpan({ cls: 'zk-branch-fullscreen-back-icon' });
+            setIcon(iconEl, 'arrow-left');
+
+            backBtn.addEventListener('click', () => {
+                if (document.fullscreenElement === branchGraphDiv && document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            });
+        }
+
+        backBtn.setAttribute('aria-label', t("exit fullscreen"));
+        setTooltip(backBtn, t("exit fullscreen"));
+        this.syncBranchFullscreenBackButtonVisibility();
+    }
+
     constructor(leaf: WorkspaceLeaf, plugin: ZKNavigationPlugin) {
         super(leaf);
         this.plugin = plugin;
@@ -710,6 +748,13 @@ export class ZKIndexView extends ItemView {
     }
 
     async onOpen() {
+        if (!this.fullscreenBackButtonListenerBound) {
+            this.addTrackedListener(document, 'fullscreenchange', () => {
+                this.syncBranchFullscreenBackButtonVisibility();
+            });
+            this.fullscreenBackButtonListenerBound = true;
+        }
+
         if (!this.undoShortcutBound) {
             this.addTrackedListener(window, 'keydown', async (event: KeyboardEvent) => {
                 const isCmdZ = event.metaKey && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'z';
@@ -1470,6 +1515,7 @@ export class ZKIndexView extends ItemView {
             branchGraphDiv.style.outline = '';
         }
         branchGraphDiv.style.backgroundColor = this.plugin.settings.themeMode === 'light' ? '#f5f5f5' : '#2a2a2a';
+        this.ensureBranchFullscreenBackButton(branchGraphDiv);
 
         // 注意：不再清空 branchGraphDiv，让 CytoscapeRenderer 内部的增量更新逻辑处理
 
@@ -2675,6 +2721,7 @@ export class ZKIndexView extends ItemView {
         // 标记监听器已初始化，保存当前容器引用
         this.branchGraphListenersInitialized = true;
         this.currentBranchGraphDiv = branchGraphDiv;
+        this.syncBranchFullscreenBackButtonVisibility();
         }
 
         this.plugin.indexViewOffsetWidth = this.containerEl.offsetWidth;
@@ -7528,6 +7575,7 @@ export class ZKIndexView extends ItemView {
         this.cleanupEventListeners();
         this.undoShortcutBound = false;
         this.pasteListenerBound = false;
+        this.fullscreenBackButtonListenerBound = false;
 
         // 销毁Cytoscape渲染器
         if (this.branchRenderer) {
