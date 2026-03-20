@@ -143,7 +143,9 @@ export default {
     "style : ": "风格: ",    
     "playPrevious":"向后",
     "playNext": "向前",
+    "back": "返回",
     "fullscreen": "全屏",
+    "exit fullscreen": "退出全屏",
 
     // localView.ts
     "close relative": "邻近",
