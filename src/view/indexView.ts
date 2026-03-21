@@ -179,6 +179,26 @@ export class ZKIndexView extends ItemView {
     private undoShortcutBound = false;
     private pasteListenerBound = false;
 
+    private getFullscreenElement(): Element | null {
+        const doc = document as Document & {
+            webkitFullscreenElement?: Element | null;
+        };
+        return document.fullscreenElement || doc.webkitFullscreenElement || null;
+    }
+
+    private exitFullscreenCompat(): void {
+        const doc = document as Document & {
+            webkitExitFullscreen?: () => Promise<void> | void;
+        };
+        if (document.exitFullscreen) {
+            void document.exitFullscreen();
+            return;
+        }
+        if (doc.webkitExitFullscreen) {
+            void doc.webkitExitFullscreen();
+        }
+    }
+
     private syncBranchFullscreenBackButtonVisibility(): void {
         const branchGraphDiv = this.currentBranchGraphDiv || document.getElementById('zk-branch-cytoscape');
         if (!branchGraphDiv) return;
@@ -186,7 +206,7 @@ export class ZKIndexView extends ItemView {
         const backBtn = branchGraphDiv.querySelector('.zk-branch-fullscreen-back-btn') as HTMLButtonElement | null;
         if (!backBtn) return;
 
-        backBtn.style.display = document.fullscreenElement === branchGraphDiv ? 'inline-flex' : 'none';
+        backBtn.style.display = this.getFullscreenElement() === branchGraphDiv ? 'inline-flex' : 'none';
     }
 
     private ensureBranchFullscreenBackButton(branchGraphDiv: HTMLElement): void {
@@ -203,13 +223,23 @@ export class ZKIndexView extends ItemView {
             const iconEl = backBtn.createSpan({ cls: 'zk-branch-fullscreen-back-icon' });
             setIcon(iconEl, 'arrow-left');
 
-            backBtn.addEventListener('click', () => {
-                if (document.fullscreenElement === branchGraphDiv && document.exitFullscreen) {
-                    document.exitFullscreen();
+            const exitHandler = (event: Event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (this.getFullscreenElement()) {
+                    this.exitFullscreenCompat();
                 }
-            });
+            };
+
+            backBtn.addEventListener('pointerdown', exitHandler);
+            backBtn.addEventListener('touchstart', exitHandler, { passive: false });
+            backBtn.addEventListener('click', exitHandler);
+            backBtn.addEventListener('pointerup', exitHandler);
+            backBtn.addEventListener('touchend', exitHandler, { passive: false });
         }
 
+        backBtn.classList.toggle('zk-branch-fullscreen-back-btn-light', this.plugin.settings.themeMode === 'light');
+        backBtn.classList.toggle('zk-branch-fullscreen-back-btn-dark', this.plugin.settings.themeMode !== 'light');
         backBtn.setAttribute('aria-label', t("exit fullscreen"));
         setTooltip(backBtn, t("exit fullscreen"));
         this.syncBranchFullscreenBackButtonVisibility();
@@ -752,6 +782,9 @@ export class ZKIndexView extends ItemView {
             this.addTrackedListener(document, 'fullscreenchange', () => {
                 this.syncBranchFullscreenBackButtonVisibility();
             });
+            this.addTrackedListener(document as any, 'webkitfullscreenchange', () => {
+                this.syncBranchFullscreenBackButtonVisibility();
+            });
             this.fullscreenBackButtonListenerBound = true;
         }
 
@@ -1206,27 +1239,7 @@ export class ZKIndexView extends ItemView {
                     .setIcon('fullscreen')
                     .setTooltip(t("fullscreen"))
                     .onClick(() => {
-
-                        let toggleClassList: string[] = [
-                            '.workspace-ribbon.side-dock-ribbon.mod-left',
-                            '.workspace-split.mod-horizontal.mod-left-split',
-                            '.workspace-tab-header-container',
-                            '.titlebar-button-container.mod-right',
-                            `.status-bar`,
-                        ];
-                        toggleClassList.forEach((cls) => {
-                            const elements = document.querySelectorAll(cls);
-                            if (cls && elements) {
-                                elements.forEach((element, i) => {
-                                    const cname = 'zk-hidden';
-                                    if (element.classList.contains(cname)) {
-                                        element.removeClass(cname);
-                                    } else {
-                                        element.addClass(cname);
-                                    }
-                                });
-                            }
-                        });
+                        this.toggleMocFullscreen();
                     })
 
                 const playBtn = new ExtraButtonComponent(playControllerDiv);
@@ -8115,5 +8128,75 @@ export class ZKIndexView extends ItemView {
 
     private isMobileReadOnly(): boolean {
         return Platform.isMobile;
+    }
+
+    private mocFullscreenExitBtn: HTMLElement | null = null;
+
+    private toggleMocFullscreen(): void {
+        const isFullscreen = document.querySelectorAll('.zk-hidden').length > 0;
+
+        const toggleClassList: string[] = [
+            '.workspace-ribbon.side-dock-ribbon.mod-left',
+            '.workspace-split.mod-horizontal.mod-left-split',
+            '.workspace-tab-header-container',
+            '.titlebar-button-container.mod-right',
+            '.status-bar',
+        ];
+
+        if (isFullscreen) {
+            // 退出全屏
+            toggleClassList.forEach((cls) => {
+                document.querySelectorAll(cls).forEach((el) => el.removeClass('zk-hidden'));
+            });
+            if (this.mocFullscreenExitBtn) {
+                this.mocFullscreenExitBtn.remove();
+                this.mocFullscreenExitBtn = null;
+            }
+        } else {
+            // 进入全屏
+            toggleClassList.forEach((cls) => {
+                document.querySelectorAll(cls).forEach((el) => el.addClass('zk-hidden'));
+            });
+            // 直接挂到 document.body，彻底脱离 Obsidian 视图层级
+            const btn = document.createElement('button');
+            btn.className = 'zk-moc-fullscreen-exit';
+            btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>`;
+            btn.style.cssText = `
+                position: fixed;
+                top: 20px;
+                left: 12px;
+                z-index: 99999;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 52px;
+                height: 36px;
+                padding: 0;
+                border-radius: 10px;
+                border: 1.5px solid #4a4a6a;
+                background-color: rgba(30, 30, 50, 0.6);
+                color: #c8c8e0;
+                cursor: pointer;
+                pointer-events: auto;
+                touch-action: manipulation;
+                -webkit-tap-highlight-color: transparent;
+            `;
+            const self = this;
+            btn.ontouchstart = function(e) {
+                e.stopPropagation();
+            };
+            btn.ontouchend = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                self.toggleMocFullscreen();
+            };
+            btn.onclick = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                self.toggleMocFullscreen();
+            };
+            document.body.appendChild(btn);
+            this.mocFullscreenExitBtn = btn;
+        }
     }
 }
