@@ -7552,6 +7552,11 @@ case 'dagre':
         nextBtn.addEventListener('click', goNext);
         closeBtn.addEventListener('click', closeSearch);
 
+        // 移动端触摸支持
+        prevBtn.addEventListener('touchend', (e) => { e.preventDefault(); goPrev(); });
+        nextBtn.addEventListener('touchend', (e) => { e.preventDefault(); goNext(); });
+        closeBtn.addEventListener('touchend', (e) => { e.preventDefault(); closeSearch(); });
+
         // 自动聚焦
         setTimeout(() => input.focus(), 50);
     }
