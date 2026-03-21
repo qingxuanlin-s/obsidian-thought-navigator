@@ -437,15 +437,13 @@ export default class ZKNavigationPlugin extends Plugin {
         });     
 
         // 初始化 MOC 文件监听器（用于实时同步）
-        if (this.settings.mocModeEnabled) {
-            this.mocFileMonitor = new MOCFileMonitor(this);
-            this.mocFileMonitor.initialize();    
-        }
+        this.mocFileMonitor = new MOCFileMonitor(this);
+        this.mocFileMonitor.initialize();
 
         // 监听文件重命名事件，更新 MOC 文件中的链接
         this.registerEvent(
             this.app.vault.on("rename", async (file, oldPath) => {
-                if (file instanceof TFile && this.settings.mocModeEnabled) {
+                if (file instanceof TFile) {
                     await this.updateMOCLinksAfterRename(file, oldPath);
                 }
             })
