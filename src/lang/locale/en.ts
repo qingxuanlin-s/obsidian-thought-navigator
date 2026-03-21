@@ -81,6 +81,7 @@ export default {
     "delete node": "delete node",
     "custom command": "custom command",
     'Open command palette': 'Open command palette',
+    "General": "General",
     "experimental": "experimental",
     "auto-copy ID":"auto-copy ID",
     "auto-copy-des": "auto-copy {id, path, created}",

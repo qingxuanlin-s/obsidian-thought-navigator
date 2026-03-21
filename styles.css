@@ -674,6 +674,13 @@ align-items: center;
   border-color: #00a8ff;
 }
 
+.zk-setting-card {
+  padding: 8px 8px 0;
+  margin-bottom: 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+}
+
 .zk-hidden{
   display: none;
 }

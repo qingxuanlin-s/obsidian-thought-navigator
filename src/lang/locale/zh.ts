@@ -80,6 +80,7 @@ export default {
     "delete node": "删除节点",
     "custom command": "自选命令",
     'Open command palette': '打开命令面板',
+    "General": "通用功能",
     "experimental": "实验性功能",
     "auto-copy ID": "自动复制节点笔记编号",    
     "auto-copy-des": "自动复制节点对象 {id, path, created}",

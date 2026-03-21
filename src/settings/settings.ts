@@ -18,40 +18,89 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
     }
 
     async display() {
-        
+
         const { containerEl } = this;
         containerEl.empty();
 
         containerEl.createEl("h1", {text: t("Zettelkasten Navigation")});
-        
-        const settingTabDiv = containerEl.createDiv("zk-setting-tab");
 
-        const topButtonsDiv = settingTabDiv.createDiv("top-buttons-div");
+        // ========== 通用功能 (General) ==========
+        containerEl.createEl("h3", { text: t("General") });
+        const generalSection = containerEl.createDiv("zk-setting-card");
 
-        const indexGraphButton = new ButtonComponent(topButtonsDiv);
-        indexGraphButton.setButtonText(t("zk-index-graph-view"))
-        .setClass("vertical-tab-nav-item")
-        .onClick(()=>{
-            this.openTabSection(0,topButtonsDiv);
-        })
+        // 主题模式设置
+        new Setting(generalSection)
+            .setName(t("Theme mode"))
+            .addDropdown(options => options
+                .addOption("dark", t("Dark theme"))
+                .addOption("light", t("Light theme"))
+                .setValue(this.plugin.settings.themeMode)
+                .onChange((value) => {
+                    this.plugin.settings.themeMode = value as 'dark' | 'light';
+                    this.plugin.applyTheme();
+                    this.plugin.RefreshIndexViewFlag = true;
+                })
+            );
 
-        const localGraphButton = new ButtonComponent(topButtonsDiv);
-        localGraphButton.setButtonText(t("zk-local-graph-view"))
-        .setClass("vertical-tab-nav-item")
-        .onClick(()=>{
-            this.openTabSection(1,topButtonsDiv); 
-        })
+        new Setting(generalSection)
+            .setName(t("Theme style"))
+            .addDropdown(options => options
+                .addOption("default", t("Default style"))
+                .addOption("vivid", t("Vivid style"))
+                .setValue(this.plugin.settings.themeStyle || "default")
+                .onChange((value) => {
+                    this.plugin.settings.themeStyle = value as 'default' | 'vivid';
+                    this.plugin.RefreshIndexViewFlag = true;
+                })
+            );
 
-        const experimentalButton = new ButtonComponent(topButtonsDiv);
-        experimentalButton.setButtonText(t("experimental"))
-        .setClass("vertical-tab-nav-item")
-        .onClick(()=>{
-            this.openTabSection(2,topButtonsDiv); 
-        })
+        new Setting(generalSection)
+            .setName(t("Edge style"))
+            .addDropdown(options => options
+                .addOption("straight", t("Straight line"))
+                .addOption("bezier", t("Bezier curve"))
+                .addOption("polyline", t("Polyline"))
+                .setValue(this.plugin.settings.edgeStyle || "bezier")
+                .onChange((value) => {
+                    this.plugin.settings.edgeStyle = value as 'straight' | 'bezier' | 'polyline';
+                    this.plugin.RefreshIndexViewFlag = true;
+                })
+            );
 
-        const indexGraphView = settingTabDiv.createDiv("zk-setting-section");
-            
-        new Setting(indexGraphView)
+        generalSection.createEl("hr");
+
+        // MOC 设置
+        new Setting(generalSection)
+            .setName(t("MOC Folder Location"))
+            .setDesc(t("Folder containing MOC index notes"))
+            .addSearch((cb) => {
+                new FolderSuggest(this.app, cb.inputEl);
+                cb.setPlaceholder(t("Example: folder1/folder2"))
+                    .setValue(this.plugin.settings.mocFolderPath)
+                    .onChange((value) => {
+                        this.plugin.settings.mocFolderPath = value;
+                        this.plugin.settings.mocCurrentFile = ''; // 重置当前文件
+                        this.plugin.RefreshIndexViewFlag = true;
+                    });
+            });
+
+        new Setting(generalSection)
+            .setName(t("Heading Title"))
+            .setDesc(t("The heading title to parse (e.g. '思维树' for '# 思维树')"))
+            .addText((cb) =>
+                cb.setValue(this.plugin.settings.mocHeadingTitle)
+                    .setPlaceholder("思维树")
+                    .onChange((value) => {
+                        this.plugin.settings.mocHeadingTitle = value;
+                        this.plugin.RefreshIndexViewFlag = true;
+                    })
+            );
+
+        // ========== 分支视图 (Index Graph) ==========
+        containerEl.createEl("h3", { text: t("zk-index-graph-view") });
+        const branchSection = containerEl.createDiv("zk-setting-card");
+
+        new Setting(branchSection)
             .setName(t("Index graph styles"))
             .addDropdown(options => options
                 .addOption("structure", t("structure"))
@@ -71,15 +120,15 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                         this.hideDiv(structureSettingDiv);
                     }else if(this.plugin.settings.graphType === "roadmap"){
                         this.hideDiv(roadmapSettingDiv);
-                    }                    
+                    }
                 })
             })
-        
-        const roadmapSettingDiv = indexGraphView.createDiv("zk-local-section zk-hidden")
+
+        const roadmapSettingDiv = branchSection.createDiv("zk-local-section zk-hidden")
 
         new Setting(roadmapSettingDiv)
-            .setName(t("Shorten the distance between adjacent nodes"))   
-            .setDesc(t("⚠Required restart to take effect"))   
+            .setName(t("Shorten the distance between adjacent nodes"))
+            .setDesc(t("⚠Required restart to take effect"))
             .addToggle(toggle => toggle.setValue(this.plugin.settings.nodeClose)
             .onChange((value) => {
                 this.plugin.settings.nodeClose = value;
@@ -88,35 +137,35 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
         );
 
         new Setting(roadmapSettingDiv)
-            .setName(t("Branches uncrossing"))   
+            .setName(t("Branches uncrossing"))
             .addToggle(toggle => toggle.setValue(this.plugin.settings.gitUncrossing)
             .onChange((value) => {
                 this.plugin.settings.gitUncrossing = value;
                 this.plugin.RefreshIndexViewFlag = true;
             })
         );
-            
-        const structureSettingDiv = indexGraphView.createDiv("zk-local-section zk-hidden")       
+
+        const structureSettingDiv = branchSection.createDiv("zk-local-section zk-hidden")
 
         await this.updateSructureSettings(structureSettingDiv);
-        
-        new Setting(indexGraphView)
+
+        new Setting(branchSection)
             .setName(t("Toolbar"))
             .setDesc(t("Open the icons(commands) in the branch graph."))
             .addToggle(toggle => toggle.setValue(this.plugin.settings.BranchToolbra)
                 .onChange((value) =>{
                     this.plugin.settings.BranchToolbra = value;
                     this.plugin.RefreshIndexViewFlag = true;
-                }) 
+                })
             ).addExtraButton((cb)=>{
                 cb.setIcon("settings")
                 .onClick(()=>{
                     this.hideDiv(branchToolbarDiv);
                 });
-            })        
-        
-        const branchToolbarDiv = indexGraphView.createDiv("zk-local-section zk-hidden")
- 
+            })
+
+        const branchToolbarDiv = branchSection.createDiv("zk-local-section zk-hidden")
+
         new Setting(branchToolbarDiv)
                 .setName(t("settings"))
                 .then((setting)=>{
@@ -132,9 +181,9 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                     .onChange((value) =>{
                         this.plugin.settings.settingIcon = value;
                         this.plugin.RefreshIndexViewFlag = true;
-                    }) 
+                    })
                 )
-    
+
         // 导出到白板功能已下线
 
         if(this.plugin.settings.MainNoteButton == true){
@@ -153,7 +202,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                     .onChange((value) =>{
                         this.plugin.settings.RandomMainNote = value;
                         this.plugin.RefreshIndexViewFlag = true;
-                    }) 
+                    })
                 )
         }
 
@@ -173,7 +222,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                     .onChange((value) =>{
                         this.plugin.settings.RandomIndex = value;
                         this.plugin.RefreshIndexViewFlag = true;
-                    }) 
+                    })
                 )
         }
 
@@ -192,9 +241,9 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                 .onChange((value) =>{
                     this.plugin.settings.showAllToggle = value;
                     this.plugin.RefreshIndexViewFlag = true;
-                }) 
+                })
             )
-        
+
         new Setting(branchToolbarDiv)
             .setName(t("table view"))
             .then((setting)=>{
@@ -210,9 +259,9 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                 .onChange((value) =>{
                     this.plugin.settings.TableView = value;
                     this.plugin.RefreshIndexViewFlag = true;
-                }) 
-            )     
-        
+                })
+            )
+
         // 大纲视图功能已下线
 
         new Setting(branchToolbarDiv)
@@ -239,20 +288,20 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
             .onChange((value) =>{
                 this.plugin.settings.HistoryToggle = value;
                 this.plugin.RefreshIndexViewFlag = true;
-            }) 
+            })
         )
-        
-        new Setting(indexGraphView)
+
+        new Setting(branchSection)
             .setName(t("play controller"))
             .setDesc(t("play_des"))
             .addToggle(toggle => toggle.setValue(this.plugin.settings.playControllerToggle)
                 .onChange((value) =>{
                     this.plugin.settings.playControllerToggle = value;
                     this.plugin.RefreshIndexViewFlag = true;
-                }) 
+                })
             )
 
-        new Setting(indexGraphView)
+        new Setting(branchSection)
             .setName(t("Node menu"))
             .setDesc(t("node_menu_des"))
             .addExtraButton((cb)=>{
@@ -261,14 +310,14 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                     this.hideDiv(nodeMenuDiv);
                 })
             })
-        
-        const nodeMenuDiv = indexGraphView.createDiv("zk-local-section zk-hidden")
 
-        const commandsDiv = nodeMenuDiv.createDiv();        
+        const nodeMenuDiv = branchSection.createDiv("zk-local-section zk-hidden")
+
+        const commandsDiv = nodeMenuDiv.createDiv();
         this.updateNodeMenu(commandsDiv);
-        
+
         const addCommandBtnDiv = nodeMenuDiv.createDiv("zk-center-button setting-item");
-        
+
         const addCommandBtn = new ButtonComponent(addCommandBtnDiv);
         addCommandBtn
         .setButtonText(t("Add command"))
@@ -291,9 +340,11 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
             this.updateNodeMenu(commandsDiv);
         })
 
-        const localGraphView = settingTabDiv.createDiv("zk-setting-section");
-        //new Setting(settingTabDiv).setName(t("zk-local-graph-view")).setHeading(); 
-        new Setting(localGraphView)
+        // ========== 局部视图 (Local Graph) ==========
+        containerEl.createEl("h3", { text: t("zk-local-graph-view") });
+        const localSection = containerEl.createDiv("zk-setting-card");
+
+        new Setting(localSection)
             .setName(t("Open close-relative graph"))
             .setDesc(t("Mermaid graph to display parent, siblings and sons"))
             .addToggle(toggle => toggle.setValue(this.plugin.settings.FamilyGraphToggle)
@@ -302,14 +353,14 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                     this.plugin.RefreshIndexViewFlag = true;
                 })
             ).addExtraButton((cb)=>{
-                
+
             cb.setIcon("settings")
             .onClick(()=>{
-                this.hideDiv(familySectionDiv);                    
-            })            
-        })  
-        
-        const familySectionDiv = localGraphView.createDiv("zk-local-section zk-hidden")
+                this.hideDiv(familySectionDiv);
+            })
+        })
+
+        const familySectionDiv = localSection.createDiv("zk-local-section zk-hidden")
 
         new Setting(familySectionDiv)
         .setName(t("direction of graph"))
@@ -325,7 +376,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
             })
         );
 
-        new Setting(localGraphView)
+        new Setting(localSection)
             .setName(t("Open inoutlinks graph"))
             .setDesc(t("Mermaid graph to display inlinks and outlinks"))
             .addToggle(toggle => toggle.setValue(this.plugin.settings.InOutlinksGraphToggle)
@@ -339,9 +390,9 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                     this.hideDiv(inoutlinksSectionDiv);
                 })
             })
-        
-        const inoutlinksSectionDiv = localGraphView.createDiv("zk-local-section zk-hidden")
-        
+
+        const inoutlinksSectionDiv = localSection.createDiv("zk-local-section zk-hidden")
+
         new Setting(inoutlinksSectionDiv)
         .setName(t("direction of graph"))
         .addDropdown(options => options
@@ -367,100 +418,6 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                     this.plugin.RefreshIndexViewFlag = true;
                 })
         )
-
-        const experimentalDiv = settingTabDiv.createDiv("zk-setting-section");
-
-        // 主题模式设置
-        new Setting(experimentalDiv)
-            .setName(t("Theme mode"))
-            .addDropdown(options => options
-                .addOption("dark", t("Dark theme"))
-                .addOption("light", t("Light theme"))
-                .setValue(this.plugin.settings.themeMode)
-                .onChange((value) => {
-                    this.plugin.settings.themeMode = value as 'dark' | 'light';
-                    this.plugin.applyTheme();
-                    this.plugin.RefreshIndexViewFlag = true;
-                })
-            );
-
-        new Setting(experimentalDiv)
-            .setName(t("Theme style"))
-            .addDropdown(options => options
-                .addOption("default", t("Default style"))
-                .addOption("vivid", t("Vivid style"))
-                .setValue(this.plugin.settings.themeStyle || "default")
-                .onChange((value) => {
-                    this.plugin.settings.themeStyle = value as 'default' | 'vivid';
-                    this.plugin.RefreshIndexViewFlag = true;
-                })
-            );
-
-        new Setting(experimentalDiv)
-            .setName(t("Edge style"))
-            .addDropdown(options => options
-                .addOption("straight", t("Straight line"))
-                .addOption("bezier", t("Bezier curve"))
-                .addOption("polyline", t("Polyline"))
-                .setValue(this.plugin.settings.edgeStyle || "bezier")
-                .onChange((value) => {
-                    this.plugin.settings.edgeStyle = value as 'straight' | 'bezier' | 'polyline';
-                    this.plugin.RefreshIndexViewFlag = true;
-                })
-            );
-
-        experimentalDiv.createEl("hr");
-
-        // MOC 设置
-        new Setting(experimentalDiv)
-            .setName(t("MOC Folder Location"))
-            .setDesc(t("Folder containing MOC index notes"))
-            .addSearch((cb) => {
-                new FolderSuggest(this.app, cb.inputEl);
-                cb.setPlaceholder(t("Example: folder1/folder2"))
-                    .setValue(this.plugin.settings.mocFolderPath)
-                    .onChange((value) => {
-                        this.plugin.settings.mocFolderPath = value;
-                        this.plugin.settings.mocCurrentFile = ''; // 重置当前文件
-                        this.plugin.RefreshIndexViewFlag = true;
-                    });
-            });
-
-        new Setting(experimentalDiv)
-            .setName(t("Heading Title"))
-            .setDesc(t("The heading title to parse (e.g. '思维树' for '# 思维树')"))
-            .addText((cb) =>
-                cb.setValue(this.plugin.settings.mocHeadingTitle)
-                    .setPlaceholder("思维树")
-                    .onChange((value) => {
-                        this.plugin.settings.mocHeadingTitle = value;
-                        this.plugin.RefreshIndexViewFlag = true;
-                    })
-            );
-
-        experimentalDiv.createEl("hr");
-
-        this.initDiv(topButtonsDiv);
-
-    }
-
-    openTabSection(selectNo:number, topButtonsDiv: HTMLDivElement){
-        const sections = document.getElementsByClassName("zk-setting-section");
-        const buttons = topButtonsDiv.querySelectorAll('button');
-
-        for(let i=0; i<sections.length;i++){
-            sections[i].addClass("zk-hidden")
-
-            buttons[i].removeClass("is-active"); 
-        }
-
-        sections[selectNo].removeClass("zk-hidden")
-        buttons[selectNo].addClass("is-active");
-        this.plugin.settings.SectionTab = selectNo;
-    }
-
-    initDiv(topButtonsDiv: HTMLDivElement){
-        this.openTabSection(this.plugin.settings.SectionTab,topButtonsDiv);
     }
 
     hideDiv(div:HTMLDivElement){
@@ -472,15 +429,15 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
         }
     }
 
-    async updateNodeMenu(nodeMenuDiv:HTMLDivElement){ 
-        
+    async updateNodeMenu(nodeMenuDiv:HTMLDivElement){
+
         nodeMenuDiv.empty();
 
         const commandsLen = this.plugin.settings.NodeCommands.length;
         for(let i=0;i<commandsLen;i++){
             let command = this.plugin.settings.NodeCommands[i];
             let commandDiv = nodeMenuDiv.createEl('div',{cls:'setting-item'});
-            
+
             new ExtraButtonComponent(commandDiv.createEl('div'))
             .setIcon(command.icon)
             .onClick(async ()=>{
@@ -488,7 +445,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                 command.icon = icon;
                 this.updateNodeMenu(nodeMenuDiv);
             })
-            
+
             commandDiv.createEl('div',{text:command.name,cls:'command-text'});
             let copyIcon = '';
             let copyText = ''
@@ -516,27 +473,27 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
             .setTooltip(t("auto-copy: ") + copyText)
             .onClick(async ()=>{
                 command.copyType = (command.copyType + 1) % 4;
-                this.updateNodeMenu(nodeMenuDiv);             
-            })            
+                this.updateNodeMenu(nodeMenuDiv);
+            })
 
             new ExtraButtonComponent(commandDiv.createEl('div'))
             .setIcon('arrow-down')
             .onClick(async ()=>{
                 if(commandsLen > 1){
-                    [this.plugin.settings.NodeCommands[i],this.plugin.settings.NodeCommands[(i+1)%commandsLen]] =                     
+                    [this.plugin.settings.NodeCommands[i],this.plugin.settings.NodeCommands[(i+1)%commandsLen]] =
                     [this.plugin.settings.NodeCommands[(i+1)%commandsLen], this.plugin.settings.NodeCommands[i]]
                 }
-                this.updateNodeMenu(nodeMenuDiv);             
+                this.updateNodeMenu(nodeMenuDiv);
             })
 
             new ExtraButtonComponent(commandDiv.createEl('div'))
             .setIcon('arrow-up')
             .onClick(async ()=>{
                 if(commandsLen > 1){
-                    [this.plugin.settings.NodeCommands[i],this.plugin.settings.NodeCommands[(i-1+commandsLen)%commandsLen]] =                     
+                    [this.plugin.settings.NodeCommands[i],this.plugin.settings.NodeCommands[(i-1+commandsLen)%commandsLen]] =
                     [this.plugin.settings.NodeCommands[(i-1+commandsLen)%commandsLen], this.plugin.settings.NodeCommands[i]]
                 }
-                this.updateNodeMenu(nodeMenuDiv);                      
+                this.updateNodeMenu(nodeMenuDiv);
             })
 
             new ButtonComponent(commandDiv)
@@ -544,7 +501,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
             .setClass('mod-warning')
             .onClick(()=>{
                 this.plugin.settings.NodeCommands.splice(i,1);
-                this.updateNodeMenu(nodeMenuDiv);   
+                this.updateNodeMenu(nodeMenuDiv);
             })
         }
     }
@@ -606,9 +563,9 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                         if(/^[1-9]\d*$/.test(value)){
                             this.plugin.settings.cardWidth = Number(value);
                         }else{
-                            this.plugin.settings.cardWidth = 400;                        
+                            this.plugin.settings.cardWidth = 400;
                         }
-                        
+
                     })
                 }
             )
@@ -619,19 +576,19 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                         if(/^[1-9]\d*$/.test(value)){
                             this.plugin.settings.cardHeight = Number(value);
                         }else{
-                            this.plugin.settings.cardHeight = 240;                        
+                            this.plugin.settings.cardHeight = 240;
                         }
-                        
+
                     })
                 }
             )
-        
+
         new Setting(canvasAdditionSection)
             .setName(t("Narrow to heading"))
             .addText((cb) => {
                 cb.setValue(this.plugin.settings.canvasSubpath.toString())
                     .onChange((value) => {
-                        this.plugin.settings.canvasSubpath = value;                        
+                        this.plugin.settings.canvasSubpath = value;
                     })
                 })
                 .addDropdown(options => options
@@ -642,14 +599,14 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                         this.plugin.settings.headingMatchMode = value;
                     })
                 );
-            
-            
+
+
         new Setting(canvasAdditionSection)
             .setName(t("Set color for cards"))
             .addExtraButton((cb)=>{
                 cb.setIcon("rotate-ccw")
                 .onClick(async ()=>{
-                    this.plugin.settings.canvasCardColor = "#C0C0C0";  
+                    this.plugin.settings.canvasCardColor = "#C0C0C0";
                     await this.updateCanvasAddSettings(canvasAdditionSection);
                 })
             })
@@ -658,13 +615,13 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                     this.plugin.settings.canvasCardColor =  value;
                 })
             )
-            
+
         new Setting(canvasAdditionSection)
             .setName(t("Set color for arrow"))
             .addExtraButton((cb)=>{
                 cb.setIcon("rotate-ccw")
                 .onClick(async()=>{
-                    this.plugin.settings.canvasArrowColor = "#C0C0C0";   
+                    this.plugin.settings.canvasArrowColor = "#C0C0C0";
                     await this.updateCanvasAddSettings(canvasAdditionSection);
                 })
             })
@@ -750,79 +707,6 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                     this.plugin.RefreshIndexViewFlag = true;
                 })
             );
-
-        // 以下功能已禁用（红框内的功能）
-        /*
-        new Setting(structureSettingDiv)
-            .setName(t("siblings order"))
-            .setDesc(t("siblings order description"))
-            .addDropdown(options => options
-                .addOption("number", t('number first'))
-                .addOption("letter", t('letter first'))
-                .setValue(this.plugin.settings.siblingsOrder)
-                .onChange((value) => {
-                    this.plugin.settings.siblingsOrder = value;
-                    this.plugin.RefreshIndexViewFlag = true;
-                })
-            );
-
-        new Setting(structureSettingDiv)
-            .setName(t("same width for siblings"))
-            .addToggle(toggle => toggle.setValue(this.plugin.settings.siblingLenToggle)
-                .onChange((value) => {
-                    this.plugin.settings.siblingLenToggle = value;
-                    this.plugin.RefreshIndexViewFlag = true;
-                })
-            );
-
-        new Setting(structureSettingDiv)
-            .setName(t("Set red dash line for nodes with ID ends with letter"))
-            .setDesc(t("In order to distinguish nodes which ID ends with letter and number"))
-            .addToggle(toggle => toggle.setValue(this.plugin.settings.RedDashLine)
-                .onChange((value) => {
-                    this.plugin.settings.RedDashLine = value;
-                    this.plugin.RefreshIndexViewFlag = true;
-                })
-            );
-
-        new Setting(structureSettingDiv)
-            .setName(t("display created time"))
-            .setDesc(t("Set datetime format"))
-            .addText((cb)=>{
-                cb.inputEl.placeholder = "yyyy-MM-DD HH:mm";
-                cb.setValue(this.plugin.settings.datetimeFormat)
-                    .onChange((value) =>{
-                        if(value === ""){
-                            this.plugin.settings.datetimeFormat = "yyyy-MM-DD HH:mm";
-                        }else{
-                            this.plugin.settings.datetimeFormat = value;
-                            this.plugin.RefreshIndexViewFlag = true;
-                        }
-                    })
-            })
-            .addToggle(toggle => toggle.setValue(this.plugin.settings.displayTimeToggle)
-                .onChange((value) => {
-                    this.plugin.settings.displayTimeToggle = value;
-                    this.plugin.RefreshIndexViewFlag = true;
-                })
-            );
-
-        new Setting(structureSettingDiv)
-            .setName(t("Set color for nodes"))
-            .addExtraButton((cb)=>{
-                cb.setIcon("rotate-ccw")
-                .onClick(async()=>{
-                    this.plugin.settings.nodeColor = "#FFFFAA";
-                    await this.updateSructureSettings(structureSettingDiv);
-                })
-            })
-            .addColorPicker(color => color.setValue(this.plugin.settings.nodeColor)
-                .onChange((value)=>{
-                    this.plugin.settings.nodeColor =  value;
-                    this.plugin.RefreshIndexViewFlag = true;
-                })
-            );
-        */
     }
 
     async hide() {
@@ -832,5 +716,5 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
         this.plugin.saveData(this.plugin.settings);
     }
 
-    
+
 }
