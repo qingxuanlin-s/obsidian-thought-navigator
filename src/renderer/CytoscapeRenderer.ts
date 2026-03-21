@@ -1410,8 +1410,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
         {
             selector: 'node[?isRoot]',
             style: {
-                'background-color': '#1e3a5f',
-                'border-color': '#2a4f7a',
+                'background-color': '#0f2440',
+                'border-color': '#1a3558',
                 'font-size': '26px',
                 'font-weight': 'bold',
                 'text-max-width': '400px',
@@ -1447,8 +1447,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
         {
             selector: 'node[?isRoot]:selected',
             style: {
-                'background-color': '#244a6f',
-                'border-color': '#3a6a9f',
+                'background-color': '#162f52',
+                'border-color': '#2a4f7a',
                 'border-width': '4px',
                 'color': '#ffffff'
             } as any
@@ -2977,14 +2977,13 @@ case 'dagre':
             badgeEl.textContent = badge;
             badgeEl.style.cssText = `
                 position: absolute;
-                background-color: rgba(59, 130, 246, 0.15);
-                color: #94a3b8;
+                background-color: rgba(0, 0, 0, 0.25);
+                color: rgba(255, 255, 255, 0.9);
                 font-size: 9px;
                 font-weight: 600;
-                padding: 2px 6px;
-                border-radius: 4px;
-                border: 1px solid rgba(71, 85, 105, 0.4);
-                backdrop-filter: blur(4px);
+                font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+                padding: 3px 8px;
+                border-radius: 20px;
                 white-space: nowrap;
                 pointer-events: auto;
                 cursor: pointer;
@@ -2993,22 +2992,21 @@ case 'dagre':
 
             // 更新徽章位置的函数
             const updateBadgePosition = () => {
-                // 检查 cy 实例是否存在
                 if (!this.cy) return;
-                
+
                 const zoom = this.cy.zoom();
                 const boundingBox = node.renderedBoundingBox();
-                
-                // 计算徽章位置（节点左上角内部，增加更多内边距）
-                const x = boundingBox.x1 + 8 * zoom;  // 左边距 8px
-                const y = boundingBox.y1 + 8 * zoom;  // 上边距 8px
-                
+
+                // 徽章位置：节点右下角内侧
+                const x = boundingBox.x2 - 8 * zoom;
+                const y = boundingBox.y2 - 8 * zoom;
+
                 badgeEl.style.left = `${x}px`;
                 badgeEl.style.top = `${y}px`;
+                badgeEl.style.transform = 'translate(-100%, -100%)';
                 badgeEl.style.fontSize = `${9 * zoom}px`;
-                badgeEl.style.padding = `${2 * zoom}px ${5 * zoom}px`;
-                badgeEl.style.borderRadius = `${3 * zoom}px`;
-                badgeEl.style.borderWidth = `${1 * zoom}px`;
+                badgeEl.style.padding = `${3 * zoom}px ${8 * zoom}px`;
+                badgeEl.style.borderRadius = `${20 * zoom}px`;
             };
 
             badgeUpdaters.push(updateBadgePosition);
