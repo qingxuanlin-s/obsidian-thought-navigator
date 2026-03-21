@@ -411,40 +411,22 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
 
         experimentalDiv.createEl("hr");
 
-        // MOC 模式设置
+        // MOC 设置
         new Setting(experimentalDiv)
-            .setName(t("MOC Mode"))
-            .setDesc(t("Parse tree structure from MOC notes with headings like '# 思维树'"))
-            .addToggle(toggle => toggle.setValue(this.plugin.settings.mocModeEnabled)
-            .onChange((value) => {
-                    this.plugin.settings.mocModeEnabled = value;
-                this.plugin.RefreshIndexViewFlag = true;
-                    this.display();
-            })
-            ).addExtraButton((cb) => {
-                cb.setIcon("settings")
-                .onClick(() => {
-                    this.hideDiv(mocSettingsDiv);
-                });
-            });
-
-        const mocSettingsDiv = experimentalDiv.createDiv("zk-local-section zk-hidden");
-
-        new Setting(mocSettingsDiv)
             .setName(t("MOC Folder Location"))
             .setDesc(t("Folder containing MOC index notes"))
             .addSearch((cb) => {
                 new FolderSuggest(this.app, cb.inputEl);
                 cb.setPlaceholder(t("Example: folder1/folder2"))
                     .setValue(this.plugin.settings.mocFolderPath)
-            .onChange((value) => {
+                    .onChange((value) => {
                         this.plugin.settings.mocFolderPath = value;
                         this.plugin.settings.mocCurrentFile = ''; // 重置当前文件
                         this.plugin.RefreshIndexViewFlag = true;
                     });
             });
 
-        new Setting(mocSettingsDiv)
+        new Setting(experimentalDiv)
             .setName(t("Heading Title"))
             .setDesc(t("The heading title to parse (e.g. '思维树' for '# 思维树')"))
             .addText((cb) =>
@@ -452,24 +434,9 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                     .setPlaceholder("思维树")
                     .onChange((value) => {
                         this.plugin.settings.mocHeadingTitle = value;
-                this.plugin.RefreshIndexViewFlag = true;
-            })
+                        this.plugin.RefreshIndexViewFlag = true;
+                    })
             );
-
-        experimentalDiv.createEl("p", { 
-            text: t("MOC Format Example:"),
-            cls: "setting-item-description"
-        });
-        
-        const formatExample = experimentalDiv.createEl("pre", {
-            cls: "setting-item-description",
-        });
-        formatExample.style.fontSize = "12px";
-        formatExample.style.padding = "8px";
-        formatExample.style.backgroundColor = "var(--background-secondary)";
-        formatExample.style.borderRadius = "4px";
-        formatExample.style.whiteSpace = "pre-wrap";
-        formatExample.textContent = `# 思维树`;
 
         experimentalDiv.createEl("hr");
 
