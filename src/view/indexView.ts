@@ -655,16 +655,11 @@ export class ZKIndexView extends ItemView {
         // 创建右侧按钮容器
         const rightBtns = toolbarDiv.createDiv("zk-toolbar-right-buttons");
 
-        if (this.plugin.settings.settingIcon === true) {
-            const settingBtn = new ExtraButtonComponent(rightBtns);
-            settingBtn.setIcon("settings").setTooltip(t("settings"));
-            settingBtn.onClick(() => {
-                //@ts-ignore
-                this.app.setting.open();
-                //@ts-ignore
-                this.app.setting.openTabById("zettelkasten-navigation");
-            });
-        }
+        const searchBtn = new ExtraButtonComponent(rightBtns);
+        searchBtn.setIcon("search").setTooltip(t("search placeholder"));
+        searchBtn.onClick(() => {
+            this.openBranchSearchBar();
+        });
 
         if (this.plugin.settings.TableView === true) {
             const tableBtn = new ExtraButtonComponent(rightBtns);
