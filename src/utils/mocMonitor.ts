@@ -58,6 +58,10 @@ export class MOCFileMonitor {
                     // 清除缓存
                     this.contentHashCache.delete(file.path);
                     this.debounceTimers.delete(file.path);
+                    // 从反向索引中移除该 MOC 的条目
+                    if (this.plugin.mocReverseIndex) {
+                        this.plugin.mocReverseIndex.removeEntriesForMOC(file.path);
+                    }
                     // 触发刷新（通知视图该 MOC 已删除）
                     this.refreshViews(file);
                 }
@@ -192,12 +196,17 @@ export class MOCFileMonitor {
      */
     private async refreshViews(file: TFile): Promise<void> {
         try {
+            // 增量更新反向索引
+            if (this.plugin.mocReverseIndex) {
+                await this.plugin.mocReverseIndex.updateFile(file);
+            }
+
             // 触发自定义事件，通知视图更新
             this.plugin.app.workspace.trigger(
                 "zk-navigation:moc-file-changed",
                 file
             );
-            
+
         } catch (error) {
             console.error(`MOC Monitor: Failed to refresh views for ${file.path}`, error);
             new Notice(`MOC 文件更新失败: ${error.message}`);

@@ -1570,3 +1570,252 @@ align-items: center;
   background: #d0d0d0;
   color: #0066cc;
 }
+
+/* ==================== 平行宇宙面包屑 (Multiverse Breadcrumb) ==================== */
+
+.zk-multiverse-container {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+}
+
+.zk-multiverse-node {
+  max-width: 120px;
+  overflow: hidden;
+}
+
+.zk-multiverse-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  background: linear-gradient(135deg, rgba(255, 170, 0, 0.2), rgba(255, 120, 0, 0.15));
+  border: 1px solid rgba(255, 170, 0, 0.5);
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.zk-multiverse-badge:hover {
+  background: linear-gradient(135deg, rgba(255, 170, 0, 0.35), rgba(255, 120, 0, 0.25));
+  border-color: rgba(255, 170, 0, 0.7);
+  box-shadow: 0 0 8px rgba(255, 170, 0, 0.2);
+}
+
+.zk-multiverse-badge-icon {
+  display: flex;
+  align-items: center;
+  color: #ffaa00;
+}
+
+.zk-multiverse-badge-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+.zk-multiverse-badge-text {
+  font-size: 11px;
+  font-weight: 600;
+  color: #ffcc44;
+}
+
+.zk-multiverse-panel {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  min-width: 200px;
+  max-width: 300px;
+  background: rgba(30, 35, 50, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  padding: 12px;
+  z-index: 10001;
+  animation: zk-multiverse-panel-enter 0.15s ease-out;
+}
+
+@keyframes zk-multiverse-panel-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.zk-multiverse-panel-title {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.zk-multiverse-panel-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.zk-multiverse-panel-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.zk-multiverse-panel-item-icon {
+  display: flex;
+  align-items: center;
+  color: #ffaa00;
+}
+
+.zk-multiverse-panel-item-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.zk-multiverse-panel-item-text {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* 浅色主题 */
+.zk-theme-light .zk-multiverse-badge {
+  background: linear-gradient(135deg, rgba(180, 120, 0, 0.12), rgba(200, 100, 0, 0.08));
+  border-color: rgba(180, 120, 0, 0.4);
+}
+
+.zk-theme-light .zk-multiverse-badge:hover {
+  background: linear-gradient(135deg, rgba(180, 120, 0, 0.22), rgba(200, 100, 0, 0.15));
+  border-color: rgba(180, 120, 0, 0.6);
+}
+
+.zk-theme-light .zk-multiverse-badge-icon {
+  color: #b07800;
+}
+
+.zk-theme-light .zk-multiverse-badge-text {
+  color: #996600;
+}
+
+.zk-theme-light .zk-multiverse-panel {
+  background: rgba(245, 245, 245, 0.95);
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.zk-theme-light .zk-multiverse-panel-title {
+  color: rgba(0, 0, 0, 0.45);
+  border-bottom-color: rgba(0, 0, 0, 0.08);
+}
+
+.zk-theme-light .zk-multiverse-panel-item:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.zk-theme-light .zk-multiverse-panel-item-icon {
+  color: #b07800;
+}
+
+.zk-theme-light .zk-multiverse-panel-item-text {
+  color: rgba(0, 0, 0, 0.85);
+}
+
+/* ==================== 笔记搜索 Modal ==================== */
+
+.zk-note-search-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.zk-note-search-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.zk-note-search-name {
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zk-note-search-mocs {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zk-note-search-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(255, 170, 0, 0.15);
+  color: #ffaa00;
+  border: 1px solid rgba(255, 170, 0, 0.3);
+  white-space: nowrap;
+}
+
+/* MOC 选择器（二级） */
+
+.zk-moc-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.zk-moc-picker-icon {
+  display: flex;
+  align-items: center;
+  color: #ffaa00;
+  flex-shrink: 0;
+}
+
+.zk-moc-picker-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.zk-moc-picker-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.zk-moc-picker-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.zk-moc-picker-detail {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+/* 浅色主题 */
+.zk-theme-light .zk-note-search-badge {
+  background: rgba(180, 120, 0, 0.1);
+  color: #996600;
+  border-color: rgba(180, 120, 0, 0.3);
+}
+
+.zk-theme-light .zk-moc-picker-icon {
+  color: #b07800;
+}
