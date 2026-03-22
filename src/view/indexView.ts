@@ -2,12 +2,13 @@ import ZKNavigationPlugin from "main";
 import { ExtraButtonComponent, FuzzySuggestModal, ItemView, Menu, Modal, Notice, Platform, Scope, Setting, TFile, WorkspaceLeaf, debounce, moment, setIcon, setTooltip } from "obsidian";
 import { t } from "src/lang/helper";
 import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
-import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
 import { tableModal } from "src/modal/tableModal";
 import { AddFreeNodeModal } from "src/modal/addFreeNodeModal";
 import { expandGraphModal } from "src/modal/expandGraphModal";
 import { MOCSelectorModal } from "src/modal/mocSelectorModal";
+import { NoteSearchModal } from "src/modal/noteSearchModal";
 import { convertMOCToZKNodes, MOCParseResult, MOCTreeNode, parseMOCStructure } from "src/utils/utils";
+import { MermaidParser } from "src/utils/mermaidParser";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
 import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
 import { RenderOptions } from "src/renderer/types";
@@ -123,6 +124,7 @@ export class ZKIndexView extends ItemView {
 
     // MOC 芯片标签引用（用于更新显示）
     private mocChipLabel: HTMLElement | null = null;
+    private multiverseContainer: HTMLElement | null = null;
 
     // 性能优化：防止重复刷新的标志位
     private isRefreshing: boolean = false;
@@ -494,33 +496,7 @@ export class ZKIndexView extends ItemView {
             setIcon(mainNoteChip.createSpan("zk-chip-icon"), "file-text");
             mainNoteChip.createSpan("zk-chip-label").setText(this.plugin.settings.MainNoteButtonText);
             mainNoteChip.addEventListener("click", () => {
-                if (this.plugin.settings.MainNoteSuggestMode === "IDOrder") {
-                    new mainNoteModal(this.app, this.plugin, this.plugin.MainNotes, (selectZKNode) => {
-                        if (!selectZKNode.file) return;
-                        this.plugin.settings.lastRetrival = {
-                            type: 'main',
-                            ID: selectZKNode.ID,
-                            displayText: selectZKNode.displayText,
-                            filePath: selectZKNode.file.path,
-                            openTime: moment().format("YYYY-MM-DD HH:mm:ss"),
-                        }
-                        this.plugin.clearShowingSettings();
-                        this.app.workspace.trigger("zk-navigation:refresh-index-graph");
-                    }).open();
-                } else {
-                    new mainNoteFuzzyModal(this.app, this.plugin, this.plugin.MainNotes, (selectZKNode) => {
-                        if (!selectZKNode.file) return;
-                        this.plugin.settings.lastRetrival = {
-                            type: 'main',
-                            ID: selectZKNode.ID,
-                            displayText: selectZKNode.displayText,
-                            filePath: selectZKNode.file.path,
-                            openTime: moment().format("YYYY-MM-DD HH:mm:ss"),
-                        }
-                        this.plugin.clearShowingSettings();
-                        this.app.workspace.trigger("zk-navigation:refresh-index-graph");
-                    }).open()
-                }
+                this.openNoteSearchModal();
             });
 
             // 面包屑分隔符
@@ -609,6 +585,10 @@ export class ZKIndexView extends ItemView {
             this.app.workspace.trigger("zk-navigation:refresh-index-graph");
             this.app.workspace.trigger("zk-navigation:refresh-local-graph");
         });
+
+        // 平行宇宙面包屑：选中节点 + MOC 徽章（动态区域）
+        this.multiverseContainer = breadcrumbNav.createDiv("zk-multiverse-container");
+        this.multiverseContainer.style.display = "none";
 
         // 右侧工具按钮（用 spacer 推到右边）
         const spacer = toolbarDiv.createDiv("zk-toolbar-spacer");
@@ -1607,9 +1587,15 @@ export class ZKIndexView extends ItemView {
             });
         });
 
-        // 监听节点选中事件（单击）
+        // 监听节点选中事件（单击）— 更新平行宇宙面包屑
         this.addTrackedListener(branchGraphDiv, 'node-select', (event: any) => {
             const { node } = event.detail;
+            this.updateMultiverseBadge(node);
+        });
+
+        // 点击画布空白处 — 隐藏平行宇宙面包屑
+        this.addTrackedListener(branchGraphDiv, 'background-click', () => {
+            this.updateMultiverseBadge(null);
         });
 
         // 监听节点编辑事件（双击）
@@ -2340,6 +2326,132 @@ export class ZKIndexView extends ItemView {
         this.plugin.indexViewOffsetHeight = this.containerEl.offsetHeight;
     }
 
+
+    /**
+     * 更新平行宇宙面包屑徽章
+     */
+    /**
+     * 打开笔记搜索 Modal — 从反向索引中模糊搜索笔记，定位到所在 MOC
+     */
+    private openNoteSearchModal(): void {
+        const reverseIndex = this.plugin.mocReverseIndex;
+        if (!reverseIndex || !reverseIndex.isInitialized) {
+            new Notice(t("Please configure MOC folder path in settings"));
+            return;
+        }
+
+        new NoteSearchModal(this.app, reverseIndex, async (notePath, location) => {
+            // 切换到选中的 MOC
+            this.plugin.settings.mocCurrentFile = location.mocFilePath;
+            this.plugin.settings.BranchTab = 0;
+            await this.plugin.saveData(this.plugin.settings);
+            this.renderedBranches.clear();
+            await this.plugin.clearShowingSettings();
+
+            // 更新 MOC 面包屑文本
+            if (this.mocChipLabel) {
+                let mocName = location.mocFileName;
+                const maxLength = 12;
+                if (mocName.length > maxLength) {
+                    mocName = mocName.substring(0, maxLength) + "...";
+                }
+                this.mocChipLabel.setText(mocName);
+            }
+
+            this.app.workspace.trigger("zk-navigation:refresh-index-graph");
+        }).open();
+    }
+
+    private updateMultiverseBadge(node: ZKNode | null): void {
+        if (!this.multiverseContainer) return;
+
+        // 清空容器
+        this.multiverseContainer.empty();
+        this.multiverseContainer.style.display = "none";
+
+        if (!node || !node.file) return;
+
+        const reverseIndex = this.plugin.mocReverseIndex;
+        if (!reverseIndex || !reverseIndex.isInitialized) return;
+
+        const currentMOC = this.plugin.settings.mocCurrentFile;
+        const otherMOCs = reverseIndex.query(node.file.path, currentMOC);
+
+        if (otherMOCs.length === 0) return;
+
+        // 显示容器
+        this.multiverseContainer.style.display = "flex";
+
+        // 分隔符
+        this.multiverseContainer.createSpan("zk-breadcrumb-sep").setText("\u203A");
+
+        // 当前节点名称
+        const nodeChip = this.multiverseContainer.createDiv("zk-chip zk-chip-outlined zk-multiverse-node");
+        let nodeLabel = node.title || node.displayText || node.IDStr;
+        if (nodeLabel.length > 10) {
+            nodeLabel = nodeLabel.substring(0, 10) + "...";
+        }
+        nodeChip.createSpan("zk-chip-label").setText(nodeLabel);
+
+        // +N MOCs 徽章
+        const badge = this.multiverseContainer.createDiv("zk-multiverse-badge");
+        setIcon(badge.createSpan("zk-multiverse-badge-icon"), "layers");
+        badge.createSpan("zk-multiverse-badge-text").setText(`+${otherMOCs.length} MOCs`);
+
+        // 悬浮面板
+        const panel = this.multiverseContainer.createDiv("zk-multiverse-panel");
+        panel.style.display = "none";
+
+        const panelTitle = panel.createDiv("zk-multiverse-panel-title");
+        panelTitle.setText(t("Note also exists in:"));
+
+        for (const loc of otherMOCs) {
+            const item = panel.createDiv("zk-multiverse-panel-item");
+            setIcon(item.createSpan("zk-multiverse-panel-item-icon"), "book-open");
+            item.createSpan("zk-multiverse-panel-item-text").setText(loc.mocFileName);
+
+            item.addEventListener("click", async () => {
+                // 切换到该 MOC
+                this.plugin.settings.mocCurrentFile = loc.mocFilePath;
+                this.plugin.settings.BranchTab = 0;
+                await this.plugin.saveData(this.plugin.settings);
+                this.renderedBranches.clear();
+                await this.plugin.clearShowingSettings();
+
+                // 更新 MOC 按钮文本
+                if (this.mocChipLabel) {
+                    let mocName = loc.mocFileName;
+                    const maxLength = 12;
+                    if (mocName.length > maxLength) {
+                        mocName = mocName.substring(0, maxLength) + "...";
+                    }
+                    this.mocChipLabel.setText(mocName);
+                }
+
+                this.app.workspace.trigger("zk-navigation:refresh-index-graph");
+
+                // 清除 multiverse 区域
+                this.updateMultiverseBadge(null);
+            });
+        }
+
+        // 点击徽章切换面板
+        badge.addEventListener("click", (e) => {
+            e.stopPropagation();
+            panel.style.display = panel.style.display === "none" ? "block" : "none";
+        });
+
+        // 点击其他区域关闭面板
+        const closePanel = (e: MouseEvent) => {
+            if (!panel.contains(e.target as Node) && !badge.contains(e.target as Node)) {
+                panel.style.display = "none";
+                document.removeEventListener("click", closePanel);
+            }
+        };
+        badge.addEventListener("click", () => {
+            setTimeout(() => document.addEventListener("click", closePanel), 0);
+        });
+    }
 
     // MOC 文件选择器
     openMOCSelectorModal() {
@@ -4481,6 +4593,9 @@ export class ZKIndexView extends ItemView {
                 isEmbed
             });
 
+            // 清除缓存，确保 moveNodeToParent 能读到刚保存的节点
+            MermaidParser.clearCacheForFile(this.plugin.settings.mocCurrentFile);
+
             // 然后移动到父节点下
             if (mocFile) {
                 await this.mocHandler.moveNodeToParent(mocFile, suggestedID, placeholderInfo.parentNodeId, suggestedID);
@@ -4498,6 +4613,7 @@ export class ZKIndexView extends ItemView {
         }
 
         if (placeholderInfo?.childNodeId && mocFile) {
+            MermaidParser.clearCacheForFile(this.plugin.settings.mocCurrentFile);
             const newChildID = this.generateChildNodeID(suggestedID);
             await this.mocHandler.moveNodeToParent(mocFile, placeholderInfo.childNodeId, suggestedID, newChildID);
         }
@@ -4564,6 +4680,9 @@ export class ZKIndexView extends ItemView {
                 isTextOnly: true  // 标记为纯文字节点
             });
 
+            // 清除缓存，确保 moveNodeToParent 能读到刚保存的节点
+            MermaidParser.clearCacheForFile(this.plugin.settings.mocCurrentFile);
+
             // 然后移动到父节点下
             if (mocFile) {
                 await this.mocHandler.moveNodeToParent(mocFile, suggestedID, placeholderInfo.parentNodeId, suggestedID);
@@ -4580,6 +4699,7 @@ export class ZKIndexView extends ItemView {
         }
 
         if (placeholderInfo?.childNodeId && mocFile) {
+            MermaidParser.clearCacheForFile(this.plugin.settings.mocCurrentFile);
             const newChildID = this.generateChildNodeID(suggestedID);
             await this.mocHandler.moveNodeToParent(mocFile, placeholderInfo.childNodeId, suggestedID, newChildID);
         }

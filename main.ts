@@ -5,6 +5,7 @@ import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
 import { ZKNavigationSettngTab } from "src/settings/settings";
 import { mainNoteInit } from "src/utils/utils";
 import { MOCFileMonitor } from "src/utils/mocMonitor";
+import { MOCReverseIndex } from "src/utils/mocReverseIndex";
 import { ZKGraphView, ZK_GRAPH_TYPE } from "src/view/graphView";
 import { ZKIndexView, ZKNode, ZK_INDEX_TYPE, ZK_NAVIGATION } from "src/view/indexView";
 import { ZK_RECENT_TYPE, ZKRecentView } from "src/view/recentView";
@@ -225,6 +226,8 @@ export default class ZKNavigationPlugin extends Plugin {
     
     // MOC 文件监听器
     mocFileMonitor: MOCFileMonitor | null = null;
+    // MOC 反向索引
+    mocReverseIndex: MOCReverseIndex | null = null;
 
     async loadSettings() {
         this.settings = Object.assign(
@@ -440,10 +443,24 @@ export default class ZKNavigationPlugin extends Plugin {
         this.mocFileMonitor = new MOCFileMonitor(this);
         this.mocFileMonitor.initialize();
 
-        // 监听文件重命名事件，更新 MOC 文件中的链接
+        // 初始化 MOC 反向索引（后台构建）
+        this.mocReverseIndex = new MOCReverseIndex(this.app);
+        // 等 layout-ready 后再构建索引，确保 metadataCache 已初始化
+        this.app.workspace.onLayoutReady(async () => {
+            await this.mocReverseIndex?.initialize(
+                this.settings.mocFolderPath,
+                this.settings.mocHeadingTitle
+            );
+        });
+
+        // 监听文件重命名事件，更新 MOC 文件中的链接和反向索引
         this.registerEvent(
             this.app.vault.on("rename", async (file, oldPath) => {
                 if (file instanceof TFile) {
+                    // 更新反向索引中的笔记路径
+                    if (this.mocReverseIndex) {
+                        this.mocReverseIndex.handleNoteRename(oldPath, file.path);
+                    }
                     await this.updateMOCLinksAfterRename(file, oldPath);
                 }
             })
