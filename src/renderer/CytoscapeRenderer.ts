@@ -7531,8 +7531,11 @@ case 'dagre':
 
         const closeSearch = () => {
             clearHighlights();
-            bar.remove();
-            this.container?.focus();
+            // 先收起键盘，等视口恢复后再移除搜索栏，避免移动端工具栏上移
+            input.blur();
+            setTimeout(() => {
+                bar.remove();
+            }, 100);
         };
 
         input.addEventListener('input', doSearch);
