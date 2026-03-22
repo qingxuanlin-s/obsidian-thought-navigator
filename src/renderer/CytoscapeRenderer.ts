@@ -2776,6 +2776,23 @@ case 'dagre':
                             }
                         }));
                     });
+                    const emitHover = (e: MouseEvent) => {
+                        this.container?.dispatchEvent(new CustomEvent('node-hover', {
+                            detail: {
+                                node: node.data('originalNode'),
+                                event: e
+                            }
+                        }));
+                    };
+                    hitEl.addEventListener('mouseenter', emitHover);
+                    hitEl.addEventListener('mousemove', emitHover);
+                    hitEl.addEventListener('mouseleave', () => {
+                        this.container?.dispatchEvent(new CustomEvent('node-leave', {
+                            detail: {
+                                node: node.data('originalNode')
+                            }
+                        }));
+                    });
                     // 移动端触摸支持
                     hitEl.addEventListener('touchend', (e) => {
                         e.preventDefault();
