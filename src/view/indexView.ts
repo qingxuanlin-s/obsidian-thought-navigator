@@ -138,6 +138,8 @@ export class ZKIndexView extends ItemView {
     private branchGraphListenersInitialized: boolean = false;
     private currentBranchGraphDiv: HTMLElement | null = null;
     private fullscreenBackButtonListenerBound: boolean = false;
+    private lastHoverPreviewPath: string | null = null;
+    private lastHoverPreviewAt = 0;
     private undoStack: Array<{ filePath: string; content: string; timestamp: number }> = [];
     private readonly MAX_UNDO_STEPS = 7;
     private isApplyingUndo = false;
@@ -1570,11 +1572,12 @@ export class ZKIndexView extends ItemView {
             if (!node || !node.file) {
                 return;
             }
-
-            // Command/Ctrl 多选过程中，不触发悬浮预览
-            if (mouseEvent?.metaKey || mouseEvent?.ctrlKey) {
+            const now = Date.now();
+            if (this.lastHoverPreviewPath === node.file.path && now - this.lastHoverPreviewAt < 120) {
                 return;
             }
+            this.lastHoverPreviewPath = node.file.path;
+            this.lastHoverPreviewAt = now;
 
             this.app.workspace.trigger('hover-link', {
                 event: mouseEvent,
@@ -1582,9 +1585,14 @@ export class ZKIndexView extends ItemView {
                 hoverParent: branchGraphDiv,
                 // 使用 Obsidian 常规参数组合，避免 [[...]] 解析差异导致误判"未创建"
                 linktext: "",
-                targetEl: mouseEvent.target,
+                targetEl: mouseEvent?.target ?? branchGraphDiv,
                 sourcePath: node.file.path,
             });
+        });
+
+        this.addTrackedListener(branchGraphDiv, 'node-leave', () => {
+            this.lastHoverPreviewPath = null;
+            this.lastHoverPreviewAt = 0;
         });
 
         // 监听节点选中事件（单击）— 更新平行宇宙面包屑
