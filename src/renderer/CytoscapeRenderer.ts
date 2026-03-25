@@ -7437,7 +7437,9 @@ case 'dagre':
         }
 
         let matchedNodes: any[] = [];
+        let filteredNodes: any[] = [];
         let currentIndex = -1;
+        let activeSuggestionIndex = -1;
 
         const bar = document.createElement('div');
         bar.className = 'zk-search-bar';
@@ -7446,12 +7448,21 @@ case 'dagre':
         bar.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
         bar.addEventListener('mousedown', (e) => { e.stopPropagation(); });
 
+        const inputWrap = document.createElement('div');
+        inputWrap.className = 'zk-search-bar-input-wrap';
+        bar.appendChild(inputWrap);
+
         // 搜索输入框
         const input = document.createElement('input');
         input.type = 'text';
         input.className = 'zk-search-bar-input';
         input.placeholder = t('search placeholder');
-        bar.appendChild(input);
+        inputWrap.appendChild(input);
+
+        // 候选框
+        const suggestionBox = document.createElement('div');
+        suggestionBox.className = 'zk-search-suggestions zk-hidden';
+        inputWrap.appendChild(suggestionBox);
 
         // 计数
         const countLabel = document.createElement('span');
@@ -7497,20 +7508,62 @@ case 'dagre':
         const updateCount = () => {
             if (!input.value.trim()) {
                 countLabel.textContent = '';
-            } else if (matchedNodes.length === 0) {
-                countLabel.textContent = '0/0';
-            } else {
+            } else if (matchedNodes.length > 0 && currentIndex >= 0) {
                 countLabel.textContent = `${currentIndex + 1}/${matchedNodes.length}`;
+            } else {
+                countLabel.textContent = `${filteredNodes.length}`;
             }
+        };
+
+        const renderSuggestions = () => {
+            suggestionBox.empty();
+            if (!input.value.trim() || filteredNodes.length === 0) {
+                suggestionBox.addClass('zk-hidden');
+                return;
+            }
+
+            const visibleCount = Math.min(filteredNodes.length, 12);
+            for (let i = 0; i < visibleCount; i++) {
+                const node = filteredNodes[i];
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'zk-search-suggestion-item';
+                if (i === activeSuggestionIndex) {
+                    item.addClass('is-active');
+                }
+
+                const origNode = node.data('originalNode');
+                const title = origNode?.title || node.data('label') || '';
+                item.textContent = title;
+
+                item.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                });
+                item.addEventListener('click', () => {
+                    matchedNodes = filteredNodes;
+                    currentIndex = i;
+                    highlightCurrent();
+                    updateCount();
+                    suggestionBox.addClass('zk-hidden');
+                    input.focus();
+                });
+                suggestionBox.appendChild(item);
+            }
+
+            suggestionBox.removeClass('zk-hidden');
         };
 
         const doSearch = () => {
             const term = input.value.trim().toLowerCase();
             clearHighlights();
             matchedNodes = [];
+            filteredNodes = [];
             currentIndex = -1;
+            activeSuggestionIndex = -1;
 
             if (!term || !this.cy) {
+                suggestionBox.addClass('zk-hidden');
                 updateCount();
                 return;
             }
@@ -7518,21 +7571,29 @@ case 'dagre':
             this.cy.nodes('[!isGroup]').forEach((node: any) => {
                 const label = (node.data('label') || '').toLowerCase();
                 const origNode = node.data('originalNode');
+                const filePath = (origNode?.file?.path || '').toLowerCase();
+                if (/(^|\/)attachments\//.test(filePath)) {
+                    return;
+                }
                 const idStr = (origNode?.IDStr || '').toLowerCase();
                 const title = (origNode?.title || '').toLowerCase();
                 if (label.includes(term) || idStr.includes(term) || title.includes(term)) {
-                    matchedNodes.push(node);
+                    filteredNodes.push(node);
                 }
             });
 
-            if (matchedNodes.length > 0) {
-                currentIndex = 0;
-                highlightCurrent();
-            }
+            renderSuggestions();
             updateCount();
         };
 
         const goNext = () => {
+            if (matchedNodes.length === 0 && filteredNodes.length > 0) {
+                matchedNodes = filteredNodes;
+                currentIndex = 0;
+                highlightCurrent();
+                updateCount();
+                return;
+            }
             if (matchedNodes.length === 0) return;
             currentIndex = (currentIndex + 1) % matchedNodes.length;
             highlightCurrent();
@@ -7540,6 +7601,13 @@ case 'dagre':
         };
 
         const goPrev = () => {
+            if (matchedNodes.length === 0 && filteredNodes.length > 0) {
+                matchedNodes = filteredNodes;
+                currentIndex = Math.max(0, matchedNodes.length - 1);
+                highlightCurrent();
+                updateCount();
+                return;
+            }
             if (matchedNodes.length === 0) return;
             currentIndex = (currentIndex - 1 + matchedNodes.length) % matchedNodes.length;
             highlightCurrent();
@@ -7548,6 +7616,7 @@ case 'dagre':
 
         const closeSearch = () => {
             clearHighlights();
+            suggestionBox.addClass('zk-hidden');
             // 先收起键盘，等视口恢复后再移除搜索栏，避免移动端工具栏上移
             input.blur();
             setTimeout(() => {
@@ -7557,13 +7626,45 @@ case 'dagre':
 
         input.addEventListener('input', doSearch);
         input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
+            if (e.key === 'ArrowDown' && !suggestionBox.classList.contains('zk-hidden') && filteredNodes.length > 0) {
                 e.preventDefault();
-                if (e.shiftKey) { goPrev(); } else { goNext(); }
+                const total = Math.min(filteredNodes.length, 12);
+                activeSuggestionIndex = (activeSuggestionIndex + 1 + total) % total;
+                renderSuggestions();
+            } else if (e.key === 'ArrowUp' && !suggestionBox.classList.contains('zk-hidden') && filteredNodes.length > 0) {
+                e.preventDefault();
+                const total = Math.min(filteredNodes.length, 12);
+                activeSuggestionIndex = (activeSuggestionIndex - 1 + total) % total;
+                renderSuggestions();
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                doSearch();
+                if (filteredNodes.length > 0) {
+                    if (activeSuggestionIndex < 0) {
+                        activeSuggestionIndex = 0;
+                    }
+                    matchedNodes = filteredNodes;
+                    currentIndex = activeSuggestionIndex;
+                    highlightCurrent();
+                    updateCount();
+                    suggestionBox.addClass('zk-hidden');
+                } else if (e.shiftKey) {
+                    goPrev();
+                } else {
+                    goNext();
+                }
             } else if (e.key === 'Escape') {
                 e.preventDefault();
                 closeSearch();
             }
+        });
+        input.addEventListener('focus', () => {
+            if (filteredNodes.length > 0) {
+                renderSuggestions();
+            }
+        });
+        input.addEventListener('blur', () => {
+            setTimeout(() => suggestionBox.addClass('zk-hidden'), 120);
         });
 
         prevBtn.addEventListener('click', goPrev);
