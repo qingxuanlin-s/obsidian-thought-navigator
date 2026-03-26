@@ -1874,3 +1874,37 @@ align-items: center;
 .zk-theme-light .zk-moc-picker-icon {
   color: #b07800;
 }
+
+/* ==================== 边端点手柄 ==================== */
+.zk-edge-endpoint-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background-color: rgba(148, 163, 184, 0.9);
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: 50%;
+  cursor: grab;
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  z-index: 1001;
+  transition: background-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+
+.zk-edge-endpoint-handle:hover {
+  background-color: var(--interactive-accent, #7c3aed);
+  box-shadow: 0 0 8px rgba(124, 58, 237, 0.5);
+  transform: translate(-50%, -50%) scale(1.3);
+}
+
+.zk-edge-endpoint-handle:active {
+  cursor: grabbing;
+  background-color: var(--interactive-accent, #7c3aed);
+  transform: translate(-50%, -50%) scale(1.1);
+}
+
+.zk-theme-light .zk-edge-endpoint-handle {
+  background-color: rgba(100, 116, 139, 0.85);
+  border-color: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
