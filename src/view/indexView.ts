@@ -77,6 +77,8 @@ export class ZKIndexView extends ItemView {
 
     // Cytoscape 渲染器
     private branchRenderer: CytoscapeRenderer | null = null;
+    // 当前 cy 实例对应的 MOC 文件路径（用于切换时正确保存位置）
+    private lastRenderedMOCPath: string | null = null;
 
     // 性能优化：节点位置缓存 Map，O(1) 查找替代 O(n) filter
     nodePositionMap: Map<number, ZKNode> = new Map();
@@ -1034,6 +1036,12 @@ export class ZKIndexView extends ItemView {
     // MOC 模式专用的刷新方法
     // MOC 模式专用的刷新方法 - 使用 Cytoscape 渲染
     async refreshBranchMermaidMOC(indexMermaidDiv: HTMLElement) {
+        // 仅在 MOC 文件真正切换时才冲刷保存旧画面位置，避免同文件刷新覆盖刚写入的位置
+        const incomingMOCPath = this.plugin.settings.mocCurrentFile;
+        if (this.lastRenderedMOCPath && this.lastRenderedMOCPath !== incomingMOCPath) {
+            await this.flushAndSaveCurrentPositions();
+        }
+
         // 获取 MOC 配置
         const mocFolder = this.plugin.settings.mocFolderPath;
         const headingTitle = this.plugin.settings.mocHeadingTitle;
@@ -1160,6 +1168,7 @@ export class ZKIndexView extends ItemView {
         // 渲染或更新图形
         // CytoscapeRenderer 内部会智能判断是否需要完全重建或增量更新
         await this.branchRenderer.render(branchGraphDiv, graphData, options);
+        this.lastRenderedMOCPath = currentMOCPath;
 
         // 恢复或自动居中视图
         const cy = this.branchRenderer.getCytoscapeInstance();
@@ -1300,6 +1309,7 @@ export class ZKIndexView extends ItemView {
 
         // 监听节点位置变化事件（拖动后保存到 MOC 文件）
         // 多节点拖动时 dragfree 会对每个节点触发，先累积到 pendingPositionChanges，防抖后批量保存
+        let pendingMOCPath: string | null = null; // 事件发生时的 MOC 路径
         this.addTrackedListener(branchGraphDiv, 'node-position-changed', async (event: any) => {
             if (this.isMobileReadOnly()) {
                 return;
@@ -1312,6 +1322,9 @@ export class ZKIndexView extends ItemView {
                 console.warn('Invalid node in position-changed event:', node);
                 return;
             }
+
+            // 在事件发生时立即捕获当前 MOC 路径，而不是等 200ms 后再读
+            pendingMOCPath = this.plugin.settings.mocCurrentFile;
 
             // 累积待保存的位置变化
             this.pendingPositionChanges.set(nodeKey, { node, position });
@@ -1326,9 +1339,10 @@ export class ZKIndexView extends ItemView {
                 this.pendingPositionChanges.clear();
 
                 try {
-                    // 监听器可能复用，保存时读取最新当前文件路径，避免写入旧 MOC
-                    const latestMOCPath = this.plugin.settings.mocCurrentFile;
-                    const mocFile = this.app.vault.getFileByPath(latestMOCPath);
+                    // 使用事件发生时捕获的 MOC 路径，防止切换后写入错误文件
+                    const targetMOCPath = pendingMOCPath || this.plugin.settings.mocCurrentFile;
+                    pendingMOCPath = null;
+                    const mocFile = this.app.vault.getFileByPath(targetMOCPath);
                     if (!mocFile) return;
 
                     // 分离跨领域节点和普通节点
@@ -2115,16 +2129,26 @@ export class ZKIndexView extends ItemView {
             }
         });
 
-        // 监听边起点修改事件
+        // 监听边起点修改事件（修改父节点）
         this.addTrackedListener(branchGraphDiv, 'edge-source-changed', async (event: any) => {
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { edgeId, oldSource, newSource, target, label } = event.detail;
+            const { edgeType, oldSource, newSource, target, label } = event.detail;
 
             try {
                 const mocFile = getLatestMOCFile();
-                if (mocFile) {
+                if (!mocFile) return;
+
+                if (edgeType === 'parent') {
+                    // 树边：移动子节点到新父节点
+                    await this.saveAllNodePositionsBeforeRefresh();
+                    const newChildID = this.generateChildNodeID(newSource);
+                    await this.mocHandler.moveNodeToParent(mocFile, target, newSource, newChildID);
+                    await this.refreshBranchMermaid();
+                    new Notice(`已修改父节点: ${target} 从 ${oldSource} → ${newSource} (新ID: ${newChildID})`);
+                } else {
+                    // 箭头关系边：修改关系起点
                     await this.updateEdgeSourceInMOC(mocFile, oldSource, newSource, target, label);
                     await this.refreshBranchMermaid();
                     new Notice(`已修改边起点: ${oldSource} → ${newSource}`);
@@ -2140,11 +2164,20 @@ export class ZKIndexView extends ItemView {
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { edgeId, source, oldTarget, newTarget, label } = event.detail;
+            const { edgeType, source, oldTarget, newTarget, label } = event.detail;
 
             try {
                 const mocFile = getLatestMOCFile();
-                if (mocFile) {
+                if (!mocFile) return;
+
+                if (edgeType === 'parent') {
+                    // 树边：交换子节点位置（ID互换）
+                    await this.saveAllNodePositionsBeforeRefresh();
+                    await this.updateEdgeTargetInMOC(mocFile, source, oldTarget, newTarget, label);
+                    await this.refreshBranchMermaid();
+                    new Notice(`已修改边终点: ${oldTarget} ↔ ${newTarget}`);
+                } else {
+                    // 箭头关系边
                     await this.updateEdgeTargetInMOC(mocFile, source, oldTarget, newTarget, label);
                     await this.refreshBranchMermaid();
                     new Notice(`已修改边终点: ${oldTarget} → ${newTarget}`);
@@ -5612,9 +5645,28 @@ export class ZKIndexView extends ItemView {
     }
 
     /**
-     * 在刷新前保存所有节点的当前位置（仅在位置发生变化时）
+     * 冲刷待保存的防抖位置并保存当前画面所有节点位置。
+     * 在切换 MOC 或刷新前调用，防止:
+     * 1) 待保存位置被写入错误的 MOC 文件
+     * 2) 当前画面位置丢失
      */
-    private async saveAllNodePositionsBeforeRefresh(): Promise<void> {
+    private async flushAndSaveCurrentPositions(): Promise<void> {
+        // 取消待执行的防抖定时器，丢弃 pending 数据（下面会整体保存）
+        if (this.nodePositionSaveTimeout) {
+            clearTimeout(this.nodePositionSaveTimeout);
+            this.nodePositionSaveTimeout = null;
+        }
+        this.pendingPositionChanges.clear();
+
+        // 用 lastRenderedMOCPath 保存位置（这是当前 cy 实例真正对应的 MOC 文件）
+        await this.saveAllNodePositionsBeforeRefresh(this.lastRenderedMOCPath || undefined);
+    }
+
+    /**
+     * 在刷新前保存所有节点的当前位置（仅在位置发生变化时）
+     * @param targetMOCPath 指定保存到哪个 MOC 文件，默认取当前设置
+     */
+    private async saveAllNodePositionsBeforeRefresh(targetMOCPath?: string): Promise<void> {
         if (!this.branchRenderer) {
             return;
         }
@@ -5624,7 +5676,7 @@ export class ZKIndexView extends ItemView {
             return;
         }
 
-        const mocFilePath = this.plugin.settings.mocCurrentFile;
+        const mocFilePath = targetMOCPath || this.plugin.settings.mocCurrentFile;
         const mocFile = this.app.vault.getFileByPath(mocFilePath);
         if (!mocFile) {
             return;

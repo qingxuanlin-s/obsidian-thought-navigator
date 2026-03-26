@@ -3832,16 +3832,18 @@ case 'dagre':
 
         // 注册到统一 overlay 调度器
         const endpointUpdater = () => {
-            this.updateEndpointHandlePosition(sourceHandle, sourceNode, edge, 'source');
+            this.updateEndpointHandlePosition(sourceHandle, edge, 'source');
             if (targetHandle) {
-                this.updateEndpointHandlePosition(targetHandle, targetNode, edge, 'target');
+                this.updateEndpointHandlePosition(targetHandle, edge, 'target');
             }
         };
         this.overlayUpdaters.add(endpointUpdater);
         this.edgeEndpointUpdaters.add(endpointUpdater);
 
-        // 首帧同步一次，避免初始渲染时手柄短暂错位
-        requestAnimationFrame(endpointUpdater);
+        // 延迟两帧确保边渲染完成后再定位
+        requestAnimationFrame(() => {
+            requestAnimationFrame(endpointUpdater);
+        });
     }
 
     /**
@@ -3855,23 +3857,7 @@ case 'dagre':
     ): HTMLElement {
         const handle = document.createElement('div');
         handle.className = `zk-edge-endpoint-handle zk-edge-endpoint-${type}`;
-        handle.style.cssText = `
-            position: absolute;
-            width: 10px;
-            height: 10px;
-            background-color: #f97316;
-            border: 2px solid #ffffff;
-            border-radius: 3px;
-            cursor: grab;
-            pointer-events: auto;
-            transform: translate(-50%, -50%);
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-            z-index: 1001;
-        `;
         container.appendChild(handle);
-
-        // 初始位置
-        this.updateEndpointHandlePosition(handle, node, edge, type);
 
         // 绑定拖动事件
         this.bindEndpointHandleDrag(handle, type, node, edge, container);
@@ -3880,128 +3866,30 @@ case 'dagre':
     }
 
     /**
-     * 更新端点手柄位置（计算边的实际端点）
+     * 更新端点手柄位置 — 直接使用 Cytoscape 的 renderedEndpoint API
      */
-    private updateEndpointHandlePosition(handle: HTMLElement, node: any, edge: any, type: 'source' | 'target'): void {
-        if (!this.cy) return;
-
-        // 优先使用 rendered 端点（像素坐标），确保手柄贴合当前连线
-        let endpoint: { x: number; y: number } | null = null;
-        if (type === 'source') {
-            if (typeof edge.renderedSourceEndpoint === 'function') {
-                endpoint = edge.renderedSourceEndpoint();
-            } else if (typeof edge.sourceEndpoint === 'function') {
-                const modelPos = edge.sourceEndpoint();
-                if (modelPos && typeof modelPos.x === 'number' && typeof modelPos.y === 'number') {
-                    const zoom = this.cy.zoom();
-                    const pan = this.cy.pan();
-                    endpoint = {
-                        x: modelPos.x * zoom + pan.x,
-                        y: modelPos.y * zoom + pan.y
-                    };
-                }
-            }
-        } else {
-            if (typeof edge.renderedTargetEndpoint === 'function') {
-                endpoint = edge.renderedTargetEndpoint();
-            } else if (typeof edge.targetEndpoint === 'function') {
-                const modelPos = edge.targetEndpoint();
-                if (modelPos && typeof modelPos.x === 'number' && typeof modelPos.y === 'number') {
-                    const zoom = this.cy.zoom();
-                    const pan = this.cy.pan();
-                    endpoint = {
-                        x: modelPos.x * zoom + pan.x,
-                        y: modelPos.y * zoom + pan.y
-                    };
-                }
-            }
+    private updateEndpointHandlePosition(handle: HTMLElement, edge: any, type: 'source' | 'target'): void {
+        if (!this.cy || !edge.inside()) {
+            handle.style.display = 'none';
+            return;
         }
 
-        if (endpoint && typeof endpoint.x === 'number' && typeof endpoint.y === 'number') {
+        let endpoint: { x: number; y: number } | null = null;
+        try {
+            endpoint = type === 'source'
+                ? edge.renderedSourceEndpoint()
+                : edge.renderedTargetEndpoint();
+        } catch {
+            // edge 可能已被移除
+        }
+
+        if (endpoint && isFinite(endpoint.x) && isFinite(endpoint.y)) {
             handle.style.display = 'block';
             handle.style.left = `${endpoint.x}px`;
             handle.style.top = `${endpoint.y}px`;
-            return;
-        }
-
-        // 获取节点中心和边界框
-        const nodeCenter = node.renderedPosition();
-        const boundingBox = node.renderedBoundingBox();
-
-        // 安全检查：确保节点存在且有有效的位置
-        if (!nodeCenter || !boundingBox) {
-            if (handle.parentNode) {
-                handle.style.display = 'none';
-            }
-            return;
-        }
-
-        const halfWidth = (boundingBox.x2 - boundingBox.x1) / 2;
-        const halfHeight = (boundingBox.y2 - boundingBox.y1) / 2;
-
-        // 获取边的另一端节点位置
-        const edgeData = edge.data();
-        let otherNode: any;
-
-        if (type === 'source') {
-            otherNode = this.cy.$id(edgeData.target);
         } else {
-            otherNode = this.cy.$id(edgeData.source);
+            handle.style.display = 'none';
         }
-
-        // 安全检查：确保另一端节点存在
-        if (!otherNode || !otherNode.length) {
-            if (handle.parentNode) {
-                handle.style.display = 'none';
-            }
-            return;
-        }
-
-        const otherPos = otherNode.renderedPosition();
-
-        // 安全检查：确保另一端节点的位置有效
-        if (!otherPos || typeof otherPos.x !== 'number' || typeof otherPos.y !== 'number') {
-            if (handle.parentNode) {
-                handle.style.display = 'none';
-            }
-            return;
-        }
-
-        // 计算从当前节点指向另一端的方向
-        const dx = otherPos.x - nodeCenter.x;
-        const dy = otherPos.y - nodeCenter.y;
-
-        // 归一化方向
-        const length = Math.sqrt(dx * dx + dy * dy);
-        const dirX = length > 0 ? dx / length : 0;
-        const dirY = length > 0 ? dy / length : 0;
-
-        // 计算交点（线段与矩形边框的交点）
-        let x = nodeCenter.x;
-        let y = nodeCenter.y;
-
-        // 计算到各边的距离
-        const distToRight = halfWidth / Math.abs(dirX || 1);
-        const distToLeft = halfWidth / Math.abs(dirX || 1);
-        const distToBottom = halfHeight / Math.abs(dirY || 1);
-        const distToTop = halfHeight / Math.abs(dirY || 1);
-
-        // 找出最小的正距离
-        let minDist = Infinity;
-
-        if (dirX > 0) distToRight < minDist && (minDist = distToRight);
-        if (dirX < 0) distToLeft < minDist && (minDist = distToLeft);
-        if (dirY > 0) distToBottom < minDist && (minDist = distToBottom);
-        if (dirY < 0) distToTop < minDist && (minDist = distToTop);
-
-        // 计算交点
-        if (minDist !== Infinity) {
-            x = nodeCenter.x + dirX * minDist;
-            y = nodeCenter.y + dirY * minDist;
-        }
-
-        handle.style.left = `${x}px`;
-        handle.style.top = `${y}px`;
     }
 
     /**
@@ -4055,21 +3943,19 @@ case 'dagre':
             this.container!.appendChild(svgOverlay);
 
             dragLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            dragLine.setAttribute('stroke', '#3b82f6');  // 改为蓝色
+            dragLine.setAttribute('stroke', 'var(--interactive-accent, #3b82f6)');
             dragLine.setAttribute('stroke-width', '2');
-            dragLine.setAttribute('stroke-dasharray', '5,5');
+            dragLine.setAttribute('stroke-dasharray', '6,4');
             svgOverlay.appendChild(dragLine);
 
-            // 获取父级起始位置
+            // 获取另一端节点位置作为拖动线的起始端
             const edgeData = edge.data();
             let startPos: { x: number; y: number };
 
             if (type === 'source') {
-                // 拖动起点时，从终点位置开始
                 const targetNode = this.cy!.$id(edgeData.target);
                 startPos = targetNode.renderedPosition();
             } else {
-                // 拖动终点时，从起点位置开始
                 const sourceNode = this.cy!.$id(edgeData.source);
                 startPos = sourceNode.renderedPosition();
             }
@@ -4113,10 +3999,10 @@ case 'dagre':
                 const targetNode = this.getNodeAtPosition(mousePos);
 
                 if (targetNode && targetNode !== sourceOrTargetNode) {
-                    dragLine.setAttribute('stroke', '#10b981');
+                    dragLine!.setAttribute('stroke', '#10b981');
                     targetNode.addClass('connection-target-hover');
                 } else {
-                    dragLine.setAttribute('stroke', '#3b82f6');
+                    dragLine!.setAttribute('stroke', 'var(--interactive-accent, #3b82f6)');
                     this.cy!.nodes('.connection-target-hover').removeClass('connection-target-hover');
                 }
             });
@@ -4147,14 +4033,12 @@ case 'dagre':
             // 如果连接到有效节点
             if (newTargetNode && newTargetNode !== sourceOrTargetNode) {
                 const edgeData = edge.data();
-                const sourceNode = this.cy.$id(edgeData.source);
-                const originalTargetNode = this.cy.$id(edgeData.target);
 
                 if (type === 'source') {
-                    // 修改起点
                     this.container?.dispatchEvent(new CustomEvent('edge-source-changed', {
                         detail: {
                             edgeId: edgeData.id,
+                            edgeType: edgeData.type,
                             oldSource: edgeData.originalSource || edgeData.source,
                             newSource: newTargetNode.data().originalNode.IDStr,
                             target: edgeData.originalTarget || edgeData.target,
@@ -4162,8 +4046,6 @@ case 'dagre':
                         }
                     }));
                 } else if (type === 'target') {
-                    // 修改终点（包含 ID 继承）
-
                     // 检查新目标是否有子节点（约束）
                     const newTargetData = newTargetNode.data();
                     const newTargetNodeSons = newTargetData.originalNode.nodeSons;
@@ -4173,14 +4055,14 @@ case 'dagre':
                         return;
                     }
 
-                    const oldTargetData = originalTargetNode.data();
-                    const oldTargetID = oldTargetData.originalNode.IDStr;
-                    const newTargetData2 = newTargetNode.data();
-                    const newTargetID = newTargetData2.originalNode.IDStr;
+                    const originalTargetNode = this.cy.$id(edgeData.target);
+                    const oldTargetID = originalTargetNode.data().originalNode.IDStr;
+                    const newTargetID = newTargetData.originalNode.IDStr;
 
                     this.container?.dispatchEvent(new CustomEvent('edge-target-changed', {
                         detail: {
                             edgeId: edgeData.id,
+                            edgeType: edgeData.type,
                             source: edgeData.originalSource || edgeData.source,
                             oldTarget: oldTargetID,
                             newTarget: newTargetID,
