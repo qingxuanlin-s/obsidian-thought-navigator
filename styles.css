@@ -1878,10 +1878,10 @@ align-items: center;
 /* ==================== 边端点手柄 ==================== */
 .zk-edge-endpoint-handle {
   position: absolute;
-  width: 10px;
-  height: 10px;
+  width: 16px;
+  height: 16px;
   background-color: rgba(148, 163, 184, 0.9);
-  border: 2px solid rgba(255, 255, 255, 0.85);
+  border: 2.5px solid rgba(255, 255, 255, 0.9);
   border-radius: 50%;
   cursor: grab;
   pointer-events: auto;

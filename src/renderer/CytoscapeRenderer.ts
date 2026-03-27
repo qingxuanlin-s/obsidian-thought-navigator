@@ -89,6 +89,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private batchSelectedNodeIds: string[] = []; // 保存批量选中的节点ID
     private batchSelectedNodes: any[] = []; // 保存批量选中的完整节点数据（包含 isCrossDomain 等信息）
     private isMetaPressed = false; // 标记 Command 键是否被按下（框选模式）
+    private isEdgeSelected = false; // 标记当前是否有选中的边（边编辑模式）
     private embedPreviewCleanup: (() => void) | null = null;
     private imagePreviewCleanup: (() => void) | null = null;
     private collapseHandleCleanup: (() => void) | null = null;
@@ -3341,6 +3342,7 @@ case 'dagre':
 
             // Cytoscape mouseover/mouseout（对普通节点和嵌入预览节点有效）
             node.on('mouseover', () => {
+                if (this.isEdgeSelected) return;
                 handle.style.opacity = '1';
             });
             node.on('mouseout', () => {
@@ -3572,16 +3574,31 @@ case 'dagre':
         // 监听边选中事件
         this.cy.on('select', 'edge', (evt: any) => {
             const edge = evt.target;
+            this.isEdgeSelected = true;
+            // 隐藏所有连线手柄（小蓝点），避免误触
+            this.container?.querySelectorAll('.zk-connection-handle').forEach((h: Element) => {
+                (h as HTMLElement).style.opacity = '0';
+                (h as HTMLElement).style.pointerEvents = 'none';
+            });
             this.showEdgeControlPoint(edge, controlPointContainer);
         });
 
         // 监听边取消选中事件
         this.cy.on('unselect', 'edge', () => {
+            this.isEdgeSelected = false;
+            // 恢复连线手柄的事件响应
+            this.container?.querySelectorAll('.zk-connection-handle').forEach((h: Element) => {
+                (h as HTMLElement).style.pointerEvents = 'auto';
+            });
             this.hideEdgeControlPoints(controlPointContainer);
         });
 
         // 监听边移除事件，确保控制点被清除
         this.cy.on('remove', 'edge', () => {
+            this.isEdgeSelected = false;
+            this.container?.querySelectorAll('.zk-connection-handle').forEach((h: Element) => {
+                (h as HTMLElement).style.pointerEvents = 'auto';
+            });
             this.hideEdgeControlPoints(controlPointContainer);
         });
     }
@@ -3623,36 +3640,25 @@ case 'dagre':
         `;
         container.appendChild(controlPoint);
 
-        // 计算控制点位置的函数
+        // 计算控制点位置的函数 — 直接用 Cytoscape 的渲染中点，确保手柄在曲线上
         const updateControlPointPosition = () => {
-            if (!this.cy) return;
-            
-            const sourcePos = sourceNode.renderedPosition();
-            const targetPos = targetNode.renderedPosition();
+            if (!this.cy || !edge.inside()) {
+                controlPoint.style.display = 'none';
+                return;
+            }
 
-            // 计算边的中点
-            const currentWeight = edge.data('controlPointWeight') !== undefined ? edge.data('controlPointWeight') : 0.5;
-            const midX = sourcePos.x + (targetPos.x - sourcePos.x) * currentWeight;
-            const midY = sourcePos.y + (targetPos.y - sourcePos.y) * currentWeight;
+            let mid: { x: number; y: number } | null = null;
+            try {
+                mid = edge.renderedMidpoint();
+            } catch { /* edge may have been removed */ }
 
-            // 计算垂直方向
-            const dx = targetPos.x - sourcePos.x;
-            const dy = targetPos.y - sourcePos.y;
-            const len = Math.sqrt(dx * dx + dy * dy);
-            const perpX = -dy / len;
-            const perpY = dx / len;
-
-            // 二次贝塞尔控制点位置（参数意义仍保持不变）
-            const currentDistance = edge.data('controlPointDistance') !== undefined ? edge.data('controlPointDistance') : 0;
-            const cpX = midX + perpX * currentDistance;
-            const cpY = midY + perpY * currentDistance;
-
-            // 手柄显示在曲线中点（t=0.5），避免“漂离连线”的视觉问题
-            const curveMidX = sourcePos.x * 0.25 + cpX * 0.5 + targetPos.x * 0.25;
-            const curveMidY = sourcePos.y * 0.25 + cpY * 0.5 + targetPos.y * 0.25;
-
-            controlPoint.style.left = `${curveMidX}px`;
-            controlPoint.style.top = `${curveMidY}px`;
+            if (mid && isFinite(mid.x) && isFinite(mid.y)) {
+                controlPoint.style.display = 'block';
+                controlPoint.style.left = `${mid.x}px`;
+                controlPoint.style.top = `${mid.y}px`;
+            } else {
+                controlPoint.style.display = 'none';
+            }
         };
 
         // 初始位置
@@ -3771,6 +3777,12 @@ case 'dagre':
      */
     private addEdgeEndpointHandles(): void {
         if (!this.cy || !this.container) return;
+
+        // 移除旧的端点手柄容器
+        const oldContainer = this.container.querySelector('.zk-edge-endpoint-handles');
+        if (oldContainer) {
+            oldContainer.remove();
+        }
 
         // 创建手柄容器
         const handleContainer = document.createElement('div');
