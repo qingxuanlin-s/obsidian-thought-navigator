@@ -663,6 +663,11 @@ export class MOCHandler {
             }
 
             // 6. 更新 reverseRelations 中的节点 ID
+            // 同时删掉旧父节点 -> 移动节点 的父子关系边（移动后该边已失效）
+            const oldParentID = freeNodeID.includes('.')
+                ? freeNodeID.split('.').slice(0, -1).join('.')
+                : null;
+
             const newReverseRelations = new Map();
             for (const [, relation] of mocData.reverseRelations) {
                 let newSourceID = relation.sourceID;
@@ -675,6 +680,11 @@ export class MOCHandler {
                     if (newTargetID === mapping.old) {
                         newTargetID = mapping.new;
                     }
+                }
+
+                // 跳过旧父节点 -> 新子节点 ID 的失效关系（它是移动前的父子树边，现已无意义）
+                if (oldParentID && newSourceID === oldParentID && newTargetID === newChildID) {
+                    continue;
                 }
 
                 const newKey = `${newSourceID}->${newTargetID}`;
