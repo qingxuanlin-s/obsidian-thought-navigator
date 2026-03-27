@@ -41,10 +41,14 @@ export class NoteSearchModal extends SuggestModal<NoteSearchItem> {
         const nameEl = content.createDiv("zk-note-search-name");
         nameEl.setText(item.noteBasename);
 
+        // 按 mocFilePath 去重（同一 MOC 文件中的多个节点只算一个 MOC）
+        const uniqueLocations = item.locations.filter((loc, idx, arr) =>
+            arr.findIndex(l => l.mocFilePath === loc.mocFilePath) === idx
+        );
+
         // 显示 MOC 列表摘要
         const mocsEl = content.createDiv("zk-note-search-mocs");
-        const mocNames = item.locations.map(loc => loc.mocFileName);
-        // 最多显示 3 个 MOC 名
+        const mocNames = uniqueLocations.map(loc => loc.mocFileName);
         const display = mocNames.length > 3
             ? mocNames.slice(0, 3).join(", ") + ` +${mocNames.length - 3}`
             : mocNames.join(", ");
@@ -52,16 +56,21 @@ export class NoteSearchModal extends SuggestModal<NoteSearchItem> {
 
         // 右侧 MOC 数量徽章
         const badge = el.createDiv("zk-note-search-badge");
-        badge.setText(`${item.locations.length} MOC${item.locations.length > 1 ? 's' : ''}`);
+        badge.setText(`${uniqueLocations.length} MOC${uniqueLocations.length > 1 ? 's' : ''}`);
     }
 
     onChooseSuggestion(item: NoteSearchItem, evt: MouseEvent | KeyboardEvent) {
-        if (item.locations.length === 1) {
+        // 按 mocFilePath 去重后再决定跳转方式
+        const uniqueLocations = item.locations.filter((loc, idx, arr) =>
+            arr.findIndex(l => l.mocFilePath === loc.mocFilePath) === idx
+        );
+
+        if (uniqueLocations.length === 1) {
             // 只有一个 MOC，直接跳转
-            this.onChoose(item.notePath, item.locations[0]);
+            this.onChoose(item.notePath, uniqueLocations[0]);
         } else {
             // 多个 MOC，弹出二级选择
-            new MOCPickerModal(this.app, item.noteBasename, item.locations, (location) => {
+            new MOCPickerModal(this.app, item.noteBasename, uniqueLocations, (location) => {
                 this.onChoose(item.notePath, location);
             }).open();
         }
