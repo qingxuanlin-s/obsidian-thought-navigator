@@ -106,6 +106,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private edgeControlPointUpdaters: Set<() => void> = new Set();
     private edgeEndpointUpdaters: Set<() => void> = new Set();
 
+    // 节点剪贴板（Cmd+C/V 复制粘贴）
+    private clipboardNodes: Array<{ originalNode: any; position: { x: number; y: number } }> = [];
+
     // SimpleMind 风格布局常量
     private readonly VERTICAL_GAP = 80;       // 垂直间距
     private readonly HORIZONTAL_GAP = 200;    // 水平间距
@@ -6499,6 +6502,44 @@ case 'dagre':
                 event.preventDefault();
                 event.stopPropagation();
                 this.showSearchBar();
+                return;
+            }
+
+            // Cmd+C：复制选中节点
+            if (event.key === 'c' && (event.metaKey || event.ctrlKey) && !event.repeat) {
+                if (!this.cy) return;
+                const selected = this.cy.$(':selected').filter((n: any) =>
+                    n.isNode() && !n.data('isGroup') && !n.data('isPlaceholder') && !n.data('isCrossDomain')
+                );
+                if (selected.length === 0) return;
+                event.preventDefault();
+                event.stopPropagation();
+                this.clipboardNodes = selected.map((node: any) => ({
+                    originalNode: node.data('originalNode'),
+                    position: { ...node.position() }
+                })).filter((item: any) => item.originalNode);
+                if (this.clipboardNodes.length > 0) {
+                    this.container?.dispatchEvent(new CustomEvent('node-copy', {
+                        detail: { count: this.clipboardNodes.length }
+                    }));
+                }
+                return;
+            }
+
+            // Cmd+V：粘贴节点
+            if (event.key === 'v' && (event.metaKey || event.ctrlKey) && !event.repeat) {
+                if (!this.cy || this.clipboardNodes.length === 0) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const pan = this.cy.pan();
+                const zoom = this.cy.zoom();
+                const pasteCenter = {
+                    x: (this.cy.width() / 2 - pan.x) / zoom,
+                    y: (this.cy.height() / 2 - pan.y) / zoom
+                };
+                this.container?.dispatchEvent(new CustomEvent('node-paste', {
+                    detail: { nodes: this.clipboardNodes, pasteCenter }
+                }));
                 return;
             }
 

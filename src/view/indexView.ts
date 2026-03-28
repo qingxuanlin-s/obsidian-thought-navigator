@@ -1729,6 +1729,74 @@ export class ZKIndexView extends ItemView {
             }
         });
 
+        // 监听节点复制事件（Cmd+C）
+        this.addTrackedListener(branchGraphDiv, 'node-copy', (event: any) => {
+            const { count } = event.detail;
+            new Notice(`已复制 ${count} 个节点`);
+        });
+
+        // 监听节点粘贴事件（Cmd+V）
+        this.addTrackedListener(branchGraphDiv, 'node-paste', async (event: any) => {
+            if (this.isMobileReadOnly()) return;
+            const { nodes, pasteCenter } = event.detail as {
+                nodes: Array<{ originalNode: any; position: { x: number; y: number } }>;
+                pasteCenter: { x: number; y: number };
+            };
+            if (!nodes || nodes.length === 0) return;
+
+            const mocFilePath = this.plugin.settings.mocCurrentFile;
+            if (!mocFilePath) return;
+            const mocFile = this.app.vault.getFileByPath(mocFilePath);
+            if (!mocFile) return;
+
+            // 计算原始节点群的中心，粘贴时保持相对位置
+            const origCenterX = nodes.reduce((s, n) => s + n.position.x, 0) / nodes.length;
+            const origCenterY = nodes.reduce((s, n) => s + n.position.y, 0) / nodes.length;
+            const PASTE_OFFSET = 60; // 避免完全重叠
+
+            await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
+                // 在 mocData 内部计算可用 ID，避免批量粘贴时 ID 冲突
+                const collectIds = (nodes: MOCTreeNode[]): string[] =>
+                    nodes.flatMap(n => [n.nodeID, ...collectIds(n.children || [])]);
+                const existingIds = new Set(collectIds(mocData.nodes));
+                const maxFree = Math.max(0, ...Array.from(existingIds)
+                    .map(id => { const m = id?.match(/^free\.(\d+)$/); return m ? parseInt(m[1]) : 0; }));
+                let nextFree = maxFree + 1;
+
+                for (const { originalNode, position } of nodes) {
+                    if (!originalNode) continue;
+                    let newID = `free.${nextFree}`;
+                    while (existingIds.has(newID)) { nextFree++; newID = `free.${nextFree}`; }
+                    existingIds.add(newID);
+                    nextFree++;
+
+                    const newNode: MOCTreeNode = {
+                        wikiLink: originalNode.isTextOnly
+                            ? (originalNode.displayText || '')
+                            : (originalNode.wikiLink || originalNode.displayText || ''),
+                        nodeID: newID,
+                        displayText: originalNode.displayText || '',
+                        depth: 0,
+                        children: [],
+                        file: originalNode.isTextOnly ? null : (originalNode.file || null),
+                        relationText: '',
+                        isTextOnly: originalNode.isTextOnly || false,
+                        isEmbed: originalNode.isEmbed || false
+                    };
+                    mocData.nodes.push(newNode);
+
+                    if (!mocData.nodePositions) mocData.nodePositions = {};
+                    mocData.nodePositions[newID] = {
+                        x: pasteCenter.x + (position.x - origCenterX) + PASTE_OFFSET,
+                        y: pasteCenter.y + (position.y - origCenterY) + PASTE_OFFSET
+                    };
+                }
+            });
+
+            await this.refreshBranchMermaid();
+            new Notice(`已粘贴 ${nodes.length} 个节点`);
+        });
+
         // 监听节点删除键事件
         this.addTrackedListener(branchGraphDiv, 'node-delete-key', async (event: any) => {
             if (this.isMobileReadOnly()) {
