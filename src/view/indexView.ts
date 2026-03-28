@@ -1905,63 +1905,8 @@ export class ZKIndexView extends ItemView {
             // 阻止默认右键菜单
             mouseEvent.preventDefault();
             mouseEvent.stopPropagation();
-            
-            // 创建菜单
-            const menu = new Menu();
 
-            // 纯文字节点：修改内容选项
-            if (node.isTextOnly) {
-                menu.addItem((item) => {
-                    item.setTitle("📝 修改内容")
-                        .setIcon("pencil")
-                        .onClick(async () => {
-                            await this.editTextNodeContent(node);
-                        });
-                });
-
-                menu.addSeparator();
-            }
-
-            // 关联跨领域节点选项
-            menu.addItem((item) => {
-                item.setTitle("🌐 关联跨领域节点")
-                    .setIcon("network")
-                    .onClick(async () => {
-                        await this.linkCrossDomainNode(node);
-                    });
-            });
-
-            menu.addItem((item) => {
-                const hasRemark = !!this.getNodeRemark(node);
-                item.setTitle(hasRemark ? "🗒️ 编辑备注" : "🗒️ 新建备注")
-                    .setIcon("sticky-note")
-                    .onClick(async () => {
-                        await this.editNodeRemark(node);
-                    });
-            });
-
-            menu.addSeparator();
-
-            // 修改节点 ID 选项
-            menu.addItem((item) => {
-                item.setTitle("✏️ 修改节点 ID")
-                    .setIcon("pencil")
-                    .onClick(async () => {
-                        await this.renameNodeID(node);
-                    });
-            });
-
-            // 修改节点颜色选项
-            menu.addItem((item) => {
-                item.setTitle("🎨 修改节点颜色")
-                    .setIcon("palette")
-                    .onClick(async () => {
-                        await this.changeNodeColor(node);
-                    });
-            });
-
-            // 显示菜单
-            menu.showAtMouseEvent(mouseEvent);
+            this.showNodeContextMenu(mouseEvent, node);
         });
 
         // 监听背景双击事件（创建占位符节点）
@@ -2731,6 +2676,69 @@ export class ZKIndexView extends ItemView {
         }));
         
         return `free.${maxNum + 1}`;
+    }
+
+    /**
+     * 显示节点右键菜单
+     */
+    showNodeContextMenu(mouseEvent: MouseEvent, node: ZKNode) {
+        const existing = document.querySelector('.zk-node-context-menu');
+        if (existing) existing.remove();
+
+        const menu = document.body.createDiv('zk-add-node-menu zk-node-context-menu');
+        menu.style.position = 'fixed';
+        menu.style.zIndex = '10000';
+
+        const items: { icon: string; label: string; action: () => Promise<void> }[] = [
+            { icon: 'share-2',    label: '关联跨领域节点', action: () => this.linkCrossDomainNode(node) },
+            null as any, // separator
+            { icon: 'fingerprint', label: '修改节点 ID',    action: () => this.renameNodeID(node) },
+            { icon: 'palette',    label: '修改节点颜色',    action: () => this.changeNodeColor(node) },
+        ];
+
+        for (const item of items) {
+            if (!item) {
+                menu.createDiv('zk-menu-separator');
+                continue;
+            }
+            const opt = menu.createDiv('zk-menu-option');
+            const iconEl = opt.createSpan();
+            setIcon(iconEl, item.icon);
+            opt.createSpan({ text: item.label });
+            opt.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                menu.remove();
+                document.removeEventListener('click', closeMenu);
+                await item.action();
+            });
+        }
+
+        // 定位：先在屏幕外渲染以获取尺寸
+        menu.style.visibility = 'hidden';
+        menu.style.left = '0';
+        menu.style.top = '0';
+
+        requestAnimationFrame(() => {
+            const mw = menu.offsetWidth;
+            const mh = menu.offsetHeight;
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            let x = mouseEvent.clientX;
+            let y = mouseEvent.clientY;
+            if (x + mw > vw) x = vw - mw - 4;
+            if (y + mh > vh) y = vh - mh - 4;
+            menu.style.left = `${x}px`;
+            menu.style.top = `${y}px`;
+            menu.style.visibility = 'visible';
+        });
+
+        const closeMenu = (e: MouseEvent) => {
+            if (!menu.contains(e.target as Node)) {
+                menu.remove();
+                document.removeEventListener('click', closeMenu);
+            }
+        };
+        setTimeout(() => document.addEventListener('click', closeMenu), 0);
     }
 
     /**
