@@ -2171,11 +2171,15 @@ export class ZKIndexView extends ItemView {
                 if (!mocFile) return;
 
                 if (edgeType === 'parent') {
-                    // 树边：交换子节点位置（ID互换）
+                    // 树边：将 oldTarget 变为自由节点，newTarget 接替 oldTarget 成为父节点的子节点
                     await this.saveAllNodePositionsBeforeRefresh();
-                    await this.updateEdgeTargetInMOC(mocFile, source, oldTarget, newTarget, label);
+                    // 清缓存：确保 redirectParentEdgeTarget 读到刚写入的最新位置（mtime 可能未及时更新）
+                    MermaidParser.clearCacheForFile(mocFile.path);
+                    await this.mocHandler.redirectParentEdgeTarget(mocFile, oldTarget, newTarget);
+                    // 再次清缓存：确保 refreshBranchMermaid 读到 redirectParentEdgeTarget 写入的结果
+                    MermaidParser.clearCacheForFile(mocFile.path);
                     await this.refreshBranchMermaid();
-                    new Notice(`已修改边终点: ${oldTarget} ↔ ${newTarget}`);
+                    new Notice(`已修改边终点: ${oldTarget} → ${newTarget}`);
                 } else {
                     // 箭头关系边
                     await this.updateEdgeTargetInMOC(mocFile, source, oldTarget, newTarget, label);
@@ -5621,27 +5625,20 @@ export class ZKIndexView extends ItemView {
      */
     private async updateEdgeTargetInMOC(
         mocFile: TFile,
-        _source: string,
+        source: string,
         oldTarget: string,
         newTarget: string,
-        _label: string
+        label: string
     ): Promise<void> {
-        try {
-            // 交换节点ID：使用 updateNodeIDInMOC 来完成ID互换
-            // 第一步：将 oldTarget 临时改为 tempID
-            const tempID = `temp_${Date.now()}`;
-            await this.mocHandler.updateNodeIDInMOC(mocFile, oldTarget, tempID);
-
-            // 第二步：将 newTarget 改为 oldTarget（继承ID）
-            await this.mocHandler.updateNodeIDInMOC(mocFile, newTarget, oldTarget);
-
-            // 第三步：将 tempID 改为 newTarget
-            await this.mocHandler.updateNodeIDInMOC(mocFile, tempID, newTarget);
-
-        } catch (error) {
-            console.error('Failed to update edge target:', error);
-            throw error;
-        }
+        // 箭头关系边：直接修改 reverseRelations 中对应条目的 target
+        await this.mocHandler.modifyMOCData(mocFile, (mocData: any) => {
+            const oldKey = `${source}->${oldTarget}`;
+            const rel = mocData.reverseRelations.get(oldKey);
+            if (!rel) throw new Error(`未找到边: ${oldKey}`);
+            mocData.reverseRelations.delete(oldKey);
+            const newKey = `${source}->${newTarget}`;
+            mocData.reverseRelations.set(newKey, { sourceID: source, targetID: newTarget, relationText: label || rel.relationText });
+        });
     }
 
     /**
