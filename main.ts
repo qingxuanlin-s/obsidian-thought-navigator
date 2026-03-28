@@ -11,7 +11,6 @@ import { MOCReverseIndex } from "src/utils/mocReverseIndex";
 import { ZKGraphView, ZK_GRAPH_TYPE } from "src/view/graphView";
 import { ZKIndexView, ZKNode, ZK_INDEX_TYPE, ZK_NAVIGATION } from "src/view/indexView";
 import { ZK_RECENT_TYPE, ZKRecentView } from "src/view/recentView";
-import { ZK_TABLE_TYPE, ZKTableView } from "src/view/tableView";
 
 interface Point {
     x: number;
@@ -80,7 +79,6 @@ interface ZKNavigationSettings {
     BranchToolbra: boolean;
     RandomIndex: boolean;
     RandomMainNote: boolean;
-    TableView: boolean;
     IndexButton: boolean;
     MainNoteButton: boolean;
     MainNoteButtonText: string;
@@ -162,7 +160,6 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     BranchToolbra: true,
     RandomIndex: true,
     RandomMainNote: true,
-    TableView: true,
     IndexButton: false,
     MainNoteButton: true,
     MainNoteButtonText: t("Main notes"),
@@ -214,7 +211,6 @@ export default class ZKNavigationPlugin extends Plugin {
 
     settings: ZKNavigationSettings;
     MainNotes: ZKNode[] = [];
-    tableArr: ZKNode[] = [];
     retrivalforLocaLgraph: LocalRetrival = {
         type: '2',
         ID: '',
@@ -453,8 +449,6 @@ export default class ZKNavigationPlugin extends Plugin {
         this.registerView(ZK_GRAPH_TYPE, (leaf) => new ZKGraphView(leaf, this));
 
         this.registerView(ZK_RECENT_TYPE, (leaf) => new ZKRecentView(leaf, this));
-
-        this.registerView(ZK_TABLE_TYPE, (leaf) => new ZKTableView(leaf, this, this.tableArr));
               
         this.addRibbonIcon("ghost", t("open zk-index-graph"), async () => {
             
@@ -673,21 +667,6 @@ export default class ZKNavigationPlugin extends Plugin {
         this.app.workspace.getLeavesOfType(ZK_GRAPH_TYPE)[0]
        );
        this.app.workspace.trigger("zk-navigation:refresh-local-graph");
-    }
-
-    async openTableView() {
-
-        if(this.app.workspace.getLeavesOfType(ZK_TABLE_TYPE).length === 0){
-            await this.app.workspace.getLeaf('split','horizontal')?.setViewState({
-                type:ZK_TABLE_TYPE,
-                active: true,
-            })
-        }
-        this.app.workspace.revealLeaf(
-            this.app.workspace.getLeavesOfType(ZK_TABLE_TYPE)[0]
-        );
-        this.app.workspace.trigger("zk-navigation:refresh-table-view");
-
     }
 
     async openRecentView() {
