@@ -32,6 +32,7 @@ export interface GraphMetadata {
     nodePositions?: Record<string, { x: number; y: number }>;  // 节点位置信息
     embedNodeSizes?: Record<string, { width: number; height: number }>; // 预览节点尺寸（模型坐标系）
     nodeRemarks?: Record<string, string>; // 节点备注
+    nodeAnchors?: Record<string, boolean>; // 锚点节点
 }
 
 /**

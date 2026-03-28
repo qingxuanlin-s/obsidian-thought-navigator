@@ -37,6 +37,7 @@ function deepCopyMOCResult(original: MOCParseResult): MOCParseResult {
         crossDomainLinks: original.crossDomainLinks ? JSON.parse(JSON.stringify(original.crossDomainLinks)) : {},
         embedNodeSizes: { ...(original as any).embedNodeSizes || {} },
         nodeRemarks: { ...(original as any).nodeRemarks || {} },
+        nodeAnchors: { ...(original as any).nodeAnchors || {} },
         nodeLayoutStyle: original.nodeLayoutStyle,
         metadata: { ...original.metadata }
     };
@@ -346,6 +347,19 @@ export class MOCHandler {
      */
     async updateTextNodeContentInMOC(mocFile: TFile, nodeID: string, newContent: string): Promise<void> {
         await this.updateNodeContentInMOC(mocFile, nodeID, newContent);
+    }
+
+    async toggleNodeAnchorInMOC(mocFile: TFile, nodeID: string, anchor: boolean): Promise<void> {
+        await this.modifyMOCData(mocFile, (mocData) => {
+            if (!(mocData as any).nodeAnchors) {
+                (mocData as any).nodeAnchors = {};
+            }
+            if (anchor) {
+                (mocData as any).nodeAnchors[nodeID] = true;
+            } else {
+                delete (mocData as any).nodeAnchors[nodeID];
+            }
+        });
     }
 
     async updateNodeRemarkInMOC(mocFile: TFile, nodeID: string, remark: string): Promise<void> {

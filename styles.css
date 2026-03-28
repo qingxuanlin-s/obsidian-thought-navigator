@@ -909,6 +909,68 @@ align-items: center;
     margin: 4px 0;
 }
 
+/* 节点右键菜单 —— 对齐工具栏 chip 风格 */
+.zk-node-ctx-menu {
+    background: #242424;
+    border: 1px solid #3a3a3a;
+    border-radius: 12px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 176px;
+}
+
+.zk-node-ctx-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    border: 1.5px solid #4a4a6a;
+    background: transparent;
+    color: #c8c8e0;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.zk-node-ctx-item svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
+
+.zk-node-ctx-item:hover {
+    border-color: #7b7baa;
+    background: rgba(120, 120, 180, 0.1);
+    color: #e8ddf5;
+}
+
+.zk-node-ctx-item:active {
+    background: rgba(120, 120, 180, 0.2);
+}
+
+.zk-node-ctx-sep {
+    height: 1px;
+    background: #3a3a3a;
+    margin: 2px 4px;
+}
+
+.zk-node-ctx-row {
+    display: flex;
+    gap: 4px;
+}
+
+.zk-node-ctx-row .zk-node-ctx-item {
+    flex: 1;
+    justify-content: center;
+}
+
 /* MOC 选择器样式 */
 .zk-moc-selector-block {
     display: flex;
@@ -1202,6 +1264,31 @@ align-items: center;
 
 .zk-theme-light .zk-menu-separator {
   background: #d0d0d0;
+}
+
+.zk-theme-light .zk-node-ctx-menu {
+  background: #f0f0f0;
+  border-color: #d0d0d0;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+}
+
+.zk-theme-light .zk-node-ctx-item {
+  border-color: #b0b0c8;
+  color: #333355;
+}
+
+.zk-theme-light .zk-node-ctx-item:hover {
+  border-color: #6666aa;
+  background: rgba(100, 100, 180, 0.1);
+  color: #222244;
+}
+
+.zk-theme-light .zk-node-ctx-sep {
+  background: #d0d0d0;
+}
+
+.zk-theme-light .zk-node-ctx-row .zk-node-ctx-item {
+  border-color: #b0b0c8;
 }
 
 .zk-theme-light .zk-moc-selector-block {

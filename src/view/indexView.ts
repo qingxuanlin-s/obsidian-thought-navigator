@@ -89,6 +89,7 @@ export class ZKIndexView extends ItemView {
     mocTreeStructure: MOCTreeNode[] = [];       // MOC 原始树结构
     mocReverseRelations: Map<string, ReverseRelation> = new Map(); // MOC 反向关系
     private nodeRemarks: Record<string, string> = {};
+    private nodeAnchors: Record<string, boolean> = {};
     private currentNodeLayoutStyle: 'free' | 'auto' = 'free'; // 当前 MOC 文件的节点布局风格（从 ext 读取，新建时锁定）
 
     // 防抖相关属性
@@ -1149,6 +1150,7 @@ export class ZKIndexView extends ItemView {
         const nodePositions = mocParseResult.nodePositions || {};
         const embedNodeSizes = (mocParseResult as any).embedNodeSizes || {};
         this.nodeRemarks = (mocParseResult as any).nodeRemarks || {};
+        this.nodeAnchors = (mocParseResult as any).nodeAnchors || {};
         const graphData = GraphDataBuilder.fromMOCTree(
             this.mocNodes,
             this.mocReverseRelations,
@@ -1160,7 +1162,8 @@ export class ZKIndexView extends ItemView {
             crossDomainLinks,
             nodePositions,
             embedNodeSizes,
-            this.nodeRemarks
+            this.nodeRemarks,
+            this.nodeAnchors
         );
 
         // 配置渲染选项
@@ -2685,33 +2688,37 @@ export class ZKIndexView extends ItemView {
         const existing = document.querySelector('.zk-node-context-menu');
         if (existing) existing.remove();
 
-        const menu = document.body.createDiv('zk-add-node-menu zk-node-context-menu');
+        const menu = document.body.createDiv('zk-node-ctx-menu zk-node-context-menu');
         menu.style.position = 'fixed';
         menu.style.zIndex = '10000';
 
-        const items: { icon: string; label: string; action: () => Promise<void> }[] = [
-            { icon: 'share-2',    label: '关联跨领域节点', action: () => this.linkCrossDomainNode(node) },
-            null as any, // separator
-            { icon: 'fingerprint', label: '修改节点 ID',    action: () => this.renameNodeID(node) },
-            { icon: 'palette',    label: '修改节点颜色',    action: () => this.changeNodeColor(node) },
-        ];
+        const isAnchor = !!(this.nodeAnchors[node.IDStr] || this.nodeAnchors[node.ID]);
 
-        for (const item of items) {
-            if (!item) {
-                menu.createDiv('zk-menu-separator');
-                continue;
-            }
-            const opt = menu.createDiv('zk-menu-option');
+        const addItem = (parent: HTMLElement, icon: string, label: string, action: () => Promise<void>) => {
+            const opt = parent.createDiv('zk-node-ctx-item');
             const iconEl = opt.createSpan();
-            setIcon(iconEl, item.icon);
-            opt.createSpan({ text: item.label });
+            setIcon(iconEl, icon);
+            opt.createSpan({ text: label });
             opt.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 menu.remove();
                 document.removeEventListener('click', closeMenu);
-                await item.action();
+                await action();
             });
-        }
+        };
+
+        // 置顶锚点（全宽）
+        addItem(menu, isAnchor ? 'star-off' : 'star', isAnchor ? '取消锚点' : '置顶锚点', () => this.toggleNodeAnchor(node));
+        // 关联跨领域节点（全宽）
+        addItem(menu, 'share-2', '关联跨领域节点', () => this.linkCrossDomainNode(node));
+
+        // 分隔线
+        menu.createDiv('zk-node-ctx-sep');
+
+        // 底部两列：修改节点 ID + 修改节点颜色
+        const row = menu.createDiv('zk-node-ctx-row');
+        addItem(row, 'fingerprint', '修改 ID', () => this.renameNodeID(node));
+        addItem(row, 'palette', '修改颜色', () => this.changeNodeColor(node));
 
         // 定位：先在屏幕外渲染以获取尺寸
         menu.style.visibility = 'hidden';
@@ -2998,6 +3005,22 @@ export class ZKIndexView extends ItemView {
                 mocData.crossDomainLinks[nodeId].push(crossDomainLink);
             }
         });
+    }
+
+    async toggleNodeAnchor(node: ZKNode) {
+        const isAnchor = !!(this.nodeAnchors[node.IDStr] || this.nodeAnchors[node.ID]);
+        await this.saveAllNodePositionsBeforeRefresh();
+        try {
+            const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+            if (mocFile) {
+                await this.mocHandler.toggleNodeAnchorInMOC(mocFile, node.IDStr, !isAnchor);
+                await this.refreshBranchMermaid();
+                new Notice(isAnchor ? `已取消节点 ${node.ID} 的锚点` : `已置顶锚点：节点 ${node.ID}`);
+            }
+        } catch (error) {
+            console.error('Failed to toggle anchor:', error);
+            new Notice(`操作失败: ${error.message}`);
+        }
     }
 
     async changeNodeColor(node: ZKNode) {

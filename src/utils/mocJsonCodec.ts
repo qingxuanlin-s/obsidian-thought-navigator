@@ -26,6 +26,7 @@ interface MOCJsonSchema {
     crossDomainLinks: Record<string, CrossDomainLink[]>;
     embedNodeSizes: Record<string, { width: number; height: number }>;
     nodeRemarks: Record<string, string>;
+    nodeAnchors: Record<string, boolean>;
     nodeLayoutStyle?: 'free' | 'auto';
 }
 
@@ -96,7 +97,7 @@ export function parseMOCJson(content: string, filePath: string, app: App): MOCPa
             version: 1, nodes: [], reverseRelations: [],
             nodePositions: {}, groups: [], edgeCurvatures: {},
             nodeColors: {}, nodeStyleColors: {}, crossDomainLinks: {},
-            embedNodeSizes: {}, nodeRemarks: {},
+            embedNodeSizes: {}, nodeRemarks: {}, nodeAnchors: {},
         };
     }
 
@@ -124,6 +125,7 @@ export function parseMOCJson(content: string, filePath: string, app: App): MOCPa
         crossDomainLinks: json.crossDomainLinks || {},
         embedNodeSizes: json.embedNodeSizes || {},
         nodeRemarks: json.nodeRemarks || {},
+        nodeAnchors: json.nodeAnchors || {},
         nodeLayoutStyle: json.nodeLayoutStyle,
         metadata: {
             totalNodes: total,
@@ -156,6 +158,7 @@ export function serializeMOCJson(data: MOCParseResult): string {
         crossDomainLinks: (data as any).crossDomainLinks || {},
         embedNodeSizes: (data as any).embedNodeSizes || {},
         nodeRemarks: (data as any).nodeRemarks || {},
+        nodeAnchors: (data as any).nodeAnchors || {},
     };
     if (data.nodeLayoutStyle) {
         json.nodeLayoutStyle = data.nodeLayoutStyle;
@@ -179,6 +182,7 @@ export function createEmptyMOCJson(nodeLayoutStyle: 'free' | 'auto' = 'free'): s
         crossDomainLinks: {},
         embedNodeSizes: {},
         nodeRemarks: {},
+        nodeAnchors: {},
         nodeLayoutStyle,
     };
     return JSON.stringify(json, null, 2);

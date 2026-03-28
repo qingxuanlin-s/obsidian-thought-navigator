@@ -281,6 +281,7 @@ export class MermaidParser {
         crossDomainLinks: Record<string, any[]>;  // 跨领域关联
         embedNodeSizes: Record<string, { width: number; height: number }>;
         nodeRemarks: Record<string, string>;
+        nodeAnchors: Record<string, boolean>;
         nodeLayoutStyle?: 'free' | 'auto';
     } {
         const defaultMetadata = {
@@ -292,6 +293,7 @@ export class MermaidParser {
             crossDomainLinks: {} as Record<string, any[]>,
             embedNodeSizes: {} as Record<string, { width: number; height: number }>,
             nodeRemarks: {} as Record<string, string>,
+            nodeAnchors: {} as Record<string, boolean>,
             nodeLayoutStyle: undefined as ('free' | 'auto' | undefined)
         };
         
@@ -318,6 +320,7 @@ export class MermaidParser {
                 crossDomainLinks: metadata.cross_domain_links || {},
                 embedNodeSizes: metadata.embed_node_sizes || {},
                 nodeRemarks: metadata.nodeRemarks || {},
+                nodeAnchors: metadata.nodeAnchors || {},
                 nodeLayoutStyle: metadata.node_layout_style || undefined
             };
         } catch (e) {
@@ -365,6 +368,7 @@ export class MermaidParser {
                     crossDomainLinks: cached.crossDomainLinks ? JSON.parse(JSON.stringify(cached.crossDomainLinks)) : {},
                     embedNodeSizes: { ...(cached as any).embedNodeSizes || {} },
                     nodeRemarks: { ...(cached as any).nodeRemarks || {} },
+                    nodeAnchors: { ...(cached as any).nodeAnchors || {} },
                     metadata: { ...cached.metadata }
                 };
             }
@@ -523,6 +527,7 @@ export class MermaidParser {
             crossDomainLinks: metadata.crossDomainLinks,
             embedNodeSizes: metadata.embedNodeSizes,
             nodeRemarks: metadata.nodeRemarks,
+            nodeAnchors: metadata.nodeAnchors,
             nodeLayoutStyle: metadata.nodeLayoutStyle,
             metadata: {
                 totalNodes: nodesMap.size,
@@ -662,6 +667,7 @@ export class MermaidParser {
             crossDomainLinks: {},
             embedNodeSizes: {},
             nodeRemarks: {},
+            nodeAnchors: {},
             metadata: {
                 totalNodes: 0,
                 maxDepth: 0,
