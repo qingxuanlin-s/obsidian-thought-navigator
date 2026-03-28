@@ -809,11 +809,14 @@ a --> a.2
 }
 
 /**
- * 获取指定文件夹内所有 MOC 文件（.md 和 .moc 均包含）
+ * 获取所有 MOC 文件：
+ * - .moc 文件全局识别，不限文件夹
+ * - .md 文件限定在指定文件夹内（兼容旧格式）
  */
 export function getMOCFilesInFolder(app: App, folderPath: string): TFile[] {
-    if (!folderPath) return [];
-    return app.vault.getFiles().filter(
-        f => f.path.startsWith(folderPath + '/') && (f.extension === 'md' || f.extension === 'moc')
-    );
+    return app.vault.getFiles().filter(f => {
+        if (f.extension === 'moc') return true;
+        if (f.extension === 'md' && folderPath) return f.path.startsWith(folderPath + '/');
+        return false;
+    });
 }
