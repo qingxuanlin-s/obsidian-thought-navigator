@@ -656,12 +656,16 @@ export class ZKIndexView extends ItemView {
             this.plugin.RefreshIndexViewFlag = true;
         }));
 
-        this.registerEvent(this.app.vault.on("create", async () => {
-            this.plugin.RefreshIndexViewFlag = true;
+        this.registerEvent(this.app.vault.on("create", async (file) => {
+            if (file instanceof TFile && (file.extension === 'md' || file.extension === 'moc')) {
+                this.plugin.RefreshIndexViewFlag = true;
+            }
         }));
 
-        this.registerEvent(this.app.vault.on("delete", async () => {
-            this.plugin.RefreshIndexViewFlag = true;
+        this.registerEvent(this.app.vault.on("delete", async (file) => {
+            if (file instanceof TFile && (file.extension === 'md' || file.extension === 'moc')) {
+                this.plugin.RefreshIndexViewFlag = true;
+            }
         }));
 
         // 智能延迟刷新：监听文件内容变化
@@ -1040,6 +1044,17 @@ export class ZKIndexView extends ItemView {
     async refreshBranchMermaidMOC(indexMermaidDiv: HTMLElement) {
         // 仅在 MOC 文件真正切换时才冲刷保存旧画面位置，避免同文件刷新覆盖刚写入的位置
         const incomingMOCPath = this.plugin.settings.mocCurrentFile;
+
+        // 同步更新 MOC 选择器标签
+        if (this.mocChipLabel && incomingMOCPath) {
+            const mocFile = this.app.vault.getFileByPath(incomingMOCPath);
+            if (mocFile) {
+                const maxLength = 12;
+                let label = mocFile.basename;
+                if (label.length > maxLength) label = label.substring(0, maxLength) + '...';
+                this.mocChipLabel.setText(label);
+            }
+        }
         if (this.lastRenderedMOCPath && this.lastRenderedMOCPath !== incomingMOCPath) {
             await this.flushAndSaveCurrentPositions();
         }
@@ -1583,11 +1598,19 @@ export class ZKIndexView extends ItemView {
 
         // 监听节点点击事件
         this.addTrackedListener(branchGraphDiv, 'node-click', (event: any) => {
-            const { node } = event.detail;
+            const { node, event: triggerEvent } = event.detail || {};
 
             // 检查节点是否有效
             if (!node || !node.file) {
                 console.warn('Invalid node clicked:', node);
+                return;
+            }
+
+            // 仅在显式打开手势下打开文件，避免编辑/刷新阶段误触导致自动跳转
+            const isMouseEvent = triggerEvent instanceof MouseEvent;
+            const shouldOpenByModifier = isMouseEvent && (triggerEvent.metaKey || triggerEvent.ctrlKey);
+            const shouldOpenByMiddleClick = isMouseEvent && triggerEvent.button === 1;
+            if (!shouldOpenByModifier && !shouldOpenByMiddleClick) {
                 return;
             }
 

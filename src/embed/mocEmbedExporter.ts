@@ -71,6 +71,7 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
             edgeStyle: plugin.settings.edgeStyle || 'bezier',
             nodeLayoutStyle: mocData.nodeLayoutStyle || 'free',
             readOnly: true,
+            exportMode: true,  // 跳过事件绑定/预览渲染，防止 MutationObserver 触发跳转
         };
 
         await renderer.render(hiddenDiv, graphData, options);
@@ -79,7 +80,9 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
         if (!cy) throw new Error('Cytoscape 实例不存在');
 
         // 导出 PNG（full:true 导出完整图，scale:2 高清）
-        const dataUri: string = (cy as any).png({ output: 'base64uri', bg: 'white', full: true, scale: 2 });
+        // 读取 Obsidian 主题背景色，确保 PNG 背景与界面一致
+        const canvasBg = getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || (plugin.settings.themeMode === 'light' ? '#ffffff' : '#0f172a');
+        const dataUri: string = (cy as any).png({ output: 'base64uri', bg: canvasBg, full: true, scale: 2 });
         const base64 = dataUri.split(',')[1];
         const binary = atob(base64);
         const bytes = new Uint8Array(binary.length);
@@ -118,6 +121,9 @@ function pngNeedsUpdate(mocFile: TFile, pngFile: TFile | null): boolean {
  * MarkdownRenderChild：处理 ![[xxx.moc]] 内嵌，展示为 PNG 图片
  */
 export class MOCEmbedRenderChild extends MarkdownRenderChild {
+    private currentImg: HTMLImageElement | null = null;
+    private regenerateTimer: ReturnType<typeof setTimeout> | null = null;
+
     constructor(
         containerEl: HTMLElement,
         private mocFile: TFile,
@@ -127,10 +133,15 @@ export class MOCEmbedRenderChild extends MarkdownRenderChild {
     }
 
     async onload() {
-        // 立即移除 src 属性，阻止 Obsidian 的 embed 处理器在我们之后覆盖内容
+        // 立即移除 src 属性，并从 Obsidian 默认 internal-embed 点击链路中摘出，
+        // 避免点击/刷新后被当作普通内嵌文件再次打开。
         this.containerEl.removeAttribute('src');
+        this.containerEl.removeAttribute('alt');
+        this.containerEl.removeAttribute('data-href');
+        this.containerEl.classList.remove('internal-embed');
         this.containerEl.empty();
         this.containerEl.addClass('zk-moc-embed');
+        this.preventDefaultOpenBehavior(this.containerEl);
 
         const app = this.plugin.app;
         const pngPath = getPNGPath(this.mocFile);
@@ -139,24 +150,69 @@ export class MOCEmbedRenderChild extends MarkdownRenderChild {
             let pngFile = app.vault.getFileByPath(pngPath);
 
             if (pngNeedsUpdate(this.mocFile, pngFile)) {
-                // 显示加载占位
                 const loading = this.containerEl.createDiv('zk-moc-embed-loading');
                 loading.setText('渲染思维树...');
-
                 pngFile = await exportMOCToPNG(this.mocFile, this.plugin);
                 loading.remove();
             }
 
             if (!pngFile) throw new Error('PNG 生成失败');
 
-            // 显示图片
             const img = this.containerEl.createEl('img');
             img.addClass('zk-moc-embed-img');
             img.src = app.vault.getResourcePath(pngFile);
             img.style.cssText = 'width:100%;height:auto;border-radius:6px;';
             img.alt = this.mocFile.basename;
+            this.preventDefaultOpenBehavior(img);
+            this.currentImg = img;
         } catch (e) {
             this.containerEl.createDiv('zk-moc-embed-error').setText(`思维树预览失败: ${e.message}`);
         }
+
+        // 监听 .moc 文件修改，5 秒后重新生成 PNG
+        this.registerEvent(
+            app.vault.on('modify', (file) => {
+                if (file.path === this.mocFile.path) {
+                    this.scheduleRegenerate();
+                }
+            })
+        );
+    }
+
+    onunload() {
+        if (this.regenerateTimer !== null) {
+            clearTimeout(this.regenerateTimer);
+            this.regenerateTimer = null;
+        }
+    }
+
+    private scheduleRegenerate() {
+        if (this.regenerateTimer !== null) clearTimeout(this.regenerateTimer);
+        this.regenerateTimer = setTimeout(async () => {
+            this.regenerateTimer = null;
+            try {
+                const pngFile = await exportMOCToPNG(this.mocFile, this.plugin);
+                if (this.currentImg) {
+                    // 加时间戳破坏浏览器缓存，强制刷新图片
+                    this.currentImg.src = this.plugin.app.vault.getResourcePath(pngFile) + '?t=' + Date.now();
+                }
+            } catch (e) {
+                console.error('[zk-moc-embed] 自动重新生成失败:', e);
+            }
+        }, 5000);
+    }
+
+    private preventDefaultOpenBehavior(el: HTMLElement): void {
+        const stop = (evt: Event) => {
+            evt.preventDefault();
+            evt.stopPropagation();
+        };
+
+        this.registerDomEvent(el, 'click', stop);
+        this.registerDomEvent(el, 'auxclick', stop);
+        this.registerDomEvent(el, 'dblclick', stop);
+        this.registerDomEvent(el, 'mousedown', stop);
+        this.registerDomEvent(el, 'mouseup', stop);
+        this.registerDomEvent(el, 'touchend', stop);
     }
 }
