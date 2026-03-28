@@ -413,15 +413,19 @@ export class CytoscapeRenderer implements IGraphRenderer {
         if (this.cy) {
             // 容器尺寸变化后显式通知 Cytoscape 重算 viewport/canvas 尺寸
             this.cy.resize();
+            // exportMode 下禁用 fit：cy.fit() 会通过 setTimeout 延迟触发 viewport 回调，
+            // 而 renderer.destroy() 在 finally 里立即销毁 cy，导致回调执行时 cy 已 null。
+            // cy.png({ full:true }) 自己会处理 fit，layout 不需要再 fit。
+            const noFit = options.exportMode ? { fit: false } : {};
             if (hasSavedPositions) {
                 // 如果有保存的位置，使用 preset 布局（保持原位置）
-                this.runLayoutSafely({ name: 'preset' });
+                this.runLayoutSafely({ name: 'preset', ...noFit });
                 this.resolveExactNodeOverlaps();
             } else {
                 // 如果没有保存位置，根据 layoutType 选择布局算法
                 // 默认使用 preset（索引视图等已有位置信息的情况）
                 // 局部关系视图的出入链图会传入 'cose' 等布局类型来自动分散节点
-                const layoutConfig = this.getLayoutConfig(options);
+                const layoutConfig = { ...this.getLayoutConfig(options), ...noFit };
                 this.runLayoutSafely(layoutConfig);
             }
         }

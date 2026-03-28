@@ -53,8 +53,9 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
     );
 
     // 创建隐藏容器（Cytoscape 需要真实 DOM）
+    // 缩小尺寸加快布局计算和 PNG 导出
     const hiddenDiv = document.createElement('div');
-    hiddenDiv.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1200px;height:800px;visibility:hidden;';
+    hiddenDiv.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:900px;height:600px;visibility:hidden;';
     document.body.appendChild(hiddenDiv);
 
     const renderer = new CytoscapeRenderer();
@@ -79,15 +80,10 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
         const cy = renderer.getCytoscapeInstance();
         if (!cy) throw new Error('Cytoscape 实例不存在');
 
-        // 导出 PNG（full:true 导出完整图，scale:2 高清）
-        // 读取 Obsidian 主题背景色，确保 PNG 背景与界面一致
+        // 导出 PNG：用 blob-promise 跳过 base64 编码/解码开销，scale:1 足够嵌入预览
         const canvasBg = getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || (plugin.settings.themeMode === 'light' ? '#ffffff' : '#0f172a');
-        const dataUri: string = (cy as any).png({ output: 'base64uri', bg: canvasBg, full: true, scale: 2 });
-        const base64 = dataUri.split(',')[1];
-        const binary = atob(base64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        pngBytes = bytes.buffer;
+        const blob: Blob = await (cy as any).png({ output: 'blob-promise', bg: canvasBg, full: true, scale: 1 });
+        pngBytes = await blob.arrayBuffer();
     } finally {
         renderer.destroy();
         document.body.removeChild(hiddenDiv);
