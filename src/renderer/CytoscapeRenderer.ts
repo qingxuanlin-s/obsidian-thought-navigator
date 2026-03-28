@@ -375,6 +375,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
                             // 更新节点数据
                             existing.data(ele.data);
 
+                            // 同步更新位置（savedPosition 对应的坐标在 ele.position 上，data 里不含位置）
+                            if (ele.group === 'nodes' && (ele as any).position) {
+                                existing.position((ele as any).position);
+                            }
+
                             // 特殊处理 parent 属性，确保分组关系正确更新
                             if (ele.group === 'nodes' && 'parent' in ele.data) {
                                 const newParent = ele.data.parent;

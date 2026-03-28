@@ -505,6 +505,147 @@ export class MOCHandler {
     }
 
     /**
+     * 重定向父子边的终点：将 oldTarget 从父节点下移出（变为自由节点），
+     * 将 newTarget 从当前位置移入 oldTarget 原来的父节点下（继承 oldTarget 的 ID）。
+     * 所有操作在一次 modifyMOCData 中完成，避免多次写文件时 MermaidParser 缓存失效。
+     */
+    async redirectParentEdgeTarget(mocFile: TFile, oldTarget: string, newTarget: string): Promise<void> {
+        await this.modifyMOCData(mocFile, (mocData) => {
+            // ---- 辅助：从树中找节点并移除，返回 {node, parent} ----
+            const findAndRemove = (targetID: string): { node: any; parent: any | null } => {
+                // 在根层查找
+                const rootIdx = mocData.nodes.findIndex((n: any) => n.nodeID === targetID);
+                if (rootIdx !== -1) {
+                    const [node] = mocData.nodes.splice(rootIdx, 1);
+                    return { node, parent: null };
+                }
+                // 在子树中查找
+                const search = (nodes: any[]): { node: any; parent: any } | null => {
+                    for (const n of nodes) {
+                        if (!n.children?.length) continue;
+                        const idx = n.children.findIndex((c: any) => c.nodeID === targetID);
+                        if (idx !== -1) {
+                            const [node] = n.children.splice(idx, 1);
+                            return { node, parent: n };
+                        }
+                        const found = search(n.children);
+                        if (found) return found;
+                    }
+                    return null;
+                };
+                const result = search(mocData.nodes);
+                if (result) return result;
+                throw new Error(`未找到节点: ${targetID}`);
+            };
+
+            // ---- 辅助：对子树中所有节点做 ID 前缀替换，收集映射 ----
+            const remapSubtree = (node: any, oldPrefix: string, newPrefix: string): Array<{ old: string; new: string }> => {
+                const mappings: Array<{ old: string; new: string }> = [];
+                const walk = (n: any) => {
+                    const oldID = n.nodeID;
+                    const newID = oldID === oldPrefix
+                        ? newPrefix
+                        : oldID.startsWith(oldPrefix + '.') ? newPrefix + oldID.slice(oldPrefix.length) : oldID;
+                    if (oldID !== newID) {
+                        mappings.push({ old: oldID, new: newID });
+                        n.nodeID = newID;
+                    }
+                    n.children?.forEach(walk);
+                };
+                walk(node);
+                return mappings;
+            };
+
+            // ---- 辅助：计算下一个可用的 free.N ID ----
+            const nextFreeID = (): string => {
+                const allIDs: string[] = [];
+                const collect = (nodes: any[]) => { for (const n of nodes) { allIDs.push(n.nodeID); collect(n.children ?? []); } };
+                collect(mocData.nodes);
+                const nums = allIDs
+                    .map(id => { const m = id.match(/^free\.(\d+)$/); return m ? parseInt(m[1]) : 0; })
+                    .filter(n => n > 0);
+                return `free.${nums.length ? Math.max(...nums) + 1 : 1}`;
+            };
+
+            // ---- 辅助：应用映射到元数据（不含 nodePositions，位置槽保持不动） ----
+            const applyMappings = (mappings: Array<{ old: string; new: string }>) => {
+                const applyMap = (id: string) => mappings.find(m => m.old === id)?.new ?? id;
+
+                // reverseRelations
+                const newRR = new Map<string, any>();
+                for (const [, rel] of mocData.reverseRelations) {
+                    const src = applyMap(rel.sourceID);
+                    const tgt = applyMap(rel.targetID);
+                    newRR.set(`${src}->${tgt}`, { sourceID: src, targetID: tgt, relationText: rel.relationText });
+                }
+                mocData.reverseRelations = newRR;
+
+                // nodePositions：随 ID 一起重命名，每个节点保持自己的视觉位置
+                if (mocData.nodePositions) {
+                    const np: Record<string, any> = {};
+                    for (const [k, v] of Object.entries(mocData.nodePositions)) np[applyMap(k)] = v;
+                    mocData.nodePositions = np;
+                }
+
+                // edgeCurvatures
+                if (mocData.edgeCurvatures) {
+                    const nc: Record<string, any> = {};
+                    for (const [k, v] of Object.entries(mocData.edgeCurvatures))
+                        nc[k.split('-').map(applyMap).join('-')] = v;
+                    mocData.edgeCurvatures = nc;
+                }
+
+                // 其他键值映射字段
+                for (const field of ['nodeColors', 'nodeStyleColors', 'embedNodeSizes', 'nodeRemarks', 'crossDomainLinks']) {
+                    const obj = (mocData as any)[field];
+                    if (!obj) continue;
+                    const nb: Record<string, any> = {};
+                    for (const [k, v] of Object.entries(obj)) nb[applyMap(k)] = v;
+                    (mocData as any)[field] = nb;
+                }
+            };
+
+            // ======== 主逻辑 ========
+
+            // 1. 取出 oldTarget，记下其父节点
+            const { node: oldNode, parent: oldParent } = findAndRemove(oldTarget);
+
+            // 2. 取出 newTarget，记下其旧父节点
+            const { node: newNode, parent: newTargetOldParent } = findAndRemove(newTarget);
+
+            // 3. 在 applyMappings 前，先删除两条失效的旧父子 reverseRelation：
+            //    a) oldParent → oldTarget（oldTarget 将变为自由节点，该边不再有效）
+            //    b) newTargetOldParent → newTarget（newTarget 将移入 oldParent，该边不再有效）
+            if (oldParent) {
+                mocData.reverseRelations.delete(`${oldParent.nodeID}->${oldTarget}`);
+            }
+            if (newTargetOldParent) {
+                mocData.reverseRelations.delete(`${newTargetOldParent.nodeID}->${newTarget}`);
+            }
+
+            // 4. oldNode 变为自由节点，放到根层，重新分配 free.N ID
+            const freeID = nextFreeID();
+            const mappingsOld = remapSubtree(oldNode, oldTarget, freeID);
+            mocData.nodes.push(oldNode);
+
+            // 5. newNode 移入 oldTarget 原父节点的 children，继承 oldTarget 的 ID
+            const mappingsNew = remapSubtree(newNode, newTarget, oldTarget);
+            const parentDepth: number = oldParent ? (oldParent.depth ?? 0) : -1;
+            const setDepth = (n: any, d: number) => { n.depth = d; n.children?.forEach((c: any) => setDepth(c, d + 1)); };
+            setDepth(newNode, parentDepth + 1);
+
+            if (oldParent) {
+                oldParent.children.push(newNode);
+            } else {
+                mocData.nodes.push(newNode);
+            }
+
+            // 6. 更新所有元数据（两批映射合并应用）
+            applyMappings([...mappingsOld, ...mappingsNew]);
+        });
+    }
+
+    /**
      * 将自由节点移动为指定父节点的子节点
      * @param mocFile - MOC 文件
      * @param freeNodeID - 自由节点 ID（以 'free.' 开头）
