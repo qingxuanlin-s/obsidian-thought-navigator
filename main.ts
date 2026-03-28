@@ -1,9 +1,10 @@
-import { FileView, loadMermaid, moment, Notice, Plugin, TFile} from "obsidian";
+import { FileView, loadMermaid, moment, Notice, Plugin, TFile, TFolder } from "obsidian";
 import { t } from "src/lang/helper";
 import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
 import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
 import { ZKNavigationSettngTab } from "src/settings/settings";
-import { mainNoteInit } from "src/utils/utils";
+import { mainNoteInit, getMOCFilesInFolder } from "src/utils/utils";
+import { createEmptyMOCJson } from "src/utils/mocJsonCodec";
 import { MOCFileMonitor } from "src/utils/mocMonitor";
 import { MOCReverseIndex } from "src/utils/mocReverseIndex";
 import { ZKGraphView, ZK_GRAPH_TYPE } from "src/view/graphView";
@@ -254,6 +255,9 @@ export default class ZKNavigationPlugin extends Plugin {
 
         await this.loadSettings();
 
+        // 注册 .moc 扩展名，使 Obsidian 在文件浏览器中显示并正确索引这些文件
+        this.registerExtensions(['moc'], 'markdown');
+
         // 应用主题
         this.applyTheme();
 
@@ -338,7 +342,7 @@ export default class ZKNavigationPlugin extends Plugin {
 
         this.registerEvent(
             this.app.workspace.on("file-menu", (menu, file, source) => {
-                
+
                 if (
                     !(
                         source === "more-options" ||
@@ -346,6 +350,43 @@ export default class ZKNavigationPlugin extends Plugin {
                         source == "file-explorer-context-menu"
                     )
                 ) {
+                    return;
+                }
+
+                // 文件夹右键：新建思维树
+                if (file instanceof TFolder) {
+                    menu.addItem((item) => {
+                        item.setTitle(t("New MOC file"))
+                            .setIcon("git-branch")
+                            .setSection("plugin")
+                            .onClick(async () => {
+                                console.log('[zk-nav] 新建思维树 onClick 触发');
+                                try {
+                                    const folder = file as TFolder;
+                                    console.log('[zk-nav] folder.path:', folder.path);
+                                    let baseName = t("New MOC");
+                                    let filePath = folder.path
+                                        ? `${folder.path}/${baseName}.moc`
+                                        : `${baseName}.moc`;
+                                    let counter = 1;
+                                    while (this.app.vault.getAbstractFileByPath(filePath)) {
+                                        filePath = folder.path
+                                            ? `${folder.path}/${baseName} ${counter}.moc`
+                                            : `${baseName} ${counter}.moc`;
+                                        counter++;
+                                    }
+                                    console.log('[zk-nav] 目标路径:', filePath);
+                                    const content = createEmptyMOCJson(
+                                        this.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free'
+                                    );
+                                    const newFile = await this.app.vault.create(filePath, content);
+                                    console.log('[zk-nav] 创建成功:', newFile?.path);
+                                } catch (e) {
+                                    console.error('[zk-navigation] 新建思维树失败', e);
+                                    new Notice(`新建失败: ${e.message}`);
+                                }
+                            });
+                    });
                     return;
                 }
 
@@ -358,7 +399,7 @@ export default class ZKNavigationPlugin extends Plugin {
                         .setIcon("copy")
                         .setSection("info")
                         .onClick(() =>
-                            
+
                             navigator.clipboard.writeText(`obsidian://zk-navigation?file=${encodeURI(file.path)}`)
                         );
                 });

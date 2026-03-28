@@ -7,7 +7,7 @@ import { AddFreeNodeModal } from "src/modal/addFreeNodeModal";
 import { expandGraphModal } from "src/modal/expandGraphModal";
 import { MOCSelectorModal } from "src/modal/mocSelectorModal";
 import { NoteSearchModal } from "src/modal/noteSearchModal";
-import { convertMOCToZKNodes, MOCParseResult, MOCTreeNode, parseMOCStructure } from "src/utils/utils";
+import { convertMOCToZKNodes, getMOCFilesInFolder, MOCParseResult, MOCTreeNode, parseMOCStructure } from "src/utils/utils";
 import { MermaidParser } from "src/utils/mermaidParser";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
 import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
@@ -1053,8 +1053,8 @@ export class ZKIndexView extends ItemView {
             return;
         }
 
-        // 获取 MOC 文件
-        const mocFiles = this.app.vault.getMarkdownFiles().filter(f => f.path.startsWith(mocFolder));
+        // 获取 MOC 文件（.md 和 .moc 均包含）
+        const mocFiles = getMOCFilesInFolder(this.app, mocFolder);
 
         if (mocFiles.length === 0) {
             new Notice(t("No MOC files found in the specified folder"));
@@ -2520,8 +2520,7 @@ export class ZKIndexView extends ItemView {
             return;
         }
 
-        const mocFiles = this.app.vault.getMarkdownFiles()
-            .filter(f => f.path.startsWith(mocFolder + '/'));
+        const mocFiles = getMOCFilesInFolder(this.app, mocFolder);
 
         if (mocFiles.length === 0) {
             new Notice(t("No MOC files found in the specified folder"));
@@ -2559,8 +2558,7 @@ export class ZKIndexView extends ItemView {
             return;
         }
 
-        const mocFiles = this.app.vault.getMarkdownFiles()
-            .filter(f => f.path.startsWith(mocFolder + '/'));
+        const mocFiles = getMOCFilesInFolder(this.app, mocFolder);
 
         if (mocFiles.length === 0) {
             new Notice(t("No MOC files found in the specified folder"));
@@ -2700,9 +2698,9 @@ export class ZKIndexView extends ItemView {
         try {
             const currentMOCPath = this.plugin.settings.mocCurrentFile;
 
-            // 获取所有 MOC 文件
+            // 获取所有 MOC 文件（.md 和 .moc 均包含）
             const mocFolder = this.plugin.settings.mocFolderPath;
-            const mocFiles = this.app.vault.getMarkdownFiles().filter(f => f.path.startsWith(mocFolder));
+            const mocFiles = getMOCFilesInFolder(this.app, mocFolder);
 
             if (mocFiles.length === 0) {
                 new Notice('没有找到其他 MOC 文件');

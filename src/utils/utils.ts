@@ -100,11 +100,15 @@ export async function parseMOCStructure(
 
     const content = await app.vault.read(file);
 
-    // 使用 Mermaid 解析器
+    // .moc 文件使用 JSON codec，.md 文件使用 Mermaid 解析器
+    if (file.extension === 'moc') {
+        const { parseMOCJson } = await import('./mocJsonCodec');
+        return parseMOCJson(content, filePath, app);
+    }
+
     const { MermaidParser } = await import('./mermaidParser');
     const mermaidParser = new MermaidParser(app);
     const result = await mermaidParser.parse(content, filePath, headingTitle);
-
 
     return result;
 }
@@ -735,6 +739,14 @@ export async function saveMOCStructure(
         throw new Error(`File not found: ${filePath}`);
     }
 
+    // .moc 文件：直接写 JSON，无需标题替换逻辑
+    if (file.extension === 'moc') {
+        const { serializeMOCJson } = await import('./mocJsonCodec');
+        await app.vault.modify(file, serializeMOCJson(data));
+        await new Promise(resolve => setTimeout(resolve, 50));
+        return;
+    }
+
     const content = await app.vault.read(file);
 
     // 检查读取到的内容中是否包含 node_colors
@@ -745,7 +757,6 @@ export async function saveMOCStructure(
     const serializer = new MermaidSerializer();
     const mermaidContent = serializer.serialize(data);
 
-
     // 替换指定标题下的内容
     const updatedContent = replaceHeadingContent(
         content,
@@ -753,12 +764,10 @@ export async function saveMOCStructure(
         mermaidContent
     );
 
-    
     await app.vault.modify(file, updatedContent);
 
     // 等待文件系统更新 mtime
     await new Promise(resolve => setTimeout(resolve, 50));
-
 
     // 写入完成后清除该文件的旧缓存（基于旧 mtime 的缓存）
     const { MermaidParser } = await import('./mermaidParser');
@@ -797,4 +806,14 @@ a --> a.2
 3. 节点 ID 使用字母和数字，用点号分隔层级（如 a, a.1, a.1.a）
 4. 拖动节点后位置会自动保存到 ext 注释中
 `;
+}
+
+/**
+ * 获取指定文件夹内所有 MOC 文件（.md 和 .moc 均包含）
+ */
+export function getMOCFilesInFolder(app: App, folderPath: string): TFile[] {
+    if (!folderPath) return [];
+    return app.vault.getFiles().filter(
+        f => f.path.startsWith(folderPath + '/') && (f.extension === 'md' || f.extension === 'moc')
+    );
 }

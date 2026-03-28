@@ -60,44 +60,63 @@ export class MOCReverseIndex {
      */
     private async indexMOCFile(file: TFile, parser?: MermaidParser): Promise<void> {
         try {
-            const p = parser || new MermaidParser(this.app);
+            // 等待文件落盘（vault.create 触发事件时文件可能还未写入磁盘）
+            await new Promise(resolve => setTimeout(resolve, 100));
             const content = await this.app.vault.read(file);
-            const mermaidBlock = p.extractMermaidBlock(content);
-            if (!mermaidBlock) return;
+            const basePath = file.path.includes('/') ? file.path.substring(0, file.path.lastIndexOf('/')) : '';
 
-            // 用正则直接提取 wikilink 节点，比完整解析更快
-            // 匹配: nodeId["[[wikilink]]"] 或 nodeId["[[wikilink|display]]"]
-            const nodeRegex = /^([a-zA-Z0-9.]+)\["(?:!)?\[\[([^\]|]+)(?:\|[^\]]+)?\]\]"\]$/gm;
-            let match;
+            if (file.extension === 'moc') {
+                // JSON 格式：遍历节点树提取 wikilink
+                let json: any;
+                try { json = JSON.parse(content); } catch { return; }
 
-            while ((match = nodeRegex.exec(mermaidBlock)) !== null) {
-                const nodeId = match[1];
-                const wikiLink = match[2];
-
-                // 解析 wikilink 到实际文件路径
-                const basePath = file.path.includes('/') ? file.path.substring(0, file.path.lastIndexOf('/')) : '';
-                const linkedFile = this.app.metadataCache.getFirstLinkpathDest(wikiLink, basePath);
-
-                if (linkedFile) {
-                    const location: MOCLocation = {
-                        mocFilePath: file.path,
-                        mocFileName: file.basename,
-                        nodeId: nodeId
-                    };
-
-                    const existing = this.index.get(linkedFile.path);
-                    if (existing) {
-                        // 避免重复（同一 MOC 文件中的同一笔记）
-                        if (!existing.some(loc => loc.mocFilePath === file.path && loc.nodeId === nodeId)) {
-                            existing.push(location);
+                const walk = (nodes: any[]) => {
+                    for (const n of nodes) {
+                        if (!n.isTextOnly && n.wikiLink) {
+                            const linkedFile = this.app.metadataCache.getFirstLinkpathDest(n.wikiLink, basePath);
+                            if (linkedFile) {
+                                this.addToIndex(linkedFile.path, file, n.nodeID);
+                            }
                         }
-                    } else {
-                        this.index.set(linkedFile.path, [location]);
+                        if (n.children?.length) walk(n.children);
+                    }
+                };
+                walk(json.nodes || []);
+            } else {
+                // Mermaid 格式：正则提取 wikilink 节点
+                const p = parser || new MermaidParser(this.app);
+                const mermaidBlock = p.extractMermaidBlock(content);
+                if (!mermaidBlock) return;
+
+                const nodeRegex = /^([a-zA-Z0-9.]+)\["(?:!)?\[\[([^\]|]+)(?:\|[^\]]+)?\]\]"\]$/gm;
+                let match;
+                while ((match = nodeRegex.exec(mermaidBlock)) !== null) {
+                    const nodeId = match[1];
+                    const wikiLink = match[2];
+                    const linkedFile = this.app.metadataCache.getFirstLinkpathDest(wikiLink, basePath);
+                    if (linkedFile) {
+                        this.addToIndex(linkedFile.path, file, nodeId);
                     }
                 }
             }
         } catch (error) {
             console.error(`MOCReverseIndex: Failed to index ${file.path}`, error);
+        }
+    }
+
+    private addToIndex(notePath: string, mocFile: TFile, nodeId: string): void {
+        const location: MOCLocation = {
+            mocFilePath: mocFile.path,
+            mocFileName: mocFile.basename,
+            nodeId,
+        };
+        const existing = this.index.get(notePath);
+        if (existing) {
+            if (!existing.some(loc => loc.mocFilePath === mocFile.path && loc.nodeId === nodeId)) {
+                existing.push(location);
+            }
+        } else {
+            this.index.set(notePath, [location]);
         }
     }
 
@@ -144,8 +163,9 @@ export class MOCReverseIndex {
      */
     private getMOCFiles(): TFile[] {
         if (!this.mocFolderPath) return [];
-        return this.app.vault.getMarkdownFiles()
-            .filter(f => f.path.startsWith(this.mocFolderPath + '/'));
+        return this.app.vault.getFiles().filter(
+            f => f.path.startsWith(this.mocFolderPath + '/') && (f.extension === 'md' || f.extension === 'moc')
+        );
     }
 
     /**
