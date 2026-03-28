@@ -123,8 +123,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
         if (this.overlayUpdateScheduled) return;
         this.overlayUpdateScheduled = true;
         requestAnimationFrame(() => {
-            this.overlayUpdaters.forEach(fn => fn());
             this.overlayUpdateScheduled = false;
+            if (!this.cy) return;
+            this.overlayUpdaters.forEach(fn => fn());
         });
     }
 
@@ -140,9 +141,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
         if (this.overlayUpdateScheduled) return;
         this.overlayUpdateScheduled = true;
         requestAnimationFrame(() => {
+            this.overlayUpdateScheduled = false;
+            if (!this.cy) return;
             this.overlayUpdaters.forEach(fn => fn());
             this.overlayExtraUpdaters.forEach(fn => fn());
-            this.overlayUpdateScheduled = false;
         });
     }
 
@@ -255,13 +257,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 maxZoom: 1.0
             });
 
-            // 绑定事件
-            this.bindEvents();
-            this.bindKeyboardEvents();
-            this.initBoxSelection();
-            this.addNodeBadges();
-            if (this.isReadOnlyMode()) {
-                this.hideBatchToolbar();
+            // 绑定事件（exportMode 下跳过所有 DOM 交互绑定，避免 MutationObserver/focus 副作用）
+            if (!options.exportMode) {
+                this.bindEvents();
+                this.bindKeyboardEvents();
+                this.initBoxSelection();
+                this.addNodeBadges();
+                if (this.isReadOnlyMode()) {
+                    this.hideBatchToolbar();
+                }
             }
 
         } else {
@@ -398,11 +402,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
             });
         }
 
-        // 更新节点徽章（无论初始化还是增量更新都需要更新）
-        // 这确保已删除节点的徽章也被移除
-        this.addNodeBadges();
-        this.addEmbedNodePreviews();
-        this.addImageNodePreviews();
+        // 更新节点徽章（exportMode 下跳过，避免 MarkdownRenderer 触发 MutationObserver 导致跳转）
+        if (!options.exportMode) {
+            this.addNodeBadges();
+            this.addEmbedNodePreviews();
+            this.addImageNodePreviews();
+        }
 
         // 运行布局
         if (this.cy) {
@@ -6467,8 +6472,9 @@ case 'dagre':
         this.cy.on('zoom pan', () => {
             if (viewStateTimeout) clearTimeout(viewStateTimeout);
             viewStateTimeout = setTimeout(() => {
-                const zoom = this.cy!.zoom();
-                const pan = this.cy!.pan();
+                if (!this.cy) return;
+                const zoom = this.cy.zoom();
+                const pan = this.cy.pan();
                 this.container?.dispatchEvent(new CustomEvent('viewStateChanged', {
                     detail: { zoom, pan }
                 }));

@@ -60,9 +60,19 @@ export class MOCReverseIndex {
      */
     private async indexMOCFile(file: TFile, parser?: MermaidParser): Promise<void> {
         try {
-            // 等待文件落盘（vault.create 触发事件时文件可能还未写入磁盘）
-            await new Promise(resolve => setTimeout(resolve, 100));
-            const content = await this.app.vault.read(file);
+            // 重试读取文件，等待 vault.create 落盘完成
+            let fileContent: string | null = null;
+            for (let attempt = 0; attempt < 5; attempt++) {
+                try {
+                    await new Promise(resolve => setTimeout(resolve, 150 * (attempt + 1)));
+                    fileContent = await this.app.vault.read(file);
+                    break;
+                } catch {
+                    if (attempt === 4) return;
+                }
+            }
+            if (fileContent === null) return;
+            const content = fileContent;
             const basePath = file.path.includes('/') ? file.path.substring(0, file.path.lastIndexOf('/')) : '';
 
             if (file.extension === 'moc') {
