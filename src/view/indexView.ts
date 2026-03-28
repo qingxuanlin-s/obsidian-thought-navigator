@@ -796,6 +796,20 @@ export class ZKIndexView extends ItemView {
         };
     }
 
+    private hasDroppableTypes(event: DragEvent): boolean {
+        const dt = event.dataTransfer;
+        if (!dt) return false;
+        const types = Array.from(dt.types || []);
+        return types.some(t =>
+            t === 'text/plain' ||
+            t === 'text/uri-list' ||
+            t === 'text/x-obsidian-uri' ||
+            t === 'application/x-obsidian-uri' ||
+            t === 'application/x-obsidian-file' ||
+            t === 'Files'
+        );
+    }
+
     private resolveDroppedVaultFiles(event: DragEvent): TFile[] {
         const dt = event.dataTransfer;
         if (!dt) return [];
@@ -1230,14 +1244,14 @@ export class ZKIndexView extends ItemView {
 
             this.addTrackedListener(branchGraphDiv, 'dragenter', (event: DragEvent) => {
                 if (this.isMobileReadOnly()) return;
-                if (this.resolveDroppedVaultFiles(event).length === 0) return;
+                if (!this.hasDroppableTypes(event)) return;
                 event.preventDefault();
                 setDropHover(true);
             });
 
             this.addTrackedListener(branchGraphDiv, 'dragover', (event: DragEvent) => {
                 if (this.isMobileReadOnly()) return;
-                if (this.resolveDroppedVaultFiles(event).length === 0) return;
+                if (!this.hasDroppableTypes(event)) return;
                 event.preventDefault();
                 if (event.dataTransfer) {
                     event.dataTransfer.dropEffect = 'copy';
