@@ -172,6 +172,8 @@ export default {
     "Main notes": "📄Main notes",
     '📖index': '📖keywords',
     "Copy zk-navigation URI":"Copy zk-navigation URI",
+    "New MOC file": "New MOC file",
+    "New MOC": "New MOC",
     "reveal current file in zk-index-graph": "reveal current file in zk-index-graph",
 
     //indexModal.ts

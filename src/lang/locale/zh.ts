@@ -170,6 +170,8 @@ export default {
     "Main notes": "📄主笔记",
     '📖index': '📖关键词',
     "Copy zk-navigation URI":"复制 zk-navigation 链接",
+    "New MOC file": "新建思维树",
+    "New MOC": "新建思维树",
     "reveal current file in zk-index-graph": "在分支视图显示当前文件",
 
     //indexModal.ts
