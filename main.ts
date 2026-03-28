@@ -6,6 +6,7 @@ import { ZKNavigationSettngTab } from "src/settings/settings";
 import { mainNoteInit, getMOCFilesInFolder } from "src/utils/utils";
 import { createEmptyMOCJson } from "src/utils/mocJsonCodec";
 import { MOCFileMonitor } from "src/utils/mocMonitor";
+import { MOCEmbedRenderChild } from "src/embed/mocEmbedExporter";
 import { MOCReverseIndex } from "src/utils/mocReverseIndex";
 import { ZKGraphView, ZK_GRAPH_TYPE } from "src/view/graphView";
 import { ZKIndexView, ZKNode, ZK_INDEX_TYPE, ZK_NAVIGATION } from "src/view/indexView";
@@ -257,6 +258,54 @@ export default class ZKNavigationPlugin extends Plugin {
 
         // 注册 .moc 扩展名，使 Obsidian 在文件浏览器中显示并正确索引这些文件
         this.registerExtensions(['moc'], 'markdown');
+
+        // 注册 ![[xxx.moc]] 内嵌处理：渲染为 PNG 图片附件
+        // Reading View 通过 post-processor 处理
+        this.registerMarkdownPostProcessor((element, context) => {
+            const embeds = element.querySelectorAll<HTMLElement>('.internal-embed[src$=".moc"]');
+            embeds.forEach(embedEl => {
+                const src = embedEl.getAttribute('src');
+                if (!src || embedEl.dataset.mocHandled) return;
+                embedEl.dataset.mocHandled = '1';
+
+                const basePath = context.sourcePath.includes('/')
+                    ? context.sourcePath.substring(0, context.sourcePath.lastIndexOf('/'))
+                    : '';
+                const mocFile = this.app.metadataCache.getFirstLinkpathDest(src, basePath)
+                    ?? this.app.vault.getFileByPath(src);
+                if (!mocFile || !(mocFile instanceof TFile) || mocFile.extension !== 'moc') return;
+
+                const child = new MOCEmbedRenderChild(embedEl, mocFile, this);
+                context.addChild(child);
+                child.load();
+            });
+        });
+
+        // Live Preview 通过 MutationObserver 处理动态插入的 embed 元素
+        const handleMocEmbed = (embedEl: HTMLElement) => {
+            const src = embedEl.getAttribute('src');
+            if (!src?.endsWith('.moc') || embedEl.dataset.mocHandled) return;
+            embedEl.dataset.mocHandled = '1';
+
+            const mocFile = this.app.metadataCache.getFirstLinkpathDest(src, '')
+                ?? this.app.vault.getFileByPath(src);
+            if (!mocFile || !(mocFile instanceof TFile) || mocFile.extension !== 'moc') return;
+
+            const child = new MOCEmbedRenderChild(embedEl, mocFile, this);
+            child.load();
+        };
+
+        const mocEmbedObserver = new MutationObserver(mutations => {
+            for (const mutation of mutations) {
+                for (const node of Array.from(mutation.addedNodes)) {
+                    if (!(node instanceof HTMLElement)) continue;
+                    if (node.classList.contains('internal-embed')) handleMocEmbed(node);
+                    node.querySelectorAll<HTMLElement>('.internal-embed').forEach(handleMocEmbed);
+                }
+            }
+        });
+        mocEmbedObserver.observe(document.body, { childList: true, subtree: true });
+        this.register(() => mocEmbedObserver.disconnect());
 
         // 应用主题
         this.applyTheme();
