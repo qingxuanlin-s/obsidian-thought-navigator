@@ -495,24 +495,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                 }) 
             )
         
-        new Setting(branchToolbarDiv)
-            .setName(t("table view"))
-            .then((setting)=>{
-                const parentEl = setting.settingEl.parentElement;
-                if(parentEl){
-                    parentEl.insertBefore(createDiv(), setting.settingEl);
-                }
-                const iconEl = createDiv();
-                setting.settingEl.prepend(iconEl);
-                setIcon(iconEl, "table");
-            })
-            .addToggle(toggle => toggle.setValue(this.plugin.settings.TableView)
-                .onChange((value) =>{
-                    this.plugin.settings.TableView = value;
-                    this.plugin.RefreshIndexViewFlag = true;
-                }) 
-            )     
-        
+
         new Setting(branchToolbarDiv)
             .setName(t("list tree"))
             .then((setting)=>{

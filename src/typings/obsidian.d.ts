@@ -22,12 +22,6 @@ declare module "obsidian"{
         ):EventRef;
     }
 
-    interface Workspace{
-        on(
-            name:"zk-navigation:refresh-table-view",
-            callback: ()=>unknown
-        ):EventRef;
-    }
 
     interface Workspace{
         on(

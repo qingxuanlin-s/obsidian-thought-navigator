@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run build:*)",
+      "Bash(git checkout:*)",
+      "Bash(npx tsc:*)",
+      "Bash(git stash:*)",
+      "Bash(git show:*)",
+      "Bash(grep:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:js.cytoscape.org)",
+      "WebFetch(domain:groups.google.com)",
+      "WebFetch(domain:simplemind.eu)",
+      "Bash(python3:*)",
+      "Bash(git status:*)",
+      "Bash(git add:*)",
+      "Bash(find:*)",
+      "Bash(sed:*)",
+      "Bash(find:*)",
+      "Bash(node:*)",
+      "Bash(xxd)"
+    ]
+  }
+}

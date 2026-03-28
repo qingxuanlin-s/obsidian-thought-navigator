@@ -125,7 +125,6 @@ export default {
     "❌Setting error: no folder specified for index!": "❌设置错误: 没有为关键词指定文件夹!",
     "Index: ": "关键词: ",
     "has no valid main note outlinks": "没有包含有效主笔记链接",
-    "table view": "表格视图",
     "Current note: ": "当前主笔记: ",
     "settings": "打开设置",
     "export to canvas": "导出到白板",

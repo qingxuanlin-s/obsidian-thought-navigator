@@ -3,7 +3,6 @@ import { ButtonComponent, DropdownComponent, ExtraButtonComponent, HeadingCache,
 import { t } from "src/lang/helper";
 import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
 import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
-import { tableModal } from "src/modal/tableModal";
 import { addSvgPanZoom, convertMOCToZKNodes, displayWidth, mainNoteInit, MOCTreeNode, parseMOCStructure, random } from "src/utils/utils";
 
 export const ZK_INDEX_TYPE: string = "zk-index-type";
@@ -542,18 +541,6 @@ export class ZKIndexView extends ItemView {
 
             }
 
-            if (this.plugin.settings.TableView == true) {
-                const tableBtn = new ExtraButtonComponent(toolButtonsDiv);
-                tableBtn.setIcon("table").setTooltip(t("table view"))
-                tableBtn.onClick(async () => {
-                    if (this.branchAllNodes && this.branchAllNodes[this.plugin.settings.BranchTab]) {
-                        this.plugin.tableArr = this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
-                        //new tableModal(this.app, this.plugin, this.plugin.tableArr).open();
-                        await this.plugin.openTableView();
-                        this.plugin.clearShowingSettings(this.plugin.settings.BranchTab);
-                    }
-                })
-            }
 
             if (this.plugin.settings.ListTree == true) {
                 const listBtn = new ExtraButtonComponent(toolButtonsDiv);
@@ -719,13 +706,6 @@ export class ZKIndexView extends ItemView {
         }
 
 
-        if (this.plugin.settings.TableView === true) {
-            if (this.branchAllNodes && this.branchAllNodes[this.plugin.settings.BranchTab]) {
-                this.plugin.tableArr = this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
-                this.app.workspace.trigger("zk-navigation:refresh-table-view");
-            }
-        }
-
         if (this.plugin.settings.playControllerToggle === true) {
             this.resetController();
         }
@@ -771,17 +751,6 @@ export class ZKIndexView extends ItemView {
                 });
             }
 
-            if (this.plugin.settings.TableView === true) {
-                const tableBtn = new ExtraButtonComponent(toolButtonsDiv);
-                tableBtn.setIcon("table").setTooltip(t("table view"));
-                tableBtn.onClick(async () => {
-                    if (this.branchAllNodes && this.branchAllNodes[this.plugin.settings.BranchTab]) {
-                        this.plugin.tableArr = this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
-                        await this.plugin.openTableView();
-                        this.plugin.clearShowingSettings(this.plugin.settings.BranchTab);
-                    }
-                });
-            }
 
             if (this.plugin.settings.ListTree === true) {
                 const listBtn = new ExtraButtonComponent(toolButtonsDiv);
@@ -1018,13 +987,6 @@ export class ZKIndexView extends ItemView {
             if (this.branchAllNodes && this.branchAllNodes[this.plugin.settings.BranchTab]) {
                 this.plugin.tableArr = this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes;
                 this.app.workspace.trigger("zk-navigation:refresh-outline-view");
-            }
-        }
-
-        if (this.plugin.settings.TableView === true) {
-            if (this.branchAllNodes && this.branchAllNodes[this.plugin.settings.BranchTab]) {
-                this.plugin.tableArr = this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
-                this.app.workspace.trigger("zk-navigation:refresh-table-view");
             }
         }
 
@@ -1939,12 +1901,6 @@ export class ZKIndexView extends ItemView {
             }
         }
 
-        if (this.plugin.settings.TableView === true) {
-            if (this.branchAllNodes && this.branchAllNodes[this.plugin.settings.BranchTab]) {
-                this.plugin.tableArr = this.branchAllNodes[this.plugin.settings.BranchTab].branchNodes;
-                this.app.workspace.trigger("zk-navigation:refresh-table-view");
-            }
-        }
 
     }
 
