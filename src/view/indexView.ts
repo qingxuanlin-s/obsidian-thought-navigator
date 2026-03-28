@@ -2,7 +2,6 @@ import ZKNavigationPlugin from "main";
 import { ExtraButtonComponent, FuzzySuggestModal, ItemView, Menu, Modal, Notice, Platform, Scope, Setting, TFile, WorkspaceLeaf, debounce, moment, setIcon, setTooltip } from "obsidian";
 import { t } from "src/lang/helper";
 import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
-import { tableModal } from "src/modal/tableModal";
 import { AddFreeNodeModal } from "src/modal/addFreeNodeModal";
 import { expandGraphModal } from "src/modal/expandGraphModal";
 import { MOCSelectorModal } from "src/modal/mocSelectorModal";
@@ -607,17 +606,6 @@ export class ZKIndexView extends ItemView {
         searchBtn.onClick(() => {
             this.openBranchSearchBar();
         });
-
-        if (this.plugin.settings.TableView === true) {
-            const tableBtn = new ExtraButtonComponent(rightBtns);
-            tableBtn.setIcon("table").setTooltip(t("table view"));
-            tableBtn.onClick(async () => {
-                if (this.mocNodes && this.mocNodes.length > 0) {
-                    this.plugin.tableArr = this.mocNodes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
-                    await this.plugin.openTableView();
-                }
-            });
-        }
 
         const sep = document.createElement("span");
         sep.className = "zk-toolbar-separator";
