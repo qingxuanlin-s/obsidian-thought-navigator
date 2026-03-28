@@ -92,7 +92,8 @@ export class MermaidSerializer {
             node_style_colors: (data as any).nodeStyleColors || {},
             cross_domain_links: data.crossDomainLinks || {},  // 始终包含 cross_domain_links，即使为空
             embed_node_sizes: (data as any).embedNodeSizes || {},
-            nodeRemarks: (data as any).nodeRemarks || {}
+            nodeRemarks: (data as any).nodeRemarks || {},
+            nodeAnchors: (data as any).nodeAnchors || {}
         };
 
         // 持久化节点布局风格（新建时锁定，后续不受全局设置影响）

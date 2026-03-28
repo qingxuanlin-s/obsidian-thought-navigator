@@ -734,6 +734,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         // 获取节点颜色映射
         const nodeColors = this.currentData?.metadata.nodeColors || {};
         const nodeRemarks = this.currentData?.metadata.nodeRemarks || {};
+        const nodeAnchors = this.currentData?.metadata.nodeAnchors || {};
         const vividStyleMap = this.buildVividNodeStyleMap(nodes);
         const parentLinkedNodeIds = new Set<string>();
         (this.currentData?.edges || []).forEach((edge) => {
@@ -768,6 +769,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     isFreeNode: (node.ID || '').startsWith('free.'),
                     remark: nodeRemarks[node.IDStr] || nodeRemarks[node.ID] || '',
                     hasRemark: !!(nodeRemarks[node.IDStr] || nodeRemarks[node.ID]),
+                    isAnchor: !!(nodeAnchors[node.IDStr] || nodeAnchors[node.ID]),
                     hasFileIcon: (!node.isTextOnly && node.file) ? true : false, // 文件节点显示图标
                     branchNodeBackground: vividStyle?.background || null,
                     branchNodeBorder: vividStyle?.border || null
@@ -1513,6 +1515,14 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'overlay-color': colors.nodeBorderSelected,
                 'overlay-padding': '4px',
                 'overlay-opacity': 0.3
+            } as any
+        },
+        // 锚点节点：金色边框，加粗
+        {
+            selector: 'node[?isAnchor]',
+            style: {
+                'border-color': '#fbbf24',
+                'border-width': '4px',
             } as any
         },
         // 折叠隐藏的子节点/连线
@@ -3000,6 +3010,48 @@ case 'dagre':
                 tooltipEl.style.opacity = '0';
                 tooltipEl.style.transform = 'translateY(4px)';
             });
+        });
+
+        // 锚点星星 badge — 左上角，最小屏幕尺寸 16px 保证缩小时仍可见
+        const MIN_ANCHOR_PX = 16;
+        this.cy.nodes('[?isAnchor]').forEach((node: any) => {
+            if (node.data('isGroup') || node.data('isPlaceholder')) return;
+
+            const starEl = document.createElement('div');
+            starEl.className = 'zk-node-anchor-badge';
+            starEl.textContent = '★';
+            starEl.style.cssText = `
+                position: absolute;
+                color: #fbbf24;
+                font-size: 18px;
+                line-height: 1;
+                pointer-events: none;
+                text-shadow: 0 0 6px rgba(251,191,36,0.8), 0 0 12px rgba(251,191,36,0.4);
+                z-index: 5;
+                transform: translate(-50%, -50%);
+            `;
+            badgeContainer.appendChild(starEl);
+
+            const updateAnchorPos = () => {
+                if (!this.cy) return;
+                const isHidden =
+                    node.removed() ||
+                    node.hasClass('zk-collapsed-hidden') ||
+                    node.style('display') === 'none' ||
+                    !node.visible();
+                if (isHidden) { starEl.style.display = 'none'; return; }
+
+                starEl.style.display = 'block';
+                const zoom = this.cy.zoom();
+                const bb = node.renderedBoundingBox();
+                const fontSize = Math.max(MIN_ANCHOR_PX, 18 * zoom);
+                starEl.style.fontSize = `${fontSize}px`;
+                starEl.style.left = `${bb.x1 + fontSize * 0.35}px`;
+                starEl.style.top = `${bb.y1 + fontSize * 0.35}px`;
+            };
+
+            badgeUpdaters.push(updateAnchorPos);
+            updateAnchorPos();
         });
 
         // 为每个有 badge 的节点创建徽章元素
