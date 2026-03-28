@@ -162,10 +162,11 @@ export class MOCReverseIndex {
      * 获取 MOC 文件夹中的所有 markdown 文件
      */
     private getMOCFiles(): TFile[] {
-        if (!this.mocFolderPath) return [];
-        return this.app.vault.getFiles().filter(
-            f => f.path.startsWith(this.mocFolderPath + '/') && (f.extension === 'md' || f.extension === 'moc')
-        );
+        return this.app.vault.getFiles().filter(f => {
+            if (f.extension === 'moc') return true;
+            if (f.extension === 'md' && this.mocFolderPath) return f.path.startsWith(this.mocFolderPath + '/');
+            return false;
+        });
     }
 
     /**
