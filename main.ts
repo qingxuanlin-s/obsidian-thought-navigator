@@ -1,4 +1,4 @@
-import { Editor, FileView, loadMermaid, MarkdownView, moment, Notice, Plugin, TFile, TFolder } from "obsidian";
+import { Editor, FileView, loadMermaid, moment, Notice, Plugin, TFile, TFolder } from "obsidian";
 import { t } from "src/lang/helper";
 import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
 import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
@@ -389,36 +389,6 @@ export default class ZKNavigationPlugin extends Plugin {
             }
         })
 
-                // 编辑器右键菜单：新建思维树并内嵌到当前文件
-        this.registerEvent(
-            this.app.workspace.on('editor-menu', (menu, editor, info) => {
-                const activeFile = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
-                if (!activeFile) return;
-                menu.addItem((item) => {
-                    item.setTitle(t('New MOC file'))
-                        .setIcon('git-branch')
-                        .setSection('plugin')
-                        .onClick(async () => {
-                            try {
-                                const folder = activeFile.parent;
-                                const baseName = '思维树-' + moment().format('YYYYMMDDHHmmss');
-                                const filePath = folder?.path ? folder.path + '/' + baseName + '.moc' : baseName + '.moc';
-                                const mocContent = createEmptyMOCJson(this.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free');
-                                const newFile = await this.app.vault.create(filePath, mocContent);
-                                editor.replaceSelection('![[' + newFile.name + ']]');
-                                // 在分支视图中打开新建的 .moc 文件
-                                this.settings.mocCurrentFile = newFile.path;
-                                await this.saveData(this.settings);
-                                await this.openIndexView();
-                                this.app.workspace.trigger('zk-navigation:refresh-index-graph');
-                            } catch (e) {
-                                new Notice('新建失败: ' + e.message);
-                            }
-                        });
-                });
-            })
-        );
-        
         this.registerEvent(
             this.app.workspace.on("file-menu", (menu, file, source) => {
 
