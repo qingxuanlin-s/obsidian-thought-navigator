@@ -2173,11 +2173,7 @@ export class ZKIndexView extends ItemView {
                 if (edgeType === 'parent') {
                     // 树边：将 oldTarget 变为自由节点，newTarget 接替 oldTarget 成为父节点的子节点
                     await this.saveAllNodePositionsBeforeRefresh();
-                    // 清缓存：确保 redirectParentEdgeTarget 读到刚写入的最新位置（mtime 可能未及时更新）
-                    MermaidParser.clearCacheForFile(mocFile.path);
                     await this.mocHandler.redirectParentEdgeTarget(mocFile, oldTarget, newTarget);
-                    // 再次清缓存：确保 refreshBranchMermaid 读到 redirectParentEdgeTarget 写入的结果
-                    MermaidParser.clearCacheForFile(mocFile.path);
                     await this.refreshBranchMermaid();
                     new Notice(`已修改边终点: ${oldTarget} → ${newTarget}`);
                 } else {
