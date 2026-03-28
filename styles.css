@@ -903,6 +903,12 @@ align-items: center;
     background: #3a4f6f;
 }
 
+.zk-menu-separator {
+    height: 1px;
+    background: #2a3f5f;
+    margin: 4px 0;
+}
+
 /* MOC 选择器样式 */
 .zk-moc-selector-block {
     display: flex;
@@ -1192,6 +1198,10 @@ align-items: center;
 
 .zk-theme-light .zk-menu-option:active {
   background: #c0c0c0;
+}
+
+.zk-theme-light .zk-menu-separator {
+  background: #d0d0d0;
 }
 
 .zk-theme-light .zk-moc-selector-block {
