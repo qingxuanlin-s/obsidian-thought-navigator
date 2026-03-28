@@ -79,6 +79,8 @@ export class ZKIndexView extends ItemView {
     private branchRenderer: CytoscapeRenderer | null = null;
     // 当前 cy 实例对应的 MOC 文件路径（用于切换时正确保存位置）
     private lastRenderedMOCPath: string | null = null;
+    // 渲染完成后自动选中并定位的节点 ID（来自搜索选中）
+    private pendingSelectNodeId: string | null = null;
 
     // 性能优化：节点位置缓存 Map，O(1) 查找替代 O(n) filter
     nodePositionMap: Map<number, ZKNode> = new Map();
@@ -1173,14 +1175,28 @@ export class ZKIndexView extends ItemView {
         // 恢复或自动居中视图
         const cy = this.branchRenderer.getCytoscapeInstance();
         if (cy) {
-            const savedViewState = this.getMOCViewState(currentMOCPath);
-            if (savedViewState) {
-                // 恢复保存的视图状态
-                cy.zoom(savedViewState.zoom);
-                cy.pan(savedViewState.pan);
+            if (this.pendingSelectNodeId) {
+                // 搜索选中后定位到目标节点
+                const escapedId = this.pendingSelectNodeId.replace(/[^a-zA-Z0-9_-]/g, '_');
+                const targetNode = cy.$id(escapedId);
+                if (targetNode.length > 0) {
+                    cy.elements().deselect();
+                    targetNode.select();
+                    cy.animate({ center: { eles: targetNode }, duration: 300 });
+                } else {
+                    cy.fit(undefined, 50);
+                }
+                this.pendingSelectNodeId = null;
             } else {
-                // 没有保存的状态，自动居中
-                cy.fit(undefined, 50);
+                const savedViewState = this.getMOCViewState(currentMOCPath);
+                if (savedViewState) {
+                    // 恢复保存的视图状态
+                    cy.zoom(savedViewState.zoom);
+                    cy.pan(savedViewState.pan);
+                } else {
+                    // 没有保存的状态，自动居中
+                    cy.fit(undefined, 50);
+                }
             }
         }
 
@@ -2399,6 +2415,8 @@ export class ZKIndexView extends ItemView {
                 this.mocChipLabel.setText(mocName);
             }
 
+            // 标记渲染完成后需要定位的节点
+            this.pendingSelectNodeId = location.nodeId;
             this.app.workspace.trigger("zk-navigation:refresh-index-graph");
         }).open();
     }
