@@ -4830,8 +4830,36 @@ case 'dagre':
                 : `${originalNode?.isEmbed ? '!' : ''}[[${originalNode?.file?.basename || originalNode?.title || ''}${(originalNode?.title && originalNode?.file?.basename && originalNode.title !== originalNode.file.basename) ? `|${originalNode.title}` : ''}]]`);
         textarea.value = initialValue;
         textarea.className = 'node-label-editor';
-        const nodeFontSize = node.style('font-size') || '20px';
-        const nodeLineHeight = node.style('line-height') || '1.5';
+        const parsePx = (value: string | null | undefined, fallback: number): number => {
+            const n = Number.parseFloat(value || '');
+            return Number.isFinite(n) && n > 0 ? n : fallback;
+        };
+        const getRenderedNodeFontSize = (): string => {
+            const renderedFontSize = node.renderedStyle?.('font-size');
+            return (typeof renderedFontSize === 'string' && renderedFontSize.trim())
+                ? renderedFontSize
+                : (node.style('font-size') || '20px');
+        };
+        const getRenderedNodeFontFamily = (): string => {
+            const renderedFontFamily = node.renderedStyle?.('font-family');
+            return (typeof renderedFontFamily === 'string' && renderedFontFamily.trim())
+                ? renderedFontFamily
+                : (node.style('font-family') || 'inherit');
+        };
+        const getRenderedNodeFontWeight = (): string => {
+            const renderedFontWeight = node.renderedStyle?.('font-weight');
+            return (typeof renderedFontWeight === 'string' && renderedFontWeight.trim())
+                ? renderedFontWeight
+                : (node.style('font-weight') || '500');
+        };
+        const getEditorLineHeight = (): string => {
+            const fontPx = parsePx(getRenderedNodeFontSize(), 20);
+            return `${Math.round(fontPx * 1.35)}px`;
+        };
+        const nodeFontSize = getRenderedNodeFontSize();
+        const nodeFontFamily = getRenderedNodeFontFamily();
+        const nodeFontWeight = getRenderedNodeFontWeight();
+        const nodeLineHeight = getEditorLineHeight();
 
         // 锁定节点尺寸，防止清空标签后节点缩小
         const lockedWidth = node.width();
@@ -4854,13 +4882,14 @@ case 'dagre':
             background: rgba(15, 23, 42, 0.96);
             color: var(--text-normal);
             font-size: ${nodeFontSize};
-            font-family: inherit;
+            font-family: ${nodeFontFamily};
+            font-weight: ${nodeFontWeight};
             z-index: 1000;
             resize: none;
             overflow: hidden;
             outline: none;
             box-sizing: border-box;
-            text-align: left;
+            text-align: center;
             line-height: ${nodeLineHeight};
             cursor: text;
             box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
@@ -4870,19 +4899,14 @@ case 'dagre':
 
         const measureCanvas = document.createElement('canvas');
         const measureContext = measureCanvas.getContext('2d');
-        let hasUserEdited = false;
         const resizeEditorToContent = () => {
             const minWidth = initialBoxWidth;
             const minHeight = initialBoxHeight;
-
-            if (!hasUserEdited) {
-                textarea.style.width = `${minWidth}px`;
-                textarea.style.height = `${minHeight}px`;
-                return;
-            }
-
             const containerWidth = this.container?.clientWidth || window.innerWidth;
             const containerHeight = this.container?.clientHeight || window.innerHeight;
+            const maxWidth = Math.max(minWidth, Math.min(720, containerWidth - 24));
+            const maxHeight = Math.max(minHeight, Math.min(460, containerHeight - 24));
+
             const computedStyle = window.getComputedStyle(textarea);
             const font = computedStyle.font || `${computedStyle.fontSize} ${computedStyle.fontFamily}`;
             const lines = textarea.value.split('\n');
@@ -4890,49 +4914,19 @@ case 'dagre':
 
             if (measureContext) {
                 measureContext.font = font;
-                contentWidth = lines.reduce((maxWidth, line) => {
+                contentWidth = lines.reduce((maxLineWidth, line) => {
                     const metrics = measureContext.measureText(line || ' ');
-                    return Math.max(maxWidth, metrics.width + 28);
+                    return Math.max(maxLineWidth, metrics.width + 28);
                 }, minWidth);
             }
 
-            const maxWidth = Math.max(minWidth, Math.min(620, containerWidth - 24));
-            const maxHeight = Math.max(minHeight, Math.min(420, containerHeight - 24));
-            const preferredWidth = Math.min(maxWidth, Math.max(minWidth, Math.ceil(contentWidth)));
-            const candidateWidths = Array.from(new Set([
-                minWidth,
-                Math.min(maxWidth, Math.max(minWidth, Math.round(minWidth * 1.2))),
-                Math.min(maxWidth, Math.max(minWidth, Math.round((minWidth + preferredWidth) / 2))),
-                preferredWidth,
-                maxWidth
-            ])).sort((a, b) => a - b);
-
-            let bestWidth = minWidth;
-            let bestHeight = minHeight;
-            let bestScore = Number.POSITIVE_INFINITY;
-            const targetAspect = 0.42;
-
-            candidateWidths.forEach((candidateWidth) => {
-                textarea.style.width = `${candidateWidth}px`;
-                textarea.style.height = 'auto';
-                const measuredHeight = Math.min(maxHeight, Math.max(minHeight, textarea.scrollHeight + 4));
-                const aspect = measuredHeight / candidateWidth;
-                const aspectPenalty = Math.abs(aspect - targetAspect);
-                const areaPenalty = ((candidateWidth - minWidth) / Math.max(1, maxWidth - minWidth)) * 0.08;
-                const score = aspectPenalty + areaPenalty;
-
-                if (score < bestScore) {
-                    bestScore = score;
-                    bestWidth = candidateWidth;
-                    bestHeight = measuredHeight;
-                }
-            });
-
-            textarea.style.width = `${bestWidth}px`;
-            textarea.style.height = `${bestHeight}px`;
-            // 重新居中：以节点中心为基准
-            textarea.style.left = `${renderedPosition.x - bestWidth / 2}px`;
-            textarea.style.top = `${renderedPosition.y - bestHeight / 2}px`;
+            const targetWidth = Math.min(maxWidth, Math.max(minWidth, Math.ceil(contentWidth)));
+            textarea.style.width = `${targetWidth}px`;
+            textarea.style.height = 'auto';
+            const targetHeight = Math.min(maxHeight, Math.max(minHeight, textarea.scrollHeight + 4));
+            textarea.style.height = `${targetHeight}px`;
+            textarea.style.left = `${renderedPosition.x - targetWidth / 2}px`;
+            textarea.style.top = `${renderedPosition.y - targetHeight / 2}px`;
         };
 
         // 自动聚焦并全选文本（方便删除）
@@ -5055,7 +5049,6 @@ case 'dagre':
         textarea.addEventListener('input', (e) => {
             // 阻止事件冒泡
             e.stopPropagation();
-            hasUserEdited = true;
             // 不再实时更新节点标签，避免重复显示
             this.checkForLinkPattern(textarea, node, {
                 x1: lockedBoxLeft,
@@ -5144,6 +5137,10 @@ case 'dagre':
             const currentBoxHeight = Math.max(Number(node.renderedHeight?.() || 0), 44);
             textarea.style.left = `${currentRenderedPosition.x - currentBoxWidth / 2}px`;
             textarea.style.top = `${currentRenderedPosition.y - currentBoxHeight / 2}px`;
+            textarea.style.fontSize = getRenderedNodeFontSize();
+            textarea.style.fontFamily = getRenderedNodeFontFamily();
+            textarea.style.fontWeight = getRenderedNodeFontWeight();
+            textarea.style.lineHeight = getEditorLineHeight();
             resizeEditorToContent();
         };
 
