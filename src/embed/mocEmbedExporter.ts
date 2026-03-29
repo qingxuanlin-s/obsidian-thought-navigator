@@ -69,7 +69,7 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
             animate: false,
             nodeText: (plugin.settings.NodeText || 'both') as any,
             themeMode: plugin.settings.themeMode,
-            themeStyle: plugin.settings.themeStyle || 'default',
+            themeStyle: plugin.settings.themeStyle || 'modern',
             edgeStyle: plugin.settings.edgeStyle || 'bezier',
             nodeLayoutStyle: mocData.nodeLayoutStyle || 'free',
             readOnly: true,
