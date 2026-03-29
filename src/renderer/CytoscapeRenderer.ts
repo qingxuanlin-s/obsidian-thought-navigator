@@ -303,14 +303,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 // 先删除所有占位符节点（因为它们不在传入的数据中）
                 const placeholderNodes = this.cy!.nodes().filter((node: any) => node.data('isPlaceholder'));
                 if (placeholderNodes.length > 0) {
-                    console.log('[CytoscapeRenderer] 增量更新前删除占位符节点', placeholderNodes.length);
                     this.cy!.remove(placeholderNodes);
                 }
 
                 // 清理所有占位符连接线
                 const connectionLines = this.container?.querySelectorAll('.placeholder-connection-line');
                 if (connectionLines && connectionLines.length > 0) {
-                    console.log('[CytoscapeRenderer] 增量更新前清理占位符连接线', connectionLines.length);
                     connectionLines.forEach(line => {
                         if (line.parentNode) {
                             line.parentNode.removeChild(line);
@@ -321,13 +319,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 // 清理占位符节点的编辑框和链接建议器
                 const editor = this.container?.querySelector('.node-label-editor');
                 if (editor) {
-                    console.log('[CytoscapeRenderer] 增量更新前清理编辑框图层');
                     editor.remove();
                 }
 
                 const suggester = this.container?.querySelector('.node-link-suggester');
                 if (suggester) {
-                    console.log('[CytoscapeRenderer] 增量更新前清理链接建议器');
                     suggester.remove();
                 }
 
@@ -799,9 +795,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
         const edgeColorMap = this.buildVividEdgeColorMap();
         const allNodes = this.currentData?.nodes || [];
         const nodeById = new Map<string, ZKNode>();
+        const nodeByIdStr = new Map<string, ZKNode>();
         allNodes.forEach((n) => {
             nodeById.set(n.ID, n);
             nodeById.set(n.IDStr, n);
+            nodeByIdStr.set(n.IDStr, n);
         });
         const nodeStyleMap = this.buildVividNodeStyleMap(allNodes);
 
@@ -822,6 +820,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
             if (isRootToFirstLevel && targetNode) {
                 branchEdgeColor = nodeStyleMap.get(targetNode.IDStr)?.border || branchEdgeColor;
             }
+            const hierarchyDepth = targetNode
+                ? this.getDepthFromNearestRoot(targetNode.IDStr, nodeByIdStr)
+                : null;
+            const hierarchyEdgeWidth = edge.type === 'parent'
+                ? this.getHierarchyEdgeWidth(hierarchyDepth)
+                : null;
             const element: any = {
                 group: 'edges' as const,
                 data: {
@@ -834,7 +838,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     originalSource: edge.source,
                     originalTarget: edge.target,
                     branchEdgeColor,
-                    isRootToFirstLevel
+                    isRootToFirstLevel,
+                    hierarchyEdgeWidth
                 }
             };
             
@@ -865,6 +870,29 @@ export class CytoscapeRenderer implements IGraphRenderer {
         const parts = (nodeId || '').split('.').filter(Boolean);
         if (parts.length <= 1) return nodeId;
         return `${parts[0]}.${parts[1]}`;
+    }
+
+    private getDepthFromNearestRoot(nodeId: string, nodeByIdStr: Map<string, ZKNode>): number {
+        const normalizedId = (nodeId || '').trim();
+        if (!normalizedId) return 1;
+        let current = normalizedId;
+        let depth = 0;
+        while (current.includes('.')) {
+            const parentId = current.substring(0, current.lastIndexOf('.'));
+            depth += 1;
+            const parentNode = nodeByIdStr.get(parentId);
+            if (parentNode?.isRoot) return depth;
+            current = parentId;
+        }
+        // 找不到显式 root 时，使用绝对层级近似
+        return Math.max(1, normalizedId.split('.').filter(Boolean).length - 1);
+    }
+
+    private getHierarchyEdgeWidth(depthFromRoot: number | null): number {
+        // 1级最粗，随后逐级变细，最低保留 2px
+        const depth = Math.max(1, depthFromRoot || 1);
+        const width = 7.2 - (depth - 1) * 1.1;
+        return Math.max(2, Math.round(width * 10) / 10);
     }
 
     private buildVividNodeStyleMap(nodes: ZKNode[]): Map<string, { background: string; border: string; shadow: string }> {
@@ -1445,8 +1473,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 },
                 'padding': '20px',
                 'shape': 'round-rectangle',
-                'corner-radius': '18px',
+                'corner-radius': '24px',
                 'border-width': '2px',
+                'border-opacity': 0.72,
                 'border-color': (ele: any) => {
                     // 如果有自定义颜色，使用自定义颜色
                     const customColor = ele.data('customColor');
@@ -1460,27 +1489,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'transition-duration': '0.2s'
             } as any
         },
-        // 绚丽风格（深色）：柔和阴影增强卡片层次
-        ...(isVivid && !isLight ? [{
-            selector: 'node:not([?isRoot]):not([?isEmbed]):not([?isStandaloneText])',
-            style: {
-                'shadow-blur': (ele: any) => ele.data('branchNodeShadow') ? 15 : 0,
-                'shadow-color': (ele: any) => ele.data('branchNodeShadow') || 'transparent',
-                'shadow-opacity': 1,
-                'shadow-offset-x': 0,
-                'shadow-offset-y': 0,
-            } as any
-        }] : []),
-        // 现代风格：发光边框 + 深色背景（无实心填充色）
+        // 现代风格：边框增强（无 shadow-*，避免 Cytoscape 样式告警）
         ...(isModern ? [{
-            selector: 'node:not([?isRoot]):not([?isEmbed]):not([?isStandaloneText])',
+            selector: 'node[!isRoot][!isEmbed][!isStandaloneText]',
             style: {
-                'border-width': (ele: any) => ele.data('branchNodeBorder') ? '2.5px' : '2px',
-                'shadow-blur': (ele: any) => ele.data('branchNodeBorder') ? 14 : 0,
-                'shadow-color': (ele: any) => ele.data('branchNodeBorder') || 'transparent',
-                'shadow-opacity': (ele: any) => ele.data('branchNodeBorder') ? 0.65 : 0,
-                'shadow-offset-x': 0,
-                'shadow-offset-y': 0,
+                'border-width': '2.5px',
             } as any
         }] : []),
         // 嵌入节点：由 HTML 预览卡片承载内容，隐藏 Cytoscape 默认卡片外观
@@ -1612,8 +1625,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
             selector: 'edge',
             style: {
                 'width': (ele: any) => {
-                    if (ele.data('isRootToFirstLevel')) {
-                        return 6;
+                    const hierarchyEdgeWidth = ele.data('hierarchyEdgeWidth');
+                    if (typeof hierarchyEdgeWidth === 'number') {
+                        return hierarchyEdgeWidth;
                     }
                     return 2;
                 },
@@ -1733,6 +1747,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'background-color': colors.nodeBackgroundSelected,
                 'border-color': colors.nodeBorderSelected,
                 'border-width': '3px',
+                'border-opacity': 0.90,
                 'color': '#ffffff'
             } as any
         },
@@ -5767,14 +5782,6 @@ case 'dagre':
         this.container?.addEventListener('add-placeholder-node', (event: any) => {
             const { nodeId, position, suggestedNodeId, parentNodeId } = event.detail;
 
-            console.log('[CytoscapeRenderer] add-placeholder-node 事件触发', {
-                nodeId,
-                position,
-                suggestedNodeId,
-                parentNodeId,
-                当前选中节点: this.cy?.$(':selected').length
-            });
-
             try {
                 // 直接在 Cytoscape 中添加占位符节点
                 this.cy?.add({
@@ -5790,8 +5797,6 @@ case 'dagre':
                     position: position
                 });
 
-                console.log('[CytoscapeRenderer] 节点已添加到 Cytoscape', nodeId);
-
                 // 如果有父节点，创建连接线
                 if (parentNodeId) {
                     setTimeout(() => {
@@ -5805,36 +5810,17 @@ case 'dagre':
                 // 自动选中并打开编辑框
                 setTimeout(() => {
                     const node = this.cy?.$id(nodeId);
-                    console.log('[CytoscapeRenderer] 准备选中节点', {
-                        nodeId,
-                        nodeFound: node && node.length > 0,
-                        当前选中: this.cy?.$(':selected').map((n: any) => n.id())
-                    });
 
                     if (node && node.length > 0) {
                         // 取消其他节点的选中
                         const previouslySelected = this.cy!.$(':selected');
-                        console.log('[CytoscapeRenderer] 取消选中', {
-                            count: previouslySelected.length,
-                            nodes: previouslySelected.map((n: any) => n.id())
-                        });
                         previouslySelected.unselect();
 
                         // 选中这个节点
                         node.select();
-                        console.log('[CytoscapeRenderer] 节点已选中', {
-                            nodeId,
-                            isPlaceholder: node.data('isPlaceholder'),
-                            选中状态: node.selected(),
-                            当前总选中数: this.cy?.$(':selected').length
-                        });
 
                         // 延迟打开编辑器，确保选中完成
                         setTimeout(() => {
-                            console.log('[CytoscapeRenderer] 准备打开编辑器', {
-                                nodeId,
-                                选中状态: node.selected()
-                            });
                             this.showInlineNodeEditor(node);
                         }, 10);
                     } else {
@@ -5850,12 +5836,9 @@ case 'dagre':
         this.container?.addEventListener('remove-placeholder-node', (event: any) => {
             const { nodeId } = event.detail;
 
-            console.log('[CytoscapeRenderer] remove-placeholder-node 事件触发', { nodeId });
-
             // 先清理连接线（通过查询选择器，更可靠）
             const connectionLine = this.container?.querySelector(`.placeholder-connection-line[data-placeholder-id="${nodeId}"]`);
             if (connectionLine && connectionLine.parentNode) {
-                console.log('[CytoscapeRenderer] 移除占位符连接线', { nodeId });
                 connectionLine.parentNode.removeChild(connectionLine);
             }
 
@@ -5867,7 +5850,6 @@ case 'dagre':
                 const connectionLineFromData = (nodeData as any).connectionLine;
 
                 if (connectionLineFromData && connectionLineFromData.parentNode) {
-                    console.log('[CytoscapeRenderer] 从节点数据清理连接线', { nodeId });
                     connectionLineFromData.parentNode.removeChild(connectionLineFromData);
                 }
 
@@ -5890,7 +5872,6 @@ case 'dagre':
             if (data.isPlaceholder) {
                 const connectionLine = this.container?.querySelector(`.placeholder-connection-line[data-placeholder-id="${data.id}"]`);
                 if (connectionLine && connectionLine.parentNode) {
-                    console.log('[CytoscapeRenderer] 节点移除时自动清理连接线', { nodeId: data.id });
                     connectionLine.parentNode.removeChild(connectionLine);
                 }
             }
@@ -5898,7 +5879,6 @@ case 'dagre':
 
         // 监听清理所有占位符连接线事件（用于视图刷新时）
         this.container?.addEventListener('cleanup-all-placeholder-connections', () => {
-            console.log('[CytoscapeRenderer] 清理所有占位符连接线');
             const connectionLines = this.container?.querySelectorAll('.placeholder-connection-line');
             if (connectionLines) {
                 connectionLines.forEach(line => {
@@ -5906,7 +5886,6 @@ case 'dagre':
                         line.parentNode.removeChild(line);
                     }
                 });
-                console.log(`[CytoscapeRenderer] 已清理 ${connectionLines.length} 条占位符连接线`);
             }
         });
 
@@ -7922,15 +7901,6 @@ case 'dagre':
 
         const selectedNodes = this.cy.$('node:selected');
 
-        console.log('[getActiveNode] 当前选中的节点', {
-            count: selectedNodes.length,
-            nodes: selectedNodes.map((n: any) => ({
-                id: n.id(),
-                IDStr: n.data().originalNode?.IDStr,
-                label: n.data().label
-            }))
-        });
-
         if (selectedNodes.length === 0) {
             new Notice('请先选择一个节点');
             return null;
@@ -8423,8 +8393,6 @@ case 'dagre':
             return;
         }
 
-        console.log('[CytoscapeRenderer] 创建占位符连接线', { placeholderNodeId, parentNodeId });
-
         // 创建 SVG 叠加层（如果不存在）
         let svgOverlay = this.container.querySelector('.placeholder-connections-svg') as SVGSVGElement;
         if (!svgOverlay) {
@@ -8465,11 +8433,6 @@ case 'dagre':
         const nodeData = placeholderNode.data();
         (nodeData as any).connectionLine = connectionLine;
         (nodeData as any).connectionParentNode = parentNode;
-
-        console.log('[CytoscapeRenderer] 连接线已创建', {
-            from: parentNodeId,
-            to: placeholderNodeId
-        });
 
         // 缓存父节点引用，避免每次都遍历所有节点
         const cachedParent = this.cy.$('node').filter((node: any) => {
