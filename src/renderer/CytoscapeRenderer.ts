@@ -772,7 +772,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     isAnchor: !!(nodeAnchors[node.IDStr] || nodeAnchors[node.ID]),
                     hasFileIcon: (!node.isTextOnly && node.file) ? true : false, // 文件节点显示图标
                     branchNodeBackground: vividStyle?.background || null,
-                    branchNodeBorder: vividStyle?.border || null
+                    branchNodeBorder: vividStyle?.border || null,
+                    branchNodeShadow: vividStyle?.shadow || null
                 }
             };
 
@@ -856,15 +857,19 @@ export class CytoscapeRenderer implements IGraphRenderer {
         return (this.currentOptions?.themeStyle || 'default') === 'vivid';
     }
 
+    private isModernThemeStyle(): boolean {
+        return (this.currentOptions?.themeStyle || 'default') === 'modern';
+    }
+
     private getTopBranchId(nodeId: string): string {
         const parts = (nodeId || '').split('.').filter(Boolean);
         if (parts.length <= 1) return nodeId;
         return `${parts[0]}.${parts[1]}`;
     }
 
-    private buildVividNodeStyleMap(nodes: ZKNode[]): Map<string, { background: string; border: string }> {
-        const styleMap = new Map<string, { background: string; border: string }>();
-        if (!this.isVividThemeStyle()) return styleMap;
+    private buildVividNodeStyleMap(nodes: ZKNode[]): Map<string, { background: string; border: string; shadow: string }> {
+        const styleMap = new Map<string, { background: string; border: string; shadow: string }>();
+        if (!this.isVividThemeStyle() && !this.isModernThemeStyle()) return styleMap;
 
         const branchIds = Array.from(
             new Set(
@@ -876,18 +881,40 @@ export class CytoscapeRenderer implements IGraphRenderer {
         ).sort(compareIds);
 
         const isLight = this.currentOptions?.themeMode === 'light';
-        const branchColorById = new Map<string, { background: string; border: string }>();
+        const branchColorById = new Map<string, { background: string; border: string; shadow: string }>();
         const styleColorMap = (this.currentData?.metadata as any)?.nodeStyleColors || {};
         const palette = this.getBranchStylePalette();
+        const isVivid = this.isVividThemeStyle();
 
         branchIds.forEach((branchId) => {
             const storedColor = this.normalizeHexColor(styleColorMap[branchId]);
-            const baseColor = storedColor || palette[this.hashString(branchId) % palette.length];
-            const border = this.softenColor(baseColor, isLight);
-            const background = isLight
-                ? this.hexToRgba(border, 0.08)
-                : this.hexToRgba(border, 0.12);
-            branchColorById.set(branchId, { background, border });
+            const paletteColor = palette[this.hashString(branchId) % palette.length];
+            const baseBackground = storedColor || paletteColor.background;
+            const accentColor = storedColor
+                ? this.lightenColor(baseBackground, isLight ? 0.10 : 0.22)
+                : paletteColor.accent;
+            let background: string;
+            let border: string;
+            let shadow: string;
+            if (isLight) {
+                // 浅色主题：淡色填充 + 软化边框
+                border = this.softenColor(accentColor, true);
+                background = this.hexToRgba(border, 0.12);
+                shadow = 'transparent';
+            } else {
+                if (isVivid) {
+                    // 绚丽风格：深底 + 高亮点缀边框（Emerald Deep / Amber Deep）
+                    background = this.darkenColor(baseBackground, 0.55);
+                    border = this.darkenColor(accentColor, 0.32);
+                    shadow = this.hexToRgba(background, 0.62);
+                } else {
+                    // 现代风格：全填充深色 + 略亮边框
+                    background = baseBackground;
+                    border = this.lightenColor(baseBackground, 0.20);
+                    shadow = this.hexToRgba(baseBackground, 0.36);
+                }
+            }
+            branchColorById.set(branchId, { background, border, shadow });
         });
 
         nodes.forEach((node) => {
@@ -902,7 +929,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
     private buildVividEdgeColorMap(): Map<string, string> {
         const colorMap = new Map<string, string>();
-        if (!this.isVividThemeStyle() || !this.currentData?.nodes) return colorMap;
+        if (!this.isVividThemeStyle() && !this.isModernThemeStyle()) return colorMap;
+        if (!this.currentData?.nodes) return colorMap;
 
         const nodeStyleMap = this.buildVividNodeStyleMap(this.currentData.nodes);
         this.currentData.nodes.forEach((node) => {
@@ -912,22 +940,23 @@ export class CytoscapeRenderer implements IGraphRenderer {
         return colorMap;
     }
 
-    private getBranchStylePalette(): string[] {
+    private getBranchStylePalette(): Array<{ background: string; accent: string }> {
+        // 深色珠宝调：background = 深底色，accent = 点缀色
         return [
-            '#b54a4e',
-            '#b5693a',
-            '#a68b3d',
-            '#3d9e4a',
-            '#2e9e7a',
-            '#4d8bc7',
-            '#7d62c9',
-            '#b5506e',
-            '#358e6f',
-            '#4d78b5',
-            '#6a5aad',
-            '#955e90',
-            '#a65858',
-            '#9e7d42'
+            { background: '#064e3b', accent: '#10b981' },  // 翡翠绿
+            { background: '#78350f', accent: '#f59e0b' },  // 琥珀黄
+            { background: '#7f1d1d', accent: '#ef4444' },  // 宝石红
+            { background: '#1e3a5f', accent: '#3b82f6' },  // 蓝宝石
+            { background: '#4c1d95', accent: '#8b5cf6' },  // 紫水晶
+            { background: '#134e4a', accent: '#14b8a6' },  // 碧玺青
+            { background: '#831843', accent: '#ec4899' },  // 玫瑰石
+            { background: '#312e81', accent: '#6366f1' },  // 靛蓝石
+            { background: '#365314', accent: '#84cc16' },  // 橄榄石
+            { background: '#0c4a6e', accent: '#0ea5e9' },  // 天河石
+            { background: '#3b0764', accent: '#a855f7' },  // 幽紫晶
+            { background: '#713f12', accent: '#eab308' },  // 黄玉
+            { background: '#14532d', accent: '#22c55e' },  // 翠绿石
+            { background: '#164e63', accent: '#06b6d4' },  // 水鸭石
         ];
     }
 
@@ -1069,6 +1098,30 @@ export class CytoscapeRenderer implements IGraphRenderer {
         const sb = Math.round(b * (1 - ratio) + target * ratio);
 
         return `#${sr.toString(16).padStart(2, '0')}${sg.toString(16).padStart(2, '0')}${sb.toString(16).padStart(2, '0')}`;
+    }
+
+    // 将颜色向白色方向提亮，amount=0~1
+    private lightenColor(hex: string, amount: number): string {
+        const normalized = this.normalizeHexColor(hex) || '#5b8fd9';
+        const r = parseInt(normalized.slice(1, 3), 16);
+        const g = parseInt(normalized.slice(3, 5), 16);
+        const b = parseInt(normalized.slice(5, 7), 16);
+        const lr = Math.min(255, Math.round(r + (255 - r) * amount));
+        const lg = Math.min(255, Math.round(g + (255 - g) * amount));
+        const lb = Math.min(255, Math.round(b + (255 - b) * amount));
+        return `#${lr.toString(16).padStart(2, '0')}${lg.toString(16).padStart(2, '0')}${lb.toString(16).padStart(2, '0')}`;
+    }
+
+    // 将颜色向黑色方向压暗，amount=0~1
+    private darkenColor(hex: string, amount: number): string {
+        const normalized = this.normalizeHexColor(hex) || '#5b8fd9';
+        const r = parseInt(normalized.slice(1, 3), 16);
+        const g = parseInt(normalized.slice(3, 5), 16);
+        const b = parseInt(normalized.slice(5, 7), 16);
+        const dr = Math.max(0, Math.round(r * (1 - amount)));
+        const dg = Math.max(0, Math.round(g * (1 - amount)));
+        const db = Math.max(0, Math.round(b * (1 - amount)));
+        return `#${dr.toString(16).padStart(2, '0')}${dg.toString(16).padStart(2, '0')}${db.toString(16).padStart(2, '0')}`;
     }
 
     /**
@@ -1306,6 +1359,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private getStylesheet(options: RenderOptions): any[] {
     const isLight = options.themeMode === 'light';
     const isVivid = (options.themeStyle || 'default') === 'vivid';
+    const isModern = (options.themeStyle || 'default') === 'modern';
     const edgeStyle = options.edgeStyle || 'bezier';
 
     const colors = isLight ? {
@@ -1397,7 +1451,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     // 如果有自定义颜色，使用自定义颜色
                     const customColor = ele.data('customColor');
                     if (customColor) return customColor;
-                    if (isVivid && ele.data('branchNodeBorder') && !ele.data('isRoot')) {
+                    if ((isVivid || isModern) && ele.data('branchNodeBorder') && !ele.data('isRoot')) {
                         return ele.data('branchNodeBorder');
                     }
                     return colors.nodeBorder;
@@ -1406,6 +1460,29 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'transition-duration': '0.2s'
             } as any
         },
+        // 绚丽风格（深色）：柔和阴影增强卡片层次
+        ...(isVivid && !isLight ? [{
+            selector: 'node:not([?isRoot]):not([?isEmbed]):not([?isStandaloneText])',
+            style: {
+                'shadow-blur': (ele: any) => ele.data('branchNodeShadow') ? 15 : 0,
+                'shadow-color': (ele: any) => ele.data('branchNodeShadow') || 'transparent',
+                'shadow-opacity': 1,
+                'shadow-offset-x': 0,
+                'shadow-offset-y': 0,
+            } as any
+        }] : []),
+        // 现代风格：发光边框 + 深色背景（无实心填充色）
+        ...(isModern ? [{
+            selector: 'node:not([?isRoot]):not([?isEmbed]):not([?isStandaloneText])',
+            style: {
+                'border-width': (ele: any) => ele.data('branchNodeBorder') ? '2.5px' : '2px',
+                'shadow-blur': (ele: any) => ele.data('branchNodeBorder') ? 14 : 0,
+                'shadow-color': (ele: any) => ele.data('branchNodeBorder') || 'transparent',
+                'shadow-opacity': (ele: any) => ele.data('branchNodeBorder') ? 0.65 : 0,
+                'shadow-offset-x': 0,
+                'shadow-offset-y': 0,
+            } as any
+        }] : []),
         // 嵌入节点：由 HTML 预览卡片承载内容，隐藏 Cytoscape 默认卡片外观
         {
             selector: 'node[?isEmbed]',
@@ -1515,14 +1592,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'overlay-color': colors.nodeBorderSelected,
                 'overlay-padding': '4px',
                 'overlay-opacity': 0.3
-            } as any
-        },
-        // 锚点节点：金色边框，加粗
-        {
-            selector: 'node[?isAnchor]',
-            style: {
-                'border-color': '#fbbf24',
-                'border-width': '4px',
             } as any
         },
         // 折叠隐藏的子节点/连线
@@ -1855,7 +1924,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     heightModel: persistedSize.height
                 });
             }
-            const isVivid = this.isVividThemeStyle();
+            const isVivid = this.isVividThemeStyle() || this.isModernThemeStyle();
             const branchBorderColor = typeof data.branchNodeBorder === 'string' ? data.branchNodeBorder : '';
             const vividHeaderBackground = isVivid && branchBorderColor
                 ? this.hexToRgba(branchBorderColor, this.currentOptions?.themeMode === 'light' ? 0.18 : 0.28)
@@ -2285,7 +2354,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 });
             }
 
-            const isVivid = this.isVividThemeStyle();
+            const isVivid = this.isVividThemeStyle() || this.isModernThemeStyle();
             const branchBorderColor = typeof data.branchNodeBorder === 'string' ? data.branchNodeBorder : '';
             const vividHeaderBackground = isVivid && branchBorderColor
                 ? this.hexToRgba(branchBorderColor, this.currentOptions?.themeMode === 'light' ? 0.18 : 0.28)
@@ -3012,8 +3081,8 @@ case 'dagre':
             });
         });
 
-        // 锚点星星 badge — 左上角，最小屏幕尺寸 16px 保证缩小时仍可见
-        const MIN_ANCHOR_PX = 16;
+        // 锚点星星 badge — 金色圆环 + 深色底 + 发光星标
+        const MIN_ANCHOR_PX = 20;
         this.cy.nodes('[?isAnchor]').forEach((node: any) => {
             if (node.data('isGroup') || node.data('isPlaceholder')) return;
 
@@ -3022,12 +3091,24 @@ case 'dagre':
             starEl.textContent = '★';
             starEl.style.cssText = `
                 position: absolute;
-                color: #fbbf24;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: #f5dc68;
                 font-size: 18px;
                 line-height: 1;
                 pointer-events: none;
-                text-shadow: 0 0 6px rgba(251,191,36,0.8), 0 0 12px rgba(251,191,36,0.4);
-                z-index: 5;
+                background: radial-gradient(circle at 30% 30%, #0f172a 0%, #0b1220 65%, #090f1a 100%);
+                border: 2px solid rgba(216, 197, 119, 0.95);
+                border-radius: 999px;
+                box-shadow:
+                    0 0 0 1px rgba(255, 234, 154, 0.18),
+                    0 6px 14px rgba(0, 0, 0, 0.4),
+                    inset 0 1px 0 rgba(255, 236, 168, 0.24);
+                text-shadow:
+                    0 0 6px rgba(245, 220, 104, 0.65),
+                    0 0 14px rgba(245, 220, 104, 0.30);
+                z-index: 8;
                 transform: translate(-50%, -50%);
             `;
             badgeContainer.appendChild(starEl);
@@ -3044,10 +3125,15 @@ case 'dagre':
                 starEl.style.display = 'block';
                 const zoom = this.cy.zoom();
                 const bb = node.renderedBoundingBox();
-                const fontSize = Math.max(MIN_ANCHOR_PX, 18 * zoom);
+                const badgeSize = Math.max(MIN_ANCHOR_PX, 26 * zoom);
+                const fontSize = Math.max(13, badgeSize * 0.52 - 1);
+                const borderWidth = Math.max(1.5, badgeSize * 0.08);
+                starEl.style.width = `${badgeSize}px`;
+                starEl.style.height = `${badgeSize}px`;
                 starEl.style.fontSize = `${fontSize}px`;
-                starEl.style.left = `${bb.x1 + fontSize * 0.35}px`;
-                starEl.style.top = `${bb.y1 + fontSize * 0.35}px`;
+                starEl.style.borderWidth = `${borderWidth}px`;
+                starEl.style.left = `${bb.x1 + badgeSize * 0.48}px`;
+                starEl.style.top = `${bb.y1 + badgeSize * 0.48}px`;
             };
 
             badgeUpdaters.push(updateAnchorPos);
@@ -3058,14 +3144,29 @@ case 'dagre':
         this.cy.nodes('[badge]').forEach((node: any) => {
             const badge = node.data('badge');
             if (!badge) return;
+            const isModern = this.isModernThemeStyle();
+            const branchBorderColor = typeof node.data('branchNodeBorder') === 'string'
+                ? this.normalizeHexColor(node.data('branchNodeBorder'))
+                : null;
+            const modernBase = branchBorderColor || '#64748b';
+            const badgeBackgroundColor = isModern
+                ? this.hexToRgba(this.darkenColor(modernBase, 0.62), 0.22)
+                : 'rgba(0, 0, 0, 0.25)';
+            const badgeTextColor = isModern
+                ? this.hexToRgba(this.darkenColor(modernBase, 0.30), 0.86)
+                : 'rgba(255, 255, 255, 0.9)';
+            const badgeBorderColor = isModern
+                ? this.hexToRgba(this.darkenColor(modernBase, 0.42), 0.38)
+                : 'transparent';
 
             const badgeEl = document.createElement('div');
             badgeEl.className = 'zk-node-badge';
             badgeEl.textContent = badge;
             badgeEl.style.cssText = `
                 position: absolute;
-                background-color: rgba(0, 0, 0, 0.25);
-                color: rgba(255, 255, 255, 0.9);
+                background-color: ${badgeBackgroundColor};
+                color: ${badgeTextColor};
+                border: 1px solid ${badgeBorderColor};
                 font-size: 9px;
                 font-weight: 600;
                 font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;

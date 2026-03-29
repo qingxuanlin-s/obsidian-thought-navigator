@@ -44,9 +44,10 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
             .addDropdown(options => options
                 .addOption("default", t("Default style"))
                 .addOption("vivid", t("Vivid style"))
+                .addOption("modern", t("Modern style"))
                 .setValue(this.plugin.settings.themeStyle || "default")
                 .onChange((value) => {
-                    this.plugin.settings.themeStyle = value as 'default' | 'vivid';
+                    this.plugin.settings.themeStyle = value as 'default' | 'vivid' | 'modern';
                     this.plugin.RefreshIndexViewFlag = true;
                 })
             );

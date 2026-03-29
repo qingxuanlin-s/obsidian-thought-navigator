@@ -219,6 +219,7 @@ export default {
     "Theme style": "Theme style",
     "Default style": "Default style",
     "Vivid style": "Vivid style",
+    "Modern style": "Modern style",
     "Edge style": "Edge style",
     "Straight line": "Straight line",
     "Bezier curve": "Bezier curve",
