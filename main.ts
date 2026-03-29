@@ -201,7 +201,7 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     mocNodePositions: {}, // MOC 节点位置存储
     smartConnection: false, // 智能连线默认关闭
     themeMode: 'dark', // 默认深色主题
-    themeStyle: 'default', // 默认风格
+    themeStyle: 'modern', // 默认风格
     edgeStyle: 'bezier', // 默认贝塞尔曲线
     nodeLayoutStyle: 'free', // 默认自由节点布局
     showNoteIdInBranchView: true,

@@ -854,11 +854,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
     }
 
     private isVividThemeStyle(): boolean {
-        return (this.currentOptions?.themeStyle || 'default') === 'vivid';
+        return (this.currentOptions?.themeStyle || 'modern') === 'vivid';
     }
 
     private isModernThemeStyle(): boolean {
-        return (this.currentOptions?.themeStyle || 'default') === 'modern';
+        return (this.currentOptions?.themeStyle || 'modern') === 'modern';
     }
 
     private getTopBranchId(nodeId: string): string {
@@ -1358,8 +1358,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
     private getStylesheet(options: RenderOptions): any[] {
     const isLight = options.themeMode === 'light';
-    const isVivid = (options.themeStyle || 'default') === 'vivid';
-    const isModern = (options.themeStyle || 'default') === 'modern';
+    const isVivid = (options.themeStyle || 'modern') === 'vivid';
+    const isModern = (options.themeStyle || 'modern') === 'modern';
     const edgeStyle = options.edgeStyle || 'bezier';
 
     const colors = isLight ? {
