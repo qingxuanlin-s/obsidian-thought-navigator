@@ -49,7 +49,8 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
         mocData.crossDomainLinks || {},
         mocData.nodePositions,
         mocData.embedNodeSizes || {},
-        mocData.nodeRemarks || {}
+        mocData.nodeRemarks || {},
+        mocData.nodeAnchors || {}
     );
 
     // 创建隐藏容器（Cytoscape 需要真实 DOM）
