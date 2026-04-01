@@ -1963,6 +1963,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             `;
 
             const headerEl = document.createElement('div');
+            headerEl.dataset.role = 'embed-header';
             headerEl.style.cssText = `
                 height: 36px;
                 padding: 0 12px;
@@ -1983,6 +1984,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             headerEl.textContent = sourceFile.basename;
 
             const contentEl = document.createElement('div');
+            contentEl.dataset.role = 'embed-content';
             contentEl.style.cssText = `
                 height: calc(100% - 36px);
                 overflow: auto;
@@ -2263,6 +2265,21 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 card.style.width = `${width}px`;
                 card.style.height = `${height}px`;
                 card.style.borderRadius = `${Math.max(8, 12 * zoom)}px`;
+
+                // 内容随 zoom 缩放
+                const headerH = Math.max(24, 36 * zoom);
+                headerEl.style.height = `${headerH}px`;
+                headerEl.style.fontSize = `${Math.max(9, 12 * zoom)}px`;
+                headerEl.style.padding = `0 ${Math.max(8, 12 * zoom)}px`;
+
+                contentEl.style.height = `calc(100% - ${headerH}px)`;
+                contentEl.style.fontSize = `${Math.max(10, 14 * zoom)}px`;
+                contentEl.style.padding = `${Math.max(6, 12 * zoom)}px ${Math.max(8, 14 * zoom)}px`;
+                contentEl.style.lineHeight = '1.6';
+
+                resizeHandle.style.width = `${Math.max(12, 18 * zoom)}px`;
+                resizeHandle.style.height = `${Math.max(12, 18 * zoom)}px`;
+                resizeHandle.style.fontSize = `${Math.max(8, 11 * zoom)}px`;
             };
 
             updaters.push(updatePosition);
@@ -3196,6 +3213,17 @@ case 'dagre':
             // 更新徽章位置的函数
             const updateBadgePosition = () => {
                 if (!this.cy) return;
+
+                const isHidden =
+                    node.removed() ||
+                    node.hasClass('zk-collapsed-hidden') ||
+                    node.style('display') === 'none' ||
+                    !node.visible();
+                if (isHidden) {
+                    badgeEl.style.display = 'none';
+                    return;
+                }
+                badgeEl.style.display = '';
 
                 const zoom = this.cy.zoom();
                 const boundingBox = node.renderedBoundingBox();
@@ -4679,16 +4707,19 @@ case 'dagre':
             left: ${midX}px;
             top: ${midY}px;
             transform: translate(-50%, -50%);
-            padding: 4px 8px;
-            border: 2px solid #5b8fd9;
-            border-radius: 4px;
-            background-color: var(--background-primary);
+            padding: 6px 14px;
+            border: 2px solid rgba(91, 143, 217, 0.95);
+            border-radius: 12px;
+            background: rgba(15, 23, 42, 0.96);
             color: var(--text-normal);
-            font-size: 11px;
+            font-size: 13px;
+            font-weight: 500;
             z-index: 1000;
-            min-width: 80px;
+            min-width: 100px;
             text-align: center;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            outline: none;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+            backdrop-filter: blur(8px);
         `;
 
         this.container.appendChild(input);
@@ -6816,21 +6847,29 @@ case 'dagre':
                     return;
                 }
 
-                const selectedNodes = this.cy.$(':selected').filter('node[!isGroup]');
-                if (selectedNodes.length !== 1) {
+                const selected = this.cy.$(':selected');
+                const selectedNodes = selected.filter('node[!isGroup]');
+                if (selectedNodes.length === 1) {
+                    const node = selectedNodes.first();
+                    const data = node.data();
+                    if (!data || data.isCrossDomain) {
+                        return;
+                    }
+
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this.showInlineNodeEditor(node);
                     return;
                 }
 
-                const node = selectedNodes.first();
-                const data = node.data();
-                if (!data || data.isCrossDomain) {
+                // 选中单条边时，Space 进入边标签编辑
+                const selectedEdges = selected.filter('edge');
+                if (selectedEdges.length === 1 && selectedNodes.length === 0) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this.showInlineEdgeLabelEditor(selectedEdges.first());
                     return;
                 }
-
-                event.preventDefault();
-                event.stopPropagation();
-                this.showInlineNodeEditor(node);
-                return;
             }
 
             // Tab 键：创建子节点
