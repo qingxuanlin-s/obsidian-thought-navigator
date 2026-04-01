@@ -5671,13 +5671,12 @@ export class ZKIndexView extends ItemView {
         try {
             await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
 
-                // 检查箭头关系是否存在
                 const key = `${sourceID}->${targetID}`;
-                const relation = mocData.reverseRelations.get(key);
+                let relation = mocData.reverseRelations.get(key);
                 if (!relation) {
-                    throw new Error(`未找到箭头关系: ${sourceID} --> ${targetID}`);
+                    // 兜底父子边可能不在 reverseRelations 中，创建条目
+                    relation = { sourceID, targetID, relationText: '' };
                 }
-
 
                 // 更新关系标签
                 relation.relationText = newLabel;
@@ -5731,10 +5730,7 @@ export class ZKIndexView extends ItemView {
             await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
                 // 查找并删除旧的关系
                 const oldKey = `${oldSource}->${target}`;
-                const oldRelation = mocData.reverseRelations.get(oldKey);
-                if (!oldRelation) {
-                    throw new Error(`未找到箭头关系: ${oldSource} --> ${target}`);
-                }
+                const oldRelation = mocData.reverseRelations.get(oldKey) || { sourceID: oldSource, targetID: target, relationText: '' };
 
                 // 删除旧关系
                 mocData.reverseRelations.delete(oldKey);
