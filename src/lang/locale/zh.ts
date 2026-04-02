@@ -167,7 +167,7 @@ export default {
     "open zk-local-graph": "打开局部关系视图",
     "zk-index-graph": "分支视图", 
     "zk-local-graph": "局部关系视图", 
-    "Main notes": "📄主笔记",
+    "Main notes": "主笔记",
     '📖index': '📖关键词',
     "Copy zk-navigation URI":"复制 zk-navigation 链接",
     "New MOC file": "新建思维树",
