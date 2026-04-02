@@ -938,8 +938,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 } else {
                     // 现代风格：全填充深色 + 略亮边框
                     background = baseBackground;
-                    border = this.lightenColor(baseBackground, 0.20);
-                    shadow = this.hexToRgba(baseBackground, 0.36);
+                    border = this.lightenColor(baseBackground, 0.12);
+                    shadow = this.hexToRgba(baseBackground, 0.22);
                 }
             }
             branchColorById.set(branchId, { background, border, shadow });
@@ -1662,15 +1662,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 },
                 'arrow-scale': 1.5,
                 'label': 'data(label)',
-                'font-size': '11px',
+                'font-size': '18px',
                 'color': colors.nodeText,
-                'text-background-color': colors.textBackground,
-                'text-background-opacity': 1,
-                'text-background-padding': '4px',
-                'text-background-shape': 'roundrectangle',
-                'text-border-width': 1,
-                'text-border-color': colors.nodeBorder,
-                'text-border-opacity': 0.8,
+                'text-background-opacity': 0,
+                'text-border-opacity': 0,
                 'z-index-compare': 'manual',
                 'z-index': 999
             } as any
@@ -1711,12 +1706,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'arrow-scale': 1.2,
                 'opacity': 0.7,
                 'label': 'data(label)',
-                'font-size': '10px',
+                'font-size': '18px',
                 'color': '#8b5cf6',
-                'text-background-color': '#f3e8ff',
-                'text-background-opacity': 1,
-                'text-background-padding': '3px',
-                'text-background-shape': 'roundrectangle',
+                'text-background-opacity': 0,
+                'text-border-opacity': 0,
                 'z-index': 998
             } as any
         },
@@ -1939,14 +1932,29 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     heightModel: persistedSize.height
                 });
             }
-            const isVivid = this.isVividThemeStyle() || this.isModernThemeStyle();
+            const isModern = this.isModernThemeStyle();
+            const isColored = this.isVividThemeStyle() || isModern;
             const branchBorderColor = typeof data.branchNodeBorder === 'string' ? data.branchNodeBorder : '';
-            const vividHeaderBackground = isVivid && branchBorderColor
-                ? this.hexToRgba(branchBorderColor, this.currentOptions?.themeMode === 'light' ? 0.18 : 0.28)
-                : 'rgba(11, 16, 25, 0.72)';
-            const vividHeaderDivider = isVivid && branchBorderColor
-                ? this.hexToRgba(branchBorderColor, this.currentOptions?.themeMode === 'light' ? 0.55 : 0.7)
-                : 'rgba(90, 111, 127, 0.45)';
+
+            // 现代风格：发光边框 + 深色背景（与普通节点一致）
+            // 绚丽风格：填充色 header
+            const cardBorder = isModern && branchBorderColor
+                ? `2.5px solid ${branchBorderColor}`
+                : '1px solid rgba(90, 111, 127, 0.6)';
+            const cardShadow = isModern && branchBorderColor
+                ? `0 0 10px ${this.hexToRgba(branchBorderColor, 0.35)}, 0 10px 24px rgba(0, 0, 0, 0.35)`
+                : '0 10px 24px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04)';
+
+            const headerBackground = isModern
+                ? 'transparent'
+                : (isColored && branchBorderColor
+                    ? this.hexToRgba(branchBorderColor, this.currentOptions?.themeMode === 'light' ? 0.18 : 0.28)
+                    : 'rgba(11, 16, 25, 0.72)');
+            const headerDivider = isModern && branchBorderColor
+                ? this.hexToRgba(branchBorderColor, 0.25)
+                : (isColored && branchBorderColor
+                    ? this.hexToRgba(branchBorderColor, this.currentOptions?.themeMode === 'light' ? 0.55 : 0.7)
+                    : 'rgba(90, 111, 127, 0.45)');
 
             const card = document.createElement('div');
             card.className = 'zk-embed-preview-card';
@@ -1954,9 +1962,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
             card.style.cssText = `
                 position: absolute;
                 background: linear-gradient(180deg, rgba(20, 26, 38, 0.98) 0%, rgba(16, 22, 34, 0.98) 100%);
-                border: 1px solid rgba(90, 111, 127, 0.6);
+                border: ${cardBorder};
                 border-radius: 12px;
-                box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+                box-shadow: ${cardShadow};
                 color: var(--text-normal);
                 overflow: hidden;
                 pointer-events: auto;
@@ -1965,23 +1973,60 @@ export class CytoscapeRenderer implements IGraphRenderer {
             const headerEl = document.createElement('div');
             headerEl.dataset.role = 'embed-header';
             headerEl.style.cssText = `
-                height: 36px;
+                height: 32px;
                 padding: 0 12px;
                 display: flex;
                 align-items: center;
-                border-bottom: 1px solid ${vividHeaderDivider};
-                background: ${vividHeaderBackground};
+                gap: 6px;
+                border-bottom: 1px solid ${headerDivider};
+                background: ${headerBackground};
                 color: var(--text-muted);
                 font-size: 12px;
-                font-weight: 600;
+                font-weight: 500;
                 letter-spacing: 0.2px;
                 white-space: nowrap;
                 overflow: hidden;
-                text-overflow: ellipsis;
                 cursor: move;
                 user-select: none;
             `;
-            headerEl.textContent = sourceFile.basename;
+            // 文件图标
+            const headerIcon = document.createElement('span');
+            headerIcon.textContent = '📄';
+            headerIcon.style.cssText = 'font-size: 11px; flex-shrink: 0; opacity: 0.7;';
+            headerEl.appendChild(headerIcon);
+            // 文件名链接
+            const headerLink = document.createElement('span');
+            headerLink.textContent = sourceFile.basename;
+            headerLink.style.cssText = `
+                overflow: hidden;
+                text-overflow: ellipsis;
+                cursor: pointer;
+                color: var(--text-muted);
+                border-bottom: 1px solid rgba(148, 163, 184, 0.3);
+                padding-bottom: 1px;
+                transition: color 0.15s ease, border-color 0.15s ease;
+            `;
+            headerLink.addEventListener('mouseenter', () => {
+                headerLink.style.color = 'var(--text-normal)';
+                headerLink.style.borderBottomColor = 'rgba(148, 163, 184, 0.6)';
+            });
+            headerLink.addEventListener('mouseleave', () => {
+                headerLink.style.color = 'var(--text-muted)';
+                headerLink.style.borderBottomColor = 'rgba(148, 163, 184, 0.3)';
+            });
+            headerLink.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                // 查找已打开的 tab，有则激活，无则新开
+                const existingLeaf = app.workspace.getLeavesOfType('markdown')
+                    .find((leaf: any) => leaf.view?.file?.path === sourceFile.path);
+                if (existingLeaf) {
+                    app.workspace.setActiveLeaf(existingLeaf, { focus: true });
+                } else {
+                    app.workspace.openLinkText(sourceFile.path, '', e.ctrlKey || e.metaKey);
+                }
+            });
+            headerEl.appendChild(headerLink);
 
             const contentEl = document.createElement('div');
             contentEl.dataset.role = 'embed-content';
@@ -2231,34 +2276,112 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 document.addEventListener('mouseup', onMouseUp);
             });
 
-            app.vault.cachedRead(sourceFile).then(async (markdown: string) => {
-                if (!contentEl.isConnected) return;
+            const isExcalidraw = sourceFile.path.includes('.excalidraw');
 
-                // 控制渲染量，避免超长笔记影响图形交互
-                const snippet = markdown.length > 3000 ? `${markdown.slice(0, 3000)}\n\n...` : markdown;
-                contentEl.empty?.();
+            if (isExcalidraw) {
                 contentEl.textContent = '';
-                await MarkdownRenderer.render(app, snippet, contentEl, sourceFile.path, rendererComponent);
-                contentEl.querySelectorAll('h1,h2,h3,h4').forEach((el: any) => {
-                    el.style.marginTop = '0.4em';
-                    el.style.marginBottom = '0.35em';
-                    el.style.lineHeight = '1.35';
+                (async () => {
+                    let rendered = false;
+
+                    // 方式 1：Excalidraw 插件 API — 直接生成 SVG
+                    if (!rendered) {
+                        try {
+                            const excalidrawPlugin = (app as any).plugins?.plugins?.['obsidian-excalidraw-plugin'];
+                            if (excalidrawPlugin) {
+                                let svg: any = null;
+                                // 尝试 ExcalidrawAutomate API
+                                const ea = excalidrawPlugin.ea;
+                                if (ea && typeof ea.createSVG === 'function') {
+                                    svg = await ea.createSVG(sourceFile.path);
+                                }
+                                // 回退：尝试 plugin 级别的 createSVG
+                                if (!svg && typeof excalidrawPlugin.createSVG === 'function') {
+                                    svg = await excalidrawPlugin.createSVG(sourceFile.path);
+                                }
+                                if (svg instanceof SVGElement || svg instanceof HTMLElement) {
+                                    svg.style.cssText = 'position: absolute; inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); object-fit: contain;';
+                                    svg.removeAttribute('width');
+                                    svg.removeAttribute('height');
+                                    contentEl.style.position = 'relative';
+                                    contentEl.style.overflow = 'hidden';
+                                    contentEl.appendChild(svg);
+                                    rendered = true;
+                                }
+                            }
+                        } catch { /* Excalidraw API 不可用 */ }
+                    }
+
+                    // 方式 2：查找自动导出的 SVG/PNG
+                    if (!rendered) {
+                        const baseName = sourceFile.path.replace(/\.excalidraw(\.md)?$/i, '');
+                        const dir = sourceFile.path.includes('/') ? sourceFile.path.substring(0, sourceFile.path.lastIndexOf('/')) + '/' : '';
+                        const stemOnly = baseName.includes('/') ? baseName.substring(baseName.lastIndexOf('/') + 1) : baseName;
+                        const candidates = [
+                            `${baseName}.svg`, `${baseName}.png`,
+                            `${dir}${stemOnly}.svg`, `${dir}${stemOnly}.png`,
+                            sourceFile.path.replace(/\.md$/i, '.svg'),
+                            sourceFile.path.replace(/\.md$/i, '.png'),
+                        ];
+                        const seen = new Set<string>();
+                        let exportedFile: any = null;
+                        for (const p of candidates) {
+                            if (seen.has(p)) continue;
+                            seen.add(p);
+                            const f = app.vault.getAbstractFileByPath(p);
+                            if (f) { exportedFile = f; break; }
+                        }
+                        if (exportedFile) {
+                            const img = document.createElement('img');
+                            img.src = app.vault.getResourcePath(exportedFile);
+                            img.draggable = false;
+                            img.style.cssText = 'position: absolute; inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); object-fit: contain; display: block; background: transparent;';
+                            contentEl.style.position = 'relative';
+                            contentEl.style.overflow = 'hidden';
+                            contentEl.textContent = '';
+                            contentEl.appendChild(img);
+                            rendered = true;
+                        }
+                    }
+
+                    // 方式 3 跳过：MarkdownRenderer 对 excalidraw 只会渲染原始警告文本，无意义
+
+                    // 方式 4：兜底显示文件名
+                    if (!rendered) {
+                        contentEl.style.cssText += 'display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 13px;';
+                        contentEl.textContent = sourceFile.basename || 'Excalidraw';
+                    }
+                })();
+            } else {
+                // 普通 Markdown 文件
+                app.vault.cachedRead(sourceFile).then(async (markdown: string) => {
+                    if (!contentEl.isConnected) return;
+
+                    // 控制渲染量，避免超长笔记影响图形交互
+                    const snippet = markdown.length > 3000 ? `${markdown.slice(0, 3000)}\n\n...` : markdown;
+                    contentEl.empty?.();
+                    contentEl.textContent = '';
+                    await MarkdownRenderer.render(app, snippet, contentEl, sourceFile.path, rendererComponent);
+                    contentEl.querySelectorAll('h1,h2,h3,h4').forEach((el: any) => {
+                        el.style.marginTop = '0.4em';
+                        el.style.marginBottom = '0.35em';
+                        el.style.lineHeight = '1.35';
+                    });
+                    contentEl.querySelectorAll('p,li').forEach((el: any) => {
+                        el.style.marginTop = '0.28em';
+                        el.style.marginBottom = '0.28em';
+                    });
+                }).catch(() => {
+                    contentEl.textContent = sourceFile.basename || '';
                 });
-                contentEl.querySelectorAll('p,li').forEach((el: any) => {
-                    el.style.marginTop = '0.28em';
-                    el.style.marginBottom = '0.28em';
-                });
-            }).catch(() => {
-                contentEl.textContent = sourceFile.basename || '';
-            });
+            }
 
             const updatePosition = () => {
                 if (!this.cy) return;
                 const bb = node.renderedBoundingBox();
                 const zoom = this.cy.zoom();
                 const size = cardSizeMap.get(nodeId);
-                const width = size ? size.widthModel * zoom : Math.max(220, bb.w);
-                const height = size ? size.heightModel * zoom : Math.max(180, bb.h);
+                const width = size ? size.widthModel * zoom : 280 * zoom;
+                const height = size ? size.heightModel * zoom : 220 * zoom;
 
                 card.style.left = `${bb.x1}px`;
                 card.style.top = `${bb.y1}px`;
@@ -2274,8 +2397,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
                 contentEl.style.height = `calc(100% - ${headerH}px)`;
                 contentEl.style.fontSize = `${Math.max(10, 14 * zoom)}px`;
-                contentEl.style.padding = `${Math.max(6, 12 * zoom)}px ${Math.max(8, 14 * zoom)}px`;
                 contentEl.style.lineHeight = '1.6';
+                // excalidraw 内容用绝对定位填充；普通 markdown 用默认 padding
+                const isExcalidrawContent = contentEl.style.position === 'relative' && contentEl.querySelector('svg, img');
+                if (isExcalidrawContent) {
+                    contentEl.style.padding = '0';
+                    contentEl.style.overflow = 'hidden';
+                } else {
+                    contentEl.style.padding = `${Math.max(6, 12 * zoom)}px ${Math.max(8, 14 * zoom)}px`;
+                }
 
                 resizeHandle.style.width = `${Math.max(12, 18 * zoom)}px`;
                 resizeHandle.style.height = `${Math.max(12, 18 * zoom)}px`;
@@ -2786,12 +2916,8 @@ case 'dagre':
 
         const IMAGE_EXTS_BADGE = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
         this.cy.nodes('[?hasFileIcon]').forEach((node: any) => {
-            // 跳过 ![[]] 图片嵌入节点（由 addImageNodePreviews 渲染）
-            if (node.data('isEmbed')) {
-                const fp = node.data('filePath') || '';
-                const ext = fp.split('.').pop()?.toLowerCase() || '';
-                if (IMAGE_EXTS_BADGE.has(ext)) return;
-            }
+            // 跳过所有 embed 节点（由预览卡片渲染标题和内容）
+            if (node.data('isEmbed')) return;
             const underlineGroupEl = document.createElement('div');
             underlineGroupEl.className = 'zk-node-file-underline-group';
             underlineGroupEl.style.cssText = `
@@ -2958,7 +3084,7 @@ case 'dagre':
         });
 
         this.cy.nodes().forEach((node: any) => {
-            if (node.data('isGroup') || node.data('isPlaceholder')) {
+            if (node.data('isGroup') || node.data('isPlaceholder') || node.data('isEmbed')) {
                 return;
             }
 
@@ -3172,10 +3298,10 @@ case 'dagre':
             updateAnchorPos();
         });
 
-        // 为每个有 badge 的节点创建徽章元素
+        // 为每个有 badge 的节点创建徽章元素（跳过 embed 节点，由预览卡片展示）
         this.cy.nodes('[badge]').forEach((node: any) => {
             const badge = node.data('badge');
-            if (!badge) return;
+            if (!badge || node.data('isEmbed')) return;
             const isModern = this.isModernThemeStyle();
             const branchBorderColor = typeof node.data('branchNodeBorder') === 'string'
                 ? this.normalizeHexColor(node.data('branchNodeBorder'))

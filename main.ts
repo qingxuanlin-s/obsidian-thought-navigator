@@ -551,6 +551,23 @@ export default class ZKNavigationPlugin extends Plugin {
             );
         });
 
+        // 拦截 .moc 文件打开，用分支视图（IndexView）代替默认编辑器
+        this.registerEvent(
+            this.app.workspace.on('file-open', (file) => {
+                if (!file || !file.path.endsWith('.moc')) return;
+                // 找到刚打开 .moc 的 markdown leaf 并关闭它
+                const activeLeaf = this.app.workspace.activeLeaf;
+                if (activeLeaf?.view?.getViewType() === 'markdown') {
+                    activeLeaf.detach();
+                }
+                // 设置当前 MOC 文件并打开分支视图
+                this.settings.mocCurrentFile = file.path;
+                this.saveData(this.settings);
+                this.openIndexView();
+                this.app.workspace.trigger('zk-navigation:refresh-index-graph');
+            })
+        );
+
         // 监听文件重命名事件，更新 MOC 文件中的链接和反向索引
         this.registerEvent(
             this.app.vault.on("rename", async (file, oldPath) => {
