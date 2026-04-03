@@ -320,6 +320,10 @@ export class MOCHandler {
                         }
                         if (typeof newIsEmbed === 'boolean') {
                             node.isEmbed = newIsEmbed;
+                            // 从 embed 切回文件节点时，清除预览卡片尺寸持久化，避免节点沿用大尺寸
+                            if (!newIsEmbed && (mocData as any).embedNodeSizes) {
+                                delete (mocData as any).embedNodeSizes[nodeID];
+                            }
                         }
                         node.displayText = newContent;
                         return true;

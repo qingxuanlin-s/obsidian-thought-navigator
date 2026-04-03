@@ -377,12 +377,20 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     if (id) {
                         const existing = this.cy!.$id(id);
                         if (existing.length > 0) {
+                            const wasEmbed = !!existing.data('isEmbed');
+                            const nextIsEmbed = !!ele.data.isEmbed;
                             // 更新节点数据
                             existing.data(ele.data);
 
                             // 同步更新位置（savedPosition 对应的坐标在 ele.position 上，data 里不含位置）
                             if (ele.group === 'nodes' && (ele as any).position) {
                                 existing.position((ele as any).position);
+                            }
+
+                            // embed -> 普通文件节点：移除预览卡片写入的 width/height bypass，恢复样式表计算尺寸
+                            if (ele.group === 'nodes' && wasEmbed && !nextIsEmbed) {
+                                existing.removeStyle('width');
+                                existing.removeStyle('height');
                             }
 
                             // 特殊处理 parent 属性，确保分组关系正确更新
@@ -2090,6 +2098,44 @@ export class CytoscapeRenderer implements IGraphRenderer {
             card.appendChild(resizeHandle);
             previewContainer.appendChild(card);
 
+            const embedToggleEl = document.createElement('div');
+            embedToggleEl.className = 'zk-embed-toggle';
+            embedToggleEl.title = '切换为文件节点';
+            embedToggleEl.setAttribute('aria-label', embedToggleEl.title);
+            setIcon(embedToggleEl, 'eye-off');
+            embedToggleEl.style.cssText = `
+                position: absolute;
+                cursor: pointer;
+                pointer-events: none;
+                opacity: 0;
+                transition: opacity 0.15s ease;
+                user-select: none;
+                z-index: 11;
+                width: 24px;
+                height: 24px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: var(--text-normal);
+            `;
+            const embedToggleSvg = embedToggleEl.querySelector('svg') as SVGElement | null;
+            if (embedToggleSvg) {
+                embedToggleSvg.style.width = '95%';
+                embedToggleSvg.style.height = '95%';
+                embedToggleSvg.style.strokeWidth = '2.2';
+            }
+            previewContainer.appendChild(embedToggleEl);
+            embedToggleEl.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.container?.dispatchEvent(new CustomEvent('toggle-embed-node', {
+                    detail: {
+                        node: data.originalNode,
+                        currentIsEmbed: true
+                    }
+                }));
+            });
+
             // 仅选中时允许交互（滚轮滚动/拖拽缩放），避免影响画布操作
             let isHoveringCard = false;
             const releaseCanvasSuppression = () => {
@@ -2102,6 +2148,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 const isSelected = node.selected();
                 resizeHandle.style.pointerEvents = isSelected ? 'auto' : 'none';
                 resizeHandle.style.opacity = isSelected ? '1' : '0';
+                embedToggleEl.style.pointerEvents = isSelected ? 'auto' : 'none';
+                embedToggleEl.style.opacity = isSelected ? '1' : '0';
                 if (!isSelected) {
                     releaseCanvasSuppression();
                 }
@@ -2414,6 +2462,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 card.style.height = `${height}px`;
                 card.style.borderRadius = `${Math.max(8, 12 * zoom)}px`;
                 card.style.borderWidth = `${Math.max(1, 2.5 * zoom)}px`;
+                const toggleSize = Math.max(20, 24 * zoom);
+                embedToggleEl.style.width = `${toggleSize}px`;
+                embedToggleEl.style.height = `${toggleSize}px`;
+                embedToggleEl.style.left = `${bb.x1 + (width - toggleSize) / 2}px`;
+                embedToggleEl.style.top = `${bb.y1 + height + 8 * zoom}px`;
 
                 // 内容随 zoom 缩放
                 const headerH = Math.max(24, 36 * zoom);
@@ -3017,7 +3070,7 @@ case 'dagre':
             width: 100%;
             height: 100%;
             pointer-events: none;
-            z-index: 1;
+            z-index: 3;
         `;
         this.container.appendChild(badgeContainer);
 
@@ -3491,11 +3544,96 @@ case 'dagre':
             });
         });
 
+        // embed toggle 按钮（睁眼/闭眼，文件节点⟷预览节点互转）
+        if (!readOnly) {
+            this.cy.nodes().forEach((node: any) => {
+                if (node.data('isRoot') || node.data('isPlaceholder') || node.data('isGroup') || node.data('isStandaloneText')) return;
+                if (node.data('isTextOnly')) return;
+                const isEmbed = !!node.data('isEmbed');
+                const hasFilePath = !!node.data('filePath');
+                if (!isEmbed && !hasFilePath) return;
+                if (isEmbed) return;
+                const toggleEl = document.createElement('div');
+                toggleEl.className = 'zk-embed-toggle';
+                toggleEl.title = isEmbed ? '切换为文件节点' : '切换为 Embed 节点';
+                toggleEl.setAttribute('aria-label', toggleEl.title);
+                setIcon(toggleEl, isEmbed ? 'eye-off' : 'eye');
+                toggleEl.style.cssText = `
+                    position: absolute;
+                    cursor: pointer;
+                    pointer-events: auto;
+                    opacity: 0.88;
+                    transition: opacity 0.15s ease, transform 0.15s ease;
+                    user-select: none;
+                    z-index: 10;
+                    width: 24px;
+                    height: 24px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: var(--text-normal);
+                `;
+                const toggleSvg = toggleEl.querySelector('svg') as SVGElement | null;
+                if (toggleSvg) {
+                    toggleSvg.style.width = '95%';
+                    toggleSvg.style.height = '95%';
+                    toggleSvg.style.strokeWidth = '2.2';
+                }
+                badgeContainer.appendChild(toggleEl);
+
+                toggleEl.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.container?.dispatchEvent(new CustomEvent('toggle-embed-node', {
+                        detail: {
+                            node: node.data('originalNode'),
+                            currentIsEmbed: isEmbed
+                        }
+                    }));
+                });
+
+                const updateTogglePos = () => {
+                    if (!this.cy) return;
+                    const isHidden = node.removed() || node.hasClass('zk-collapsed-hidden') || node.style('display') === 'none' || !node.visible();
+                    if (isHidden) { toggleEl.style.display = 'none'; return; }
+                    if (!node.selected()) {
+                        toggleEl.style.display = 'none';
+                        toggleEl.style.pointerEvents = 'none';
+                        return;
+                    }
+                    toggleEl.style.display = '';
+                    toggleEl.style.opacity = '1';
+                    toggleEl.style.pointerEvents = 'auto';
+                    const zoom = this.cy.zoom();
+                    const bb = node.renderedBoundingBox();
+                    const size = Math.max(20, 24 * zoom);
+                    toggleEl.style.width = `${size}px`;
+                    toggleEl.style.height = `${size}px`;
+                    let x = bb.x1 + bb.w / 2 - size / 2;
+                    let y = bb.y2 + 8 * zoom;
+
+                    if (isEmbed) {
+                        const embedCard = this.container?.querySelector(`.zk-embed-preview-card[data-node-id="${node.id()}"]`) as HTMLElement | null;
+                        if (embedCard) {
+                            x = embedCard.offsetLeft + (embedCard.offsetWidth - size) / 2;
+                            y = embedCard.offsetTop + embedCard.offsetHeight + 8 * zoom;
+                        }
+                    }
+
+                    toggleEl.style.left = `${x}px`;
+                    toggleEl.style.top = `${y}px`;
+                };
+
+                badgeUpdaters.push(updateTogglePos);
+                updateTogglePos();
+            });
+        }
+
         // 注册到统一 overlay 调度器
         const badgePositionUpdater = () => badgeUpdaters.forEach(updater => updater());
         this.overlayUpdaters.add(badgePositionUpdater);
         this.overlayImmediateUpdaters.add(badgePositionUpdater);
         this.overlayExtraUpdaters.add(badgePositionUpdater);
+        this.overlaySelectionUpdaters.add(badgePositionUpdater);
 
         // 添加边控制点
         this.addEdgeControlPoints();
