@@ -1999,11 +1999,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 cursor: move;
                 user-select: none;
             `;
-            // 文件图标
-            const headerIcon = document.createElement('span');
-            headerIcon.textContent = '📄';
-            headerIcon.style.cssText = 'font-size: 11px; flex-shrink: 0; opacity: 0.7;';
-            headerEl.appendChild(headerIcon);
             // 文件名链接
             const headerLink = document.createElement('span');
             headerLink.textContent = sourceFile.basename;
@@ -2622,10 +2617,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 cursor: move;
                 user-select: none;
             `;
-            const headerIcon = document.createElement('span');
-            headerIcon.textContent = '🖼';
-            headerIcon.style.cssText = 'font-size: 11px; flex-shrink: 0; opacity: 0.7;';
-            headerEl.appendChild(headerIcon);
+
 
             const headerLink = document.createElement('span');
             headerLink.textContent = (file as any).basename || filePath.split('/').pop() || '';
