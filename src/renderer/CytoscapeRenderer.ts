@@ -92,6 +92,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private isEdgeSelected = false; // 标记当前是否有选中的边（边编辑模式）
     private embedPreviewCleanup: (() => void) | null = null;
     private imagePreviewCleanup: (() => void) | null = null;
+    // 缓存已渲染的预览卡片 DOM，避免重建时 excalidraw/markdown 内容闪烁
+    private embedCardCache: Map<string, HTMLElement> = new Map();
     private collapseHandleCleanup: (() => void) | null = null;
     private collapsedNodeIds: Set<string> = new Set();
 
@@ -1864,7 +1866,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private addEmbedNodePreviews(): void {
         if (!this.cy || !this.container) return;
 
+        // 清理前先缓存已渲染的卡片内容（避免 excalidraw/markdown 异步内容闪烁）
         if (this.embedPreviewCleanup) {
+            const oldContainer = this.container.querySelector('.zk-embed-previews');
+            if (oldContainer) {
+                oldContainer.querySelectorAll('.zk-embed-preview-card').forEach((card: Element) => {
+                    const nid = (card as HTMLElement).dataset.nodeId;
+                    if (nid) this.embedCardCache.set(nid, card as HTMLElement);
+                });
+            }
             this.embedPreviewCleanup();
             this.embedPreviewCleanup = null;
         }
@@ -1877,7 +1887,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             const ext = filePath.split('.').pop()?.toLowerCase() || '';
             return !IMAGE_EXTENSIONS.has(ext);
         });
-        if (embedNodes.length === 0) return;
+        if (embedNodes.length === 0) { this.embedCardCache.clear(); return; }
 
         const app = (window as any).app;
         if (!app) return;
@@ -2067,6 +2077,20 @@ export class CytoscapeRenderer implements IGraphRenderer {
             resizeHandle.textContent = '◢';
 
             card.appendChild(headerEl);
+            // 仅对 excalidraw 复用缓存内容（避免异步渲染闪烁）
+            const isExcalidrawFile = sourceFile.path.includes('.excalidraw');
+            if (isExcalidrawFile) {
+                const cachedCard = this.embedCardCache.get(nodeId);
+                const cachedContent = cachedCard?.querySelector('[data-role="embed-content"]') as HTMLElement | null;
+                if (cachedContent && cachedContent.children.length > 0) {
+                    while (cachedContent.firstChild) {
+                        contentEl.appendChild(cachedContent.firstChild);
+                    }
+                    if (cachedContent.style.position === 'relative') {
+                        contentEl.style.position = 'relative';
+                    }
+                }
+            }
             card.appendChild(contentEl);
             card.appendChild(resizeHandle);
             previewContainer.appendChild(card);
@@ -2277,8 +2301,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
             });
 
             const isExcalidraw = sourceFile.path.includes('.excalidraw');
+            const hasExcalidrawCache = isExcalidrawFile && contentEl.children.length > 0;
 
-            if (isExcalidraw) {
+            if (isExcalidraw && !hasExcalidrawCache) {
                 contentEl.textContent = '';
                 (async () => {
                     let rendered = false;
@@ -2351,7 +2376,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         contentEl.textContent = sourceFile.basename || 'Excalidraw';
                     }
                 })();
-            } else {
+            } else if (!isExcalidraw) {
                 // 普通 Markdown 文件
                 app.vault.cachedRead(sourceFile).then(async (markdown: string) => {
                     if (!contentEl.isConnected) return;
@@ -2377,17 +2402,23 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
             const updatePosition = () => {
                 if (!this.cy) return;
-                const bb = node.renderedBoundingBox();
                 const zoom = this.cy.zoom();
                 const size = cardSizeMap.get(nodeId);
-                const width = size ? size.widthModel * zoom : 280 * zoom;
-                const height = size ? size.heightModel * zoom : 220 * zoom;
+                const widthModel = size ? size.widthModel : 280;
+                const heightModel = size ? size.heightModel : 220;
+                const width = widthModel * zoom;
+                const height = heightModel * zoom;
 
+                // 同步 Cytoscape 节点尺寸，让连线正确连接到卡片边缘
+                node.style({ 'width': widthModel, 'height': heightModel });
+
+                const bb = node.renderedBoundingBox();
                 card.style.left = `${bb.x1}px`;
                 card.style.top = `${bb.y1}px`;
                 card.style.width = `${width}px`;
                 card.style.height = `${height}px`;
                 card.style.borderRadius = `${Math.max(8, 12 * zoom)}px`;
+                card.style.borderWidth = `${Math.max(1, 2.5 * zoom)}px`;
 
                 // 内容随 zoom 缩放
                 const headerH = Math.max(24, 36 * zoom);
@@ -2416,6 +2447,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
             updatePosition();
         });
 
+        // 缓存已使用，清空
+        this.embedCardCache.clear();
+
         // 注册到统一 overlay 调度器
         const embedPositionUpdater = () => updaters.forEach(fn => fn());
         const embedSelectionUpdater = () => interactionUpdaters.forEach(fn => fn());
@@ -2440,14 +2474,14 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private addImageNodePreviews(): void {
         if (!this.cy || !this.container) return;
 
+        const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
+        const app = (window as any).app;
+        if (!app) return;
+
         if (this.imagePreviewCleanup) {
             this.imagePreviewCleanup();
             this.imagePreviewCleanup = null;
         }
-
-        const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
-        const app = (window as any).app;
-        if (!app) return;
 
         // 查找所有 ![[]] 嵌入节点且文件路径为图片格式的节点
         // [[image.png]] 普通文件节点不渲染图片，保持为普通可点击节点
@@ -2537,19 +2571,94 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'padding': 0
             });
 
-            // 创建卡片容器（无标题栏，纯图片）
+            // 现代/绚丽风格适配
+            const isModern = this.isModernThemeStyle();
+            const isColored = this.isVividThemeStyle() || isModern;
+            const cardBorder = isModern && branchBorderColor
+                ? `2.5px solid ${branchBorderColor}`
+                : `2px solid rgba(90, 111, 127, 0.4)`;
+            const cardShadow = isModern && branchBorderColor
+                ? `0 0 10px ${this.hexToRgba(branchBorderColor, 0.35)}, 0 4px 12px rgba(0, 0, 0, 0.25)`
+                : '0 4px 12px rgba(0, 0, 0, 0.25)';
+            const headerBackground = isModern
+                ? 'transparent'
+                : (isColored && branchBorderColor ? vividHeaderBackground : 'rgba(11, 16, 25, 0.72)');
+            const headerDivider = isModern && branchBorderColor
+                ? this.hexToRgba(branchBorderColor, 0.25)
+                : vividHeaderDivider;
+
+            // 创建卡片容器
             const card = document.createElement('div');
             card.className = 'zk-image-preview-card';
             card.style.cssText = `
                 position: absolute;
-                border: 2px solid rgba(90, 111, 127, 0.4);
+                background: linear-gradient(180deg, rgba(20, 26, 38, 0.98) 0%, rgba(16, 22, 34, 0.98) 100%);
+                border: ${cardBorder};
                 border-radius: 8px;
                 overflow: hidden;
                 pointer-events: auto;
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+                box-shadow: ${cardShadow};
                 transition: border-color 0.15s ease;
             `;
             card.dataset.nodeId = nodeId;
+
+            // 标题栏（文件名 + 点击跳转）
+            const headerEl = document.createElement('div');
+            headerEl.dataset.role = 'image-header';
+            headerEl.style.cssText = `
+                height: 32px;
+                padding: 0 12px;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                border-bottom: 1px solid ${headerDivider};
+                background: ${headerBackground};
+                color: var(--text-muted);
+                font-size: 12px;
+                font-weight: 500;
+                letter-spacing: 0.2px;
+                white-space: nowrap;
+                overflow: hidden;
+                cursor: move;
+                user-select: none;
+            `;
+            const headerIcon = document.createElement('span');
+            headerIcon.textContent = '🖼';
+            headerIcon.style.cssText = 'font-size: 11px; flex-shrink: 0; opacity: 0.7;';
+            headerEl.appendChild(headerIcon);
+
+            const headerLink = document.createElement('span');
+            headerLink.textContent = (file as any).basename || filePath.split('/').pop() || '';
+            headerLink.style.cssText = `
+                overflow: hidden;
+                text-overflow: ellipsis;
+                cursor: pointer;
+                color: var(--text-muted);
+                border-bottom: 1px solid rgba(148, 163, 184, 0.3);
+                padding-bottom: 1px;
+                transition: color 0.15s ease, border-color 0.15s ease;
+            `;
+            headerLink.addEventListener('mouseenter', () => {
+                headerLink.style.color = 'var(--text-normal)';
+                headerLink.style.borderBottomColor = 'rgba(148, 163, 184, 0.6)';
+            });
+            headerLink.addEventListener('mouseleave', () => {
+                headerLink.style.color = 'var(--text-muted)';
+                headerLink.style.borderBottomColor = 'rgba(148, 163, 184, 0.3)';
+            });
+            headerLink.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                const existingLeaf = app.workspace.getLeavesOfType('markdown')
+                    .find((leaf: any) => leaf.view?.file?.path === filePath);
+                if (existingLeaf) {
+                    app.workspace.setActiveLeaf(existingLeaf, { focus: true });
+                } else {
+                    app.workspace.openLinkText(filePath, '', e.ctrlKey || e.metaKey);
+                }
+            });
+            headerEl.appendChild(headerLink);
+            card.appendChild(headerEl);
 
             // 鼠标悬浮图片卡片时显示连线手柄并更新位置
             card.addEventListener('mouseenter', () => {
@@ -2565,18 +2674,17 @@ export class CytoscapeRenderer implements IGraphRenderer {
             card.addEventListener('mouseleave', (e: MouseEvent) => {
                 const handle = this.container?.querySelector(`.zk-connection-handle[data-image-node-id="${nodeId}"]`) as HTMLElement;
                 if (!handle) return;
-                // 鼠标移到蓝点上时不隐藏
                 if (e.relatedTarget === handle || handle.contains(e.relatedTarget as Node)) return;
                 handle.style.opacity = '0';
             });
 
-            // 图片直接作为内容
+            // 图片内容区
             const img = document.createElement('img');
             img.src = resourcePath;
             img.draggable = false;
             img.style.cssText = `
                 width: 100%;
-                height: 100%;
+                height: calc(100% - 32px);
                 object-fit: contain;
                 display: block;
                 background: var(--background-secondary);
@@ -2773,8 +2881,13 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 const rp = node.renderedPosition();
                 const size = cardSizeMap.get(nodeId);
                 // 默认使用较小尺寸，图片加载后会自动适应
-                const width = size ? size.widthModel * zoom : 240 * zoom;
-                const height = size ? size.heightModel * zoom : 200 * zoom;
+                const widthModel = size ? size.widthModel : 240;
+                const heightModel = size ? size.heightModel : 200;
+                const width = widthModel * zoom;
+                const height = heightModel * zoom;
+
+                // 同步 Cytoscape 节点尺寸，让连线正确连接到卡片边缘
+                node.style({ 'width': widthModel, 'height': heightModel });
 
                 card.style.left = `${rp.x - width / 2}px`;
                 card.style.top = `${rp.y - height / 2}px`;
@@ -2783,6 +2896,14 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 card.dataset.renderedWidth = `${width}`;
                 card.dataset.renderedHeight = `${height}`;
                 card.style.borderRadius = `${Math.max(6, 8 * zoom)}px`;
+                card.style.borderWidth = `${Math.max(1, 2.5 * zoom)}px`;
+
+                // header 随 zoom 缩放
+                const headerH = Math.max(24, 32 * zoom);
+                headerEl.style.height = `${headerH}px`;
+                headerEl.style.fontSize = `${Math.max(9, 12 * zoom)}px`;
+                headerEl.style.padding = `0 ${Math.max(8, 12 * zoom)}px`;
+                img.style.height = `calc(100% - ${headerH}px)`;
             };
 
             updaters.push(updatePosition);
