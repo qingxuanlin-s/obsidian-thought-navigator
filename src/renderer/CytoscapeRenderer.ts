@@ -2344,7 +2344,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             });
 
             const isExcalidraw = sourceFile.path.includes('.excalidraw');
-            const hasExcalidrawCache = isExcalidrawFile && contentEl.children.length > 0;
+            const hasExcalidrawCache = isExcalidrawFile && !!contentEl.querySelector('svg, img');
 
             if (isExcalidraw && !hasExcalidrawCache) {
                 contentEl.textContent = '';
@@ -2365,6 +2365,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
                                 // 回退：尝试 plugin 级别的 createSVG
                                 if (!svg && typeof excalidrawPlugin.createSVG === 'function') {
                                     svg = await excalidrawPlugin.createSVG(sourceFile.path);
+                                }
+                                if (typeof svg === 'string') {
+                                    const wrapped = document.createElement('div');
+                                    wrapped.innerHTML = svg;
+                                    svg = wrapped.querySelector('svg');
                                 }
                                 if (svg instanceof SVGElement || svg instanceof HTMLElement) {
                                     svg.style.cssText = 'position: absolute; inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); object-fit: contain;';
@@ -2416,7 +2421,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     // 方式 4：兜底显示文件名
                     if (!rendered) {
                         contentEl.style.cssText += 'display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 13px;';
-                        contentEl.textContent = sourceFile.basename || 'Excalidraw';
+                        contentEl.textContent = `Excalidraw 预览不可用：${sourceFile.basename || sourceFile.path}`;
                     }
                 })();
             } else if (!isExcalidraw) {
