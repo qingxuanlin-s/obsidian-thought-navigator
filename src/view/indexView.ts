@@ -1606,20 +1606,32 @@ export class ZKIndexView extends ItemView {
             const { node, event: triggerEvent } = event.detail || {};
 
             // 检查节点是否有效
-            if (!node || !node.file) {
+            if (!node) {
                 console.warn('Invalid node clicked:', node);
                 return;
             }
 
-            // 仅在显式打开手势下打开文件，避免编辑/刷新阶段误触导致自动跳转
-            const isMouseEvent = triggerEvent instanceof MouseEvent;
-            const shouldOpenByModifier = isMouseEvent && (triggerEvent.metaKey || triggerEvent.ctrlKey);
-            const shouldOpenByMiddleClick = isMouseEvent && triggerEvent.button === 1;
-            if (!shouldOpenByModifier && !shouldOpenByMiddleClick) {
+            // 优先使用已解析文件；否则回退到 wikiLink/显示文本解析，避免转换后 file 暂时为空导致无法打开
+            let targetFile = node.file ?? null;
+            if (!targetFile && node.file?.path) {
+                targetFile = this.app.vault.getFileByPath(node.file.path);
+            }
+            if (!targetFile) {
+                const mocPath = this.plugin.settings.mocCurrentFile || '';
+                const basePath = mocPath.includes('/') ? mocPath.substring(0, mocPath.lastIndexOf('/')) : '';
+                const linkText = (node.wikiLink || node.displayText || node.title || '').trim();
+                if (linkText) {
+                    targetFile = this.app.metadataCache.getFirstLinkpathDest(linkText, basePath) || null;
+                }
+            }
+            if (!targetFile) {
+                console.warn('Node click target file not resolved:', node);
                 return;
             }
 
-            this.app.workspace.getLeaf(false).openFile(node.file);
+            const isMouseEvent = triggerEvent instanceof MouseEvent;
+            const openInNewLeaf = isMouseEvent && (triggerEvent.metaKey || triggerEvent.ctrlKey || triggerEvent.button === 1);
+            this.app.workspace.getLeaf(openInNewLeaf).openFile(targetFile);
         });
 
         // 监听节点悬停事件
@@ -1698,6 +1710,27 @@ export class ZKIndexView extends ItemView {
                 return;
             }
             await this.editNodeRemark(node);
+        });
+
+        // 监听文件节点⟷预览节点切换
+        this.addTrackedListener(branchGraphDiv, 'toggle-embed-node', async (event: any) => {
+            if (this.isMobileReadOnly()) return;
+            const { node, currentIsEmbed } = event.detail;
+            if (!node) return;
+            const mocFilePath = this.plugin.settings.mocCurrentFile;
+            if (!mocFilePath) return;
+            const mocFile = this.app.vault.getFileByPath(mocFilePath);
+            if (!mocFile) return;
+            const newIsEmbed = !currentIsEmbed;
+            const contentForSave = (node.wikiLink || node.file?.basename || node.displayText || node.title || '').trim();
+            await this.mocHandler.updateNodeContentInMOC(
+                mocFile,
+                node.IDStr || node.nodeID,
+                contentForSave,
+                undefined,
+                newIsEmbed
+            );
+            await this.refreshBranchMermaid();
         });
 
         // 监听跨领域节点点击事件（跳转到关联的 MOC 文件）
