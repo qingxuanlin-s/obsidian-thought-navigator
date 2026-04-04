@@ -104,6 +104,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private overlaySelectionUpdaters: Set<() => void> = new Set(); // select/unselect 独占 updaters
     private overlayUpdateScheduled = false;
     private overlayListenerBound = false;
+    private overlayInteracting = false;
+    private overlayInteractTimer: number | null = null;
     // 边控制点/端点手柄的 updaters（生命周期跟随选中边，需单独追踪清理）
     private edgeControlPointUpdaters: Set<() => void> = new Set();
     private edgeEndpointUpdaters: Set<() => void> = new Set();
@@ -129,7 +131,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         this.overlayUpdateScheduled = true;
         requestAnimationFrame(() => {
             this.overlayUpdateScheduled = false;
-            if (!this.cy) return;
+            if (!this.cy || !this.container?.isConnected) return;
             this.overlayUpdaters.forEach(fn => fn());
         });
     }
@@ -147,10 +149,22 @@ export class CytoscapeRenderer implements IGraphRenderer {
         this.overlayUpdateScheduled = true;
         requestAnimationFrame(() => {
             this.overlayUpdateScheduled = false;
-            if (!this.cy) return;
+            if (!this.cy || !this.container?.isConnected) return;
             this.overlayUpdaters.forEach(fn => fn());
             this.overlayExtraUpdaters.forEach(fn => fn());
         });
+    }
+
+    private markOverlayInteracting(): void {
+        this.overlayInteracting = true;
+        if (this.overlayInteractTimer !== null) {
+            window.clearTimeout(this.overlayInteractTimer);
+        }
+        this.overlayInteractTimer = window.setTimeout(() => {
+            this.overlayInteracting = false;
+            this.overlayInteractTimer = null;
+            this.scheduleOverlayExtraUpdate();
+        }, 100);
     }
 
     /** select/unselect 专用更新（同步，不经过 rAF） */
@@ -167,9 +181,19 @@ export class CytoscapeRenderer implements IGraphRenderer {
         this.overlayListenerBound = true;
 
         // 核心视口/拖动事件 → 单一 rAF 调度
-        this.cy.on('zoom pan viewport drag position', () => this.scheduleOverlayUpdate());
+        this.cy.on('zoom pan viewport drag position', () => {
+            this.markOverlayInteracting();
+            this.scheduleOverlayUpdate();
+        });
         // 拖动结束 → 立即同步
-        this.cy.on('dragfree', () => this.immediateOverlayUpdate());
+        this.cy.on('dragfree', () => {
+            this.overlayInteracting = false;
+            if (this.overlayInteractTimer !== null) {
+                window.clearTimeout(this.overlayInteractTimer);
+                this.overlayInteractTimer = null;
+            }
+            this.immediateOverlayUpdate();
+        });
         // 结构/状态变化事件 → 额外 updaters
         this.cy.on('class data add remove layoutstop', () => this.scheduleOverlayExtraUpdate());
         // 选择变化 → 同步 selection updaters + 调度位置更新
@@ -188,6 +212,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
         this.edgeControlPointUpdaters.clear();
         this.edgeEndpointUpdaters.clear();
         this.overlayUpdateScheduled = false;
+        this.overlayInteracting = false;
+        if (this.overlayInteractTimer !== null) {
+            window.clearTimeout(this.overlayInteractTimer);
+            this.overlayInteractTimer = null;
+        }
         // 不重置 overlayListenerBound：事件监听器绑定在 cy 实例上未被移除
         // 重置会导致 bindOverlayListeners 重复绑定，事件累积
     }
@@ -3282,11 +3311,32 @@ case 'dagre':
         this.cy.nodes('.group-node').forEach((groupNode: any) => {
             const glassEl = document.createElement('div');
             glassEl.className = 'zk-group-glass';
+            glassEl.style.position = 'absolute';
+            glassEl.style.left = '0';
+            glassEl.style.top = '0';
+            glassEl.style.borderRadius = '12px';
+            glassEl.style.border = isLightTheme
+                ? '1.5px solid rgba(180, 195, 220, 0.7)'
+                : '1.5px solid rgba(255, 255, 255, 0.13)';
+            glassEl.style.background = isLightTheme
+                ? 'rgba(255, 255, 255, 0.35)'
+                : 'rgba(255, 255, 255, 0.05)';
+            (glassEl.style as any).backdropFilter = 'blur(12px)';
+            (glassEl.style as any).webkitBackdropFilter = 'blur(12px)';
+            glassEl.style.boxShadow = isLightTheme
+                ? '0 2px 16px rgba(0,0,0,0.06)'
+                : '0 2px 16px rgba(0,0,0,0.25)';
             glassLayer.appendChild(glassEl);
 
             const labelEl = document.createElement('div');
             labelEl.className = 'zk-group-glass-label';
             labelEl.textContent = groupNode.data('label') || '';
+            labelEl.style.position = 'absolute';
+            labelEl.style.fontWeight = '600';
+            labelEl.style.color = isLightTheme ? '#64748b' : 'rgba(255,255,255,0.4)';
+            labelEl.style.pointerEvents = 'none';
+            labelEl.style.userSelect = 'none';
+            labelEl.style.whiteSpace = 'nowrap';
             glassEl.appendChild(labelEl);
 
             const updateGlassPos = () => {
@@ -3300,36 +3350,15 @@ case 'dagre':
                     return;
                 }
                 glassEl.style.display = 'block';
-                glassEl.style.position = 'absolute';
-                glassEl.style.left = '0';
-                glassEl.style.top = '0';
                 glassEl.style.transform = `translate(${bb.x1}px, ${bb.y1}px)`;
                 glassEl.style.width = `${bb.w}px`;
                 glassEl.style.height = `${bb.h}px`;
-                glassEl.style.borderRadius = '12px';
-                glassEl.style.border = isLightTheme
-                    ? '1.5px solid rgba(180, 195, 220, 0.7)'
-                    : '1.5px solid rgba(255, 255, 255, 0.13)';
-                glassEl.style.background = isLightTheme
-                    ? 'rgba(255, 255, 255, 0.35)'
-                    : 'rgba(255, 255, 255, 0.05)';
-                (glassEl.style as any).backdropFilter = 'blur(12px)';
-                (glassEl.style as any).webkitBackdropFilter = 'blur(12px)';
-                glassEl.style.boxShadow = isLightTheme
-                    ? '0 2px 16px rgba(0,0,0,0.06)'
-                    : '0 2px 16px rgba(0,0,0,0.25)';
 
                 // 标签
                 const zoom = this.cy.zoom();
-                labelEl.style.position = 'absolute';
                 labelEl.style.top = `${8 * zoom}px`;
                 labelEl.style.left = `${14 * zoom}px`;
                 labelEl.style.fontSize = `${14 * zoom}px`;
-                labelEl.style.fontWeight = '600';
-                labelEl.style.color = isLightTheme ? '#64748b' : 'rgba(255,255,255,0.4)';
-                labelEl.style.pointerEvents = 'none';
-                labelEl.style.userSelect = 'none';
-                labelEl.style.whiteSpace = 'nowrap';
                 labelEl.textContent = groupNode.data('label') || '';
             };
 
@@ -3351,6 +3380,10 @@ case 'dagre':
 
             const updateUnderlinePosition = () => {
                 if (!this.cy) return;
+                if (this.overlayInteracting) {
+                    underlineGroupEl.style.display = 'none';
+                    return;
+                }
 
                 const isHidden =
                     node.removed() ||
