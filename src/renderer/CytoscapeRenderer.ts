@@ -246,10 +246,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     : { name: 'grid', fit: false, avoidOverlap: true, padding: 30 },
                 // 性能优化选项
                 hideEdgesOnViewport: true,
+                hideLabelsOnViewport: true,  // pan/zoom 时隐藏标签，减少 canvas 渲染量
                 // 关闭拖拽纹理缓存，避免画布拖动时出现半透明色块伪影
                 textureOnViewport: false,
                 motionBlur: false,
-                pixelRatio: 'auto',
+                pixelRatio: Math.min(window.devicePixelRatio, 2),  // 限制最高 2x，3x 屏省 ~25% canvas 填充
                 // 启用节点拖动
                 autoungrabify: options.readOnly === true,
                 // 启用原生缩放和平移
@@ -1894,7 +1895,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'background-opacity': isLight ? 0.05 : 0.04,
                 'border-width': 0,
                 'border-color': 'transparent',
-                'corner-radius': '8px',
+                'corner-radius': '24px',
             } as any
         },
         // 自由节点选中态：与普通节点保持一致（覆盖 isStandaloneText 选中样式）
@@ -2101,6 +2102,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
             card.dataset.nodeId = nodeId;
             card.style.cssText = `
                 position: absolute;
+                left: 0;
+                top: 0;
                 background: ${resolvedCardBackground};
                 border: ${resolvedCardBorder};
                 border-radius: 8px;
@@ -2108,6 +2111,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 color: var(--text-normal);
                 overflow: hidden;
                 pointer-events: auto;
+                will-change: transform;
             `;
 
             const headerEl = document.createElement('div');
@@ -2286,8 +2290,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 if (handle && this.cy) {
                     const bb = node.renderedBoundingBox();
                     const cardW = card.offsetWidth;
-                    handle.style.left = `${bb.x1 + cardW}px`;
-                    handle.style.top = `${(bb.y1 + bb.y2) / 2}px`;
+                    handle.style.transform = `translate(${bb.x1 + cardW}px, ${(bb.y1 + bb.y2) / 2}px) translate(-50%, -50%)`;
                     handle.style.opacity = '1';
                 }
                 if (!node.selected() || isHoveringCard) return;
@@ -2658,8 +2661,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 node.style({ 'width': widthModel, 'height': heightModel });
 
                 const bb = node.renderedBoundingBox();
-                card.style.left = `${bb.x1}px`;
-                card.style.top = `${bb.y1}px`;
+                card.style.transform = `translate(${bb.x1}px, ${bb.y1}px)`;
                 card.style.width = `${width}px`;
                 card.style.height = `${height}px`;
                 card.style.borderRadius = `${Math.max(6, 8 * zoom)}px`;
@@ -2667,8 +2669,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 const toggleSize = Math.max(20, 24 * zoom);
                 embedToggleEl.style.width = `${toggleSize}px`;
                 embedToggleEl.style.height = `${toggleSize}px`;
-                embedToggleEl.style.left = `${bb.x1 + (width - toggleSize) / 2}px`;
-                embedToggleEl.style.top = `${bb.y1 + height + 8 * zoom}px`;
+                embedToggleEl.style.transform = `translate(${bb.x1 + (width - toggleSize) / 2}px, ${bb.y1 + height + 8 * zoom}px)`;
 
                 // 内容随 zoom 缩放
                 const headerH = Math.max(24, 36 * zoom);
@@ -2820,6 +2821,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
             card.className = 'zk-image-preview-card';
             card.style.cssText = `
                 position: absolute;
+                left: 0;
+                top: 0;
                 background: ${theme.cardBackground};
                 border: ${resolvedCardBorder};
                 border-radius: 8px;
@@ -2827,6 +2830,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 pointer-events: auto;
                 box-shadow: ${theme.cardShadow};
                 transition: border-color 0.15s ease;
+                will-change: transform;
             `;
             card.dataset.nodeId = nodeId;
 
@@ -2876,8 +2880,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 const rp = node.renderedPosition();
                 const w = parseFloat(card.dataset.renderedWidth || '0');
                 const zoom = this.cy.zoom();
-                handle.style.left = `${rp.x + w / 2}px`;
-                handle.style.top = `${rp.y}px`;
+                handle.style.transform = `translate(${rp.x + w / 2}px, ${rp.y}px) translate(-50%, -50%)`;
                 handle.style.opacity = '1';
             });
             card.addEventListener('mouseleave', (e: MouseEvent) => {
@@ -3108,8 +3111,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 // 同步 Cytoscape 节点尺寸，让连线正确连接到卡片边缘
                 node.style({ 'width': widthModel, 'height': heightModel });
 
-                card.style.left = `${rp.x - width / 2}px`;
-                card.style.top = `${rp.y - height / 2}px`;
+                card.style.transform = `translate(${rp.x - width / 2}px, ${rp.y - height / 2}px)`;
                 card.style.width = `${width}px`;
                 card.style.height = `${height}px`;
                 card.dataset.renderedWidth = `${width}`;
@@ -3299,8 +3301,9 @@ case 'dagre':
                 }
                 glassEl.style.display = 'block';
                 glassEl.style.position = 'absolute';
-                glassEl.style.left = `${bb.x1}px`;
-                glassEl.style.top = `${bb.y1}px`;
+                glassEl.style.left = '0';
+                glassEl.style.top = '0';
+                glassEl.style.transform = `translate(${bb.x1}px, ${bb.y1}px)`;
                 glassEl.style.width = `${bb.w}px`;
                 glassEl.style.height = `${bb.h}px`;
                 glassEl.style.borderRadius = '12px';
@@ -3558,6 +3561,10 @@ case 'dagre':
             `;
             badgeContainer.appendChild(tooltipEl);
 
+            // 懒缓存：embed/image 卡片在 addNodeBadges 之后才创建，首次查到后复用
+            let remarkImageCardCache: HTMLElement | null = null;
+            let remarkEmbedCardCache: HTMLElement | null = null;
+
             const updateRemarkPosition = () => {
                 if (!this.cy) return;
                 const remarkText = node.data('remark') || '';
@@ -3588,12 +3595,12 @@ case 'dagre':
                 const curIsImageNode = node.data('isImageNode');
                 const curIsEmbedNode = node.data('isEmbed');
                 if (curIsImageNode) {
-                    // 图片节点：用卡片宽度计算右上角
+                    // 图片节点：用卡片宽度计算右上角（懒缓存 DOM 引用，避免每帧 querySelector）
+                    if (!remarkImageCardCache) remarkImageCardCache = this.container?.querySelector(`.zk-image-preview-card[data-node-id="${node.id()}"]`) as HTMLElement ?? null;
                     const rp = node.renderedPosition();
-                    const imageCard = this.container?.querySelector(`.zk-image-preview-card[data-node-id="${node.id()}"]`) as HTMLElement;
-                    if (imageCard && imageCard.dataset.renderedWidth && imageCard.dataset.renderedHeight) {
-                        const cardW = parseFloat(imageCard.dataset.renderedWidth);
-                        const cardH = parseFloat(imageCard.dataset.renderedHeight);
+                    if (remarkImageCardCache && remarkImageCardCache.dataset.renderedWidth && remarkImageCardCache.dataset.renderedHeight) {
+                        const cardW = parseFloat(remarkImageCardCache.dataset.renderedWidth);
+                        const cardH = parseFloat(remarkImageCardCache.dataset.renderedHeight);
                         x = rp.x + cardW / 2 - size * 0.35;
                         y = rp.y - cardH / 2 - size * 0.35;
                     } else {
@@ -3601,10 +3608,10 @@ case 'dagre':
                         y = boundingBox.y1 - size * 0.35;
                     }
                 } else if (curIsEmbedNode) {
-                    // 嵌入预览节点：用卡片实际宽度计算右上角
-                    const embedCard = this.container?.querySelector(`.zk-embed-preview-card[data-node-id="${node.id()}"]`) as HTMLElement;
-                    if (embedCard) {
-                        const cardW = embedCard.offsetWidth;
+                    // 嵌入预览节点：用卡片实际宽度计算右上角（懒缓存）
+                    if (!remarkEmbedCardCache) remarkEmbedCardCache = this.container?.querySelector(`.zk-embed-preview-card[data-node-id="${node.id()}"]`) as HTMLElement ?? null;
+                    if (remarkEmbedCardCache) {
+                        const cardW = remarkEmbedCardCache.offsetWidth;
                         x = boundingBox.x1 + cardW - size * 0.35;
                         y = boundingBox.y1 - size * 0.35;
                     } else {
@@ -3616,8 +3623,7 @@ case 'dagre':
                     y = boundingBox.y1 - size * 0.35;
                 }
 
-                remarkEl.style.left = `${x}px`;
-                remarkEl.style.top = `${y}px`;
+                remarkEl.style.transform = `translate(${x}px, ${y}px)`;
                 remarkEl.style.width = `${size}px`;
                 remarkEl.style.height = `${size}px`;
                 remarkEl.style.fontSize = `${16 * zoom}px`;
@@ -3710,8 +3716,7 @@ case 'dagre':
                 starEl.style.height = `${badgeSize}px`;
                 starEl.style.fontSize = `${fontSize}px`;
                 starEl.style.borderWidth = `${borderWidth}px`;
-                starEl.style.left = `${bb.x1 + badgeSize * 0.48}px`;
-                starEl.style.top = `${bb.y1 + badgeSize * 0.48}px`;
+                starEl.style.transform = `translate(${bb.x1 + badgeSize * 0.48}px, ${bb.y1 + badgeSize * 0.48}px) translate(-50%, -50%)`;
             };
 
             badgeUpdaters.push(updateAnchorPos);
@@ -3754,8 +3759,7 @@ case 'dagre':
                 dotEl.style.display = 'block';
                 dotEl.style.width = `${dotSize}px`;
                 dotEl.style.height = `${dotSize}px`;
-                dotEl.style.left = `${textStartX}px`;
-                dotEl.style.top = `${centerY}px`;
+                dotEl.style.transform = `translate(${textStartX}px, ${centerY}px) translate(-50%, -50%)`;
             };
 
             badgeUpdaters.push(updateDotPos);
@@ -3822,9 +3826,7 @@ case 'dagre':
                 const x = boundingBox.x2 - 8 * zoom;
                 const y = boundingBox.y2 - 8 * zoom;
 
-                badgeEl.style.left = `${x}px`;
-                badgeEl.style.top = `${y}px`;
-                badgeEl.style.transform = 'translate(-100%, -100%)';
+                badgeEl.style.transform = `translate(${x}px, ${y}px) translate(-100%, -100%)`;
                 badgeEl.style.fontSize = `${9 * zoom}px`;
                 badgeEl.style.padding = `${3 * zoom}px ${8 * zoom}px`;
                 badgeEl.style.borderRadius = `${20 * zoom}px`;
@@ -3942,8 +3944,7 @@ case 'dagre':
                     resizeEl.style.width = `${size}px`;
                     resizeEl.style.height = `${size}px`;
                     resizeEl.style.fontSize = `${Math.max(8, 11 * zoom)}px`;
-                    resizeEl.style.left = `${bb.x2 - size}px`;
-                    resizeEl.style.top = `${bb.y2 - size}px`;
+                    resizeEl.style.transform = `translate(${bb.x2 - size}px, ${bb.y2 - size}px)`;
                 };
 
                 badgeUpdaters.push(updateResizeHandle);
@@ -4009,6 +4010,7 @@ case 'dagre':
                     }));
                 });
 
+                let toggleEmbedCardCache: HTMLElement | null = null;
                 const updateTogglePos = () => {
                     if (!this.cy) return;
                     const isHidden = node.removed() || node.hasClass('zk-collapsed-hidden') || node.style('display') === 'none' || !node.visible();
@@ -4030,15 +4032,14 @@ case 'dagre':
                     let y = bb.y2 + 8 * zoom;
 
                     if (isEmbed) {
-                        const embedCard = this.container?.querySelector(`.zk-embed-preview-card[data-node-id="${node.id()}"]`) as HTMLElement | null;
-                        if (embedCard) {
-                            x = embedCard.offsetLeft + (embedCard.offsetWidth - size) / 2;
-                            y = embedCard.offsetTop + embedCard.offsetHeight + 8 * zoom;
+                        if (!toggleEmbedCardCache) toggleEmbedCardCache = this.container?.querySelector(`.zk-embed-preview-card[data-node-id="${node.id()}"]`) as HTMLElement ?? null;
+                        if (toggleEmbedCardCache) {
+                            x = toggleEmbedCardCache.offsetLeft + (toggleEmbedCardCache.offsetWidth - size) / 2;
+                            y = toggleEmbedCardCache.offsetTop + toggleEmbedCardCache.offsetHeight + 8 * zoom;
                         }
                     }
 
-                    toggleEl.style.left = `${x}px`;
-                    toggleEl.style.top = `${y}px`;
+                    toggleEl.style.transform = `translate(${x}px, ${y}px)`;
                 };
 
                 badgeUpdaters.push(updateTogglePos);
@@ -4155,8 +4156,7 @@ case 'dagre':
                 handle.style.width = `${size}px`;
                 handle.style.height = `${size}px`;
                 handle.style.borderRadius = `${size / 2}px`;
-                handle.style.left = `${left}px`;
-                handle.style.top = `${top}px`;
+                handle.style.transform = `translate(${left}px, ${top}px)`;
                 handle.style.fontSize = `${18 * zoom}px`;
                 handle.style.display = 'flex';
             };
@@ -4294,7 +4294,9 @@ case 'dagre':
             // 动态检查节点类型（isImageNode 可能在 addImageNodePreviews 中延迟设置）
             const nodeId = node.id();
 
-            // 更新手柄位置的函数
+            // 更新手柄位置的函数（懒缓存 embed/image 卡片引用，避免每帧 querySelector）
+            let handleImageCardCache: HTMLElement | null = null;
+            let handleEmbedCardCache: HTMLElement | null = null;
             const updateHandlePosition = () => {
                 if (!this.cy) return;
                 const zoom = this.cy.zoom();
@@ -4305,9 +4307,9 @@ case 'dagre':
                 if (curIsImageNode) {
                     // 图片节点：节点位置 + 卡片半宽 = 卡片右边缘
                     const rp = node.renderedPosition();
-                    const imageCard = this.container?.querySelector(`.zk-image-preview-card[data-node-id="${nodeId}"]`) as HTMLElement;
-                    if (imageCard && imageCard.dataset.renderedWidth) {
-                        const cardW = parseFloat(imageCard.dataset.renderedWidth);
+                    if (!handleImageCardCache) handleImageCardCache = this.container?.querySelector(`.zk-image-preview-card[data-node-id="${nodeId}"]`) as HTMLElement ?? null;
+                    if (handleImageCardCache && handleImageCardCache.dataset.renderedWidth) {
+                        const cardW = parseFloat(handleImageCardCache.dataset.renderedWidth);
                         x = rp.x + cardW / 2;
                         y = rp.y;
                     } else {
@@ -4316,9 +4318,9 @@ case 'dagre':
                 } else if (curIsEmbedNode) {
                     // 嵌入预览节点：使用卡片实际宽度计算右边缘
                     const boundingBox = node.renderedBoundingBox();
-                    const embedCard = this.container?.querySelector(`.zk-embed-preview-card[data-node-id="${nodeId}"]`) as HTMLElement;
-                    if (embedCard) {
-                        const cardW = embedCard.offsetWidth;
+                    if (!handleEmbedCardCache) handleEmbedCardCache = this.container?.querySelector(`.zk-embed-preview-card[data-node-id="${nodeId}"]`) as HTMLElement ?? null;
+                    if (handleEmbedCardCache) {
+                        const cardW = handleEmbedCardCache.offsetWidth;
                         x = boundingBox.x1 + cardW;
                     } else {
                         x = boundingBox.x2;
@@ -4330,8 +4332,7 @@ case 'dagre':
                     y = (boundingBox.y1 + boundingBox.y2) / 2;
                 }
 
-                handle.style.left = `${x}px`;
-                handle.style.top = `${y}px`;
+                handle.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
                 handle.style.width = `${baseHandleSize * zoom}px`;
                 handle.style.height = `${baseHandleSize * zoom}px`;
                 handle.style.borderWidth = `${2 * zoom}px`;
@@ -4662,8 +4663,7 @@ case 'dagre':
 
             if (mid && isFinite(mid.x) && isFinite(mid.y)) {
                 controlPoint.style.display = 'block';
-                controlPoint.style.left = `${mid.x}px`;
-                controlPoint.style.top = `${mid.y}px`;
+                controlPoint.style.transform = `translate(${mid.x}px, ${mid.y}px) translate(-50%, -50%)`;
             } else {
                 controlPoint.style.display = 'none';
             }
@@ -4905,8 +4905,7 @@ case 'dagre':
 
         if (endpoint && isFinite(endpoint.x) && isFinite(endpoint.y)) {
             handle.style.display = 'block';
-            handle.style.left = `${endpoint.x}px`;
-            handle.style.top = `${endpoint.y}px`;
+            handle.style.transform = `translate(${endpoint.x}px, ${endpoint.y}px) translate(-50%, -50%)`;
         } else {
             handle.style.display = 'none';
         }
@@ -7850,8 +7849,7 @@ case 'dagre':
 
 
             currentHandles.forEach((handle, index) => {
-                handle.style.left = `${positions[index].x}px`;
-                handle.style.top = `${positions[index].y}px`;
+                handle.style.transform = `translate(${positions[index].x}px, ${positions[index].y}px) translate(-50%, -50%)`;
             });
         };
 
@@ -7938,8 +7936,7 @@ case 'dagre':
                 const minSize = 50;
                 if (newX2 - newX1 < minSize || newY2 - newY1 < minSize) return;
                 if (resizePreview) {
-                    resizePreview.style.left = `${newX1}px`;
-                    resizePreview.style.top = `${newY1}px`;
+                    resizePreview.style.transform = `translate(${newX1}px, ${newY1}px)`;
                     resizePreview.style.width = `${newX2 - newX1}px`;
                     resizePreview.style.height = `${newY2 - newY1}px`;
                 }
@@ -8160,12 +8157,15 @@ case 'dagre':
         selectionBox.className = 'zk-selection-box';
         selectionBox.style.cssText = `
             position: absolute;
+            left: 0;
+            top: 0;
             display: none;
             border: 2px dashed #5b8fd9;
             background-color: rgba(91, 143, 217, 0.1);
             border-radius: 4px;
             pointer-events: none;
             z-index: 9999;
+            will-change: transform;
         `;
         this.container.appendChild(selectionBox);
 
@@ -8224,8 +8224,7 @@ case 'dagre':
 
             // 显示选择框
             selectionBox.style.display = 'block';
-            selectionBox.style.left = `${startX}px`;
-            selectionBox.style.top = `${startY}px`;
+            selectionBox.style.transform = `translate(${startX}px, ${startY}px)`;
             selectionBox.style.width = '0px';
             selectionBox.style.height = '0px';
 
@@ -8252,8 +8251,7 @@ case 'dagre':
             lastBoxHeight = Math.abs(currentY - startY);
 
             // 选择框视觉立即更新
-            selectionBox.style.left = `${lastBoxLeft}px`;
-            selectionBox.style.top = `${lastBoxTop}px`;
+            selectionBox.style.transform = `translate(${lastBoxLeft}px, ${lastBoxTop}px)`;
             selectionBox.style.width = `${lastBoxWidth}px`;
             selectionBox.style.height = `${lastBoxHeight}px`;
 
