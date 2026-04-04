@@ -1714,21 +1714,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
             } as any
         },
         // 节点徽章样式已通过 HTML 叠加层实现，这里不需要额外样式
-        // 分组节点样式 - 容器化设计
+        // 分组节点样式 - 完全透明（由 CSS glass overlay 层实现视觉效果）
         {
             selector: '.group-node',
             style: {
-                'background-color':  isLight ? 'rgba(203, 213, 225, 0.3)' : 'rgba(30, 41, 59, 0.2)',  // 半透明深色背景
-                'background-opacity': 1,
+                'background-color': 'transparent',
+                'background-opacity': 0,
                 'border-width': '0px',
                 'shape': 'round-rectangle',
-                'label': 'data(label)',
-                'text-valign': 'top',
-                'text-halign': 'center',
-                'text-margin-y': -10,
-                'font-size': '14px',
-                'font-weight': '600',
-                'color': isLight ?  '#94a3b8' : '#666666' ,
+                'label': '',
                 'padding': '20px'
             } as any
         },
@@ -1894,13 +1888,20 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'color': '#ffffff'
             } as any
         },
-        // 自由节点：非选中态边框透明
+        // 自由节点：微底色晕染
         {
             selector: 'node[?isFreeNode]:unselected',
             style: {
-                'background-opacity': 0,
+                'background-color': isLight ? '#94a3b8' : '#7b9cc4',
+                'background-opacity': isLight ? 0.05 : 0.04,
                 'border-width': 0,
-                'border-color': 'transparent'
+                'border-color': 'transparent',
+                'corner-radius': '8px',
+                'shadow-blur': 28,
+                'shadow-color': isLight ? '#64748b' : '#5b8fd9',
+                'shadow-opacity': isLight ? 0.14 : 0.18,
+                'shadow-offset-x': 0,
+                'shadow-offset-y': 0
             } as any
         },
         // 自由节点选中态：与普通节点保持一致（覆盖 isStandaloneText 选中样式）
@@ -3233,6 +3234,28 @@ case 'dagre':
             oldBadgeContainer.remove();
         }
 
+        // 移除旧的分组 glass 层
+        const oldGlassLayer = this.container.querySelector('.zk-group-glass-layer');
+        if (oldGlassLayer) {
+            oldGlassLayer.remove();
+        }
+
+        // 创建分组 glass 层（插到最前，位于 canvas 下方）
+        const isLightTheme = document.body.classList.contains('theme-light');
+        const glassLayer = document.createElement('div');
+        glassLayer.className = 'zk-group-glass-layer';
+        glassLayer.style.cssText = `
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        `;
+        this.container.insertBefore(glassLayer, this.container.firstChild);
+
         // 创建徽章容器
         const badgeContainer = document.createElement('div');
         badgeContainer.className = 'zk-node-badges';
@@ -3252,6 +3275,64 @@ case 'dagre':
         const readOnly = this.isReadOnlyMode();
         const underlineMeasure = document.createElement('canvas');
         const underlineMeasureCtx = underlineMeasure.getContext('2d');
+
+        // 分组 glass overlay
+        this.cy.nodes('.group-node').forEach((groupNode: any) => {
+            const glassEl = document.createElement('div');
+            glassEl.className = 'zk-group-glass';
+            glassLayer.appendChild(glassEl);
+
+            const labelEl = document.createElement('div');
+            labelEl.className = 'zk-group-glass-label';
+            labelEl.textContent = groupNode.data('label') || '';
+            glassEl.appendChild(labelEl);
+
+            const updateGlassPos = () => {
+                if (!this.cy || groupNode.removed()) {
+                    glassEl.style.display = 'none';
+                    return;
+                }
+                const bb = groupNode.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
+                if (!bb || bb.w <= 0 || bb.h <= 0) {
+                    glassEl.style.display = 'none';
+                    return;
+                }
+                glassEl.style.display = 'block';
+                glassEl.style.position = 'absolute';
+                glassEl.style.left = `${bb.x1}px`;
+                glassEl.style.top = `${bb.y1}px`;
+                glassEl.style.width = `${bb.w}px`;
+                glassEl.style.height = `${bb.h}px`;
+                glassEl.style.borderRadius = '12px';
+                glassEl.style.border = isLightTheme
+                    ? '1.5px solid rgba(180, 195, 220, 0.7)'
+                    : '1.5px solid rgba(255, 255, 255, 0.13)';
+                glassEl.style.background = isLightTheme
+                    ? 'rgba(255, 255, 255, 0.35)'
+                    : 'rgba(255, 255, 255, 0.05)';
+                (glassEl.style as any).backdropFilter = 'blur(12px)';
+                (glassEl.style as any).webkitBackdropFilter = 'blur(12px)';
+                glassEl.style.boxShadow = isLightTheme
+                    ? '0 2px 16px rgba(0,0,0,0.06)'
+                    : '0 2px 16px rgba(0,0,0,0.25)';
+
+                // 标签
+                const zoom = this.cy.zoom();
+                labelEl.style.position = 'absolute';
+                labelEl.style.top = `${8 * zoom}px`;
+                labelEl.style.left = `${14 * zoom}px`;
+                labelEl.style.fontSize = `${14 * zoom}px`;
+                labelEl.style.fontWeight = '600';
+                labelEl.style.color = isLightTheme ? '#64748b' : 'rgba(255,255,255,0.4)';
+                labelEl.style.pointerEvents = 'none';
+                labelEl.style.userSelect = 'none';
+                labelEl.style.whiteSpace = 'nowrap';
+                labelEl.textContent = groupNode.data('label') || '';
+            };
+
+            badgeUpdaters.push(updateGlassPos);
+            updateGlassPos();
+        });
 
         const IMAGE_EXTS_BADGE = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
         this.cy.nodes('[?hasFileIcon]').forEach((node: any) => {
