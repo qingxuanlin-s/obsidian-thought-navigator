@@ -465,6 +465,9 @@ align-items: center;
   max-width: 520px;
   padding: 4px 0;
 }
+.zk-iol-grid-empty {
+  min-height: 48px;
+}
 
 /* 节点卡片 */
 .zk-iol-card {
@@ -485,6 +488,10 @@ align-items: center;
 }
 .zk-iol-card:active {
   transform: scale(0.97);
+}
+.zk-iol-card-placeholder {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 /* 入链卡片 */

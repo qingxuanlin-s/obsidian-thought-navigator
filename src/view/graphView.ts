@@ -1267,18 +1267,25 @@ export class ZKGraphView extends ItemView {
         };
 
         // === 入链区域 ===
+        // 入链标题（始终保留，避免只有出链时上半区塌陷）
+        const inHeader = inoutlinksContainer.createDiv('zk-iol-header zk-iol-header-inlink');
+        inHeader.createEl('span', { text: `${t("inlinks")} · ${inlinkArr.length}` });
+
+        // 入链卡片网格（空时用占位撑高度）
+        const inGrid = inoutlinksContainer.createDiv('zk-iol-grid');
         if (inlinkArr.length > 0) {
-            // 入链标题
-            const inHeader = inoutlinksContainer.createDiv('zk-iol-header zk-iol-header-inlink');
-            inHeader.createEl('span', { text: `${t("inlinks")} · ${inlinkArr.length}` });
-
-            // 入链卡片网格
-            const inGrid = inoutlinksContainer.createDiv('zk-iol-grid');
             inlinkArr.forEach((file) => inGrid.appendChild(createNodeCard(file, 'inlink')));
-
-            // 连接线
-            inoutlinksContainer.createDiv('zk-iol-connector');
+        } else {
+            inGrid.addClass('zk-iol-grid-empty');
+            for (let i = 0; i < 2; i++) {
+                const placeholder = inGrid.createDiv('zk-iol-card zk-iol-card-inlink zk-iol-card-placeholder');
+                placeholder.createDiv('zk-iol-card-icon');
+                placeholder.createEl('span', { cls: 'zk-iol-card-name', text: ' ' });
+            }
         }
+
+        // 连接线（始终保留，保持上下分区对称）
+        inoutlinksContainer.createDiv('zk-iol-connector');
 
         // === 当前文件卡片 ===
         const centerCard = inoutlinksContainer.createDiv('zk-iol-center');
