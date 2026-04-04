@@ -911,7 +911,8 @@ export class ZKGraphView extends ItemView {
                     nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
                     themeMode: this.plugin.settings.themeMode,
                     themeStyle: this.plugin.settings.themeStyle || 'modern',
-                    edgeStyle: this.plugin.settings.edgeStyle || 'bezier'
+                    edgeStyle: this.plugin.settings.edgeStyle || 'bezier',
+                    readOnly: true
                 };
                 expandBtn.onClick(() => {
                     try {
@@ -938,9 +939,26 @@ export class ZKGraphView extends ItemView {
                 }
 
                 // 监听节点点击事件
-                mocNodeTreeDiv.addEventListener('node-click', (event: any) => {
+                mocNodeTreeDiv.addEventListener('node-click', async (event: any) => {
                     const { node, ctrlKey, shiftKey, altKey } = event.detail;
-                    if (!node.file) return;
+                    if (!node) return;
+
+                    // 文本节点（无 file）：以该节点为核心重渲染周边节点
+                    if (!node.file) {
+                        const clicked = allNodes.find((n) =>
+                            n.IDStr === node.IDStr || n.ID === node.ID || n.IDStr === node.ID || n.ID === node.IDStr
+                        );
+                        if (clicked) {
+                            await this.refreshLocalGraphMOCNode(
+                                graphMermaidDiv,
+                                currentFile,
+                                allNodes,
+                                clicked,
+                                mocFile
+                            );
+                        }
+                        return;
+                    }
 
                     if (ctrlKey) {
                         this.app.workspace.openLinkText("", node.file.path, 'tab');
@@ -965,6 +983,26 @@ export class ZKGraphView extends ItemView {
                     } else {
                         this.app.workspace.openLinkText("", node.file.path);
                     }
+                });
+
+                // 文本节点不走 node-click（无 hasFileIcon），通过 node-select 支持“点击后以该节点为中心重渲染”
+                mocNodeTreeDiv.addEventListener('node-select', async (event: any) => {
+                    const { node } = event.detail || {};
+                    if (!node || node.file) return;
+
+                    const clicked = allNodes.find((n) =>
+                        n.IDStr === node.IDStr || n.ID === node.ID || n.IDStr === node.ID || n.ID === node.IDStr
+                    );
+                    if (!clicked) return;
+                    if (clicked.IDStr === currentNode.IDStr) return;
+
+                    await this.refreshLocalGraphMOCNode(
+                        graphMermaidDiv,
+                        currentFile,
+                        allNodes,
+                        clicked,
+                        mocFile
+                    );
                 });
 
                 // 监听节点悬停事件
@@ -1118,7 +1156,8 @@ export class ZKGraphView extends ItemView {
             nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
             themeMode: this.plugin.settings.themeMode,
             themeStyle: this.plugin.settings.themeStyle || 'modern',
-            edgeStyle: this.plugin.settings.edgeStyle || 'bezier'
+            edgeStyle: this.plugin.settings.edgeStyle || 'bezier',
+            readOnly: true
         };
         expandBtn.onClick(() => {
             try {
