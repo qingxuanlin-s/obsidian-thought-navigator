@@ -1603,14 +1603,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'border-width': '2.5px',
             } as any
         }] : []),
-        // 文件节点边框透明（不影响 embed/纯文本/分组/占位）
-        {
-            selector: 'node[!isRoot][!isEmbed][!isStandaloneText][!isGroup][!isPlaceholder]',
-            style: {
-                'border-color': 'transparent',
-                'border-opacity': 0
-            } as any
-        },
         // 嵌入节点：由 HTML 预览卡片承载内容，隐藏 Cytoscape 默认卡片外观
         {
             selector: 'node[?isEmbed]',
@@ -1857,14 +1849,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'border-width': '3px',
                 'border-opacity': 0.90,
                 'color': '#ffffff'
-            } as any
-        },
-        // 文件节点选中态保持透明边框
-        {
-            selector: 'node[!isRoot][!isEmbed][!isStandaloneText][!isGroup][!isPlaceholder]:selected',
-            style: {
-                'border-color': 'transparent',
-                'border-opacity': 0
             } as any
         },
         // 自由节点：非选中态边框透明

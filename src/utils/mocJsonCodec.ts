@@ -33,9 +33,16 @@ interface MOCJsonSchema {
 // ---- 内部转换工具 ----
 
 function resolveJsonNode(app: App, data: JsonNodeData, basePath: string): MOCTreeNode {
-    const file = (!data.isTextOnly && data.wikiLink)
-        ? (app.metadataCache.getFirstLinkpathDest(data.wikiLink, basePath) ?? null)
-        : null;
+    let file: any = null;
+    if (!data.isTextOnly && data.wikiLink) {
+        file = app.metadataCache.getFirstLinkpathDest(data.wikiLink, basePath) ?? null;
+        // metadataCache 解析失败时，回退到 vault 路径查找（兼容图片/excalidraw/.moc）
+        if (!file) {
+            file = app.vault.getAbstractFileByPath(data.wikiLink)
+                || app.vault.getAbstractFileByPath(basePath ? `${basePath}/${data.wikiLink}` : data.wikiLink)
+                || null;
+        }
+    }
 
     return {
         wikiLink: data.wikiLink,

@@ -17,6 +17,172 @@ function getPNGPath(mocFile: TFile): string {
     return dir ? `${dir}/attachments/${pngName}` : `attachments/${pngName}`;
 }
 
+function delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function blobToImage(blob: Blob): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+            URL.revokeObjectURL(url);
+            resolve(img);
+        };
+        img.onerror = (error) => {
+            URL.revokeObjectURL(url);
+            reject(error);
+        };
+        img.src = url;
+    });
+}
+
+function waitForImages(root: HTMLElement, timeoutMs: number = 1800): Promise<void> {
+    const imgs = Array.from(root.querySelectorAll('img')) as HTMLImageElement[];
+    if (imgs.length === 0) return Promise.resolve();
+
+    const waits = imgs.map((img) => {
+        if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+        return new Promise<void>((resolve) => {
+            const done = () => resolve();
+            img.addEventListener('load', done, { once: true });
+            img.addEventListener('error', done, { once: true });
+        });
+    });
+
+    return Promise.race([
+        Promise.all(waits).then(() => undefined),
+        delay(timeoutMs)
+    ]);
+}
+
+async function waitForPreviewCardsReady(root: HTMLElement, timeoutMs: number = 5000): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+        const cards = root.querySelectorAll('.zk-embed-preview-card, .zk-image-preview-card');
+        if (cards.length > 0) {
+            await waitForImages(root, 1200);
+            return;
+        }
+        await delay(120);
+    }
+}
+
+function previewCardHasRenderableContent(card: Element): boolean {
+    const contentEl = card.querySelector('[data-role="embed-content"]') as HTMLElement | null;
+    if (!contentEl) {
+        // 图片卡片无 embed-content，直接看是否有 img
+        return !!card.querySelector('img');
+    }
+
+    if (contentEl.querySelector('img, svg')) return true;
+    const text = (contentEl.textContent || '').trim();
+    return text.length > 0;
+}
+
+async function waitForPreviewContentReady(root: HTMLElement, timeoutMs: number = 6000): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+        const cards = Array.from(
+            root.querySelectorAll('.zk-embed-preview-card, .zk-image-preview-card')
+        );
+        if (cards.length > 0 && cards.every(previewCardHasRenderableContent)) {
+            await waitForImages(root, 1200);
+            return;
+        }
+        await delay(150);
+    }
+}
+
+function parsePx(value: string | null | undefined, fallback: number): number {
+    if (!value) return fallback;
+    const n = Number.parseFloat(value);
+    return Number.isFinite(n) ? n : fallback;
+}
+
+async function drawPreviewOverlays(
+    hiddenDiv: HTMLElement,
+    canvas: HTMLCanvasElement,
+    originX: number,
+    originY: number,
+    scaleX: number = 1,
+    scaleY: number = 1
+): Promise<void> {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const cards = Array.from(
+        hiddenDiv.querySelectorAll('.zk-embed-preview-card, .zk-image-preview-card')
+    ) as HTMLElement[];
+
+    for (const card of cards) {
+        const style = getComputedStyle(card);
+        if (style.display === 'none' || style.visibility === 'hidden') continue;
+
+        const cardRect = card.getBoundingClientRect();
+        const x = (cardRect.left - originX) * scaleX;
+        const y = (cardRect.top - originY) * scaleY;
+        const w = cardRect.width * scaleX;
+        const h = cardRect.height * scaleY;
+        if (w <= 1 || h <= 1) continue;
+
+        // 卡片背景（当前多为 transparent，这里兼容未来样式）
+        const bg = style.backgroundColor;
+        if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
+            ctx.fillStyle = bg;
+            ctx.fillRect(x, y, w, h);
+        }
+
+        const header = card.querySelector('[data-role="embed-header"], [data-role="image-header"]') as HTMLElement | null;
+        const content = card.querySelector('[data-role="embed-content"]') as HTMLElement | null;
+        const headerH = (header ? header.getBoundingClientRect().height : parsePx(style.height, 0) * 0.14) * scaleY;
+
+        if (header) {
+            const hs = getComputedStyle(header);
+            const hb = hs.backgroundColor;
+            if (hb && hb !== 'rgba(0, 0, 0, 0)' && hb !== 'transparent') {
+                ctx.fillStyle = hb;
+                ctx.fillRect(x, y, w, headerH);
+            }
+
+            const label = (header.textContent || '').trim();
+            if (label) {
+                ctx.fillStyle = hs.color || '#cbd5e1';
+                const fontSize = parsePx(hs.fontSize, 12) * Math.min(scaleX, scaleY);
+                const fontWeight = hs.fontWeight || '500';
+                const fontFamily = hs.fontFamily || 'sans-serif';
+                ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+                ctx.textBaseline = 'middle';
+                ctx.fillText(label, x + 12 * scaleX, y + headerH / 2);
+            }
+        }
+
+        const contentRect = content?.getBoundingClientRect();
+        const cx = contentRect ? (contentRect.left - originX) * scaleX : x;
+        const cy = contentRect ? (contentRect.top - originY) * scaleY : y + headerH;
+        const cw = contentRect ? contentRect.width * scaleX : w;
+        const ch = contentRect ? contentRect.height * scaleY : (h - headerH);
+
+        const img = card.querySelector('img') as HTMLImageElement | null;
+        if (img && img.complete && img.naturalWidth > 0) {
+            ctx.drawImage(img, cx, cy, cw, ch);
+            continue;
+        }
+
+        const svg = card.querySelector('svg') as SVGElement | null;
+        if (svg) {
+            try {
+                const serialized = new XMLSerializer().serializeToString(svg);
+                const svgBlob = new Blob([serialized], { type: 'image/svg+xml;charset=utf-8' });
+                const svgImage = await blobToImage(svgBlob);
+                ctx.drawImage(svgImage, cx, cy, cw, ch);
+            } catch {
+                // ignore svg draw failures
+            }
+        }
+    }
+}
+
 /**
  * 将 .moc 文件渲染为 PNG，返回 PNG 的 TFile
  */
@@ -56,7 +222,7 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
     // 创建隐藏容器（Cytoscape 需要真实 DOM）
     // 缩小尺寸加快布局计算和 PNG 导出
     const hiddenDiv = document.createElement('div');
-    hiddenDiv.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:900px;height:600px;visibility:hidden;';
+    hiddenDiv.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:900px;height:600px;opacity:0;pointer-events:none;';
     document.body.appendChild(hiddenDiv);
 
     const renderer = new CytoscapeRenderer();
@@ -73,18 +239,42 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
             edgeStyle: plugin.settings.edgeStyle || 'bezier',
             nodeLayoutStyle: mocData.nodeLayoutStyle || 'free',
             readOnly: true,
-            exportMode: true,  // 跳过事件绑定/预览渲染，防止 MutationObserver 触发跳转
+            exportMode: false,  // 截图模式：需要渲染 embed/image overlay
         };
 
         await renderer.render(hiddenDiv, graphData, options);
+        await delay(500);
+        await waitForPreviewCardsReady(hiddenDiv, 5000);
+        await waitForPreviewContentReady(hiddenDiv, 6000);
+        await waitForImages(hiddenDiv);
 
         const cy = renderer.getCytoscapeInstance();
         if (!cy) throw new Error('Cytoscape 实例不存在');
 
-        // 导出 PNG：用 blob-promise 跳过 base64 编码/解码开销，scale:1 足够嵌入预览
+        // 底图：先导出 Cytoscape 画布，再叠加 HTML overlay（图片/excalidraw 预览）
         const canvasBg = getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || (plugin.settings.themeMode === 'light' ? '#ffffff' : '#0f172a');
-        const blob: Blob = await (cy as any).png({ output: 'blob-promise', bg: canvasBg, full: true, scale: 1 });
-        pngBytes = await blob.arrayBuffer();
+        const exportScale = Math.max(2, Math.ceil(window.devicePixelRatio || 1));
+        const blob: Blob = await (cy as any).png({ output: 'blob-promise', bg: canvasBg, full: false, scale: exportScale });
+        const baseImage = await blobToImage(blob);
+
+        const composedCanvas = document.createElement('canvas');
+        composedCanvas.width = baseImage.width;
+        composedCanvas.height = baseImage.height;
+        const composedCtx = composedCanvas.getContext('2d');
+        if (!composedCtx) throw new Error('导出画布初始化失败');
+        composedCtx.imageSmoothingEnabled = true;
+        composedCtx.imageSmoothingQuality = 'high';
+        composedCtx.drawImage(baseImage, 0, 0);
+
+        const hostRect = hiddenDiv.getBoundingClientRect();
+        const scaleX = composedCanvas.width / Math.max(1, hostRect.width);
+        const scaleY = composedCanvas.height / Math.max(1, hostRect.height);
+        await drawPreviewOverlays(hiddenDiv, composedCanvas, hostRect.left, hostRect.top, scaleX, scaleY);
+
+        const composedBlob: Blob = await new Promise((resolve, reject) => {
+            composedCanvas.toBlob((b) => (b ? resolve(b) : reject(new Error('PNG 合成失败'))), 'image/png');
+        });
+        pngBytes = await composedBlob.arrayBuffer();
     } finally {
         renderer.destroy();
         document.body.removeChild(hiddenDiv);
