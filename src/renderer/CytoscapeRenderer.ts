@@ -1225,7 +1225,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
      */
     private getNodeLabel(node: ZKNode, options: RenderOptions | null): string {
         const nodeText = options?.nodeText || 'both';
-        const showNoteId = options?.showNoteId ?? true;
+        const isFreeNode = (node.ID || node.IDStr || '').startsWith('free.');
+        const showNoteId = (options?.showNoteId ?? true) && !isFreeNode;
 
         let label = '';
         switch (nodeText) {
@@ -1259,7 +1260,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
      */
     private getNodeBadge(node: ZKNode, options: RenderOptions | null): string {
         const nodeText = options?.nodeText || 'both';
-        const showNoteId = options?.showNoteId ?? true;
+        const isFreeNode = (node.ID || node.IDStr || '').startsWith('free.');
+        const showNoteId = (options?.showNoteId ?? true) && !isFreeNode;
 
         if (!showNoteId) {
             return '';

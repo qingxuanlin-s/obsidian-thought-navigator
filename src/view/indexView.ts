@@ -1333,19 +1333,16 @@ export class ZKIndexView extends ItemView {
                     return;
                 }
 
-                // 生成新的子节点 ID
-                const newChildID = this.generateChildNodeID(parentNode.IDStr);
+                // 自由节点不建立父子关系，只创建虚线关系
+                await this.addArrowRelationToMOC(mocFile, parentNode.IDStr, childNode.IDStr, '');
 
-                // 使用 moveNodeToParent 方法移动节点到新的父节点
-                await this.mocHandler.moveNodeToParent(mocFile, childNode.IDStr, parentNode.IDStr, newChildID);
-
-                // 保存位置
-                await this.saveNodePositionToMOC(mocFile, newChildID, position);
+                // 保存位置（保持原 ID）
+                await this.saveNodePositionToMOC(mocFile, childNode.IDStr, position);
 
                 // 刷新视图
                 await this.refreshBranchMermaid();
 
-                new Notice(`已连接节点: ${childNode.displayText} → ${parentNode.displayText} (新 ID: ${newChildID})`);
+                new Notice(`已创建关系: ${parentNode.displayText} → ${childNode.displayText}`);
             } catch (error) {
                 console.error('[auto-connect-node] 连接失败:', error);
                 new Notice(`连接失败: ${error.message}`);
@@ -2063,7 +2060,11 @@ export class ZKIndexView extends ItemView {
                 // 然后移动到父节点下
                 const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
                 if (mocFile) {
-                    await this.mocHandler.moveNodeToParent(mocFile, suggestedID, placeholderInfo.parentNodeId, suggestedID);
+                    if (this.isFreeNodeID(suggestedID) || this.isFreeNodeID(placeholderInfo.parentNodeId)) {
+                        await this.addArrowRelationToMOC(mocFile, placeholderInfo.parentNodeId, suggestedID, '');
+                    } else {
+                        await this.mocHandler.moveNodeToParent(mocFile, suggestedID, placeholderInfo.parentNodeId, suggestedID);
+                    }
                 }
             } else {
                 // 保存到 MOC
@@ -2128,7 +2129,11 @@ export class ZKIndexView extends ItemView {
                 // 然后移动到父节点下
                 const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
                 if (mocFile) {
-                    await this.mocHandler.moveNodeToParent(mocFile, suggestedID, placeholderInfo.parentNodeId, suggestedID);
+                    if (this.isFreeNodeID(suggestedID) || this.isFreeNodeID(placeholderInfo.parentNodeId)) {
+                        await this.addArrowRelationToMOC(mocFile, placeholderInfo.parentNodeId, suggestedID, '');
+                    } else {
+                        await this.mocHandler.moveNodeToParent(mocFile, suggestedID, placeholderInfo.parentNodeId, suggestedID);
+                    }
                 }
             } else {
                 // 直接保存到 MOC，不需要打开模态框
@@ -2332,54 +2337,34 @@ export class ZKIndexView extends ItemView {
                 return;
             }
 
-            // 检查目标节点是否是自由节点（ID 以 "free." 开头）
-            const isFreeNode = targetNode.IDStr.startsWith('free.');
+            // 涉及自由节点时，只创建虚线关系，不做父子挂载
+            const sourceIsFree = this.isFreeNodeID(sourceNode.IDStr);
+            const targetIsFree = this.isFreeNodeID(targetNode.IDStr);
             let finalTargetID = targetNode.IDStr;
             let relationText = '';
 
-            if (isFreeNode) {
-                // 生成新的子节点 ID
-                const newChildID = this.generateChildNodeID(sourceNode.IDStr);
+            // 在刷新前保存所有节点的当前位置
+            await this.saveAllNodePositionsBeforeRefresh();
 
-                // 在刷新前保存所有节点的当前位置
-                await this.saveAllNodePositionsBeforeRefresh();
-
-                // 将自由节点移动为源节点的子节点（而不是只改 ID）
+            try {
                 const mocFile = getLatestMOCFile();
                 if (mocFile) {
-                    await this.mocHandler.moveNodeToParent(mocFile, targetNode.IDStr, sourceNode.IDStr, newChildID);
-                    finalTargetID = newChildID;
-                    new Notice(`自由节点 ${targetNode.IDStr} 已转换为子节点 ${newChildID}`);
+                    await this.addArrowRelationToMOC(
+                        mocFile,
+                        sourceNode.IDStr,
+                        finalTargetID,
+                        relationText
+                    );
 
                     // 刷新视图
                     await this.refreshBranchMermaid();
+
+                    const relationType = (sourceIsFree || targetIsFree) ? '自由节点虚线关系' : '箭头关系';
+                    new Notice(`已创建${relationType}: ${sourceNode.ID} → ${finalTargetID}`);
                 }
-            } else {
-                // 不是自由节点，直接创建箭头关系（不显示输入对话框）
-                relationText = '';
-
-                // 在刷新前保存所有节点的当前位置
-                await this.saveAllNodePositionsBeforeRefresh();
-
-                try {
-                    const mocFile = getLatestMOCFile();
-                    if (mocFile) {
-                        await this.addArrowRelationToMOC(
-                            mocFile,
-                            sourceNode.IDStr,
-                            finalTargetID,
-                            relationText
-                        );
-
-                        // 刷新视图
-                        await this.refreshBranchMermaid();
-
-                        new Notice(`已创建箭头关系: ${sourceNode.ID} → ${finalTargetID}`);
-                    }
-                } catch (error) {
-                    console.error('Failed to create arrow relation:', error);
-                    new Notice(`创建箭头关系失败: ${error.message}`);
-                }
+            } catch (error) {
+                console.error('Failed to create arrow relation:', error);
+                new Notice(`创建箭头关系失败: ${error.message}`);
             }
         });
 
@@ -4539,6 +4524,10 @@ export class ZKIndexView extends ItemView {
 
         return null;
     }
+    
+    private isFreeNodeID(nodeId?: string | null): boolean {
+        return !!nodeId && String(nodeId).startsWith('free.');
+    }
 
     private getBranchStylePalette(): string[] {
         return ['#ff5a5f', '#ff8a3d', '#f7c948', '#56d364', '#38d9a9', '#4dabf7', '#9775fa', '#f06595'];
@@ -4854,7 +4843,11 @@ export class ZKIndexView extends ItemView {
 
             // 然后移动到父节点下
             if (mocFile) {
-                await this.mocHandler.moveNodeToParent(mocFile, suggestedID, placeholderInfo.parentNodeId, suggestedID);
+                if (this.isFreeNodeID(suggestedID) || this.isFreeNodeID(placeholderInfo.parentNodeId)) {
+                    await this.addArrowRelationToMOC(mocFile, placeholderInfo.parentNodeId, suggestedID, '');
+                } else {
+                    await this.mocHandler.moveNodeToParent(mocFile, suggestedID, placeholderInfo.parentNodeId, suggestedID);
+                }
             }
         } else {
             // 保存到 MOC
@@ -4870,8 +4863,12 @@ export class ZKIndexView extends ItemView {
 
         if (placeholderInfo?.childNodeId && mocFile) {
             MermaidParser.clearCacheForFile(this.plugin.settings.mocCurrentFile);
-            const newChildID = this.generateChildNodeID(suggestedID);
-            await this.mocHandler.moveNodeToParent(mocFile, placeholderInfo.childNodeId, suggestedID, newChildID);
+            if (this.isFreeNodeID(suggestedID) || this.isFreeNodeID(placeholderInfo.childNodeId)) {
+                await this.addArrowRelationToMOC(mocFile, suggestedID, placeholderInfo.childNodeId, '');
+            } else {
+                const newChildID = this.generateChildNodeID(suggestedID);
+                await this.mocHandler.moveNodeToParent(mocFile, placeholderInfo.childNodeId, suggestedID, newChildID);
+            }
         }
 
         // 保存位置
@@ -4941,7 +4938,11 @@ export class ZKIndexView extends ItemView {
 
             // 然后移动到父节点下
             if (mocFile) {
-                await this.mocHandler.moveNodeToParent(mocFile, suggestedID, placeholderInfo.parentNodeId, suggestedID);
+                if (this.isFreeNodeID(suggestedID) || this.isFreeNodeID(placeholderInfo.parentNodeId)) {
+                    await this.addArrowRelationToMOC(mocFile, placeholderInfo.parentNodeId, suggestedID, '');
+                } else {
+                    await this.mocHandler.moveNodeToParent(mocFile, suggestedID, placeholderInfo.parentNodeId, suggestedID);
+                }
             }
         } else {
             // 保存到 MOC（不关联文件）
@@ -4956,8 +4957,12 @@ export class ZKIndexView extends ItemView {
 
         if (placeholderInfo?.childNodeId && mocFile) {
             MermaidParser.clearCacheForFile(this.plugin.settings.mocCurrentFile);
-            const newChildID = this.generateChildNodeID(suggestedID);
-            await this.mocHandler.moveNodeToParent(mocFile, placeholderInfo.childNodeId, suggestedID, newChildID);
+            if (this.isFreeNodeID(suggestedID) || this.isFreeNodeID(placeholderInfo.childNodeId)) {
+                await this.addArrowRelationToMOC(mocFile, suggestedID, placeholderInfo.childNodeId, '');
+            } else {
+                const newChildID = this.generateChildNodeID(suggestedID);
+                await this.mocHandler.moveNodeToParent(mocFile, placeholderInfo.childNodeId, suggestedID, newChildID);
+            }
         }
 
         // 保存位置
@@ -5478,8 +5483,12 @@ export class ZKIndexView extends ItemView {
                     isEmbed: result.isEmbed || false
                 };
 
-                // 如果有父节点，添加为子节点
-                if (result.connectToNodeID) {
+                const isFreeNode = this.isFreeNodeID(result.nodeID);
+                const parentNodeId = result.connectToNodeID;
+                const shouldAttachAsChild = !!parentNodeId && !isFreeNode;
+
+                // 如果有父节点且不是自由节点，添加为子节点
+                if (shouldAttachAsChild) {
                     // 查找父节点
                     const findNodeInTree = (nodes: MOCTreeNode[], nodeID: string): MOCTreeNode | null => {
                         for (const node of nodes) {
@@ -5494,7 +5503,7 @@ export class ZKIndexView extends ItemView {
                         return null;
                     };
 
-                    const parentNode = findNodeInTree(mocData.nodes, result.connectToNodeID);
+                    const parentNode = findNodeInTree(mocData.nodes, parentNodeId as string);
                     if (parentNode) {
                         // 计算深度
                         newNode.depth = parentNode.depth + 1;
@@ -5517,6 +5526,16 @@ export class ZKIndexView extends ItemView {
                     if (!(mocData as any).nodeStyleColors[newNode.nodeID]) {
                         (mocData as any).nodeStyleColors[newNode.nodeID] = this.pickNextBranchStyleColor((mocData as any).nodeStyleColors);
                     }
+                }
+
+                // 自由节点即使选择了“连接到节点”，也只保留虚线关系，不建立父子关系
+                if (isFreeNode && result.connectToNodeID && !result.reverseRelation) {
+                    const key = `${result.connectToNodeID}->${result.nodeID}`;
+                    mocData.reverseRelations.set(key, {
+                        sourceID: result.connectToNodeID,
+                        targetID: result.nodeID,
+                        relationText: result.connectionRelation || result.relationText || ''
+                    });
                 }
 
                 // 如果有反向关系，添加到 reverseRelations
