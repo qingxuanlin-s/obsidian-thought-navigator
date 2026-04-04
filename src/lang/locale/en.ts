@@ -158,6 +158,8 @@ export default {
     "close relative": "close relative",
     "inlinks": "inlinks",
     "outlinks": "outlinks",
+    "no inlinks": "No inlinks",
+    "no outlinks": "No outlinks",
     "inoutlinks": "in/outlinks",
     "mind tree context": "Mind Tree",
     "expand graph": "expand graph",

@@ -450,16 +450,11 @@ export default class ZKNavigationPlugin extends Plugin {
 
         this.registerView(ZK_RECENT_TYPE, (leaf) => new ZKRecentView(leaf, this));
               
-        this.addRibbonIcon("ghost", t("open zk-index-graph"), async () => {
+        this.addRibbonIcon("tree-pine", t("open zk-index-graph"), async () => {
             
             this.openIndexView();
             
         })
-
-        this.addRibbonIcon("network", t("open zk-local-graph"), async () => {
-            
-            this.openGraphView();
-        });
 
         this.addCommand({
             id: "zk-index-graph",

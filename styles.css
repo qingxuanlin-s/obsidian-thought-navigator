@@ -285,13 +285,17 @@ align-items: center;
 
 .zk-graph-text {
   position: fixed;
-  background-color: #27313b;
+  background-color: #242424;
   margin:5px;
   margin-top: 0px;
   border-radius: 5px;
-  padding: 5px;
+  padding: 8px;
   float: left;
-  border: 1px solid #2a3f5f;
+  border: 1px solid #3a3a3a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #c8c8e0;
   /* 确保下拉框可以正常展开 */
   z-index: 50;
 }
@@ -300,6 +304,57 @@ align-items: center;
 .zk-graph-text .zk-moc-selector {
   position: relative;
   z-index: 100;
+  margin-left: 0;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #1a2f4f;
+  background-color: #2a3f5f;
+  color: #e0e0e0;
+  font-size: 12px;
+  min-width: 120px;
+  transition: all 0.2s ease;
+}
+
+.zk-graph-text .zk-moc-selector:hover {
+  background-color: #3a4f6f;
+  border-color: #00a8ff;
+}
+
+.zk-graph-text .zk-moc-selector:focus {
+  outline: none;
+  border-color: #00a8ff;
+  box-shadow: 0 0 0 2px rgba(0, 168, 255, 0.3);
+}
+
+.zk-graph-text .zk-moc-selector option {
+  background-color: #2a3f5f;
+  color: #e0e0e0;
+}
+
+.zk-graph-text .zk-moc-file-input {
+  margin-left: 0;
+  padding: 4px 8px;
+  border: 1px solid #1a2f4f;
+  border-radius: 4px;
+  background-color: #2a3f5f;
+  color: #e0e0e0;
+  font-size: 12px;
+}
+
+.zk-graph-text .zk-moc-file-input:hover {
+  background-color: #3a4f6f;
+  border-color: #00a8ff;
+}
+
+.zk-graph-text .zk-moc-file-input:focus {
+  outline: none;
+  border-color: #00a8ff;
+  box-shadow: 0 0 0 2px rgba(0, 168, 255, 0.3);
+}
+
+.zk-graph-text .zk-moc-hint,
+.zk-graph-text small {
+  color: #8088a8;
 }
 
 .zk-graph-icon {
@@ -313,16 +368,19 @@ align-items: center;
 }
 
 .zk-graph-icon >.clickable-icon {  
-  background-color: #1a1f2e;
-  border: 1px solid #2a3f5f;
-  padding: 2px;
-  color: #00a8ff;
+  background: transparent;
+  border: 1.5px solid #4a4a6a;
+  border-radius: 20px;
+  padding: 5px 8px;
+  color: #c8c8e0;
+  transition: all 0.15s ease;
   pointer-events: auto;
 }
 
 .zk-graph-icon >.clickable-icon:hover {
-  background-color: #2a3f5f;
-  border-color: #00a8ff;
+  border-color: #7b7baa;
+  background: rgba(120, 120, 180, 0.1);
+  color: #e0e0f0;
 }
 
 .zk-graph-icon-bottom {
@@ -422,6 +480,9 @@ align-items: center;
   border-radius: 0;
   position: relative;
   background: transparent;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
 }
 .zk-inoutlinks-container {
   display: flex;
@@ -430,6 +491,8 @@ align-items: center;
   padding: 16px 12px;
   gap: 0;
   border-radius: 5px;
+  flex: 1;
+  min-height: 0;
 }
 
 /* 区域标题 */
@@ -445,6 +508,8 @@ align-items: center;
 }
 .zk-iol-header-outlink {
   color: #f59e0b;
+  margin-top: auto;
+  padding-bottom: 10px;
 }
 
 /* 连接线 */
@@ -1155,17 +1220,61 @@ align-items: center;
 .zk-theme-light .zk-graph-text {
   background-color: #e8e8e8;
   border: 1px solid #d0d0d0;
+  color: #333;
+}
+
+.zk-theme-light .zk-graph-text .zk-moc-selector {
+  background-color: #f5f5f5;
+  color: #333333;
+  border: 1px solid #d0d0d0;
+}
+
+.zk-theme-light .zk-graph-text .zk-moc-selector:hover {
+  background-color: #e8e8e8;
+  border-color: #0066cc;
+}
+
+.zk-theme-light .zk-graph-text .zk-moc-selector:focus {
+  border-color: #0066cc;
+  box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.2);
+}
+
+.zk-theme-light .zk-graph-text .zk-moc-selector option {
+  background-color: #ffffff;
+  color: #333333;
+}
+
+.zk-theme-light .zk-graph-text .zk-moc-file-input {
+  background-color: #f5f5f5;
+  color: #333333;
+  border: 1px solid #d0d0d0;
+}
+
+.zk-theme-light .zk-graph-text .zk-moc-file-input:hover {
+  background-color: #e8e8e8;
+  border-color: #0066cc;
+}
+
+.zk-theme-light .zk-graph-text .zk-moc-file-input:focus {
+  border-color: #0066cc;
+  box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.2);
+}
+
+.zk-theme-light .zk-graph-text .zk-moc-hint,
+.zk-theme-light .zk-graph-text small {
+  color: #666666;
 }
 
 .zk-theme-light .zk-graph-icon > .clickable-icon {
-  background-color: #e8e8e8;
-  border: 1px solid #d0d0d0;
-  color: #0066cc;
+  background: transparent;
+  border: 1.5px solid #c0c0d0;
+  color: #555;
 }
 
 .zk-theme-light .zk-graph-icon > .clickable-icon:hover {
-  background-color: #d0d0d0;
-  border-color: #0066cc;
+  border-color: #8080b0;
+  background: rgba(100, 100, 160, 0.08);
+  color: #333;
 }
 
 .zk-theme-light .zk-graph-icon-bottom > .clickable-icon {
