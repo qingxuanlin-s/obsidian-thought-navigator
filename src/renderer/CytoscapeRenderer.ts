@@ -741,6 +741,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         const nodeColors = this.currentData?.metadata.nodeColors || {};
         const nodeRemarks = this.currentData?.metadata.nodeRemarks || {};
         const nodeAnchors = this.currentData?.metadata.nodeAnchors || {};
+        const embedNodeSizes = ((this.currentData?.metadata as any)?.embedNodeSizes || {}) as Record<string, { width: number; height: number }>;
         const vividStyleMap = this.buildVividNodeStyleMap(nodes);
         const parentLinkedNodeIds = new Set<string>();
         (this.currentData?.edges || []).forEach((edge) => {
@@ -752,6 +753,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
         const elements = nodes.map(node => {
             const vividStyle = vividStyleMap.get(node.IDStr);
             const hasParentChildLink = parentLinkedNodeIds.has(node.ID) || parentLinkedNodeIds.has(node.IDStr);
+            const persistedSize = embedNodeSizes[node.ID] || embedNodeSizes[node.IDStr];
+            const isTextNode = !!node.isTextOnly;
+            const manualSize = (isTextNode && persistedSize && persistedSize.width > 0 && persistedSize.height > 0)
+                ? persistedSize
+                : null;
             const element: any = {
                 group: 'nodes' as const,
                 data: {
@@ -778,6 +784,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     hasRemark: !!(nodeRemarks[node.IDStr] || nodeRemarks[node.ID]),
                     isAnchor: !!(nodeAnchors[node.IDStr] || nodeAnchors[node.ID]),
                     hasFileIcon: (!node.isTextOnly && node.file) ? true : false, // 文件节点显示图标
+                    manualWidthModel: manualSize?.width || null,
+                    manualHeightModel: manualSize?.height || null,
                     branchNodeBackground: vividStyle?.background || null,
                     branchNodeBorder: vividStyle?.border || null,
                     branchNodeShadow: vividStyle?.shadow || null
@@ -1557,6 +1565,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'font-weight': '500',
                 // 使用函数动态计算宽度和高度
                 'width': (ele: any) => {
+                    const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
+                    if (manualWidthModel > 0 && ele.data('isTextOnly')) {
+                        return manualWidthModel;
+                    }
                     const label = ele.data('label') || '';
                     return this.measureNodeLabel(label, {
                         baseWidth: 90,
@@ -1569,6 +1581,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     }).width;
                 },
                 'height': (ele: any) => {
+                    const manualHeightModel = Number(ele.data('manualHeightModel') || 0);
+                    if (manualHeightModel > 0 && ele.data('isTextOnly')) {
+                        return manualHeightModel;
+                    }
                     const label = ele.data('label') || '';
                     return this.measureNodeLabel(label, {
                         baseWidth: 90,
@@ -1614,6 +1630,17 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'border-width': 0
             } as any
         },
+        // 纯文本节点：文字换行宽度跟随节点宽度（支持手动拉伸后自适应）
+        {
+            selector: 'node[?isTextOnly]',
+            style: {
+                'text-max-width': (ele: any) => {
+                    const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
+                    const widthModel = manualWidthModel > 0 ? manualWidthModel : Number(ele.width() || 280);
+                    return Math.max(120, widthModel - 48);
+                }
+            } as any
+        },
         // 自由文本节点（无父子关系）：纯文本样式（透明边框与背景）
         {
             selector: 'node[?isStandaloneText]',
@@ -1621,8 +1648,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'background-opacity': 0,
                 'border-width': 0,
                 'shape': 'round-rectangle',
-                'padding': '0px',
-                'text-max-width': '320px'
+                'padding': '0px'
             } as any
         },
         // 根节点样式：尺寸放大 2 倍，边框加粗
@@ -1633,8 +1659,19 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'border-color': '#1a3558',
                 'font-size': '26px',
                 'font-weight': 'bold',
-                'text-max-width': '400px',
+                'text-max-width': (ele: any) => {
+                    if (ele.data('isTextOnly')) {
+                        const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
+                        const widthModel = manualWidthModel > 0 ? manualWidthModel : Number(ele.width() || 400);
+                        return Math.max(120, widthModel - 48);
+                    }
+                    return 400;
+                },
                 'width': (ele: any) => {
+                    const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
+                    if (manualWidthModel > 0 && ele.data('isTextOnly')) {
+                        return manualWidthModel;
+                    }
                     const label = ele.data('label') || '';
                     const normalSize = this.measureNodeLabel(label, {
                         baseWidth: 80,
@@ -1648,6 +1685,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     return normalSize.width * 2;
                 },
                 'height': (ele: any) => {
+                    const manualHeightModel = Number(ele.data('manualHeightModel') || 0);
+                    if (manualHeightModel > 0 && ele.data('isTextOnly')) {
+                        return manualHeightModel;
+                    }
                     const label = ele.data('label') || '';
                     const normalSize = this.measureNodeLabel(label, {
                         baseWidth: 80,
@@ -3675,6 +3716,115 @@ case 'dagre':
                 node.select();
             });
         });
+
+        // 文本节点右下角拉伸手柄（仅选中时可见）
+        if (!readOnly) {
+            this.cy.nodes('[?isTextOnly]').forEach((node: any) => {
+                if (node.data('isGroup') || node.data('isPlaceholder') || node.data('isEmbed')) return;
+
+                const resizeEl = document.createElement('div');
+                resizeEl.className = 'zk-text-node-resize-handle';
+                resizeEl.style.cssText = `
+                    position: absolute;
+                    width: 18px;
+                    height: 18px;
+                    border-top-left-radius: 6px;
+                    background: rgba(91, 143, 217, 0.9);
+                    color: rgba(255, 255, 255, 0.95);
+                    font-size: 11px;
+                    font-weight: 700;
+                    display: flex;
+                    align-items: flex-end;
+                    justify-content: flex-end;
+                    line-height: 1;
+                    padding-right: 2px;
+                    cursor: nwse-resize;
+                    pointer-events: none;
+                    opacity: 0;
+                    transition: opacity 0.15s ease;
+                    z-index: 10;
+                    user-select: none;
+                `;
+                resizeEl.textContent = '\u25e2';
+                badgeContainer.appendChild(resizeEl);
+
+                let resizing = false;
+                let startX = 0;
+                let startY = 0;
+                let startW = 0;
+                let startH = 0;
+
+                const onMove = (e: MouseEvent) => {
+                    if (!resizing || !this.cy) return;
+                    const zoom = this.cy.zoom();
+                    const newWidth = Math.max(140, startW + (e.clientX - startX));
+                    const newHeight = Math.max(56, startH + (e.clientY - startY));
+                    const widthModel = newWidth / zoom;
+                    const heightModel = newHeight / zoom;
+                    node.style({ width: widthModel, height: heightModel });
+                    node.data('manualWidthModel', widthModel);
+                    node.data('manualHeightModel', heightModel);
+                    this.immediateOverlayUpdate();
+                };
+
+                const onUp = () => {
+                    if (!resizing || !this.cy) return;
+                    resizing = false;
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                    const widthModel = Number(node.width());
+                    const heightModel = Number(node.height());
+                    this.container?.dispatchEvent(new CustomEvent('embed-node-size-changed', {
+                        detail: {
+                            node: node.data('originalNode'),
+                            nodeId: node.data('originalNodeId') || node.data('originalNode')?.IDStr || node.data('originalNode')?.ID || '',
+                            size: { widthModel, heightModel }
+                        }
+                    }));
+                };
+
+                resizeEl.addEventListener('mousedown', (e: MouseEvent) => {
+                    if (e.button !== 0 || !this.cy) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    resizing = true;
+                    startX = e.clientX;
+                    startY = e.clientY;
+                    startW = node.width() * this.cy.zoom();
+                    startH = node.height() * this.cy.zoom();
+                    document.addEventListener('mousemove', onMove);
+                    document.addEventListener('mouseup', onUp);
+                });
+
+                const updateResizeHandle = () => {
+                    if (!this.cy) return;
+                    const isHidden =
+                        node.removed() ||
+                        node.hasClass('zk-collapsed-hidden') ||
+                        node.style('display') === 'none' ||
+                        !node.visible();
+                    if (isHidden || !node.selected()) {
+                        resizeEl.style.display = 'none';
+                        resizeEl.style.pointerEvents = 'none';
+                        return;
+                    }
+                    resizeEl.style.display = 'flex';
+                    resizeEl.style.pointerEvents = 'auto';
+                    resizeEl.style.opacity = '1';
+                    const zoom = this.cy.zoom();
+                    const bb = node.renderedBoundingBox();
+                    const size = Math.max(14, 18 * zoom);
+                    resizeEl.style.width = `${size}px`;
+                    resizeEl.style.height = `${size}px`;
+                    resizeEl.style.fontSize = `${Math.max(8, 11 * zoom)}px`;
+                    resizeEl.style.left = `${bb.x2 - size}px`;
+                    resizeEl.style.top = `${bb.y2 - size}px`;
+                };
+
+                badgeUpdaters.push(updateResizeHandle);
+                updateResizeHandle();
+            });
+        }
 
         // embed toggle 按钮（睁眼/闭眼，文件节点⟷预览节点互转）
         if (!readOnly) {
