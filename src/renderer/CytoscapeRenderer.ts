@@ -1886,7 +1886,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'color': '#ffffff'
             } as any
         },
-        // 自由节点：微底色晕染
+        // 自由节点：微底色晕染（无 shadow-*，避免 Cytoscape 样式告警）
         {
             selector: 'node[?isFreeNode]:unselected',
             style: {
@@ -1895,11 +1895,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'border-width': 0,
                 'border-color': 'transparent',
                 'corner-radius': '8px',
-                'shadow-blur': 28,
-                'shadow-color': isLight ? '#64748b' : '#5b8fd9',
-                'shadow-opacity': isLight ? 0.14 : 0.18,
-                'shadow-offset-x': 0,
-                'shadow-offset-y': 0
             } as any
         },
         // 自由节点选中态：与普通节点保持一致（覆盖 isStandaloneText 选中样式）
