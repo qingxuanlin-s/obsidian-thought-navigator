@@ -2506,6 +2506,18 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
             const updatePosition = () => {
                 if (!this.cy) return;
+                const isHidden =
+                    node.removed() ||
+                    node.hasClass('zk-collapsed-hidden') ||
+                    node.style('display') === 'none' ||
+                    !node.visible();
+                if (isHidden) {
+                    card.style.display = 'none';
+                    embedToggleEl.style.display = 'none';
+                    return;
+                }
+                card.style.display = '';
+                embedToggleEl.style.display = '';
                 const zoom = this.cy.zoom();
                 const size = cardSizeMap.get(nodeId);
                 const widthModel = size ? size.widthModel : 280;
@@ -2945,6 +2957,16 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
             const updatePosition = () => {
                 if (!this.cy) return;
+                const isHidden =
+                    node.removed() ||
+                    node.hasClass('zk-collapsed-hidden') ||
+                    node.style('display') === 'none' ||
+                    !node.visible();
+                if (isHidden) {
+                    card.style.display = 'none';
+                    return;
+                }
+                card.style.display = '';
                 const zoom = this.cy.zoom();
                 const rp = node.renderedPosition();
                 const size = cardSizeMap.get(nodeId);
