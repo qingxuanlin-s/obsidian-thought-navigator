@@ -156,6 +156,8 @@ export default {
     "close relative": "邻近",
     "inlinks": "入链",
     "outlinks": "出链",
+    "no inlinks": "暂无入链",
+    "no outlinks": "暂无出链",
     "inoutlinks": "出入链",
     "mind tree context": "思维树",
     "expand graph": "放大显示",
@@ -163,7 +165,7 @@ export default {
     "Mermaid graph to display inlinks and outlinks": "显示当前笔记的入链和出链",
 
     //main.ts
-    "open zk-index-graph": "打开分支视图",
+    "open zk-index-graph": "打开思维树",
     "open zk-local-graph": "打开局部关系视图",
     "zk-index-graph": "分支视图", 
     "zk-local-graph": "局部关系视图", 

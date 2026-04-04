@@ -2,7 +2,7 @@ import ZKNavigationPlugin from "main";
 import { ExtraButtonComponent, FileView, ItemView, Notice, TFile, WorkspaceLeaf, debounce, loadMermaid, setIcon } from "obsidian";
 import { ZKNode, ZK_NAVIGATION } from "./indexView";
 import { t } from "src/lang/helper";
-import { convertMOCToZKNodes, parseMOCStructure, ReverseRelation } from "src/utils/utils";
+import { convertMOCToZKNodes, getMOCFilesInFolder, parseMOCStructure, ReverseRelation } from "src/utils/utils";
 
 import { CytoscapeExpandModal } from "src/modal/cytoscapeExpandModal";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
@@ -780,23 +780,38 @@ export class ZKGraphView extends ItemView {
                 const mocFolder = this.plugin.settings.mocFolderPath;
                 const headingTitle = this.plugin.settings.mocHeadingTitle;
                 const availableMOCs: Array<{file: TFile, hasCurrentFile: boolean, allNodes: ZKNode[], currentNode: ZKNode | null}> = [];
+                const currentFileName = currentFile.name;
+                const currentBasename = currentFile.basename;
+
+                const isNodeMatchCurrentFile = (node: ZKNode, mocPath: string): boolean => {
+                    if (node.file?.path === currentFile.path) return true;
+
+                    const wikiLink = (node.wikiLink || '').trim();
+                    if (!wikiLink) return false;
+                    if (wikiLink === currentFile.path || wikiLink === currentFileName || wikiLink === currentBasename) return true;
+                    if (wikiLink.replace(/\.md$/i, '') === currentBasename) return true;
+
+                    const basePath = mocPath.includes('/') ? mocPath.substring(0, mocPath.lastIndexOf('/')) : '';
+                    const resolved = this.app.metadataCache.getFirstLinkpathDest(wikiLink, basePath);
+                    return !!resolved && resolved.path === currentFile.path;
+                };
                 
                 if (mocFolder) {
-                    const mocFiles = this.app.vault.getMarkdownFiles()
-                        .filter(f => f.path.startsWith(mocFolder + '/'));
+                    const mocFiles = getMOCFilesInFolder(this.app, mocFolder);
                         
                     // 检查每个MOC文件是否包含当前文件
                     for (const mocFileCandidate of mocFiles) {
                         const tempParseResult = await parseMOCStructure(this.app, mocFileCandidate.path, headingTitle);
                         const tempNodes = await convertMOCToZKNodes(this.plugin, tempParseResult.nodes, tempParseResult.reverseRelations, [], tempParseResult.nodePositions);
-                        const tempCurrentNode = tempNodes.find(n => n.file && n.file.path === currentFile.path);
-                        const hasCurrentFile = !!tempCurrentNode;
-                        availableMOCs.push({
-                            file: mocFileCandidate, 
-                            hasCurrentFile, 
-                            allNodes: tempNodes, 
-                            currentNode: tempCurrentNode || null
-                        });
+                        const tempCurrentNode = tempNodes.find(n => isNodeMatchCurrentFile(n, mocFileCandidate.path));
+                        if (tempCurrentNode) {
+                            availableMOCs.push({
+                                file: mocFileCandidate,
+                                hasCurrentFile: true,
+                                allNodes: tempNodes,
+                                currentNode: tempCurrentNode
+                            });
+                        }
                     }
                 }
                 
@@ -814,17 +829,15 @@ export class ZKGraphView extends ItemView {
                     mocSelector.style.minWidth = '120px';
                     mocSelector.style.cursor = 'pointer';
 
-                    // 优先显示包含当前文件的MOC
-                    const sortedMOCs = [...availableMOCs].sort((a, b) => {
-                        if (a.hasCurrentFile && !b.hasCurrentFile) return -1;
-                        if (!a.hasCurrentFile && b.hasCurrentFile) return 1;
-                        return a.file.basename.localeCompare(b.file.basename);
-                    });
+                    // 仅显示包含当前文件的 MOC
+                    const sortedMOCs = [...availableMOCs].sort((a, b) =>
+                        a.file.basename.localeCompare(b.file.basename)
+                    );
 
                     sortedMOCs.forEach((mocInfo) => {
                         const option = mocSelector.createEl('option');
                         option.value = mocInfo.file.path;
-                        option.textContent = `${mocInfo.file.basename}${mocInfo.hasCurrentFile ? ' ✓' : ''}`;
+                        option.textContent = mocInfo.file.basename;
                         if (mocInfo.file.path === mocFile.path) {
                             option.selected = true;
                         }
@@ -832,20 +845,15 @@ export class ZKGraphView extends ItemView {
 
                     mocSelector.addEventListener('change', async () => {
                         const selectedMOC = sortedMOCs.find(m => m.file.path === mocSelector.value);
-                        if (selectedMOC) {
-                            if (selectedMOC.currentNode) {
-                                // 刷新视图显示选中的MOC
-                                await this.refreshLocalGraphMOCNode(
-                                    graphMermaidDiv,
-                                    currentFile,
-                                    selectedMOC.allNodes,
-                                    selectedMOC.currentNode,
-                                    selectedMOC.file
-                                );
-                            } else {
-                                // 选中的MOC不包含当前笔记，显示提示
-                                new Notice(`"${selectedMOC.file.basename}" 不包含当前笔记`);
-                            }
+                        if (selectedMOC && selectedMOC.currentNode) {
+                            // 刷新视图显示选中的MOC
+                            await this.refreshLocalGraphMOCNode(
+                                graphMermaidDiv,
+                                currentFile,
+                                selectedMOC.allNodes,
+                                selectedMOC.currentNode,
+                                selectedMOC.file
+                            );
                         } else {
                             console.error('[graphView] 未找到选中的 MOC:', mocSelector.value);
                         }
@@ -1125,7 +1133,7 @@ export class ZKGraphView extends ItemView {
         
         // 全屏按钮
         const fullscreenBtn = new ExtraButtonComponent(graphIconDiv);
-        fullscreenBtn.setIcon("maximize-2").setTooltip(t("fullscreen"));
+        fullscreenBtn.setIcon("expand").setTooltip(t("fullscreen"));
         fullscreenBtn.onClick(() => {
             this.toggleFullscreen(mocGraphContainer);
         });
@@ -1244,6 +1252,7 @@ export class ZKGraphView extends ItemView {
     ): Promise<void> {
         // 创建入链出链图容器（带标题和展开按钮）
         const inoutlinksGraphContainer = container.createDiv("zk-inoutlinks-graph-container");
+        inoutlinksGraphContainer.style.height = `${this.graphHeight}px`;
         const inoutlinksGraphTextDiv = inoutlinksGraphContainer.createDiv("zk-graph-text");
         inoutlinksGraphTextDiv.empty();
         inoutlinksGraphTextDiv.createEl('span', { text: t("inoutlinks") });
@@ -1334,18 +1343,25 @@ export class ZKGraphView extends ItemView {
         centerCard.addEventListener('click', (e) => handleFileClick(currentFile, e));
 
         // === 出链区域 ===
+        // 连接线（始终保留，保证下半区结构稳定）
+        inoutlinksContainer.createDiv('zk-iol-connector');
+
+        // 出链卡片网格（空时用占位撑高度）
+        const outGrid = inoutlinksContainer.createDiv('zk-iol-grid');
         if (outlinkArr.length > 0) {
-            // 连接线
-            inoutlinksContainer.createDiv('zk-iol-connector');
-
-            // 出链卡片网格
-            const outGrid = inoutlinksContainer.createDiv('zk-iol-grid');
             outlinkArr.forEach((file) => outGrid.appendChild(createNodeCard(file, 'outlink')));
-
-            // 出链标题
-            const outHeader = inoutlinksContainer.createDiv('zk-iol-header zk-iol-header-outlink');
-            outHeader.createEl('span', { text: `${t("outlinks")} · ${outlinkArr.length}` });
+        } else {
+            outGrid.addClass('zk-iol-grid-empty');
+            for (let i = 0; i < 2; i++) {
+                const placeholder = outGrid.createDiv('zk-iol-card zk-iol-card-outlink zk-iol-card-placeholder');
+                placeholder.createDiv('zk-iol-card-icon');
+                placeholder.createEl('span', { cls: 'zk-iol-card-name', text: ' ' });
+            }
         }
+
+        // 出链标题（始终放在底部）
+        const outHeader = inoutlinksContainer.createDiv('zk-iol-header zk-iol-header-outlink');
+        outHeader.createEl('span', { text: `${t("outlinks")} · ${outlinkArr.length}` });
 
         // 展开按钮：用 Cytoscape 渲染放大视图
         expandBtn.onClick(() => {
