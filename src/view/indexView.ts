@@ -1500,23 +1500,17 @@ export class ZKIndexView extends ItemView {
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { node, size } = event.detail || {};
-            if (!node?.ID || !size) return;
-
-            if (this.embedNodeSizeSaveTimeout) {
-                clearTimeout(this.embedNodeSizeSaveTimeout);
-            }
-
-            this.embedNodeSizeSaveTimeout = setTimeout(async () => {
-                try {
-                    const mocFile = getLatestMOCFile();
-                    if (mocFile) {
-                        await this.saveEmbedNodeSizeToMOC(mocFile, node.ID, size);
-                    }
-                } catch (error) {
-                    console.error('Failed to save embed node size:', error);
+            const { node, nodeId, size } = event.detail || {};
+            const targetNodeId = String(nodeId || node?.ID || node?.IDStr || '').trim();
+            if (!targetNodeId || !size) return;
+            try {
+                const mocFile = getLatestMOCFile();
+                if (mocFile) {
+                    await this.saveEmbedNodeSizeToMOC(mocFile, targetNodeId, size);
                 }
-            }, DEBOUNCE_DELAY.POSITION_SAVE);
+            } catch (error) {
+                console.error('Failed to save embed node size:', error);
+            }
         });
 
         // 监听分组创建事件
