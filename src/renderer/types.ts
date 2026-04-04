@@ -63,6 +63,7 @@ export interface RenderOptions {
     smartConnection?: boolean;
     readOnly?: boolean;
     exportMode?: boolean;  // 纯导出模式：跳过所有 DOM 事件绑定和预览渲染，防止触发 MutationObserver 副作用
+    mocPreviewExporter?: (mocFile: TFile) => Promise<TFile | null>;
 }
 
 /**
