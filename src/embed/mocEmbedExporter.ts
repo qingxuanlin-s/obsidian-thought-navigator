@@ -107,6 +107,22 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
 }
 
 /**
+ * 确保 .moc 对应预览 PNG 可用（不存在或过期则重新生成）
+ */
+export async function ensureMOCPreviewPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promise<TFile> {
+    const app = plugin.app;
+    const pngPath = getPNGPath(mocFile);
+    let pngFile = app.vault.getFileByPath(pngPath);
+    if (pngNeedsUpdate(mocFile, pngFile)) {
+        pngFile = await exportMOCToPNG(mocFile, plugin);
+    }
+    if (!pngFile) {
+        throw new Error('PNG 生成失败');
+    }
+    return pngFile;
+}
+
+/**
  * 判断 PNG 是否需要重新生成（.moc 比 PNG 新）
  */
 function pngNeedsUpdate(mocFile: TFile, pngFile: TFile | null): boolean {
@@ -149,7 +165,7 @@ export class MOCEmbedRenderChild extends MarkdownRenderChild {
             if (pngNeedsUpdate(this.mocFile, pngFile)) {
                 const loading = this.containerEl.createDiv('zk-moc-embed-loading');
                 loading.setText('渲染思维树...');
-                pngFile = await exportMOCToPNG(this.mocFile, this.plugin);
+                pngFile = await ensureMOCPreviewPNG(this.mocFile, this.plugin);
                 loading.remove();
             }
 
@@ -188,7 +204,7 @@ export class MOCEmbedRenderChild extends MarkdownRenderChild {
         this.regenerateTimer = setTimeout(async () => {
             this.regenerateTimer = null;
             try {
-                const pngFile = await exportMOCToPNG(this.mocFile, this.plugin);
+                const pngFile = await ensureMOCPreviewPNG(this.mocFile, this.plugin);
                 if (this.currentImg) {
                     // 加时间戳破坏浏览器缓存，强制刷新图片
                     this.currentImg.src = this.plugin.app.vault.getResourcePath(pngFile) + '?t=' + Date.now();

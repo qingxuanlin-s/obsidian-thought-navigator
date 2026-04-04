@@ -13,7 +13,7 @@ class MarkdownFileSuggest extends AbstractInputSuggest<TFile> {
     }
 
     getSuggestions(inputStr: string): TFile[] {
-        const abstractFiles = this.app.vault.getAllLoadedFiles().filter(f => f.path.endsWith(".md"));
+        const abstractFiles = this.app.vault.getAllLoadedFiles().filter(f => f.path.endsWith(".md") || f.path.endsWith(".moc"));
         const files: TFile[] = [];
         const lowerCaseInputStr = inputStr.toLowerCase();
 

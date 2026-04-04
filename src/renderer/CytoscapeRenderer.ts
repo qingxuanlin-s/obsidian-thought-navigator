@@ -756,6 +756,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 group: 'nodes' as const,
                 data: {
                     id: this.escapeId(node.ID),
+                    originalNodeId: node.IDStr || node.ID,
                     label: this.getNodeLabel(node, this.currentOptions),
                     badge: this.getNodeBadge(node, this.currentOptions),
                     title: node.title,
@@ -1311,6 +1312,45 @@ export class CytoscapeRenderer implements IGraphRenderer {
     }
 
     /**
+     * 生成用于保存的 wikilink：
+     * - .md 继续使用 basename（保持现有习惯）
+     * - .moc 使用文件名（带扩展名），避免与同名 .md 冲突
+     */
+    private buildWikiLinkForFile(file: any): string {
+        const path = String(file?.path || '').trim();
+        const name = String(file?.name || '').trim();
+        const basename = String(file?.basename || '').trim();
+        const extension = String(file?.extension || '').toLowerCase();
+
+        if ((path && path.toLowerCase().endsWith('.moc')) || extension === 'moc') {
+            return name || `${basename}.moc`;
+        }
+
+        return basename || name || path;
+    }
+
+    /**
+     * .moc 预览 PNG 路径（与 mocEmbedExporter 保持一致）
+     * 默认：{moc目录}/attachments/{moc文件名}.png => 例如 a/demo.moc.png
+     */
+    private getMocPreviewPngCandidates(mocFilePath: string): string[] {
+        const normalized = String(mocFilePath || '').trim();
+        if (!normalized.toLowerCase().endsWith('.moc')) return [];
+
+        const dir = normalized.includes('/') ? normalized.substring(0, normalized.lastIndexOf('/')) : '';
+        const mocFileName = normalized.includes('/') ? normalized.substring(normalized.lastIndexOf('/') + 1) : normalized;
+        const mocBasename = mocFileName.replace(/\.moc$/i, '');
+
+        const candidates = [
+            dir ? `${dir}/attachments/${mocFileName}.png` : `attachments/${mocFileName}.png`,
+            dir ? `${dir}/attachments/${mocBasename}.png` : `attachments/${mocBasename}.png`
+        ];
+
+        // 去重
+        return Array.from(new Set(candidates));
+    }
+
+    /**
      * 设置入链出链图的初始位置
      * 入链节点在中心节点上方，出链节点在下方
      */
@@ -1571,20 +1611,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'border-opacity': 0
             } as any
         },
-        // 普通文件节点：补充背光和阴影（不影响 embed/纯文本）
-        {
-            selector: 'node[!isEmbed][!isGroup][!isPlaceholder]',
-            style: {
-                'shadow-color': (ele: any) => {
-                    if (ele.data('branchNodeShadow')) return ele.data('branchNodeShadow');
-                    return isLight ? 'rgba(15, 23, 42, 0.16)' : 'rgba(16, 28, 50, 0.55)';
-                },
-                'shadow-opacity': isLight ? 0.42 : 0.70,
-                'shadow-blur': isLight ? 14 : 24,
-                'shadow-offset-x': 0,
-                'shadow-offset-y': isLight ? 2 : 4
-            } as any
-        },
         // 嵌入节点：由 HTML 预览卡片承载内容，隐藏 Cytoscape 默认卡片外观
         {
             selector: 'node[?isEmbed]',
@@ -1830,12 +1856,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'border-color': colors.nodeBorderSelected,
                 'border-width': '3px',
                 'border-opacity': 0.90,
-                'color': '#ffffff',
-                'shadow-color': isLight ? 'rgba(59, 130, 246, 0.32)' : 'rgba(91, 143, 217, 0.70)',
-                'shadow-opacity': isLight ? 0.62 : 0.92,
-                'shadow-blur': isLight ? 22 : 30,
-                'shadow-offset-x': 0,
-                'shadow-offset-y': isLight ? 2 : 6
+                'color': '#ffffff'
             } as any
         },
         // 文件节点选中态保持透明边框
@@ -2087,6 +2108,13 @@ export class CytoscapeRenderer implements IGraphRenderer {
             headerLink.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
+                if (sourceFile.path.endsWith('.moc')) {
+                    // .moc 文件：触发分支视图打开
+                    this.container?.dispatchEvent(new CustomEvent('open-moc-in-index-view', {
+                        detail: { filePath: sourceFile.path }
+                    }));
+                    return;
+                }
                 // 查找已打开的 tab，有则激活，无则新开
                 const existingLeaf = app.workspace.getLeavesOfType('markdown')
                     .find((leaf: any) => leaf.view?.file?.path === sourceFile.path);
@@ -2181,12 +2209,23 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 embedToggleSvg.style.strokeWidth = '2.2';
             }
             previewContainer.appendChild(embedToggleEl);
+            const swallowTogglePointer = (e: Event) => {
+                e.preventDefault();
+                e.stopPropagation();
+            };
+            embedToggleEl.addEventListener('pointerdown', swallowTogglePointer);
+            embedToggleEl.addEventListener('mousedown', swallowTogglePointer);
             embedToggleEl.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 this.container?.dispatchEvent(new CustomEvent('toggle-embed-node', {
                     detail: {
                         node: data.originalNode,
+                        nodeId: data.originalNodeId || data.originalNode?.IDStr || data.originalNode?.ID || '',
+                        wikiLink: data.originalNode?.wikiLink || '',
+                        filePath: data.filePath || '',
+                        displayText: data.displayText || '',
+                        title: data.title || '',
                         currentIsEmbed: true
                     }
                 }));
@@ -2399,10 +2438,72 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 document.addEventListener('mouseup', onMouseUp);
             });
 
+            const isMOCFile = sourceFile.path.endsWith('.moc');
             const isExcalidraw = sourceFile.path.includes('.excalidraw');
             const hasExcalidrawCache = isExcalidrawFile && !!contentEl.querySelector('svg, img');
 
-            if (isExcalidraw && !hasExcalidrawCache) {
+            if (isMOCFile) {
+                contentEl.textContent = '';
+                contentEl.style.position = 'relative';
+                contentEl.style.overflow = 'hidden';
+                contentEl.style.padding = '0';
+                contentEl.style.background = 'transparent';
+                contentEl.style.cursor = 'default';
+
+                (async () => {
+                    let previewFile: any = null;
+
+                    // 优先：直接读取已存在的预览 PNG 文件（附件路径）
+                    const candidates = this.getMocPreviewPngCandidates(sourceFile.path);
+                    for (const candidate of candidates) {
+                        const f = app.vault.getAbstractFileByPath(candidate);
+                        if (f) {
+                            previewFile = f;
+                            break;
+                        }
+                    }
+
+                    // 回退：附件不存在时，再调用注入的 .moc 预览 API（与 markdown embed 共用）
+                    if (!previewFile) {
+                        try {
+                            const exporter = this.currentOptions?.mocPreviewExporter;
+                            if (exporter) {
+                                previewFile = await exporter(sourceFile as any);
+                            }
+                        } catch (error) {
+                            console.error('[CytoscapeRenderer] mocPreviewExporter failed:', error);
+                        }
+                    }
+
+                    if (previewFile) {
+                        const img = document.createElement('img');
+                        img.src = app.vault.getResourcePath(previewFile);
+                        img.draggable = false;
+                        img.style.cssText = `
+                            position: absolute;
+                            inset: 0;
+                            width: 100%;
+                            height: 100%;
+                            object-fit: contain;
+                            display: block;
+                            background: transparent;
+                        `;
+                        if (!contentEl.isConnected) return;
+                        contentEl.textContent = '';
+                        contentEl.appendChild(img);
+                        return;
+                    }
+
+                    if (!contentEl.isConnected) return;
+                    contentEl.style.cssText += 'display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px;';
+                    contentEl.innerHTML = `
+                        <div style="font-size: 12px; color: var(--text-muted); text-align: center;">
+                            未找到 MOC 预览 PNG（attachments/${sourceFile.name}.png）
+                        </div>
+                    `;
+                })();
+
+            } else if (isExcalidraw && !hasExcalidrawCache) {
                 contentEl.textContent = '';
                 (async () => {
                     let rendered = false;
@@ -3624,12 +3725,24 @@ case 'dagre':
                     toggleSvg.style.strokeWidth = '2.2';
                 }
                 badgeContainer.appendChild(toggleEl);
+                const swallowTogglePointer = (e: Event) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                };
+                toggleEl.addEventListener('pointerdown', swallowTogglePointer);
+                toggleEl.addEventListener('mousedown', swallowTogglePointer);
 
                 toggleEl.addEventListener('click', (e) => {
+                    e.preventDefault();
                     e.stopPropagation();
                     this.container?.dispatchEvent(new CustomEvent('toggle-embed-node', {
                         detail: {
                             node: node.data('originalNode'),
+                            nodeId: node.data('originalNodeId') || node.data('originalNode')?.IDStr || node.data('originalNode')?.ID || '',
+                            wikiLink: node.data('originalNode')?.wikiLink || '',
+                            filePath: node.data('filePath') || '',
+                            displayText: node.data('displayText') || '',
+                            title: node.data('title') || '',
                             currentIsEmbed: isEmbed
                         }
                     }));
@@ -5407,7 +5520,8 @@ case 'dagre':
 
             const before = triggerStart >= 0 ? value.slice(0, triggerStart) : value.slice(0, cursorPos);
             const after = triggerStart >= 0 ? value.slice(cursorPos) : value.slice(cursorPos);
-            const wikiText = `${embed ? '!' : ''}[[${file.basename}]]`;
+            const wikiLink = this.buildWikiLinkForFile(file);
+            const wikiText = `${embed ? '!' : ''}[[${wikiLink}]]`;
 
             textarea.value = `${before}${wikiText}${after}`;
             const newCursor = before.length + wikiText.length;
@@ -5624,7 +5738,7 @@ case 'dagre':
                 this.container?.dispatchEvent(new CustomEvent('placeholder-node-complete', {
                     detail: {
                         nodeId: data.id,
-                        wikiLink: file.basename,
+                        wikiLink: this.buildWikiLinkForFile(file),
                         file,
                         isEmbed: embed
                     }
@@ -5713,9 +5827,11 @@ case 'dagre':
         isEmbed: boolean = false,
         onSelectFile?: (file: any, isEmbed: boolean) => void
     ): void {
-        // 获取所有 markdown 文件
+        // 获取所有 markdown + moc 文件
         const app = (window as any).app;
-        const files = app.vault.getMarkdownFiles();
+        const files = app.vault.getAllLoadedFiles().filter((f: any) =>
+            f.path.endsWith('.md') || f.path.endsWith('.moc')
+        );
 
         // 创建 suggester popover
         const popover = document.createElement('div');
@@ -5833,7 +5949,7 @@ case 'dagre':
             this.container?.dispatchEvent(new CustomEvent('add-free-node-from-suggester', {
                 detail: {
                     nodeId: node.data().id,
-                    wikiLink: file.basename,
+                    wikiLink: this.buildWikiLinkForFile(file),
                     file: file,
                     isEmbed
                 }
@@ -6366,7 +6482,7 @@ case 'dagre':
                 } else {
                     console.warn('[CytoscapeRenderer] 未找到节点', nodeId);
                 }
-            }, 10); // 延迟 200ms 确保视图刷新完成
+            }, 300); // 延迟 300ms 确保视图刷新完成
         });
 
         // 节点拖动自动连接相关变量

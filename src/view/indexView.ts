@@ -1179,7 +1179,16 @@ export class ZKIndexView extends ItemView {
             nodeLayoutStyle: this.currentNodeLayoutStyle,
             showNoteId: this.plugin.settings.showNoteIdInBranchView,
             smartConnection: this.plugin.settings.smartConnection === true,
-            readOnly: this.isMobileReadOnly()
+            readOnly: this.isMobileReadOnly(),
+            mocPreviewExporter: async (mocFile: TFile) => {
+                try {
+                    const { ensureMOCPreviewPNG } = await import('src/embed/mocEmbedExporter');
+                    return await ensureMOCPreviewPNG(mocFile, this.plugin);
+                } catch (error) {
+                    console.error('[indexView] ensureMOCPreviewPNG failed:', error);
+                    return null;
+                }
+            }
         };
 
         // 性能优化：复用或创建渲染器，避免每次都销毁重建
@@ -1712,25 +1721,58 @@ export class ZKIndexView extends ItemView {
             await this.editNodeRemark(node);
         });
 
+        // 监听 .moc 预览节点点击跳转分支视图
+        this.addTrackedListener(branchGraphDiv, 'open-moc-in-index-view', async (event: any) => {
+            const { filePath } = event.detail;
+            if (!filePath) return;
+            this.plugin.settings.mocCurrentFile = filePath;
+            await this.plugin.saveData(this.plugin.settings);
+            this.app.workspace.trigger("zk-navigation:refresh-index-graph");
+        });
+
         // 监听文件节点⟷预览节点切换
         this.addTrackedListener(branchGraphDiv, 'toggle-embed-node', async (event: any) => {
             if (this.isMobileReadOnly()) return;
-            const { node, currentIsEmbed } = event.detail;
-            if (!node) return;
+            const { node, nodeId: detailNodeId, wikiLink: detailWikiLink, filePath: detailFilePath, displayText: detailDisplayText, title: detailTitle, currentIsEmbed } = event.detail;
             const mocFilePath = this.plugin.settings.mocCurrentFile;
             if (!mocFilePath) return;
             const mocFile = this.app.vault.getFileByPath(mocFilePath);
             if (!mocFile) return;
+            const nodeId = String(detailNodeId || node?.IDStr || node?.nodeID || node?.ID || '').trim();
+            if (!nodeId) {
+                console.warn('[indexView] toggle-embed-node missing node id', node);
+                new Notice('切换失败：节点 ID 缺失');
+                return;
+            }
+
             const newIsEmbed = !currentIsEmbed;
-            const contentForSave = (node.wikiLink || node.file?.basename || node.displayText || node.title || '').trim();
-            await this.mocHandler.updateNodeContentInMOC(
-                mocFile,
-                node.IDStr || node.nodeID,
-                contentForSave,
-                undefined,
-                newIsEmbed
-            );
-            await this.refreshBranchMermaid();
+            const fallbackWikiFromPath = (() => {
+                const path = String(detailFilePath || node?.file?.path || '').trim();
+                if (!path) return '';
+                const name = path.includes('/') ? path.substring(path.lastIndexOf('/') + 1) : path;
+                if (name.toLowerCase().endsWith('.moc')) {
+                    return name; // .moc 需要保留扩展名
+                }
+                return name.replace(/\.md$/i, '');
+            })();
+            // .moc 需要保留扩展名，优先取 file.name；其他文件兼容现有字段
+            const contentForSave = String(
+                detailWikiLink || node?.wikiLink || node?.file?.name || node?.file?.basename || detailDisplayText || node?.displayText || detailTitle || node?.title || fallbackWikiFromPath
+            ).trim();
+
+            try {
+                await this.mocHandler.updateNodeContentInMOC(
+                    mocFile,
+                    nodeId,
+                    contentForSave,
+                    undefined,
+                    newIsEmbed
+                );
+                await this.refreshBranchMermaid();
+            } catch (error) {
+                console.error('[indexView] toggle-embed-node failed:', { nodeId, node, error });
+                new Notice(`切换失败: ${error?.message || error}`);
+            }
         });
 
         // 监听跨领域节点点击事件（跳转到关联的 MOC 文件）
