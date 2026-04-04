@@ -773,6 +773,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     originalNode: node,
                     isRoot: node.isRoot || false,  // 根节点标记
                     customColor: nodeColors[node.IDStr] || null,  // 添加自定义颜色
+                    hasCustomColor: !!(nodeColors[node.IDStr]),
                     isCrossDomain: node.isCrossDomain || false,  // 传递跨领域节点标记
                     isTextOnly: node.isTextOnly || false,  // 传递纯文字节点标记
                     isStandaloneText: (node.isTextOnly || false) && !hasParentChildLink, // 无父子关系的文本节点
@@ -1602,9 +1603,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'border-width': '2px',
                 'border-opacity': 0.72,
                 'border-color': (ele: any) => {
-                    // 如果有自定义颜色，使用自定义颜色
-                    const customColor = ele.data('customColor');
-                    if (customColor) return customColor;
                     if ((isVivid || isModern) && ele.data('branchNodeBorder') && !ele.data('isRoot')) {
                         return ele.data('branchNodeBorder');
                     }
@@ -1913,6 +1911,13 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'border-color': colors.nodeBorderSelected,
                 'border-width': '3px',
                 'color': '#ffffff'
+            } as any
+        },
+        // 有自定义颜色的节点：文字右移为色点留空间
+        {
+            selector: 'node[?hasCustomColor][!isEmbed][!isGroup]',
+            style: {
+                'text-margin-x': 8,
             } as any
         },
         // 嵌入节点选中态：保持隐藏（由 HTML 预览卡片处理选中视觉）
@@ -3716,6 +3721,50 @@ case 'dagre':
 
             badgeUpdaters.push(updateAnchorPos);
             updateAnchorPos();
+        });
+
+        // 文字前小色点（customColor）
+        this.cy.nodes('[customColor]').forEach((node: any) => {
+            if (node.data('isGroup') || node.data('isEmbed')) return;
+            const color = node.data('customColor') as string;
+            if (!color) return;
+
+            const dotEl = document.createElement('div');
+            dotEl.className = 'zk-node-color-dot';
+            dotEl.style.cssText = `
+                position: absolute;
+                pointer-events: none;
+                border-radius: 999px;
+                transform: translate(-50%, -50%);
+            `;
+            dotEl.style.backgroundColor = color;
+            dotEl.style.boxShadow = `0 0 6px 1px ${color}66`;
+            badgeContainer.appendChild(dotEl);
+
+            const updateDotPos = () => {
+                if (!this.cy || node.removed()) { dotEl.style.display = 'none'; return; }
+                const isHidden =
+                    node.hasClass('zk-collapsed-hidden') ||
+                    node.style('display') === 'none' ||
+                    !node.visible();
+                if (isHidden) { dotEl.style.display = 'none'; return; }
+
+                const zoom = this.cy.zoom();
+                const bb = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
+                const dotSize = Math.max(5, 7 * zoom);
+                const centerY = (bb.y1 + bb.y2) / 2;
+                // 估算文字起始位置：节点左边加内边距
+                const textStartX = bb.x1 + Math.max(14, 20 * zoom);
+
+                dotEl.style.display = 'block';
+                dotEl.style.width = `${dotSize}px`;
+                dotEl.style.height = `${dotSize}px`;
+                dotEl.style.left = `${textStartX}px`;
+                dotEl.style.top = `${centerY}px`;
+            };
+
+            badgeUpdaters.push(updateDotPos);
+            updateDotPos();
         });
 
         // 为每个有 badge 的节点创建徽章元素（跳过 embed 节点，由预览卡片展示）
