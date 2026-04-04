@@ -1138,6 +1138,63 @@ export class CytoscapeRenderer implements IGraphRenderer {
         return `#${sr.toString(16).padStart(2, '0')}${sg.toString(16).padStart(2, '0')}${sb.toString(16).padStart(2, '0')}`;
     }
 
+    private getPreviewCardTheme(data: any): {
+        cardBackground: string;
+        cardBorder: string;
+        cardShadow: string;
+        headerBackground: string;
+        headerDivider: string;
+    } {
+        const isModern = this.isModernThemeStyle();
+        const isColored = this.isVividThemeStyle() || isModern;
+        const branchBorderColor = typeof data?.branchNodeBorder === 'string' ? data.branchNodeBorder : '';
+        const vividHeaderBackground = isColored && branchBorderColor
+            ? this.hexToRgba(branchBorderColor, this.currentOptions?.themeMode === 'light' ? 0.18 : 0.28)
+            : 'rgba(11, 16, 25, 0.72)';
+        const vividHeaderDivider = isColored && branchBorderColor
+            ? this.hexToRgba(branchBorderColor, this.currentOptions?.themeMode === 'light' ? 0.55 : 0.7)
+            : 'rgba(90, 111, 127, 0.45)';
+
+        const cardBorder = isModern && branchBorderColor
+            ? `2.5px solid ${branchBorderColor}`
+            : `2px solid rgba(90, 111, 127, 0.4)`;
+        const cardShadow = isModern && branchBorderColor
+            ? `0 0 10px ${this.hexToRgba(branchBorderColor, 0.35)}, 0 4px 12px rgba(0, 0, 0, 0.25)`
+            : '0 4px 12px rgba(0, 0, 0, 0.25)';
+        const headerBackground = isModern ? 'transparent' : vividHeaderBackground;
+        const headerDivider = isModern && branchBorderColor
+            ? this.hexToRgba(branchBorderColor, 0.25)
+            : vividHeaderDivider;
+
+        return {
+            cardBackground: 'transparent',
+            cardBorder,
+            cardShadow,
+            headerBackground,
+            headerDivider
+        };
+    }
+
+    private applyPreviewHeaderLinkStyle(linkEl: HTMLElement): void {
+        linkEl.style.cssText = `
+            overflow: hidden;
+            text-overflow: ellipsis;
+            cursor: pointer;
+            color: var(--text-muted);
+            border-bottom: 1px solid rgba(148, 163, 184, 0.3);
+            padding-bottom: 1px;
+            transition: color 0.15s ease, border-color 0.15s ease;
+        `;
+        linkEl.addEventListener('mouseenter', () => {
+            linkEl.style.color = 'var(--text-normal)';
+            linkEl.style.borderBottomColor = 'rgba(148, 163, 184, 0.6)';
+        });
+        linkEl.addEventListener('mouseleave', () => {
+            linkEl.style.color = 'var(--text-muted)';
+            linkEl.style.borderBottomColor = 'rgba(148, 163, 184, 0.3)';
+        });
+    }
+
     // 将颜色向白色方向提亮，amount=0~1
     private lightenColor(hex: string, amount: number): string {
         const normalized = this.normalizeHexColor(hex) || '#5b8fd9';
@@ -1506,6 +1563,28 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'border-width': '2.5px',
             } as any
         }] : []),
+        // 文件节点边框透明（不影响 embed/纯文本/分组/占位）
+        {
+            selector: 'node[!isRoot][!isEmbed][!isStandaloneText][!isGroup][!isPlaceholder]',
+            style: {
+                'border-color': 'transparent',
+                'border-opacity': 0
+            } as any
+        },
+        // 普通文件节点：补充背光和阴影（不影响 embed/纯文本）
+        {
+            selector: 'node[!isEmbed][!isGroup][!isPlaceholder]',
+            style: {
+                'shadow-color': (ele: any) => {
+                    if (ele.data('branchNodeShadow')) return ele.data('branchNodeShadow');
+                    return isLight ? 'rgba(15, 23, 42, 0.16)' : 'rgba(16, 28, 50, 0.55)';
+                },
+                'shadow-opacity': isLight ? 0.42 : 0.70,
+                'shadow-blur': isLight ? 14 : 24,
+                'shadow-offset-x': 0,
+                'shadow-offset-y': isLight ? 2 : 4
+            } as any
+        },
         // 嵌入节点：由 HTML 预览卡片承载内容，隐藏 Cytoscape 默认卡片外观
         {
             selector: 'node[?isEmbed]',
@@ -1751,7 +1830,20 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'border-color': colors.nodeBorderSelected,
                 'border-width': '3px',
                 'border-opacity': 0.90,
-                'color': '#ffffff'
+                'color': '#ffffff',
+                'shadow-color': isLight ? 'rgba(59, 130, 246, 0.32)' : 'rgba(91, 143, 217, 0.70)',
+                'shadow-opacity': isLight ? 0.62 : 0.92,
+                'shadow-blur': isLight ? 22 : 30,
+                'shadow-offset-x': 0,
+                'shadow-offset-y': isLight ? 2 : 6
+            } as any
+        },
+        // 文件节点选中态保持透明边框
+        {
+            selector: 'node[!isRoot][!isEmbed][!isStandaloneText][!isGroup][!isPlaceholder]:selected',
+            style: {
+                'border-color': 'transparent',
+                'border-opacity': 0
             } as any
         },
         // 自由节点：非选中态边框透明
@@ -1942,6 +2034,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             const originalNode = data.originalNode as ZKNode | undefined;
             if (!originalNode?.file) return;
             const sourceFile = originalNode.file;
+            const isExcalidrawFile = sourceFile.path.includes('.excalidraw');
             const nodeId = node.id();
             const persistedSize = embedNodeSizes[originalNode.ID] || embedNodeSizes[originalNode.IDStr];
             if (persistedSize && persistedSize.width > 0 && persistedSize.height > 0) {
@@ -1950,39 +2043,19 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     heightModel: persistedSize.height
                 });
             }
-            const isModern = this.isModernThemeStyle();
-            const isColored = this.isVividThemeStyle() || isModern;
-            const branchBorderColor = typeof data.branchNodeBorder === 'string' ? data.branchNodeBorder : '';
-
-            // 现代风格：发光边框 + 深色背景（与普通节点一致）
-            // 绚丽风格：填充色 header
-            const cardBorder = isModern && branchBorderColor
-                ? `2.5px solid ${branchBorderColor}`
-                : '1px solid rgba(90, 111, 127, 0.6)';
-            const cardShadow = isModern && branchBorderColor
-                ? `0 0 10px ${this.hexToRgba(branchBorderColor, 0.35)}, 0 10px 24px rgba(0, 0, 0, 0.35)`
-                : '0 10px 24px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04)';
-
-            const headerBackground = isModern
-                ? 'transparent'
-                : (isColored && branchBorderColor
-                    ? this.hexToRgba(branchBorderColor, this.currentOptions?.themeMode === 'light' ? 0.18 : 0.28)
-                    : 'rgba(11, 16, 25, 0.72)');
-            const headerDivider = isModern && branchBorderColor
-                ? this.hexToRgba(branchBorderColor, 0.25)
-                : (isColored && branchBorderColor
-                    ? this.hexToRgba(branchBorderColor, this.currentOptions?.themeMode === 'light' ? 0.55 : 0.7)
-                    : 'rgba(90, 111, 127, 0.45)');
+            const theme = this.getPreviewCardTheme(data);
+            const resolvedCardBorder = 'none';
+            const resolvedCardBackground = isExcalidrawFile ? 'transparent' : theme.cardBackground;
 
             const card = document.createElement('div');
             card.className = 'zk-embed-preview-card';
             card.dataset.nodeId = nodeId;
             card.style.cssText = `
                 position: absolute;
-                background: linear-gradient(180deg, rgba(20, 26, 38, 0.98) 0%, rgba(16, 22, 34, 0.98) 100%);
-                border: ${cardBorder};
-                border-radius: 12px;
-                box-shadow: ${cardShadow};
+                background: ${resolvedCardBackground};
+                border: ${resolvedCardBorder};
+                border-radius: 8px;
+                box-shadow: ${theme.cardShadow};
                 color: var(--text-normal);
                 overflow: hidden;
                 pointer-events: auto;
@@ -1996,8 +2069,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 display: flex;
                 align-items: center;
                 gap: 6px;
-                border-bottom: 1px solid ${headerDivider};
-                background: ${headerBackground};
+                border-bottom: 1px solid ${theme.headerDivider};
+                background: ${theme.headerBackground};
                 color: var(--text-muted);
                 font-size: 12px;
                 font-weight: 500;
@@ -2010,23 +2083,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             // 文件名链接
             const headerLink = document.createElement('span');
             headerLink.textContent = sourceFile.basename;
-            headerLink.style.cssText = `
-                overflow: hidden;
-                text-overflow: ellipsis;
-                cursor: pointer;
-                color: var(--text-muted);
-                border-bottom: 1px solid rgba(148, 163, 184, 0.3);
-                padding-bottom: 1px;
-                transition: color 0.15s ease, border-color 0.15s ease;
-            `;
-            headerLink.addEventListener('mouseenter', () => {
-                headerLink.style.color = 'var(--text-normal)';
-                headerLink.style.borderBottomColor = 'rgba(148, 163, 184, 0.6)';
-            });
-            headerLink.addEventListener('mouseleave', () => {
-                headerLink.style.color = 'var(--text-muted)';
-                headerLink.style.borderBottomColor = 'rgba(148, 163, 184, 0.3)';
-            });
+            this.applyPreviewHeaderLinkStyle(headerLink);
             headerLink.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
@@ -2081,7 +2138,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
             card.appendChild(headerEl);
             // 仅对 excalidraw 复用缓存内容（避免异步渲染闪烁）
-            const isExcalidrawFile = sourceFile.path.includes('.excalidraw');
             if (isExcalidrawFile) {
                 const cachedCard = this.embedCardCache.get(nodeId);
                 const cachedContent = cachedCard?.querySelector('[data-role="embed-content"]') as HTMLElement | null;
@@ -2100,8 +2156,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
             const embedToggleEl = document.createElement('div');
             embedToggleEl.className = 'zk-embed-toggle';
-            embedToggleEl.title = '切换为文件节点';
-            embedToggleEl.setAttribute('aria-label', embedToggleEl.title);
+            const embedToggleLabel = '切换为文件节点';
+            embedToggleEl.setAttribute('aria-label', embedToggleLabel);
             setIcon(embedToggleEl, 'eye-off');
             embedToggleEl.style.cssText = `
                 position: absolute;
@@ -2372,7 +2428,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                                     svg = wrapped.querySelector('svg');
                                 }
                                 if (svg instanceof SVGElement || svg instanceof HTMLElement) {
-                                    svg.style.cssText = 'position: absolute; inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); object-fit: contain;';
+                                    svg.style.cssText = 'position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;';
                                     svg.removeAttribute('width');
                                     svg.removeAttribute('height');
                                     contentEl.style.position = 'relative';
@@ -2407,7 +2463,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                             const img = document.createElement('img');
                             img.src = app.vault.getResourcePath(exportedFile);
                             img.draggable = false;
-                            img.style.cssText = 'position: absolute; inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); object-fit: contain; display: block; background: transparent;';
+                            img.style.cssText = 'position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; background: transparent;';
                             contentEl.style.position = 'relative';
                             contentEl.style.overflow = 'hidden';
                             contentEl.textContent = '';
@@ -2465,8 +2521,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 card.style.top = `${bb.y1}px`;
                 card.style.width = `${width}px`;
                 card.style.height = `${height}px`;
-                card.style.borderRadius = `${Math.max(8, 12 * zoom)}px`;
-                card.style.borderWidth = `${Math.max(1, 2.5 * zoom)}px`;
+                card.style.borderRadius = `${Math.max(6, 8 * zoom)}px`;
+                card.style.borderWidth = '0px';
                 const toggleSize = Math.max(20, 24 * zoom);
                 embedToggleEl.style.width = `${toggleSize}px`;
                 embedToggleEl.style.height = `${toggleSize}px`;
@@ -2603,14 +2659,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 });
             }
 
-            const isVivid = this.isVividThemeStyle() || this.isModernThemeStyle();
-            const branchBorderColor = typeof data.branchNodeBorder === 'string' ? data.branchNodeBorder : '';
-            const vividHeaderBackground = isVivid && branchBorderColor
-                ? this.hexToRgba(branchBorderColor, this.currentOptions?.themeMode === 'light' ? 0.18 : 0.28)
-                : 'rgba(11, 16, 25, 0.72)';
-            const vividHeaderDivider = isVivid && branchBorderColor
-                ? this.hexToRgba(branchBorderColor, this.currentOptions?.themeMode === 'light' ? 0.55 : 0.7)
-                : 'rgba(90, 111, 127, 0.45)';
+            const theme = this.getPreviewCardTheme(data);
+            const resolvedCardBorder = 'none';
 
             // 完全隐藏 Cytoscape 节点（由 HTML 图片卡片处理视觉）
             node.data('isImageNode', true);
@@ -2624,33 +2674,17 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'padding': 0
             });
 
-            // 现代/绚丽风格适配
-            const isModern = this.isModernThemeStyle();
-            const isColored = this.isVividThemeStyle() || isModern;
-            const cardBorder = isModern && branchBorderColor
-                ? `2.5px solid ${branchBorderColor}`
-                : `2px solid rgba(90, 111, 127, 0.4)`;
-            const cardShadow = isModern && branchBorderColor
-                ? `0 0 10px ${this.hexToRgba(branchBorderColor, 0.35)}, 0 4px 12px rgba(0, 0, 0, 0.25)`
-                : '0 4px 12px rgba(0, 0, 0, 0.25)';
-            const headerBackground = isModern
-                ? 'transparent'
-                : (isColored && branchBorderColor ? vividHeaderBackground : 'rgba(11, 16, 25, 0.72)');
-            const headerDivider = isModern && branchBorderColor
-                ? this.hexToRgba(branchBorderColor, 0.25)
-                : vividHeaderDivider;
-
             // 创建卡片容器
             const card = document.createElement('div');
             card.className = 'zk-image-preview-card';
             card.style.cssText = `
                 position: absolute;
-                background: linear-gradient(180deg, rgba(20, 26, 38, 0.98) 0%, rgba(16, 22, 34, 0.98) 100%);
-                border: ${cardBorder};
+                background: ${theme.cardBackground};
+                border: ${resolvedCardBorder};
                 border-radius: 8px;
                 overflow: hidden;
                 pointer-events: auto;
-                box-shadow: ${cardShadow};
+                box-shadow: ${theme.cardShadow};
                 transition: border-color 0.15s ease;
             `;
             card.dataset.nodeId = nodeId;
@@ -2664,8 +2698,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 display: flex;
                 align-items: center;
                 gap: 6px;
-                border-bottom: 1px solid ${headerDivider};
-                background: ${headerBackground};
+                border-bottom: 1px solid ${theme.headerDivider};
+                background: ${theme.headerBackground};
                 color: var(--text-muted);
                 font-size: 12px;
                 font-weight: 500;
@@ -2679,23 +2713,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
             const headerLink = document.createElement('span');
             headerLink.textContent = (file as any).basename || filePath.split('/').pop() || '';
-            headerLink.style.cssText = `
-                overflow: hidden;
-                text-overflow: ellipsis;
-                cursor: pointer;
-                color: var(--text-muted);
-                border-bottom: 1px solid rgba(148, 163, 184, 0.3);
-                padding-bottom: 1px;
-                transition: color 0.15s ease, border-color 0.15s ease;
-            `;
-            headerLink.addEventListener('mouseenter', () => {
-                headerLink.style.color = 'var(--text-normal)';
-                headerLink.style.borderBottomColor = 'rgba(148, 163, 184, 0.6)';
-            });
-            headerLink.addEventListener('mouseleave', () => {
-                headerLink.style.color = 'var(--text-muted)';
-                headerLink.style.borderBottomColor = 'rgba(148, 163, 184, 0.3)';
-            });
+            this.applyPreviewHeaderLinkStyle(headerLink);
             headerLink.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
@@ -2946,7 +2964,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 card.dataset.renderedWidth = `${width}`;
                 card.dataset.renderedHeight = `${height}`;
                 card.style.borderRadius = `${Math.max(6, 8 * zoom)}px`;
-                card.style.borderWidth = `${Math.max(1, 2.5 * zoom)}px`;
+                card.style.borderWidth = '0px';
 
                 // header 随 zoom 缩放
                 const headerH = Math.max(24, 32 * zoom);
@@ -3554,14 +3572,13 @@ case 'dagre':
             this.cy.nodes().forEach((node: any) => {
                 if (node.data('isRoot') || node.data('isPlaceholder') || node.data('isGroup') || node.data('isStandaloneText')) return;
                 if (node.data('isTextOnly')) return;
+                if (node.data('isCrossDomain')) return;
                 const isEmbed = !!node.data('isEmbed');
-                const hasFilePath = !!node.data('filePath');
-                if (!isEmbed && !hasFilePath) return;
                 if (isEmbed) return;
                 const toggleEl = document.createElement('div');
                 toggleEl.className = 'zk-embed-toggle';
-                toggleEl.title = isEmbed ? '切换为文件节点' : '切换为 Embed 节点';
-                toggleEl.setAttribute('aria-label', toggleEl.title);
+                const toggleLabel = isEmbed ? '切换为文件节点' : '切换为 Embed 节点';
+                toggleEl.setAttribute('aria-label', toggleLabel);
                 setIcon(toggleEl, isEmbed ? 'eye-off' : 'eye');
                 toggleEl.style.cssText = `
                     position: absolute;
