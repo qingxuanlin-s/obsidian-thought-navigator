@@ -1860,7 +1860,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'line-dash-pattern': [6, 4],
                 'line-color': '#64748b',  // 暗灰色（降噪）
                 'target-arrow-color': '#64748b',
-                'width': 1.5,  // 更细
+                'width': 3,    // 加粗一倍
                 'arrow-scale': 1.0,
                 'opacity': 0.5,  // 更淡
                 'z-index': 999
