@@ -3329,6 +3329,20 @@ case 'dagre':
                 : '0 2px 16px rgba(0,0,0,0.25)';
             glassLayer.appendChild(glassEl);
 
+            // 标签下方的遮罩层：用于“切断”被标签覆盖区域的上边框，降低视觉噪声
+            const labelMaskEl = document.createElement('div');
+            labelMaskEl.className = 'zk-group-glass-label-mask';
+            labelMaskEl.style.position = 'absolute';
+            labelMaskEl.style.top = '0';
+            labelMaskEl.style.left = '0';
+            labelMaskEl.style.transform = 'translate(0, -50%)';
+            labelMaskEl.style.borderRadius = '999px';
+            labelMaskEl.style.pointerEvents = 'none';
+            labelMaskEl.style.zIndex = '1';
+            const containerBg = this.container ? getComputedStyle(this.container).backgroundColor : '';
+            labelMaskEl.style.background = containerBg || (isLightTheme ? '#f5f5f5' : '#2a2a2a');
+            glassEl.appendChild(labelMaskEl);
+
             const labelEl = document.createElement('div');
             labelEl.className = 'zk-group-glass-label';
             labelEl.textContent = groupNode.data('label') || '';
@@ -3360,6 +3374,7 @@ case 'dagre':
             labelEl.style.boxShadow = isLightTheme
                 ? '0 1px 6px rgba(50, 70, 100, 0.14)'
                 : '0 1px 8px rgba(0, 0, 0, 0.35)';
+            labelEl.style.zIndex = '2';
             glassEl.appendChild(labelEl);
 
             const updateGlassPos = () => {
@@ -3383,6 +3398,15 @@ case 'dagre':
                 labelEl.style.fontSize = `${Math.max(11, 13 * zoom)}px`;
                 labelEl.style.padding = `${Math.max(2, 3 * zoom)}px ${Math.max(10, 14 * zoom)}px`;
                 labelEl.textContent = groupNode.data('label') || '';
+
+                // 遮罩尺寸略大于标签，确保边框不会穿透到文字和标签底色
+                const labelW = labelEl.offsetWidth || 0;
+                const labelH = labelEl.offsetHeight || 0;
+                const maskPadX = Math.max(4, 6 * zoom);
+                const maskPadY = Math.max(1, 2 * zoom);
+                labelMaskEl.style.left = `${Math.max(10, 14 * zoom) - maskPadX / 2}px`;
+                labelMaskEl.style.width = `${labelW + maskPadX}px`;
+                labelMaskEl.style.height = `${Math.max(4, labelH + maskPadY)}px`;
             };
 
             badgeUpdaters.push(updateGlassPos);
