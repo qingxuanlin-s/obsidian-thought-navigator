@@ -4961,6 +4961,9 @@ case 'dagre':
         this.overlayUpdaters.add(endpointUpdater);
         this.edgeEndpointUpdaters.add(endpointUpdater);
 
+        // 立即定位一次，避免手柄先在左上角闪现
+        endpointUpdater();
+
         // 延迟两帧确保边渲染完成后再定位
         requestAnimationFrame(() => {
             requestAnimationFrame(endpointUpdater);
@@ -4978,6 +4981,8 @@ case 'dagre':
     ): HTMLElement {
         const handle = document.createElement('div');
         handle.className = `zk-edge-endpoint-handle zk-edge-endpoint-${type}`;
+        // 避免初始布局前出现在(0,0)
+        handle.style.display = 'none';
         container.appendChild(handle);
 
         // 绑定拖动事件

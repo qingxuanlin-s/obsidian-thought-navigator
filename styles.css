@@ -2101,7 +2101,7 @@ align-items: center;
   transform: translate(-50%, -50%);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
   z-index: 1001;
-  transition: background-color 0.15s, box-shadow 0.15s, transform 0.15s;
+  transition: background-color 0.15s, box-shadow 0.15s;
 }
 
 .zk-edge-endpoint-handle:hover {
