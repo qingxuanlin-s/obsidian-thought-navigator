@@ -2324,6 +2324,18 @@ export class ZKIndexView extends ItemView {
             try {
                 const mocFile = getLatestMOCFile();
                 if (mocFile) {
+                    // 新规则：非自由节点第一次连线到自由节点时，
+                    // 将自由节点直接挂载为其子节点（自由↔自由仍保持虚线关系）。
+                    // 仅对真实 MOC 节点生效（分组节点不参与父子树）。
+                    const sourceExistsInTree = this.mocNodes.some((n) => n.IDStr === finalSourceId || n.ID === finalSourceId);
+                    if (!sourceIsFree && targetIsFree && sourceExistsInTree) {
+                        const newChildID = this.generateChildNodeID(finalSourceId);
+                        await this.mocHandler.moveNodeToParent(mocFile, finalTargetId, finalSourceId, newChildID);
+                        await this.refreshBranchMermaid();
+                        new Notice(`已将自由节点挂载为子节点: ${finalTargetId} → ${newChildID}`);
+                        return;
+                    }
+
                     await this.addArrowRelationToMOC(
                         mocFile,
                         finalSourceId,
