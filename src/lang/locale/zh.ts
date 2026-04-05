@@ -167,7 +167,7 @@ export default {
     //main.ts
     "open zk-index-graph": "打开思维树",
     "open zk-local-graph": "打开局部关系视图",
-    "zk-index-graph": "分支视图", 
+    "zk-index-graph": "思维树视图", 
     "zk-local-graph": "局部关系视图", 
     "Main notes": "主笔记",
     '📖index': '📖关键词',
