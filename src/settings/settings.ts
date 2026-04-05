@@ -159,29 +159,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                     this.plugin.settings.FamilyGraphToggle = value;
                     this.plugin.RefreshIndexViewFlag = true;
                 })
-            ).addExtraButton((cb)=>{
-
-            cb.setIcon("settings")
-            .onClick(()=>{
-                this.hideDiv(familySectionDiv);
-            })
-        })
-
-        const familySectionDiv = localSection.createDiv("zk-local-section zk-hidden")
-
-        new Setting(familySectionDiv)
-        .setName(t("direction of graph"))
-        .addDropdown(options => options
-            .addOption("LR", t('"LR": feft to right'))
-            .addOption("RL", t('"RL": right to left'))
-            .addOption("TB", t('"TB": top to bottom'))
-            .addOption("BT", t('"BT": bottom to top'))
-            .setValue(this.plugin.settings.DirectionOfFamilyGraph)
-            .onChange((value) => {
-                this.plugin.settings.DirectionOfFamilyGraph = value;
-                this.plugin.RefreshIndexViewFlag = true;
-            })
-        );
+            );
 
         new Setting(localSection)
             .setName(t("Open inoutlinks graph"))
@@ -199,20 +177,6 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
             })
 
         const inoutlinksSectionDiv = localSection.createDiv("zk-local-section zk-hidden")
-
-        new Setting(inoutlinksSectionDiv)
-        .setName(t("direction of graph"))
-        .addDropdown(options => options
-            .addOption("LR", t('"LR": feft to right'))
-            .addOption("RL", t('"RL": right to left'))
-            .addOption("TB", t('"TB": top to bottom'))
-            .addOption("BT", t('"BT": bottom to top'))
-            .setValue(this.plugin.settings.DirectionOfInlinksGraph)
-            .onChange((value) => {
-                this.plugin.settings.DirectionOfInlinksGraph = value;
-                this.plugin.RefreshIndexViewFlag = true;
-            })
-        );
 
         new Setting(inoutlinksSectionDiv)
         .setName(t("Detect file extensions"))

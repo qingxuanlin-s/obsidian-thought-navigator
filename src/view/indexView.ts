@@ -251,7 +251,7 @@ export class ZKIndexView extends ItemView {
     }
 
     getIcon(): string {
-        return "ghost";
+        return "tree-pine";
     }
 
     /**

@@ -912,7 +912,7 @@ export class ZKGraphView extends ItemView {
 
                 // 配置渲染选项
                 const options: RenderOptions = {
-                    direction: (this.plugin.settings.DirectionOfFamilyGraph || 'TB') as 'TB' | 'BT' | 'LR' | 'RL',
+                    direction: (this.plugin.settings.DirectionOfBranchGraph || 'LR') as 'TB' | 'BT' | 'LR' | 'RL',
                     layoutType: 'dagre',
                     animate: true,
                     animationDuration: 500,
@@ -1157,7 +1157,7 @@ export class ZKGraphView extends ItemView {
 
         // 配置渲染选项
         const options: RenderOptions = {
-            direction: (this.plugin.settings.DirectionOfFamilyGraph || 'TB') as 'TB' | 'BT' | 'LR' | 'RL',
+            direction: (this.plugin.settings.DirectionOfBranchGraph || 'LR') as 'TB' | 'BT' | 'LR' | 'RL',
             layoutType: 'dagre',  // 使用 dagre 布局，适合层级结构
             animate: true,
             animationDuration: 500,
