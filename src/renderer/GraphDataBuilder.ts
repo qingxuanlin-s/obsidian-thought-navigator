@@ -73,22 +73,27 @@ export class GraphDataBuilder {
      * - 如果箭头是父->子关系，使用实线（type: 'parent'）
      * - 其他情况使用虚线（type: 'reverse'）
      */
-    buildMOCTreeEdges(reverseRelations: Map<string, any>): this {
+    buildMOCTreeEdges(reverseRelations: Map<string, any>, groups: any[] = []): this {
         const nodeMap = new Map<string, ZKNode>();
         this.nodes.forEach(node => nodeMap.set(node.IDStr, node));
+        const groupIdSet = new Set<string>((groups || []).map((group: any) => String(group.id || '').trim()).filter(Boolean));
         const edgeKeySet = new Set<string>();
 
         // 只根据 reverseRelations（Mermaid 文件中的箭头）来生成边
         for (const relNode of reverseRelations.values()) {
-            const sourceNode = nodeMap.get(relNode.sourceID);
-            if (sourceNode === undefined) {
+            const sourceId = String(relNode.sourceID || '').trim();
+            const targetId = String(relNode.targetID || '').trim();
+            if (!sourceId || !targetId) {
                 continue;
             }
 
-            const targetNode = nodeMap.get(relNode.targetID);
-            if (targetNode) {
-                // 判断是否是父子关系：检查 target 的父节点 ID 是否等于 source 的 ID
-                const isParentChild = this.isParentChildRelation(relNode.sourceID, relNode.targetID);
+            const sourceNode = nodeMap.get(sourceId) || (groupIdSet.has(sourceId) ? ({ ID: sourceId, IDStr: sourceId } as ZKNode) : undefined);
+            const targetNode = nodeMap.get(targetId) || (groupIdSet.has(targetId) ? ({ ID: targetId, IDStr: targetId } as ZKNode) : undefined);
+            if (sourceNode && targetNode) {
+                // 判断是否是父子关系：仅在普通节点之间生效
+                const isParentChild = nodeMap.has(sourceId) && nodeMap.has(targetId)
+                    ? this.isParentChildRelation(sourceId, targetId)
+                    : false;
 
                 // 如果是父子关系，使用实线；否则使用虚线
                 const edgeType = isParentChild ? 'parent' : 'reverse';
@@ -408,7 +413,7 @@ export class GraphDataBuilder {
     ): GraphData {
         const graphData = new GraphDataBuilder()
             .addNodes(nodes)
-            .buildMOCTreeEdges(reverseRelations)
+            .buildMOCTreeEdges(reverseRelations, groups)
             // 先设置元数据（包含 nodePositions），这样 buildCrossDomainEdges 才能访问
             .setMetadata({
                 currentFile: currentFile?.path || '',

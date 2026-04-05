@@ -729,6 +729,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 group: 'nodes' as const,
                 data: {
                     id: group.id,
+                    originalNodeId: group.id,
                     label: group.label,
                     isGroup: true,
                     nodeIds: group.nodeIds || []  // 添加节点 ID 列表
@@ -3333,10 +3334,32 @@ case 'dagre':
             labelEl.textContent = groupNode.data('label') || '';
             labelEl.style.position = 'absolute';
             labelEl.style.fontWeight = '600';
-            labelEl.style.color = isLightTheme ? '#64748b' : 'rgba(255,255,255,0.4)';
+            labelEl.style.color = isLightTheme ? '#5b6578' : 'rgba(235, 241, 255, 0.78)';
             labelEl.style.pointerEvents = 'none';
             labelEl.style.userSelect = 'none';
             labelEl.style.whiteSpace = 'nowrap';
+            labelEl.style.left = '0';
+            labelEl.style.top = '0';
+            labelEl.style.transform = 'translate(0, -50%)';
+            labelEl.style.display = 'inline-flex';
+            labelEl.style.alignItems = 'center';
+            labelEl.style.justifyContent = 'center';
+            labelEl.style.border = isLightTheme
+                ? '1px solid rgba(168, 184, 214, 0.72)'
+                : '1px solid rgba(206, 220, 245, 0.42)';
+            // 通过弱化底边制造“标签压在边框上”的半镶嵌感
+            labelEl.style.borderBottomColor = isLightTheme
+                ? 'rgba(168, 184, 214, 0.15)'
+                : 'rgba(206, 220, 245, 0.12)';
+            labelEl.style.borderRadius = '999px';
+            labelEl.style.background = isLightTheme
+                ? 'rgba(255, 255, 255, 0.56)'
+                : 'rgba(14, 24, 40, 0.58)';
+            (labelEl.style as any).backdropFilter = 'blur(8px)';
+            (labelEl.style as any).webkitBackdropFilter = 'blur(8px)';
+            labelEl.style.boxShadow = isLightTheme
+                ? '0 1px 6px rgba(50, 70, 100, 0.14)'
+                : '0 1px 8px rgba(0, 0, 0, 0.35)';
             glassEl.appendChild(labelEl);
 
             const updateGlassPos = () => {
@@ -3354,11 +3377,11 @@ case 'dagre':
                 glassEl.style.width = `${bb.w}px`;
                 glassEl.style.height = `${bb.h}px`;
 
-                // 标签
+                // 边界标签化：标签压在容器上边框，内部空间不占用
                 const zoom = this.cy.zoom();
-                labelEl.style.top = `${8 * zoom}px`;
-                labelEl.style.left = `${14 * zoom}px`;
-                labelEl.style.fontSize = `${14 * zoom}px`;
+                labelEl.style.left = `${Math.max(10, 14 * zoom)}px`;
+                labelEl.style.fontSize = `${Math.max(11, 13 * zoom)}px`;
+                labelEl.style.padding = `${Math.max(2, 3 * zoom)}px ${Math.max(10, 14 * zoom)}px`;
                 labelEl.textContent = groupNode.data('label') || '';
             };
 
@@ -4304,7 +4327,7 @@ case 'dagre':
         const handleUpdaters: Array<() => void> = [];
 
         // 为每个节点创建连线手柄
-        this.cy.nodes('[!isGroup]').forEach((node: any) => {
+        this.cy.nodes('[!isPlaceholder]').forEach((node: any) => {
             const handle = document.createElement('div');
             handle.className = 'zk-connection-handle';
             const baseHandleSize = 36;
@@ -4516,19 +4539,29 @@ case 'dagre':
 
             const sourceData = sourceNode.data();
             const sourceOriginalNode = sourceData.originalNode;
+            const sourceId = sourceData.originalNodeId || sourceData.id;
 
             if (targetNode && targetNode !== sourceNode) {
                 // 连接到现有节点 - 创建反向关系
                 const targetData = targetNode.data();
                 const targetOriginalNode = targetData.originalNode;
+                const targetId = targetData.originalNodeId || targetData.id;
 
                 this.container?.dispatchEvent(new CustomEvent('create-arrow-relation', {
                     detail: {
+                        sourceId,
+                        targetId,
+                        sourceIsGroup: !!sourceData.isGroup,
+                        targetIsGroup: !!targetData.isGroup,
                         sourceNode: sourceOriginalNode,
                         targetNode: targetOriginalNode
                     }
                 }));
             } else {
+                // 分组节点是容器语义，不支持从空白处创建子节点
+                if (!sourceOriginalNode) {
+                    return;
+                }
                 // 连接到空白处 - 创建子节点
                 const modelPos = this.cy.pan();
                 const zoom = this.cy.zoom();
@@ -4574,9 +4607,20 @@ case 'dagre':
     private getNodeAtPosition(pos: { x: number; y: number }): any {
         if (!this.cy) return null;
 
-        const nodes = this.cy.nodes('[!isGroup]');
-        for (let i = 0; i < nodes.length; i++) {
-            const node = nodes[i];
+        // 优先命中普通节点，避免 group 大框覆盖其子节点点击区域
+        const normalNodes = this.cy.nodes('[!isGroup][!isPlaceholder]');
+        for (let i = 0; i < normalNodes.length; i++) {
+            const node = normalNodes[i];
+            const bb = node.renderedBoundingBox();
+
+            if (pos.x >= bb.x1 && pos.x <= bb.x2 && pos.y >= bb.y1 && pos.y <= bb.y2) {
+                return node;
+            }
+        }
+
+        const groupNodes = this.cy.nodes('[?isGroup]');
+        for (let i = 0; i < groupNodes.length; i++) {
+            const node = groupNodes[i];
             const bb = node.renderedBoundingBox();
             
             if (pos.x >= bb.x1 && pos.x <= bb.x2 && pos.y >= bb.y1 && pos.y <= bb.y2) {
@@ -6564,7 +6608,7 @@ case 'dagre':
         });
 
         // 节点右键菜单事件
-        this.cy.on('cxttap', 'node', (evt: any) => {
+        this.cy.on('cxttap', 'node[!isGroup]', (evt: any) => {
             if (this.isReadOnlyMode()) {
                 return;
             }

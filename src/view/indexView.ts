@@ -1576,29 +1576,8 @@ export class ZKIndexView extends ItemView {
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { groupId, groupLabel, position } = event.detail;
-
-            // 创建右键菜单
-            const menu = new Menu();
-
-            menu.addItem((item) => {
-                item.setTitle('删除分组')
-                    .setIcon('trash')
-                    .onClick(async () => {
-                        try {
-                            const mocFile = getLatestMOCFile();
-                            if (mocFile) {
-                                await this.deleteGroupFromMOC(mocFile, groupId);
-                                // 刷新视图
-                                await this.refreshBranchMermaid();
-                            }
-                        } catch (error) {
-                            console.error('Failed to delete group:', error);
-                        }
-                    });
-            });
-
-            menu.showAtPosition(position);
+            const { groupId, groupLabel, event: mouseEvent } = event.detail;
+            this.showGroupContextMenu(mouseEvent, groupId, groupLabel);
         });
 
         // 监听节点点击事件
@@ -2324,17 +2303,19 @@ export class ZKIndexView extends ItemView {
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { sourceNode, targetNode } = event.detail;
+            const { sourceNode, targetNode, sourceId, targetId } = event.detail;
 
-            if (!sourceNode || !targetNode) {
-                console.warn('Invalid nodes for arrow relation:', { sourceNode, targetNode });
+            const finalSourceId = sourceId || sourceNode?.IDStr;
+            const finalTargetId = targetId || targetNode?.IDStr;
+
+            if (!finalSourceId || !finalTargetId) {
+                console.warn('Invalid nodes for arrow relation:', { sourceNode, targetNode, sourceId, targetId });
                 return;
             }
 
             // 涉及自由节点时，只创建虚线关系，不做父子挂载
-            const sourceIsFree = this.isFreeNodeID(sourceNode.IDStr);
-            const targetIsFree = this.isFreeNodeID(targetNode.IDStr);
-            let finalTargetID = targetNode.IDStr;
+            const sourceIsFree = this.isFreeNodeID(finalSourceId);
+            const targetIsFree = this.isFreeNodeID(finalTargetId);
             let relationText = '';
 
             // 在刷新前保存所有节点的当前位置
@@ -2345,8 +2326,8 @@ export class ZKIndexView extends ItemView {
                 if (mocFile) {
                     await this.addArrowRelationToMOC(
                         mocFile,
-                        sourceNode.IDStr,
-                        finalTargetID,
+                        finalSourceId,
+                        finalTargetId,
                         relationText
                     );
 
@@ -2354,7 +2335,7 @@ export class ZKIndexView extends ItemView {
                     await this.refreshBranchMermaid();
 
                     const relationType = (sourceIsFree || targetIsFree) ? '自由节点虚线关系' : '箭头关系';
-                    new Notice(`已创建${relationType}: ${sourceNode.ID} → ${finalTargetID}`);
+                    new Notice(`已创建${relationType}: ${finalSourceId} → ${finalTargetId}`);
                 }
             } catch (error) {
                 console.error('Failed to create arrow relation:', error);
@@ -2773,6 +2754,83 @@ export class ZKIndexView extends ItemView {
         const row = menu.createDiv('zk-node-ctx-row');
         addItem(row, 'fingerprint', '修改 ID', () => this.renameNodeID(node));
         addItem(row, 'palette', '修改颜色', () => this.changeNodeColor(node));
+
+        // 定位：先在屏幕外渲染以获取尺寸
+        menu.style.visibility = 'hidden';
+        menu.style.left = '0';
+        menu.style.top = '0';
+
+        requestAnimationFrame(() => {
+            const mw = menu.offsetWidth;
+            const mh = menu.offsetHeight;
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            let x = mouseEvent.clientX;
+            let y = mouseEvent.clientY;
+            if (x + mw > vw) x = vw - mw - 4;
+            if (y + mh > vh) y = vh - mh - 4;
+            menu.style.left = `${x}px`;
+            menu.style.top = `${y}px`;
+            menu.style.visibility = 'visible';
+        });
+
+        const closeMenu = (e: MouseEvent) => {
+            if (!menu.contains(e.target as Node)) {
+                menu.remove();
+                document.removeEventListener('click', closeMenu);
+            }
+        };
+        setTimeout(() => document.addEventListener('click', closeMenu), 0);
+    }
+
+    /**
+     * 显示分组右键菜单（仅保留分组相关操作）
+     */
+    private showGroupContextMenu(mouseEvent: MouseEvent, groupId: string, groupLabel: string) {
+        const existing = document.querySelector('.zk-node-context-menu');
+        if (existing) existing.remove();
+
+        const menu = document.body.createDiv('zk-node-ctx-menu zk-node-context-menu');
+        menu.style.position = 'fixed';
+        menu.style.zIndex = '10000';
+
+        const addItem = (parent: HTMLElement, icon: string, label: string, action: () => Promise<void>) => {
+            const opt = parent.createDiv('zk-node-ctx-item');
+            const iconEl = opt.createSpan();
+            setIcon(iconEl, icon);
+            opt.createSpan({ text: label });
+            opt.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                menu.remove();
+                document.removeEventListener('click', closeMenu);
+                await action();
+            });
+        };
+
+        addItem(menu, 'trash', '删除分组', async () => {
+            const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+            if (!mocFile) return;
+            await this.deleteGroupFromMOC(mocFile, groupId);
+            await this.refreshBranchMermaid();
+        });
+
+        addItem(menu, 'pencil', '重命名分组', async () => {
+            const newLabel = await this.showGroupLabelInputDialog(groupLabel);
+            if (!newLabel || newLabel === groupLabel) return;
+            const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+            if (!mocFile) return;
+            await this.renameGroupInMOC(mocFile, groupId, newLabel);
+            await this.refreshBranchMermaid();
+        });
+
+        addItem(menu, 'fingerprint', '修改 ID', async () => {
+            const newGroupId = await this.showGroupIDInputDialog(groupId);
+            if (!newGroupId || newGroupId === groupId) return;
+            const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+            if (!mocFile) return;
+            await this.renameGroupIDInMOC(mocFile, groupId, newGroupId);
+            await this.refreshBranchMermaid();
+        });
 
         // 定位：先在屏幕外渲染以获取尺寸
         menu.style.visibility = 'hidden';
@@ -3647,6 +3705,160 @@ export class ZKIndexView extends ItemView {
                 }
             });
             
+            modal.open();
+            setTimeout(() => {
+                input.focus();
+                input.select();
+            }, 0);
+        });
+    }
+
+    private showGroupLabelInputDialog(currentLabel: string): Promise<string | null> {
+        return new Promise((resolve) => {
+            const modal = new Modal(this.app);
+            modal.titleEl.setText('重命名分组');
+
+            const { contentEl } = modal;
+            contentEl.empty();
+            contentEl.style.padding = '20px';
+
+            const inputContainer = contentEl.createDiv();
+            inputContainer.style.marginBottom = '15px';
+
+            const label = inputContainer.createEl('label', { text: '新的分组名称：' });
+            label.style.display = 'block';
+            label.style.marginBottom = '5px';
+            label.style.color = 'var(--text-normal)';
+
+            const input = inputContainer.createEl('input', {
+                type: 'text',
+                value: currentLabel || ''
+            });
+            input.style.width = '100%';
+            input.style.padding = '8px';
+            input.style.border = '1px solid var(--background-modifier-border)';
+            input.style.borderRadius = '4px';
+            input.style.backgroundColor = 'var(--background-primary)';
+            input.style.color = 'var(--text-normal)';
+
+            const buttonContainer = contentEl.createDiv();
+            buttonContainer.style.display = 'flex';
+            buttonContainer.style.justifyContent = 'flex-end';
+            buttonContainer.style.gap = '10px';
+
+            const cancelButton = buttonContainer.createEl('button', { text: '取消' });
+            cancelButton.addEventListener('click', () => {
+                modal.close();
+                resolve(null);
+            });
+
+            const confirmButton = buttonContainer.createEl('button', { text: '确认' });
+            confirmButton.addEventListener('click', () => {
+                const newLabel = input.value.trim();
+                if (!newLabel) {
+                    new Notice('分组名称不能为空');
+                    return;
+                }
+                modal.close();
+                resolve(newLabel);
+            });
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    const newLabel = input.value.trim();
+                    if (!newLabel) {
+                        new Notice('分组名称不能为空');
+                        return;
+                    }
+                    modal.close();
+                    resolve(newLabel);
+                } else if (e.key === 'Escape') {
+                    modal.close();
+                    resolve(null);
+                }
+            });
+
+            modal.open();
+            setTimeout(() => {
+                input.focus();
+                input.select();
+            }, 0);
+        });
+    }
+
+    private showGroupIDInputDialog(currentID: string): Promise<string | null> {
+        return new Promise((resolve) => {
+            const modal = new Modal(this.app);
+            modal.titleEl.setText('修改分组 ID');
+
+            const { contentEl } = modal;
+            contentEl.empty();
+            contentEl.style.padding = '20px';
+
+            const infoDiv = contentEl.createDiv();
+            infoDiv.style.marginBottom = '15px';
+            infoDiv.style.padding = '10px';
+            infoDiv.style.backgroundColor = 'var(--background-secondary)';
+            infoDiv.style.borderRadius = '4px';
+            infoDiv.style.color = 'var(--text-muted)';
+            infoDiv.innerHTML = `<div>当前分组 ID: <strong>${currentID}</strong></div>`;
+
+            const inputContainer = contentEl.createDiv();
+            inputContainer.style.marginBottom = '15px';
+
+            const label = inputContainer.createEl('label', { text: '新的分组 ID：' });
+            label.style.display = 'block';
+            label.style.marginBottom = '5px';
+            label.style.color = 'var(--text-normal)';
+
+            const input = inputContainer.createEl('input', {
+                type: 'text',
+                value: currentID
+            });
+            input.style.width = '100%';
+            input.style.padding = '8px';
+            input.style.border = '1px solid var(--background-modifier-border)';
+            input.style.borderRadius = '4px';
+            input.style.backgroundColor = 'var(--background-primary)';
+            input.style.color = 'var(--text-normal)';
+
+            const buttonContainer = contentEl.createDiv();
+            buttonContainer.style.display = 'flex';
+            buttonContainer.style.justifyContent = 'flex-end';
+            buttonContainer.style.gap = '10px';
+
+            const cancelButton = buttonContainer.createEl('button', { text: '取消' });
+            cancelButton.addEventListener('click', () => {
+                modal.close();
+                resolve(null);
+            });
+
+            const confirmButton = buttonContainer.createEl('button', { text: '确认' });
+            confirmButton.addEventListener('click', () => {
+                const newID = input.value.trim();
+                if (!newID) {
+                    new Notice('分组 ID 不能为空');
+                    return;
+                }
+                modal.close();
+                resolve(newID);
+            });
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    const newID = input.value.trim();
+                    if (!newID) {
+                        new Notice('分组 ID 不能为空');
+                        return;
+                    }
+                    modal.close();
+                    resolve(newID);
+                } else if (e.key === 'Escape') {
+                    modal.close();
+                    resolve(null);
+                }
+            });
+
             modal.open();
             setTimeout(() => {
                 input.focus();
@@ -5624,6 +5836,103 @@ export class ZKIndexView extends ItemView {
         } catch (error) {
             console.error('Failed to rename group:', error);
             new Notice(`重命名分组失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 修改分组 ID（同时迁移与分组相关的关系与元数据键）
+     */
+    private async renameGroupIDInMOC(mocFile: TFile, oldGroupId: string, newGroupId: string): Promise<void> {
+        try {
+            await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
+                const oldId = String(oldGroupId || '').trim();
+                const newId = String(newGroupId || '').trim();
+                if (!oldId || !newId) {
+                    throw new Error('分组 ID 不能为空');
+                }
+                if (oldId === newId) {
+                    return;
+                }
+
+                const groupIndex = mocData.groups.findIndex((g: any) => g.id === oldId);
+                if (groupIndex === -1) {
+                    throw new Error(`未找到分组: ${oldId}`);
+                }
+
+                const hasDuplicate = mocData.groups.some((g: any, index: number) => index !== groupIndex && g.id === newId);
+                if (hasDuplicate) {
+                    throw new Error(`分组 ID "${newId}" 已存在`);
+                }
+
+                // 避免和节点 ID 冲突（分组已支持参与连线，ID 需唯一）
+                const hasNodeConflict = this.mocNodes.some((node) => node.IDStr === newId || node.ID === newId);
+                if (hasNodeConflict) {
+                    throw new Error(`分组 ID "${newId}" 与节点 ID 冲突`);
+                }
+
+                mocData.groups[groupIndex].id = newId;
+
+                const remapId = (id: string) => (id === oldId ? newId : id);
+
+                // 迁移 reverseRelations
+                const newReverseRelations = new Map<string, any>();
+                for (const [, relation] of mocData.reverseRelations) {
+                    const sourceID = remapId(relation.sourceID);
+                    const targetID = remapId(relation.targetID);
+                    newReverseRelations.set(`${sourceID}->${targetID}`, {
+                        sourceID,
+                        targetID,
+                        relationText: relation.relationText || ''
+                    });
+                }
+                mocData.reverseRelations = newReverseRelations;
+
+                // 迁移按节点 ID 存储的对象键
+                const remapObjectKeys = (obj: Record<string, any> | undefined) => {
+                    if (!obj || typeof obj !== 'object') return obj;
+                    if (!(oldId in obj)) return obj;
+                    const next: Record<string, any> = {};
+                    Object.entries(obj).forEach(([key, value]) => {
+                        next[key === oldId ? newId : key] = value;
+                    });
+                    return next;
+                };
+
+                if (mocData.nodePositions) {
+                    mocData.nodePositions = remapObjectKeys(mocData.nodePositions) as Record<string, { x: number; y: number }>;
+                }
+                if (mocData.nodeColors) {
+                    mocData.nodeColors = remapObjectKeys(mocData.nodeColors) as Record<string, string>;
+                }
+                if ((mocData as any).nodeStyleColors) {
+                    (mocData as any).nodeStyleColors = remapObjectKeys((mocData as any).nodeStyleColors);
+                }
+                if ((mocData as any).embedNodeSizes) {
+                    (mocData as any).embedNodeSizes = remapObjectKeys((mocData as any).embedNodeSizes);
+                }
+                if ((mocData as any).nodeRemarks) {
+                    (mocData as any).nodeRemarks = remapObjectKeys((mocData as any).nodeRemarks);
+                }
+                if ((mocData as any).nodeAnchors) {
+                    (mocData as any).nodeAnchors = remapObjectKeys((mocData as any).nodeAnchors);
+                }
+
+                // 迁移 edgeCurvatures key（格式：source-target）
+                if (mocData.edgeCurvatures) {
+                    const nextCurvatures: Record<string, { distance: number; weight: number }> = {};
+                    Object.entries(mocData.edgeCurvatures).forEach(([key, value]) => {
+                        const parts = key.split('-');
+                        const remapped = parts.map((part) => remapId(part)).join('-');
+                        nextCurvatures[remapped] = value as { distance: number; weight: number };
+                    });
+                    mocData.edgeCurvatures = nextCurvatures;
+                }
+            });
+
+            new Notice(`已将分组 ID 从 "${oldGroupId}" 修改为 "${newGroupId}"`);
+        } catch (error) {
+            console.error('Failed to rename group ID:', error);
+            new Notice(`修改分组 ID 失败: ${error.message}`);
         }
     }
 
