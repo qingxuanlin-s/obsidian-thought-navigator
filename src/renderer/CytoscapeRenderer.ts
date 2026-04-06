@@ -1326,17 +1326,17 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private processDisplayText(text: string, nodeText: string, showNoteId: boolean): string {
         if (!showNoteId) {
             return text
-                .replace(/^[a-zA-Z0-9._]+:\s*/, '')
+                .replace(/^[a-zA-Z0-9._]+(?::\s*|\s+)/, '')
                 .replace(/^\d+\s+/, '');
         }
 
         if (nodeText === 'id-title') {
-            // id-title 模式：去掉 "ID: " 前缀和时间戳
-            // 例如：1: 20251215 nihao -> nihao
-            // 或者：a.1: 20251215 薛定谔方程 -> 薛定谔方程
+            // id-title 模式：去掉 ID 前缀和时间戳
+            // 支持冒号分隔：a.1: 20251215 薛定谔方程 -> 薛定谔方程
+            // 支持空格分隔：ai.b 什么是智能体 -> 什么是智能体（displayText 回退场景）
             return text
-                .replace(/^[a-zA-Z0-9._]+:\s*/, '')  // 去掉 "ID: " 前缀
-                .replace(/^\d+\s+/, '');  // 去掉开头的任意数字和空格
+                .replace(/^[a-zA-Z0-9._]+(?::\s*|\s+)/, '')  // 去掉 "ID: " 或 "ID " 前缀
+                .replace(/^\d+\s+/, '');  // 去掉开头的纯数字时间戳
         } else if (nodeText === 'title' || nodeText === 'both') {
             // title 或 both 模式：去掉开头的时间戳
             // 例如：20251215 薛定谔方程 -> 薛定谔方程
