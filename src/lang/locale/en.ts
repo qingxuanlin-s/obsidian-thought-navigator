@@ -236,4 +236,14 @@ export default {
     "batch cancel": "Deselect",
     // Search
     "search placeholder": "Search nodes...",
+    // Node / group context menu
+    "ctx pin anchor": "Pin as anchor",
+    "ctx unpin anchor": "Unpin anchor",
+    "ctx link cross domain": "Link cross-domain node",
+    "ctx rename id": "Rename ID",
+    "ctx change color": "Change color",
+    "ctx delete group": "Delete group",
+    "ctx rename group": "Rename group",
+    "add node forward": "➡️ Forward",
+    "add node reverse": "⬅️ Reverse",
 }

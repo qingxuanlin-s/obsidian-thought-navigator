@@ -92,6 +92,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private isEdgeSelected = false; // 标记当前是否有选中的边（边编辑模式）
     private embedPreviewCleanup: (() => void) | null = null;
     private imagePreviewCleanup: (() => void) | null = null;
+    // 追踪正在进行中的 overlay 拖拽/缩放操作，确保 destroy() 时能中止挂在 document 上的监听器
+    private activeOverlayDragAborters: Set<AbortController> = new Set();
     // 缓存已渲染的预览卡片 DOM，避免重建时 excalidraw/markdown 内容闪烁
     private embedCardCache: Map<string, HTMLElement> = new Map();
     private collapseHandleCleanup: (() => void) | null = null;
@@ -624,9 +626,19 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 销毁渲染器
      */
     destroy(): void {
+        // 中止所有挂在 document 上、尚未释放的 overlay 拖拽/缩放监听器
+        for (const ctrl of this.activeOverlayDragAborters) {
+            try { ctrl.abort(); } catch { /* ignore */ }
+        }
+        this.activeOverlayDragAborters.clear();
+
         if (this.embedPreviewCleanup) {
             this.embedPreviewCleanup();
             this.embedPreviewCleanup = null;
+        }
+        if (this.imagePreviewCleanup) {
+            this.imagePreviewCleanup();
+            this.imagePreviewCleanup = null;
         }
         if (this.collapseHandleCleanup) {
             this.collapseHandleCleanup();
@@ -845,12 +857,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private convertEdgesToElements(edges: Edge[]): any[] {
         const edgeColorMap = this.buildVividEdgeColorMap();
         const allNodes = this.currentData?.nodes || [];
+        // 同一张 Map 里同时用 n.ID 和 n.IDStr 建索引；
+        // getDepthFromNearestRoot 仅按 IDStr 路径前缀回溯，额外的 ID 键不会造成冲突
         const nodeById = new Map<string, ZKNode>();
-        const nodeByIdStr = new Map<string, ZKNode>();
         allNodes.forEach((n) => {
             nodeById.set(n.ID, n);
             nodeById.set(n.IDStr, n);
-            nodeByIdStr.set(n.IDStr, n);
         });
         const nodeStyleMap = this.buildVividNodeStyleMap(allNodes);
 
@@ -872,7 +884,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 branchEdgeColor = nodeStyleMap.get(targetNode.IDStr)?.border || branchEdgeColor;
             }
             const hierarchyDepth = targetNode
-                ? this.getDepthFromNearestRoot(targetNode.IDStr, nodeByIdStr)
+                ? this.getDepthFromNearestRoot(targetNode.IDStr, nodeById)
                 : null;
             const hierarchyEdgeWidth = edge.type === 'parent'
                 ? this.getHierarchyEdgeWidth(hierarchyDepth)
@@ -923,7 +935,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         return `${parts[0]}.${parts[1]}`;
     }
 
-    private getDepthFromNearestRoot(nodeId: string, nodeByIdStr: Map<string, ZKNode>): number {
+    private getDepthFromNearestRoot(nodeId: string, nodeMap: Map<string, ZKNode>): number {
         const normalizedId = (nodeId || '').trim();
         if (!normalizedId) return 1;
         let current = normalizedId;
@@ -931,8 +943,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
         while (current.includes('.')) {
             const parentId = current.substring(0, current.lastIndexOf('.'));
             depth += 1;
-            const parentNode = nodeByIdStr.get(parentId);
-            if (parentNode?.isRoot) return depth;
+            const parentNode = nodeMap.get(parentId);
+            // 校验 IDStr 精确匹配，避免 nodeMap 中同时以 n.ID 建索引时的潜在冲突
+            if (parentNode?.isRoot && parentNode.IDStr === parentId) return depth;
             current = parentId;
         }
         // 找不到显式 root 时，使用绝对层级近似
@@ -2408,8 +2421,14 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 const renderedPos = node.renderedPosition();
                 dragStartRenderedX = renderedPos.x;
                 dragStartRenderedY = renderedPos.y;
-                document.addEventListener('mousemove', onHeaderMouseMove);
-                document.addEventListener('mouseup', onHeaderMouseUp);
+                const ctrl = new AbortController();
+                this.activeOverlayDragAborters.add(ctrl);
+                const finalize = () => {
+                    this.activeOverlayDragAborters.delete(ctrl);
+                    try { ctrl.abort(); } catch { /* ignore */ }
+                };
+                document.addEventListener('mousemove', onHeaderMouseMove, { signal: ctrl.signal });
+                document.addEventListener('mouseup', () => { onHeaderMouseUp(); finalize(); }, { signal: ctrl.signal });
             });
 
             headerEl.addEventListener('dblclick', (e: MouseEvent) => {
@@ -2495,8 +2514,14 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     startW = Math.max(220, bb.w);
                     startH = Math.max(180, bb.h);
                 }
-                document.addEventListener('mousemove', onMouseMove);
-                document.addEventListener('mouseup', onMouseUp);
+                const ctrl = new AbortController();
+                this.activeOverlayDragAborters.add(ctrl);
+                const finalize = () => {
+                    this.activeOverlayDragAborters.delete(ctrl);
+                    try { ctrl.abort(); } catch { /* ignore */ }
+                };
+                document.addEventListener('mousemove', onMouseMove, { signal: ctrl.signal });
+                document.addEventListener('mouseup', () => { onMouseUp(); finalize(); }, { signal: ctrl.signal });
             });
 
             const isMOCFile = sourceFile.path.endsWith('.moc');
@@ -3047,8 +3072,14 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     const renderedPos = node.renderedPosition();
                     dragStartRenderedX = renderedPos.x;
                     dragStartRenderedY = renderedPos.y;
-                    document.addEventListener('mousemove', onCardMouseMove);
-                    document.addEventListener('mouseup', onCardMouseUp);
+                    const ctrl = new AbortController();
+                    this.activeOverlayDragAborters.add(ctrl);
+                    const finalize = () => {
+                        this.activeOverlayDragAborters.delete(ctrl);
+                        try { ctrl.abort(); } catch { /* ignore */ }
+                    };
+                    document.addEventListener('mousemove', onCardMouseMove, { signal: ctrl.signal });
+                    document.addEventListener('mouseup', () => { onCardMouseUp(); finalize(); }, { signal: ctrl.signal });
                 } else {
                     // 未选中 → 选中
                     this.cy.$(':selected').unselect();
@@ -3113,8 +3144,14 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     startW = 240;
                     startH = 200;
                 }
-                document.addEventListener('mousemove', onMouseMove);
-                document.addEventListener('mouseup', onMouseUp);
+                const ctrl = new AbortController();
+                this.activeOverlayDragAborters.add(ctrl);
+                const finalize = () => {
+                    this.activeOverlayDragAborters.delete(ctrl);
+                    try { ctrl.abort(); } catch { /* ignore */ }
+                };
+                document.addEventListener('mousemove', onMouseMove, { signal: ctrl.signal });
+                document.addEventListener('mouseup', () => { onMouseUp(); finalize(); }, { signal: ctrl.signal });
             });
 
             const updatePosition = () => {

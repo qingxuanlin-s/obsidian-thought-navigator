@@ -1496,21 +1496,28 @@ export class ZKIndexView extends ItemView {
         });
 
         // 监听预览节点尺寸变化事件（右下角拖拽后保存到 ext）
-        this.addTrackedListener(branchGraphDiv, 'embed-node-size-changed', async (event: any) => {
+        // 使用 debounce 合并连续 resize 事件，避免高频写入触发 MermaidParser 同秒缓存问题
+        this.addTrackedListener(branchGraphDiv, 'embed-node-size-changed', (event: any) => {
             if (this.isMobileReadOnly()) {
                 return;
             }
             const { node, nodeId, size } = event.detail || {};
             const targetNodeId = String(nodeId || node?.ID || node?.IDStr || '').trim();
             if (!targetNodeId || !size) return;
-            try {
-                const mocFile = getLatestMOCFile();
-                if (mocFile) {
-                    await this.saveEmbedNodeSizeToMOC(mocFile, targetNodeId, size);
-                }
-            } catch (error) {
-                console.error('Failed to save embed node size:', error);
+
+            if (this.embedNodeSizeSaveTimeout) {
+                clearTimeout(this.embedNodeSizeSaveTimeout);
             }
+            this.embedNodeSizeSaveTimeout = setTimeout(async () => {
+                try {
+                    const mocFile = getLatestMOCFile();
+                    if (mocFile) {
+                        await this.saveEmbedNodeSizeToMOC(mocFile, targetNodeId, size);
+                    }
+                } catch (error) {
+                    console.error('Failed to save embed node size:', error);
+                }
+            }, DEBOUNCE_DELAY.POSITION_SAVE);
         });
 
         // 监听分组创建事件
@@ -2740,6 +2747,30 @@ export class ZKIndexView extends ItemView {
     }
 
     /**
+     * 向右键菜单添加一个可点击项：图标 + 文本 + 点击回调
+     * 点击后自动关闭菜单并解绑 closeMenu 监听器
+     */
+    private addContextMenuItem(
+        parent: HTMLElement,
+        menu: HTMLElement,
+        closeMenu: (e: MouseEvent) => void,
+        icon: string,
+        label: string,
+        action: () => Promise<void>
+    ) {
+        const opt = parent.createDiv('zk-node-ctx-item');
+        const iconEl = opt.createSpan();
+        setIcon(iconEl, icon);
+        opt.createSpan({ text: label });
+        opt.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            menu.remove();
+            document.removeEventListener('click', closeMenu);
+            await action();
+        });
+    }
+
+    /**
      * 显示节点右键菜单
      */
     showNodeContextMenu(mouseEvent: MouseEvent, node: ZKNode) {
@@ -2752,57 +2783,37 @@ export class ZKIndexView extends ItemView {
 
         const isAnchor = !!(this.nodeAnchors[node.IDStr] || this.nodeAnchors[node.ID]);
 
-        const addItem = (parent: HTMLElement, icon: string, label: string, action: () => Promise<void>) => {
-            const opt = parent.createDiv('zk-node-ctx-item');
-            const iconEl = opt.createSpan();
-            setIcon(iconEl, icon);
-            opt.createSpan({ text: label });
-            opt.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                menu.remove();
-                document.removeEventListener('click', closeMenu);
-                await action();
-            });
-        };
-
-        // 置顶锚点（全宽）
-        addItem(menu, isAnchor ? 'star-off' : 'star', isAnchor ? '取消锚点' : '置顶锚点', () => this.toggleNodeAnchor(node));
-        // 关联跨领域节点（全宽）
-        addItem(menu, 'share-2', '关联跨领域节点', () => this.linkCrossDomainNode(node));
-
-        // 分隔线
-        menu.createDiv('zk-node-ctx-sep');
-
-        // 底部两列：修改节点 ID + 修改节点颜色
-        const row = menu.createDiv('zk-node-ctx-row');
-        addItem(row, 'fingerprint', '修改 ID', () => this.renameNodeID(node));
-        addItem(row, 'palette', '修改颜色', () => this.changeNodeColor(node));
-
-        // 定位：先在屏幕外渲染以获取尺寸
-        menu.style.visibility = 'hidden';
-        menu.style.left = '0';
-        menu.style.top = '0';
-
-        requestAnimationFrame(() => {
-            const mw = menu.offsetWidth;
-            const mh = menu.offsetHeight;
-            const vw = window.innerWidth;
-            const vh = window.innerHeight;
-            let x = mouseEvent.clientX;
-            let y = mouseEvent.clientY;
-            if (x + mw > vw) x = vw - mw - 4;
-            if (y + mh > vh) y = vh - mh - 4;
-            menu.style.left = `${x}px`;
-            menu.style.top = `${y}px`;
-            menu.style.visibility = 'visible';
-        });
-
         const closeMenu = (e: MouseEvent) => {
             if (!menu.contains(e.target as Node)) {
                 menu.remove();
                 document.removeEventListener('click', closeMenu);
             }
         };
+
+        // 置顶锚点（全宽）
+        this.addContextMenuItem(
+            menu, menu, closeMenu,
+            isAnchor ? 'star-off' : 'star',
+            isAnchor ? t('ctx unpin anchor') : t('ctx pin anchor'),
+            () => this.toggleNodeAnchor(node)
+        );
+        // 关联跨领域节点（全宽）
+        this.addContextMenuItem(menu, menu, closeMenu, 'share-2', t('ctx link cross domain'), () => this.linkCrossDomainNode(node));
+
+        // 分隔线
+        menu.createDiv('zk-node-ctx-sep');
+
+        // 底部两列：修改节点 ID + 修改节点颜色
+        const row = menu.createDiv('zk-node-ctx-row');
+        this.addContextMenuItem(row, menu, closeMenu, 'fingerprint', t('ctx rename id'), () => this.renameNodeID(node));
+        this.addContextMenuItem(row, menu, closeMenu, 'palette', t('ctx change color'), () => this.changeNodeColor(node));
+
+        // 定位：先在屏幕外渲染以获取尺寸
+        menu.style.visibility = 'hidden';
+        menu.style.left = '0';
+        menu.style.top = '0';
+
+        this.positionContextMenu(menu, mouseEvent);
         setTimeout(() => document.addEventListener('click', closeMenu), 0);
     }
 
@@ -2817,27 +2828,21 @@ export class ZKIndexView extends ItemView {
         menu.style.position = 'fixed';
         menu.style.zIndex = '10000';
 
-        const addItem = (parent: HTMLElement, icon: string, label: string, action: () => Promise<void>) => {
-            const opt = parent.createDiv('zk-node-ctx-item');
-            const iconEl = opt.createSpan();
-            setIcon(iconEl, icon);
-            opt.createSpan({ text: label });
-            opt.addEventListener('click', async (e) => {
-                e.stopPropagation();
+        const closeMenu = (e: MouseEvent) => {
+            if (!menu.contains(e.target as Node)) {
                 menu.remove();
                 document.removeEventListener('click', closeMenu);
-                await action();
-            });
+            }
         };
 
-        addItem(menu, 'trash', '删除分组', async () => {
+        this.addContextMenuItem(menu, menu, closeMenu, 'trash', t('ctx delete group'), async () => {
             const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
             if (!mocFile) return;
             await this.deleteGroupFromMOC(mocFile, groupId);
             await this.refreshBranchMermaid();
         });
 
-        addItem(menu, 'pencil', '重命名分组', async () => {
+        this.addContextMenuItem(menu, menu, closeMenu, 'pencil', t('ctx rename group'), async () => {
             const newLabel = await this.showGroupLabelInputDialog(groupLabel);
             if (!newLabel || newLabel === groupLabel) return;
             const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
@@ -2846,7 +2851,7 @@ export class ZKIndexView extends ItemView {
             await this.refreshBranchMermaid();
         });
 
-        addItem(menu, 'fingerprint', '修改 ID', async () => {
+        this.addContextMenuItem(menu, menu, closeMenu, 'fingerprint', t('ctx rename id'), async () => {
             const newGroupId = await this.showGroupIDInputDialog(groupId);
             if (!newGroupId || newGroupId === groupId) return;
             const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
@@ -2855,11 +2860,17 @@ export class ZKIndexView extends ItemView {
             await this.refreshBranchMermaid();
         });
 
-        // 定位：先在屏幕外渲染以获取尺寸
+        this.positionContextMenu(menu, mouseEvent);
+        setTimeout(() => document.addEventListener('click', closeMenu), 0);
+    }
+
+    /**
+     * 在鼠标位置附近定位右键菜单，并保证不溢出视口
+     */
+    private positionContextMenu(menu: HTMLElement, mouseEvent: MouseEvent) {
         menu.style.visibility = 'hidden';
         menu.style.left = '0';
         menu.style.top = '0';
-
         requestAnimationFrame(() => {
             const mw = menu.offsetWidth;
             const mh = menu.offsetHeight;
@@ -2873,14 +2884,6 @@ export class ZKIndexView extends ItemView {
             menu.style.top = `${y}px`;
             menu.style.visibility = 'visible';
         });
-
-        const closeMenu = (e: MouseEvent) => {
-            if (!menu.contains(e.target as Node)) {
-                menu.remove();
-                document.removeEventListener('click', closeMenu);
-            }
-        };
-        setTimeout(() => document.addEventListener('click', closeMenu), 0);
     }
 
     /**
@@ -2903,7 +2906,7 @@ export class ZKIndexView extends ItemView {
 
         // 正向连接选项
         const forwardOption = menu.createDiv('zk-menu-option');
-        forwardOption.innerHTML = '➡️ 正向';
+        forwardOption.textContent = t('add node forward');
         forwardOption.addEventListener('click', async (e) => {
             e.stopPropagation();
             menu.remove();
@@ -2912,7 +2915,7 @@ export class ZKIndexView extends ItemView {
 
         // 反向连接选项
         const reverseOption = menu.createDiv('zk-menu-option');
-        reverseOption.innerHTML = '⬅️ 反向';
+        reverseOption.textContent = t('add node reverse');
         reverseOption.addEventListener('click', async (e) => {
             e.stopPropagation();
             menu.remove();
@@ -3739,7 +3742,7 @@ export class ZKIndexView extends ItemView {
     private showGroupLabelInputDialog(currentLabel: string): Promise<string | null> {
         return new Promise((resolve) => {
             const modal = new Modal(this.app);
-            modal.titleEl.setText('重命名分组');
+            modal.titleEl.setText(t('ctx rename group'));
 
             const { contentEl } = modal;
             contentEl.empty();

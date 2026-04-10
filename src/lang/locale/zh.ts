@@ -234,4 +234,14 @@ export default {
     "batch cancel": "取消",
     // 搜索
     "search placeholder": "搜索节点...",
+    // 节点/分组右键菜单
+    "ctx pin anchor": "置顶锚点",
+    "ctx unpin anchor": "取消锚点",
+    "ctx link cross domain": "关联跨领域节点",
+    "ctx rename id": "修改 ID",
+    "ctx change color": "修改颜色",
+    "ctx delete group": "删除分组",
+    "ctx rename group": "重命名分组",
+    "add node forward": "➡️ 正向",
+    "add node reverse": "⬅️ 反向",
 }

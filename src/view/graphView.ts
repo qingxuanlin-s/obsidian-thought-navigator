@@ -1368,7 +1368,7 @@ export class ZKGraphView extends ItemView {
             try {
                 const graphData = GraphDataBuilder.fromInOutLinks(currentFile, inlinkArr, outlinkArr);
                 const options: RenderOptions = {
-                    direction: (this.plugin.settings.DirectionOfInlinksGraph || 'TB') as 'TB' | 'BT' | 'LR' | 'RL',
+                    direction: 'TB' as 'TB' | 'BT' | 'LR' | 'RL',
                     layoutType: 'preset',
                     animate: true,
                     animationDuration: 500,

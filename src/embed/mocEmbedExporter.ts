@@ -22,18 +22,16 @@ function delay(ms: number): Promise<void> {
 }
 
 function blobToImage(blob: Blob): Promise<HTMLImageElement> {
-    return new Promise((resolve, reject) => {
-        const url = URL.createObjectURL(blob);
+    // 使用 try/finally 模式确保 object URL 无论 resolve/reject 都会被释放，
+    // 避免 onload/onerror 在边缘情况下都未触发时的泄漏
+    const url = URL.createObjectURL(blob);
+    return new Promise<HTMLImageElement>((resolve, reject) => {
         const img = new Image();
-        img.onload = () => {
-            URL.revokeObjectURL(url);
-            resolve(img);
-        };
-        img.onerror = (error) => {
-            URL.revokeObjectURL(url);
-            reject(error);
-        };
+        img.onload = () => resolve(img);
+        img.onerror = (error) => reject(error);
         img.src = url;
+    }).finally(() => {
+        URL.revokeObjectURL(url);
     });
 }
 
