@@ -73,8 +73,6 @@ interface ZKNavigationSettings {
     FileExtension:string; // "all" or ".md only"
     SectionTab:number;    
     DirectionOfBranchGraph: string;
-    DirectionOfFamilyGraph: string;
-    DirectionOfInlinksGraph: string;
     DirectionOfOutlinksGraph: string;
     BranchToolbra: boolean;
     RandomIndex: boolean;
@@ -154,8 +152,6 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     FileExtension: "md",
     SectionTab: 0,
     DirectionOfBranchGraph: "LR",
-    DirectionOfFamilyGraph: "LR",
-    DirectionOfInlinksGraph: "TB",
     DirectionOfOutlinksGraph: "TB",
     BranchToolbra: true,
     RandomIndex: true,
