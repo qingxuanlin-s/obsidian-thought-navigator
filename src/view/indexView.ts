@@ -78,6 +78,9 @@ export class ZKIndexView extends ItemView {
     private branchRenderer: CytoscapeRenderer | null = null;
     // 当前 cy 实例对应的 MOC 文件路径（用于切换时正确保存位置）
     private lastRenderedMOCPath: string | null = null;
+    // 上次成功渲染时的完整签名（文件路径 + mtime + 影响渲染的设置项）。
+    // 用于跳过无实质变化的 refresh：如窗口 resize、未相关事件触发的刷新等
+    private lastRenderSignature: string | null = null;
     // 渲染完成后自动选中并定位的节点 ID（来自搜索选中）
     private pendingSelectNodeId: string | null = null;
 
@@ -1042,6 +1045,45 @@ export class ZKIndexView extends ItemView {
         await this.refreshBranchMermaidMOC(indexMermaidDiv);
     }
 
+    /**
+     * 计算影响渲染结果的完整签名：文件路径 + mtime + 影响视觉/布局的设置项。
+     * 用于 refreshBranchMermaidMOC 的 no-op 短路检测——签名一致说明完全无需重建。
+     *
+     * ⚠️ 维护说明：任何会改变画面的设置都必须加进来，否则改设置不会即时生效。
+     * 目前只包含"会影响 parseMOCStructure / convertMOCToZKNodes / render options"的字段。
+     * 不进入签名的字段：HistoryList、zoomPanScaleArr、mocCurrentFile（已是 filePath）等运行时状态。
+     */
+    private computeRenderSignature(filePath: string, mtime: number): string {
+        const s = this.plugin.settings;
+        return [
+            filePath,
+            mtime,
+            // 主题 / 视觉
+            s.themeMode,
+            s.themeStyle || 'modern',
+            s.edgeStyle || 'bezier',
+            s.nodeColor || '',
+            // 布局
+            s.DirectionOfBranchGraph || 'LR',
+            s.nodeLayoutStyle || 'free',
+            s.graphType || 'structure',
+            // 节点标签 / 显示
+            s.NodeText || 'both',
+            s.showNoteIdInBranchView ? '1' : '0',
+            s.smartConnection ? '1' : '0',
+            // 节点 ID / 标题解析（影响 convertMOCToZKNodes）
+            s.IDFieldOption || '1',
+            s.TitleField || '',
+            s.IDField || '',
+            s.Separator || ' ',
+            s.OtherSeparator || '',
+            // MOC 解析
+            s.mocHeadingTitle || '',
+            // 运行时
+            this.isMobileReadOnly() ? 'ro' : 'rw',
+        ].join('|');
+    }
+
     // MOC 模式专用的刷新方法
     // MOC 模式专用的刷新方法 - 使用 Cytoscape 渲染
     async refreshBranchMermaidMOC(indexMermaidDiv: HTMLElement) {
@@ -1071,29 +1113,48 @@ export class ZKIndexView extends ItemView {
             return;
         }
 
-        // 获取 MOC 文件（.md 和 .moc 均包含）
-        const mocFiles = getMOCFilesInFolder(this.app, mocFolder);
-
-        if (mocFiles.length === 0) {
-            new Notice(t("No MOC files found in the specified folder"));
-            return;
-        }
-
         // 解析当前 MOC 文件
         let currentMOCPath = this.plugin.settings.mocCurrentFile;
-        
-        // 如果没有设置当前 MOC，使用第一个 MOC 文件并保存设置
-        if (!currentMOCPath && mocFiles.length > 0) {
+
+        // 性能优化：仅在未设置当前 MOC 时才做全 vault 扫描回退；
+        // 否则直接 O(1) 读设置，避免每次刷新都 O(V) 过滤整个 vault 文件列表
+        if (!currentMOCPath) {
+            const mocFiles = getMOCFilesInFolder(this.app, mocFolder);
+            if (mocFiles.length === 0) {
+                new Notice(t("No MOC files found in the specified folder"));
+                return;
+            }
             currentMOCPath = mocFiles[0].path;
             this.plugin.settings.mocCurrentFile = currentMOCPath;
             await this.plugin.saveData(this.plugin.settings);
         }
-        
+
         const currentMOCFile = this.app.vault.getAbstractFileByPath(currentMOCPath);
 
         if (!(currentMOCFile instanceof TFile)) {
             new Notice("Invalid MOC file");
             return;
+        }
+
+        // 性能优化：如果文件 mtime 和影响渲染的设置都没变，且 cy 实例仍对应同一文件，
+        // 说明这是一次无实质变化的刷新（如窗口 resize、其他模块触发的事件），直接跳过
+        // parse → convert → build → render 整条热路径，只同步容器尺寸即可。
+        const renderSignature = this.computeRenderSignature(currentMOCPath, currentMOCFile.stat.mtime);
+        const cyInstance = this.branchRenderer?.getCytoscapeInstance();
+        if (
+            cyInstance
+            && this.lastRenderedMOCPath === currentMOCPath
+            && this.lastRenderSignature === renderSignature
+        ) {
+            const existingGraphDiv = document.getElementById("zk-branch-cytoscape") as HTMLElement | null;
+            if (existingGraphDiv) {
+                const graphHeight = Math.max(220, this.containerEl.offsetHeight - 80);
+                if (existingGraphDiv.style.height !== `${graphHeight}px`) {
+                    existingGraphDiv.style.height = `${graphHeight}px`;
+                    cyInstance.resize();
+                }
+                return;
+            }
         }
 
         const mocParseResult = await parseMOCStructure(this.app, currentMOCPath, headingTitle);
@@ -1200,6 +1261,7 @@ export class ZKIndexView extends ItemView {
         // CytoscapeRenderer 内部会智能判断是否需要完全重建或增量更新
         await this.branchRenderer.render(branchGraphDiv, graphData, options);
         this.lastRenderedMOCPath = currentMOCPath;
+        this.lastRenderSignature = renderSignature;
 
         // 恢复或自动居中视图
         const cy = this.branchRenderer.getCytoscapeInstance();

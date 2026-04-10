@@ -379,7 +379,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     return id && !currentIds.has(id);
                 });
 
-                // 删除旧元素（使用 filter 避免选择器语法问题）
+                // 删除旧元素
+                // 性能优化：原实现 cy.elements().filter(ele => toRemove.includes(...))
+                // 对全图元素做 O(E × |toRemove|) 扫描。改为直接用 $id 做 O(1) 哈希查找，
+                // 把移除复杂度降到 O(|toRemove|)。
                 if (toRemove.length > 0) {
                     // 检查是否删除了分组节点，如果是，先释放子节点
                     toRemove.forEach(id => {
@@ -394,8 +397,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         }
                     });
 
-                    const elementsToRemove = this.cy!.elements().filter(ele => toRemove.includes(ele.id()));
-                    this.cy!.remove(elementsToRemove);
+                    toRemove.forEach(id => {
+                        const ele = this.cy!.$id(id);
+                        if (ele.length > 0) {
+                            this.cy!.remove(ele);
+                        }
+                    });
                 }
 
                 // 添加新元素
