@@ -1610,6 +1610,17 @@ export class ZKIndexView extends ItemView {
 
             const isMouseEvent = triggerEvent instanceof MouseEvent;
             const openInNewLeaf = isMouseEvent && (triggerEvent.metaKey || triggerEvent.ctrlKey || triggerEvent.button === 1);
+
+            // 如果不是强制新开，先查已有 tab
+            if (!openInNewLeaf) {
+                const existingLeaf = this.app.workspace.getLeavesOfType('markdown').find(
+                    leaf => (leaf.view as any)?.file?.path === targetFile.path
+                );
+                if (existingLeaf) {
+                    this.app.workspace.setActiveLeaf(existingLeaf, { focus: true });
+                    return;
+                }
+            }
             this.app.workspace.getLeaf(openInNewLeaf).openFile(targetFile);
         });
 

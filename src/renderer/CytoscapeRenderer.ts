@@ -7802,7 +7802,8 @@ case 'dagre':
             // 方向键：切换选中节点
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key) && !event.repeat) {
                 // 检查是否有打开的内联编辑器
-                const hasEditor = this.container?.querySelector('.node-label-editor');
+                const hasEditor = this.container?.querySelector('.node-label-editor') ||
+                    this.container?.querySelector('.edge-label-editor');
 
                 if (!hasEditor) {
                     event.preventDefault();
