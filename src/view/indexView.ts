@@ -843,10 +843,29 @@ export class ZKIndexView extends ItemView {
 
         const vaultFiles = this.app.vault.getFiles();
         const tryResolvePath = (raw: string): TFile | null => {
-            const normalized = decodeURIComponent(raw)
+            let normalized = decodeURIComponent(raw).trim();
+
+            // 兼容 Obsidian URI：obsidian://open?vault=...&file=...
+            if (normalized.startsWith('obsidian://')) {
+                try {
+                    const parsed = new URL(normalized);
+                    const fileParam = parsed.searchParams.get('file');
+                    if (fileParam) {
+                        normalized = decodeURIComponent(fileParam);
+                    } else {
+                        normalized = normalized
+                            .replace(/^obsidian:\/\/open\?file=/, '')
+                            .replace(/^obsidian:\/\/advanced-uri\?.*?file=/, '');
+                    }
+                } catch (_) {
+                    normalized = normalized
+                        .replace(/^obsidian:\/\/open\?file=/, '')
+                        .replace(/^obsidian:\/\/advanced-uri\?.*?file=/, '');
+                }
+            }
+
+            normalized = normalized
                 .replace(/^file:\/\//, '')
-                .replace(/^obsidian:\/\/open\?file=/, '')
-                .replace(/^obsidian:\/\/advanced-uri\?.*?file=/, '')
                 .replace(/^\//, '');
 
             if (!normalized) return null;
