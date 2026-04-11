@@ -504,7 +504,6 @@ export class ZKIndexView extends ItemView {
 
         if (this.plugin.settings.MainNoteButton == true) {
             const mainNoteChip = breadcrumbNav.createDiv("zk-chip zk-chip-outlined");
-            setIcon(mainNoteChip.createSpan("zk-chip-icon"), "file-text");
             mainNoteChip.createSpan("zk-chip-label").setText(this.plugin.settings.MainNoteButtonText);
             mainNoteChip.addEventListener("click", () => {
                 this.openNoteSearchModal();
