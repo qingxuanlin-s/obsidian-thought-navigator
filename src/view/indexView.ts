@@ -1504,16 +1504,25 @@ export class ZKIndexView extends ItemView {
                     return;
                 }
 
-                // 自由节点不建立父子关系，只创建虚线关系
-                await this.addArrowRelationToMOC(mocFile, parentNode.IDStr, childNode.IDStr, '');
+                // 智能连线：自由节点连接到普通节点时，建立父子关系（而不是反向关系）
+                if (!this.isFreeNodeID(childNode.IDStr) || this.isFreeNodeID(parentNode.IDStr)) {
+                    console.warn('[auto-connect-node] 非法智能连线目标（child 必须是自由节点，parent 必须是普通节点）', {
+                        childNodeId: childNode.IDStr,
+                        parentNodeId: parentNode.IDStr
+                    });
+                    return;
+                }
 
-                // 保存位置（保持原 ID）
-                await this.saveNodePositionToMOC(mocFile, childNode.IDStr, position);
+                const newChildID = this.generateChildNodeID(parentNode.IDStr);
+                await this.mocHandler.moveNodeToParent(mocFile, childNode.IDStr, parentNode.IDStr, newChildID);
+
+                // 保存移动后的节点位置（使用新子节点 ID）
+                await this.saveNodePositionToMOC(mocFile, newChildID, position);
 
                 // 刷新视图
                 await this.refreshBranchMermaid();
 
-                new Notice(`已创建关系: ${parentNode.displayText} → ${childNode.displayText}`);
+                new Notice(`已创建父子关系: ${parentNode.displayText} → ${childNode.displayText}`);
             } catch (error) {
                 console.error('[auto-connect-node] 连接失败:', error);
                 new Notice(`连接失败: ${error.message}`);

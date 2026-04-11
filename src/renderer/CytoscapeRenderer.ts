@@ -7213,6 +7213,11 @@ case 'dagre':
                 return;  // 只允许自由节点拖动自动连接
             }
 
+            // 限制：自由节点一旦已有任意连线（父子/反向），不再允许智能连线到其他节点
+            if (node.connectedEdges().length > 0) {
+                return;
+            }
+
             // 创建 SVG 叠加层用于绘制连线
             if (!svgOverlay && this.container) {
                 svgOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -7320,6 +7325,17 @@ case 'dagre':
                 return;  // 只允许自由节点拖动自动连接
             }
 
+            // 限制：自由节点一旦已有任意连线（父子/反向），不再允许智能连线到其他节点
+            if (node.connectedEdges().length > 0) {
+                if (tempConnectionLine && svgOverlay) {
+                    svgOverlay.removeChild(tempConnectionLine);
+                    tempConnectionLine = null;
+                }
+                this.cy!.nodes('.connection-target-hover').removeClass('connection-target-hover');
+                nearbyNodeId = null;
+                return;
+            }
+
             // 获取当前节点位置
             const pos = node.renderedPosition();
 
@@ -7331,8 +7347,8 @@ case 'dagre':
                 if (otherNode.id() === node.id()) return;  // 跳过自己
                 if (otherNode.data().isPlaceholder) return;  // 跳过占位符
                 if (otherNode.data().isGroup) return;  // 跳过分组
+                if (otherNode.data().isFreeNode) return; // 自由节点不作为智能连线目标
 
-                // 自由节点可以连接到任何节点（包括子节点）
                 const otherPos = otherNode.renderedPosition();
                 const distance = Math.sqrt(
                     Math.pow(pos.x - otherPos.x, 2) +
