@@ -4373,22 +4373,26 @@ case 'dagre':
                     currentEntry.el.style.display = 'none';
                     return;
                 }
-                // 编辑期隐藏
-                if (currentEntry.el.dataset.editing === '1') {
-                    currentEntry.el.style.display = 'none';
-                    return;
-                }
                 const bb = node.renderedBoundingBox();
                 if (!bb || bb.w <= 0) {
                     currentEntry.el.style.display = 'none';
                     return;
                 }
                 const zoom = this.cy.zoom();
+                // 原地编辑：textarea 内嵌在 overlay 里，所以编辑期保持可见，
+                // 但跟随节点的实际渲染尺寸（autoGrow 后 node 会变高）
+                const isEditing = currentEntry.el.dataset.editing === '1';
                 currentEntry.el.style.display = 'block';
                 currentEntry.el.style.left = `${bb.x1}px`;
                 currentEntry.el.style.top = `${bb.y1}px`;
-                currentEntry.el.style.width = `${currentEntry.width}px`;
-                currentEntry.el.style.height = `${currentEntry.height}px`;
+                if (isEditing) {
+                    // 编辑期用节点的实际渲染尺寸（cy.batch 同步更新后可立即读到）
+                    currentEntry.el.style.width = `${bb.w / zoom}px`;
+                    currentEntry.el.style.height = `${bb.h / zoom}px`;
+                } else {
+                    currentEntry.el.style.width = `${currentEntry.width}px`;
+                    currentEntry.el.style.height = `${currentEntry.height}px`;
+                }
                 currentEntry.el.style.transform = `scale(${zoom})`;
             };
             badgeUpdaters.push(updateOverlayPos);
@@ -6028,17 +6032,16 @@ case 'dagre':
             existingEditor.remove();
         }
 
-        // 文本节点编辑期隐藏 MD overlay（以便 textarea 显示原始源码）
-        const mdOverlayForNode: HTMLElement | null = (() => {
-            if (!originalNode?.isTextOnly) return null;
+        // 文本节点：原地编辑（在已有 overlay 内部直接编辑，不创建悬浮 textarea）
+        if (!isPlaceholder && originalNode?.isTextOnly) {
             const rawSource = (originalNode.title || '').replace(/\\n/g, '\n');
             const sourcePath = this.currentData?.metadata?.currentFile || '';
             const cacheKey = `${sourcePath}||${rawSource}`;
-            return this.textMdOverlayCache.get(cacheKey)?.el || null;
-        })();
-        if (mdOverlayForNode) {
-            mdOverlayForNode.dataset.editing = '1';
-            mdOverlayForNode.style.display = 'none';
+            const cachedEntry = this.textMdOverlayCache.get(cacheKey);
+            if (cachedEntry) {
+                this.startInPlaceTextEdit(node, originalNode, cachedEntry);
+                return;
+            }
         }
 
         const renderedPosition = node.renderedPosition();
@@ -6213,12 +6216,6 @@ case 'dagre':
             node.removeCss('width');
             node.removeCss('height');
             node.data('label', originalDisplayLabel);
-            // 恢复 MD overlay 显示：若内容未变化 indexView 会提前返回不重建图，
-            // 需要在这里兜底清除编辑标记，否则 overlay 会一直被隐藏
-            if (mdOverlayForNode) {
-                delete mdOverlayForNode.dataset.editing;
-                mdOverlayForNode.style.display = 'block';
-            }
 
             // 获取节点的实际位置（使用 position() 而不是 boundingBox）
             const nodePosition = node.position();
@@ -6266,11 +6263,6 @@ case 'dagre':
             node.removeCss('width');
             node.removeCss('height');
             node.data('label', isPlaceholder ? '' : originalDisplayLabel);
-            // 恢复 MD overlay 显示（取消路径不会触发图重建）
-            if (mdOverlayForNode) {
-                delete mdOverlayForNode.dataset.editing;
-                mdOverlayForNode.style.display = 'block';
-            }
             if (isPlaceholder) {
                 this.container?.dispatchEvent(new CustomEvent('placeholder-node-cancel', {
                     detail: {
@@ -6427,6 +6419,261 @@ case 'dagre':
 
             insertWikiLinkAtCursor(file, embed);
             saveNode();
+        };
+    }
+
+    /**
+     * 文本节点原地编辑：直接在已渲染的 MD overlay 内插入一个透明 textarea 填满整个 overlay，
+     * 编辑框的位置/缩放由 overlay 的 transform 自动处理，字体/对齐从 overlay 继承。
+     */
+    private startInPlaceTextEdit(
+        node: any,
+        originalNode: ZKNode,
+        entry: {
+            el: HTMLElement;
+            component: Component;
+            width: number;
+            height: number;
+            isPlainText: boolean;
+            usedInCycle: boolean;
+        }
+    ): void {
+        if (!this.cy || !this.container) return;
+
+        this.ensureNodeVisibleInViewport(node);
+
+        const overlayEl = entry.el;
+        const savedHtml = overlayEl.innerHTML;
+        const savedWidth = entry.width;
+        const savedHeight = entry.height;
+
+        // 清空 overlay 并插入一个填满它的 textarea
+        overlayEl.textContent = '';
+        overlayEl.dataset.editing = '1';
+        // 编辑时允许捕获点击事件（默认 overlay 是 pointer-events: none）
+        const prevPointerEvents = overlayEl.style.pointerEvents;
+        overlayEl.style.pointerEvents = 'auto';
+
+        const textarea = document.createElement('textarea');
+        textarea.className = 'node-label-editor zk-text-md-inline-editor';
+        textarea.value = (originalNode.title || '').replace(/\\n/g, '\n');
+        textarea.style.cssText = `
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            border: 2px solid rgba(91, 143, 217, 0.95);
+            border-radius: 12px;
+            outline: none;
+            padding: 10px 14px;
+            margin: 0;
+            color: var(--text-normal);
+            font-size: 14px;
+            font-family: inherit;
+            font-weight: 400;
+            line-height: 1.5;
+            text-align: left;
+            resize: none;
+            overflow: hidden;
+            box-sizing: border-box;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            pointer-events: auto;
+            user-select: text;
+            z-index: 2;
+        `;
+        overlayEl.appendChild(textarea);
+
+        let isSaved = false;
+        const suggesterPopoverRef = { value: null as HTMLElement | null };
+
+        // 自动增长：根据 textarea 的内容撑高节点
+        // 注意：textarea 用 inset:0 + height:100% 锁定尺寸；测量时需先解除 bottom 约束
+        // 否则 absolute 定位下 height:auto 会被 (parent.h - top - bottom) 反向覆盖，
+        // scrollHeight 永远不会超过当前父元素高度
+        const autoGrow = () => {
+            if (!this.cy) return;
+            textarea.style.bottom = 'auto';
+            textarea.style.height = 'auto';
+            const contentH = textarea.scrollHeight;
+            const newH = Math.max(savedHeight, Math.min(contentH + 4, 640));
+            // 恢复 textarea 的 inset 锁定
+            textarea.style.bottom = '0';
+            textarea.style.height = '100%';
+            if (newH !== entry.height) {
+                entry.height = newH;
+                if (!node.removed()) {
+                    this.cy.batch(() => {
+                        node.data('manualHeightModel', newH);
+                        node.style({ height: newH });
+                    });
+                }
+            }
+        };
+
+        // 聚焦 + 全选
+        setTimeout(() => {
+            textarea.focus();
+            textarea.select();
+            autoGrow();
+        }, 0);
+
+        const restoreOverlay = () => {
+            // 清除编辑态，并恢复原 HTML（取消路径用）
+            if (textarea.parentNode) textarea.remove();
+            overlayEl.innerHTML = savedHtml;
+            delete overlayEl.dataset.editing;
+            overlayEl.style.pointerEvents = prevPointerEvents || 'none';
+            if (suggesterPopoverRef.value && suggesterPopoverRef.value.parentNode) {
+                suggesterPopoverRef.value.remove();
+                suggesterPopoverRef.value = null;
+            }
+            // 恢复节点尺寸
+            if (this.cy && !node.removed() && (savedWidth !== entry.width || savedHeight !== entry.height)) {
+                entry.width = savedWidth;
+                entry.height = savedHeight;
+                this.cy.batch(() => {
+                    node.data('manualWidthModel', savedWidth);
+                    node.data('manualHeightModel', savedHeight);
+                    node.style({ width: savedWidth, height: savedHeight });
+                });
+            }
+            document.removeEventListener('mousedown', handleOutsidePointerDown, true);
+        };
+
+        const saveEdit = () => {
+            if (isSaved) return;
+            const newValue = textarea.value.trim();
+            if (!newValue) {
+                // 空内容视为取消
+                isSaved = true;
+                restoreOverlay();
+                this.container?.focus();
+                return;
+            }
+            isSaved = true;
+
+            // 先清理 textarea（防止 blur 递归）
+            if (textarea.parentNode) textarea.remove();
+            if (suggesterPopoverRef.value && suggesterPopoverRef.value.parentNode) {
+                suggesterPopoverRef.value.remove();
+                suggesterPopoverRef.value = null;
+            }
+            document.removeEventListener('mousedown', handleOutsidePointerDown, true);
+            overlayEl.style.pointerEvents = prevPointerEvents || 'none';
+            // 不清除 dataset.editing —— 留到图重建后的 mark-sweep/detach 来清理；
+            // 若内容未变化 indexView 会 return，下面的 fallback 会兜底恢复
+            const nodePosition = node.position();
+            this.container?.dispatchEvent(new CustomEvent('node-inline-edit-save', {
+                detail: {
+                    node: originalNode,
+                    content: newValue,
+                    position: { x: nodePosition.x, y: nodePosition.y }
+                }
+            }));
+
+            // 兜底：若事件处理不触发重建（内容未变化），需要恢复 overlay 的原 HTML
+            // 延迟一帧检查：若 overlayEl 仍存在且仍在 DOM 中且没有被新渲染填充，则恢复
+            setTimeout(() => {
+                if (overlayEl.isConnected && overlayEl.dataset.editing === '1') {
+                    overlayEl.innerHTML = savedHtml;
+                    delete overlayEl.dataset.editing;
+                }
+            }, 50);
+
+            this.container?.focus();
+        };
+
+        const cancelEdit = () => {
+            if (isSaved) return;
+            isSaved = true;
+            restoreOverlay();
+            this.container?.focus();
+        };
+
+        // 事件监听
+        textarea.addEventListener('input', (e) => {
+            e.stopPropagation();
+            this.checkForLinkPattern(textarea, node, node.renderedBoundingBox(), suggesterPopoverRef, handleLinkSelect);
+            autoGrow();
+        });
+        textarea.addEventListener('keyup', (e) => e.stopPropagation());
+        textarea.addEventListener('keypress', (e) => e.stopPropagation());
+        textarea.addEventListener('click', (e) => e.stopPropagation());
+        textarea.addEventListener('mousedown', (e) => e.stopPropagation());
+
+        textarea.addEventListener('keydown', (e: KeyboardEvent) => {
+            e.stopPropagation();
+
+            if (suggesterPopoverRef.value && suggesterPopoverRef.value.parentNode) {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    (suggesterPopoverRef.value as HTMLElement).remove();
+                    suggesterPopoverRef.value = null;
+                    return;
+                }
+                return;
+            }
+
+            if (e.key === 'Enter') {
+                if (e.shiftKey) return; // Shift+Enter 换行
+                e.preventDefault();
+                saveEdit();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                cancelEdit();
+            }
+        });
+
+        textarea.addEventListener('blur', () => {
+            setTimeout(() => {
+                if (suggesterPopoverRef.value && (suggesterPopoverRef.value as Node).contains(document.activeElement as Node)) {
+                    return;
+                }
+                if (suggesterPopoverRef.value) {
+                    suggesterPopoverRef.value.remove();
+                    suggesterPopoverRef.value = null;
+                }
+                if (!isSaved) {
+                    saveEdit();
+                }
+            }, 20);
+        });
+
+        const handleOutsidePointerDown = (e: MouseEvent) => {
+            if (isSaved) return;
+            const target = e.target as Node | null;
+            if (!target) return;
+            if (textarea.contains(target)) return;
+            if (suggesterPopoverRef.value && suggesterPopoverRef.value.contains(target)) return;
+            saveEdit();
+        };
+        document.addEventListener('mousedown', handleOutsidePointerDown, true);
+
+        // [[ 触发的 wiki link 选择回调
+        const handleLinkSelect = (file: any, _embed: boolean) => {
+            const cursorPos = textarea.selectionStart ?? textarea.value.length;
+            const value = textarea.value;
+            const triggerPatterns = ['![[', '！【【', '[[', '【【'];
+            let triggerStart = -1;
+            for (const pattern of triggerPatterns) {
+                const idx = value.lastIndexOf(pattern, cursorPos);
+                if (idx > triggerStart) triggerStart = idx;
+            }
+            const before = triggerStart >= 0 ? value.slice(0, triggerStart) : value.slice(0, cursorPos);
+            const after = triggerStart >= 0 ? value.slice(cursorPos) : value.slice(cursorPos);
+            const wikiLink = this.buildWikiLinkForFile(file);
+            const wikiText = `${_embed ? '!' : ''}[[${wikiLink}]]`;
+            textarea.value = `${before}${wikiText}${after}`;
+            const newCursor = before.length + wikiText.length;
+            textarea.setSelectionRange(newCursor, newCursor);
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            if (suggesterPopoverRef.value) {
+                suggesterPopoverRef.value.remove();
+                suggesterPopoverRef.value = null;
+            }
+            textarea.focus();
         };
     }
 
