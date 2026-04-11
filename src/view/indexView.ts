@@ -7,6 +7,7 @@ import { expandGraphModal } from "src/modal/expandGraphModal";
 import { MOCSelectorModal } from "src/modal/mocSelectorModal";
 import { NoteSearchModal } from "src/modal/noteSearchModal";
 import { convertMOCToZKNodes, getMOCFilesInFolder, MOCParseResult, MOCTreeNode, parseMOCStructure } from "src/utils/utils";
+import { createEmptyMOCJson } from "src/utils/mocJsonCodec";
 import { MermaidParser } from "src/utils/mermaidParser";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
 import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
@@ -144,6 +145,7 @@ export class ZKIndexView extends ItemView {
     // 性能优化：追踪事件监听器初始化状态，避免重复添加
     private branchGraphListenersInitialized: boolean = false;
     private currentBranchGraphDiv: HTMLElement | null = null;
+    private isCreateMOCPromptOpen: boolean = false;
     private fullscreenBackButtonListenerBound: boolean = false;
     private lastHoverPreviewPath: string | null = null;
     private lastHoverPreviewAt = 0;
@@ -1084,6 +1086,112 @@ export class ZKIndexView extends ItemView {
         ].join('|');
     }
 
+    private buildMOCFilePath(mocFolder: string, baseName: string): string {
+        const normalizedFolder = (mocFolder || '').replace(/^\/+|\/+$/g, '');
+        return normalizedFolder ? `${normalizedFolder}/${baseName}.moc` : `${baseName}.moc`;
+    }
+
+    private async promptCreateInitialMOCFile(mocFolder: string): Promise<TFile | null> {
+        if (this.isCreateMOCPromptOpen) return null;
+        this.isCreateMOCPromptOpen = true;
+
+        return new Promise((resolve) => {
+            const modal = new Modal(this.app);
+            let settled = false;
+            const finish = (file: TFile | null) => {
+                if (settled) return;
+                settled = true;
+                this.isCreateMOCPromptOpen = false;
+                resolve(file);
+            };
+
+            modal.titleEl.setText('未检测到 .moc 文件');
+            const { contentEl } = modal;
+            contentEl.empty();
+            contentEl.createEl('p', { text: '当前还没有思维树文件，是否现在创建一个？' });
+
+            const defaultBaseName = `思维树-${moment().format('YYYYMMDDHHmmss')}`;
+            let draftBaseName = defaultBaseName;
+
+            new Setting(contentEl)
+                .setName('文件名')
+                .setDesc('会自动添加 .moc 后缀')
+                .addText((text) => {
+                    text.setPlaceholder(defaultBaseName);
+                    text.setValue(defaultBaseName);
+                    text.onChange((value) => {
+                        draftBaseName = value.trim();
+                    });
+                });
+
+            const buttonRow = contentEl.createDiv();
+            buttonRow.style.display = 'flex';
+            buttonRow.style.justifyContent = 'flex-end';
+            buttonRow.style.gap = '8px';
+            buttonRow.style.marginTop = '16px';
+
+            const cancelBtn = buttonRow.createEl('button', { text: '取消' });
+            cancelBtn.onclick = () => {
+                modal.close();
+                finish(null);
+            };
+
+            const createBtn = buttonRow.createEl('button', { text: '创建' });
+            createBtn.addClass('mod-cta');
+            createBtn.onclick = async () => {
+                const normalizedBaseName = (draftBaseName || defaultBaseName).replace(/\.moc$/i, '').trim();
+                if (!normalizedBaseName) {
+                    new Notice('文件名不能为空');
+                    return;
+                }
+
+                const filePath = this.buildMOCFilePath(mocFolder, normalizedBaseName);
+                const exists = this.app.vault.getAbstractFileByPath(filePath);
+                if (exists) {
+                    new Notice(`文件已存在: ${filePath}`);
+                    return;
+                }
+
+                try {
+                    const content = createEmptyMOCJson(this.plugin.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free');
+                    const newFile = await this.app.vault.create(filePath, content);
+                    this.plugin.settings.mocCurrentFile = newFile.path;
+                    await this.plugin.saveData(this.plugin.settings);
+                    modal.close();
+                    finish(newFile);
+                } catch (error: any) {
+                    new Notice(`新建失败: ${error?.message || error}`);
+                }
+            };
+
+            modal.onClose = () => {
+                finish(null);
+            };
+
+            modal.open();
+        });
+    }
+
+    private async ensureCurrentMOCFile(mocFolder: string): Promise<TFile | null> {
+        const configuredPath = this.plugin.settings.mocCurrentFile;
+        if (configuredPath) {
+            const configuredFile = this.app.vault.getAbstractFileByPath(configuredPath);
+            if (configuredFile instanceof TFile) {
+                return configuredFile;
+            }
+        }
+
+        const mocFiles = getMOCFilesInFolder(this.app, mocFolder);
+        if (mocFiles.length > 0) {
+            const fallback = mocFiles[0];
+            this.plugin.settings.mocCurrentFile = fallback.path;
+            await this.plugin.saveData(this.plugin.settings);
+            return fallback;
+        }
+
+        return await this.promptCreateInitialMOCFile(mocFolder);
+    }
+
     // MOC 模式专用的刷新方法
     // MOC 模式专用的刷新方法 - 使用 Cytoscape 渲染
     async refreshBranchMermaidMOC(indexMermaidDiv: HTMLElement) {
@@ -1113,28 +1221,11 @@ export class ZKIndexView extends ItemView {
             return;
         }
 
-        // 解析当前 MOC 文件
-        let currentMOCPath = this.plugin.settings.mocCurrentFile;
-
-        // 性能优化：仅在未设置当前 MOC 时才做全 vault 扫描回退；
-        // 否则直接 O(1) 读设置，避免每次刷新都 O(V) 过滤整个 vault 文件列表
-        if (!currentMOCPath) {
-            const mocFiles = getMOCFilesInFolder(this.app, mocFolder);
-            if (mocFiles.length === 0) {
-                new Notice(t("No MOC files found in the specified folder"));
-                return;
-            }
-            currentMOCPath = mocFiles[0].path;
-            this.plugin.settings.mocCurrentFile = currentMOCPath;
-            await this.plugin.saveData(this.plugin.settings);
-        }
-
-        const currentMOCFile = this.app.vault.getAbstractFileByPath(currentMOCPath);
-
+        const currentMOCFile = await this.ensureCurrentMOCFile(mocFolder);
         if (!(currentMOCFile instanceof TFile)) {
-            new Notice("Invalid MOC file");
             return;
         }
+        const currentMOCPath = currentMOCFile.path;
 
         // 性能优化：如果文件 mtime 和影响渲染的设置都没变，且 cy 实例仍对应同一文件，
         // 说明这是一次无实质变化的刷新（如窗口 resize、其他模块触发的事件），直接跳过
