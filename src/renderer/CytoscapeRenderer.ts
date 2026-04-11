@@ -99,6 +99,13 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private embedCardCache: Map<string, HTMLElement> = new Map();
     private collapseHandleCleanup: (() => void) | null = null;
     private collapsedNodeIds: Set<string> = new Set();
+    private activeTextSelectionToolbarCleanup: (() => void) | null = null;
+    // 记住用户上一次在文本选区工具条里选择的颜色，跨选区保持
+    private lastPickedTextColor: string | null = null;
+    private lastPickedBgColor: string | null = null;
+    private static readonly SELECTION_COLOR_CHOICES = ['#00a8ff', '#34d399', '#f59e0b', '#ef4444', '#a78bfa', '#e2e8f0'];
+    private static readonly DEFAULT_SELECTION_TEXT_COLOR = '#00a8ff';
+    private static readonly DEFAULT_SELECTION_BG_COLOR = '#f59e0b';
 
     // 文本节点 Markdown 渲染缓存：跨 addNodeBadges 重建复用已渲染的 overlay DOM + Component
     // key = `${sourcePath}||${rawSource}`
@@ -134,6 +141,340 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
     private isReadOnlyMode(): boolean {
         return this.currentOptions?.readOnly === true || Platform.isMobile;
+    }
+
+    private clearActiveTextSelectionToolbar(): void {
+        if (!this.activeTextSelectionToolbarCleanup) return;
+        this.activeTextSelectionToolbarCleanup();
+        this.activeTextSelectionToolbarCleanup = null;
+    }
+
+    private stripInlineTextFormatting(text: string): string {
+        let result = text;
+        const unwrapPatterns: Array<[RegExp, string]> = [
+            [/\*\*([\s\S]*?)\*\*/g, '$1'],
+            [/~~([\s\S]*?)~~/g, '$1'],
+            [/<u>([\s\S]*?)<\/u>/gi, '$1'],
+            [/<span\b[^>]*>([\s\S]*?)<\/span>/gi, '$1'],
+        ];
+
+        let changed = true;
+        while (changed) {
+            changed = false;
+            for (const [pattern, replacement] of unwrapPatterns) {
+                const next = result.replace(pattern, replacement);
+                if (next !== result) {
+                    result = next;
+                    changed = true;
+                }
+            }
+        }
+
+        return result.replace(/<\/?[^>]+>/g, '');
+    }
+
+    private hexToRgb(hex: string): { r: number; g: number; b: number } {
+        const normalized = hex.replace('#', '').trim();
+        const full = normalized.length === 3
+            ? normalized.split('').map((c) => c + c).join('')
+            : normalized.padStart(6, '0').slice(0, 6);
+        const intVal = Number.parseInt(full, 16);
+        return {
+            r: (intVal >> 16) & 255,
+            g: (intVal >> 8) & 255,
+            b: intVal & 255
+        };
+    }
+
+    private rgbToHex(r: number, g: number, b: number): string {
+        const toHex = (value: number) => Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, '0');
+        return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+    }
+
+    private rgbToHsv(r: number, g: number, b: number): { h: number; s: number; v: number } {
+        const rn = r / 255;
+        const gn = g / 255;
+        const bn = b / 255;
+        const max = Math.max(rn, gn, bn);
+        const min = Math.min(rn, gn, bn);
+        const delta = max - min;
+
+        let h = 0;
+        if (delta > 0) {
+            if (max === rn) h = ((gn - bn) / delta) % 6;
+            else if (max === gn) h = (bn - rn) / delta + 2;
+            else h = (rn - gn) / delta + 4;
+            h *= 60;
+            if (h < 0) h += 360;
+        }
+
+        const s = max === 0 ? 0 : delta / max;
+        return { h, s, v: max };
+    }
+
+    private hsvToRgb(h: number, s: number, v: number): { r: number; g: number; b: number } {
+        const c = v * s;
+        const hp = (h % 360) / 60;
+        const x = c * (1 - Math.abs((hp % 2) - 1));
+        let r1 = 0;
+        let g1 = 0;
+        let b1 = 0;
+        if (hp >= 0 && hp < 1) [r1, g1, b1] = [c, x, 0];
+        else if (hp < 2) [r1, g1, b1] = [x, c, 0];
+        else if (hp < 3) [r1, g1, b1] = [0, c, x];
+        else if (hp < 4) [r1, g1, b1] = [0, x, c];
+        else if (hp < 5) [r1, g1, b1] = [x, 0, c];
+        else [r1, g1, b1] = [c, 0, x];
+        const m = v - c;
+        return {
+            r: (r1 + m) * 255,
+            g: (g1 + m) * 255,
+            b: (b1 + m) * 255
+        };
+    }
+
+    private createInlineColorPicker(
+        initialColor: string,
+        onConfirm: (hexColor: string) => void,
+        onCancel?: () => void
+    ): HTMLElement {
+        const picker = document.createElement('div');
+        picker.className = 'zk-inline-color-picker';
+        picker.addEventListener('pointerdown', (e) => e.stopPropagation());
+        picker.addEventListener('mousedown', (e) => e.stopPropagation());
+
+        const svArea = document.createElement('div');
+        svArea.className = 'zk-inline-color-picker-sv';
+        const svWhite = document.createElement('div');
+        svWhite.className = 'zk-inline-color-picker-sv-white';
+        const svBlack = document.createElement('div');
+        svBlack.className = 'zk-inline-color-picker-sv-black';
+        const svHandle = document.createElement('div');
+        svHandle.className = 'zk-inline-color-picker-handle';
+        svArea.appendChild(svWhite);
+        svArea.appendChild(svBlack);
+        svArea.appendChild(svHandle);
+
+        // 自定义 hue 滑条（不用 <input type=range>，避免点击时抢占焦点
+        // 导致外层编辑器触发 focusout → onBlur → saveEdit，从而关闭工具条）
+        const hueSlider = document.createElement('div');
+        hueSlider.className = 'zk-inline-color-picker-hue';
+        const hueHandle = document.createElement('div');
+        hueHandle.className = 'zk-inline-color-picker-hue-handle';
+        hueSlider.appendChild(hueHandle);
+
+        const footer = document.createElement('div');
+        footer.className = 'zk-inline-color-picker-footer';
+        const preview = document.createElement('span');
+        preview.className = 'zk-inline-color-picker-preview';
+        const confirmBtn = document.createElement('button');
+        confirmBtn.type = 'button';
+        confirmBtn.className = 'zk-inline-color-picker-btn';
+        confirmBtn.textContent = '确认';
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'zk-inline-color-picker-btn';
+        cancelBtn.textContent = '取消';
+        footer.appendChild(preview);
+        footer.appendChild(confirmBtn);
+        footer.appendChild(cancelBtn);
+
+        picker.appendChild(svArea);
+        picker.appendChild(hueSlider);
+        picker.appendChild(footer);
+
+        const rgb = this.hexToRgb(initialColor);
+        const hsv = this.rgbToHsv(rgb.r, rgb.g, rgb.b);
+        let h = hsv.h;
+        let s = hsv.s;
+        let v = hsv.v;
+
+        const updateUi = () => {
+            const hueRgb = this.hsvToRgb(h, 1, 1);
+            const hueHex = this.rgbToHex(hueRgb.r, hueRgb.g, hueRgb.b);
+            svArea.style.backgroundColor = hueHex;
+            hueHandle.style.left = `${(h / 360) * 100}%`;
+            svHandle.style.left = `${s * 100}%`;
+            svHandle.style.top = `${(1 - v) * 100}%`;
+            const out = this.hsvToRgb(h, s, v);
+            preview.style.backgroundColor = this.rgbToHex(out.r, out.g, out.b);
+        };
+
+        const currentHex = () => {
+            const out = this.hsvToRgb(h, s, v);
+            return this.rgbToHex(out.r, out.g, out.b);
+        };
+
+        const updateSvFromEvent = (evt: MouseEvent | PointerEvent) => {
+            const rect = svArea.getBoundingClientRect();
+            const x = Math.max(0, Math.min(rect.width, evt.clientX - rect.left));
+            const y = Math.max(0, Math.min(rect.height, evt.clientY - rect.top));
+            s = rect.width <= 0 ? 0 : x / rect.width;
+            v = rect.height <= 0 ? 0 : 1 - (y / rect.height);
+            updateUi();
+        };
+
+        const startSvDrag = (evt: MouseEvent) => {
+            evt.preventDefault();
+            updateSvFromEvent(evt);
+            const onMove = (moveEvt: MouseEvent) => {
+                moveEvt.preventDefault();
+                updateSvFromEvent(moveEvt);
+            };
+            const onUp = () => {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        };
+
+        const updateHueFromEvent = (evt: MouseEvent | PointerEvent) => {
+            const rect = hueSlider.getBoundingClientRect();
+            const x = Math.max(0, Math.min(rect.width, evt.clientX - rect.left));
+            h = rect.width <= 0 ? 0 : (x / rect.width) * 360;
+            updateUi();
+        };
+
+        const startHueDrag = (evt: MouseEvent) => {
+            evt.preventDefault();
+            updateHueFromEvent(evt);
+            const onMove = (moveEvt: MouseEvent) => {
+                moveEvt.preventDefault();
+                updateHueFromEvent(moveEvt);
+            };
+            const onUp = () => {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        };
+
+        svArea.addEventListener('mousedown', startSvDrag);
+        hueSlider.addEventListener('mousedown', startHueDrag);
+
+        // 按钮的 mousedown 必须 preventDefault,否则点按钮会把焦点从外层编辑器
+        // 抢过来,触发外层编辑器的 onBlur → saveEdit,导致工具条和 picker 被销毁,
+        // 用户会看到"点确认没反应"。
+        confirmBtn.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        });
+        confirmBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onConfirm(currentHex());
+        });
+        cancelBtn.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        });
+        cancelBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onCancel?.();
+        });
+
+        updateUi();
+        return picker;
+    }
+
+    /**
+     * 构建文本选区工具条里的颜色面板（最近色 + 预设色板 + 自定义 HSV 取色器）。
+     * 文字颜色与背景色面板结构一致，用此方法统一生成，避免重复代码。
+     *
+     * @param initialColor 初始高亮的颜色（用来标记"当前激活"的色板并作为 HSV 起始值）
+     * @param recentColor  最近一次选中的颜色（null 表示本次会话还没选过）；非 null 时
+     *                     会作为"最近色"置于第一位，文本/背景色各自独立
+     * @param customTitle  "+" 按钮的 title（"自定义颜色" / "自定义背景色"）
+     * @param onPick       用户选定颜色后的回调（选预设或确认 HSV 都走这里）
+     */
+    private createSelectionColorPanel(
+        initialColor: string,
+        recentColor: string | null,
+        customTitle: string,
+        onPick: (hexColor: string) => void
+    ): HTMLElement {
+        const panel = document.createElement('div');
+        panel.className = 'zk-text-selection-color-panel';
+        panel.addEventListener('pointerdown', (e) => e.stopPropagation());
+        panel.addEventListener('mousedown', (e) => e.stopPropagation());
+
+        const syncActiveSwatch = (targetColor: string) => {
+            panel.querySelectorAll('.zk-text-selection-color-swatch').forEach((el) => {
+                const swatch = el as HTMLElement;
+                const swatchColor = swatch.dataset.color || '';
+                swatch.classList.toggle(
+                    'is-active',
+                    swatchColor.toLowerCase() === targetColor.toLowerCase()
+                );
+            });
+        };
+
+        const appendSwatch = (color: string, extraClass: string, title: string) => {
+            const swatch = document.createElement('button');
+            swatch.type = 'button';
+            swatch.className = `zk-text-selection-color-swatch${extraClass ? ' ' + extraClass : ''}`;
+            swatch.dataset.color = color;
+            swatch.style.backgroundColor = color;
+            swatch.title = title;
+            swatch.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            swatch.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                syncActiveSwatch(color);
+                onPick(color);
+            });
+            panel.appendChild(swatch);
+        };
+
+        if (recentColor) {
+            appendSwatch(recentColor, 'zk-text-selection-color-recent', `最近使用: ${recentColor}`);
+        }
+
+        CytoscapeRenderer.SELECTION_COLOR_CHOICES.forEach((color) => {
+            appendSwatch(color, '', color);
+        });
+
+        let inlinePicker: HTMLElement | null = null;
+        const customSwatch = document.createElement('button');
+        customSwatch.type = 'button';
+        customSwatch.className = 'zk-text-selection-color-swatch zk-text-selection-color-custom';
+        customSwatch.title = customTitle;
+        customSwatch.textContent = '+';
+        customSwatch.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        });
+        customSwatch.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (inlinePicker?.parentNode) {
+                inlinePicker.remove();
+                inlinePicker = null;
+                return;
+            }
+            inlinePicker = this.createInlineColorPicker(
+                initialColor,
+                (hexColor) => {
+                    syncActiveSwatch(hexColor);
+                    onPick(hexColor);
+                },
+                () => {
+                    if (inlinePicker?.parentNode) inlinePicker.remove();
+                    inlinePicker = null;
+                }
+            );
+            panel.appendChild(inlinePicker);
+        });
+        panel.appendChild(customSwatch);
+
+        syncActiveSwatch(initialColor);
+        return panel;
     }
 
     /**
@@ -367,6 +708,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 if (editor) {
                     editor.remove();
                 }
+                const edgeEditor = this.container?.querySelector('.edge-label-editor');
+                if (edgeEditor) {
+                    edgeEditor.remove();
+                }
+                this.clearActiveTextSelectionToolbar();
 
                 const suggester = this.container?.querySelector('.node-link-suggester');
                 if (suggester) {
@@ -645,6 +991,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 销毁渲染器
      */
     destroy(): void {
+        this.clearActiveTextSelectionToolbar();
+
         // 中止所有挂在 document 上、尚未释放的 overlay 拖拽/缩放监听器
         for (const ctrl of this.activeOverlayDragAborters) {
             try { ctrl.abort(); } catch { /* ignore */ }
@@ -5864,6 +6212,651 @@ case 'dagre':
 
 
 
+    private attachInlineTextSelectionToolbar(inputEl: HTMLInputElement | HTMLTextAreaElement): {
+        destroy: () => void;
+        containsTarget: (target: Node | null) => boolean;
+    } {
+        if (!this.container) {
+            return {
+                destroy: () => undefined,
+                containsTarget: () => false
+            };
+        }
+
+        this.clearActiveTextSelectionToolbar();
+
+        let toolbar: HTMLElement | null = null;
+        let colorPanel: HTMLElement | null = null;
+        let bgColorPanel: HTMLElement | null = null;
+        let sizePanel: HTMLElement | null = null;
+        const fontSizeChoices = [12, 14, 16, 18, 20, 24, 28];
+        let lastSelection: { start: number; end: number } | null = null;
+
+        const getSelectionRange = (): { start: number; end: number; length: number } => {
+            const start = inputEl.selectionStart ?? 0;
+            const end = inputEl.selectionEnd ?? 0;
+            const length = Math.max(0, end - start);
+            if (length > 0) {
+                lastSelection = { start, end };
+                return { start, end, length };
+            }
+            if (lastSelection && lastSelection.end > lastSelection.start) {
+                return {
+                    start: lastSelection.start,
+                    end: lastSelection.end,
+                    length: lastSelection.end - lastSelection.start
+                };
+            }
+            return { start, end, length: 0 };
+        };
+
+        const applySelectionTransform = (formatter: (selectedText: string) => string) => {
+            const { start, end, length } = getSelectionRange();
+            if (length <= 0) return;
+            const selectedText = inputEl.value.slice(start, end);
+            const replacedText = formatter(selectedText);
+            inputEl.focus();
+            inputEl.setRangeText(replacedText, start, end, 'select');
+            lastSelection = { start, end: start + replacedText.length };
+            inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+            updateToolbarVisibility();
+        };
+
+        const hideToolbar = () => {
+            if (toolbar?.parentNode) {
+                toolbar.remove();
+            }
+            toolbar = null;
+            colorPanel = null;
+            bgColorPanel = null;
+            sizePanel = null;
+        };
+
+        const closeColorPanel = () => {
+            if (colorPanel?.parentNode) {
+                colorPanel.remove();
+            }
+            colorPanel = null;
+        };
+
+        const closeBgColorPanel = () => {
+            if (bgColorPanel?.parentNode) {
+                bgColorPanel.remove();
+            }
+            bgColorPanel = null;
+        };
+
+        const closeSizePanel = () => {
+            if (sizePanel?.parentNode) {
+                sizePanel.remove();
+            }
+            sizePanel = null;
+        };
+
+        const positionToolbar = () => {
+            if (!toolbar || !this.container) return;
+            const inputRect = inputEl.getBoundingClientRect();
+            const containerRect = this.container.getBoundingClientRect();
+            const toolbarWidth = toolbar.offsetWidth || 220;
+            const x = inputRect.left - containerRect.left + inputRect.width / 2;
+            const topSpace = inputRect.top - containerRect.top;
+            const bottomSpace = containerRect.bottom - inputRect.bottom;
+            let y = topSpace - 10;
+
+            toolbar.classList.remove('zk-text-selection-toolbar-below');
+            if (topSpace < 56 && bottomSpace > 56) {
+                y = topSpace + inputRect.height + 10;
+                toolbar.classList.add('zk-text-selection-toolbar-below');
+            }
+
+            const minX = toolbarWidth / 2 + 10;
+            const maxX = (this.container.clientWidth || containerRect.width) - toolbarWidth / 2 - 10;
+            const clampedX = Math.max(minX, Math.min(maxX, x));
+
+            toolbar.style.left = `${clampedX}px`;
+            toolbar.style.top = `${Math.max(8, y)}px`;
+        };
+
+        const createToolbarButton = (iconName: string, title: string, handler: () => void): HTMLButtonElement => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'zk-text-selection-btn';
+            btn.title = title;
+            setIcon(btn, iconName);
+            btn.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handler();
+                inputEl.focus();
+            });
+            return btn;
+        };
+
+        const ensureToolbar = () => {
+            if (toolbar || !this.container) return;
+            toolbar = document.createElement('div');
+            toolbar.className = 'zk-text-selection-toolbar';
+            toolbar.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            toolbar.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+
+            toolbar.appendChild(createToolbarButton('bold', '加粗', () => {
+                applySelectionTransform((text) => `**${text}**`);
+            }));
+            toolbar.appendChild(createToolbarButton('underline', '下划线', () => {
+                applySelectionTransform((text) => `<u>${text}</u>`);
+            }));
+            toolbar.appendChild(createToolbarButton('strikethrough', '删除线', () => {
+                applySelectionTransform((text) => `~~${text}~~`);
+            }));
+            toolbar.appendChild(createToolbarButton('palette', '文字颜色', () => {
+                if (!toolbar || !this.container) return;
+                closeBgColorPanel();
+                closeSizePanel();
+                if (colorPanel) {
+                    closeColorPanel();
+                    return;
+                }
+                const initial = this.lastPickedTextColor ?? CytoscapeRenderer.DEFAULT_SELECTION_TEXT_COLOR;
+                colorPanel = this.createSelectionColorPanel(initial, this.lastPickedTextColor, '自定义颜色', (color) => {
+                    this.lastPickedTextColor = color;
+                    applySelectionTransform((text) => `<span style='color: ${color};'>${text}</span>`);
+                    closeColorPanel();
+                });
+                toolbar.appendChild(colorPanel);
+            }));
+            toolbar.appendChild(createToolbarButton('highlighter', '背景色', () => {
+                if (!toolbar || !this.container) return;
+                closeColorPanel();
+                closeSizePanel();
+                if (bgColorPanel) {
+                    closeBgColorPanel();
+                    return;
+                }
+                const initial = this.lastPickedBgColor ?? CytoscapeRenderer.DEFAULT_SELECTION_BG_COLOR;
+                bgColorPanel = this.createSelectionColorPanel(initial, this.lastPickedBgColor, '自定义背景色', (color) => {
+                    this.lastPickedBgColor = color;
+                    applySelectionTransform((text) => `<span style='background-color: ${color};'>${text}</span>`);
+                    closeBgColorPanel();
+                });
+                toolbar.appendChild(bgColorPanel);
+            }));
+            toolbar.appendChild(createToolbarButton('type', '字号', () => {
+                if (!toolbar || !this.container) return;
+                closeColorPanel();
+                closeBgColorPanel();
+                if (sizePanel) {
+                    closeSizePanel();
+                    return;
+                }
+
+                sizePanel = document.createElement('div');
+                sizePanel.className = 'zk-text-selection-size-panel';
+                sizePanel.addEventListener('pointerdown', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                });
+                sizePanel.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                });
+
+                fontSizeChoices.forEach((size) => {
+                    const sizeBtn = document.createElement('button');
+                    sizeBtn.type = 'button';
+                    sizeBtn.className = 'zk-text-selection-size-btn';
+                    sizeBtn.textContent = `${size}px`;
+                    sizeBtn.addEventListener('mousedown', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    });
+                    sizeBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        applySelectionTransform((text) => `<span style='font-size: ${size}px;'>${text}</span>`);
+                        closeSizePanel();
+                    });
+                    sizePanel!.appendChild(sizeBtn);
+                });
+
+                const customWrap = document.createElement('div');
+                customWrap.className = 'zk-text-selection-size-custom';
+                const customInput = document.createElement('input');
+                customInput.type = 'number';
+                customInput.min = '8';
+                customInput.max = '96';
+                customInput.step = '1';
+                customInput.value = '16';
+                customInput.className = 'zk-text-selection-size-input';
+                const customApply = document.createElement('button');
+                customApply.type = 'button';
+                customApply.className = 'zk-text-selection-size-apply';
+                customApply.textContent = '应用';
+                const applyCustomSize = () => {
+                    const value = Number.parseInt(customInput.value, 10);
+                    if (!Number.isFinite(value)) return;
+                    const size = Math.min(96, Math.max(8, value));
+                    applySelectionTransform((text) => `<span style='font-size: ${size}px;'>${text}</span>`);
+                    closeSizePanel();
+                };
+                customApply.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                });
+                customApply.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    applyCustomSize();
+                });
+                customInput.addEventListener('keydown', (e) => {
+                    e.stopPropagation();
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        applyCustomSize();
+                    }
+                });
+                customWrap.appendChild(customInput);
+                customWrap.appendChild(customApply);
+                sizePanel.appendChild(customWrap);
+
+                toolbar.appendChild(sizePanel);
+            }));
+            toolbar.appendChild(createToolbarButton('eraser', '清除格式', () => {
+                applySelectionTransform((text) => this.stripInlineTextFormatting(text));
+                closeColorPanel();
+                closeBgColorPanel();
+                closeSizePanel();
+            }));
+
+            this.container.appendChild(toolbar);
+            positionToolbar();
+        };
+
+        const updateToolbarVisibility = () => {
+            const activeEl = document.activeElement as Node | null;
+            if (activeEl && toolbar?.contains(activeEl)) {
+                ensureToolbar();
+                positionToolbar();
+                return;
+            }
+            const isFocused = document.activeElement === inputEl;
+            const { length } = getSelectionRange();
+            if (!isFocused || length <= 0) {
+                hideToolbar();
+                return;
+            }
+            ensureToolbar();
+            positionToolbar();
+        };
+
+        const handleBlur = () => {
+            setTimeout(() => {
+                const activeEl = document.activeElement as Node | null;
+                if (document.activeElement !== inputEl && !(activeEl && toolbar?.contains(activeEl))) {
+                    hideToolbar();
+                }
+            }, 20);
+        };
+
+        inputEl.addEventListener('mouseup', updateToolbarVisibility);
+        inputEl.addEventListener('keyup', updateToolbarVisibility);
+        inputEl.addEventListener('select', updateToolbarVisibility);
+        inputEl.addEventListener('input', updateToolbarVisibility);
+        inputEl.addEventListener('scroll', positionToolbar);
+        inputEl.addEventListener('blur', handleBlur);
+        window.addEventListener('resize', positionToolbar);
+        this.cy?.on('zoom pan', positionToolbar);
+
+        const cleanup = () => {
+            inputEl.removeEventListener('mouseup', updateToolbarVisibility);
+            inputEl.removeEventListener('keyup', updateToolbarVisibility);
+            inputEl.removeEventListener('select', updateToolbarVisibility);
+            inputEl.removeEventListener('input', updateToolbarVisibility);
+            inputEl.removeEventListener('scroll', positionToolbar);
+            inputEl.removeEventListener('blur', handleBlur);
+            window.removeEventListener('resize', positionToolbar);
+            this.cy?.off('zoom pan', positionToolbar);
+            hideToolbar();
+            if (this.activeTextSelectionToolbarCleanup === cleanup) {
+                this.activeTextSelectionToolbarCleanup = null;
+            }
+        };
+
+        this.activeTextSelectionToolbarCleanup = cleanup;
+
+        return {
+            destroy: cleanup,
+            containsTarget: (target: Node | null) => !!target && !!toolbar?.contains(target)
+        };
+    }
+
+    private attachContentSelectionToolbar(
+        rootEl: HTMLElement,
+        applyTransform: (formatter: (selectedText: string) => string) => boolean
+    ): {
+        destroy: () => void;
+        containsTarget: (target: Node | null) => boolean;
+    } {
+        if (!this.container) {
+            return {
+                destroy: () => undefined,
+                containsTarget: () => false
+            };
+        }
+
+        this.clearActiveTextSelectionToolbar();
+
+        let toolbar: HTMLElement | null = null;
+        let colorPanel: HTMLElement | null = null;
+        let bgColorPanel: HTMLElement | null = null;
+        let sizePanel: HTMLElement | null = null;
+        const fontSizeChoices = [12, 14, 16, 18, 20, 24, 28];
+
+        const getSelectionRect = (): DOMRect | null => {
+            const selection = window.getSelection();
+            if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null;
+            const range = selection.getRangeAt(0);
+            const anchorNode = range.commonAncestorContainer;
+            if (!rootEl.contains(anchorNode)) return null;
+            const rect = range.getBoundingClientRect();
+            if (rect.width > 0 || rect.height > 0) return rect;
+            const clientRect = range.getClientRects()[0];
+            return clientRect || null;
+        };
+
+        const hideToolbar = () => {
+            if (toolbar?.parentNode) {
+                toolbar.remove();
+            }
+            toolbar = null;
+            colorPanel = null;
+            bgColorPanel = null;
+            sizePanel = null;
+        };
+
+        const closeColorPanel = () => {
+            if (colorPanel?.parentNode) {
+                colorPanel.remove();
+            }
+            colorPanel = null;
+        };
+
+        const closeBgColorPanel = () => {
+            if (bgColorPanel?.parentNode) {
+                bgColorPanel.remove();
+            }
+            bgColorPanel = null;
+        };
+
+        const closeSizePanel = () => {
+            if (sizePanel?.parentNode) {
+                sizePanel.remove();
+            }
+            sizePanel = null;
+        };
+
+        const positionToolbar = () => {
+            if (!toolbar || !this.container) return;
+            const rangeRect = getSelectionRect();
+            if (!rangeRect) {
+                return;
+            }
+
+            const containerRect = this.container.getBoundingClientRect();
+            const toolbarWidth = toolbar.offsetWidth || 220;
+            const x = rangeRect.left - containerRect.left + rangeRect.width / 2;
+            const topSpace = rangeRect.top - containerRect.top;
+            const bottomSpace = containerRect.bottom - rangeRect.bottom;
+            let y = topSpace - 10;
+
+            toolbar.classList.remove('zk-text-selection-toolbar-below');
+            if (topSpace < 56 && bottomSpace > 56) {
+                y = rangeRect.bottom - containerRect.top + 10;
+                toolbar.classList.add('zk-text-selection-toolbar-below');
+            }
+
+            const minX = toolbarWidth / 2 + 10;
+            const maxX = (this.container.clientWidth || containerRect.width) - toolbarWidth / 2 - 10;
+            const clampedX = Math.max(minX, Math.min(maxX, x));
+
+            toolbar.style.left = `${clampedX}px`;
+            toolbar.style.top = `${Math.max(8, y)}px`;
+        };
+
+        const applyAndRefresh = (formatter: (selectedText: string) => string) => {
+            if (!applyTransform(formatter)) return;
+            updateToolbarVisibility();
+        };
+
+        const createToolbarButton = (iconName: string, title: string, handler: () => void): HTMLButtonElement => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'zk-text-selection-btn';
+            btn.title = title;
+            setIcon(btn, iconName);
+            btn.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handler();
+            });
+            return btn;
+        };
+
+        const ensureToolbar = () => {
+            if (toolbar || !this.container) return;
+            toolbar = document.createElement('div');
+            toolbar.className = 'zk-text-selection-toolbar';
+            toolbar.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            toolbar.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+
+            toolbar.appendChild(createToolbarButton('bold', '加粗', () => {
+                applyAndRefresh((text) => `**${text}**`);
+            }));
+            toolbar.appendChild(createToolbarButton('underline', '下划线', () => {
+                applyAndRefresh((text) => `<u>${text}</u>`);
+            }));
+            toolbar.appendChild(createToolbarButton('strikethrough', '删除线', () => {
+                applyAndRefresh((text) => `~~${text}~~`);
+            }));
+            toolbar.appendChild(createToolbarButton('palette', '文字颜色', () => {
+                if (!toolbar || !this.container) return;
+                closeBgColorPanel();
+                closeSizePanel();
+                if (colorPanel) {
+                    closeColorPanel();
+                    return;
+                }
+                const initial = this.lastPickedTextColor ?? CytoscapeRenderer.DEFAULT_SELECTION_TEXT_COLOR;
+                colorPanel = this.createSelectionColorPanel(initial, this.lastPickedTextColor, '自定义颜色', (color) => {
+                    this.lastPickedTextColor = color;
+                    applyAndRefresh((text) => `<span style='color: ${color};'>${text}</span>`);
+                    closeColorPanel();
+                });
+                toolbar.appendChild(colorPanel);
+            }));
+            toolbar.appendChild(createToolbarButton('highlighter', '背景色', () => {
+                if (!toolbar || !this.container) return;
+                closeColorPanel();
+                closeSizePanel();
+                if (bgColorPanel) {
+                    closeBgColorPanel();
+                    return;
+                }
+                const initial = this.lastPickedBgColor ?? CytoscapeRenderer.DEFAULT_SELECTION_BG_COLOR;
+                bgColorPanel = this.createSelectionColorPanel(initial, this.lastPickedBgColor, '自定义背景色', (color) => {
+                    this.lastPickedBgColor = color;
+                    applyAndRefresh((text) => `<span style='background-color: ${color};'>${text}</span>`);
+                    closeBgColorPanel();
+                });
+                toolbar.appendChild(bgColorPanel);
+            }));
+            toolbar.appendChild(createToolbarButton('type', '字号', () => {
+                if (!toolbar || !this.container) return;
+                closeColorPanel();
+                closeBgColorPanel();
+                if (sizePanel) {
+                    closeSizePanel();
+                    return;
+                }
+
+                sizePanel = document.createElement('div');
+                sizePanel.className = 'zk-text-selection-size-panel';
+                sizePanel.addEventListener('pointerdown', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                });
+                sizePanel.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                });
+
+                fontSizeChoices.forEach((size) => {
+                    const sizeBtn = document.createElement('button');
+                    sizeBtn.type = 'button';
+                    sizeBtn.className = 'zk-text-selection-size-btn';
+                    sizeBtn.textContent = `${size}px`;
+                    sizeBtn.addEventListener('mousedown', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    });
+                    sizeBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        applyAndRefresh((text) => `<span style='font-size: ${size}px;'>${text}</span>`);
+                        closeSizePanel();
+                    });
+                    sizePanel!.appendChild(sizeBtn);
+                });
+
+                const customWrap = document.createElement('div');
+                customWrap.className = 'zk-text-selection-size-custom';
+                const customInput = document.createElement('input');
+                customInput.type = 'number';
+                customInput.min = '8';
+                customInput.max = '96';
+                customInput.step = '1';
+                customInput.value = '16';
+                customInput.className = 'zk-text-selection-size-input';
+                const customApply = document.createElement('button');
+                customApply.type = 'button';
+                customApply.className = 'zk-text-selection-size-apply';
+                customApply.textContent = '应用';
+                const applyCustomSize = () => {
+                    const value = Number.parseInt(customInput.value, 10);
+                    if (!Number.isFinite(value)) return;
+                    const size = Math.min(96, Math.max(8, value));
+                    applyAndRefresh((text) => `<span style='font-size: ${size}px;'>${text}</span>`);
+                    closeSizePanel();
+                };
+                customApply.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                });
+                customApply.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    applyCustomSize();
+                });
+                customInput.addEventListener('keydown', (e) => {
+                    e.stopPropagation();
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        applyCustomSize();
+                    }
+                });
+                customWrap.appendChild(customInput);
+                customWrap.appendChild(customApply);
+                sizePanel.appendChild(customWrap);
+
+                toolbar.appendChild(sizePanel);
+            }));
+            toolbar.appendChild(createToolbarButton('eraser', '清除格式', () => {
+                applyAndRefresh((text) => this.stripInlineTextFormatting(text));
+                closeColorPanel();
+                closeBgColorPanel();
+                closeSizePanel();
+            }));
+
+            this.container.appendChild(toolbar);
+            positionToolbar();
+        };
+
+        const updateToolbarVisibility = () => {
+            const activeEl = document.activeElement as Node | null;
+            if (activeEl && toolbar?.contains(activeEl)) {
+                ensureToolbar();
+                positionToolbar();
+                return;
+            }
+            const isFocused = rootEl.contains(document.activeElement);
+            const hasSelection = !!getSelectionRect();
+            if (!isFocused || !hasSelection) {
+                hideToolbar();
+                return;
+            }
+            ensureToolbar();
+            positionToolbar();
+        };
+
+        const handleSelectionChange = () => updateToolbarVisibility();
+        const handleBlur = () => {
+            setTimeout(() => {
+                const activeEl = document.activeElement as Node | null;
+                if (!rootEl.contains(document.activeElement) && !(activeEl && toolbar?.contains(activeEl))) {
+                    hideToolbar();
+                }
+            }, 20);
+        };
+
+        document.addEventListener('selectionchange', handleSelectionChange);
+        rootEl.addEventListener('mouseup', updateToolbarVisibility, true);
+        rootEl.addEventListener('keyup', updateToolbarVisibility, true);
+        rootEl.addEventListener('scroll', positionToolbar, true);
+        rootEl.addEventListener('focusout', handleBlur, true);
+        window.addEventListener('resize', positionToolbar);
+        this.cy?.on('zoom pan', positionToolbar);
+
+        const cleanup = () => {
+            document.removeEventListener('selectionchange', handleSelectionChange);
+            rootEl.removeEventListener('mouseup', updateToolbarVisibility, true);
+            rootEl.removeEventListener('keyup', updateToolbarVisibility, true);
+            rootEl.removeEventListener('scroll', positionToolbar, true);
+            rootEl.removeEventListener('focusout', handleBlur, true);
+            window.removeEventListener('resize', positionToolbar);
+            this.cy?.off('zoom pan', positionToolbar);
+            hideToolbar();
+            if (this.activeTextSelectionToolbarCleanup === cleanup) {
+                this.activeTextSelectionToolbarCleanup = null;
+            }
+        };
+
+        this.activeTextSelectionToolbarCleanup = cleanup;
+
+        return {
+            destroy: cleanup,
+            containsTarget: (target: Node | null) => !!target && !!toolbar?.contains(target)
+        };
+    }
+
     /**
      * 显示内联边标签编辑器
      */
@@ -5916,6 +6909,7 @@ case 'dagre':
         `;
 
         this.container.appendChild(input);
+        const selectionToolbar = this.attachInlineTextSelectionToolbar(input);
 
         // 自动聚焦并选中文本
         setTimeout(() => {
@@ -5930,6 +6924,7 @@ case 'dagre':
         const saveLabel = () => {
             if (isSaved) return;  // 避免重复保存
             isSaved = true;
+            selectionToolbar.destroy();
             
             const newLabel = input.value.trim();
             
@@ -5962,6 +6957,7 @@ case 'dagre':
                 e.preventDefault();
                 e.stopPropagation();
                 isSaved = true;  // 标记为已处理
+                selectionToolbar.destroy();
                 if (input.parentNode) {
                     input.remove();
                 }
@@ -6008,6 +7004,7 @@ case 'dagre':
                 mutation.removedNodes.forEach((node) => {
                     if (node === input && this.cy) {
                         this.cy.off('zoom pan', updatePosition);
+                        selectionToolbar.destroy();
                         observer.disconnect();
                     }
                 });
@@ -6136,6 +7133,7 @@ case 'dagre':
         `;
 
         this.container.appendChild(textarea);
+        const selectionToolbar = this.attachInlineTextSelectionToolbar(textarea);
 
         const measureCanvas = document.createElement('canvas');
         const measureContext = measureCanvas.getContext('2d');
@@ -6252,6 +7250,7 @@ case 'dagre':
             if (textarea.parentNode) {
                 textarea.remove();
             }
+            selectionToolbar.destroy();
             if (suggesterPopoverRef.value && suggesterPopoverRef.value.parentNode) {
                 suggesterPopoverRef.value.remove();
             }
@@ -6278,6 +7277,7 @@ case 'dagre':
             if (textarea.parentNode) {
                 textarea.remove();
             }
+            selectionToolbar.destroy();
             if (suggesterPopoverRef.value && suggesterPopoverRef.value.parentNode) {
                 suggesterPopoverRef.value.remove();
             }
@@ -6364,6 +7364,7 @@ case 'dagre':
             const target = e.target as Node | null;
             if (!target) return;
             if (textarea.contains(target)) return;
+            if (selectionToolbar.containsTarget(target)) return;
             if (suggesterPopoverRef.value && suggesterPopoverRef.value.contains(target)) return;
             saveNode();
         };
@@ -6393,6 +7394,7 @@ case 'dagre':
                 mutation.removedNodes.forEach((removedNode) => {
                     if (removedNode === textarea && this.cy) {
                         this.cy.off('zoom pan', updatePosition);
+                        selectionToolbar.destroy();
                         document.removeEventListener('mousedown', handleOutsidePointerDown, true);
                     }
                 });
@@ -6475,6 +7477,7 @@ case 'dagre':
 
         let isSaved = false;
         let mdEditor: EmbeddableMarkdownEditor | null = null;
+        let selectionToolbar: { destroy: () => void; containsTarget: (target: Node | null) => boolean } | null = null;
         const nodeWasGrabbable = typeof node.grabbable === 'function' ? !!node.grabbable() : true;
         if (typeof node.grabbable === 'function') {
             node.grabbable(false);
@@ -6513,6 +7516,8 @@ case 'dagre':
         };
 
         const clearLiveEdit = () => {
+            selectionToolbar?.destroy();
+            selectionToolbar = null;
             if (mdEditor) {
                 mdEditor.unload();
                 mdEditor = null;
@@ -6602,6 +7607,13 @@ case 'dagre':
             });
             (editorHost as any)._mdEditor = mdEditor;
             mdEditor.focus();
+            const editorDom = mdEditor.getDom();
+            if (editorDom) {
+                selectionToolbar = this.attachContentSelectionToolbar(editorHost, (formatter) => {
+                    if (!mdEditor) return false;
+                    return mdEditor.transformSelection(formatter);
+                });
+            }
             setTimeout(() => autoGrow(), 0);
         } catch (err) {
             console.warn('[ZK] Live preview unavailable, fallback to textarea', err);
@@ -6675,6 +7687,7 @@ case 'dagre':
             z-index: 2;
         `;
         overlayEl.appendChild(textarea);
+        const selectionToolbar = this.attachInlineTextSelectionToolbar(textarea);
 
         let isSaved = false;
         const suggesterPopoverRef = { value: null as HTMLElement | null };
@@ -6713,6 +7726,7 @@ case 'dagre':
         const restoreOverlay = () => {
             // 清除编辑态，并恢复原 HTML（取消路径用）
             if (textarea.parentNode) textarea.remove();
+            selectionToolbar.destroy();
             overlayEl.innerHTML = savedHtml;
             delete overlayEl.dataset.editing;
             overlayEl.style.pointerEvents = prevPointerEvents || 'none';
@@ -6746,6 +7760,7 @@ case 'dagre':
             isSaved = true;
 
             // 先清理 textarea（防止 blur 递归）
+            selectionToolbar.destroy();
             if (textarea.parentNode) textarea.remove();
             if (suggesterPopoverRef.value && suggesterPopoverRef.value.parentNode) {
                 suggesterPopoverRef.value.remove();
@@ -6837,6 +7852,7 @@ case 'dagre':
             const target = e.target as Node | null;
             if (!target) return;
             if (textarea.contains(target)) return;
+            if (selectionToolbar.containsTarget(target)) return;
             if (suggesterPopoverRef.value && suggesterPopoverRef.value.contains(target)) return;
             saveEdit();
         };
@@ -8331,7 +9347,7 @@ case 'dagre':
                 !!this.container?.querySelector('.edge-label-editor') ||
                 !!this.container?.querySelector('.zk-text-md-live-edit-host');
             const isEventFromInlineEditor = !!targetEl?.closest(
-                '.node-label-editor, .edge-label-editor, .zk-text-md-live-edit-host, .cm-editor, .cm-content, .node-link-suggester'
+                '.node-label-editor, .edge-label-editor, .zk-text-md-live-edit-host, .cm-editor, .cm-content, .node-link-suggester, .zk-text-selection-toolbar'
             );
 
             // 编辑器内按键不应触发图级快捷键（方向键切换、Tab 建节点等）
