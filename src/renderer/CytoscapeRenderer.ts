@@ -4622,7 +4622,7 @@ case 'dagre':
         const MD_SYNTAX_RE = /(\*\*|__|(^|\s)[*_][^\s*_]|`|^#{1,6}\s|^\s*[-+*]\s|^\s*\d+\.\s|^\s*>\s|\[\[|!\[|==|~~|^\s*```|^\s*---\s*$|<br)/m;
         const hasMarkdownSyntax = (s: string): boolean => MD_SYNTAX_RE.test(s);
 
-        const measureAndSizePending: Array<{ node: any; entry: { width: number; height: number } }> = [];
+        const measureAndSizePending: Array<{ node: any; entry: { el: HTMLElement; width: number; height: number } }> = [];
         const renderPromises: Promise<void>[] = [];
 
         this.cy.nodes('[?isTextOnly]').forEach((node: any) => {
@@ -4653,11 +4653,12 @@ case 'dagre':
                     overflow: hidden;
                     box-sizing: border-box;
                     padding: 10px 14px;
-                    max-width: 560px;
+                    max-width: none;
                     color: var(--text-normal);
                     font-size: 14px;
                     line-height: 1.5;
                     word-wrap: break-word;
+                    overflow-wrap: anywhere;
                     user-select: none;
                 `;
                 badgeContainer.appendChild(overlayEl);
@@ -4743,8 +4744,13 @@ case 'dagre':
                     currentEntry.el.style.width = `${bb.w / zoom}px`;
                     currentEntry.el.style.height = `${bb.h / zoom}px`;
                 } else {
-                    currentEntry.el.style.width = `${currentEntry.width}px`;
-                    currentEntry.el.style.height = `${currentEntry.height}px`;
+                    // 非编辑态也跟随节点当前尺寸，确保手动拉伸后文本实时重排，不再使用旧缓存宽高。
+                    const modelWidth = bb.w / zoom;
+                    const modelHeight = bb.h / zoom;
+                    currentEntry.width = modelWidth;
+                    currentEntry.height = modelHeight;
+                    currentEntry.el.style.width = `${modelWidth}px`;
+                    currentEntry.el.style.height = `${modelHeight}px`;
                 }
                 currentEntry.el.style.transform = `scale(${zoom})`;
             };
@@ -4752,16 +4758,40 @@ case 'dagre':
         });
 
         // 批量尺寸回写：先处理同步完成的（快路径），异步完成的在 Promise.all 后再批量
+        const measureOverlayHeightForWidth = (el: HTMLElement, width: number, fallbackHeight: number): number => {
+            if (!el || width <= 0) return fallbackHeight;
+            const prevWidth = el.style.width;
+            const prevHeight = el.style.height;
+            const prevTransform = el.style.transform;
+            try {
+                // 以模型坐标测量内容高度，避免缩放态下尺寸误差。
+                el.style.transform = 'scale(1)';
+                el.style.width = `${width}px`;
+                el.style.height = 'auto';
+                const measured = Math.ceil(Math.max(el.scrollHeight, el.getBoundingClientRect().height)) + 4;
+                return Math.max(32, Math.min(640, measured));
+            } catch {
+                return fallbackHeight;
+            } finally {
+                el.style.width = prevWidth;
+                el.style.height = prevHeight;
+                el.style.transform = prevTransform;
+            }
+        };
+
         const applySizes = (pending: typeof measureAndSizePending) => {
             if (!this.cy || pending.length === 0) return;
             this.cy.batch(() => {
                 pending.forEach(({ node, entry: e }) => {
                     if (node.removed()) return;
-                    if (!node.data('userResized')) {
-                        node.data('manualWidthModel', e.width);
-                        node.data('manualHeightModel', e.height);
-                        node.style({ width: e.width, height: e.height });
-                    }
+                    const currentWidthModel = Number(node.data('manualWidthModel') || 0);
+                    const targetWidth = currentWidthModel > 0 ? currentWidthModel : e.width;
+                    const targetHeight = measureOverlayHeightForWidth(e.el, targetWidth, e.height);
+                    e.width = targetWidth;
+                    e.height = targetHeight;
+                    node.data('manualWidthModel', targetWidth);
+                    node.data('manualHeightModel', targetHeight);
+                    node.style({ width: targetWidth, height: targetHeight });
                 });
             });
         };
