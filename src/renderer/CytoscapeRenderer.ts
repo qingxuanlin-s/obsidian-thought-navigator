@@ -1654,7 +1654,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'border-width': '2px',
                 'border-opacity': 0.72,
                 'border-color': (ele: any) => {
-                    if ((isVivid || isModern) && ele.data('branchNodeBorder') && !ele.data('isRoot')) {
+                    if (
+                        (isVivid || isModern) &&
+                        ele.data('branchNodeBorder') &&
+                        !ele.data('isRoot') &&
+                        !ele.data('isFreeNode')
+                    ) {
                         return ele.data('branchNodeBorder');
                     }
                     return colors.nodeBorder;
@@ -1702,7 +1707,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         },
         // 根节点样式：尺寸放大 2 倍，边框加粗
         {
-            selector: 'node[?isRoot]',
+            selector: 'node[?isRoot][!isFreeNode]',
             style: {
                 'background-color': '#0f2440',
                 'border-color': '#1a3558',
@@ -1754,7 +1759,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             } as any
         },
         {
-            selector: 'node[?isRoot]:selected',
+            selector: 'node[?isRoot][!isFreeNode]:selected',
             style: {
                 'background-color': '#162f52',
                 'border-color': '#2a4f7a',
@@ -1943,7 +1948,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
             style: {
                 'background-color': isLight ? '#94a3b8' : '#7b9cc4',
                 'background-opacity': isLight ? 0.05 : 0.04,
-                'border-width': 0,
+                // 与普通节点保持一致，仅保留自由节点半透明底色
+                'font-size': '20px',
+                'border-width': isModern ? '2.5px' : '2px',
+                // 保持自由节点原有半透明视觉：边框不显色
+                'border-opacity': 0,
                 'border-color': 'transparent',
                 'corner-radius': '24px',
             } as any
