@@ -529,7 +529,6 @@ export default class ZKNavigationPlugin extends Plugin {
                     editor.replaceSelection('![[' + newFile.name + ']]');
                     this.settings.mocCurrentFile = newFile.path;
                     await this.saveData(this.settings);
-                    await this.openIndexView();
                     this.app.workspace.trigger('zk-navigation:refresh-index-graph');
                 } catch (e) {
                     new Notice('新建失败: ' + e.message);
