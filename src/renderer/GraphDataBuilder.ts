@@ -43,15 +43,18 @@ export class GraphDataBuilder {
      */
     buildFamilyEdges(): this {
         const nodeMap = new Map<string, ZKNode>();
-        this.nodes.forEach(node => nodeMap.set(node.ID, node));
+        this.nodes.forEach(node => {
+            nodeMap.set(node.ID, node);
+            if (node.IDStr) nodeMap.set(node.IDStr, node);
+        });
 
         this.nodes.forEach(node => {
             // 构建父子关系边
             const parentID = this.getParentId(node);
             if (!parentID) return;
 
-            // 查找父节点（优先按 IDStr，再按 ID）
-            const parent = Array.from(nodeMap.values()).find(n => n.IDStr === parentID || n.ID === parentID);
+            // O(1) 查找父节点（支持 ID 和 IDStr）
+            const parent = nodeMap.get(parentID);
 
             if (parent) {
                 this.edges.push({
@@ -75,7 +78,10 @@ export class GraphDataBuilder {
      */
     buildMOCTreeEdges(reverseRelations: Map<string, any>, groups: any[] = []): this {
         const nodeMap = new Map<string, ZKNode>();
-        this.nodes.forEach(node => nodeMap.set(node.IDStr, node));
+        this.nodes.forEach(node => {
+            nodeMap.set(node.IDStr, node);
+            if (node.ID) nodeMap.set(node.ID, node);
+        });
         const groupIdSet = new Set<string>((groups || []).map((group: any) => String(group.id || '').trim()).filter(Boolean));
         const edgeKeySet = new Set<string>();
 
@@ -114,7 +120,7 @@ export class GraphDataBuilder {
             const parentID = this.getParentId(node);
             if (!parentID) return;
 
-            const parentNode = Array.from(nodeMap.values()).find(n => n.IDStr === parentID || n.ID === parentID);
+            const parentNode = nodeMap.get(parentID);
             if (!parentNode) return;
 
             const key = `${parentNode.ID}->${node.ID}`;
