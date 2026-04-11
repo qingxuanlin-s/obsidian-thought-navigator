@@ -3926,6 +3926,9 @@ case 'dagre':
                 pointer-events: auto;
                 cursor: pointer;
             `;
+            badgeEl.style.transformOrigin = 'right bottom';
+            (badgeEl.style as any).webkitTextSizeAdjust = 'none';
+            (badgeEl.style as any).textSizeAdjust = 'none';
             badgeContainer.appendChild(badgeEl);
 
             // 更新徽章位置的函数
@@ -3949,11 +3952,19 @@ case 'dagre':
                 // 徽章位置：节点右下角内侧
                 const x = boundingBox.x2 - 8 * zoom;
                 const y = boundingBox.y2 - 8 * zoom;
-
-                badgeEl.style.transform = `translate(${x}px, ${y}px) translate(-100%, -100%)`;
-                badgeEl.style.fontSize = `${9 * zoom}px`;
-                badgeEl.style.padding = `${3 * zoom}px ${8 * zoom}px`;
-                badgeEl.style.borderRadius = `${20 * zoom}px`;
+                if (Platform.isMobile) {
+                    // 移动端使用 transform scale，规避 WebView 文本最小字号干预导致的“ID 不缩放”
+                    const safeScale = Math.max(0.28, zoom);
+                    badgeEl.style.transform = `translate(${x}px, ${y}px) translate(-100%, -100%) scale(${safeScale})`;
+                    badgeEl.style.fontSize = '9px';
+                    badgeEl.style.padding = '3px 8px';
+                    badgeEl.style.borderRadius = '20px';
+                } else {
+                    badgeEl.style.transform = `translate(${x}px, ${y}px) translate(-100%, -100%)`;
+                    badgeEl.style.fontSize = `${9 * zoom}px`;
+                    badgeEl.style.padding = `${3 * zoom}px ${8 * zoom}px`;
+                    badgeEl.style.borderRadius = `${20 * zoom}px`;
+                }
             };
 
             badgeUpdaters.push(updateBadgePosition);

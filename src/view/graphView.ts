@@ -287,6 +287,8 @@ export class ZKGraphView extends ItemView {
 
     // 检查文件是否是 MOC 文件
     isMOCFile(file: TFile): boolean {
+        if (file.extension === 'moc') return true;
+        if (file.extension !== 'md') return false;
         const mocFolder = this.plugin.settings.mocFolderPath;
         if (!mocFolder) return false;
         return file.path.startsWith(mocFolder + '/') || file.path.startsWith(mocFolder);
@@ -645,17 +647,35 @@ export class ZKGraphView extends ItemView {
     async findNodeInMOCTrees(file: TFile): Promise<{ allNodes: ZKNode[], currentNode: ZKNode, mocFile: TFile } | null> {
         const mocFolder = this.plugin.settings.mocFolderPath;
         const headingTitle = this.plugin.settings.mocHeadingTitle;
+        const scanned = new Set<string>();
 
-        if (!mocFolder) return null;
+        // 优先使用反向索引，只解析候选 MOC
+        const candidateMocFiles: TFile[] = [];
+        if (this.plugin.mocReverseIndex?.isInitialized) {
+            const locations = this.plugin.mocReverseIndex.query(file.path);
+            for (const location of locations) {
+                const mocFile = this.app.vault.getFileByPath(location.mocFilePath);
+                if (mocFile) {
+                    candidateMocFiles.push(mocFile);
+                    scanned.add(mocFile.path);
+                }
+            }
+        }
 
-        // 获取 MOC 文件夹中的所有文件
-        const mocFiles = this.app.vault.getFiles().filter(f =>
-            f.path.startsWith(mocFolder + '/') || f.path.startsWith(mocFolder)
-        ).filter(f => f.extension === 'md');
+        // 兜底：反向索引未初始化或无结果时，做全量扫描
+        if (candidateMocFiles.length === 0) {
+            candidateMocFiles.push(...getMOCFilesInFolder(this.app, mocFolder || ''));
+        } else if (mocFolder) {
+            // 补充同目录 MOC，避免索引延迟导致漏查
+            for (const mocFile of getMOCFilesInFolder(this.app, mocFolder)) {
+                if (!scanned.has(mocFile.path)) {
+                    candidateMocFiles.push(mocFile);
+                }
+            }
+        }
 
-
-        // 遍历每个 MOC 文件，查找当前文件
-        for (const mocFile of mocFiles) {
+        // 遍历候选 MOC 文件，查找当前文件
+        for (const mocFile of candidateMocFiles) {
             const mocParseResult = await parseMOCStructure(this.app, mocFile.path, headingTitle);
 
             if (mocParseResult.nodes.length > 0) {

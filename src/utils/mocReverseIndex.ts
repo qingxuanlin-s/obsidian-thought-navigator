@@ -60,14 +60,14 @@ export class MOCReverseIndex {
      */
     private async indexMOCFile(file: TFile, parser?: MermaidParser): Promise<void> {
         try {
-            // 重试读取文件，等待 vault.create 落盘完成
+            // 直接读取；仅在失败时做指数回退重试，避免全量重建时为每个文件固定等待
             let fileContent: string | null = null;
             for (let attempt = 0; attempt < 5; attempt++) {
                 try {
-                    await new Promise(resolve => setTimeout(resolve, 150 * (attempt + 1)));
                     fileContent = await this.app.vault.read(file);
                     break;
                 } catch {
+                    await new Promise(resolve => setTimeout(resolve, 75 * (attempt + 1)));
                     if (attempt === 4) return;
                 }
             }

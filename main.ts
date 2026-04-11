@@ -222,6 +222,7 @@ export default class ZKNavigationPlugin extends Plugin {
     mocFileMonitor: MOCFileMonitor | null = null;
     // MOC 反向索引
     mocReverseIndex: MOCReverseIndex | null = null;
+    private originalWindowOnError: OnErrorEventHandler | null = null;
 
     async loadSettings() {
         this.settings = Object.assign(
@@ -269,11 +270,11 @@ export default class ZKNavigationPlugin extends Plugin {
 
                 const child = new MOCEmbedRenderChild(embedEl, mocFile, this);
                 context.addChild(child);
-                child.load();
             });
         });
 
         // Live Preview 通过 MutationObserver 处理动态插入的 embed 元素
+        const livePreviewEmbedChildren = new WeakMap<HTMLElement, MOCEmbedRenderChild>();
         const handleMocEmbed = (embedEl: HTMLElement) => {
             const src = embedEl.getAttribute('src');
             if (!src?.endsWith('.moc') || embedEl.dataset.mocHandled) return;
@@ -284,7 +285,22 @@ export default class ZKNavigationPlugin extends Plugin {
             if (!mocFile || !(mocFile instanceof TFile) || mocFile.extension !== 'moc') return;
 
             const child = new MOCEmbedRenderChild(embedEl, mocFile, this);
+            livePreviewEmbedChildren.set(embedEl, child);
             child.load();
+        };
+
+        const cleanupRemovedEmbed = (root: HTMLElement) => {
+            const embeds: HTMLElement[] = [];
+            if (root.dataset.mocHandled === '1') embeds.push(root);
+            root.querySelectorAll<HTMLElement>('[data-moc-handled="1"]').forEach((el) => embeds.push(el));
+
+            embeds.forEach((embedEl) => {
+                const child = livePreviewEmbedChildren.get(embedEl);
+                if (child) {
+                    child.unload();
+                    livePreviewEmbedChildren.delete(embedEl);
+                }
+            });
         };
 
         const mocEmbedObserver = new MutationObserver(mutations => {
@@ -293,6 +309,10 @@ export default class ZKNavigationPlugin extends Plugin {
                     if (!(node instanceof HTMLElement)) continue;
                     if (node.classList.contains('internal-embed')) handleMocEmbed(node);
                     node.querySelectorAll<HTMLElement>('.internal-embed').forEach(handleMocEmbed);
+                }
+                for (const node of Array.from(mutation.removedNodes)) {
+                    if (!(node instanceof HTMLElement)) continue;
+                    cleanupRemovedEmbed(node);
                 }
             }
         });
@@ -303,14 +323,14 @@ export default class ZKNavigationPlugin extends Plugin {
         this.applyTheme();
 
         // 添加全局错误处理来忽略ResizeObserver错误
-        const originalError = window.onerror;
+        this.originalWindowOnError = window.onerror;
         window.onerror = (message, source, lineno, colno, error) => {
             if (typeof message === 'string' && message.includes('ResizeObserver loop completed')) {
                 // 忽略ResizeObserver循环错误
                 return true;
             }
-            if (originalError) {
-                return originalError(message, source, lineno, colno, error);
+            if (this.originalWindowOnError) {
+                return this.originalWindowOnError(message, source, lineno, colno, error);
             }
             return false;
         };
@@ -401,18 +421,14 @@ export default class ZKNavigationPlugin extends Plugin {
                             .setIcon("git-branch")
                             .setSection("plugin")
                             .onClick(async () => {
-                                console.log('[zk-nav] 新建思维树 onClick 触发');
                                 try {
                                     const folder = file as TFolder;
-                                    console.log('[zk-nav] folder.path:', folder.path);
                                     const baseName = '思维树-' + moment().format('YYYYMMDDHHmmss');
                                     const filePath = folder.path ? `${folder.path}/${baseName}.moc` : `${baseName}.moc`;
-                                    console.log('[zk-nav] 目标路径:', filePath);
                                     const content = createEmptyMOCJson(
                                         this.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free'
                                     );
-                                    const newFile = await this.app.vault.create(filePath, content);
-                                    console.log('[zk-nav] 创建成功:', newFile?.path);
+                                    await this.app.vault.create(filePath, content);
                                 } catch (e) {
                                     console.error('[zk-navigation] 新建思维树失败', e);
                                     new Notice(`新建失败: ${e.message}`);
@@ -747,7 +763,6 @@ export default class ZKNavigationPlugin extends Plugin {
     async updateMOCLinksAfterRename(file: TFile, oldPath: string): Promise<void> {
         try {
             const mocFolder = this.settings.mocFolderPath;
-            if (!mocFolder) return;
 
             // 获取旧文件名和新文件名（不含扩展名）
             const oldBasename = oldPath.split('/').pop()?.replace('.md', '') || '';
@@ -757,8 +772,7 @@ export default class ZKNavigationPlugin extends Plugin {
             if (oldBasename === newBasename) return;
 
             // 获取所有 MOC 文件
-            const mocFiles = this.app.vault.getMarkdownFiles()
-                .filter(f => f.path.startsWith(mocFolder + '/'));
+            const mocFiles = getMOCFilesInFolder(this.app, mocFolder || '');
 
             // 遍历所有 MOC 文件，更新链接
             for (const mocFile of mocFiles) {
@@ -804,6 +818,8 @@ export default class ZKNavigationPlugin extends Plugin {
             this.mocFileMonitor.cleanup();
             this.mocFileMonitor = null;
         }
+        window.onerror = this.originalWindowOnError;
+        this.originalWindowOnError = null;
         
         this.saveData(this.settings);
     }

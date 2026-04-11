@@ -1,13 +1,16 @@
 import ZKNavigationPlugin from "main";
-import { App, ExtraButtonComponent, PluginSettingTab, setIcon, Setting } from "obsidian";
+import { App, PluginSettingTab, Setting } from "obsidian";
 import { FolderSuggest } from "../suggester/FolderSuggester";
-import { TagSuggest } from "src/suggester/TagSuggester";
 import { t } from "../lang/helper";
 import { FileSuggest } from "src/suggester/FileSuggester";
 
 export class ZKNavigationSettngTab extends PluginSettingTab {
 
     plugin: ZKNavigationPlugin
+    private hiddenMOCOptionsUnlocked = false;
+    private generalTitleClickCount = 0;
+    private lastGeneralTitleClickTime = 0;
+    private readonly unlockIntervalMs = 450;
 
     constructor(app: App, plugin: ZKNavigationPlugin) {
         super(app, plugin);
@@ -22,7 +25,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
         containerEl.createEl("h1", {text: t("Zettelkasten Navigation")});
 
         // ========== 通用功能 (General) ==========
-        containerEl.createEl("h3", { text: t("General") });
+        const generalTitle = containerEl.createEl("h3", { text: t("General") });
         const generalSection = containerEl.createDiv("zk-setting-card");
 
         // 主题模式设置
@@ -63,35 +66,6 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                     this.plugin.settings.edgeStyle = value as 'straight' | 'bezier' | 'polyline';
                     this.plugin.RefreshIndexViewFlag = true;
                 })
-            );
-
-        generalSection.createEl("hr");
-
-        // MOC 设置
-        new Setting(generalSection)
-            .setName(t("MOC Folder Location"))
-            .setDesc(t("Folder containing MOC index notes"))
-            .addSearch((cb) => {
-                new FolderSuggest(this.app, cb.inputEl);
-                cb.setPlaceholder(t("Example: folder1/folder2"))
-                    .setValue(this.plugin.settings.mocFolderPath)
-                    .onChange((value) => {
-                        this.plugin.settings.mocFolderPath = value;
-                        this.plugin.settings.mocCurrentFile = ''; // 重置当前文件
-                        this.plugin.RefreshIndexViewFlag = true;
-                    });
-            });
-
-        new Setting(generalSection)
-            .setName(t("Heading Title"))
-            .setDesc(t("The heading title to parse (e.g. '思维树' for '# 思维树')"))
-            .addText((cb) =>
-                cb.setValue(this.plugin.settings.mocHeadingTitle)
-                    .setPlaceholder("思维树")
-                    .onChange((value) => {
-                        this.plugin.settings.mocHeadingTitle = value;
-                        this.plugin.RefreshIndexViewFlag = true;
-                    })
             );
 
         // ========== 分支视图 (Index Graph) ==========
@@ -189,6 +163,20 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                     this.plugin.RefreshIndexViewFlag = true;
                 })
         )
+
+        // ========== 隐藏选项（通过通用功能标题快速点击 3 次解锁） ==========
+        const hiddenSectionTitle = containerEl.createEl("h3", { text: "隐藏选项" });
+        hiddenSectionTitle.addClass("zk-hidden");
+        const hiddenSection = containerEl.createDiv("zk-setting-card");
+        hiddenSection.addClass("zk-hidden");
+
+        this.renderHiddenMOCSettings(hiddenSection);
+        if (this.hiddenMOCOptionsUnlocked) {
+            hiddenSectionTitle.removeClass("zk-hidden");
+            hiddenSection.removeClass("zk-hidden");
+        }
+
+        this.bindGeneralTitleUnlock(generalTitle, hiddenSectionTitle, hiddenSection);
     }
 
     hideDiv(div:HTMLDivElement){
@@ -387,6 +375,59 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                     this.plugin.settings.smartConnection = value;
                     this.plugin.RefreshIndexViewFlag = true;
                 })
+            );
+    }
+
+    private bindGeneralTitleUnlock(
+        generalTitleEl: HTMLHeadingElement,
+        hiddenTitleEl: HTMLHeadingElement,
+        hiddenSectionEl: HTMLDivElement
+    ) {
+        generalTitleEl.addEventListener("click", () => {
+            const now = Date.now();
+            if (now - this.lastGeneralTitleClickTime > this.unlockIntervalMs) {
+                this.generalTitleClickCount = 0;
+            }
+
+            this.generalTitleClickCount += 1;
+            this.lastGeneralTitleClickTime = now;
+
+            if (this.generalTitleClickCount >= 3) {
+                this.hiddenMOCOptionsUnlocked = true;
+                hiddenTitleEl.removeClass("zk-hidden");
+                hiddenSectionEl.removeClass("zk-hidden");
+                this.generalTitleClickCount = 0;
+            }
+        });
+    }
+
+    private renderHiddenMOCSettings(container: HTMLDivElement) {
+        container.empty();
+
+        new Setting(container)
+            .setName(t("MOC Folder Location"))
+            .setDesc(t("Folder containing MOC index notes"))
+            .addSearch((cb) => {
+                new FolderSuggest(this.app, cb.inputEl);
+                cb.setPlaceholder(t("Example: folder1/folder2"))
+                    .setValue(this.plugin.settings.mocFolderPath)
+                    .onChange((value) => {
+                        this.plugin.settings.mocFolderPath = value;
+                        this.plugin.settings.mocCurrentFile = '';
+                        this.plugin.RefreshIndexViewFlag = true;
+                    });
+            });
+
+        new Setting(container)
+            .setName(t("Heading Title"))
+            .setDesc(t("The heading title to parse (e.g. '思维树' for '# 思维树')"))
+            .addText((cb) =>
+                cb.setValue(this.plugin.settings.mocHeadingTitle)
+                    .setPlaceholder("思维树")
+                    .onChange((value) => {
+                        this.plugin.settings.mocHeadingTitle = value;
+                        this.plugin.RefreshIndexViewFlag = true;
+                    })
             );
     }
 

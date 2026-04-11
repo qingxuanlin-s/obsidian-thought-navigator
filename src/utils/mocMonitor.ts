@@ -18,7 +18,7 @@ export class MOCFileMonitor {
     private readonly MAX_CACHE_SIZE = 100;
     
     // 防抖延迟（毫秒）
-    private readonly DEBOUNCE_DELAY = 10;
+    private readonly DEBOUNCE_DELAY = 120;
 
     constructor(plugin: ZKNavigationPlugin) {
         this.plugin = plugin;

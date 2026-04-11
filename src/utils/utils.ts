@@ -283,7 +283,8 @@ export async function ID_formatting(id: string, arr: string[], siblingsOrder: st
 // translating different ID fields(filename/attribute/prefix of filename) into standard ZKNode array
 export async function mainNoteInit(plugin: ZKNavigationPlugin) {
 
-    let mainNoteFiles: TFile[] = this.app.vault.getFiles();
+    const app = plugin.app;
+    let mainNoteFiles: TFile[] = app.vault.getFiles();
 
     if (plugin.settings.MainNoteExt == 'md') {
         mainNoteFiles = mainNoteFiles.filter(file => file.extension == "md");
@@ -326,7 +327,7 @@ export async function mainNoteInit(plugin: ZKNavigationPlugin) {
         }
 
         mdMainNote = mainNoteFiles.filter(
-            file => file.extension == 'md' && getfileTags(file).includes(plugin.settings.TagOfMainNotes)
+            file => file.extension == 'md' && getfileTags(app, file).includes(plugin.settings.TagOfMainNotes)
         )
         mainNoteFiles = mdMainNote.concat(otherMainNote);
     }
@@ -356,7 +357,7 @@ export async function mainNoteInit(plugin: ZKNavigationPlugin) {
             gitNodePos: 0,
         }
 
-        let nodeCache = this.app.metadataCache.getFileCache(note);
+        let nodeCache = app.metadataCache.getFileCache(note);
 
         switch (plugin.settings.IDFieldOption) {
             case "1":
@@ -640,9 +641,9 @@ export async function addSvgPanZoom(
     }
 }
 
-function getfileTags(file: TFile) {
+function getfileTags(app: App, file: TFile) {
     let fileTags: string[] = [];
-    let fmTags = this.app.metadataCache.getFileCache(file)?.frontmatter?.tags;
+    let fmTags = app.metadataCache.getFileCache(file)?.frontmatter?.tags;
     if (fmTags) {
         if (Array.isArray(fmTags)) {
 
@@ -656,7 +657,7 @@ function getfileTags(file: TFile) {
         }
     }
 
-    let tags = this.app.metadataCache.getFileCache(file)?.tags
+    let tags = app.metadataCache.getFileCache(file)?.tags
 
     if (tags && Array.isArray(tags)) {
 
