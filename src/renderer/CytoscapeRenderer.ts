@@ -99,6 +99,17 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private collapseHandleCleanup: (() => void) | null = null;
     private collapsedNodeIds: Set<string> = new Set();
 
+    // 文本节点 Markdown 渲染缓存：跨 addNodeBadges 重建复用已渲染的 overlay DOM + Component
+    // key = `${sourcePath}||${rawSource}`
+    private textMdOverlayCache: Map<string, {
+        el: HTMLElement;
+        component: Component;
+        width: number;
+        height: number;
+        isPlainText: boolean;
+        usedInCycle: boolean;
+    }> = new Map();
+
     // 统一 overlay rAF 调度器
     private overlayUpdaters: Set<() => void> = new Set();
     private overlayImmediateUpdaters: Set<() => void> = new Set();
@@ -651,6 +662,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
             this.collapseHandleCleanup();
             this.collapseHandleCleanup = null;
         }
+        // 清理文本节点 MD overlay 缓存（unload 每个 Component）
+        this.textMdOverlayCache.forEach(entry => {
+            try { entry.component.unload(); } catch { /* ignore */ }
+            if (entry.el.parentNode) entry.el.remove();
+        });
+        this.textMdOverlayCache.clear();
         if (this.cy) {
             this.cy.destroy();
             this.cy = null;
@@ -1693,6 +1710,13 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     const widthModel = manualWidthModel > 0 ? manualWidthModel : Number(ele.width() || 280);
                     return Math.max(120, widthModel - 48);
                 }
+            } as any
+        },
+        // 具有 Markdown 渲染 overlay 的文本节点：隐藏 Canvas 文字（由 HTML 层渲染）
+        {
+            selector: 'node[?isTextOnly][?hasMarkdownOverlay]',
+            style: {
+                'text-opacity': 0
             } as any
         },
         // 自由文本节点（无父子关系）：纯文本样式（透明边框与背景）
@@ -3313,6 +3337,15 @@ case 'dagre':
         // 清理旧的统一 overlay 调度器（badge 重建时所有子系统也会重建）
         this.cleanupOverlayScheduler();
 
+        // 先从旧 badgeContainer 中摘下缓存的 MD overlay（保持 DOM 节点存活，便于下面复用）
+        this.textMdOverlayCache.forEach(entry => {
+            entry.usedInCycle = false;
+            // 防御性清理：清除可能遗留的编辑标记和隐藏样式，避免下次复用时继续不显示
+            delete entry.el.dataset.editing;
+            entry.el.style.display = 'block';
+            if (entry.el.parentNode) entry.el.parentNode.removeChild(entry.el);
+        });
+
         // 移除旧的徽章容器
         const oldBadgeContainer = this.container.querySelector('.zk-node-badges');
         if (oldBadgeContainer) {
@@ -4191,6 +4224,9 @@ case 'dagre':
             });
         }
 
+        // 文本节点 Markdown 渲染 overlay
+        this.buildTextMarkdownOverlays(badgeContainer, badgeUpdaters);
+
         // 注册到统一 overlay 调度器
         const badgePositionUpdater = () => badgeUpdaters.forEach(updater => updater());
         this.overlayUpdaters.add(badgePositionUpdater);
@@ -4215,6 +4251,190 @@ case 'dagre':
 
         // 所有 overlay 子系统注册完毕后，绑定统一事件监听
         this.bindOverlayListeners();
+    }
+
+    /**
+     * 为所有 isTextOnly 节点构建 Markdown 渲染 overlay
+     * 性能优化：
+     *   1) 内容 hash 缓存 —— 跨 addNodeBadges 重建复用 overlay DOM + Component
+     *   2) 快路径检测 —— 无 MD 语法时跳过 MarkdownRenderer，直接 textContent
+     *   3) 批量尺寸回写 —— Promise.all 完成后 cy.batch 一次性刷新节点宽高
+     */
+    private buildTextMarkdownOverlays(badgeContainer: HTMLElement, badgeUpdaters: Array<() => void>): void {
+        if (!this.cy) return;
+        const app = (window as any).app;
+        const sourcePath = this.currentData?.metadata?.currentFile || '';
+
+        // 快路径检测：无 Markdown 语法则走纯文本渲染
+        const MD_SYNTAX_RE = /(\*\*|__|(^|\s)[*_][^\s*_]|`|^#{1,6}\s|^\s*[-+*]\s|^\s*\d+\.\s|^\s*>\s|\[\[|!\[|==|~~|^\s*```|^\s*---\s*$|<br)/m;
+        const hasMarkdownSyntax = (s: string): boolean => MD_SYNTAX_RE.test(s);
+
+        const measureAndSizePending: Array<{ node: any; entry: { width: number; height: number } }> = [];
+        const renderPromises: Promise<void>[] = [];
+
+        this.cy.nodes('[?isTextOnly]').forEach((node: any) => {
+            const data = node.data();
+            if (data.isPlaceholder) return;
+            const originalNode: ZKNode | undefined = data.originalNode;
+            if (!originalNode) return;
+
+            const rawSource = (originalNode.title || '').replace(/\\n/g, '\n');
+            const cacheKey = `${sourcePath}||${rawSource}`;
+
+            let entry = this.textMdOverlayCache.get(cacheKey);
+
+            if (entry) {
+                // 缓存命中：直接复用
+                entry.usedInCycle = true;
+                badgeContainer.appendChild(entry.el);
+            } else {
+                // 缓存未命中：创建新 overlay
+                const overlayEl = document.createElement('div');
+                overlayEl.className = 'zk-text-md-overlay markdown-rendered';
+                overlayEl.style.cssText = `
+                    position: absolute;
+                    left: 0;
+                    top: 0;
+                    transform-origin: 0 0;
+                    pointer-events: none;
+                    overflow: hidden;
+                    box-sizing: border-box;
+                    padding: 10px 14px;
+                    max-width: 560px;
+                    color: var(--text-normal);
+                    font-size: 14px;
+                    line-height: 1.5;
+                    word-wrap: break-word;
+                    user-select: none;
+                `;
+                badgeContainer.appendChild(overlayEl);
+
+                const component = new Component();
+                component.load();
+
+                const isPlain = !hasMarkdownSyntax(rawSource);
+                entry = {
+                    el: overlayEl,
+                    component,
+                    width: 0,
+                    height: 0,
+                    isPlainText: isPlain,
+                    usedInCycle: true,
+                };
+                this.textMdOverlayCache.set(cacheKey, entry);
+
+                if (isPlain) {
+                    // 快路径：纯文本，直接 textContent + 保留换行
+                    overlayEl.textContent = '';
+                    const pre = document.createElement('div');
+                    pre.style.whiteSpace = 'pre-wrap';
+                    pre.textContent = rawSource;
+                    overlayEl.appendChild(pre);
+                    // 同步测量
+                    const rect = overlayEl.getBoundingClientRect();
+                    entry.width = Math.max(80, Math.min(rect.width + 4, 640));
+                    entry.height = Math.max(32, Math.min(rect.height + 4, 640));
+                    measureAndSizePending.push({ node, entry });
+                } else if (app && MarkdownRenderer) {
+                    // 慢路径：Obsidian MarkdownRenderer 渲染
+                    const p = (async () => {
+                        try {
+                            overlayEl.empty?.();
+                            overlayEl.textContent = '';
+                            await MarkdownRenderer.render(app, rawSource, overlayEl, sourcePath, component);
+                        } catch (e) {
+                            overlayEl.textContent = rawSource;
+                        }
+                        const rect = overlayEl.getBoundingClientRect();
+                        entry!.width = Math.max(80, Math.min(rect.width + 4, 640));
+                        entry!.height = Math.max(32, Math.min(rect.height + 4, 640));
+                        measureAndSizePending.push({ node, entry: entry! });
+                    })();
+                    renderPromises.push(p);
+                } else {
+                    // 无 app 兜底
+                    overlayEl.textContent = rawSource;
+                    const rect = overlayEl.getBoundingClientRect();
+                    entry.width = Math.max(80, Math.min(rect.width + 4, 640));
+                    entry.height = Math.max(32, Math.min(rect.height + 4, 640));
+                    measureAndSizePending.push({ node, entry });
+                }
+            }
+
+            // 标记节点已有 overlay（供样式层判断是否隐藏 Canvas 文字）
+            node.data('hasMarkdownOverlay', true);
+            // 挂载 overlay 引用到节点，便于编辑期查找
+            (node.scratch as any) && node.scratch('_zkMdOverlay', entry.el);
+
+            // 位置同步 updater
+            const currentEntry = entry;
+            const updateOverlayPos = () => {
+                if (!this.cy || node.removed()) {
+                    currentEntry.el.style.display = 'none';
+                    return;
+                }
+                // 编辑期隐藏
+                if (currentEntry.el.dataset.editing === '1') {
+                    currentEntry.el.style.display = 'none';
+                    return;
+                }
+                const bb = node.renderedBoundingBox();
+                if (!bb || bb.w <= 0) {
+                    currentEntry.el.style.display = 'none';
+                    return;
+                }
+                const zoom = this.cy.zoom();
+                currentEntry.el.style.display = 'block';
+                currentEntry.el.style.left = `${bb.x1}px`;
+                currentEntry.el.style.top = `${bb.y1}px`;
+                currentEntry.el.style.width = `${currentEntry.width}px`;
+                currentEntry.el.style.height = `${currentEntry.height}px`;
+                currentEntry.el.style.transform = `scale(${zoom})`;
+            };
+            badgeUpdaters.push(updateOverlayPos);
+        });
+
+        // 批量尺寸回写：先处理同步完成的（快路径），异步完成的在 Promise.all 后再批量
+        const applySizes = (pending: typeof measureAndSizePending) => {
+            if (!this.cy || pending.length === 0) return;
+            this.cy.batch(() => {
+                pending.forEach(({ node, entry: e }) => {
+                    if (node.removed()) return;
+                    if (!node.data('userResized')) {
+                        node.data('manualWidthModel', e.width);
+                        node.data('manualHeightModel', e.height);
+                        node.style({ width: e.width, height: e.height });
+                    }
+                });
+            });
+        };
+
+        // 同步快路径批量写入
+        const syncPending = measureAndSizePending.splice(0);
+        applySizes(syncPending);
+
+        // 异步 MD 渲染完成后批量写入（不阻塞后续 addNodeBadges 流程）
+        if (renderPromises.length > 0) {
+            Promise.all(renderPromises).then(() => {
+                applySizes(measureAndSizePending.splice(0));
+            });
+        }
+
+        // 清理本次未使用的缓存项（mark-sweep）
+        const toEvict: string[] = [];
+        this.textMdOverlayCache.forEach((e, key) => {
+            if (!e.usedInCycle) {
+                toEvict.push(key);
+            }
+        });
+        toEvict.forEach(key => {
+            const e = this.textMdOverlayCache.get(key);
+            if (e) {
+                try { e.component.unload(); } catch { /* ignore */ }
+                if (e.el.parentNode) e.el.remove();
+                this.textMdOverlayCache.delete(key);
+            }
+        });
     }
 
     private addCollapseToggleHandle(): void {
@@ -5808,6 +6028,19 @@ case 'dagre':
             existingEditor.remove();
         }
 
+        // 文本节点编辑期隐藏 MD overlay（以便 textarea 显示原始源码）
+        const mdOverlayForNode: HTMLElement | null = (() => {
+            if (!originalNode?.isTextOnly) return null;
+            const rawSource = (originalNode.title || '').replace(/\\n/g, '\n');
+            const sourcePath = this.currentData?.metadata?.currentFile || '';
+            const cacheKey = `${sourcePath}||${rawSource}`;
+            return this.textMdOverlayCache.get(cacheKey)?.el || null;
+        })();
+        if (mdOverlayForNode) {
+            mdOverlayForNode.dataset.editing = '1';
+            mdOverlayForNode.style.display = 'none';
+        }
+
         const renderedPosition = node.renderedPosition();
         const bb = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
         const initialBoxWidth = Math.max(bb.w, 80);
@@ -5851,10 +6084,14 @@ case 'dagre':
             const fontPx = parsePx(getRenderedNodeFontSize(), 20);
             return `${Math.round(fontPx * 1.35)}px`;
         };
-        const nodeFontSize = getRenderedNodeFontSize();
+        // 文本节点使用与 MD overlay 一致的字体和左对齐
+        const isTextOnlyEdit = !!originalNode?.isTextOnly;
+        const nodeFontSize = isTextOnlyEdit ? '14px' : getRenderedNodeFontSize();
         const nodeFontFamily = getRenderedNodeFontFamily();
-        const nodeFontWeight = getRenderedNodeFontWeight();
-        const nodeLineHeight = getEditorLineHeight();
+        const nodeFontWeight = isTextOnlyEdit ? '400' : getRenderedNodeFontWeight();
+        const nodeLineHeight = isTextOnlyEdit ? '1.5' : getEditorLineHeight();
+        const textAlign = isTextOnlyEdit ? 'left' : 'center';
+        const editorPadding = isTextOnlyEdit ? '10px 14px' : '10px 12px';
 
         // 锁定节点尺寸，防止清空标签后节点缩小
         const lockedWidth = node.width();
@@ -5871,7 +6108,7 @@ case 'dagre':
             width: ${initialBoxWidth}px;
             height: ${initialBoxHeight}px;
             transform: translate(0, 0);
-            padding: 10px 12px;
+            padding: ${editorPadding};
             border: 2px solid rgba(91, 143, 217, 0.95);
             border-radius: 16px;
             background: rgba(15, 23, 42, 0.96);
@@ -5884,7 +6121,7 @@ case 'dagre':
             overflow: hidden;
             outline: none;
             box-sizing: border-box;
-            text-align: center;
+            text-align: ${textAlign};
             line-height: ${nodeLineHeight};
             cursor: text;
             box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
@@ -5976,6 +6213,12 @@ case 'dagre':
             node.removeCss('width');
             node.removeCss('height');
             node.data('label', originalDisplayLabel);
+            // 恢复 MD overlay 显示：若内容未变化 indexView 会提前返回不重建图，
+            // 需要在这里兜底清除编辑标记，否则 overlay 会一直被隐藏
+            if (mdOverlayForNode) {
+                delete mdOverlayForNode.dataset.editing;
+                mdOverlayForNode.style.display = 'block';
+            }
 
             // 获取节点的实际位置（使用 position() 而不是 boundingBox）
             const nodePosition = node.position();
@@ -6023,6 +6266,11 @@ case 'dagre':
             node.removeCss('width');
             node.removeCss('height');
             node.data('label', isPlaceholder ? '' : originalDisplayLabel);
+            // 恢复 MD overlay 显示（取消路径不会触发图重建）
+            if (mdOverlayForNode) {
+                delete mdOverlayForNode.dataset.editing;
+                mdOverlayForNode.style.display = 'block';
+            }
             if (isPlaceholder) {
                 this.container?.dispatchEvent(new CustomEvent('placeholder-node-cancel', {
                     detail: {
@@ -6133,10 +6381,10 @@ case 'dagre':
             const currentBoxHeight = Math.max(Number(node.renderedHeight?.() || 0), 44);
             textarea.style.left = `${currentRenderedPosition.x - currentBoxWidth / 2}px`;
             textarea.style.top = `${currentRenderedPosition.y - currentBoxHeight / 2}px`;
-            textarea.style.fontSize = getRenderedNodeFontSize();
+            textarea.style.fontSize = isTextOnlyEdit ? '14px' : getRenderedNodeFontSize();
             textarea.style.fontFamily = getRenderedNodeFontFamily();
-            textarea.style.fontWeight = getRenderedNodeFontWeight();
-            textarea.style.lineHeight = getEditorLineHeight();
+            textarea.style.fontWeight = isTextOnlyEdit ? '400' : getRenderedNodeFontWeight();
+            textarea.style.lineHeight = isTextOnlyEdit ? '1.5' : getEditorLineHeight();
             resizeEditorToContent();
         };
 
