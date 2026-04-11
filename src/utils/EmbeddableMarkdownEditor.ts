@@ -77,6 +77,7 @@ export class EmbeddableMarkdownEditor extends Component {
 	private editView: any = null;
 	private cm: any = null;
 	private destroyed = false;
+	private lastSelection: { from: number; to: number } | null = null;
 	private readonly opts: EmbeddableMarkdownEditorOptions;
 
 	constructor(opts: EmbeddableMarkdownEditorOptions) {
@@ -172,9 +173,18 @@ export class EmbeddableMarkdownEditor extends Component {
 		const cm = this.cm;
 		if (!cm?.dom) return;
 
+		const captureSelection = () => {
+			const sel = cm?.state?.selection?.main;
+			if (!sel || sel.empty) return;
+			this.lastSelection = { from: sel.from, to: sel.to };
+		};
+
 		cm.dom.addEventListener('input', () => {
+			captureSelection();
 			this.opts.onChange?.(this.getValue());
 		});
+		cm.dom.addEventListener('mouseup', captureSelection, true);
+		cm.dom.addEventListener('keyup', captureSelection, true);
 
 		cm.dom.addEventListener('keydown', (e: KeyboardEvent) => {
 			// 阻止冒泡到图级快捷键（方向键/Tab/Enter 等）
@@ -262,6 +272,32 @@ export class EmbeddableMarkdownEditor extends Component {
 		const scrollDom = this.cm?.scrollDOM as HTMLElement | undefined;
 		if (!scrollDom) return 0;
 		return Math.max(0, scrollDom.scrollHeight - scrollDom.clientHeight);
+	}
+
+	getDom(): HTMLElement | null {
+		return (this.cm?.dom as HTMLElement | undefined) ?? null;
+	}
+
+	transformSelection(formatter: (selectedText: string) => string): boolean {
+		const cm = this.cm;
+		if (!cm?.dispatch) return false;
+		const selection = cm?.state?.selection?.main;
+		const from = (selection && !selection.empty) ? selection.from : this.lastSelection?.from;
+		const to = (selection && !selection.empty) ? selection.to : this.lastSelection?.to;
+		if (!Number.isFinite(from) || !Number.isFinite(to) || (to as number) <= (from as number)) return false;
+		const fromNum = from as number;
+		const toNum = to as number;
+		const selectedText = cm.state.doc.sliceString(fromNum, toNum);
+		const replacedText = formatter(selectedText);
+		const head = fromNum + replacedText.length;
+
+		cm.dispatch({
+			changes: { from: fromNum, to: toNum, insert: replacedText },
+			selection: { anchor: fromNum, head },
+		});
+		this.lastSelection = { from: fromNum, to: head };
+		this.opts.onChange?.(this.getValue());
+		return true;
 	}
 
 	onunload(): void {
