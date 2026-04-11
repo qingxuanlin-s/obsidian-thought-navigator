@@ -2187,3 +2187,25 @@ align-items: center;
 .zk-text-md-overlay a.internal-link {
   pointer-events: auto;
 }
+
+/* 编辑期容器 */
+.zk-text-md-overlay[data-editing="1"] {
+  pointer-events: auto;
+  user-select: text;
+  overflow: visible;
+}
+
+.zk-text-md-live-edit-host .cm-editor {
+  height: 100%;
+  background: transparent;
+}
+
+.zk-text-md-live-edit-host .cm-scroller {
+  font-family: var(--font-text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.zk-text-md-live-edit-host .cm-content {
+  padding: 8px 12px;
+}

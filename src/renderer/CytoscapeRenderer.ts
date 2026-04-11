@@ -5,6 +5,7 @@ import { IGraphRenderer, GraphData, RenderOptions, GraphChanges, ViewState, Edge
 import { ZKNode } from 'src/view/indexView';
 import { Component, MarkdownRenderer, Notice, Platform, setIcon } from 'obsidian';
 import { t } from 'src/lang/helper';
+import { EmbeddableMarkdownEditor } from 'src/utils/EmbeddableMarkdownEditor';
 
 // 处理 CommonJS 和 ESM 模块的兼容性
 const getCytoscape = (): any => {
@@ -664,6 +665,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
         }
         // 清理文本节点 MD overlay 缓存（unload 每个 Component）
         this.textMdOverlayCache.forEach(entry => {
+            const liveHost = entry.el.querySelector('.zk-text-md-live-edit-host') as any;
+            if (liveHost?._mdEditor) {
+                try { liveHost._mdEditor.unload(); } catch { /* ignore */ }
+            }
             try { entry.component.unload(); } catch { /* ignore */ }
             if (entry.el.parentNode) entry.el.remove();
         });
@@ -6423,10 +6428,196 @@ case 'dagre':
     }
 
     /**
-     * 文本节点原地编辑：直接在已渲染的 MD overlay 内插入一个透明 textarea 填满整个 overlay，
-     * 编辑框的位置/缩放由 overlay 的 transform 自动处理，字体/对齐从 overlay 继承。
+     * 文本节点原地编辑（Live Preview 版）。
+     * 若内部 API 反射失败，自动降级到 legacy textarea 实现。
      */
     private startInPlaceTextEdit(
+        node: any,
+        originalNode: ZKNode,
+        entry: {
+            el: HTMLElement;
+            component: Component;
+            width: number;
+            height: number;
+            isPlainText: boolean;
+            usedInCycle: boolean;
+        }
+    ): void {
+        if (!this.cy || !this.container) return;
+
+        this.ensureNodeVisibleInViewport(node);
+
+        const overlayEl = entry.el;
+        const savedHtml = overlayEl.innerHTML;
+        const savedWidth = entry.width;
+        const savedHeight = entry.height;
+        const rawSource = (originalNode.title || '').replace(/\\n/g, '\n');
+        const sourcePath = this.currentData?.metadata?.currentFile || '';
+
+        overlayEl.textContent = '';
+        overlayEl.dataset.editing = '1';
+        const prevPointerEvents = overlayEl.style.pointerEvents;
+        overlayEl.style.pointerEvents = 'auto';
+
+        const editorHost = document.createElement('div');
+        editorHost.className = 'zk-text-md-live-edit-host';
+        editorHost.style.cssText = `
+            position: absolute;
+            inset: 0;
+            border: 2px solid rgba(91, 143, 217, 0.95);
+            border-radius: 12px;
+            overflow: auto;
+            background: var(--background-primary);
+            pointer-events: auto;
+            z-index: 2;
+        `;
+        overlayEl.appendChild(editorHost);
+
+        let isSaved = false;
+        let mdEditor: EmbeddableMarkdownEditor | null = null;
+        const nodeWasGrabbable = typeof node.grabbable === 'function' ? !!node.grabbable() : true;
+        if (typeof node.grabbable === 'function') {
+            node.grabbable(false);
+        }
+
+        const stopPointerPropagation = (evt: Event) => {
+            evt.stopPropagation();
+        };
+        const pointerEventsToStop = [
+            'mousedown', 'mousemove', 'mouseup',
+            'pointerdown', 'pointermove', 'pointerup',
+            'touchstart', 'touchmove', 'touchend',
+            'dragstart', 'click', 'dblclick'
+        ];
+        pointerEventsToStop.forEach((name) => {
+            editorHost.addEventListener(name, stopPointerPropagation, true);
+        });
+
+        const restoreNodeInteractivity = () => {
+            if (this.cy && !node.removed() && typeof node.grabbable === 'function') {
+                node.grabbable(nodeWasGrabbable);
+            }
+        };
+
+        const autoGrow = () => {
+            if (!this.cy || node.removed()) return;
+            const overflow = Math.max(mdEditor?.getVerticalOverflow() ?? 0, 0);
+            if (overflow < 1) return;
+            const newH = Math.max(savedHeight, Math.min(entry.height + overflow + 2, 720));
+            if (newH <= entry.height) return;
+            entry.height = newH;
+            this.cy.batch(() => {
+                node.data('manualHeightModel', newH);
+                node.style({ height: newH });
+            });
+        };
+
+        const clearLiveEdit = () => {
+            if (mdEditor) {
+                mdEditor.unload();
+                mdEditor = null;
+            }
+            (editorHost as any)._mdEditor = null;
+            pointerEventsToStop.forEach((name) => {
+                editorHost.removeEventListener(name, stopPointerPropagation, true);
+            });
+        };
+
+        const restoreOverlay = () => {
+            clearLiveEdit();
+            restoreNodeInteractivity();
+            overlayEl.innerHTML = savedHtml;
+            delete overlayEl.dataset.editing;
+            overlayEl.style.pointerEvents = prevPointerEvents || 'none';
+        };
+
+        const cancelEdit = () => {
+            if (isSaved) return;
+            isSaved = true;
+            restoreOverlay();
+            if (this.cy && !node.removed()) {
+                entry.width = savedWidth;
+                entry.height = savedHeight;
+                this.cy.batch(() => {
+                    node.data('manualWidthModel', savedWidth);
+                    node.data('manualHeightModel', savedHeight);
+                    node.style({ width: savedWidth, height: savedHeight });
+                });
+            }
+            this.container?.focus();
+        };
+
+        const saveEdit = () => {
+            if (isSaved) return;
+            const newValue = (mdEditor?.getValue() ?? '').trim();
+            if (!newValue) {
+                cancelEdit();
+                return;
+            }
+            isSaved = true;
+            clearLiveEdit();
+            restoreNodeInteractivity();
+            overlayEl.style.pointerEvents = prevPointerEvents || 'none';
+
+            const nodePosition = node.position();
+            this.container?.dispatchEvent(new CustomEvent('node-inline-edit-save', {
+                detail: {
+                    node: originalNode,
+                    content: newValue,
+                    position: { x: nodePosition.x, y: nodePosition.y }
+                }
+            }));
+
+            setTimeout(() => {
+                if (overlayEl.isConnected && overlayEl.dataset.editing === '1') {
+                    overlayEl.innerHTML = savedHtml;
+                    delete overlayEl.dataset.editing;
+                    overlayEl.style.pointerEvents = prevPointerEvents || 'none';
+                    restoreNodeInteractivity();
+                }
+            }, 50);
+
+            this.container?.focus();
+        };
+
+        try {
+            mdEditor = new EmbeddableMarkdownEditor({
+                app: (window as any).app,
+                containerEl: editorHost,
+                initialValue: rawSource,
+                sourcePath,
+                onChange: () => autoGrow(),
+                onEnter: (_value, evt) => {
+                    if (evt.shiftKey) return false;
+                    if (evt.metaKey || evt.ctrlKey) {
+                        saveEdit();
+                        return true;
+                    }
+                    return false;
+                },
+                onEscape: () => cancelEdit(),
+                onBlur: () => {
+                    if (!isSaved) saveEdit();
+                },
+            });
+            (editorHost as any)._mdEditor = mdEditor;
+            mdEditor.focus();
+            setTimeout(() => autoGrow(), 0);
+        } catch (err) {
+            console.warn('[ZK] Live preview unavailable, fallback to textarea', err);
+            clearLiveEdit();
+            editorHost.remove();
+            delete overlayEl.dataset.editing;
+            overlayEl.style.pointerEvents = prevPointerEvents || 'none';
+            restoreNodeInteractivity();
+            this.startInPlaceTextEditLegacy(node, originalNode, entry);
+        }
+    }
+
+    /**
+     * 文本节点原地编辑（legacy textarea fallback）。
+     */
+    private startInPlaceTextEditLegacy(
         node: any,
         originalNode: ZKNode,
         entry: {
@@ -8135,6 +8326,19 @@ case 'dagre':
 
         // 监听键盘按下事件
         const handleKeyDown = (event: KeyboardEvent) => {
+            const targetEl = event.target as HTMLElement | null;
+            const isInlineEditing = !!this.container?.querySelector('.node-label-editor') ||
+                !!this.container?.querySelector('.edge-label-editor') ||
+                !!this.container?.querySelector('.zk-text-md-live-edit-host');
+            const isEventFromInlineEditor = !!targetEl?.closest(
+                '.node-label-editor, .edge-label-editor, .zk-text-md-live-edit-host, .cm-editor, .cm-content, .node-link-suggester'
+            );
+
+            // 编辑器内按键不应触发图级快捷键（方向键切换、Tab 建节点等）
+            if (isInlineEditing && isEventFromInlineEditor) {
+                return;
+            }
+
             // Cmd+F：搜索节点
             if (event.key === 'f' && event.metaKey && !event.ctrlKey && !event.repeat) {
                 event.preventDefault();
@@ -8360,7 +8564,7 @@ case 'dagre':
             // Enter 键：创建兄弟节点（仅在没有打开内联编辑器时）
             if (event.key === 'Enter' && !event.repeat) {
                 // 检查是否有打开的内联编辑器
-                if (!this.container?.querySelector('.node-label-editor')) {
+                if (!isInlineEditing) {
                     event.preventDefault();
                     this.handleCreateSiblingNode();
                     return;
@@ -8377,14 +8581,11 @@ case 'dagre':
             // 方向键：切换选中节点
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key) && !event.repeat) {
                 // 检查是否有打开的内联编辑器
-                const hasEditor = this.container?.querySelector('.node-label-editor') ||
-                    this.container?.querySelector('.edge-label-editor');
-
-                if (!hasEditor) {
+                if (!isInlineEditing) {
                     event.preventDefault();
                     this.handleArrowKeyNavigation(event.key);
                     return;
-                } 
+                }
             }
         };
 
