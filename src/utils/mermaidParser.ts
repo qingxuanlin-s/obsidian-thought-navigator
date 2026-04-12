@@ -564,17 +564,28 @@ export class MermaidParser {
     ): Promise<MOCTreeNode[]> {
         const treeNodes: MOCTreeNode[] = [];
         const nodeMap = new Map<string, MOCTreeNode>();
+        const resolvedFileCache = new Map<string, TFile | null>();
+
+        const resolveWikiLink = (wikiLink: string): TFile | null => {
+            if (resolvedFileCache.has(wikiLink)) {
+                return resolvedFileCache.get(wikiLink) || null;
+            }
+
+            let file = this.app.metadataCache.getFirstLinkpathDest(wikiLink, basePath) || null;
+            // .moc 文件不被 metadata cache 索引，直接从 vault 查找
+            if (!file && wikiLink.endsWith('.moc')) {
+                file = (this.app.vault.getAbstractFileByPath(wikiLink) ||
+                    this.app.vault.getAbstractFileByPath(`${basePath}/${wikiLink}`)) as TFile | null;
+            }
+
+            resolvedFileCache.set(wikiLink, file);
+            return file;
+        };
 
         // 创建所有节点
         for (const [id, nodeDef] of nodesMap) {
             // 使用 basePath 解析 wikilink，这样跨领域 MOC 文件中的链接才能正确解析
-            let file = this.app.metadataCache.getFirstLinkpathDest(nodeDef.wikiLink, basePath) || null;
-            // .moc 文件不被 metadata cache 索引，直接从 vault 查找
-            if (!file && nodeDef.wikiLink.endsWith('.moc')) {
-                const wikiLink = nodeDef.wikiLink;
-                file = (this.app.vault.getAbstractFileByPath(wikiLink) ||
-                    this.app.vault.getAbstractFileByPath(`${basePath}/${wikiLink}`)) as any || null;
-            }
+            const file = resolveWikiLink(nodeDef.wikiLink);
 
 
             const idParts = id.split('.');
