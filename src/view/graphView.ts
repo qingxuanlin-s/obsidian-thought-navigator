@@ -802,6 +802,7 @@ export class ZKGraphView extends ItemView {
                 const availableMOCs: Array<{file: TFile, hasCurrentFile: boolean, allNodes: ZKNode[], currentNode: ZKNode | null}> = [];
                 const currentFileName = currentFile.name;
                 const currentBasename = currentFile.basename;
+                const resolvedLinkCache = new Map<string, TFile | null>();
 
                 const isNodeMatchCurrentFile = (node: ZKNode, mocPath: string): boolean => {
                     if (node.file?.path === currentFile.path) return true;
@@ -812,7 +813,14 @@ export class ZKGraphView extends ItemView {
                     if (wikiLink.replace(/\.md$/i, '') === currentBasename) return true;
 
                     const basePath = mocPath.includes('/') ? mocPath.substring(0, mocPath.lastIndexOf('/')) : '';
-                    const resolved = this.app.metadataCache.getFirstLinkpathDest(wikiLink, basePath);
+                    const cacheKey = `${basePath}::${wikiLink}`;
+                    let resolved: TFile | null;
+                    if (resolvedLinkCache.has(cacheKey)) {
+                        resolved = resolvedLinkCache.get(cacheKey) || null;
+                    } else {
+                        resolved = this.app.metadataCache.getFirstLinkpathDest(wikiLink, basePath);
+                        resolvedLinkCache.set(cacheKey, resolved);
+                    }
                     return !!resolved && resolved.path === currentFile.path;
                 };
                 

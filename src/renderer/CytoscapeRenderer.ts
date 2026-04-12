@@ -58,6 +58,14 @@ function compareIds(id1: string, id2: string): number {
     return 0;
 }
 
+type NodeBranchStyle = { background: string; border: string; shadow: string };
+
+type ElementConversionContext = {
+    nodeStyleMap: Map<string, NodeBranchStyle>;
+    nodeById: Map<string, ZKNode>;
+    parentLinkedNodeIds: Set<string>;
+};
+
 // 注册布局扩展
 const registerExtensions = () => {
     if (extensionsRegistered) return;
@@ -1098,16 +1106,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 转换数据为 Cytoscape 元素（包含分组）
      */
     private convertToElementsWithGroups(data: GraphData): cytoscape.ElementDefinition[] {
-        // 先加载边弧度信息到 Map（必须在 convertEdgesToElements 之前）
-        this.edgeControlPoints.clear();
-        const edgeCurvatures = data.metadata.edgeCurvatures || {};
-        Object.entries(edgeCurvatures).forEach(([key, value]) => {
-            this.edgeControlPoints.set(key, value);
-        });
+        const parentLinkedNodeIds = this.loadEdgeControlPointsAndParentLinks(data);
+        const context = this.buildElementConversionContext(data, parentLinkedNodeIds);
         
         // 然后转换节点和边
-        const nodes = this.convertNodesToElements(data.nodes);
-        const edges = this.convertEdgesToElements(data.edges);
+        const nodes = this.convertNodesToElements(data.nodes, context);
+        const edges = this.convertEdgesToElements(data.edges, context);
         
         // 获取分组信息
         const groups = (data.metadata as any)?.groups || [];
@@ -1145,15 +1149,17 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 转换数据为 Cytoscape 元素
      */
     private convertToElements(data: GraphData): cytoscape.ElementDefinition[] {
-        const nodes = this.convertNodesToElements(data.nodes);
-        const edges = this.convertEdgesToElements(data.edges);
+        const parentLinkedNodeIds = this.loadEdgeControlPointsAndParentLinks(data);
+        const context = this.buildElementConversionContext(data, parentLinkedNodeIds);
+        const nodes = this.convertNodesToElements(data.nodes, context);
+        const edges = this.convertEdgesToElements(data.edges, context);
         return [...nodes, ...edges];
     }
 
     /**
      * 转换节点为 Cytoscape 元素
      */
-    private convertNodesToElements(nodes: ZKNode[]): any[] {
+    private convertNodesToElements(nodes: ZKNode[], context?: ElementConversionContext): any[] {
         // 获取当前文件路径（如果有）
         const currentFilePath = this.currentData?.metadata.currentFile || '';
 
@@ -1162,13 +1168,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
         const nodeRemarks = this.currentData?.metadata.nodeRemarks || {};
         const nodeAnchors = this.currentData?.metadata.nodeAnchors || {};
         const embedNodeSizes = ((this.currentData?.metadata as any)?.embedNodeSizes || {}) as Record<string, { width: number; height: number }>;
-        const vividStyleMap = this.buildVividNodeStyleMap(nodes);
-        const parentLinkedNodeIds = new Set<string>();
-        (this.currentData?.edges || []).forEach((edge) => {
-            if (edge.type !== 'parent') return;
-            parentLinkedNodeIds.add(edge.source);
-            parentLinkedNodeIds.add(edge.target);
-        });
+        const resolvedContext = context || this.buildElementConversionContext(this.currentData);
+        const vividStyleMap = resolvedContext.nodeStyleMap;
+        const parentLinkedNodeIds = resolvedContext.parentLinkedNodeIds;
 
         const elements = nodes.map(node => {
             const vividStyle = vividStyleMap.get(node.IDStr);
@@ -1231,17 +1233,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
     /**
      * 转换边为 Cytoscape 元素
      */
-    private convertEdgesToElements(edges: Edge[]): any[] {
-        const edgeColorMap = this.buildVividEdgeColorMap();
-        const allNodes = this.currentData?.nodes || [];
-        // 同一张 Map 里同时用 n.ID 和 n.IDStr 建索引；
-        // getDepthFromNearestRoot 仅按 IDStr 路径前缀回溯，额外的 ID 键不会造成冲突
-        const nodeById = new Map<string, ZKNode>();
-        allNodes.forEach((n) => {
-            nodeById.set(n.ID, n);
-            nodeById.set(n.IDStr, n);
-        });
-        const nodeStyleMap = this.buildVividNodeStyleMap(allNodes);
+    private convertEdgesToElements(edges: Edge[], context?: ElementConversionContext): any[] {
+        const resolvedContext = context || this.buildElementConversionContext(this.currentData);
+        const nodeById = resolvedContext.nodeById;
+        const nodeStyleMap = resolvedContext.nodeStyleMap;
 
         const elements = edges.map(edge => {
             const sourceNode = nodeById.get(edge.source);
@@ -1256,7 +1251,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 targetNode.IDStr.includes('.') &&
                 targetNode.IDStr.substring(0, targetNode.IDStr.lastIndexOf('.')) === sourceNode.IDStr;
 
-            let branchEdgeColor = edgeColorMap.get(edge.source) || null;
+            let branchEdgeColor = nodeStyleMap.get(edge.source)?.border || null;
             if (isRootToFirstLevel && targetNode) {
                 branchEdgeColor = nodeStyleMap.get(targetNode.IDStr)?.border || branchEdgeColor;
             }
@@ -1336,8 +1331,54 @@ export class CytoscapeRenderer implements IGraphRenderer {
         return Math.max(2, Math.round(width * 10) / 10);
     }
 
-    private buildVividNodeStyleMap(nodes: ZKNode[]): Map<string, { background: string; border: string; shadow: string }> {
-        const styleMap = new Map<string, { background: string; border: string; shadow: string }>();
+    private loadEdgeControlPointsAndParentLinks(data: GraphData): Set<string> {
+        this.edgeControlPoints.clear();
+
+        const parentLinkedNodeIds = new Set<string>();
+        const edgeCurvatures = data.metadata.edgeCurvatures || {};
+        data.edges.forEach((edge) => {
+            if (edge.type === 'parent') {
+                parentLinkedNodeIds.add(edge.source);
+                parentLinkedNodeIds.add(edge.target);
+            }
+
+            const key = `${edge.source}-${edge.target}`;
+            const curvature = edgeCurvatures[key];
+            if (curvature) {
+                this.edgeControlPoints.set(key, curvature);
+            }
+        });
+
+        return parentLinkedNodeIds;
+    }
+
+    private buildElementConversionContext(data: GraphData | null, parentLinkedNodeIds?: Set<string>): ElementConversionContext {
+        const allNodes = data?.nodes || [];
+        const resolvedParentLinkedNodeIds = parentLinkedNodeIds || new Set<string>();
+        const nodeById = new Map<string, ZKNode>();
+
+        if (!parentLinkedNodeIds) {
+            (data?.edges || []).forEach((edge) => {
+                if (edge.type !== 'parent') return;
+                resolvedParentLinkedNodeIds.add(edge.source);
+                resolvedParentLinkedNodeIds.add(edge.target);
+            });
+        }
+
+        allNodes.forEach((node) => {
+            nodeById.set(node.ID, node);
+            nodeById.set(node.IDStr, node);
+        });
+
+        return {
+            nodeStyleMap: this.buildVividNodeStyleMap(allNodes),
+            nodeById,
+            parentLinkedNodeIds: resolvedParentLinkedNodeIds
+        };
+    }
+
+    private buildVividNodeStyleMap(nodes: ZKNode[]): Map<string, NodeBranchStyle> {
+        const styleMap = new Map<string, NodeBranchStyle>();
         if (!this.isVividThemeStyle() && !this.isModernThemeStyle()) return styleMap;
 
         const branchIds = Array.from(
@@ -1350,7 +1391,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         ).sort(compareIds);
 
         const isLight = this.currentOptions?.themeMode === 'light';
-        const branchColorById = new Map<string, { background: string; border: string; shadow: string }>();
+        const branchColorById = new Map<string, NodeBranchStyle>();
         const styleColorMap = (this.currentData?.metadata as any)?.nodeStyleColors || {};
         const palette = this.getBranchStylePalette();
         const isVivid = this.isVividThemeStyle();
@@ -1395,20 +1436,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
         return styleMap;
     }
-
-    private buildVividEdgeColorMap(): Map<string, string> {
-        const colorMap = new Map<string, string>();
-        if (!this.isVividThemeStyle() && !this.isModernThemeStyle()) return colorMap;
-        if (!this.currentData?.nodes) return colorMap;
-
-        const nodeStyleMap = this.buildVividNodeStyleMap(this.currentData.nodes);
-        this.currentData.nodes.forEach((node) => {
-            const style = nodeStyleMap.get(node.IDStr);
-            if (style) colorMap.set(node.IDStr, style.border);
-        });
-        return colorMap;
-    }
-
     private getBranchStylePalette(): Array<{ background: string; accent: string }> {
         // 深色珠宝调：background = 深底色，accent = 点缀色
         return [

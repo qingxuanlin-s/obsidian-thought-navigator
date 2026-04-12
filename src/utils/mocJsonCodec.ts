@@ -32,15 +32,20 @@ interface MOCJsonSchema {
 
 // ---- 内部转换工具 ----
 
-function resolveJsonNode(app: App, data: JsonNodeData, basePath: string): MOCTreeNode {
+function resolveJsonNode(app: App, data: JsonNodeData, basePath: string, resolvedFileCache: Map<string, any>): MOCTreeNode {
     let file: any = null;
     if (!data.isTextOnly && data.wikiLink) {
-        file = app.metadataCache.getFirstLinkpathDest(data.wikiLink, basePath) ?? null;
-        // metadataCache 解析失败时，回退到 vault 路径查找（兼容图片/excalidraw/.moc）
-        if (!file) {
-            file = app.vault.getAbstractFileByPath(data.wikiLink)
-                || app.vault.getAbstractFileByPath(basePath ? `${basePath}/${data.wikiLink}` : data.wikiLink)
-                || null;
+        if (resolvedFileCache.has(data.wikiLink)) {
+            file = resolvedFileCache.get(data.wikiLink) ?? null;
+        } else {
+            file = app.metadataCache.getFirstLinkpathDest(data.wikiLink, basePath) ?? null;
+            // metadataCache 解析失败时，回退到 vault 路径查找（兼容图片/excalidraw/.moc）
+            if (!file) {
+                file = app.vault.getAbstractFileByPath(data.wikiLink)
+                    || app.vault.getAbstractFileByPath(basePath ? `${basePath}/${data.wikiLink}` : data.wikiLink)
+                    || null;
+            }
+            resolvedFileCache.set(data.wikiLink, file);
         }
     }
 
@@ -49,7 +54,7 @@ function resolveJsonNode(app: App, data: JsonNodeData, basePath: string): MOCTre
         nodeID: data.nodeID,
         displayText: data.displayText,
         depth: data.depth,
-        children: (data.children || []).map(c => resolveJsonNode(app, c, basePath)),
+        children: (data.children || []).map(c => resolveJsonNode(app, c, basePath, resolvedFileCache)),
         file,
         relationText: data.relationText || '',
         ...(data.isTextOnly ? { isTextOnly: true } : {}),
@@ -108,7 +113,8 @@ export function parseMOCJson(content: string, filePath: string, app: App): MOCPa
         };
     }
 
-    const nodes = (json.nodes || []).map(n => resolveJsonNode(app, n, basePath));
+    const resolvedFileCache = new Map<string, any>();
+    const nodes = (json.nodes || []).map(n => resolveJsonNode(app, n, basePath, resolvedFileCache));
 
     const reverseRelations = new Map<string, ReverseRelation>();
     for (const rel of (json.reverseRelations || [])) {

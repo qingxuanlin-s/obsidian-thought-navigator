@@ -74,6 +74,15 @@ export class MOCReverseIndex {
             if (fileContent === null) return;
             const content = fileContent;
             const basePath = file.path.includes('/') ? file.path.substring(0, file.path.lastIndexOf('/')) : '';
+            const resolvedFileCache = new Map<string, TFile | null>();
+            const resolveWikiLink = (wikiLink: string): TFile | null => {
+                if (resolvedFileCache.has(wikiLink)) {
+                    return resolvedFileCache.get(wikiLink) || null;
+                }
+                const linkedFile = this.app.metadataCache.getFirstLinkpathDest(wikiLink, basePath);
+                resolvedFileCache.set(wikiLink, linkedFile);
+                return linkedFile;
+            };
 
             if (file.extension === 'moc') {
                 // JSON 格式：遍历节点树提取 wikilink
@@ -83,7 +92,7 @@ export class MOCReverseIndex {
                 const walk = (nodes: any[]) => {
                     for (const n of nodes) {
                         if (!n.isTextOnly && n.wikiLink) {
-                            const linkedFile = this.app.metadataCache.getFirstLinkpathDest(n.wikiLink, basePath);
+                            const linkedFile = resolveWikiLink(n.wikiLink);
                             if (linkedFile) {
                                 this.addToIndex(linkedFile.path, file, n.nodeID);
                             }
@@ -103,7 +112,7 @@ export class MOCReverseIndex {
                 while ((match = nodeRegex.exec(mermaidBlock)) !== null) {
                     const nodeId = match[1];
                     const wikiLink = match[2];
-                    const linkedFile = this.app.metadataCache.getFirstLinkpathDest(wikiLink, basePath);
+                    const linkedFile = resolveWikiLink(wikiLink);
                     if (linkedFile) {
                         this.addToIndex(linkedFile.path, file, nodeId);
                     }
