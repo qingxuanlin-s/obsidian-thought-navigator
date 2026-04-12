@@ -4723,11 +4723,17 @@ case 'dagre':
                 // 缓存未命中：创建新 overlay
                 const overlayEl = document.createElement('div');
                 overlayEl.className = 'zk-text-md-overlay markdown-rendered';
+                // 短文本（< 50 字符且无换行）使用 flex 居中
+                const useFlexCenter = rawSource.length < 50 && !rawSource.includes('\n');
+                if (useFlexCenter) {
+                    overlayEl.dataset.flexCenter = '1';
+                }
                 overlayEl.style.cssText = `
                     position: absolute;
                     left: 0;
                     top: 0;
-                    display: inline-block;
+                    display: ${useFlexCenter ? 'flex' : 'inline-block'};
+                    ${useFlexCenter ? 'justify-content: center; align-items: center; text-align: center;' : ''}
                     transform-origin: 0 0;
                     pointer-events: none;
                     overflow: hidden;
@@ -4803,7 +4809,7 @@ case 'dagre':
                 // 原地编辑：textarea 内嵌在 overlay 里，所以编辑期保持可见，
                 // 但跟随节点的实际渲染尺寸（autoGrow 后 node 会变高）
                 const isEditing = currentEntry.el.dataset.editing === '1';
-                currentEntry.el.style.display = 'block';
+                currentEntry.el.style.display = currentEntry.el.dataset.flexCenter === '1' ? 'flex' : 'block';
                 currentEntry.el.style.left = `${bb.x1}px`;
                 currentEntry.el.style.top = `${bb.y1}px`;
                 if (isEditing) {
