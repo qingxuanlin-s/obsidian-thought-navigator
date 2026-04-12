@@ -2466,6 +2466,19 @@ align-items: center;
   overflow: visible;
 }
 
+.zk-text-md-overlay::-webkit-scrollbar {
+  width: 6px;
+}
+
+.zk-text-md-overlay::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.zk-text-md-overlay::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.5);
+  border-radius: 999px;
+}
+
 .zk-text-md-live-edit-host .cm-editor {
   height: 100%;
   background: transparent;

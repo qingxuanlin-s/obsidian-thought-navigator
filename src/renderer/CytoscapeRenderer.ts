@@ -4460,16 +4460,35 @@ case 'dagre':
                 let resizing = false;
                 let startX = 0;
                 let startY = 0;
-                let startW = 0;
-                let startH = 0;
+                let startWModel = 0;
+                let startHModel = 0;
+
+                const getTextNodeMinModelSize = (): { width: number; height: number } => {
+                    const label = String(node.data('label') || '');
+                    const measured = this.measureNodeLabel(label, {
+                        baseWidth: 90,
+                        minHeight: 42,
+                        maxWidth: 280,
+                        charWidth: 11,
+                        lineHeight: 18,
+                        paddingX: 40,
+                        paddingY: 20
+                    });
+                    const compensated = this.compensateFreeLikeNodeFrameSize(label, measured, {
+                        isFreeNode: !!node.data('isFreeNode'),
+                        isStandaloneText: !!node.data('isStandaloneText'),
+                        maxWidth: 280,
+                        charWidth: 11
+                    });
+                    return compensated;
+                };
 
                 const onMove = (e: MouseEvent) => {
                     if (!resizing || !this.cy) return;
                     const zoom = this.cy.zoom();
-                    const newWidth = Math.max(140, startW + (e.clientX - startX));
-                    const newHeight = Math.max(56, startH + (e.clientY - startY));
-                    const widthModel = newWidth / zoom;
-                    const heightModel = newHeight / zoom;
+                    const minSize = getTextNodeMinModelSize();
+                    const widthModel = Math.max(minSize.width, startWModel + (e.clientX - startX) / zoom);
+                    const heightModel = Math.max(minSize.height, startHModel + (e.clientY - startY) / zoom);
                     node.style({ width: widthModel, height: heightModel });
                     node.data('manualWidthModel', widthModel);
                     node.data('manualHeightModel', heightModel);
@@ -4499,8 +4518,8 @@ case 'dagre':
                     resizing = true;
                     startX = e.clientX;
                     startY = e.clientY;
-                    startW = node.width() * this.cy.zoom();
-                    startH = node.height() * this.cy.zoom();
+                    startWModel = Number(node.width() || 0);
+                    startHModel = Number(node.height() || 0);
                     document.addEventListener('mousemove', onMove);
                     document.addEventListener('mouseup', onUp);
                 });
@@ -4800,6 +4819,11 @@ case 'dagre':
                     currentEntry.el.style.width = `${modelWidth}px`;
                     currentEntry.el.style.height = `${modelHeight}px`;
                 }
+                const isSelected = node.selected();
+                const overflowY = (currentEntry.el.scrollHeight - currentEntry.el.clientHeight) > 1;
+                currentEntry.el.style.overflowX = 'hidden';
+                currentEntry.el.style.overflowY = (isSelected && overflowY) ? 'auto' : 'hidden';
+                currentEntry.el.style.pointerEvents = (isSelected && overflowY) ? 'auto' : 'none';
                 currentEntry.el.style.transform = `scale(${zoom})`;
             };
             badgeUpdaters.push(updateOverlayPos);
