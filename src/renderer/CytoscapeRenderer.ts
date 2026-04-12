@@ -2611,6 +2611,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             const theme = this.getPreviewCardTheme(data);
             const resolvedCardBorder = 'none';
             const resolvedCardBackground = isExcalidrawFile ? 'transparent' : theme.cardBackground;
+            const resolvedCardShadow = isExcalidrawFile && !!data.isFreeNode ? 'none' : theme.cardShadow;
 
             const card = document.createElement('div');
             card.className = 'zk-embed-preview-card';
@@ -2622,7 +2623,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 background: ${resolvedCardBackground};
                 border: ${resolvedCardBorder};
                 border-radius: 8px;
-                box-shadow: ${theme.cardShadow};
+                box-shadow: ${resolvedCardShadow};
                 color: var(--text-normal);
                 overflow: hidden;
                 pointer-events: auto;
