@@ -1491,6 +1491,44 @@ export class CytoscapeRenderer implements IGraphRenderer {
         return { width, height };
     }
 
+    private compensateFreeLikeNodeFrameSize(
+        label: string,
+        measured: { width: number; height: number },
+        options?: {
+            isFreeNode?: boolean;
+            isStandaloneText?: boolean;
+            maxWidth?: number;
+            charWidth?: number;
+        }
+    ): { width: number; height: number } {
+        const isFreeLikeNode = !!(options?.isFreeNode || options?.isStandaloneText);
+        if (!isFreeLikeNode) return measured;
+
+        const maxWidth = options?.maxWidth ?? 280;
+        const charWidth = options?.charWidth ?? 11;
+        const lineCount = this.estimateWrappedLines(label, { maxWidth, charWidth }).length;
+        const cornerRadius = 24;
+
+        // 先补齐最小宽度，避免短文本节点初始过窄导致整体显得过小
+        const minVisualWidth = lineCount <= 1 ? 136 : 152;
+        const width = Math.max(measured.width, minVisualWidth);
+
+        // 按圆角半径推导最小可视高度，避免 24px 圆角在短文本上退化为胶囊感
+        const minVisualHeight = cornerRadius * 2 + (lineCount <= 1 ? 24 : 32);
+        let height = Math.max(measured.height, minVisualHeight);
+
+        // 根据文本行数和宽度做宽高比补偿：短文本节点更偏矩形，长内容保持宽松比例
+        const maxRatio = width <= 180
+            ? (lineCount <= 1 ? 1.72 : 1.95)
+            : (lineCount <= 1 ? 1.88 : 2.1);
+        height = Math.max(height, width / maxRatio);
+
+        return {
+            width: Math.round(width),
+            height: Math.round(height)
+        };
+    }
+
     private estimateWrappedLines(label: string, options?: {
         maxWidth?: number;
         charWidth?: number;
@@ -1988,13 +2026,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 // 使用函数动态计算宽度和高度
                 'width': (ele: any) => {
                     const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
-                    const enforceMinFrame = !!ele.data('isFreeNode');
-                    const minFrameWidth = enforceMinFrame ? 160 : 0;
                     if (manualWidthModel > 0 && ele.data('isTextOnly')) {
-                        return Math.max(manualWidthModel, minFrameWidth);
+                        return manualWidthModel;
                     }
                     const label = ele.data('label') || '';
-                    const measuredWidth = this.measureNodeLabel(label, {
+                    const measured = this.measureNodeLabel(label, {
                         baseWidth: 90,
                         minHeight: 42,
                         maxWidth: 280,
@@ -2002,18 +2038,22 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         lineHeight: 18,
                         paddingX: 40,
                         paddingY: 20
-                    }).width;
-                    return Math.max(measuredWidth, minFrameWidth);
+                    });
+                    const compensated = this.compensateFreeLikeNodeFrameSize(label, measured, {
+                        isFreeNode: !!ele.data('isFreeNode'),
+                        isStandaloneText: !!ele.data('isStandaloneText'),
+                        maxWidth: 280,
+                        charWidth: 11
+                    });
+                    return compensated.width;
                 },
                 'height': (ele: any) => {
                     const manualHeightModel = Number(ele.data('manualHeightModel') || 0);
-                    const enforceMinFrame = !!ele.data('isFreeNode');
-                    const minFrameHeight = enforceMinFrame ? 88 : 0;
                     if (manualHeightModel > 0 && ele.data('isTextOnly')) {
-                        return Math.max(manualHeightModel, minFrameHeight);
+                        return manualHeightModel;
                     }
                     const label = ele.data('label') || '';
-                    const measuredHeight = this.measureNodeLabel(label, {
+                    const measured = this.measureNodeLabel(label, {
                         baseWidth: 90,
                         minHeight: 42,
                         maxWidth: 280,
@@ -2021,8 +2061,14 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         lineHeight: 18,
                         paddingX: 40,
                         paddingY: 20
-                    }).height;
-                    return Math.max(measuredHeight, minFrameHeight);
+                    });
+                    const compensated = this.compensateFreeLikeNodeFrameSize(label, measured, {
+                        isFreeNode: !!ele.data('isFreeNode'),
+                        isStandaloneText: !!ele.data('isStandaloneText'),
+                        maxWidth: 280,
+                        charWidth: 11
+                    });
+                    return compensated.height;
                 },
                 'padding': '20px',
                 'shape': 'round-rectangle',
@@ -2106,10 +2152,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 },
                 'width': (ele: any) => {
                     const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
-                    const enforceMinFrame = !!ele.data('isFreeNode');
-                    const minFrameWidth = enforceMinFrame ? 160 : 0;
                     if (manualWidthModel > 0 && ele.data('isTextOnly')) {
-                        return Math.max(manualWidthModel, minFrameWidth);
+                        return manualWidthModel;
                     }
                     const label = ele.data('label') || '';
                     const normalSize = this.measureNodeLabel(label, {
@@ -2121,14 +2165,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         paddingX: 32,
                         paddingY: 16
                     });
-                    return Math.max(normalSize.width * 2, minFrameWidth);
+                    return normalSize.width * 2;
                 },
                 'height': (ele: any) => {
                     const manualHeightModel = Number(ele.data('manualHeightModel') || 0);
-                    const enforceMinFrame = !!ele.data('isFreeNode');
-                    const minFrameHeight = enforceMinFrame ? 88 : 0;
                     if (manualHeightModel > 0 && ele.data('isTextOnly')) {
-                        return Math.max(manualHeightModel, minFrameHeight);
+                        return manualHeightModel;
                     }
                     const label = ele.data('label') || '';
                     const normalSize = this.measureNodeLabel(label, {
@@ -2140,7 +2182,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         paddingX: 32,
                         paddingY: 16
                     });
-                    return Math.max(normalSize.height * 2, minFrameHeight);
+                    return normalSize.height * 2;
                 },
                 'border-width': '4px'
             } as any
