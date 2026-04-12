@@ -1988,11 +1988,13 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 // 使用函数动态计算宽度和高度
                 'width': (ele: any) => {
                     const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
+                    const enforceMinFrame = !!ele.data('isFreeNode');
+                    const minFrameWidth = enforceMinFrame ? 160 : 0;
                     if (manualWidthModel > 0 && ele.data('isTextOnly')) {
-                        return manualWidthModel;
+                        return Math.max(manualWidthModel, minFrameWidth);
                     }
                     const label = ele.data('label') || '';
-                    return this.measureNodeLabel(label, {
+                    const measuredWidth = this.measureNodeLabel(label, {
                         baseWidth: 90,
                         minHeight: 42,
                         maxWidth: 280,
@@ -2001,14 +2003,17 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         paddingX: 40,
                         paddingY: 20
                     }).width;
+                    return Math.max(measuredWidth, minFrameWidth);
                 },
                 'height': (ele: any) => {
                     const manualHeightModel = Number(ele.data('manualHeightModel') || 0);
+                    const enforceMinFrame = !!ele.data('isFreeNode');
+                    const minFrameHeight = enforceMinFrame ? 88 : 0;
                     if (manualHeightModel > 0 && ele.data('isTextOnly')) {
-                        return manualHeightModel;
+                        return Math.max(manualHeightModel, minFrameHeight);
                     }
                     const label = ele.data('label') || '';
-                    return this.measureNodeLabel(label, {
+                    const measuredHeight = this.measureNodeLabel(label, {
                         baseWidth: 90,
                         minHeight: 42,
                         maxWidth: 280,
@@ -2017,6 +2022,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         paddingX: 40,
                         paddingY: 20
                     }).height;
+                    return Math.max(measuredHeight, minFrameHeight);
                 },
                 'padding': '20px',
                 'shape': 'round-rectangle',
@@ -2100,8 +2106,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 },
                 'width': (ele: any) => {
                     const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
+                    const enforceMinFrame = !!ele.data('isFreeNode');
+                    const minFrameWidth = enforceMinFrame ? 160 : 0;
                     if (manualWidthModel > 0 && ele.data('isTextOnly')) {
-                        return manualWidthModel;
+                        return Math.max(manualWidthModel, minFrameWidth);
                     }
                     const label = ele.data('label') || '';
                     const normalSize = this.measureNodeLabel(label, {
@@ -2113,12 +2121,14 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         paddingX: 32,
                         paddingY: 16
                     });
-                    return normalSize.width * 2;
+                    return Math.max(normalSize.width * 2, minFrameWidth);
                 },
                 'height': (ele: any) => {
                     const manualHeightModel = Number(ele.data('manualHeightModel') || 0);
+                    const enforceMinFrame = !!ele.data('isFreeNode');
+                    const minFrameHeight = enforceMinFrame ? 88 : 0;
                     if (manualHeightModel > 0 && ele.data('isTextOnly')) {
-                        return manualHeightModel;
+                        return Math.max(manualHeightModel, minFrameHeight);
                     }
                     const label = ele.data('label') || '';
                     const normalSize = this.measureNodeLabel(label, {
@@ -2130,7 +2140,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         paddingX: 32,
                         paddingY: 16
                     });
-                    return normalSize.height * 2;
+                    return Math.max(normalSize.height * 2, minFrameHeight);
                 },
                 'border-width': '4px'
             } as any
@@ -4618,10 +4628,6 @@ case 'dagre':
         const app = (window as any).app;
         const sourcePath = this.currentData?.metadata?.currentFile || '';
 
-        // 快路径检测：无 Markdown 语法则走纯文本渲染
-        const MD_SYNTAX_RE = /(\*\*|__|(^|\s)[*_][^\s*_]|`|^#{1,6}\s|^\s*[-+*]\s|^\s*\d+\.\s|^\s*>\s|\[\[|!\[|==|~~|^\s*```|^\s*---\s*$|<br)/m;
-        const hasMarkdownSyntax = (s: string): boolean => MD_SYNTAX_RE.test(s);
-
         const measureAndSizePending: Array<{ node: any; entry: { el: HTMLElement; width: number; height: number } }> = [];
         const renderPromises: Promise<void>[] = [];
 
@@ -4631,8 +4637,20 @@ case 'dagre':
             const originalNode: ZKNode | undefined = data.originalNode;
             if (!originalNode) return;
 
-            const rawSource = (originalNode.title || '').replace(/\\n/g, '\n');
-            const cacheKey = `${sourcePath}||${rawSource}`;
+            const rawSource = String(
+                originalNode.title
+                || originalNode.displayText
+                || data.label
+                || ''
+            ).replace(/\\n/g, '\n');
+            const nodeCacheId = String(
+                data.originalNodeId
+                || originalNode.IDStr
+                || originalNode.ID
+                || node.id?.()
+                || ''
+            );
+            const cacheKey = `${sourcePath}||${nodeCacheId}||${rawSource}`;
 
             let entry = this.textMdOverlayCache.get(cacheKey);
 
@@ -4648,6 +4666,7 @@ case 'dagre':
                     position: absolute;
                     left: 0;
                     top: 0;
+                    display: inline-block;
                     transform-origin: 0 0;
                     pointer-events: none;
                     overflow: hidden;
@@ -4655,8 +4674,8 @@ case 'dagre':
                     padding: 10px 14px;
                     max-width: none;
                     color: var(--text-normal);
-                    font-size: 14px;
-                    line-height: 1.5;
+                    font-size: 20px;
+                    line-height: 1.35;
                     word-wrap: break-word;
                     overflow-wrap: anywhere;
                     user-select: none;
@@ -4666,30 +4685,17 @@ case 'dagre':
                 const component = new Component();
                 component.load();
 
-                const isPlain = !hasMarkdownSyntax(rawSource);
                 entry = {
                     el: overlayEl,
                     component,
                     width: 0,
                     height: 0,
-                    isPlainText: isPlain,
+                    isPlainText: false,
                     usedInCycle: true,
                 };
                 this.textMdOverlayCache.set(cacheKey, entry);
 
-                if (isPlain) {
-                    // 快路径：纯文本，直接 textContent + 保留换行
-                    overlayEl.textContent = '';
-                    const pre = document.createElement('div');
-                    pre.style.whiteSpace = 'pre-wrap';
-                    pre.textContent = rawSource;
-                    overlayEl.appendChild(pre);
-                    // 同步测量
-                    const rect = overlayEl.getBoundingClientRect();
-                    entry.width = Math.max(80, Math.min(rect.width + 4, 640));
-                    entry.height = Math.max(32, Math.min(rect.height + 4, 640));
-                    measureAndSizePending.push({ node, entry });
-                } else if (app && MarkdownRenderer) {
+                if (app && MarkdownRenderer) {
                     // 慢路径：Obsidian MarkdownRenderer 渲染
                     const p = (async () => {
                         try {
@@ -4785,6 +4791,10 @@ case 'dagre':
                 pending.forEach(({ node, entry: e }) => {
                     if (node.removed()) return;
                     const currentWidthModel = Number(node.data('manualWidthModel') || 0);
+                    const currentHeightModel = Number(node.data('manualHeightModel') || 0);
+                    // 回归原有尺寸计算：初始化阶段不由 Markdown overlay 改写节点尺寸；
+                    // 仅在已存在手动尺寸时继续沿用。
+                    if (currentWidthModel <= 0 && currentHeightModel <= 0) return;
                     const targetWidth = currentWidthModel > 0 ? currentWidthModel : e.width;
                     const targetHeight = measureOverlayHeightForWidth(e.el, targetWidth, e.height);
                     e.width = targetWidth;
@@ -7066,9 +7076,21 @@ case 'dagre':
 
         // 文本节点：原地编辑（在已有 overlay 内部直接编辑，不创建悬浮 textarea）
         if (!isPlaceholder && originalNode?.isTextOnly) {
-            const rawSource = (originalNode.title || '').replace(/\\n/g, '\n');
+            const rawSource = String(
+                originalNode.title
+                || originalNode.displayText
+                || data.label
+                || ''
+            ).replace(/\\n/g, '\n');
             const sourcePath = this.currentData?.metadata?.currentFile || '';
-            const cacheKey = `${sourcePath}||${rawSource}`;
+            const nodeCacheId = String(
+                data.originalNodeId
+                || originalNode.IDStr
+                || originalNode.ID
+                || node.id?.()
+                || ''
+            );
+            const cacheKey = `${sourcePath}||${nodeCacheId}||${rawSource}`;
             const cachedEntry = this.textMdOverlayCache.get(cacheKey);
             if (cachedEntry) {
                 this.startInPlaceTextEdit(node, originalNode, cachedEntry);
@@ -7089,7 +7111,7 @@ case 'dagre':
         const initialValue = isPlaceholder
             ? (data.label || '')
             : (originalNode?.isTextOnly
-                ? ((originalNode.title || '').replace(/\\n/g, '\n'))
+                ? (String(originalNode.title || originalNode.displayText || data.label || '').replace(/\\n/g, '\n'))
                 : `${originalNode?.isEmbed ? '!' : ''}[[${originalNode?.file?.basename || originalNode?.title || ''}${(originalNode?.title && originalNode?.file?.basename && originalNode.title !== originalNode.file.basename) ? `|${originalNode.title}` : ''}]]`);
         textarea.value = initialValue;
         textarea.className = 'node-label-editor';
@@ -7121,10 +7143,10 @@ case 'dagre':
         };
         // 文本节点使用与 MD overlay 一致的字体和左对齐
         const isTextOnlyEdit = !!originalNode?.isTextOnly;
-        const nodeFontSize = isTextOnlyEdit ? '14px' : getRenderedNodeFontSize();
+        const nodeFontSize = isTextOnlyEdit ? '20px' : getRenderedNodeFontSize();
         const nodeFontFamily = getRenderedNodeFontFamily();
-        const nodeFontWeight = isTextOnlyEdit ? '400' : getRenderedNodeFontWeight();
-        const nodeLineHeight = isTextOnlyEdit ? '1.5' : getEditorLineHeight();
+        const nodeFontWeight = isTextOnlyEdit ? '500' : getRenderedNodeFontWeight();
+        const nodeLineHeight = isTextOnlyEdit ? '1.35' : getEditorLineHeight();
         const textAlign = isTextOnlyEdit ? 'left' : 'center';
         const editorPadding = isTextOnlyEdit ? '10px 14px' : '10px 12px';
 
@@ -7409,10 +7431,10 @@ case 'dagre':
             const currentBoxHeight = Math.max(Number(node.renderedHeight?.() || 0), 44);
             textarea.style.left = `${currentRenderedPosition.x - currentBoxWidth / 2}px`;
             textarea.style.top = `${currentRenderedPosition.y - currentBoxHeight / 2}px`;
-            textarea.style.fontSize = isTextOnlyEdit ? '14px' : getRenderedNodeFontSize();
+            textarea.style.fontSize = isTextOnlyEdit ? '20px' : getRenderedNodeFontSize();
             textarea.style.fontFamily = getRenderedNodeFontFamily();
-            textarea.style.fontWeight = isTextOnlyEdit ? '400' : getRenderedNodeFontWeight();
-            textarea.style.lineHeight = isTextOnlyEdit ? '1.5' : getEditorLineHeight();
+            textarea.style.fontWeight = isTextOnlyEdit ? '500' : getRenderedNodeFontWeight();
+            textarea.style.lineHeight = isTextOnlyEdit ? '1.35' : getEditorLineHeight();
             resizeEditorToContent();
         };
 
@@ -7483,7 +7505,12 @@ case 'dagre':
         const savedHtml = overlayEl.innerHTML;
         const savedWidth = entry.width;
         const savedHeight = entry.height;
-        const rawSource = (originalNode.title || '').replace(/\\n/g, '\n');
+        const rawSource = String(
+            originalNode.title
+            || originalNode.displayText
+            || node.data('label')
+            || ''
+        ).replace(/\\n/g, '\n');
         const sourcePath = this.currentData?.metadata?.currentFile || '';
 
         overlayEl.textContent = '';
@@ -7602,6 +7629,16 @@ case 'dagre':
                     position: { x: nodePosition.x, y: nodePosition.y }
                 }
             }));
+            this.container?.dispatchEvent(new CustomEvent('embed-node-size-changed', {
+                detail: {
+                    node: originalNode,
+                    nodeId: node.data('originalNodeId') || originalNode.IDStr || originalNode.ID || '',
+                    size: {
+                        widthModel: Number(node.width()),
+                        heightModel: Number(node.height())
+                    }
+                }
+            }));
 
             setTimeout(() => {
                 if (overlayEl.isConnected && overlayEl.dataset.editing === '1') {
@@ -7689,7 +7726,12 @@ case 'dagre':
 
         const textarea = document.createElement('textarea');
         textarea.className = 'node-label-editor zk-text-md-inline-editor';
-        textarea.value = (originalNode.title || '').replace(/\\n/g, '\n');
+        textarea.value = String(
+            originalNode.title
+            || originalNode.displayText
+            || node.data('label')
+            || ''
+        ).replace(/\\n/g, '\n');
         textarea.style.cssText = `
             position: absolute;
             inset: 0;
@@ -7702,10 +7744,10 @@ case 'dagre':
             padding: 10px 14px;
             margin: 0;
             color: var(--text-normal);
-            font-size: 14px;
+            font-size: 20px;
             font-family: inherit;
-            font-weight: 400;
-            line-height: 1.5;
+            font-weight: 500;
+            line-height: 1.35;
             text-align: left;
             resize: none;
             overflow: hidden;
@@ -7806,6 +7848,16 @@ case 'dagre':
                     node: originalNode,
                     content: newValue,
                     position: { x: nodePosition.x, y: nodePosition.y }
+                }
+            }));
+            this.container?.dispatchEvent(new CustomEvent('embed-node-size-changed', {
+                detail: {
+                    node: originalNode,
+                    nodeId: node.data('originalNodeId') || originalNode.IDStr || originalNode.ID || '',
+                    size: {
+                        widthModel: Number(node.width()),
+                        heightModel: Number(node.height())
+                    }
                 }
             }));
 
