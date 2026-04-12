@@ -1055,14 +1055,14 @@ export class ZKIndexView extends ItemView {
 
     }
 
-    async refreshBranchMermaid() {
+    async refreshBranchMermaid(force: boolean = false) {
 
         this.plugin.RefreshIndexViewFlag = false;
         const indexMermaidDiv = document.getElementById("zk-index-mermaid-container");
 
         if (!indexMermaidDiv) return;
 
-        await this.refreshBranchMermaidMOC(indexMermaidDiv);
+        await this.refreshBranchMermaidMOC(indexMermaidDiv, force);
     }
 
     /**
@@ -1212,7 +1212,7 @@ export class ZKIndexView extends ItemView {
 
     // MOC 模式专用的刷新方法
     // MOC 模式专用的刷新方法 - 使用 Cytoscape 渲染
-    async refreshBranchMermaidMOC(indexMermaidDiv: HTMLElement) {
+    async refreshBranchMermaidMOC(indexMermaidDiv: HTMLElement, force: boolean = false) {
         // 仅在 MOC 文件真正切换时才冲刷保存旧画面位置，避免同文件刷新覆盖刚写入的位置
         const incomingMOCPath = this.plugin.settings.mocCurrentFile;
 
@@ -1250,11 +1250,7 @@ export class ZKIndexView extends ItemView {
         // parse → convert → build → render 整条热路径，只同步容器尺寸即可。
         const renderSignature = this.computeRenderSignature(currentMOCPath, currentMOCFile.stat.mtime);
         const cyInstance = this.branchRenderer?.getCytoscapeInstance();
-        if (
-            cyInstance
-            && this.lastRenderedMOCPath === currentMOCPath
-            && this.lastRenderSignature === renderSignature
-        ) {
+        if (!force && cyInstance && this.lastRenderedMOCPath === currentMOCPath && this.lastRenderSignature === renderSignature) {
             const existingGraphDiv = document.getElementById("zk-branch-cytoscape") as HTMLElement | null;
             if (existingGraphDiv) {
                 const graphHeight = Math.max(220, this.containerEl.offsetHeight - 80);
@@ -1520,7 +1516,7 @@ export class ZKIndexView extends ItemView {
                 await this.saveNodePositionToMOC(mocFile, newChildID, position);
 
                 // 刷新视图
-                await this.refreshBranchMermaid();
+                await this.refreshBranchMermaid(true);
 
                 new Notice(`已创建父子关系: ${parentNode.displayText} → ${childNode.displayText}`);
             } catch (error) {

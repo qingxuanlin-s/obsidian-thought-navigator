@@ -2067,7 +2067,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         paddingY: 20
                     });
                     const compensated = this.compensateFreeLikeNodeFrameSize(label, measured, {
-                        isFreeNode: !!ele.data('isFreeNode'),
+                        isFreeNode: !!ele.data('isFreeNode') && !!ele.data('isTextOnly'),
                         isStandaloneText: !!ele.data('isStandaloneText'),
                         maxWidth: 280,
                         charWidth: 11
@@ -2090,7 +2090,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         paddingY: 20
                     });
                     const compensated = this.compensateFreeLikeNodeFrameSize(label, measured, {
-                        isFreeNode: !!ele.data('isFreeNode'),
+                        isFreeNode: !!ele.data('isFreeNode') && !!ele.data('isTextOnly'),
                         isStandaloneText: !!ele.data('isStandaloneText'),
                         maxWidth: 280,
                         charWidth: 11
