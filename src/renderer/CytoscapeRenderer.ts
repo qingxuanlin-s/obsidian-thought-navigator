@@ -4015,9 +4015,20 @@ case 'dagre':
                         pointer-events: auto;
                         cursor: pointer;
                     `;
+                    hitEl.addEventListener('mousedown', (e: MouseEvent) => {
+                        if (!this.cy || e.button !== 0) return;
+                        const toggleSelection = e.metaKey || e.ctrlKey;
+                        if (toggleSelection) {
+                            if (node.selected()) { node.unselect(); } else { node.select(); }
+                            e.preventDefault();
+                            e.stopPropagation();
+                        }
+                    });
                     hitEl.addEventListener('click', (e) => {
                         e.preventDefault();
                         e.stopPropagation();
+                        // Cmd/Ctrl+Click 用于多选，不触发打开文件
+                        if ((e as MouseEvent).metaKey || (e as MouseEvent).ctrlKey) return;
                         this.container?.dispatchEvent(new CustomEvent('node-click', {
                             detail: {
                                 node: node.data('originalNode'),
