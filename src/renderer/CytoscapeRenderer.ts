@@ -2139,7 +2139,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
             style: {
                 'text-max-width': (ele: any) => {
                     const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
-                    const widthModel = manualWidthModel > 0 ? manualWidthModel : Number(ele.width() || 280);
+                    const w = Number(ele.width() || 0);
+                    // 使用节点实际宽度；若未就绪则用保守值避免不可见标签撑大 boundingBox
+                    const widthModel = manualWidthModel > 0 ? manualWidthModel : (w > 0 ? w : 200);
                     return Math.max(120, widthModel - 48);
                 }
             } as any
@@ -4412,11 +4414,24 @@ case 'dagre':
                 if (isHidden) { dotEl.style.display = 'none'; return; }
 
                 const zoom = this.cy.zoom();
-                const bb = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
                 const dotSize = Math.max(5, 7 * zoom);
-                const centerY = (bb.y1 + bb.y2) / 2;
-                // 估算文字起始位置：节点左边加内边距
-                const textStartX = bb.x1 + Math.max(14, 20 * zoom);
+                const renderedPos = node.renderedPosition();
+                const renderedWidth = Number(node.renderedWidth?.() || 0);
+                const renderedHeight = Number(node.renderedHeight?.() || 0);
+                const hasValidRenderBox =
+                    Number.isFinite(renderedPos?.x) &&
+                    Number.isFinite(renderedPos?.y) &&
+                    Number.isFinite(renderedWidth) &&
+                    Number.isFinite(renderedHeight) &&
+                    renderedWidth > 1 &&
+                    renderedHeight > 1;
+                if (!hasValidRenderBox) {
+                    dotEl.style.display = 'none';
+                    return;
+                }
+
+                const centerY = renderedPos.y;
+                const textStartX = renderedPos.x - renderedWidth / 2 + 20 * zoom;
 
                 dotEl.style.display = 'block';
                 dotEl.style.width = `${dotSize}px`;
@@ -4891,7 +4906,9 @@ case 'dagre':
                     currentEntry.el.style.display = 'none';
                     return;
                 }
-                const bb = node.renderedBoundingBox();
+                // 使用 includeLabels:false 获取纯形状边界，避免不可见标签
+                // （text-opacity:0）撑大 boundingBox 导致 overlay 宽于节点形状
+                const bb = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
                 if (!bb || bb.w <= 0) {
                     currentEntry.el.style.display = 'none';
                     return;
@@ -5213,6 +5230,7 @@ case 'dagre':
                 opacity: 0;
                 transition: opacity 0.2s;
             `;
+            handle.style.display = 'none';
             handleContainer.appendChild(handle);
 
             // 动态检查节点类型（isImageNode 可能在 addImageNodePreviews 中延迟设置）
@@ -5224,8 +5242,21 @@ case 'dagre':
             let handleLastZoom = -1;
             const updateHandlePosition = () => {
                 if (!this.cy) return;
-                // 手柄不可见时跳过位置计算（opacity: 0 表示未 hover）
-                if (handle.style.opacity === '0') return;
+                // 手柄不可见时直接隐藏，避免默认 transform 露出在左上角
+                if (handle.style.opacity === '0') {
+                    handle.style.display = 'none';
+                    return;
+                }
+
+                const isHidden =
+                    node.removed() ||
+                    node.hasClass('zk-collapsed-hidden') ||
+                    node.style('display') === 'none' ||
+                    !node.visible();
+                if (isHidden) {
+                    handle.style.display = 'none';
+                    return;
+                }
 
                 const zoom = this.cy.zoom();
                 const curIsImageNode = node.data('isImageNode');
@@ -5234,6 +5265,10 @@ case 'dagre':
                 let x: number, y: number;
                 if (curIsImageNode) {
                     const rp = node.renderedPosition();
+                    if (!Number.isFinite(rp?.x) || !Number.isFinite(rp?.y)) {
+                        handle.style.display = 'none';
+                        return;
+                    }
                     if (!handleImageCardCache) handleImageCardCache = this.container?.querySelector(`.zk-image-preview-card[data-node-id="${nodeId}"]`) as HTMLElement ?? null;
                     if (handleImageCardCache && handleImageCardCache.dataset.renderedWidth) {
                         const cardW = parseFloat(handleImageCardCache.dataset.renderedWidth);
@@ -5244,6 +5279,10 @@ case 'dagre':
                     }
                 } else if (curIsEmbedNode) {
                     const boundingBox = node.renderedBoundingBox();
+                    if (!Number.isFinite(boundingBox?.x1) || !Number.isFinite(boundingBox?.x2) || !Number.isFinite(boundingBox?.y1) || !Number.isFinite(boundingBox?.y2)) {
+                        handle.style.display = 'none';
+                        return;
+                    }
                     if (!handleEmbedCardCache) handleEmbedCardCache = this.container?.querySelector(`.zk-embed-preview-card[data-node-id="${nodeId}"]`) as HTMLElement ?? null;
                     if (handleEmbedCardCache) {
                         const cardW = handleEmbedCardCache.offsetWidth;
@@ -5254,10 +5293,20 @@ case 'dagre':
                     y = (boundingBox.y1 + boundingBox.y2) / 2;
                 } else {
                     const boundingBox = node.renderedBoundingBox();
+                    if (!Number.isFinite(boundingBox?.x2) || !Number.isFinite(boundingBox?.y1) || !Number.isFinite(boundingBox?.y2)) {
+                        handle.style.display = 'none';
+                        return;
+                    }
                     x = boundingBox.x2;
                     y = (boundingBox.y1 + boundingBox.y2) / 2;
                 }
 
+                if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                    handle.style.display = 'none';
+                    return;
+                }
+
+                handle.style.display = 'block';
                 handle.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
                 // 仅 zoom 变化时更新尺寸
                 if (zoom !== handleLastZoom) {
@@ -5283,9 +5332,11 @@ case 'dagre':
             node.on('mouseover', () => {
                 if (this.isEdgeSelected) return;
                 handle.style.opacity = '1';
+                updateHandlePosition();
             });
             node.on('mouseout', () => {
                 handle.style.opacity = '0';
+                handle.style.display = 'none';
             });
 
             // 鼠标离开蓝点时：如果移向对应的卡片则不隐藏
@@ -5295,6 +5346,7 @@ case 'dagre':
                 const embedCard = this.container?.querySelector(`.zk-embed-preview-card[data-node-id="${nodeId}"]`);
                 if (embedCard && (e.relatedTarget === embedCard || embedCard.contains(e.relatedTarget as Node))) return;
                 handle.style.opacity = '0';
+                handle.style.display = 'none';
             });
 
             // 拖动创建连接
