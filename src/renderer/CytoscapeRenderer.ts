@@ -181,6 +181,19 @@ export class CytoscapeRenderer implements IGraphRenderer {
         return result.replace(/<\/?[^>]+>/g, '');
     }
 
+
+
+    private preserveMarkdownBlankLines(text: string): string {
+        if (!text || !text.includes('\n\n\n')) return text;
+
+        return text.replace(/\n{3,}/g, (match) => {
+            const extraBlankLineCount = Math.max(0, match.length - 2);
+            if (extraBlankLineCount === 0) return match;
+            const placeholders = Array.from({ length: extraBlankLineCount }, () => '<div class="zk-md-blank-line" aria-hidden="true"></div>').join('\n');
+            return `\n\n${placeholders}\n`;
+        });
+    }
+
     private hexToRgb(hex: string): { r: number; g: number; b: number } {
         const normalized = hex.replace('#', '').trim();
         const full = normalized.length === 3
@@ -4810,6 +4823,7 @@ case 'dagre':
                 || data.label
                 || ''
             ).replace(/\\n/g, '\n');
+            const renderSource = this.preserveMarkdownBlankLines(rawSource);
             const nodeCacheId = String(
                 data.originalNodeId
                 || originalNode.IDStr
@@ -4847,7 +4861,9 @@ case 'dagre':
                     padding: 10px 14px;
                     max-width: none;
                     color: var(--text-normal);
+                    font-family: var(--font-text);
                     font-size: 20px;
+                    font-weight: 500;
                     line-height: 1.35;
                     word-wrap: break-word;
                     overflow-wrap: anywhere;
@@ -4874,7 +4890,7 @@ case 'dagre':
                         try {
                             overlayEl.empty?.();
                             overlayEl.textContent = '';
-                            await MarkdownRenderer.render(app, rawSource, overlayEl, sourcePath, component);
+                            await MarkdownRenderer.render(app, renderSource, overlayEl, sourcePath, component);
                         } catch (e) {
                             overlayEl.textContent = rawSource;
                         }
@@ -7757,12 +7773,21 @@ case 'dagre':
         let mdEditor: EmbeddableMarkdownEditor | null = null;
         let selectionToolbar: { destroy: () => void; containsTarget: (target: Node | null) => boolean } | null = null;
         const nodeWasGrabbable = typeof node.grabbable === 'function' ? !!node.grabbable() : true;
+        const prevZoomingEnabled = this.cy?.userZoomingEnabled() ?? true;
         if (typeof node.grabbable === 'function') {
             node.grabbable(false);
         }
+        this.cy?.userZoomingEnabled(false);
 
         const stopPointerPropagation = (evt: Event) => {
             evt.stopPropagation();
+        };
+        const stopWheelPropagation = (evt: WheelEvent) => {
+            evt.stopPropagation();
+            // 触控板捏合/浏览器缩放手势不应继续传给白板缩放
+            if (evt.ctrlKey || evt.metaKey) {
+                evt.preventDefault();
+            }
         };
         const pointerEventsToStop = [
             'mousedown', 'mousemove', 'mouseup',
@@ -7773,11 +7798,13 @@ case 'dagre':
         pointerEventsToStop.forEach((name) => {
             editorHost.addEventListener(name, stopPointerPropagation, true);
         });
+        editorHost.addEventListener('wheel', stopWheelPropagation, { capture: true, passive: false });
 
         const restoreNodeInteractivity = () => {
             if (this.cy && !node.removed() && typeof node.grabbable === 'function') {
                 node.grabbable(nodeWasGrabbable);
             }
+            this.cy?.userZoomingEnabled(prevZoomingEnabled);
         };
 
         const autoGrow = () => {
@@ -7804,6 +7831,7 @@ case 'dagre':
             pointerEventsToStop.forEach((name) => {
                 editorHost.removeEventListener(name, stopPointerPropagation, true);
             });
+            editorHost.removeEventListener('wheel', stopWheelPropagation, true);
         };
 
         const restoreOverlay = () => {
@@ -7966,7 +7994,7 @@ case 'dagre':
             margin: 0;
             color: var(--text-normal);
             font-size: 20px;
-            font-family: inherit;
+            font-family: var(--font-text);
             font-weight: 500;
             line-height: 1.35;
             text-align: left;
@@ -7974,6 +8002,7 @@ case 'dagre':
             overflow: hidden;
             box-sizing: border-box;
             white-space: pre-wrap;
+            white-space: break-spaces;
             word-wrap: break-word;
             pointer-events: auto;
             user-select: text;
@@ -7981,6 +8010,15 @@ case 'dagre':
         `;
         overlayEl.appendChild(textarea);
         const selectionToolbar = this.attachInlineTextSelectionToolbar(textarea);
+        const prevZoomingEnabled = this.cy?.userZoomingEnabled() ?? true;
+        this.cy?.userZoomingEnabled(false);
+        const stopTextareaWheelPropagation = (evt: WheelEvent) => {
+            evt.stopPropagation();
+            if (evt.ctrlKey || evt.metaKey) {
+                evt.preventDefault();
+            }
+        };
+        textarea.addEventListener('wheel', stopTextareaWheelPropagation, { capture: true, passive: false });
 
         let isSaved = false;
         const suggesterPopoverRef = { value: null as HTMLElement | null };
@@ -8038,6 +8076,8 @@ case 'dagre':
                 });
             }
             document.removeEventListener('mousedown', handleOutsidePointerDown, true);
+            textarea.removeEventListener('wheel', stopTextareaWheelPropagation, true);
+            this.cy?.userZoomingEnabled(prevZoomingEnabled);
         };
 
         const saveEdit = () => {

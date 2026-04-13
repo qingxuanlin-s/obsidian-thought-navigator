@@ -2428,9 +2428,12 @@ align-items: center;
 /* ===== 文本节点 Markdown 渲染 overlay ===== */
 .zk-text-md-overlay {
   color: var(--text-normal);
+  font-family: var(--font-text);
   font-size: 20px;
+  font-weight: 500;
   line-height: 1.35;
   word-wrap: break-word;
+  white-space: break-spaces;
   user-select: none;
 }
 
@@ -2454,6 +2457,7 @@ align-items: center;
 
 .zk-text-md-overlay p {
   margin: 4px 0;
+  white-space: break-spaces;
 }
 
 .zk-text-md-overlay ul,
@@ -2464,6 +2468,7 @@ align-items: center;
 
 .zk-text-md-overlay li {
   margin: 2px 0;
+  white-space: break-spaces;
 }
 
 .zk-text-md-overlay pre {
@@ -2483,6 +2488,14 @@ align-items: center;
   margin: 4px 0;
   padding-left: 10px;
   border-left: 3px solid var(--background-modifier-border);
+}
+
+.zk-text-md-overlay .zk-md-blank-line {
+  display: block;
+  height: 1.35em;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
 }
 
 /* overlay 本身不拦截事件，只让内部链接可点击 */
@@ -2519,9 +2532,15 @@ align-items: center;
 .zk-text-md-live-edit-host .cm-scroller {
   font-family: var(--font-text);
   font-size: 20px;
+  font-weight: 500;
   line-height: 1.35;
 }
 
 .zk-text-md-live-edit-host .cm-content {
-  padding: 8px 12px;
+  padding: 10px 14px;
+  white-space: break-spaces;
+}
+
+.zk-text-md-live-edit-host .cm-line {
+  white-space: break-spaces;
 }
