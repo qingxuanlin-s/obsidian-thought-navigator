@@ -181,18 +181,20 @@ export class CytoscapeRenderer implements IGraphRenderer {
         return result.replace(/<\/?[^>]+>/g, '');
     }
 
+    private preserveEditorLikeBlankLines(text: string): string {
+        if (!text || !text.includes('\n\n')) return text;
 
-
-    private preserveMarkdownBlankLines(text: string): string {
-        if (!text || !text.includes('\n\n\n')) return text;
-
-        return text.replace(/\n{3,}/g, (match) => {
-            const extraBlankLineCount = Math.max(0, match.length - 2);
-            if (extraBlankLineCount === 0) return match;
-            const placeholders = Array.from({ length: extraBlankLineCount }, () => '<div class="zk-md-blank-line" aria-hidden="true"></div>').join('\n');
+        return text.replace(/\n{2,}/g, (match) => {
+            const blankLineCount = Math.max(1, match.length - 1);
+            const placeholders = Array.from(
+                { length: blankLineCount },
+                () => '<div class="zk-md-blank-line" aria-hidden="true"></div>'
+            ).join('\n');
             return `\n\n${placeholders}\n`;
         });
     }
+
+
 
     private hexToRgb(hex: string): { r: number; g: number; b: number } {
         const normalized = hex.replace('#', '').trim();
@@ -4823,7 +4825,7 @@ case 'dagre':
                 || data.label
                 || ''
             ).replace(/\\n/g, '\n');
-            const renderSource = this.preserveMarkdownBlankLines(rawSource);
+            const renderSource = this.preserveEditorLikeBlankLines(rawSource);
             const nodeCacheId = String(
                 data.originalNodeId
                 || originalNode.IDStr
