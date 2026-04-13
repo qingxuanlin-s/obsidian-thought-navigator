@@ -3164,6 +3164,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 });
             }
 
+            // 缓存上一次同步到 Cytoscape 的尺寸，避免每帧都触发样式重算
+            let lastSyncedW = -1;
+            let lastSyncedH = -1;
+            let lastZoom = -1;
+
             const updatePosition = () => {
                 if (!this.cy) return;
                 const isHidden =
@@ -3185,41 +3190,48 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 const width = widthModel * zoom;
                 const height = heightModel * zoom;
 
-                // 同步 Cytoscape 节点尺寸，让连线正确连接到卡片边缘
-                node.style({ 'width': widthModel, 'height': heightModel });
+                // 仅在尺寸变化时同步 Cytoscape 节点尺寸，避免每帧触发样式重算
+                if (widthModel !== lastSyncedW || heightModel !== lastSyncedH) {
+                    node.style({ 'width': widthModel, 'height': heightModel });
+                    lastSyncedW = widthModel;
+                    lastSyncedH = heightModel;
+                }
 
                 const bb = node.renderedBoundingBox();
                 card.style.transform = `translate(${bb.x1}px, ${bb.y1}px)`;
                 card.style.width = `${width}px`;
                 card.style.height = `${height}px`;
-                card.style.borderRadius = `${Math.max(6, 8 * zoom)}px`;
-                card.style.borderWidth = '0px';
-                const toggleSize = Math.max(20, 24 * zoom);
-                embedToggleEl.style.width = `${toggleSize}px`;
-                embedToggleEl.style.height = `${toggleSize}px`;
-                embedToggleEl.style.transform = `translate(${bb.x1 + (width - toggleSize) / 2}px, ${bb.y1 + height + 8 * zoom}px)`;
 
-                // 内容随 zoom 缩放
-                const headerH = Math.max(24, 36 * zoom);
-                headerEl.style.height = `${headerH}px`;
-                headerEl.style.fontSize = `${Math.max(9, 12 * zoom)}px`;
-                headerEl.style.padding = `0 ${Math.max(8, 12 * zoom)}px`;
+                // zoom 未变化时跳过子元素样式更新（纯 pan 只需更新 transform）
+                if (zoom !== lastZoom) {
+                    lastZoom = zoom;
+                    card.style.borderRadius = `${Math.max(6, 8 * zoom)}px`;
+                    const toggleSize = Math.max(20, 24 * zoom);
+                    embedToggleEl.style.width = `${toggleSize}px`;
+                    embedToggleEl.style.height = `${toggleSize}px`;
 
-                contentEl.style.height = `calc(100% - ${headerH}px)`;
-                contentEl.style.fontSize = `${Math.max(10, 14 * zoom)}px`;
-                contentEl.style.lineHeight = '1.6';
-                // excalidraw 内容用绝对定位填充；普通 markdown 用默认 padding
-                const isExcalidrawContent = contentEl.style.position === 'relative' && contentEl.querySelector('svg, img');
-                if (isExcalidrawContent) {
-                    contentEl.style.padding = '0';
-                    contentEl.style.overflow = 'hidden';
-                } else {
-                    contentEl.style.padding = `${Math.max(6, 12 * zoom)}px ${Math.max(8, 14 * zoom)}px`;
+                    const headerH = Math.max(24, 36 * zoom);
+                    headerEl.style.height = `${headerH}px`;
+                    headerEl.style.fontSize = `${Math.max(9, 12 * zoom)}px`;
+                    headerEl.style.padding = `0 ${Math.max(8, 12 * zoom)}px`;
+
+                    contentEl.style.height = `calc(100% - ${headerH}px)`;
+                    contentEl.style.fontSize = `${Math.max(10, 14 * zoom)}px`;
+                    const isExcalidrawContent = contentEl.style.position === 'relative' && contentEl.querySelector('svg, img');
+                    if (isExcalidrawContent) {
+                        contentEl.style.padding = '0';
+                        contentEl.style.overflow = 'hidden';
+                    } else {
+                        contentEl.style.padding = `${Math.max(6, 12 * zoom)}px ${Math.max(8, 14 * zoom)}px`;
+                    }
+
+                    resizeHandle.style.width = `${Math.max(12, 18 * zoom)}px`;
+                    resizeHandle.style.height = `${Math.max(12, 18 * zoom)}px`;
+                    resizeHandle.style.fontSize = `${Math.max(8, 11 * zoom)}px`;
                 }
 
-                resizeHandle.style.width = `${Math.max(12, 18 * zoom)}px`;
-                resizeHandle.style.height = `${Math.max(12, 18 * zoom)}px`;
-                resizeHandle.style.fontSize = `${Math.max(8, 11 * zoom)}px`;
+                const toggleSize = Math.max(20, 24 * zoom);
+                embedToggleEl.style.transform = `translate(${bb.x1 + (width - toggleSize) / 2}px, ${bb.y1 + height + 8 * zoom}px)`;
             };
 
             updaters.push(updatePosition);
@@ -3627,6 +3639,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 document.addEventListener('mouseup', () => { onMouseUp(); finalize(); }, { signal: ctrl.signal });
             });
 
+            // 缓存上一次同步到 Cytoscape 的尺寸，避免每帧都触发样式重算
+            let lastSyncedW = -1;
+            let lastSyncedH = -1;
+            let lastZoom = -1;
+
             const updatePosition = () => {
                 if (!this.cy) return;
                 const isHidden =
@@ -3642,29 +3659,34 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 const zoom = this.cy.zoom();
                 const rp = node.renderedPosition();
                 const size = cardSizeMap.get(nodeId);
-                // 默认使用较小尺寸，图片加载后会自动适应
                 const widthModel = size ? size.widthModel : 240;
                 const heightModel = size ? size.heightModel : 200;
                 const width = widthModel * zoom;
                 const height = heightModel * zoom;
 
-                // 同步 Cytoscape 节点尺寸，让连线正确连接到卡片边缘
-                node.style({ 'width': widthModel, 'height': heightModel });
+                // 仅在尺寸变化时同步 Cytoscape 节点尺寸，避免每帧触发样式重算
+                if (widthModel !== lastSyncedW || heightModel !== lastSyncedH) {
+                    node.style({ 'width': widthModel, 'height': heightModel });
+                    lastSyncedW = widthModel;
+                    lastSyncedH = heightModel;
+                }
 
                 card.style.transform = `translate(${rp.x - width / 2}px, ${rp.y - height / 2}px)`;
                 card.style.width = `${width}px`;
                 card.style.height = `${height}px`;
                 card.dataset.renderedWidth = `${width}`;
                 card.dataset.renderedHeight = `${height}`;
-                card.style.borderRadius = `${Math.max(6, 8 * zoom)}px`;
-                card.style.borderWidth = '0px';
 
-                // header 随 zoom 缩放
-                const headerH = Math.max(24, 32 * zoom);
-                headerEl.style.height = `${headerH}px`;
-                headerEl.style.fontSize = `${Math.max(9, 12 * zoom)}px`;
-                headerEl.style.padding = `0 ${Math.max(8, 12 * zoom)}px`;
-                img.style.height = `calc(100% - ${headerH}px)`;
+                // zoom 未变化时跳过子元素样式更新（纯 pan 只需更新 transform）
+                if (zoom !== lastZoom) {
+                    lastZoom = zoom;
+                    card.style.borderRadius = `${Math.max(6, 8 * zoom)}px`;
+                    const headerH = Math.max(24, 32 * zoom);
+                    headerEl.style.height = `${headerH}px`;
+                    headerEl.style.fontSize = `${Math.max(9, 12 * zoom)}px`;
+                    headerEl.style.padding = `0 ${Math.max(8, 12 * zoom)}px`;
+                    img.style.height = `calc(100% - ${headerH}px)`;
+                }
             };
 
             updaters.push(updatePosition);
@@ -3944,6 +3966,124 @@ case 'dagre':
             `;
             badgeContainer.appendChild(underlineGroupEl);
 
+            // 缓存：label 不变时复用 wrappedLines 和 modelLineWidths，避免每帧 measureText
+            let cachedLabel = '';
+            let cachedWrappedLines: string[] = [];
+            let cachedModelLineWidths: number[] = []; // 模型坐标系下的宽度（不含 zoom）
+            let cachedIsRoot = false;
+            // DOM 元素池：创建一次，后续只更新位置
+            let lineElements: Array<{ hitEl: HTMLElement; underlineEl: HTMLElement }> = [];
+
+            const rebuildWrappedLinesCache = (label: string, isRoot: boolean) => {
+                cachedLabel = label;
+                cachedIsRoot = isRoot;
+                const fontPx = isRoot ? 26 : 20;
+                const fontWeight = isRoot ? '700' : '500';
+                const textMaxWidth = isRoot ? 400 : 280;
+
+                if (underlineMeasureCtx) {
+                    underlineMeasureCtx.font = `${fontWeight} ${fontPx}px sans-serif`;
+                    cachedWrappedLines = [];
+                    const explicitLines = label.split('\n');
+                    for (const explicitLine of explicitLines) {
+                        if (!explicitLine) {
+                            cachedWrappedLines.push(' ');
+                            continue;
+                        }
+                        let currentLine = '';
+                        for (const char of explicitLine) {
+                            const testLine = currentLine + char;
+                            if (underlineMeasureCtx.measureText(testLine).width > textMaxWidth && currentLine.length > 0) {
+                                cachedWrappedLines.push(currentLine);
+                                currentLine = char;
+                            } else {
+                                currentLine = testLine;
+                            }
+                        }
+                        if (currentLine) cachedWrappedLines.push(currentLine);
+                    }
+                    if (cachedWrappedLines.length === 0) cachedWrappedLines = [' '];
+                    // 预计算模型坐标系下每行宽度
+                    cachedModelLineWidths = cachedWrappedLines.map(line =>
+                        underlineMeasureCtx!.measureText(line || ' ').width
+                    );
+                } else {
+                    cachedWrappedLines = this.estimateWrappedLines(label, isRoot ? { maxWidth: 220, charWidth: 8 } : undefined);
+                    cachedModelLineWidths = cachedWrappedLines.map(line => {
+                        const cjkCount = [...line].filter(ch => {
+                            const code = ch.codePointAt(0) || 0;
+                            return (code >= 0x4E00 && code <= 0x9FFF) || (code >= 0x3000 && code <= 0x303F);
+                        }).length;
+                        return cjkCount * 16 + (line.length - cjkCount) * 8;
+                    });
+                }
+            };
+
+            const ensureLineElements = (count: number) => {
+                // 移除多余元素
+                while (lineElements.length > count) {
+                    const removed = lineElements.pop()!;
+                    removed.hitEl.remove();
+                    removed.underlineEl.remove();
+                }
+                // 补充不足的元素
+                while (lineElements.length < count) {
+                    const hitEl = document.createElement('div');
+                    hitEl.className = 'zk-node-file-link-hit';
+                    hitEl.style.position = 'absolute';
+                    hitEl.style.background = 'transparent';
+                    hitEl.style.pointerEvents = 'auto';
+                    hitEl.style.cursor = 'pointer';
+                    hitEl.addEventListener('mousedown', (e: MouseEvent) => {
+                        if (!this.cy || e.button !== 0) return;
+                        const toggleSelection = e.metaKey || e.ctrlKey;
+                        if (toggleSelection) {
+                            if (node.selected()) { node.unselect(); } else { node.select(); }
+                            e.preventDefault();
+                            e.stopPropagation();
+                        }
+                    });
+                    hitEl.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if ((e as MouseEvent).metaKey || (e as MouseEvent).ctrlKey) return;
+                        this.container?.dispatchEvent(new CustomEvent('node-click', {
+                            detail: { node: node.data('originalNode'), event: e }
+                        }));
+                    });
+                    const emitHover = (e: MouseEvent) => {
+                        this.container?.dispatchEvent(new CustomEvent('node-hover', {
+                            detail: { node: node.data('originalNode'), event: e }
+                        }));
+                    };
+                    hitEl.addEventListener('mouseenter', emitHover);
+                    hitEl.addEventListener('mousemove', emitHover);
+                    hitEl.addEventListener('mouseleave', () => {
+                        this.container?.dispatchEvent(new CustomEvent('node-leave', {
+                            detail: { node: node.data('originalNode') }
+                        }));
+                    });
+                    hitEl.addEventListener('touchend', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        this.container?.dispatchEvent(new CustomEvent('node-click', {
+                            detail: { node: node.data('originalNode'), event: e }
+                        }));
+                    }, { passive: false });
+
+                    const underlineEl = document.createElement('div');
+                    underlineEl.className = 'zk-node-file-underline';
+                    underlineEl.style.position = 'absolute';
+                    underlineEl.style.background = 'rgba(255, 255, 255, 0.58)';
+                    underlineEl.style.borderRadius = '999px';
+                    underlineEl.style.pointerEvents = 'none';
+
+                    underlineGroupEl.appendChild(hitEl);
+                    underlineGroupEl.appendChild(underlineEl);
+                    lineElements.push({ hitEl, underlineEl });
+                }
+            };
+
             const updateUnderlinePosition = () => {
                 if (!this.cy) return;
                 if (this.overlayInteracting) {
@@ -3968,148 +4108,47 @@ case 'dagre':
                     return;
                 }
 
-                const zoom = this.cy.zoom();
-                const box = node.renderedBoundingBox();
                 const isRoot = !!node.data('isRoot');
-                const fontPx = isRoot ? 26 : 20;
-                const fontWeight = isRoot ? '700' : '500';
-                const textMaxWidth = isRoot ? 400 : 280; // 匹配 Cytoscape text-max-width
 
-                // 使用 canvas measureText 精确计算换行，匹配 Cytoscape 的 text-overflow-wrap: anywhere
-                let wrappedLines: string[];
-                if (underlineMeasureCtx) {
-                    underlineMeasureCtx.font = `${fontWeight} ${fontPx}px sans-serif`;
-                    wrappedLines = [];
-                    const explicitLines = label.split('\n');
-                    for (const explicitLine of explicitLines) {
-                        if (!explicitLine) {
-                            wrappedLines.push(' ');
-                            continue;
-                        }
-                        let currentLine = '';
-                        for (const char of explicitLine) {
-                            const testLine = currentLine + char;
-                            if (underlineMeasureCtx.measureText(testLine).width > textMaxWidth && currentLine.length > 0) {
-                                wrappedLines.push(currentLine);
-                                currentLine = char;
-                            } else {
-                                currentLine = testLine;
-                            }
-                        }
-                        if (currentLine) {
-                            wrappedLines.push(currentLine);
-                        }
-                    }
-                    if (wrappedLines.length === 0) wrappedLines = [' '];
-                } else {
-                    wrappedLines = this.estimateWrappedLines(label, isRoot ? {
-                        maxWidth: 220,
-                        charWidth: 8
-                    } : undefined);
+                // 仅在 label 或 isRoot 变化时重新计算换行（zoom/pan 期间跳过）
+                if (label !== cachedLabel || isRoot !== cachedIsRoot) {
+                    rebuildWrappedLinesCache(label, isRoot);
                 }
 
-                const lineHeight = (isRoot ? 24 : 18) * zoom;
+                const zoom = this.cy.zoom();
+                const box = node.renderedBoundingBox();
+                const fontPx = isRoot ? 26 : 20;
+                const lineHeightModel = isRoot ? 24 : 18;
+                const lineHeight = lineHeightModel * zoom;
                 const centerX = box.x1 + box.w / 2;
                 const centerY = box.y1 + box.h / 2;
-                const textBlockHeight = wrappedLines.length * lineHeight;
+                const textBlockHeight = cachedWrappedLines.length * lineHeight;
                 const firstLineCenterY = centerY - textBlockHeight / 2 + lineHeight / 2;
 
                 underlineGroupEl.style.display = 'block';
-                underlineGroupEl.style.left = '0px';
-                underlineGroupEl.style.top = '0px';
-                underlineGroupEl.replaceChildren();
 
-                // 设置缩放后的字体用于测量每行下划线宽度
-                if (underlineMeasureCtx) {
-                    underlineMeasureCtx.font = `${fontWeight} ${fontPx * zoom}px sans-serif`;
-                }
+                // 确保 DOM 元素数量匹配行数
+                ensureLineElements(cachedWrappedLines.length);
 
-                wrappedLines.forEach((line, index) => {
-                    const lineWidth = underlineMeasureCtx
-                        ? underlineMeasureCtx.measureText(line || ' ').width
-                        : Math.max(24 * zoom, wrappedLines.length > 1 ? (textMaxWidth * zoom) : (label.length * 8 * zoom));
+                for (let i = 0; i < cachedWrappedLines.length; i++) {
+                    const modelWidth = cachedModelLineWidths[i] || 24;
+                    const lineWidth = modelWidth * zoom;
                     const underlineWidth = Math.min(box.w - 24 * zoom, Math.max(24 * zoom, lineWidth));
-                    const lineCenterY = firstLineCenterY + index * lineHeight;
+                    const lineCenterY = firstLineCenterY + i * lineHeight;
                     const hitHeight = Math.max(16 * zoom, lineHeight);
-                    const hitEl = document.createElement('div');
-                    hitEl.className = 'zk-node-file-link-hit';
-                    hitEl.style.cssText = `
-                        position: absolute;
-                        width: ${underlineWidth}px;
-                        height: ${hitHeight}px;
-                        left: ${centerX - underlineWidth / 2}px;
-                        top: ${lineCenterY - hitHeight / 2}px;
-                        background: transparent;
-                        pointer-events: auto;
-                        cursor: pointer;
-                    `;
-                    hitEl.addEventListener('mousedown', (e: MouseEvent) => {
-                        if (!this.cy || e.button !== 0) return;
-                        const toggleSelection = e.metaKey || e.ctrlKey;
-                        if (toggleSelection) {
-                            if (node.selected()) { node.unselect(); } else { node.select(); }
-                            e.preventDefault();
-                            e.stopPropagation();
-                        }
-                    });
-                    hitEl.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        // Cmd/Ctrl+Click 用于多选，不触发打开文件
-                        if ((e as MouseEvent).metaKey || (e as MouseEvent).ctrlKey) return;
-                        this.container?.dispatchEvent(new CustomEvent('node-click', {
-                            detail: {
-                                node: node.data('originalNode'),
-                                event: e
-                            }
-                        }));
-                    });
-                    const emitHover = (e: MouseEvent) => {
-                        this.container?.dispatchEvent(new CustomEvent('node-hover', {
-                            detail: {
-                                node: node.data('originalNode'),
-                                event: e
-                            }
-                        }));
-                    };
-                    hitEl.addEventListener('mouseenter', emitHover);
-                    hitEl.addEventListener('mousemove', emitHover);
-                    hitEl.addEventListener('mouseleave', () => {
-                        this.container?.dispatchEvent(new CustomEvent('node-leave', {
-                            detail: {
-                                node: node.data('originalNode')
-                            }
-                        }));
-                    });
-                    // 移动端触摸支持
-                    hitEl.addEventListener('touchend', (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        this.container?.dispatchEvent(new CustomEvent('node-click', {
-                            detail: {
-                                node: node.data('originalNode'),
-                                event: e
-                            }
-                        }));
-                    }, { passive: false });
-                    underlineGroupEl.appendChild(hitEl);
+                    const { hitEl, underlineEl } = lineElements[i];
 
-                    const underlineEl = document.createElement('div');
+                    hitEl.style.width = `${underlineWidth}px`;
+                    hitEl.style.height = `${hitHeight}px`;
+                    hitEl.style.left = `${centerX - underlineWidth / 2}px`;
+                    hitEl.style.top = `${lineCenterY - hitHeight / 2}px`;
+
                     const underlineY = lineCenterY + (fontPx * 0.58 * zoom);
-
-                    underlineEl.className = 'zk-node-file-underline';
-                    underlineEl.style.cssText = `
-                        position: absolute;
-                        width: ${underlineWidth}px;
-                        height: ${Math.max(1, 2 * zoom)}px;
-                        left: ${centerX - underlineWidth / 2}px;
-                        top: ${underlineY}px;
-                        background: rgba(255, 255, 255, 0.58);
-                        border-radius: 999px;
-                        pointer-events: none;
-                    `;
-                    underlineGroupEl.appendChild(underlineEl);
-                });
+                    underlineEl.style.width = `${underlineWidth}px`;
+                    underlineEl.style.height = `${Math.max(1, 2 * zoom)}px`;
+                    underlineEl.style.left = `${centerX - underlineWidth / 2}px`;
+                    underlineEl.style.top = `${underlineY}px`;
+                }
             };
 
             badgeUpdaters.push(updateUnderlinePosition);
@@ -4124,8 +4163,11 @@ case 'dagre':
             const remarkEl = document.createElement('div');
             remarkEl.className = 'zk-node-remark-badge';
             remarkEl.textContent = 'R';
+            let lastRemarkColor = '';
             const applyRemarkBadgeStyle = () => {
                 const remarkColor = node.data('branchNodeBorder') || '#ef4444';
+                if (remarkColor === lastRemarkColor) return;
+                lastRemarkColor = remarkColor;
                 remarkEl.style.cssText = `
                 position: absolute;
                 width: 28px;
@@ -4178,12 +4220,22 @@ case 'dagre':
             const updateRemarkPosition = () => {
                 if (!this.cy) return;
                 const remarkText = node.data('remark') || '';
+                const isSelected = node.selected();
+                // 快速路径：无 remark 且未选中时直接隐藏，跳过 visibility 检查和 boundingBox 计算
+                if (!remarkText && !isSelected) {
+                    if (remarkEl.style.display !== 'none') {
+                        remarkEl.style.display = 'none';
+                        tooltipEl.style.display = 'none';
+                        tooltipEl.style.opacity = '0';
+                    }
+                    return;
+                }
                 const isHidden =
                     node.removed() ||
                     node.hasClass('zk-collapsed-hidden') ||
                     node.style('display') === 'none' ||
                     !node.visible();
-                const shouldShow = !isHidden && (node.selected() || !!remarkText);
+                const shouldShow = !isHidden;
                 tooltipEl.textContent = remarkText;
                 applyRemarkBadgeStyle();
 
@@ -5169,15 +5221,18 @@ case 'dagre':
             // 更新手柄位置的函数（懒缓存 embed/image 卡片引用，避免每帧 querySelector）
             let handleImageCardCache: HTMLElement | null = null;
             let handleEmbedCardCache: HTMLElement | null = null;
+            let handleLastZoom = -1;
             const updateHandlePosition = () => {
                 if (!this.cy) return;
+                // 手柄不可见时跳过位置计算（opacity: 0 表示未 hover）
+                if (handle.style.opacity === '0') return;
+
                 const zoom = this.cy.zoom();
                 const curIsImageNode = node.data('isImageNode');
                 const curIsEmbedNode = node.data('isEmbed');
 
                 let x: number, y: number;
                 if (curIsImageNode) {
-                    // 图片节点：节点位置 + 卡片半宽 = 卡片右边缘
                     const rp = node.renderedPosition();
                     if (!handleImageCardCache) handleImageCardCache = this.container?.querySelector(`.zk-image-preview-card[data-node-id="${nodeId}"]`) as HTMLElement ?? null;
                     if (handleImageCardCache && handleImageCardCache.dataset.renderedWidth) {
@@ -5188,7 +5243,6 @@ case 'dagre':
                         x = rp.x; y = rp.y;
                     }
                 } else if (curIsEmbedNode) {
-                    // 嵌入预览节点：使用卡片实际宽度计算右边缘
                     const boundingBox = node.renderedBoundingBox();
                     if (!handleEmbedCardCache) handleEmbedCardCache = this.container?.querySelector(`.zk-embed-preview-card[data-node-id="${nodeId}"]`) as HTMLElement ?? null;
                     if (handleEmbedCardCache) {
@@ -5205,9 +5259,13 @@ case 'dagre':
                 }
 
                 handle.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
-                handle.style.width = `${baseHandleSize * zoom}px`;
-                handle.style.height = `${baseHandleSize * zoom}px`;
-                handle.style.borderWidth = `${2 * zoom}px`;
+                // 仅 zoom 变化时更新尺寸
+                if (zoom !== handleLastZoom) {
+                    handleLastZoom = zoom;
+                    handle.style.width = `${baseHandleSize * zoom}px`;
+                    handle.style.height = `${baseHandleSize * zoom}px`;
+                    handle.style.borderWidth = `${2 * zoom}px`;
+                }
             };
 
             handleUpdaters.push(updateHandlePosition);
