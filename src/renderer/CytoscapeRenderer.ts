@@ -120,6 +120,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private textMdOverlayCache: Map<string, {
         el: HTMLElement;
         component: Component;
+        mdEditor: EmbeddableMarkdownEditor | null;
         width: number;
         height: number;
         isPlainText: boolean;
@@ -180,21 +181,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
         return result.replace(/<\/?[^>]+>/g, '');
     }
-
-    private preserveEditorLikeBlankLines(text: string): string {
-        if (!text || !text.includes('\n\n')) return text;
-
-        return text.replace(/\n{2,}/g, (match) => {
-            const blankLineCount = Math.max(1, match.length - 1);
-            const placeholders = Array.from(
-                { length: blankLineCount },
-                () => '<div class="zk-md-blank-line" aria-hidden="true"></div>'
-            ).join('\n');
-            return `\n\n${placeholders}\n`;
-        });
-    }
-
-
 
     private hexToRgb(hex: string): { r: number; g: number; b: number } {
         const normalized = hex.replace('#', '').trim();
@@ -1036,6 +1022,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
         }
         // 清理文本节点 MD overlay 缓存（unload 每个 Component）
         this.textMdOverlayCache.forEach(entry => {
+            if (entry.mdEditor) {
+                try { entry.mdEditor.unload(); } catch { /* ignore */ }
+            }
             const liveHost = entry.el.querySelector('.zk-text-md-live-edit-host') as any;
             if (liveHost?._mdEditor) {
                 try { liveHost._mdEditor.unload(); } catch { /* ignore */ }
@@ -4825,7 +4814,6 @@ case 'dagre':
                 || data.label
                 || ''
             ).replace(/\\n/g, '\n');
-            const renderSource = this.preserveEditorLikeBlankLines(rawSource);
             const nodeCacheId = String(
                 data.originalNodeId
                 || originalNode.IDStr
@@ -4844,31 +4832,17 @@ case 'dagre':
             } else {
                 // 缓存未命中：创建新 overlay
                 const overlayEl = document.createElement('div');
-                overlayEl.className = 'zk-text-md-overlay markdown-rendered';
-                // 短文本（< 50 字符且无换行）使用 flex 居中
-                const useFlexCenter = rawSource.length < 50 && !rawSource.includes('\n');
-                if (useFlexCenter) {
-                    overlayEl.dataset.flexCenter = '1';
-                }
+                overlayEl.className = 'zk-text-md-overlay';
                 overlayEl.style.cssText = `
                     position: absolute;
                     left: 0;
                     top: 0;
-                    display: ${useFlexCenter ? 'flex' : 'inline-block'};
-                    ${useFlexCenter ? 'justify-content: center; align-items: center; text-align: center;' : ''}
+                    display: block;
                     transform-origin: 0 0;
                     pointer-events: none;
                     overflow: hidden;
                     box-sizing: border-box;
-                    padding: 10px 14px;
                     max-width: none;
-                    color: var(--text-normal);
-                    font-family: var(--font-text);
-                    font-size: 20px;
-                    font-weight: 500;
-                    line-height: 1.35;
-                    word-wrap: break-word;
-                    overflow-wrap: anywhere;
                     user-select: none;
                 `;
                 badgeContainer.appendChild(overlayEl);
@@ -4879,6 +4853,7 @@ case 'dagre':
                 entry = {
                     el: overlayEl,
                     component,
+                    mdEditor: null,
                     width: 0,
                     height: 0,
                     isPlainText: false,
@@ -4886,13 +4861,54 @@ case 'dagre':
                 };
                 this.textMdOverlayCache.set(cacheKey, entry);
 
-                if (app && MarkdownRenderer) {
-                    // 慢路径：Obsidian MarkdownRenderer 渲染
+                // 优先使用只读 EmbeddableMarkdownEditor，保证展示与编辑视觉一致
+                let usedLivePreview = false;
+                if (app) {
+                    try {
+                        const readonlyEditor = new EmbeddableMarkdownEditor({
+                            app,
+                            containerEl: overlayEl,
+                            initialValue: rawSource,
+                            sourcePath,
+                            readOnly: true,
+                        });
+                        entry.mdEditor = readonlyEditor;
+                        usedLivePreview = true;
+                    } catch {
+                        // Live preview 不可用，降级到 MarkdownRenderer
+                    }
+                }
+
+                if (usedLivePreview) {
+                    // CM6 同步创建，但渲染需要一帧完成布局
+                    const p = new Promise<void>((resolve) => {
+                        requestAnimationFrame(() => {
+                            requestAnimationFrame(() => {
+                                const rect = overlayEl.getBoundingClientRect();
+                                entry!.width = Math.max(80, Math.min(rect.width + 4, 640));
+                                entry!.height = Math.max(32, Math.min(rect.height + 4, 640));
+                                measureAndSizePending.push({ node, entry: entry! });
+                                resolve();
+                            });
+                        });
+                    });
+                    renderPromises.push(p);
+                } else if (app && MarkdownRenderer) {
+                    // 降级：Obsidian MarkdownRenderer 渲染
+                    overlayEl.classList.add('markdown-rendered');
+                    overlayEl.style.padding = '10px 14px';
+                    overlayEl.style.color = 'var(--text-normal)';
+                    overlayEl.style.fontFamily = 'var(--font-text)';
+                    overlayEl.style.fontSize = '20px';
+                    overlayEl.style.fontWeight = '500';
+                    overlayEl.style.lineHeight = '1.35';
+                    overlayEl.style.wordWrap = 'break-word';
+                    overlayEl.style.overflowWrap = 'anywhere';
                     const p = (async () => {
                         try {
                             overlayEl.empty?.();
                             overlayEl.textContent = '';
-                            await MarkdownRenderer.render(app, renderSource, overlayEl, sourcePath, component);
+                            await MarkdownRenderer.render(app, rawSource, overlayEl, sourcePath, component);
                         } catch (e) {
                             overlayEl.textContent = rawSource;
                         }
@@ -4904,6 +4920,7 @@ case 'dagre':
                     renderPromises.push(p);
                 } else {
                     // 无 app 兜底
+                    overlayEl.style.padding = '10px 14px';
                     overlayEl.textContent = rawSource;
                     const rect = overlayEl.getBoundingClientRect();
                     entry.width = Math.max(80, Math.min(rect.width + 4, 640));
@@ -5025,6 +5042,9 @@ case 'dagre':
         toEvict.forEach(key => {
             const e = this.textMdOverlayCache.get(key);
             if (e) {
+                if (e.mdEditor) {
+                    try { e.mdEditor.unload(); } catch { /* ignore */ }
+                }
                 try { e.component.unload(); } catch { /* ignore */ }
                 if (e.el.parentNode) e.el.remove();
                 this.textMdOverlayCache.delete(key);
@@ -7730,6 +7750,7 @@ case 'dagre':
         entry: {
             el: HTMLElement;
             component: Component;
+            mdEditor?: EmbeddableMarkdownEditor | null;
             width: number;
             height: number;
             isPlainText: boolean;
@@ -7737,6 +7758,12 @@ case 'dagre':
         }
     ): void {
         if (!this.cy || !this.container) return;
+
+        // 先卸载只读展示用的 editor，避免与可编辑 editor 冲突
+        if (entry.mdEditor) {
+            try { entry.mdEditor.unload(); } catch { /* ignore */ }
+            entry.mdEditor = null;
+        }
 
         this.ensureNodeVisibleInViewport(node);
 
@@ -7953,6 +7980,7 @@ case 'dagre':
         entry: {
             el: HTMLElement;
             component: Component;
+            mdEditor?: EmbeddableMarkdownEditor | null;
             width: number;
             height: number;
             isPlainText: boolean;
