@@ -67,6 +67,7 @@ export interface EmbeddableMarkdownEditorOptions {
 	initialValue: string;
 	sourcePath?: string;
 	placeholder?: string;
+	readOnly?: boolean;
 	onChange?: (value: string) => void;
 	onEnter?: (value: string, evt: KeyboardEvent) => boolean;
 	onEscape?: (evt: KeyboardEvent) => void;
@@ -105,7 +106,15 @@ export class EmbeddableMarkdownEditor extends Component {
 		this.setValue(this.opts.initialValue ?? '');
 
 		this.cm = this.editView?.editor?.cm ?? this.editView?.cm ?? null;
-		this.bindCallbacks();
+
+		if (this.opts.readOnly) {
+			// 只读模式：禁用编辑，隐藏光标
+			if (this.cm?.contentDOM) {
+				(this.cm.contentDOM as HTMLElement).contentEditable = 'false';
+			}
+		} else {
+			this.bindCallbacks();
+		}
 	}
 
 	private resolveSourceFile(sourcePath?: string): TFile | null {
