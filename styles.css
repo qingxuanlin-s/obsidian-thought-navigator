@@ -2451,28 +2451,28 @@ align-items: center;
 .zk-text-md-overlay h4,
 .zk-text-md-overlay h5,
 .zk-text-md-overlay h6 {
-  margin: 4px 0;
+  margin: 0;
   line-height: 1.3;
 }
 
 .zk-text-md-overlay p {
-  margin: 4px 0;
+  margin: 0;
   white-space: break-spaces;
 }
 
 .zk-text-md-overlay ul,
 .zk-text-md-overlay ol {
-  margin: 4px 0;
+  margin: 0;
   padding-left: 20px;
 }
 
 .zk-text-md-overlay li {
-  margin: 2px 0;
+  margin: 0;
   white-space: break-spaces;
 }
 
 .zk-text-md-overlay pre {
-  margin: 4px 0;
+  margin: 0;
   padding: 6px 8px;
   font-size: 12px;
   border-radius: 4px;
@@ -2485,7 +2485,7 @@ align-items: center;
 }
 
 .zk-text-md-overlay blockquote {
-  margin: 4px 0;
+  margin: 0;
   padding-left: 10px;
   border-left: 3px solid var(--background-modifier-border);
 }
