@@ -56,7 +56,7 @@ export interface RenderOptions {
     animationDuration?: number;
     nodeText?: 'id' | 'title' | 'both' | 'id-title';
     themeMode?: 'dark' | 'light';
-    themeStyle?: 'default' | 'vivid' | 'modern';
+    themeStyle?: 'default' | 'modern';
     edgeStyle?: 'straight' | 'bezier' | 'polyline';
     nodeLayoutStyle?: 'free' | 'auto';
     showNoteId?: boolean;

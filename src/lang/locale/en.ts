@@ -232,7 +232,7 @@ export default {
     "batch selected count": "{count} selected",
     "batch group": "Group",
     "batch delete": "Delete",
-    "batch change color": "Color",
+    "batch change color": "Fill",
     "batch cancel": "Deselect",
     // Search
     "search placeholder": "Search nodes...",
@@ -241,7 +241,7 @@ export default {
     "ctx unpin anchor": "Unpin anchor",
     "ctx link cross domain": "Link cross-domain node",
     "ctx rename id": "Rename ID",
-    "ctx change color": "Change color",
+    "ctx change color": "Change fill",
     "ctx delete group": "Delete group",
     "ctx rename group": "Rename group",
     "add node forward": "➡️ Forward",

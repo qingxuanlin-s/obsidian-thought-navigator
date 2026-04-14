@@ -230,7 +230,7 @@ export default {
     "batch selected count": "已选中 {count} 个",
     "batch group": "分组",
     "batch delete": "删除",
-    "batch change color": "颜色",
+    "batch change color": "底色",
     "batch cancel": "取消",
     // 搜索
     "search placeholder": "搜索节点...",
@@ -239,7 +239,7 @@ export default {
     "ctx unpin anchor": "取消锚点",
     "ctx link cross domain": "关联跨领域节点",
     "ctx rename id": "修改 ID",
-    "ctx change color": "修改颜色",
+    "ctx change color": "修改底色",
     "ctx delete group": "删除分组",
     "ctx rename group": "重命名分组",
     "add node forward": "➡️ 正向",
