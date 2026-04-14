@@ -4989,7 +4989,9 @@ case 'dagre':
                     // 仅在已存在手动尺寸时继续沿用。
                     if (currentWidthModel <= 0 && currentHeightModel <= 0) return;
                     const targetWidth = currentWidthModel > 0 ? currentWidthModel : e.width;
-                    const targetHeight = measureOverlayHeightForWidth(e.el, targetWidth, e.height);
+                    const targetHeight = currentHeightModel > 0
+                        ? currentHeightModel
+                        : measureOverlayHeightForWidth(e.el, targetWidth, e.height);
                     e.width = targetWidth;
                     e.height = targetHeight;
                     node.data('manualWidthModel', targetWidth);
@@ -7385,7 +7387,7 @@ case 'dagre':
         const nodeFontWeight = isTextOnlyEdit ? '500' : getRenderedNodeFontWeight();
         const nodeLineHeight = isTextOnlyEdit ? '1.35' : getEditorLineHeight();
         const textAlign = isTextOnlyEdit ? 'left' : 'center';
-        const editorPadding = isTextOnlyEdit ? '10px 14px' : '10px 12px';
+        const editorPadding = isTextOnlyEdit ? '8px 12px' : '10px 12px';
 
         // 锁定节点尺寸，防止清空标签后节点缩小
         const lockedWidth = node.width();
@@ -7998,7 +8000,7 @@ case 'dagre':
             border: 2px solid rgba(91, 143, 217, 0.95);
             border-radius: 12px;
             outline: none;
-            padding: 10px 14px;
+            padding: 8px 12px;
             margin: 0;
             color: var(--text-normal);
             font-size: 20px;
