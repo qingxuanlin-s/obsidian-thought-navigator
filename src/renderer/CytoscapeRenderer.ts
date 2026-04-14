@@ -4881,6 +4881,13 @@ case 'dagre':
                     input
                         // 最小过滤：移除 script 标签，避免执行脚本
                         .replace(/<\s*script\b[^>]*>[\s\S]*?<\s*\/\s*script\s*>/gi, '');
+                const applyRoughInlineMarkdown = (input: string): string =>
+                    // 粗糙支持常见内联样式：
+                    // **text** -> <strong>, ~~text~~ -> <del>, __text__ -> <u>
+                    input
+                        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                        .replace(/~~(.+?)~~/g, '<del>$1</del>')
+                        .replace(/__(.+?)__/g, '<u>$1</u>');
                 const roughHtml = normalizedSource
                     .split('\n')
                     .map((line) => {
@@ -4890,9 +4897,9 @@ case 'dagre':
                         }
                         const h1Match = line.match(/^\s*#\s+(.+)$/);
                         if (h1Match) {
-                            return `<div class="zk-rough-h1-line">${sanitizeInlineHtml(h1Match[1])}</div>`;
+                            return `<div class="zk-rough-h1-line">${applyRoughInlineMarkdown(sanitizeInlineHtml(h1Match[1]))}</div>`;
                         }
-                        return `<div class="zk-rough-text-line">${sanitizeInlineHtml(line)}</div>`;
+                        return `<div class="zk-rough-text-line">${applyRoughInlineMarkdown(sanitizeInlineHtml(line))}</div>`;
                     })
                     .join('');
                 overlayEl.empty?.();
