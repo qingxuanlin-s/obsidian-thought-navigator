@@ -4875,35 +4875,32 @@ case 'dagre':
                 };
                 this.textMdOverlayCache.set(cacheKey, entry);
 
-                // 预处理：统一换行后全部转成 <br />，避免 MarkdownRenderer
-                // 按段落模型压缩空行，同时保留内联 Markdown（链接、加粗等）
                 const normalizedSource = rawSource.replace(/\r\n?/g, '\n');
-                const renderSource = normalizedSource.replace(/\n/g, '<br />');
-
-                if (app && MarkdownRenderer) {
-                    // Obsidian MarkdownRenderer 渲染
-                    const p = (async () => {
-                        try {
-                            overlayEl.empty?.();
-                            overlayEl.textContent = '';
-                            await MarkdownRenderer.render(app, renderSource, overlayEl, sourcePath, component);
-                        } catch (e) {
-                            overlayEl.textContent = normalizedSource;
+                // 粗糙渲染：仅区分 H1（# ）和普通文本，避免 Markdown 段落语义引入额外间距。
+                const sanitizeInlineHtml = (input: string): string =>
+                    input
+                        // 最小过滤：移除 script 标签，避免执行脚本
+                        .replace(/<\s*script\b[^>]*>[\s\S]*?<\s*\/\s*script\s*>/gi, '');
+                const roughHtml = normalizedSource
+                    .split('\n')
+                    .map((line) => {
+                        const trimmed = line.trim();
+                        if (!trimmed) {
+                            return '<div class="zk-rough-empty-line"></div>';
                         }
-                        const rect = overlayEl.getBoundingClientRect();
-                        entry!.width = Math.max(80, Math.min(rect.width + 4, 640));
-                        entry!.height = Math.max(32, Math.min(rect.height + 4, 640));
-                        measureAndSizePending.push({ node, entry: entry! });
-                    })();
-                    renderPromises.push(p);
-                } else {
-                    // 无 app 兜底
-                    overlayEl.textContent = normalizedSource;
-                    const rect = overlayEl.getBoundingClientRect();
-                    entry.width = Math.max(80, Math.min(rect.width + 4, 640));
-                    entry.height = Math.max(32, Math.min(rect.height + 4, 640));
-                    measureAndSizePending.push({ node, entry });
-                }
+                        const h1Match = line.match(/^\s*#\s+(.+)$/);
+                        if (h1Match) {
+                            return `<div class="zk-rough-h1-line">${sanitizeInlineHtml(h1Match[1])}</div>`;
+                        }
+                        return `<div class="zk-rough-text-line">${sanitizeInlineHtml(line)}</div>`;
+                    })
+                    .join('');
+                overlayEl.empty?.();
+                overlayEl.innerHTML = roughHtml;
+                const rect = overlayEl.getBoundingClientRect();
+                entry.width = Math.max(80, Math.min(rect.width + 4, 640));
+                entry.height = Math.max(32, Math.min(rect.height + 4, 640));
+                measureAndSizePending.push({ node, entry });
             }
 
             // 标记节点已有 overlay（供样式层判断是否隐藏 Canvas 文字）
@@ -5700,11 +5697,30 @@ case 'dagre':
 
         // 拖动控制点
         let isDragging = false;
+        let dragStartDistance = distance;
+        let dragStartProjection = 0;
+        const CURVATURE_DRAG_SENSITIVITY = 1.5;
 
         controlPoint.addEventListener('mousedown', (e: MouseEvent) => {
             e.preventDefault();
             e.stopPropagation();
+            const sourcePos = sourceNode.renderedPosition();
+            const targetPos = targetNode.renderedPosition();
+            const containerRect = this.container!.getBoundingClientRect();
+            const mouseX = e.clientX - containerRect.left;
+            const mouseY = e.clientY - containerRect.top;
+            const currentWeight = edge.data('controlPointWeight') !== undefined ? edge.data('controlPointWeight') : 0.5;
+            const midX = sourcePos.x + (targetPos.x - sourcePos.x) * currentWeight;
+            const midY = sourcePos.y + (targetPos.y - sourcePos.y) * currentWeight;
+            const dx = targetPos.x - sourcePos.x;
+            const dy = targetPos.y - sourcePos.y;
+            const len = Math.sqrt(dx * dx + dy * dy) || 1;
+            const perpX = -dy / len;
+            const perpY = dx / len;
+
             isDragging = true;
+            dragStartDistance = edge.data('controlPointDistance') !== undefined ? edge.data('controlPointDistance') : distance;
+            dragStartProjection = (mouseX - midX) * perpX + (mouseY - midY) * perpY;
             controlPoint.style.cursor = 'grabbing';
         });
 
@@ -5733,7 +5749,8 @@ case 'dagre':
             // 计算新的 distance（鼠标到边中点的垂直距离）
             const toMouseX = mouseX - midX;
             const toMouseY = mouseY - midY;
-            const newDistance = toMouseX * perpX + toMouseY * perpY;
+            const projectedDistance = toMouseX * perpX + toMouseY * perpY;
+            const newDistance = dragStartDistance + (projectedDistance - dragStartProjection) * CURVATURE_DRAG_SENSITIVITY;
 
             // 更新边的弧度
             edge.data('controlPointDistance', newDistance);
