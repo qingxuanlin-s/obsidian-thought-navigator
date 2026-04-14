@@ -4947,6 +4947,7 @@ case 'dagre':
                 }
                 const isSelected = node.selected();
                 const overflowY = (currentEntry.el.scrollHeight - currentEntry.el.clientHeight) > 1;
+                currentEntry.el.dataset.overflowing = overflowY ? '1' : '0';
                 currentEntry.el.style.overflowX = 'hidden';
                 currentEntry.el.style.overflowY = (isSelected && overflowY) ? 'auto' : 'hidden';
                 currentEntry.el.style.pointerEvents = (isSelected && overflowY) ? 'auto' : 'none';
