@@ -3362,7 +3362,8 @@ export class ZKIndexView extends ItemView {
         try {
             const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
             if (mocFile) {
-                await this.mocHandler.updateNodeColorInMOC(mocFile, node.IDStr, selectedColor);
+                const persistedColor = selectedColor ? `fill2:${selectedColor}` : '';
+                await this.mocHandler.updateNodeColorInMOC(mocFile, node.IDStr, persistedColor);
                 
                 // 刷新视图
                 await this.refreshBranchMermaid();
@@ -3407,7 +3408,8 @@ export class ZKIndexView extends ItemView {
         try {
             const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
             if (mocFile) {
-                await this.mocHandler.updateNodeColorsInMOC(mocFile, nodeIds, selectedColor);
+                const persistedColor = selectedColor ? `fill2:${selectedColor}` : '';
+                await this.mocHandler.updateNodeColorsInMOC(mocFile, nodeIds, persistedColor);
 
                 // 刷新视图
                 await this.refreshBranchMermaid();
