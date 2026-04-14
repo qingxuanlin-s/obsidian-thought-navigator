@@ -2482,6 +2482,16 @@ align-items: center;
   white-space: break-spaces;
 }
 
+.zk-text-md-overlay.markdown-rendered :is(h1, h2, h3, h4, h5, h6) + :is(p, ul, ol, blockquote, pre),
+.zk-text-md-overlay :is(h1, h2, h3, h4, h5, h6) + :is(p, ul, ol, blockquote, pre) {
+  margin-top: 0 !important;
+}
+
+.zk-text-md-overlay.markdown-rendered :is(p, ul, ol, blockquote, pre) + :is(p, ul, ol, blockquote, pre),
+.zk-text-md-overlay :is(p, ul, ol, blockquote, pre) + :is(p, ul, ol, blockquote, pre) {
+  margin-top: 0 !important;
+}
+
 .zk-text-md-overlay ul,
 .zk-text-md-overlay ol {
   margin: 4px 0;
@@ -2489,7 +2499,7 @@ align-items: center;
 }
 
 .zk-text-md-overlay li {
-  margin: 2px 0;
+  margin: 0.12em 0;
   white-space: break-spaces;
 }
 
@@ -2510,6 +2520,27 @@ align-items: center;
   margin: 4px 0;
   padding-left: 10px;
   border-left: 3px solid var(--background-modifier-border);
+}
+
+/* 粗糙渲染：仅区分 h1 行和普通文本行 */
+.zk-text-md-overlay .zk-rough-h1-line {
+  margin: 0;
+  font-size: 1.8em;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--h1-color);
+  white-space: break-spaces;
+}
+
+.zk-text-md-overlay .zk-rough-text-line {
+  margin: 0;
+  line-height: 1.35;
+  color: var(--text-normal);
+  white-space: break-spaces;
+}
+
+.zk-text-md-overlay .zk-rough-empty-line {
+  height: 0.8em;
 }
 
 /* overlay 本身不拦截事件，只让内部链接可点击 */
