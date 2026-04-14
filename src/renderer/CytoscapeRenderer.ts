@@ -1184,6 +1184,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
             const manualSize = (isTextNode && persistedSize && persistedSize.width > 0 && persistedSize.height > 0)
                 ? persistedSize
                 : null;
+            const rawCustomColor = nodeColors[node.IDStr] || nodeColors[node.ID] || null;
+            const customFillColor = (typeof rawCustomColor === 'string' && rawCustomColor.startsWith('fill2:'))
+                ? rawCustomColor.slice(6)
+                : null;
+            const hasLegacyCustomColor = !!rawCustomColor && !customFillColor;
             const element: any = {
                 group: 'nodes' as const,
                 data: {
@@ -1198,8 +1203,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     isCurrentFile: node.file?.path === currentFilePath,  // 纯文字节点不匹配
                     originalNode: node,
                     isRoot: node.isRoot || false,  // 根节点标记
-                    customColor: nodeColors[node.IDStr] || null,  // 添加自定义颜色
-                    hasCustomColor: !!(nodeColors[node.IDStr]),
+                    customColor: rawCustomColor,  // 兼容旧自定义颜色（色点/旧语义）
+                    customFillColor: customFillColor,  // 新语义：节点底色
+                    hasCustomColor: hasLegacyCustomColor,
                     isCrossDomain: node.isCrossDomain || false,  // 传递跨领域节点标记
                     isTextOnly: node.isTextOnly || false,  // 传递纯文字节点标记
                     isStandaloneText: (node.isTextOnly || false) && !hasParentChildLink, // 无父子关系的文本节点
@@ -2042,7 +2048,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'text-max-width': '280px',
                 'text-overflow-wrap': 'anywhere',
                 'background-color': (ele: any) => {
-                    const customColor = this.normalizeHexColor(ele.data('customColor'));
+                    const customColor = this.normalizeHexColor(ele.data('customFillColor'));
                     if (customColor && !ele.data('isEmbed') && !ele.data('isGroup')) {
                         return customColor;
                     }
@@ -2052,7 +2058,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     return colors.nodeBackground;
                 },
                 'color': (ele: any) => {
-                    const customColor = this.normalizeHexColor(ele.data('customColor'));
+                    const customColor = this.normalizeHexColor(ele.data('customFillColor'));
                     if (customColor && !ele.data('isEmbed') && !ele.data('isGroup')) {
                         return resolveTextColorForFill(customColor);
                     }
@@ -2429,6 +2435,13 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'border-color': colors.nodeBorderSelected,
                 'border-width': '3px',
                 'color': '#ffffff'
+            } as any
+        },
+        // 兼容旧语义：仅有 legacy customColor 的节点保留文字左侧色点留白
+        {
+            selector: 'node[?hasCustomColor][!isEmbed][!isGroup]',
+            style: {
+                'text-margin-x': 8,
             } as any
         },
         // 嵌入节点选中态：保持隐藏（由 HTML 预览卡片处理选中视觉）
@@ -4385,6 +4398,64 @@ case 'dagre':
             updateAnchorPos();
         });
 
+        // 兼容旧语义：文字前小色点（legacy customColor）
+        this.cy.nodes('[customColor]').forEach((node: any) => {
+            if (node.data('isGroup') || node.data('isEmbed')) return;
+            const rawColor = String(node.data('customColor') || '');
+            if (!rawColor || rawColor.startsWith('fill:')) return;
+            const color = this.normalizeHexColor(rawColor);
+            if (!color) return;
+
+            const dotEl = document.createElement('div');
+            dotEl.className = 'zk-node-color-dot';
+            dotEl.style.cssText = `
+                position: absolute;
+                pointer-events: none;
+                border-radius: 999px;
+                transform: translate(-50%, -50%);
+            `;
+            dotEl.style.backgroundColor = color;
+            dotEl.style.boxShadow = `0 0 6px 1px ${color}66`;
+            badgeContainer.appendChild(dotEl);
+
+            const updateDotPos = () => {
+                if (!this.cy || node.removed()) { dotEl.style.display = 'none'; return; }
+                const isHidden =
+                    node.hasClass('zk-collapsed-hidden') ||
+                    node.style('display') === 'none' ||
+                    !node.visible();
+                if (isHidden) { dotEl.style.display = 'none'; return; }
+
+                const zoom = this.cy.zoom();
+                const dotSize = Math.max(5, 7 * zoom);
+                const renderedPos = node.renderedPosition();
+                const renderedWidth = Number(node.renderedWidth?.() || 0);
+                const renderedHeight = Number(node.renderedHeight?.() || 0);
+                const hasValidRenderBox =
+                    Number.isFinite(renderedPos?.x) &&
+                    Number.isFinite(renderedPos?.y) &&
+                    Number.isFinite(renderedWidth) &&
+                    Number.isFinite(renderedHeight) &&
+                    renderedWidth > 1 &&
+                    renderedHeight > 1;
+                if (!hasValidRenderBox) {
+                    dotEl.style.display = 'none';
+                    return;
+                }
+
+                const centerY = renderedPos.y;
+                const textStartX = renderedPos.x - renderedWidth / 2 + 20 * zoom;
+
+                dotEl.style.display = 'block';
+                dotEl.style.width = `${dotSize}px`;
+                dotEl.style.height = `${dotSize}px`;
+                dotEl.style.transform = `translate(${textStartX}px, ${centerY}px) translate(-50%, -50%)`;
+            };
+
+            badgeUpdaters.push(updateDotPos);
+            updateDotPos();
+        });
+
         // 为每个有 badge 的节点创建徽章元素（跳过 embed 节点，由预览卡片展示）
         this.cy.nodes('[badge]').forEach((node: any) => {
             const badge = node.data('badge');
@@ -4510,6 +4581,8 @@ case 'dagre':
                 let startY = 0;
                 let startWModel = 0;
                 let startHModel = 0;
+                let startLeftModel = 0;
+                let startTopModel = 0;
 
                 const getTextNodeMinModelSize = (): { width: number; height: number } => {
                     const label = String(node.data('label') || '');
@@ -4537,6 +4610,9 @@ case 'dagre':
                     const minSize = getTextNodeMinModelSize();
                     const widthModel = Math.max(minSize.width, startWModel + (e.clientX - startX) / zoom);
                     const heightModel = Math.max(minSize.height, startHModel + (e.clientY - startY) / zoom);
+                    const centerX = startLeftModel + widthModel / 2;
+                    const centerY = startTopModel + heightModel / 2;
+                    node.position({ x: centerX, y: centerY });
                     node.style({ width: widthModel, height: heightModel });
                     node.data('manualWidthModel', widthModel);
                     node.data('manualHeightModel', heightModel);
@@ -4568,6 +4644,9 @@ case 'dagre':
                     startY = e.clientY;
                     startWModel = Number(node.width() || 0);
                     startHModel = Number(node.height() || 0);
+                    const startPos = node.position();
+                    startLeftModel = startPos.x - startWModel / 2;
+                    startTopModel = startPos.y - startHModel / 2;
                     document.addEventListener('mousemove', onMove);
                     document.addEventListener('mouseup', onUp);
                 });
