@@ -3340,16 +3340,12 @@ export class ZKIndexView extends ItemView {
     async changeNodeColor(node: ZKNode) {
         // 预设颜色
         const colors = [
-            { name: '青色', value: '#0891b2' },
-            { name: '蓝色', value: '#2563eb' },
-            { name: '深紫', value: '#7c3aed' },
-            { name: '紫红', value: '#c026d3' },
-            { name: '玫红', value: '#db2777' },
-            { name: '绿色', value: '#16a34a' },
-            { name: '深绿', value: '#047857' },
-            { name: '橙色', value: '#ea580c' },
-            { name: '深橙', value: '#dc2626' },
-            { name: '红色', value: '#dc2626' },
+            { name: '蓝色', value: '#00a8ff' },
+            { name: '绿色', value: '#34d399' },
+            { name: '橙色', value: '#f59e0b' },
+            { name: '红色', value: '#ef4444' },
+            { name: '紫色', value: '#a78bfa' },
+            { name: '浅灰', value: '#e2e8f0' },
             { name: '默认', value: '' }
         ];
         
@@ -3372,14 +3368,14 @@ export class ZKIndexView extends ItemView {
                 await this.refreshBranchMermaid();
                 
                 if (selectedColor) {
-                    new Notice(`已设置节点 ${node.ID} 的颜色`);
+                    new Notice(`已设置节点 ${node.ID} 的底色`);
                 } else {
-                    new Notice(`已重置节点 ${node.ID} 的颜色`);
+                    new Notice(`已重置节点 ${node.ID} 的底色`);
                 }
             }
         } catch (error) {
             console.error('Failed to change node color:', error);
-            new Notice(`修改节点颜色失败: ${error.message}`);
+            new Notice(`修改节点底色失败: ${error.message}`);
         }
     }
 
@@ -3389,16 +3385,12 @@ export class ZKIndexView extends ItemView {
     async batchChangeNodeColor(nodeIds: string[]) {
         // 预设颜色
         const colors = [
-            { name: '青色', value: '#0891b2' },
-            { name: '蓝色', value: '#2563eb' },
-            { name: '深紫', value: '#7c3aed' },
-            { name: '紫红', value: '#c026d3' },
-            { name: '玫红', value: '#db2777' },
-            { name: '绿色', value: '#16a34a' },
-            { name: '深绿', value: '#047857' },
-            { name: '橙色', value: '#ea580c' },
-            { name: '深橙', value: '#dc2626' },
-            { name: '红色', value: '#dc2626' },
+            { name: '蓝色', value: '#00a8ff' },
+            { name: '绿色', value: '#34d399' },
+            { name: '橙色', value: '#f59e0b' },
+            { name: '红色', value: '#ef4444' },
+            { name: '紫色', value: '#a78bfa' },
+            { name: '浅灰', value: '#e2e8f0' },
             { name: '默认', value: '' }
         ];
 
@@ -3421,14 +3413,14 @@ export class ZKIndexView extends ItemView {
                 await this.refreshBranchMermaid();
 
                 if (selectedColor) {
-                    new Notice(`已修改 ${nodeIds.length} 个节点的颜色`);
+                    new Notice(`已修改 ${nodeIds.length} 个节点的底色`);
                 } else {
-                    new Notice(`已重置 ${nodeIds.length} 个节点的颜色`);
+                    new Notice(`已重置 ${nodeIds.length} 个节点的底色`);
                 }
             }
         } catch (error) {
             console.error('Failed to batch change node color:', error);
-            new Notice(`批量修改节点颜色失败: ${error.message}`);
+            new Notice(`批量修改节点底色失败: ${error.message}`);
         }
     }
 
@@ -3438,7 +3430,7 @@ export class ZKIndexView extends ItemView {
     private showBatchColorPickerDialog(colors: Array<{ name: string; value: string }>, nodeIds: string[]): Promise<string | null> {
         return new Promise((resolve) => {
             const modal = new Modal(this.app);
-            modal.titleEl.setText('批量修改节点颜色');
+            modal.titleEl.setText('批量修改节点底色');
 
             const { contentEl } = modal;
             contentEl.empty();
@@ -3452,7 +3444,7 @@ export class ZKIndexView extends ItemView {
             infoDiv.style.color = 'var(--text-muted)';
             infoDiv.innerHTML = `
                 <div>选中节点: <strong>${nodeIds.length} 个</strong></div>
-                <div style="font-size: 0.9em; margin-top: 5px;">选择一个颜色应用到所有选中的节点</div>
+                <div style="font-size: 0.9em; margin-top: 5px;">选择一个颜色应用到所有选中的节点底色</div>
             `;
 
             const colorGrid = contentEl.createDiv();
@@ -3466,26 +3458,24 @@ export class ZKIndexView extends ItemView {
             colors.forEach((color) => {
                 const colorButton = colorGrid.createDiv();
                 colorButton.style.cssText = `
-                    width: 80px;
-                    height: 80px;
-                    border-radius: 16px;
+                    width: 84px;
+                    height: 56px;
+                    border-radius: 12px;
                     cursor: pointer;
                     display: flex;
                     align-items: center;
                     justify-content: center;
                     font-size: 14px;
                     font-weight: 600;
-                    color: white;
+                    color: var(--text-normal);
                     transition: all 0.2s;
-                    border: 3px solid transparent;
+                    border: 1px solid var(--background-modifier-border);
                 `;
 
                 if (color.value) {
-                    colorButton.style.backgroundColor = color.value;
+                    colorButton.style.background = `linear-gradient(135deg, ${color.value}26, ${color.value}40)`;
                 } else {
                     colorButton.style.backgroundColor = 'var(--background-secondary)';
-                    colorButton.style.border = '3px solid var(--background-modifier-border)';
-                    colorButton.style.color = 'var(--text-normal)';
                 }
 
                 colorButton.textContent = color.name;
@@ -3505,12 +3495,12 @@ export class ZKIndexView extends ItemView {
                 colorButton.addEventListener('click', () => {
                     colorGrid.querySelectorAll('div').forEach(btn => {
                         btn.style.transform = 'scale(1)';
-                        btn.style.border = color.value ? '3px solid transparent' : '3px solid var(--background-modifier-border)';
+                        btn.style.border = '1px solid var(--background-modifier-border)';
                     });
 
                     selectedColor = color.value;
                     colorButton.style.transform = 'scale(1.1)';
-                    colorButton.style.border = '3px solid white';
+                    colorButton.style.border = '2px solid var(--interactive-accent)';
                     colorButton.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
                 });
 
@@ -3561,7 +3551,7 @@ export class ZKIndexView extends ItemView {
     private showColorPickerDialog(colors: Array<{ name: string; value: string }>, node: ZKNode): Promise<string | null> {
         return new Promise((resolve) => {
             const modal = new Modal(this.app);
-            modal.titleEl.setText('选择节点颜色');
+            modal.titleEl.setText('选择节点底色');
             
             const { contentEl } = modal;
             contentEl.empty();
@@ -3575,7 +3565,7 @@ export class ZKIndexView extends ItemView {
             infoDiv.style.color = 'var(--text-muted)';
             infoDiv.innerHTML = `
                 <div>节点: <strong>${node.ID}</strong></div>
-                <div style="font-size: 0.9em; margin-top: 5px;">选择一个颜色作为节点的外框颜色</div>
+                <div style="font-size: 0.9em; margin-top: 5px;">选择一个颜色作为节点底色</div>
             `;
             
             const colorGrid = contentEl.createDiv();
@@ -3589,27 +3579,24 @@ export class ZKIndexView extends ItemView {
             colors.forEach((color) => {
                 const colorButton = colorGrid.createDiv();
                 colorButton.style.cssText = `
-                    width: 80px;
-                    height: 80px;
-                    border-radius: 16px;
+                    width: 84px;
+                    height: 56px;
+                    border-radius: 12px;
                     cursor: pointer;
                     display: flex;
                     align-items: center;
                     justify-content: center;
                     font-size: 14px;
                     font-weight: 600;
-                    color: white;
+                    color: var(--text-normal);
                     transition: all 0.2s;
-                    border: 3px solid transparent;
+                    border: 1px solid var(--background-modifier-border);
                 `;
                 
                 if (color.value) {
-                    colorButton.style.backgroundColor = color.value;
+                    colorButton.style.background = `linear-gradient(135deg, ${color.value}26, ${color.value}40)`;
                 } else {
-                    // 默认颜色显示为灰色边框
                     colorButton.style.backgroundColor = 'var(--background-secondary)';
-                    colorButton.style.border = '3px solid var(--background-modifier-border)';
-                    colorButton.style.color = 'var(--text-normal)';
                 }
                 
                 colorButton.textContent = color.name;
@@ -3632,13 +3619,13 @@ export class ZKIndexView extends ItemView {
                     // 取消之前的选中
                     colorGrid.querySelectorAll('div').forEach(btn => {
                         btn.style.transform = 'scale(1)';
-                        btn.style.border = color.value ? '3px solid transparent' : '3px solid var(--background-modifier-border)';
+                        btn.style.border = '1px solid var(--background-modifier-border)';
                     });
                     
                     // 选中当前颜色
                     selectedColor = color.value;
                     colorButton.style.transform = 'scale(1.1)';
-                    colorButton.style.border = '3px solid white';
+                    colorButton.style.border = '2px solid var(--interactive-accent)';
                     colorButton.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
                 });
                 

@@ -1297,10 +1297,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
         return elements;
     }
 
-    private isVividThemeStyle(): boolean {
-        return (this.currentOptions?.themeStyle || 'modern') === 'vivid';
-    }
-
     private isModernThemeStyle(): boolean {
         return (this.currentOptions?.themeStyle || 'modern') === 'modern';
     }
@@ -1383,7 +1379,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
     private buildVividNodeStyleMap(nodes: ZKNode[]): Map<string, NodeBranchStyle> {
         const styleMap = new Map<string, NodeBranchStyle>();
-        if (!this.isVividThemeStyle() && !this.isModernThemeStyle()) return styleMap;
+        if (!this.isModernThemeStyle()) return styleMap;
 
         const branchIds = Array.from(
             new Set(
@@ -1398,8 +1394,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
         const branchColorById = new Map<string, NodeBranchStyle>();
         const styleColorMap = (this.currentData?.metadata as any)?.nodeStyleColors || {};
         const palette = this.getBranchStylePalette();
-        const isVivid = this.isVividThemeStyle();
-
         branchIds.forEach((branchId) => {
             const storedColor = this.normalizeHexColor(styleColorMap[branchId]);
             const paletteColor = palette[this.hashString(branchId) % palette.length];
@@ -1416,17 +1410,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 background = this.hexToRgba(border, 0.12);
                 shadow = 'transparent';
             } else {
-                if (isVivid) {
-                    // 绚丽风格：深底 + 高亮点缀边框（Emerald Deep / Amber Deep）
-                    background = this.darkenColor(baseBackground, 0.55);
-                    border = this.darkenColor(accentColor, 0.32);
-                    shadow = this.hexToRgba(background, 0.62);
-                } else {
-                    // 现代风格：全填充深色 + 略亮边框
-                    background = baseBackground;
-                    border = this.lightenColor(baseBackground, 0.12);
-                    shadow = this.hexToRgba(baseBackground, 0.22);
-                }
+                // 现代风格：全填充深色 + 略亮边框
+                background = baseBackground;
+                border = this.lightenColor(baseBackground, 0.12);
+                shadow = this.hexToRgba(baseBackground, 0.22);
             }
             branchColorById.set(branchId, { background, border, shadow });
         });
@@ -1646,7 +1633,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         headerDivider: string;
     } {
         const isModern = this.isModernThemeStyle();
-        const isColored = this.isVividThemeStyle() || isModern;
+        const isColored = isModern;
         const branchBorderColor = typeof data?.branchNodeBorder === 'string' ? data.branchNodeBorder : '';
         const vividHeaderBackground = isColored && branchBorderColor
             ? this.hexToRgba(branchBorderColor, this.currentOptions?.themeMode === 'light' ? 0.18 : 0.28)
@@ -1994,7 +1981,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
     private getStylesheet(options: RenderOptions): any[] {
     const isLight = options.themeMode === 'light';
-    const isVivid = (options.themeStyle || 'modern') === 'vivid';
     const isModern = (options.themeStyle || 'modern') === 'modern';
     const edgeStyle = options.edgeStyle || 'bezier';
 
@@ -2033,6 +2019,16 @@ export class CytoscapeRenderer implements IGraphRenderer {
         badgeBackground: '#5b8fd9',
         badgeText: '#ffffff'
     };
+    const resolveTextColorForFill = (fillColor: string | null): string => {
+        if (!fillColor) return colors.nodeText;
+        const normalized = this.normalizeHexColor(fillColor);
+        if (!normalized) return colors.nodeText;
+        const r = parseInt(normalized.slice(1, 3), 16);
+        const g = parseInt(normalized.slice(3, 5), 16);
+        const b = parseInt(normalized.slice(5, 7), 16);
+        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        return luminance > 0.62 ? '#1f2937' : '#f8fafc';
+    };
 
         return [
         // 节点样式 - 使用函数动态计算大小
@@ -2046,12 +2042,22 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'text-max-width': '280px',
                 'text-overflow-wrap': 'anywhere',
                 'background-color': (ele: any) => {
-                    if (isVivid && ele.data('branchNodeBackground') && !ele.data('isRoot')) {
+                    const customColor = this.normalizeHexColor(ele.data('customColor'));
+                    if (customColor && !ele.data('isEmbed') && !ele.data('isGroup')) {
+                        return customColor;
+                    }
+                    if (isModern && ele.data('branchNodeBackground') && !ele.data('isRoot')) {
                         return ele.data('branchNodeBackground');
                     }
                     return colors.nodeBackground;
                 },
-                'color': colors.nodeText,
+                'color': (ele: any) => {
+                    const customColor = this.normalizeHexColor(ele.data('customColor'));
+                    if (customColor && !ele.data('isEmbed') && !ele.data('isGroup')) {
+                        return resolveTextColorForFill(customColor);
+                    }
+                    return colors.nodeText;
+                },
                 'font-size': '20px',
                 'font-weight': '500',
                 // 使用函数动态计算宽度和高度
@@ -2107,12 +2113,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'border-width': '2px',
                 'border-opacity': 0.72,
                 'border-color': (ele: any) => {
-                    if (
-                        (isVivid || isModern) &&
-                        ele.data('branchNodeBorder') &&
-                        !ele.data('isRoot') &&
-                        !ele.data('isFreeNode')
-                    ) {
+                    if (isModern && ele.data('branchNodeBorder') && !ele.data('isRoot') && !ele.data('isFreeNode')) {
                         return ele.data('branchNodeBorder');
                     }
                     return colors.nodeBorder;
@@ -2292,13 +2293,13 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     return 2;
                 },
                 'line-color': (ele: any) => {
-                    if (isVivid && ele.data('branchEdgeColor')) {
+                    if (isModern && ele.data('branchEdgeColor')) {
                         return ele.data('branchEdgeColor');
                     }
                     return colors.edgeNormal;
                 },
                 'target-arrow-color': (ele: any) => {
-                    if (isVivid && ele.data('branchEdgeColor')) {
+                    if (isModern && ele.data('branchEdgeColor')) {
                         return ele.data('branchEdgeColor');
                     }
                     return colors.edgeNormal;
@@ -2428,13 +2429,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'border-color': colors.nodeBorderSelected,
                 'border-width': '3px',
                 'color': '#ffffff'
-            } as any
-        },
-        // 有自定义颜色的节点：文字右移为色点留空间
-        {
-            selector: 'node[?hasCustomColor][!isEmbed][!isGroup]',
-            style: {
-                'text-margin-x': 8,
             } as any
         },
         // 嵌入节点选中态：保持隐藏（由 HTML 预览卡片处理选中视觉）
@@ -4389,62 +4383,6 @@ case 'dagre':
 
             badgeUpdaters.push(updateAnchorPos);
             updateAnchorPos();
-        });
-
-        // 文字前小色点（customColor）
-        this.cy.nodes('[customColor]').forEach((node: any) => {
-            if (node.data('isGroup') || node.data('isEmbed')) return;
-            const color = node.data('customColor') as string;
-            if (!color) return;
-
-            const dotEl = document.createElement('div');
-            dotEl.className = 'zk-node-color-dot';
-            dotEl.style.cssText = `
-                position: absolute;
-                pointer-events: none;
-                border-radius: 999px;
-                transform: translate(-50%, -50%);
-            `;
-            dotEl.style.backgroundColor = color;
-            dotEl.style.boxShadow = `0 0 6px 1px ${color}66`;
-            badgeContainer.appendChild(dotEl);
-
-            const updateDotPos = () => {
-                if (!this.cy || node.removed()) { dotEl.style.display = 'none'; return; }
-                const isHidden =
-                    node.hasClass('zk-collapsed-hidden') ||
-                    node.style('display') === 'none' ||
-                    !node.visible();
-                if (isHidden) { dotEl.style.display = 'none'; return; }
-
-                const zoom = this.cy.zoom();
-                const dotSize = Math.max(5, 7 * zoom);
-                const renderedPos = node.renderedPosition();
-                const renderedWidth = Number(node.renderedWidth?.() || 0);
-                const renderedHeight = Number(node.renderedHeight?.() || 0);
-                const hasValidRenderBox =
-                    Number.isFinite(renderedPos?.x) &&
-                    Number.isFinite(renderedPos?.y) &&
-                    Number.isFinite(renderedWidth) &&
-                    Number.isFinite(renderedHeight) &&
-                    renderedWidth > 1 &&
-                    renderedHeight > 1;
-                if (!hasValidRenderBox) {
-                    dotEl.style.display = 'none';
-                    return;
-                }
-
-                const centerY = renderedPos.y;
-                const textStartX = renderedPos.x - renderedWidth / 2 + 20 * zoom;
-
-                dotEl.style.display = 'block';
-                dotEl.style.width = `${dotSize}px`;
-                dotEl.style.height = `${dotSize}px`;
-                dotEl.style.transform = `translate(${textStartX}px, ${centerY}px) translate(-50%, -50%)`;
-            };
-
-            badgeUpdaters.push(updateDotPos);
-            updateDotPos();
         });
 
         // 为每个有 badge 的节点创建徽章元素（跳过 embed 节点，由预览卡片展示）

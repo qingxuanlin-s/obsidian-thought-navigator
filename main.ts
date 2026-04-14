@@ -118,7 +118,7 @@ interface ZKNavigationSettings {
     mocNodePositions: Record<string, Record<string, { x: number; y: number }>>; // MOC 节点位置存储 {mocFilePath: {nodeId: {x, y}}}
     smartConnection: boolean;          // 智能连线开关
     themeMode: 'dark' | 'light';       // 主题模式
-    themeStyle: 'default' | 'vivid' | 'modern';   // 主题风格（默认/绚丽/现代）
+    themeStyle: 'default' | 'modern';   // 主题风格（默认/现代）
     edgeStyle: 'straight' | 'bezier' | 'polyline'; // 连线风格
     nodeLayoutStyle: 'free' | 'auto';  // 节点布局风格（自由/自动）
     showNoteIdInBranchView: boolean;   // 分支视图是否显示笔记编号
@@ -230,6 +230,9 @@ export default class ZKNavigationPlugin extends Plugin {
             DEFAULT_SETTINGS,
             await this.loadData()
         )
+        if ((this.settings as any).themeStyle === 'vivid') {
+            this.settings.themeStyle = 'modern';
+        }
     }
 
     applyTheme() {
