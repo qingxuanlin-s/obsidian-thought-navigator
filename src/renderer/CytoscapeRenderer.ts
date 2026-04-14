@@ -4832,17 +4832,31 @@ case 'dagre':
             } else {
                 // 缓存未命中：创建新 overlay
                 const overlayEl = document.createElement('div');
-                overlayEl.className = 'zk-text-md-overlay';
+                overlayEl.className = 'zk-text-md-overlay markdown-rendered';
+                // 短文本（< 50 字符且无换行）使用 flex 居中
+                const useFlexCenter = rawSource.length < 50 && !rawSource.includes('\n');
+                if (useFlexCenter) {
+                    overlayEl.dataset.flexCenter = '1';
+                }
                 overlayEl.style.cssText = `
                     position: absolute;
                     left: 0;
                     top: 0;
-                    display: block;
+                    display: ${useFlexCenter ? 'flex' : 'inline-block'};
+                    ${useFlexCenter ? 'justify-content: center; align-items: center; text-align: center;' : ''}
                     transform-origin: 0 0;
                     pointer-events: none;
                     overflow: hidden;
                     box-sizing: border-box;
+                    padding: 10px 14px;
                     max-width: none;
+                    color: var(--text-normal);
+                    font-family: var(--font-text);
+                    font-size: 20px;
+                    font-weight: 500;
+                    line-height: 1.35;
+                    word-wrap: break-word;
+                    overflow-wrap: anywhere;
                     user-select: none;
                 `;
                 badgeContainer.appendChild(overlayEl);
@@ -4861,56 +4875,20 @@ case 'dagre':
                 };
                 this.textMdOverlayCache.set(cacheKey, entry);
 
-                // 优先使用只读 EmbeddableMarkdownEditor，保证展示与编辑视觉一致
-                let usedLivePreview = false;
-                if (app) {
-                    try {
-                        const readonlyEditor = new EmbeddableMarkdownEditor({
-                            app,
-                            containerEl: overlayEl,
-                            initialValue: rawSource,
-                            sourcePath,
-                            readOnly: true,
-                        });
-                        entry.mdEditor = readonlyEditor;
-                        usedLivePreview = true;
-                    } catch {
-                        // Live preview 不可用，降级到 MarkdownRenderer
-                    }
-                }
+                // 预处理：统一换行后全部转成 <br />，避免 MarkdownRenderer
+                // 按段落模型压缩空行，同时保留内联 Markdown（链接、加粗等）
+                const normalizedSource = rawSource.replace(/\r\n?/g, '\n');
+                const renderSource = normalizedSource.replace(/\n/g, '<br />');
 
-                if (usedLivePreview) {
-                    // CM6 同步创建，但渲染需要一帧完成布局
-                    const p = new Promise<void>((resolve) => {
-                        requestAnimationFrame(() => {
-                            requestAnimationFrame(() => {
-                                const rect = overlayEl.getBoundingClientRect();
-                                entry!.width = Math.max(80, Math.min(rect.width + 4, 640));
-                                entry!.height = Math.max(32, Math.min(rect.height + 4, 640));
-                                measureAndSizePending.push({ node, entry: entry! });
-                                resolve();
-                            });
-                        });
-                    });
-                    renderPromises.push(p);
-                } else if (app && MarkdownRenderer) {
-                    // 降级：Obsidian MarkdownRenderer 渲染
-                    overlayEl.classList.add('markdown-rendered');
-                    overlayEl.style.padding = '10px 14px';
-                    overlayEl.style.color = 'var(--text-normal)';
-                    overlayEl.style.fontFamily = 'var(--font-text)';
-                    overlayEl.style.fontSize = '20px';
-                    overlayEl.style.fontWeight = '500';
-                    overlayEl.style.lineHeight = '1.35';
-                    overlayEl.style.wordWrap = 'break-word';
-                    overlayEl.style.overflowWrap = 'anywhere';
+                if (app && MarkdownRenderer) {
+                    // Obsidian MarkdownRenderer 渲染
                     const p = (async () => {
                         try {
                             overlayEl.empty?.();
                             overlayEl.textContent = '';
-                            await MarkdownRenderer.render(app, rawSource, overlayEl, sourcePath, component);
+                            await MarkdownRenderer.render(app, renderSource, overlayEl, sourcePath, component);
                         } catch (e) {
-                            overlayEl.textContent = rawSource;
+                            overlayEl.textContent = normalizedSource;
                         }
                         const rect = overlayEl.getBoundingClientRect();
                         entry!.width = Math.max(80, Math.min(rect.width + 4, 640));
@@ -4920,8 +4898,7 @@ case 'dagre':
                     renderPromises.push(p);
                 } else {
                     // 无 app 兜底
-                    overlayEl.style.padding = '10px 14px';
-                    overlayEl.textContent = rawSource;
+                    overlayEl.textContent = normalizedSource;
                     const rect = overlayEl.getBoundingClientRect();
                     entry.width = Math.max(80, Math.min(rect.width + 4, 640));
                     entry.height = Math.max(32, Math.min(rect.height + 4, 640));
