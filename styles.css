@@ -2620,13 +2620,23 @@ align-items: center;
 .zk-text-md-live-edit-host .cm-editor {
   height: 100%;
   background: transparent;
+  font-size: 20px !important;
+  font-weight: 500 !important;
 }
 
 .zk-text-md-live-edit-host .cm-scroller {
-  font-family: var(--font-text);
-  font-size: 20px;
-  font-weight: 500;
-  line-height: 1.35;
+  font-family: var(--font-text) !important;
+  font-size: 20px !important;
+  font-weight: 500 !important;
+  line-height: 1.35 !important;
+}
+
+.zk-text-md-live-edit-host .cm-content,
+.zk-text-md-live-edit-host .cm-line,
+.zk-text-md-live-edit-host .cm-editor .cm-line {
+  font-size: 20px !important;
+  font-weight: 500 !important;
+  line-height: 1.35 !important;
 }
 
 .zk-text-md-live-edit-host .cm-content {
