@@ -8294,6 +8294,26 @@ case 'dagre':
 
         let isSaved = false;
 
+        // 动态扩展：根据内容自动撑高编辑框
+        const autoGrow = () => {
+            if (!this.cy || node.removed()) return;
+            textarea.style.height = 'auto';
+            const contentH = textarea.scrollHeight + 4;
+            const newH = Math.max(boxH, Math.min(contentH, 640));
+            textarea.style.height = `${newH}px`;
+            // 同步 Cytoscape 节点尺寸
+            const curNodeH = Number(node.height() || boxH);
+            if (newH !== curNodeH) {
+                this.cy.batch(() => {
+                    node.style({ height: newH });
+                });
+            }
+            // 重新定位居中
+            const rp = node.renderedPosition();
+            textarea.style.left = `${rp.x - boxW / 2}px`;
+            textarea.style.top = `${rp.y - newH / 2}px`;
+        };
+
         const save = () => {
             if (isSaved) return;
             const val = textarea.value.trim();
@@ -8317,6 +8337,7 @@ case 'dagre':
             this.container?.focus();
         };
 
+        textarea.addEventListener('input', () => autoGrow());
         textarea.addEventListener('keydown', (e: KeyboardEvent) => {
             e.stopPropagation();
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); save(); }
@@ -8328,7 +8349,7 @@ case 'dagre':
         textarea.addEventListener('mousedown', (e) => e.stopPropagation());
         textarea.addEventListener('blur', () => { setTimeout(() => { if (!isSaved) save(); }, 20); });
 
-        setTimeout(() => textarea.focus(), 0);
+        setTimeout(() => { textarea.focus(); autoGrow(); }, 0);
     }
 
     /**
