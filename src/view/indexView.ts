@@ -1,3 +1,4 @@
+import { toPng } from "html-to-image";
 import ZKNavigationPlugin from "main";
 import { ExtraButtonComponent, FuzzySuggestModal, ItemView, Menu, Modal, Notice, Platform, Scope, Setting, TFile, WorkspaceLeaf, debounce, moment, setIcon, setTooltip } from "obsidian";
 import { t } from "src/lang/helper";
@@ -632,6 +633,350 @@ export class ZKIndexView extends ItemView {
                 div.requestFullscreen();
             }
         });
+
+        const moreBtn = new ExtraButtonComponent(rightBtns);
+        moreBtn.setIcon("more-horizontal").setTooltip(t("more options"));
+        moreBtn.onClick(() => {
+            this.showMoreMenu(moreBtn.extraSettingsEl);
+        });
+    }
+
+    /**
+     * 显示"更多"下拉菜单
+     */
+    private showMoreMenu(btnEl: HTMLElement): void {
+        // 移除已有菜单
+        const existingMenu = document.querySelector('.zk-more-menu');
+        if (existingMenu) {
+            existingMenu.remove();
+            return; // toggle 行为
+        }
+
+        const btnRect = btnEl.getBoundingClientRect();
+        const menu = document.body.createDiv('zk-more-menu');
+        menu.style.position = 'fixed';
+        menu.style.zIndex = '10000';
+
+        // 导出为图片（带子菜单）
+        const exportOption = menu.createDiv('zk-menu-option');
+        setIcon(exportOption.createSpan('zk-menu-option-icon'), 'image');
+        exportOption.createSpan().setText(t('export as image'));
+        setIcon(exportOption.createSpan('zk-menu-option-arrow'), 'chevron-right');
+
+        exportOption.addEventListener('click', (e) => {
+            e.stopPropagation();
+            // 切换子菜单
+            let sub = menu.querySelector('.zk-more-submenu') as HTMLElement | null;
+            if (sub) {
+                sub.remove();
+                return;
+            }
+            sub = menu.createDiv('zk-more-submenu');
+
+            const mediumOption = sub.createDiv('zk-menu-option');
+            setIcon(mediumOption.createSpan('zk-menu-option-icon'), 'file-image');
+            mediumOption.createSpan().setText(t('export medium quality'));
+            mediumOption.addEventListener('click', async (ev) => {
+                ev.stopPropagation();
+                menu.remove();
+                await this.exportGraphAsImage(2);
+            });
+
+            const highOption = sub.createDiv('zk-menu-option');
+            setIcon(highOption.createSpan('zk-menu-option-icon'), 'file-image');
+            highOption.createSpan().setText(t('export high quality'));
+            highOption.addEventListener('click', async (ev) => {
+                ev.stopPropagation();
+                menu.remove();
+                await this.exportGraphAsImage(4);
+            });
+        });
+
+        // 分隔线
+        menu.createDiv('zk-menu-separator');
+
+        // 导出为交互式 HTML
+        const htmlOption = menu.createDiv('zk-menu-option');
+        setIcon(htmlOption.createSpan('zk-menu-option-icon'), 'code');
+        htmlOption.createSpan().setText(t('export as html'));
+        htmlOption.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            menu.remove();
+            await this.exportGraphAsHTML();
+        });
+
+        // 定位菜单：在按钮下方
+        menu.style.top = `${btnRect.bottom + 4}px`;
+        menu.style.right = `${document.documentElement.clientWidth - btnRect.right}px`;
+
+        // 点击其他地方关闭
+        const closeMenu = (e: MouseEvent) => {
+            if (!menu.contains(e.target as Node)) {
+                menu.remove();
+                document.removeEventListener('click', closeMenu);
+            }
+        };
+        setTimeout(() => {
+            document.addEventListener('click', closeMenu);
+        }, 0);
+    }
+
+    /**
+     * 导出当前图形为 PNG 图片
+     */
+    private async exportGraphAsImage(scale: number): Promise<void> {
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        const graphDiv = document.getElementById('zk-branch-cytoscape');
+        if (!cy || !graphDiv) {
+            new Notice(t('export fail'));
+            return;
+        }
+
+        const savedZoom = cy.zoom();
+        const savedPan = { ...cy.pan() };
+
+        try {
+            const savedWidth = graphDiv.style.width;
+            const savedHeight = graphDiv.style.height;
+            const savedPosition = graphDiv.style.position;
+            const savedOverflow = graphDiv.style.overflow;
+
+            // 计算全图 bounding box（模型坐标）
+            const bb = cy.elements().boundingBox();
+            const padding = 60;
+
+            // 浏览器 canvas 像素上限（安全值）
+            const maxCanvasDim = 8192;
+            // 计算最大允许的 zoom，确保 容器尺寸 * pixelRatio < 上限
+            const rawW = bb.w + padding * 2;
+            const rawH = bb.h + padding * 2;
+            let exportZoom = 1;
+            const maxDim = Math.max(rawW, rawH) * scale;
+            if (maxDim > maxCanvasDim) {
+                exportZoom = maxCanvasDim / (Math.max(rawW, rawH) * scale);
+            }
+
+            const fullW = Math.ceil(rawW * exportZoom);
+            const fullH = Math.ceil(rawH * exportZoom);
+
+            // 临时撑大容器，以 exportZoom 渲染全图
+            graphDiv.style.width = `${fullW}px`;
+            graphDiv.style.height = `${fullH}px`;
+            graphDiv.style.overflow = 'hidden';
+
+            cy.resize();
+            cy.viewport({
+                zoom: exportZoom,
+                pan: { x: (-bb.x1 + padding) * exportZoom, y: (-bb.y1 + padding) * exportZoom }
+            });
+
+            // 等待 overlay 重新定位
+            await new Promise(r => setTimeout(r, 300));
+
+            const canvasBg = getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || '#1e1e1e';
+
+            const dataUrl = await toPng(graphDiv, {
+                pixelRatio: scale,
+                backgroundColor: canvasBg,
+                width: fullW,
+                height: fullH,
+                filter: (node: HTMLElement) => {
+                    if (node.classList?.contains('zk-node-add-btn')) return false;
+                    if (node.classList?.contains('zk-batch-toolbar')) return false;
+                    if (node.classList?.contains('zk-more-menu')) return false;
+                    return true;
+                },
+            });
+
+            // 恢复容器尺寸和视口
+            graphDiv.style.width = savedWidth;
+            graphDiv.style.height = savedHeight;
+            graphDiv.style.position = savedPosition;
+            graphDiv.style.overflow = savedOverflow;
+            cy.resize();
+            cy.viewport({ zoom: savedZoom, pan: savedPan });
+
+            // 触发下载
+            const a = document.createElement('a');
+            const mocPath = this.plugin.settings.mocCurrentFile || 'graph';
+            const baseName = mocPath.replace(/^.*\//, '').replace(/\.[^.]+$/, '');
+            a.href = dataUrl;
+            a.download = `${baseName}-${Date.now()}.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            new Notice(t('export success'));
+        } catch (err) {
+            console.error('[ZK] export graph as image failed', err);
+            // 尝试恢复
+            graphDiv.style.width = '';
+            graphDiv.style.height = '';
+            cy.resize();
+            cy.viewport({ zoom: savedZoom, pan: savedPan });
+            new Notice(t('export fail'));
+        }
+    }
+
+    /**
+     * 导出为自包含交互式 HTML（可拖拽 / 缩放）
+     */
+    private async exportGraphAsHTML(): Promise<void> {
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        if (!cy) {
+            new Notice(t('export fail'));
+            return;
+        }
+
+        try {
+            // 提取每个节点/边的计算后样式
+            const nodes: any[] = [];
+            cy.nodes().forEach((n: any) => {
+                if (n.style('display') === 'none') return;
+                const d = n.data();
+                nodes.push({
+                    data: {
+                        id: d.id,
+                        label: d.label || '',
+                        isRoot: !!d.isRoot,
+                        isEmbed: !!d.isEmbed,
+                        isGroup: !!d.isGroup,
+                        isTextOnly: !!d.isTextOnly,
+                        isStandaloneText: !!d.isStandaloneText,
+                    },
+                    position: { ...n.position() },
+                    style: {
+                        'width': n.width(),
+                        'height': n.height(),
+                        'background-color': n.style('background-color'),
+                        'background-opacity': n.style('background-opacity'),
+                        'border-width': n.style('border-width'),
+                        'border-color': n.style('border-color'),
+                        'color': n.style('color'),
+                        'font-size': n.style('font-size'),
+                        'font-weight': n.style('font-weight'),
+                        'shape': n.style('shape'),
+                        'label': d.isEmbed ? '' : (d.label || ''),
+                        'opacity': n.style('opacity'),
+                    }
+                });
+            });
+
+            const edges: any[] = [];
+            cy.edges().forEach((e: any) => {
+                if (e.style('display') === 'none') return;
+                const d = e.data();
+                edges.push({
+                    data: {
+                        id: d.id,
+                        source: d.source,
+                        target: d.target,
+                        label: d.label || '',
+                    },
+                    style: {
+                        'width': e.style('width'),
+                        'line-color': e.style('line-color'),
+                        'target-arrow-color': e.style('target-arrow-color'),
+                        'target-arrow-shape': e.style('target-arrow-shape'),
+                        'curve-style': e.style('curve-style'),
+                    }
+                });
+            });
+
+            const bgColor = getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || '#1e1e1e';
+
+            const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mind Map Export</title>
+<script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"><\/script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: ${bgColor}; overflow: hidden; }
+#cy { width: 100vw; height: 100vh; }
+#toolbar {
+  position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+  background: rgba(30,30,30,0.85); border-radius: 8px; padding: 6px 12px;
+  display: flex; gap: 8px; z-index: 10; backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.1);
+}
+#toolbar button {
+  background: none; border: 1px solid rgba(255,255,255,0.2);
+  color: #ccc; padding: 6px 14px; border-radius: 6px; cursor: pointer;
+  font-size: 13px; transition: all 0.15s;
+}
+#toolbar button:hover { background: rgba(255,255,255,0.1); color: #fff; }
+</style>
+</head>
+<body>
+<div id="cy"></div>
+<div id="toolbar">
+  <button onclick="cy.fit(null,40)">Fit</button>
+  <button onclick="cy.zoom({level:cy.zoom()*1.3,renderedPosition:{x:innerWidth/2,y:innerHeight/2}})">Zoom +</button>
+  <button onclick="cy.zoom({level:cy.zoom()/1.3,renderedPosition:{x:innerWidth/2,y:innerHeight/2}})">Zoom −</button>
+</div>
+<script>
+var graphData = ${JSON.stringify({ nodes, edges })};
+var cy = cytoscape({
+  container: document.getElementById('cy'),
+  elements: graphData.nodes.map(function(n){return{group:'nodes',data:n.data,position:n.position}})
+    .concat(graphData.edges.map(function(e){return{group:'edges',data:e.data}})),
+  style: [
+    { selector: 'node', style: {
+      'label': 'data(label)', 'text-valign': 'center', 'text-halign': 'center',
+      'text-wrap': 'wrap', 'text-max-width': '260px', 'font-size': '18px',
+      'font-weight': '500', 'shape': 'round-rectangle', 'corner-radius': '20px',
+      'border-width': '2px', 'border-opacity': 0.72, 'padding': '18px',
+      'text-overflow-wrap': 'anywhere',
+    }},
+    { selector: 'edge', style: {
+      'curve-style': 'unbundled-bezier', 'control-point-distances': 60,
+      'control-point-weights': 0.5, 'target-arrow-shape': 'triangle',
+      'arrow-scale': 1.2,
+    }},
+  ].concat(
+    graphData.nodes.map(function(n){
+      var s = {}; for(var k in n.style){ if(n.style[k] != null) s[k] = n.style[k]; }
+      return { selector: 'node[id="'+n.data.id+'"]', style: s };
+    })
+  ).concat(
+    graphData.edges.map(function(e){
+      var s = {}; for(var k in e.style){ if(e.style[k] != null) s[k] = e.style[k]; }
+      return { selector: 'edge[id="'+e.data.id+'"]', style: s };
+    })
+  ),
+  layout: { name: 'preset' },
+  userZoomingEnabled: true,
+  userPanningEnabled: true,
+  boxSelectionEnabled: false,
+  autoungrabify: false,
+  minZoom: 0.05,
+  maxZoom: 3
+});
+cy.fit(null, 40);
+<\/script>
+</body>
+</html>`;
+
+            const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const mocPath = this.plugin.settings.mocCurrentFile || 'graph';
+            const baseName = mocPath.replace(/^.*\//, '').replace(/\.[^.]+$/, '');
+            a.href = url;
+            a.download = `${baseName}-${Date.now()}.html`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            new Notice(t('export success'));
+        } catch (err) {
+            console.error('[ZK] export graph as HTML failed', err);
+            new Notice(t('export fail'));
+        }
     }
 
     async onload() {
