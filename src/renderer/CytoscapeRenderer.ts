@@ -4816,7 +4816,7 @@ case 'dagre':
                 || ''
             );
             const cacheKey = `${sourcePath}||${nodeCacheId}||${rawSource}`;
-            const isRootTextNode = !!data.isRoot;
+            const isRootTextNode = !!data.isRoot && !data.isFreeNode;
             const applyTextOverlayBaseStyle = (overlayEl: HTMLElement) => {
                 const overlayDisplay = isRootTextNode ? 'flex' : 'block';
                 const overlayPadding = isRootTextNode ? '0 24px' : '24px 24px 12px 24px';
@@ -7456,7 +7456,7 @@ case 'dagre':
         };
         // 文本节点使用与 MD overlay 一致的字体和左对齐
         const isTextOnlyEdit = !!originalNode?.isTextOnly;
-        const isRootEdit = !!data.isRoot;
+        const isRootEdit = !!data.isRoot && !data.isFreeNode;
         const nodeFontSize = isTextOnlyEdit
             ? (isRootEdit ? '26px' : '20px')
             : getRenderedNodeFontSize();
