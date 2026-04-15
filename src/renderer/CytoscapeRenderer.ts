@@ -4572,23 +4572,12 @@ case 'dagre':
                 let startTopModel = 0;
 
                 const getTextNodeMinModelSize = (): { width: number; height: number } => {
-                    const label = String(node.data('label') || '');
-                    const measured = this.measureNodeLabel(label, {
-                        baseWidth: 90,
-                        minHeight: 42,
-                        maxWidth: 280,
-                        charWidth: 11,
-                        lineHeight: 18,
-                        paddingX: 40,
-                        paddingY: 20
-                    });
-                    const compensated = this.compensateFreeLikeNodeFrameSize(label, measured, {
-                        isFreeNode: !!node.data('isFreeNode'),
-                        isStandaloneText: !!node.data('isStandaloneText'),
-                        maxWidth: 280,
-                        charWidth: 11
-                    });
-                    return compensated;
+                    // 手动缩放时使用固定下限，不再按整段文本内容估算最小高度，
+                    // 否则长文本节点会被一个很大的“内容最小值”卡住，无法继续缩小。
+                    if (node.data('isRoot')) {
+                        return { width: 180, height: 90 };
+                    }
+                    return { width: 120, height: 60 };
                 };
 
                 const onMove = (e: MouseEvent) => {
