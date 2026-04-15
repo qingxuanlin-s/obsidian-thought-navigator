@@ -2432,6 +2432,7 @@ align-items: center;
   font-size: 20px;
   font-weight: 500;
   line-height: 1.35;
+  text-align: left;
   word-wrap: break-word;
   white-space: break-spaces;
   user-select: none;
@@ -2529,6 +2530,20 @@ align-items: center;
   white-space: break-spaces;
 }
 
+.zk-text-md-overlay .zk-root-text-md-inner {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 100%;
+  width: 100%;
+}
+
+.zk-text-md-overlay .zk-root-text-md-inner > * {
+  width: 100%;
+  text-align: center;
+}
+
 .zk-text-md-overlay .zk-rough-h1-line {
   font-size: 1.8em;
   font-weight: 700;
@@ -2615,7 +2630,7 @@ align-items: center;
 }
 
 .zk-text-md-live-edit-host .cm-content {
-  padding: 10px 14px;
+  padding: 24px 24px 12px 24px;
   white-space: break-spaces;
 }
 

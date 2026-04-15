@@ -4815,43 +4815,52 @@ case 'dagre':
                 || ''
             );
             const cacheKey = `${sourcePath}||${nodeCacheId}||${rawSource}`;
+            const isRootTextNode = !!data.isRoot;
+            const applyTextOverlayBaseStyle = (overlayEl: HTMLElement) => {
+                const overlayDisplay = isRootTextNode ? 'flex' : 'block';
+                const overlayPadding = isRootTextNode ? '0 24px' : '24px 24px 12px 24px';
+                const overlayFontSize = isRootTextNode ? '26px' : '20px';
+                const overlayFontWeight = isRootTextNode ? '700' : '500';
+                const overlayTextAlign = isRootTextNode ? 'center' : 'left';
+                const overlayAlignItems = isRootTextNode ? 'center' : 'stretch';
+                overlayEl.style.cssText = `
+                    position: absolute;
+                    left: 0;
+                    top: 0;
+                    display: ${overlayDisplay};
+                    flex-direction: column;
+                    justify-content: center;
+                    align-items: ${overlayAlignItems};
+                    transform-origin: 0 0;
+                    pointer-events: none;
+                    overflow: hidden;
+                    box-sizing: border-box;
+                    padding: ${overlayPadding};
+                    max-width: none;
+                    color: var(--text-normal);
+                    font-family: var(--font-text);
+                    font-size: ${overlayFontSize};
+                    font-weight: ${overlayFontWeight};
+                    line-height: 1.35;
+                    word-wrap: break-word;
+                    overflow-wrap: anywhere;
+                    user-select: none;
+                    text-align: ${overlayTextAlign};
+                `;
+            };
 
             let entry = this.textMdOverlayCache.get(cacheKey);
 
             if (entry) {
                 // 缓存命中：直接复用
                 entry.usedInCycle = true;
+                applyTextOverlayBaseStyle(entry.el);
                 badgeContainer.appendChild(entry.el);
             } else {
                 // 缓存未命中：创建新 overlay
                 const overlayEl = document.createElement('div');
                 overlayEl.className = 'zk-text-md-overlay markdown-rendered';
-                // 短文本（< 50 字符且无换行）使用 flex 居中
-                const useFlexCenter = rawSource.length < 50 && !rawSource.includes('\n');
-                if (useFlexCenter) {
-                    overlayEl.dataset.flexCenter = '1';
-                }
-                overlayEl.style.cssText = `
-                    position: absolute;
-                    left: 0;
-                    top: 0;
-                    display: ${useFlexCenter ? 'flex' : 'inline-block'};
-                    ${useFlexCenter ? 'justify-content: center; align-items: center; text-align: center;' : ''}
-                    transform-origin: 0 0;
-                    pointer-events: none;
-                    overflow: hidden;
-                    box-sizing: border-box;
-                    padding: 10px 14px;
-                    max-width: none;
-                    color: var(--text-normal);
-                    font-family: var(--font-text);
-                    font-size: 20px;
-                    font-weight: 500;
-                    line-height: 1.35;
-                    word-wrap: break-word;
-                    overflow-wrap: anywhere;
-                    user-select: none;
-                `;
+                applyTextOverlayBaseStyle(overlayEl);
                 badgeContainer.appendChild(overlayEl);
 
                 const component = new Component();
@@ -4902,7 +4911,9 @@ case 'dagre':
                     })
                     .join('');
                 overlayEl.empty?.();
-                overlayEl.innerHTML = roughHtml;
+                overlayEl.innerHTML = isRootTextNode
+                    ? `<div class="zk-root-text-md-inner">${roughHtml}</div>`
+                    : roughHtml;
                 const rect = overlayEl.getBoundingClientRect();
                 entry.width = Math.max(80, Math.min(rect.width + 4, 640));
                 entry.height = Math.max(32, Math.min(rect.height + 4, 640));
@@ -4932,7 +4943,7 @@ case 'dagre':
                 // 原地编辑：textarea 内嵌在 overlay 里，所以编辑期保持可见，
                 // 但跟随节点的实际渲染尺寸（autoGrow 后 node 会变高）
                 const isEditing = currentEntry.el.dataset.editing === '1';
-                currentEntry.el.style.display = currentEntry.el.dataset.flexCenter === '1' ? 'flex' : 'block';
+                currentEntry.el.style.display = 'block';
                 currentEntry.el.style.left = `${bb.x1}px`;
                 currentEntry.el.style.top = `${bb.y1}px`;
                 if (isEditing) {
@@ -7405,12 +7416,17 @@ case 'dagre':
         };
         // 文本节点使用与 MD overlay 一致的字体和左对齐
         const isTextOnlyEdit = !!originalNode?.isTextOnly;
-        const nodeFontSize = isTextOnlyEdit ? '20px' : getRenderedNodeFontSize();
+        const isRootEdit = !!data.isRoot;
+        const nodeFontSize = isTextOnlyEdit
+            ? (isRootEdit ? '26px' : '20px')
+            : getRenderedNodeFontSize();
         const nodeFontFamily = getRenderedNodeFontFamily();
-        const nodeFontWeight = isTextOnlyEdit ? '500' : getRenderedNodeFontWeight();
+        const nodeFontWeight = isTextOnlyEdit
+            ? (isRootEdit ? '700' : '500')
+            : getRenderedNodeFontWeight();
         const nodeLineHeight = isTextOnlyEdit ? '1.35' : getEditorLineHeight();
-        const textAlign = isTextOnlyEdit ? 'left' : 'center';
-        const editorPadding = isTextOnlyEdit ? '8px 12px' : '10px 12px';
+        const textAlign = isRootEdit ? 'center' : 'left';
+        const editorPadding = '24px 24px 12px 24px';
 
         // 锁定节点尺寸，防止清空标签后节点缩小
         const lockedWidth = node.width();
@@ -7472,7 +7488,9 @@ case 'dagre':
                 }, minWidth);
             }
 
-            const targetWidth = Math.min(maxWidth, Math.max(minWidth, Math.ceil(contentWidth)));
+            const targetWidth = isRootEdit
+                ? minWidth
+                : Math.min(maxWidth, Math.max(minWidth, Math.ceil(contentWidth)));
             textarea.style.width = `${targetWidth}px`;
             textarea.style.height = 'auto';
             const targetHeight = Math.min(maxHeight, Math.max(minHeight, textarea.scrollHeight + 4));
@@ -8023,7 +8041,7 @@ case 'dagre':
             border: 2px solid rgba(91, 143, 217, 0.95);
             border-radius: 12px;
             outline: none;
-            padding: 8px 12px;
+            padding: 24px 24px 12px 24px;
             margin: 0;
             color: var(--text-normal);
             font-size: 20px;
