@@ -7381,6 +7381,12 @@ case 'dagre':
             existingEditor.remove();
         }
 
+        // 占位符节点：使用与文本节点一致的 CM6 编辑器
+        if (isPlaceholder) {
+            this.startPlaceholderInPlaceEdit(node);
+            return;
+        }
+
         // 文本节点：原地编辑（在已有 overlay 内部直接编辑，不创建悬浮 textarea）
         if (!isPlaceholder && originalNode?.isTextOnly) {
             const rawSource = String(
@@ -8024,6 +8030,305 @@ case 'dagre':
             restoreNodeInteractivity();
             this.startInPlaceTextEditLegacy(node, originalNode, entry);
         }
+    }
+
+    /**
+     * 占位符节点原地编辑（CM6 版），与文本节点编辑体验统一。
+     * 提交时根据内容路由：[[xxx]] → 文件节点，![[xxx]] → 嵌入节点，其他 → 文本节点。
+     */
+    private startPlaceholderInPlaceEdit(node: any): void {
+        if (!this.cy || !this.container) return;
+
+        const data = node.data();
+
+        this.ensureNodeVisibleInViewport(node);
+
+        // 给占位符节点一个合理的编辑尺寸
+        const defaultW = 240;
+        const defaultH = 80;
+        node.style({ width: defaultW, height: defaultH });
+
+        // 创建临时 overlay，定位到节点位置
+        const overlayEl = document.createElement('div');
+        overlayEl.className = 'zk-text-md-overlay zk-placeholder-edit-overlay';
+        overlayEl.style.cssText = `
+            position: absolute;
+            pointer-events: auto;
+            box-sizing: border-box;
+            z-index: 10;
+        `;
+        this.container.appendChild(overlayEl);
+
+        // 同步 overlay 位置到节点（模型坐标 + scale(zoom)，与文本节点 overlay 一致）
+        const syncOverlayPos = () => {
+            if (!this.cy || node.removed()) {
+                overlayEl.style.display = 'none';
+                return;
+            }
+            const bb = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
+            if (!bb || bb.w <= 0) { overlayEl.style.display = 'none'; return; }
+            const zoom = this.cy.zoom();
+            overlayEl.style.left = `${bb.x1}px`;
+            overlayEl.style.top = `${bb.y1}px`;
+            overlayEl.style.width = `${bb.w / zoom}px`;
+            overlayEl.style.height = `${bb.h / zoom}px`;
+            overlayEl.style.transformOrigin = '0 0';
+            overlayEl.style.transform = `scale(${zoom})`;
+        };
+        syncOverlayPos();
+
+        // 创建 CM6 编辑器宿主
+        const editorHost = document.createElement('div');
+        editorHost.className = 'zk-text-md-live-edit-host';
+        editorHost.style.cssText = `
+            position: absolute;
+            inset: 0;
+            border: 2px solid rgba(91, 143, 217, 0.95);
+            border-radius: 12px;
+            overflow: auto;
+            background: var(--background-primary);
+            pointer-events: auto;
+            z-index: 2;
+        `;
+        overlayEl.appendChild(editorHost);
+
+        let isSaved = false;
+        let mdEditor: EmbeddableMarkdownEditor | null = null;
+        let selectionToolbar: { destroy: () => void; containsTarget: (target: Node | null) => boolean } | null = null;
+        const nodeWasGrabbable = typeof node.grabbable === 'function' ? !!node.grabbable() : true;
+        const prevZoomingEnabled = this.cy?.userZoomingEnabled() ?? true;
+        if (typeof node.grabbable === 'function') {
+            node.grabbable(false);
+        }
+        this.cy?.userZoomingEnabled(false);
+
+        const stopPointerPropagation = (evt: Event) => { evt.stopPropagation(); };
+        const stopWheelPropagation = (evt: WheelEvent) => {
+            evt.stopPropagation();
+            if (evt.ctrlKey || evt.metaKey) evt.preventDefault();
+        };
+        const pointerEventsToStop = [
+            'mousedown', 'mousemove', 'mouseup',
+            'pointerdown', 'pointermove', 'pointerup',
+            'touchstart', 'touchmove', 'touchend',
+            'dragstart', 'click', 'dblclick'
+        ];
+        pointerEventsToStop.forEach((name) => {
+            editorHost.addEventListener(name, stopPointerPropagation, true);
+        });
+        editorHost.addEventListener('wheel', stopWheelPropagation, { capture: true, passive: false });
+
+        const restoreNodeInteractivity = () => {
+            if (this.cy && !node.removed() && typeof node.grabbable === 'function') {
+                node.grabbable(nodeWasGrabbable);
+            }
+            this.cy?.userZoomingEnabled(prevZoomingEnabled);
+        };
+
+        const autoGrow = () => {
+            if (!this.cy || node.removed()) return;
+            const overflow = Math.max(mdEditor?.getVerticalOverflow() ?? 0, 0);
+            if (overflow < 1) return;
+            const curH = Number(node.height() || defaultH);
+            const newH = Math.min(curH + overflow + 2, 720);
+            if (newH <= curH) return;
+            this.cy.batch(() => {
+                node.style({ height: newH });
+            });
+            syncOverlayPos();
+        };
+
+        const cleanup = () => {
+            selectionToolbar?.destroy();
+            selectionToolbar = null;
+            if (mdEditor) {
+                mdEditor.unload();
+                mdEditor = null;
+            }
+            pointerEventsToStop.forEach((name) => {
+                editorHost.removeEventListener(name, stopPointerPropagation, true);
+            });
+            editorHost.removeEventListener('wheel', stopWheelPropagation, true);
+            restoreNodeInteractivity();
+            if (overlayEl.parentNode) overlayEl.remove();
+            this.cy?.off('zoom pan', syncOverlayPos);
+        };
+
+        const cancelEdit = () => {
+            if (isSaved) return;
+            isSaved = true;
+            cleanup();
+            this.container?.dispatchEvent(new CustomEvent('placeholder-node-cancel', {
+                detail: { nodeId: data.id }
+            }));
+            this.container?.focus();
+        };
+
+        const saveEdit = () => {
+            if (isSaved) return;
+            const newValue = (mdEditor?.getValue() ?? '').trim();
+            if (!newValue) {
+                cancelEdit();
+                return;
+            }
+            isSaved = true;
+            cleanup();
+
+            const nodePosition = node.position();
+            const position = { x: nodePosition.x, y: nodePosition.y };
+
+            // 路由：检测 wiki link 模式
+            const wikiMatch = newValue.match(/^(!)?\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/);
+            const fullWidthMatch = newValue.match(/^(！)?【【([^|】]+)(?:\|([^】]+))?】】$/);
+            const match = wikiMatch || fullWidthMatch;
+
+            if (match) {
+                const isEmbed = !!match[1];
+                const wikiLink = (match[2] || '').trim();
+                if (wikiLink) {
+                    // 文件/嵌入节点
+                    this.container?.dispatchEvent(new CustomEvent('placeholder-node-edit', {
+                        detail: {
+                            nodeId: data.id,
+                            label: newValue,
+                            position,
+                            suggestedNodeId: data.suggestedNodeId
+                        }
+                    }));
+                    this.container?.focus();
+                    return;
+                }
+            }
+
+            // 纯文本/Markdown → 文本节点
+            this.container?.dispatchEvent(new CustomEvent('placeholder-node-edit', {
+                detail: {
+                    nodeId: data.id,
+                    label: newValue,
+                    position,
+                    suggestedNodeId: data.suggestedNodeId
+                }
+            }));
+            this.container?.focus();
+        };
+
+        // 监听缩放/平移同步 overlay 位置
+        this.cy.on('zoom pan', syncOverlayPos);
+
+        const sourcePath = this.currentData?.metadata?.currentFile || '';
+
+        try {
+            mdEditor = new EmbeddableMarkdownEditor({
+                app: (window as any).app,
+                containerEl: editorHost,
+                initialValue: '',
+                sourcePath,
+                onChange: () => autoGrow(),
+                onEnter: (_value, evt) => {
+                    if (evt.shiftKey) return false;
+                    if (evt.metaKey || evt.ctrlKey) {
+                        saveEdit();
+                        return true;
+                    }
+                    return false;
+                },
+                onEscape: () => cancelEdit(),
+                onBlur: () => {
+                    if (!isSaved) saveEdit();
+                },
+            });
+            mdEditor.focus();
+            const editorDom = mdEditor.getDom();
+            if (editorDom) {
+                selectionToolbar = this.attachContentSelectionToolbar(editorHost, (formatter) => {
+                    if (!mdEditor) return false;
+                    return mdEditor.transformSelection(formatter);
+                });
+            }
+        } catch (err) {
+            console.warn('[ZK] Placeholder live preview unavailable, fallback to textarea', err);
+            cleanup();
+            // 降级：回退到原有 textarea 方式
+            this.startPlaceholderTextareaFallback(node);
+        }
+    }
+
+    /**
+     * 占位符节点 textarea 降级编辑（CM6 不可用时的后备）。
+     */
+    private startPlaceholderTextareaFallback(node: any): void {
+        if (!this.cy || !this.container) return;
+        const data = node.data();
+
+        const bb = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
+        const boxW = Math.max(bb?.w || 0, 240);
+        const boxH = Math.max(bb?.h || 0, 80);
+        const renderedPosition = node.renderedPosition();
+
+        const textarea = document.createElement('textarea');
+        textarea.className = 'node-label-editor';
+        textarea.value = '';
+        textarea.style.cssText = `
+            position: absolute;
+            left: ${renderedPosition.x - boxW / 2}px;
+            top: ${renderedPosition.y - boxH / 2}px;
+            width: ${boxW}px;
+            height: ${boxH}px;
+            border: 2px solid rgba(91, 143, 217, 0.95);
+            border-radius: 12px;
+            background: var(--background-primary);
+            color: var(--text-normal);
+            font-size: 20px;
+            font-family: var(--font-text);
+            font-weight: 500;
+            line-height: 1.35;
+            padding: 24px 24px 12px 24px;
+            outline: none;
+            resize: none;
+            overflow: hidden;
+            box-sizing: border-box;
+            z-index: 1000;
+            text-align: left;
+        `;
+        this.container.appendChild(textarea);
+
+        let isSaved = false;
+
+        const save = () => {
+            if (isSaved) return;
+            const val = textarea.value.trim();
+            if (!val) { cancel(); return; }
+            isSaved = true;
+            textarea.remove();
+            const pos = node.position();
+            this.container?.dispatchEvent(new CustomEvent('placeholder-node-edit', {
+                detail: { nodeId: data.id, label: val, position: { x: pos.x, y: pos.y }, suggestedNodeId: data.suggestedNodeId }
+            }));
+            this.container?.focus();
+        };
+
+        const cancel = () => {
+            if (isSaved) return;
+            isSaved = true;
+            textarea.remove();
+            this.container?.dispatchEvent(new CustomEvent('placeholder-node-cancel', {
+                detail: { nodeId: data.id }
+            }));
+            this.container?.focus();
+        };
+
+        textarea.addEventListener('keydown', (e: KeyboardEvent) => {
+            e.stopPropagation();
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); save(); }
+            else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+        });
+        textarea.addEventListener('keyup', (e) => e.stopPropagation());
+        textarea.addEventListener('keypress', (e) => e.stopPropagation());
+        textarea.addEventListener('click', (e) => e.stopPropagation());
+        textarea.addEventListener('mousedown', (e) => e.stopPropagation());
+        textarea.addEventListener('blur', () => { setTimeout(() => { if (!isSaved) save(); }, 20); });
+
+        setTimeout(() => textarea.focus(), 0);
     }
 
     /**
