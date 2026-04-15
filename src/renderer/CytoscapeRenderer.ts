@@ -1189,6 +1189,17 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 ? rawCustomColor.slice(6)
                 : null;
             const hasLegacyCustomColor = !!rawCustomColor && !customFillColor;
+            // 预计算底色对应的文字颜色，避免样式函数中重复计算
+            let customFillTextColor: string | null = null;
+            if (customFillColor) {
+                const nc = this.normalizeHexColor(customFillColor);
+                if (nc) {
+                    const r = parseInt(nc.slice(1, 3), 16);
+                    const g = parseInt(nc.slice(3, 5), 16);
+                    const b = parseInt(nc.slice(5, 7), 16);
+                    customFillTextColor = (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.62 ? '#1f2937' : '#f8fafc';
+                }
+            }
             const element: any = {
                 group: 'nodes' as const,
                 data: {
@@ -1205,6 +1216,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     isRoot: node.isRoot || false,  // 根节点标记
                     customColor: rawCustomColor,  // 兼容旧自定义颜色（色点/旧语义）
                     customFillColor: customFillColor,  // 新语义：节点底色
+                    customFillTextColor: customFillTextColor,  // 预计算的底色文字颜色
                     hasCustomColor: hasLegacyCustomColor,
                     isCrossDomain: node.isCrossDomain || false,  // 传递跨领域节点标记
                     isTextOnly: node.isTextOnly || false,  // 传递纯文字节点标记
@@ -2025,17 +2037,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
         badgeBackground: '#5b8fd9',
         badgeText: '#ffffff'
     };
-    const resolveTextColorForFill = (fillColor: string | null): string => {
-        if (!fillColor) return colors.nodeText;
-        const normalized = this.normalizeHexColor(fillColor);
-        if (!normalized) return colors.nodeText;
-        const r = parseInt(normalized.slice(1, 3), 16);
-        const g = parseInt(normalized.slice(3, 5), 16);
-        const b = parseInt(normalized.slice(5, 7), 16);
-        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-        return luminance > 0.62 ? '#1f2937' : '#f8fafc';
-    };
-
         return [
         // 节点样式 - 使用函数动态计算大小
         {
@@ -2048,16 +2049,16 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'text-max-width': '280px',
                 'text-overflow-wrap': 'anywhere',
                 'background-color': (ele: any) => {
-                    const customColor = this.normalizeHexColor(ele.data('customFillColor'));
-                    if (customColor && !ele.data('isEmbed') && !ele.data('isGroup')) {
-                        return customColor;
+                    const fillColor = ele.data('customFillColor');
+                    if (fillColor && !ele.data('isEmbed') && !ele.data('isGroup')) {
+                        return fillColor;
                     }
                     return colors.nodeBackground;
                 },
                 'color': (ele: any) => {
-                    const customColor = this.normalizeHexColor(ele.data('customFillColor'));
-                    if (customColor && !ele.data('isEmbed') && !ele.data('isGroup')) {
-                        return resolveTextColorForFill(customColor);
+                    const fillTextColor = ele.data('customFillTextColor');
+                    if (fillTextColor && !ele.data('isEmbed') && !ele.data('isGroup')) {
+                        return fillTextColor;
                     }
                     return colors.nodeText;
                 },
@@ -4389,7 +4390,7 @@ case 'dagre':
         this.cy.nodes('[customColor]').forEach((node: any) => {
             if (node.data('isGroup') || node.data('isEmbed')) return;
             const rawColor = String(node.data('customColor') || '');
-            if (!rawColor || rawColor.startsWith('fill:')) return;
+            if (!rawColor || rawColor.startsWith('fill2:')) return;
             const color = this.normalizeHexColor(rawColor);
             if (!color) return;
 
@@ -4878,42 +4879,75 @@ case 'dagre':
                 this.textMdOverlayCache.set(cacheKey, entry);
 
                 const normalizedSource = rawSource.replace(/\r\n?/g, '\n');
-                // 粗糙渲染：仅区分 H1（# ）和普通文本，避免 Markdown 段落语义引入额外间距。
-                const sanitizeInlineHtml = (input: string): string =>
-                    input
-                        // 最小过滤：移除 script 标签，避免执行脚本
-                        .replace(/<\s*script\b[^>]*>[\s\S]*?<\s*\/\s*script\s*>/gi, '');
-                const applyRoughInlineMarkdown = (input: string): string =>
-                    // 粗糙支持常见内联样式：
-                    // **text** -> <strong>, ~~text~~ -> <del>, __text__ -> <u>, [text](url) -> <a>
-                    input
-                        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                        .replace(/~~(.+?)~~/g, '<del>$1</del>')
-                        .replace(/__(.+?)__/g, '<u>$1</u>')
-                        .replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g, (_match, text, url, title) => {
-                            const safeUrl = String(url || '').replace(/"/g, '&quot;');
-                            const safeTitle = title ? ` title="${String(title).replace(/"/g, '&quot;')}"` : '';
-                            return `<a href="${safeUrl}"${safeTitle}>${text}</a>`;
-                        });
-                const roughHtml = normalizedSource
-                    .split('\n')
-                    .map((line) => {
+                // 粗糙渲染：用 DOM API 构建，避免 innerHTML 大量字符串拼接
+                const applyRoughInlineMarkdown = (container: HTMLElement, input: string): void => {
+                    // 按内联标记拆分并逐段追加 DOM 节点
+                    const tokenRe = /\*\*(.+?)\*\*|~~(.+?)~~|__(.+?)__|(\[([^\]]+)\]\(([^)\s]+)(?:\s+"([^"]*)")?\))/g;
+                    let lastIndex = 0;
+                    let m: RegExpExecArray | null;
+                    while ((m = tokenRe.exec(input)) !== null) {
+                        if (m.index > lastIndex) {
+                            container.appendChild(document.createTextNode(input.slice(lastIndex, m.index)));
+                        }
+                        if (m[1] !== undefined) {
+                            const strong = document.createElement('strong');
+                            strong.textContent = m[1];
+                            container.appendChild(strong);
+                        } else if (m[2] !== undefined) {
+                            const del = document.createElement('del');
+                            del.textContent = m[2];
+                            container.appendChild(del);
+                        } else if (m[3] !== undefined) {
+                            const u = document.createElement('u');
+                            u.textContent = m[3];
+                            container.appendChild(u);
+                        } else if (m[5] !== undefined) {
+                            const a = document.createElement('a');
+                            a.href = m[6] || '';
+                            if (m[7]) a.title = m[7];
+                            a.textContent = m[5];
+                            container.appendChild(a);
+                        }
+                        lastIndex = m.index + m[0].length;
+                    }
+                    if (lastIndex < input.length) {
+                        container.appendChild(document.createTextNode(input.slice(lastIndex)));
+                    }
+                };
+                const buildRoughLines = (parent: HTMLElement) => {
+                    const lines = normalizedSource.split('\n');
+                    for (const line of lines) {
                         const trimmed = line.trim();
                         if (!trimmed) {
-                            return '<div class="zk-rough-empty-line"></div>';
+                            const empty = document.createElement('div');
+                            empty.className = 'zk-rough-empty-line';
+                            parent.appendChild(empty);
+                            continue;
                         }
                         const headingMatch = line.match(/^\s*(#{1,6})\s+(.+)$/);
                         if (headingMatch) {
-                            const headingLevel = Math.min(headingMatch[1].length, 6);
-                            return `<div class="zk-rough-heading-line zk-rough-h${headingLevel}-line">${applyRoughInlineMarkdown(sanitizeInlineHtml(headingMatch[2]))}</div>`;
+                            const level = Math.min(headingMatch[1].length, 6);
+                            const div = document.createElement('div');
+                            div.className = `zk-rough-heading-line zk-rough-h${level}-line`;
+                            applyRoughInlineMarkdown(div, headingMatch[2]);
+                            parent.appendChild(div);
+                        } else {
+                            const div = document.createElement('div');
+                            div.className = 'zk-rough-text-line';
+                            applyRoughInlineMarkdown(div, line);
+                            parent.appendChild(div);
                         }
-                        return `<div class="zk-rough-text-line">${applyRoughInlineMarkdown(sanitizeInlineHtml(line))}</div>`;
-                    })
-                    .join('');
+                    }
+                };
                 overlayEl.empty?.();
-                overlayEl.innerHTML = isRootTextNode
-                    ? `<div class="zk-root-text-md-inner">${roughHtml}</div>`
-                    : roughHtml;
+                if (isRootTextNode) {
+                    const inner = document.createElement('div');
+                    inner.className = 'zk-root-text-md-inner';
+                    buildRoughLines(inner);
+                    overlayEl.appendChild(inner);
+                } else {
+                    buildRoughLines(overlayEl);
+                }
                 const rect = overlayEl.getBoundingClientRect();
                 entry.width = Math.max(80, Math.min(rect.width + 4, 640));
                 entry.height = Math.max(32, Math.min(rect.height + 4, 640));
