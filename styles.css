@@ -2523,13 +2523,46 @@ align-items: center;
 }
 
 /* 粗糙渲染：仅区分 h1 行和普通文本行 */
-.zk-text-md-overlay .zk-rough-h1-line {
+.zk-text-md-overlay .zk-rough-heading-line {
   margin: 0;
+  line-height: 1.2;
+  white-space: break-spaces;
+}
+
+.zk-text-md-overlay .zk-rough-h1-line {
   font-size: 1.8em;
   font-weight: 700;
-  line-height: 1.2;
   color: var(--h1-color);
-  white-space: break-spaces;
+}
+
+.zk-text-md-overlay .zk-rough-h2-line {
+  font-size: 1.55em;
+  font-weight: 700;
+  color: var(--h2-color, var(--h1-color));
+}
+
+.zk-text-md-overlay .zk-rough-h3-line {
+  font-size: 1.35em;
+  font-weight: 650;
+  color: var(--h3-color, var(--h2-color, var(--h1-color)));
+}
+
+.zk-text-md-overlay .zk-rough-h4-line {
+  font-size: 1.18em;
+  font-weight: 650;
+  color: var(--h4-color, var(--h3-color, var(--h2-color, var(--h1-color))));
+}
+
+.zk-text-md-overlay .zk-rough-h5-line {
+  font-size: 1.04em;
+  font-weight: 600;
+  color: var(--h5-color, var(--h4-color, var(--h3-color, var(--h2-color, var(--h1-color)))));
+}
+
+.zk-text-md-overlay .zk-rough-h6-line {
+  font-size: 0.94em;
+  font-weight: 600;
+  color: var(--h6-color, var(--h5-color, var(--h4-color, var(--h3-color, var(--h2-color, var(--h1-color))))));
 }
 
 .zk-text-md-overlay .zk-rough-text-line {

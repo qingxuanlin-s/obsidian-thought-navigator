@@ -2052,9 +2052,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     if (customColor && !ele.data('isEmbed') && !ele.data('isGroup')) {
                         return customColor;
                     }
-                    if (isModern && ele.data('branchNodeBackground') && !ele.data('isRoot')) {
-                        return ele.data('branchNodeBackground');
-                    }
                     return colors.nodeBackground;
                 },
                 'color': (ele: any) => {
@@ -2298,18 +2295,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     }
                     return 2;
                 },
-                'line-color': (ele: any) => {
-                    if (isModern && ele.data('branchEdgeColor')) {
-                        return ele.data('branchEdgeColor');
-                    }
-                    return colors.edgeNormal;
-                },
-                'target-arrow-color': (ele: any) => {
-                    if (isModern && ele.data('branchEdgeColor')) {
-                        return ele.data('branchEdgeColor');
-                    }
-                    return colors.edgeNormal;
-                },
+                'line-color': colors.edgeNormal,
+                'target-arrow-color': colors.edgeNormal,
                 'target-arrow-shape': 'triangle',
                 'curve-style': edgeStyle === 'straight'
                     ? 'straight'
@@ -4900,11 +4887,16 @@ case 'dagre':
                         .replace(/<\s*script\b[^>]*>[\s\S]*?<\s*\/\s*script\s*>/gi, '');
                 const applyRoughInlineMarkdown = (input: string): string =>
                     // 粗糙支持常见内联样式：
-                    // **text** -> <strong>, ~~text~~ -> <del>, __text__ -> <u>
+                    // **text** -> <strong>, ~~text~~ -> <del>, __text__ -> <u>, [text](url) -> <a>
                     input
                         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
                         .replace(/~~(.+?)~~/g, '<del>$1</del>')
-                        .replace(/__(.+?)__/g, '<u>$1</u>');
+                        .replace(/__(.+?)__/g, '<u>$1</u>')
+                        .replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g, (_match, text, url, title) => {
+                            const safeUrl = String(url || '').replace(/"/g, '&quot;');
+                            const safeTitle = title ? ` title="${String(title).replace(/"/g, '&quot;')}"` : '';
+                            return `<a href="${safeUrl}"${safeTitle}>${text}</a>`;
+                        });
                 const roughHtml = normalizedSource
                     .split('\n')
                     .map((line) => {
@@ -4912,9 +4904,10 @@ case 'dagre':
                         if (!trimmed) {
                             return '<div class="zk-rough-empty-line"></div>';
                         }
-                        const h1Match = line.match(/^\s*#\s+(.+)$/);
-                        if (h1Match) {
-                            return `<div class="zk-rough-h1-line">${applyRoughInlineMarkdown(sanitizeInlineHtml(h1Match[1]))}</div>`;
+                        const headingMatch = line.match(/^\s*(#{1,6})\s+(.+)$/);
+                        if (headingMatch) {
+                            const headingLevel = Math.min(headingMatch[1].length, 6);
+                            return `<div class="zk-rough-heading-line zk-rough-h${headingLevel}-line">${applyRoughInlineMarkdown(sanitizeInlineHtml(headingMatch[2]))}</div>`;
                         }
                         return `<div class="zk-rough-text-line">${applyRoughInlineMarkdown(sanitizeInlineHtml(line))}</div>`;
                     })
