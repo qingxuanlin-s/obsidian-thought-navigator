@@ -981,6 +981,57 @@ align-items: center;
     margin: 4px 0;
 }
 
+/* 更多菜单 */
+.zk-more-menu {
+    background: #1a1f2e;
+    border: 1px solid #2a3f5f;
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+    padding: 4px;
+    min-width: 200px;
+}
+
+.zk-more-menu .zk-menu-option {
+    justify-content: flex-start;
+}
+
+.zk-menu-option-icon {
+    display: flex;
+    align-items: center;
+    width: 18px;
+    height: 18px;
+}
+
+.zk-menu-option-icon svg {
+    width: 16px;
+    height: 16px;
+}
+
+.zk-menu-option-arrow {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    width: 16px;
+    height: 16px;
+    opacity: 0.5;
+}
+
+.zk-menu-option-arrow svg {
+    width: 14px;
+    height: 14px;
+}
+
+.zk-more-submenu {
+    border-top: 1px solid #2a3f5f;
+    margin-top: 4px;
+    padding-top: 4px;
+}
+
+.zk-more-submenu .zk-menu-option {
+    padding-left: 24px;
+    font-size: 13px;
+}
+
 /* 节点右键菜单 —— 对齐工具栏 chip 风格 */
 .zk-node-ctx-menu {
     background: #242424;
@@ -1659,6 +1710,16 @@ align-items: center;
 
 .zk-theme-light .zk-menu-separator {
   background: #d0d0d0;
+}
+
+.zk-theme-light .zk-more-menu {
+    background: #ffffff;
+    border-color: #e0e0e0;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.zk-theme-light .zk-more-submenu {
+    border-top-color: #e0e0e0;
 }
 
 .zk-theme-light .zk-node-ctx-menu {
