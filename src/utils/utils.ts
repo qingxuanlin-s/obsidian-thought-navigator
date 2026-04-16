@@ -39,6 +39,7 @@ export interface MOCParseResult {
     nodeRemarks?: Record<string, string>; // 节点备注
     nodeAnchors?: Record<string, boolean>; // 锚点节点
     nodeLayoutStyle?: 'free' | 'auto'; // 节点布局风格（新建文件时锁定，后期修改设置不受影响）
+    nodeLayoutOverrides?: Record<string, 'auto' | 'free'>; // 节点级布局风格覆盖（优先于文件级 nodeLayoutStyle）
     metadata: {                 // 扩展信息
         totalNodes: number;     // 总节点数
         maxDepth: number;       // 最大深度

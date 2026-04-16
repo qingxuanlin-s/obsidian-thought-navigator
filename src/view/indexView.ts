@@ -96,6 +96,7 @@ export class ZKIndexView extends ItemView {
     private nodeRemarks: Record<string, string> = {};
     private nodeAnchors: Record<string, boolean> = {};
     private currentNodeLayoutStyle: 'free' | 'auto' = 'free'; // 当前 MOC 文件的节点布局风格（从 ext 读取，新建时锁定）
+    private currentNodeLayoutOverrides: Record<string, 'auto' | 'free'> = {}; // 节点级布局风格覆盖
 
     // 防抖相关属性
     resizeTimeout: NodeJS.Timeout | null = null;
@@ -1614,6 +1615,7 @@ cy.fit(null, 40);
             mocParseResult.nodeLayoutStyle,
             this.plugin.settings.nodeLayoutStyle
         );
+        this.currentNodeLayoutOverrides = mocParseResult.nodeLayoutOverrides || {};
 
         // 转换为 ZKNode（即使为空也继续）
         this.mocNodes = mocParseResult.nodes.length > 0
@@ -3329,6 +3331,34 @@ cy.fit(null, 40);
         this.addContextMenuItem(row, menu, closeMenu, 'fingerprint', t('ctx rename id'), () => this.renameNodeID(node));
         this.addContextMenuItem(row, menu, closeMenu, 'palette', t('ctx change color'), () => this.changeNodeColor(node));
 
+        // 节点布局风格
+        menu.createDiv('zk-node-ctx-sep');
+        const nodeId = node.IDStr || node.ID;
+        const effectiveLayout = this.currentNodeLayoutOverrides[nodeId] ?? this.currentNodeLayoutStyle;
+        const layoutLabel = menu.createDiv('zk-node-ctx-label');
+        layoutLabel.textContent = t('ctx node layout');
+        const layoutRow = menu.createDiv('zk-node-ctx-row');
+        const autoItem = layoutRow.createDiv('zk-node-ctx-item');
+        const autoIcon = autoItem.createSpan();
+        setIcon(autoIcon, 'git-fork');
+        autoItem.createSpan({ text: (effectiveLayout === 'auto' ? '✓ ' : '') + t('ctx layout auto') });
+        autoItem.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            menu.remove();
+            document.removeEventListener('click', closeMenu);
+            await this.setNodeLayoutStyle(node, 'auto');
+        });
+        const freeItem = layoutRow.createDiv('zk-node-ctx-item');
+        const freeIcon = freeItem.createSpan();
+        setIcon(freeIcon, 'move');
+        freeItem.createSpan({ text: (effectiveLayout === 'free' ? '✓ ' : '') + t('ctx layout free') });
+        freeItem.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            menu.remove();
+            document.removeEventListener('click', closeMenu);
+            await this.setNodeLayoutStyle(node, 'free');
+        });
+
         // 定位：先在屏幕外渲染以获取尺寸
         menu.style.visibility = 'hidden';
         menu.style.left = '0';
@@ -4707,8 +4737,8 @@ cy.fit(null, 40);
                 }
 
                 if (e.key === 'Enter') {
-                    if (e.shiftKey) {
-                        // Shift + Enter：换行
+                    if (e.shiftKey || e.metaKey || e.ctrlKey) {
+                        // Shift/Cmd/Ctrl + Enter：换行
                         return;
                     }
 
@@ -5862,6 +5892,43 @@ cy.fit(null, 40);
         return this.currentNodeLayoutStyle === 'auto';
     }
 
+    /**
+     * 判断某个节点是否启用自动布局（节点级覆盖优先，否则回退到文件级默认）
+     */
+    private isNodeAutoLayout(nodeId: string): boolean {
+        const override = this.currentNodeLayoutOverrides[nodeId];
+        if (override !== undefined) return override === 'auto';
+        return this.isAutoNodeLayoutStyle();
+    }
+
+    /**
+     * 设置节点级布局风格，并持久化到 MOC 文件
+     */
+    private async setNodeLayoutStyle(node: ZKNode, style: 'auto' | 'free'): Promise<void> {
+        const nodeId = node.IDStr || node.ID;
+        const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+        if (!mocFile) return;
+
+        await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
+            if (!mocData.nodeLayoutOverrides) mocData.nodeLayoutOverrides = {};
+            // 若与文件默认相同则清除覆盖（保持数据干净）
+            const fileDefault = mocData.nodeLayoutStyle || this.plugin.settings.nodeLayoutStyle || 'free';
+            if (style === fileDefault) {
+                delete mocData.nodeLayoutOverrides[nodeId];
+            } else {
+                mocData.nodeLayoutOverrides[nodeId] = style;
+            }
+        });
+
+        // 同步本地缓存
+        const fileDefault = this.currentNodeLayoutStyle;
+        if (style === fileDefault) {
+            delete this.currentNodeLayoutOverrides[nodeId];
+        } else {
+            this.currentNodeLayoutOverrides[nodeId] = style;
+        }
+    }
+
     private normalizeNodeLayoutStyle(
         style: unknown,
         fallback: unknown = 'free'
@@ -5884,7 +5951,7 @@ cy.fit(null, 40);
     }
 
     private async relayoutAutoLayoutSiblings(parentNodeId: string): Promise<void> {
-        if (!this.isAutoNodeLayoutStyle() || !this.branchRenderer) {
+        if (!this.isNodeAutoLayout(parentNodeId) || !this.branchRenderer) {
             return;
         }
 

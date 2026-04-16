@@ -283,6 +283,7 @@ export class MermaidParser {
         nodeRemarks: Record<string, string>;
         nodeAnchors: Record<string, boolean>;
         nodeLayoutStyle?: 'free' | 'auto';
+        nodeLayoutOverrides?: Record<string, 'auto' | 'free'>;
     } {
         const defaultMetadata = {
             nodePositions: {} as Record<string, { x: number; y: number }>,
@@ -294,7 +295,8 @@ export class MermaidParser {
             embedNodeSizes: {} as Record<string, { width: number; height: number }>,
             nodeRemarks: {} as Record<string, string>,
             nodeAnchors: {} as Record<string, boolean>,
-            nodeLayoutStyle: undefined as ('free' | 'auto' | undefined)
+            nodeLayoutStyle: undefined as ('free' | 'auto' | undefined),
+            nodeLayoutOverrides: undefined as (Record<string, 'auto' | 'free'> | undefined)
         };
         
         // 匹配元数据注释：%% ext:{JSON} %%
@@ -321,7 +323,8 @@ export class MermaidParser {
                 embedNodeSizes: metadata.embed_node_sizes || {},
                 nodeRemarks: metadata.nodeRemarks || {},
                 nodeAnchors: metadata.nodeAnchors || {},
-                nodeLayoutStyle: metadata.node_layout_style || undefined
+                nodeLayoutStyle: metadata.node_layout_style || undefined,
+                nodeLayoutOverrides: metadata.node_layout_overrides || undefined
             };
         } catch (e) {
             this.warnings.push({
@@ -529,6 +532,7 @@ export class MermaidParser {
             nodeRemarks: metadata.nodeRemarks,
             nodeAnchors: metadata.nodeAnchors,
             nodeLayoutStyle: metadata.nodeLayoutStyle,
+            nodeLayoutOverrides: metadata.nodeLayoutOverrides,
             metadata: {
                 totalNodes: nodesMap.size,
                 maxDepth: this.calculateMaxDepth(mocNodes),
