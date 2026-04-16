@@ -1094,6 +1094,13 @@ align-items: center;
     justify-content: center;
 }
 
+.zk-node-ctx-label {
+    padding: 2px 8px;
+    font-size: 11px;
+    opacity: 0.5;
+    user-select: none;
+}
+
 /* MOC 选择器样式 */
 .zk-moc-selector-block {
     display: flex;

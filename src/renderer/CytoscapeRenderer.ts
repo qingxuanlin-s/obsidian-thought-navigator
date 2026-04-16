@@ -4882,7 +4882,7 @@ case 'dagre':
                 // 粗糙渲染：用 DOM API 构建，避免 innerHTML 大量字符串拼接
                 const applyRoughInlineMarkdown = (container: HTMLElement, input: string): void => {
                     // 按内联标记拆分并逐段追加 DOM 节点
-                    const tokenRe = /\*\*(.+?)\*\*|~~(.+?)~~|__(.+?)__|(\[([^\]]+)\]\(([^)\s]+)(?:\s+"([^"]*)")?\))/g;
+                    const tokenRe = /\*\*(.+?)\*\*|~~(.+?)~~|__(.+?)__|(\[([^\]]+)\]\(([^)\s]+)(?:\s+"([^"]*)")?\))|<span\s+style=["']([^"']+)["']>(.*?)<\/span>/g;
                     let lastIndex = 0;
                     let m: RegExpExecArray | null;
                     while ((m = tokenRe.exec(input)) !== null) {
@@ -4907,6 +4907,11 @@ case 'dagre':
                             if (m[7]) a.title = m[7];
                             a.textContent = m[5];
                             container.appendChild(a);
+                        } else if (m[8] !== undefined) {
+                            const span = document.createElement('span');
+                            span.style.cssText = m[8].trim();
+                            span.textContent = m[9];
+                            container.appendChild(span);
                         }
                         lastIndex = m.index + m[0].length;
                     }
@@ -7371,6 +7376,13 @@ case 'dagre':
         const originalNode = data.originalNode;
         const isPlaceholder = !!data.isPlaceholder;
         const isExistingNode = !!originalNode && !data.isGroup;
+        console.log('[ZK][InlineEdit] showInlineNodeEditor', {
+            isPlaceholder,
+            isExistingNode,
+            isTextOnly: !!originalNode?.isTextOnly,
+            nodeId: node.id?.(),
+            originalNodeId: data.originalNodeId || originalNode?.IDStr || originalNode?.ID || null,
+        });
         if (!isPlaceholder && !isExistingNode) return;
 
         this.ensureNodeVisibleInViewport(node);
@@ -7406,10 +7418,19 @@ case 'dagre':
             const cacheKey = `${sourcePath}||${nodeCacheId}||${rawSource}`;
             const cachedEntry = this.textMdOverlayCache.get(cacheKey);
             if (cachedEntry) {
+                console.log('[ZK][InlineEdit] route=startInPlaceTextEdit', {
+                    cacheKey,
+                    hasCachedEntry: true,
+                });
                 this.startInPlaceTextEdit(node, originalNode, cachedEntry);
                 return;
             }
         }
+
+        console.log('[ZK][InlineEdit] route=showInlineNodeEditor:textarea-fallback', {
+            isPlaceholder,
+            isTextOnly: !!originalNode?.isTextOnly,
+        });
 
         const renderedPosition = node.renderedPosition();
         const bb = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
@@ -7503,6 +7524,13 @@ case 'dagre':
         `;
 
         this.container.appendChild(textarea);
+
+        const insertTextareaNewline = () => {
+            const start = textarea.selectionStart ?? textarea.value.length;
+            const end = textarea.selectionEnd ?? start;
+            textarea.setRangeText('\n', start, end, 'end');
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        };
         const selectionToolbar = this.attachInlineTextSelectionToolbar(textarea);
 
         const measureCanvas = document.createElement('canvas');
@@ -7577,6 +7605,12 @@ case 'dagre':
         // 保存函数
         const saveNode = async () => {
             const newLabel = textarea.value.trim();
+            console.log('[ZK][InlineEditTextarea] saveNode', {
+                rawValue: textarea.value,
+                rawLength: textarea.value.length,
+                trimmedLength: newLabel.length,
+                endsWithNewline: textarea.value.endsWith('\n'),
+            });
 
             if (!newLabel) {
                 if (isPlaceholder) {
@@ -7683,6 +7717,15 @@ case 'dagre':
         textarea.addEventListener('keydown', (e: KeyboardEvent) => {
             // 阻止事件冒泡到 Cytoscape，避免被其他事件处理器拦截
             e.stopPropagation();
+            if (e.key === 'Enter') {
+                console.log('[ZK][InlineEditTextarea] Enter keydown', {
+                    metaKey: e.metaKey,
+                    ctrlKey: e.ctrlKey,
+                    shiftKey: e.shiftKey,
+                    altKey: e.altKey,
+                    valueLength: textarea.value.length,
+                });
+            }
 
             // 如果 suggester 正在显示，ESC 键关闭 suggester，其他键让 suggester 的键盘处理器处理
             if (suggesterPopoverRef.value && suggesterPopoverRef.value.parentNode) {
@@ -7697,11 +7740,13 @@ case 'dagre':
             }
 
             if (e.key === 'Enter') {
-                if (e.shiftKey) {
+                if (e.metaKey || e.ctrlKey) {
+                    e.preventDefault();
+                    insertTextareaNewline();
                     return;
                 }
                 e.preventDefault();
-                saveNode();
+                saveNode(); // Enter = 保存
             } else if (e.key === 'Escape') {
                 // 取消编辑
                 e.preventDefault();
@@ -7819,6 +7864,10 @@ case 'dagre':
         }
     ): void {
         if (!this.cy || !this.container) return;
+        console.log('[ZK][TextNodeLiveEdit] startInPlaceTextEdit', {
+            nodeId: node.id?.(),
+            originalNodeId: originalNode.IDStr || originalNode.ID || null,
+        });
 
         // 先卸载只读展示用的 editor，避免与可编辑 editor 冲突
         if (entry.mdEditor) {
@@ -7858,6 +7907,50 @@ case 'dagre':
             z-index: 2;
         `;
         overlayEl.appendChild(editorHost);
+        editorHost.addEventListener('focusin', (e: FocusEvent) => {
+            console.log('[ZK][TextNodeLiveEdit] editorHost focusin', {
+                targetClass: (e.target as HTMLElement | null)?.className ?? null,
+                activeElementClass: (document.activeElement as HTMLElement | null)?.className ?? null,
+            });
+        }, true);
+        editorHost.addEventListener('keydown', (e: KeyboardEvent) => {
+            if (e.key === 'Enter') {
+                console.log('[ZK][TextNodeLiveEdit] editorHost keydown Enter', {
+                    metaKey: e.metaKey,
+                    ctrlKey: e.ctrlKey,
+                    shiftKey: e.shiftKey,
+                    altKey: e.altKey,
+                    targetClass: (e.target as HTMLElement | null)?.className ?? null,
+                });
+            }
+        }, true);
+        const logGlobalEnter = (scope: 'window' | 'document') => (e: KeyboardEvent) => {
+            if (e.key !== 'Enter') return;
+            const activeEl = document.activeElement as HTMLElement | null;
+            const isInThisEditor = !!activeEl && editorHost.contains(activeEl);
+            console.log(`[ZK][TextNodeLiveEdit] ${scope} keydown Enter`, {
+                metaKey: e.metaKey,
+                ctrlKey: e.ctrlKey,
+                shiftKey: e.shiftKey,
+                altKey: e.altKey,
+                isInThisEditor,
+                activeElementClass: activeEl?.className ?? null,
+                targetClass: (e.target as HTMLElement | null)?.className ?? null,
+            });
+            if (scope === 'window' && isInThisEditor && (e.metaKey || e.ctrlKey) && mdEditor) {
+                console.log('[ZK][TextNodeLiveEdit] intercept Cmd/Ctrl+Enter at window', {
+                    metaKey: e.metaKey,
+                    ctrlKey: e.ctrlKey,
+                });
+                e.preventDefault();
+                e.stopPropagation();
+                mdEditor.insertLineBreak();
+            }
+        };
+        const onWindowKeyDown = logGlobalEnter('window');
+        const onDocumentKeyDown = logGlobalEnter('document');
+        window.addEventListener('keydown', onWindowKeyDown, true);
+        document.addEventListener('keydown', onDocumentKeyDown, true);
 
         let isSaved = false;
         let mdEditor: EmbeddableMarkdownEditor | null = null;
@@ -7918,6 +8011,8 @@ case 'dagre':
                 mdEditor = null;
             }
             (editorHost as any)._mdEditor = null;
+            window.removeEventListener('keydown', onWindowKeyDown, true);
+            document.removeEventListener('keydown', onDocumentKeyDown, true);
             pointerEventsToStop.forEach((name) => {
                 editorHost.removeEventListener(name, stopPointerPropagation, true);
             });
@@ -7950,8 +8045,14 @@ case 'dagre':
 
         const saveEdit = () => {
             if (isSaved) return;
-            const newValue = (mdEditor?.getValue() ?? '').trim();
-            if (!newValue) {
+            const rawValue = (mdEditor?.getValue() ?? '').replace(/\r\n/g, '\n');
+            console.log('[ZK][TextNodeLiveEdit] saveEdit', {
+                rawValue,
+                rawLength: rawValue.length,
+                trimmedLength: rawValue.trim().length,
+                endsWithNewline: rawValue.endsWith('\n'),
+            });
+            if (!rawValue.trim()) {
                 cancelEdit();
                 return;
             }
@@ -7964,7 +8065,7 @@ case 'dagre':
             this.container?.dispatchEvent(new CustomEvent('node-inline-edit-save', {
                 detail: {
                     node: originalNode,
-                    content: newValue,
+                    content: rawValue,
                     position: { x: nodePosition.x, y: nodePosition.y }
                 }
             }));
@@ -7999,12 +8100,16 @@ case 'dagre':
                 sourcePath,
                 onChange: () => autoGrow(),
                 onEnter: (_value, evt) => {
-                    if (evt.shiftKey) return false;
-                    if (evt.metaKey || evt.ctrlKey) {
-                        saveEdit();
-                        return true;
-                    }
-                    return false;
+                    console.log('[ZK][TextNodeLiveEdit] onEnter', {
+                        metaKey: evt.metaKey,
+                        ctrlKey: evt.ctrlKey,
+                        shiftKey: evt.shiftKey,
+                        valueLength: _value.length,
+                        endsWithNewline: _value.endsWith('\n'),
+                    });
+                    if (evt.metaKey || evt.ctrlKey) return false; // Cmd/Ctrl+Enter = 换行
+                    saveEdit();
+                    return true; // Enter = 保存
                 },
                 onEscape: () => cancelEdit(),
                 onBlur: () => {
@@ -8013,6 +8118,9 @@ case 'dagre':
             });
             (editorHost as any)._mdEditor = mdEditor;
             mdEditor.focus();
+            console.log('[ZK][TextNodeLiveEdit] after mdEditor.focus', {
+                activeElementClass: (document.activeElement as HTMLElement | null)?.className ?? null,
+            });
             const editorDom = mdEditor.getDom();
             if (editorDom) {
                 selectionToolbar = this.attachContentSelectionToolbar(editorHost, (formatter) => {
@@ -8225,12 +8333,9 @@ case 'dagre':
                 sourcePath,
                 onChange: () => autoGrow(),
                 onEnter: (_value, evt) => {
-                    if (evt.shiftKey) return false;
-                    if (evt.metaKey || evt.ctrlKey) {
-                        saveEdit();
-                        return true;
-                    }
-                    return false;
+                    if (evt.metaKey || evt.ctrlKey) return false; // Cmd/Ctrl+Enter = 换行
+                    saveEdit();
+                    return true; // Enter = 保存
                 },
                 onEscape: () => cancelEdit(),
                 onBlur: () => {
@@ -8291,6 +8396,12 @@ case 'dagre':
             text-align: left;
         `;
         this.container.appendChild(textarea);
+        const insertTextareaNewline = () => {
+            const start = textarea.selectionStart ?? textarea.value.length;
+            const end = textarea.selectionEnd ?? start;
+            textarea.setRangeText('\n', start, end, 'end');
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        };
 
         let isSaved = false;
 
@@ -8340,8 +8451,15 @@ case 'dagre':
         textarea.addEventListener('input', () => autoGrow());
         textarea.addEventListener('keydown', (e: KeyboardEvent) => {
             e.stopPropagation();
-            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); save(); }
-            else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+            if (e.key === 'Enter') {
+                if (e.metaKey || e.ctrlKey) {
+                    e.preventDefault();
+                    insertTextareaNewline();
+                    return;
+                }
+                e.preventDefault();
+                save(); // Enter = 保存
+            } else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
         });
         textarea.addEventListener('keyup', (e) => e.stopPropagation());
         textarea.addEventListener('keypress', (e) => e.stopPropagation());
@@ -8421,6 +8539,12 @@ case 'dagre':
         `;
         overlayEl.appendChild(textarea);
         const selectionToolbar = this.attachInlineTextSelectionToolbar(textarea);
+        const insertTextareaNewline = () => {
+            const start = textarea.selectionStart ?? textarea.value.length;
+            const end = textarea.selectionEnd ?? start;
+            textarea.setRangeText('\n', start, end, 'end');
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        };
         const prevZoomingEnabled = this.cy?.userZoomingEnabled() ?? true;
         this.cy?.userZoomingEnabled(false);
         const stopTextareaWheelPropagation = (evt: WheelEvent) => {
@@ -8577,9 +8701,13 @@ case 'dagre':
             }
 
             if (e.key === 'Enter') {
-                if (e.shiftKey) return; // Shift+Enter 换行
+                if (e.metaKey || e.ctrlKey) {
+                    e.preventDefault();
+                    insertTextareaNewline();
+                    return;
+                }
                 e.preventDefault();
-                saveEdit();
+                saveEdit(); // Enter = 保存
             } else if (e.key === 'Escape') {
                 e.preventDefault();
                 cancelEdit();

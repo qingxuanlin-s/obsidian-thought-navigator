@@ -251,6 +251,9 @@ export default {
     "ctx change color": "Change fill",
     "ctx delete group": "Delete group",
     "ctx rename group": "Rename group",
+    "ctx node layout": "Node layout",
+    "ctx layout auto": "Auto layout",
+    "ctx layout free": "Free layout",
     "add node forward": "➡️ Forward",
     "add node reverse": "⬅️ Reverse",
 }

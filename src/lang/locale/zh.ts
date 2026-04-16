@@ -249,6 +249,9 @@ export default {
     "ctx change color": "修改底色",
     "ctx delete group": "删除分组",
     "ctx rename group": "重命名分组",
+    "ctx node layout": "节点布局风格",
+    "ctx layout auto": "自动布局",
+    "ctx layout free": "自由布局",
     "add node forward": "➡️ 正向",
     "add node reverse": "⬅️ 反向",
 }

@@ -100,6 +100,9 @@ export class MermaidSerializer {
         if (data.nodeLayoutStyle) {
             metadata.node_layout_style = data.nodeLayoutStyle;
         }
+        if (data.nodeLayoutOverrides && Object.keys(data.nodeLayoutOverrides).length > 0) {
+            metadata.node_layout_overrides = data.nodeLayoutOverrides;
+        }
 
         const jsonStr = JSON.stringify(metadata);
         return `%% ext:${jsonStr} %%`;

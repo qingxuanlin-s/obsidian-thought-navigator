@@ -87,6 +87,29 @@ export class EmbeddableMarkdownEditor extends Component {
 		this.mount();
 	}
 
+	private insertNewline(): void {
+		const cm = this.cm;
+		if (!cm) return;
+		const editor = this.editView?.editor;
+		if (editor?.replaceSelection) {
+			try {
+				editor.replaceSelection('\n');
+				this.opts.onChange?.(this.getValue());
+				return;
+			} catch {
+				/* fallback below */
+			}
+		}
+		const sel = cm.state?.selection?.main;
+		if (sel !== undefined && cm.dispatch) {
+			cm.dispatch({
+				changes: { from: sel.from, to: sel.to, insert: '\n' },
+				selection: { anchor: sel.from + 1 }
+			});
+			this.opts.onChange?.(this.getValue());
+		}
+	}
+
 	private mount(): void {
 		const Ctor = resolveEmbeddableEditorCtor(this.opts.app);
 		if (!Ctor) {
@@ -106,6 +129,13 @@ export class EmbeddableMarkdownEditor extends Component {
 		this.setValue(this.opts.initialValue ?? '');
 
 		this.cm = this.editView?.editor?.cm ?? this.editView?.cm ?? null;
+		console.log('[ZK][EmbeddableMarkdownEditor] mount', {
+			hasEditView: !!this.editView,
+			hasCm: !!this.cm,
+			hasDom: !!this.cm?.dom,
+			hasContentDOM: !!this.cm?.contentDOM,
+			hasScrollDOM: !!this.cm?.scrollDOM,
+		});
 
 		if (this.opts.readOnly) {
 			// 只读模式：禁用编辑，隐藏光标
@@ -192,6 +222,28 @@ export class EmbeddableMarkdownEditor extends Component {
 			captureSelection();
 			this.opts.onChange?.(this.getValue());
 		});
+		cm.dom.addEventListener('focusin', (e: FocusEvent) => {
+			console.log('[ZK][EmbeddableMarkdownEditor] cm.dom focusin', {
+				targetClass: (e.target as HTMLElement | null)?.className ?? null,
+				activeElementClass: (document.activeElement as HTMLElement | null)?.className ?? null,
+			});
+		}, true);
+		cm.contentDOM?.addEventListener('focusin', (e: FocusEvent) => {
+			console.log('[ZK][EmbeddableMarkdownEditor] contentDOM focusin', {
+				targetClass: (e.target as HTMLElement | null)?.className ?? null,
+				activeElementClass: (document.activeElement as HTMLElement | null)?.className ?? null,
+			});
+		}, true);
+		cm.contentDOM?.addEventListener('keydown', (e: KeyboardEvent) => {
+			if (e.key === 'Enter') {
+				console.log('[ZK][EmbeddableMarkdownEditor] contentDOM keydown Enter', {
+					metaKey: e.metaKey,
+					ctrlKey: e.ctrlKey,
+					shiftKey: e.shiftKey,
+					altKey: e.altKey,
+				});
+			}
+		}, true);
 		cm.dom.addEventListener('mouseup', captureSelection, true);
 		cm.dom.addEventListener('keyup', captureSelection, true);
 
@@ -200,8 +252,18 @@ export class EmbeddableMarkdownEditor extends Component {
 			e.stopPropagation();
 
 			if (e.key === 'Enter' && this.opts.onEnter) {
-				if (this.opts.onEnter(this.getValue(), e)) {
-					e.preventDefault();
+				console.log('[ZK][EmbeddableMarkdownEditor] Enter keydown', {
+					metaKey: e.metaKey,
+					ctrlKey: e.ctrlKey,
+					shiftKey: e.shiftKey,
+					altKey: e.altKey,
+					valueLength: this.getValue().length,
+				});
+				e.preventDefault();
+				if (!this.opts.onEnter(this.getValue(), e)) {
+					// onEnter 返回 false 表示"允许换行"；这里统一显式插入，
+					// 避免 Meta/Ctrl 组合键依赖浏览器/编辑器默认行为而失效
+					this.insertNewline();
 				}
 				return;
 			}
@@ -260,6 +322,9 @@ export class EmbeddableMarkdownEditor extends Component {
 	focus(): void {
 		try {
 			this.cm?.focus?.();
+			console.log('[ZK][EmbeddableMarkdownEditor] focus()', {
+				activeElementClass: (document.activeElement as HTMLElement | null)?.className ?? null,
+			});
 		} catch {
 			/* ignore */
 		}
@@ -285,6 +350,10 @@ export class EmbeddableMarkdownEditor extends Component {
 
 	getDom(): HTMLElement | null {
 		return (this.cm?.dom as HTMLElement | undefined) ?? null;
+	}
+
+	insertLineBreak(): void {
+		this.insertNewline();
 	}
 
 	transformSelection(formatter: (selectedText: string) => string): boolean {
