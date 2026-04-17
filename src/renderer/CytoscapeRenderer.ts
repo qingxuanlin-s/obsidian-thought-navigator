@@ -114,6 +114,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private embedRendererComponents: Set<Component> = new Set();
     private activeAlignmentOverlay: SVGSVGElement | null = null;
     private boxSelectionElement: HTMLElement | null = null;
+    private liveEditCleanupHandlers: Set<() => void> = new Set();
     private collapseHandleCleanup: (() => void) | null = null;
     private collapsedNodeIds: Set<string> = new Set();
     private activeTextSelectionToolbarCleanup: (() => void) | null = null;
@@ -593,7 +594,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private cleanupOverlayEventBindings(): void {
         if (!this.cy) return;
         if (this.overlayCoreUpdateHandler) {
-            this.cy.off('zoom pan viewport drag position', this.overlayCoreUpdateHandler);
+            this.cy.off('zoom', this.overlayCoreUpdateHandler);
+            this.cy.off('pan', this.overlayCoreUpdateHandler);
+            this.cy.off('viewport', this.overlayCoreUpdateHandler);
+            this.cy.off('drag', this.overlayCoreUpdateHandler);
+            this.cy.off('position', this.overlayCoreUpdateHandler);
             this.overlayCoreUpdateHandler = null;
         }
         if (this.overlayDragfreeHandler) {
@@ -601,11 +606,16 @@ export class CytoscapeRenderer implements IGraphRenderer {
             this.overlayDragfreeHandler = null;
         }
         if (this.overlayExtraUpdateHandler) {
-            this.cy.off('class data add remove layoutstop', this.overlayExtraUpdateHandler);
+            this.cy.off('class', this.overlayExtraUpdateHandler);
+            this.cy.off('data', this.overlayExtraUpdateHandler);
+            this.cy.off('add', this.overlayExtraUpdateHandler);
+            this.cy.off('remove', this.overlayExtraUpdateHandler);
+            this.cy.off('layoutstop', this.overlayExtraUpdateHandler);
             this.overlayExtraUpdateHandler = null;
         }
         if (this.overlaySelectionHandler) {
-            this.cy.off('select unselect', this.overlaySelectionHandler);
+            this.cy.off('select', this.overlaySelectionHandler);
+            this.cy.off('unselect', this.overlaySelectionHandler);
             this.overlaySelectionHandler = null;
         }
     }
@@ -632,6 +642,13 @@ export class CytoscapeRenderer implements IGraphRenderer {
             try { component.unload(); } catch { /* ignore */ }
         });
         this.embedRendererComponents.clear();
+    }
+
+    private cleanupLiveEditHandlers(): void {
+        this.liveEditCleanupHandlers.forEach((cleanup) => {
+            try { cleanup(); } catch { /* ignore */ }
+        });
+        this.liveEditCleanupHandlers.clear();
     }
 
     private cleanupBadgeInteractionBindings(): void {
@@ -1114,6 +1131,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
      */
     destroy(): void {
         this.clearActiveTextSelectionToolbar();
+        this.cleanupLiveEditHandlers();
         this.cleanupManagedDomListeners();
         this.cleanupOverlayEventBindings();
         this.cleanupBadgeInteractionBindings();
@@ -1161,7 +1179,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
         this.textMdOverlayCache.clear();
         if (this.cy) {
-            (this.cy as any).off();
             this.cy.destroy();
             this.cy = null;
         }
@@ -8136,6 +8153,7 @@ case 'dagre':
         };
 
         const clearLiveEdit = () => {
+            this.liveEditCleanupHandlers.delete(clearLiveEdit);
             selectionToolbar?.destroy();
             selectionToolbar = null;
             if (mdEditor) {
@@ -8150,6 +8168,7 @@ case 'dagre':
             });
             editorHost.removeEventListener('wheel', stopWheelPropagation, true);
         };
+        this.liveEditCleanupHandlers.add(clearLiveEdit);
 
         const restoreOverlay = () => {
             clearLiveEdit();

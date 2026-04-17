@@ -120,11 +120,13 @@ export class ZKIndexView extends ItemView {
 
     // MOC 视图状态（缩放和平移）
     private mocViewStates: Map<string, { zoom: number; pan: { x: number; y: number } }> = new Map();
+    private readonly MAX_MOC_VIEW_STATES = 20;
 
     // 占位符节点追踪（用于未完成编辑的临时节点）
     private placeholderNodes: Map<string, {
         nodeId: string;
         tempId: string;
+        mocPath: string;
         content: string;
         position: { x: number; y: number };
         timestamp: number;
@@ -132,6 +134,7 @@ export class ZKIndexView extends ItemView {
         suggestedNodeId?: string;  // 预生成的节点 ID
         childNodeId?: string;  // 需要移动到此节点下的子节点 ID（用于创建父节点时）
     }> = new Map();
+    private readonly PLACEHOLDER_EXPIRY_MS = 10 * 60 * 1000;
 
     // MOC 芯片标签引用（用于更新显示）
     private mocChipLabel: HTMLElement | null = null;
@@ -325,6 +328,55 @@ export class ZKIndexView extends ItemView {
         if (this.undoStack.length > this.MAX_UNDO_STEPS) {
             this.undoStack = this.undoStack.slice(this.undoStack.length - this.MAX_UNDO_STEPS);
         }
+    }
+
+    private pruneMOCViewStates(activePath?: string | null): void {
+        if (activePath && this.mocViewStates.has(activePath)) {
+            const activeState = this.mocViewStates.get(activePath)!;
+            this.mocViewStates.delete(activePath);
+            this.mocViewStates.set(activePath, activeState);
+        }
+
+        while (this.mocViewStates.size > this.MAX_MOC_VIEW_STATES) {
+            const oldestKey = this.mocViewStates.keys().next().value;
+            if (!oldestKey) break;
+            this.mocViewStates.delete(oldestKey);
+        }
+    }
+
+    private prunePlaceholderNodes(currentMOCPath?: string | null): void {
+        const now = Date.now();
+        this.placeholderNodes.forEach((info, key) => {
+            const expired = now - info.timestamp > this.PLACEHOLDER_EXPIRY_MS;
+            const staleMOC = !!currentMOCPath && info.mocPath !== currentMOCPath;
+            if (expired || staleMOC) {
+                this.placeholderNodes.delete(key);
+            }
+        });
+    }
+
+    private createPlaceholderRecord(
+        tempId: string,
+        position: { x: number; y: number },
+        extra: {
+            parentNodeId?: string;
+            suggestedNodeId?: string;
+            childNodeId?: string;
+        } = {}
+    ): void {
+        const mocPath = this.plugin.settings.mocCurrentFile || '__graph__';
+        this.prunePlaceholderNodes(mocPath);
+        this.placeholderNodes.set(tempId, {
+            nodeId: tempId,
+            tempId,
+            mocPath,
+            content: '',
+            position,
+            timestamp: Date.now(),
+            parentNodeId: extra.parentNodeId,
+            suggestedNodeId: extra.suggestedNodeId,
+            childNodeId: extra.childNodeId
+        });
     }
 
     private async undoLastMOCChange(): Promise<void> {
@@ -1564,6 +1616,8 @@ cy.fit(null, 40);
     async refreshBranchMermaidMOC(indexMermaidDiv: HTMLElement, force: boolean = false) {
         // 仅在 MOC 文件真正切换时才冲刷保存旧画面位置，避免同文件刷新覆盖刚写入的位置
         const incomingMOCPath = this.plugin.settings.mocCurrentFile;
+        this.prunePlaceholderNodes(incomingMOCPath);
+        this.pruneMOCViewStates(incomingMOCPath);
 
         // 同步更新 MOC 选择器标签
         if (this.mocChipLabel && incomingMOCPath) {
@@ -5414,12 +5468,7 @@ cy.fit(null, 40);
         const tempId = `temp_${Date.now()}`;
 
         // 存储占位符信息
-        this.placeholderNodes.set(tempId, {
-            nodeId: tempId,
-            tempId: tempId,
-            content: '',
-            position,
-            timestamp: Date.now(),
+        this.createPlaceholderRecord(tempId, position, {
             parentNodeId: parentId,
             suggestedNodeId: siblingId
         });
@@ -5459,15 +5508,9 @@ cy.fit(null, 40);
         const tempId = `temp_${Date.now()}`;
 
         // 存储占位符信息
-        this.placeholderNodes.set(tempId, {
-            nodeId: tempId,
-            tempId: tempId,
-            content: '',
-            position,
-            timestamp: Date.now(),
-            parentNodeId: undefined,  // 新父节点没有父节点
+        this.createPlaceholderRecord(tempId, position, {
             suggestedNodeId: parentId,
-            childNodeId: activeNodeId  // 标记当前节点应该成为这个新节点的子节点
+            childNodeId: activeNodeId
         });
 
         // 通知 Cytoscape 渲染器添加占位符节点
@@ -5555,14 +5598,9 @@ cy.fit(null, 40);
         }
 
         // 存储占位符信息（包括潜在的父节点ID和预生成的节点ID）
-        this.placeholderNodes.set(tempId, {
-            nodeId: tempId,
-            tempId: tempId,
-            content: '',
-            position,
-            timestamp: Date.now(),
+        this.createPlaceholderRecord(tempId, position, {
             parentNodeId: parentNodeId,
-            suggestedNodeId: suggestedNodeId  // 保存预生成的节点ID
+            suggestedNodeId: suggestedNodeId
         });
 
         // 直接通过事件通知 Cytoscape 渲染器添加占位符节点
@@ -6368,6 +6406,7 @@ cy.fit(null, 40);
      * 获取 MOC 文件的视图状态
      */
     private getMOCViewState(mocPath: string): { zoom: number; pan: { x: number; y: number } } | null {
+        this.pruneMOCViewStates(mocPath);
         return this.mocViewStates.get(mocPath) || null;
     }
 
@@ -6376,6 +6415,7 @@ cy.fit(null, 40);
      */
     private saveMOCViewState(mocPath: string, zoom: number, pan: { x: number; y: number }): void {
         this.mocViewStates.set(mocPath, { zoom, pan });
+        this.pruneMOCViewStates(mocPath);
     }
 
     async onClose() {
