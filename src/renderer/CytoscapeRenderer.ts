@@ -7990,19 +7990,6 @@ case 'dagre':
             this.cy?.userZoomingEnabled(prevZoomingEnabled);
         };
 
-        const autoGrow = () => {
-            if (!this.cy || node.removed()) return;
-            const overflow = Math.max(mdEditor?.getVerticalOverflow() ?? 0, 0);
-            if (overflow < 1) return;
-            const newH = Math.max(savedHeight, Math.min(entry.height + overflow + 2, 720));
-            if (newH <= entry.height) return;
-            entry.height = newH;
-            this.cy.batch(() => {
-                node.data('manualHeightModel', newH);
-                node.style({ height: newH });
-            });
-        };
-
         const clearLiveEdit = () => {
             selectionToolbar?.destroy();
             selectionToolbar = null;
@@ -8098,7 +8085,6 @@ case 'dagre':
                 containerEl: editorHost,
                 initialValue: rawSource,
                 sourcePath,
-                onChange: () => autoGrow(),
                 onEnter: (_value, evt) => {
                     console.log('[ZK][TextNodeLiveEdit] onEnter', {
                         metaKey: evt.metaKey,
@@ -8128,7 +8114,6 @@ case 'dagre':
                     return mdEditor.transformSelection(formatter);
                 });
             }
-            setTimeout(() => autoGrow(), 0);
         } catch (err) {
             console.warn('[ZK] Live preview unavailable, fallback to textarea', err);
             clearLiveEdit();
@@ -8528,7 +8513,7 @@ case 'dagre':
             line-height: 1.35;
             text-align: left;
             resize: none;
-            overflow: hidden;
+            overflow: auto;
             box-sizing: border-box;
             white-space: pre-wrap;
             white-space: break-spaces;
@@ -8558,35 +8543,10 @@ case 'dagre':
         let isSaved = false;
         const suggesterPopoverRef = { value: null as HTMLElement | null };
 
-        // 自动增长：根据 textarea 的内容撑高节点
-        // 注意：textarea 用 inset:0 + height:100% 锁定尺寸；测量时需先解除 bottom 约束
-        // 否则 absolute 定位下 height:auto 会被 (parent.h - top - bottom) 反向覆盖，
-        // scrollHeight 永远不会超过当前父元素高度
-        const autoGrow = () => {
-            if (!this.cy) return;
-            textarea.style.bottom = 'auto';
-            textarea.style.height = 'auto';
-            const contentH = textarea.scrollHeight;
-            const newH = Math.max(savedHeight, Math.min(contentH + 4, 640));
-            // 恢复 textarea 的 inset 锁定
-            textarea.style.bottom = '0';
-            textarea.style.height = '100%';
-            if (newH !== entry.height) {
-                entry.height = newH;
-                if (!node.removed()) {
-                    this.cy.batch(() => {
-                        node.data('manualHeightModel', newH);
-                        node.style({ height: newH });
-                    });
-                }
-            }
-        };
-
         // 聚焦 + 全选
         setTimeout(() => {
             textarea.focus();
             textarea.select();
-            autoGrow();
         }, 0);
 
         const restoreOverlay = () => {
@@ -8680,7 +8640,6 @@ case 'dagre':
         textarea.addEventListener('input', (e) => {
             e.stopPropagation();
             this.checkForLinkPattern(textarea, node, node.renderedBoundingBox(), suggesterPopoverRef, handleLinkSelect);
-            autoGrow();
         });
         textarea.addEventListener('keyup', (e) => e.stopPropagation());
         textarea.addEventListener('keypress', (e) => e.stopPropagation());
