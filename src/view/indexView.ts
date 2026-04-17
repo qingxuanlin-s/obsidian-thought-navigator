@@ -105,6 +105,7 @@ export class ZKIndexView extends ItemView {
     pendingPositionChanges: Map<string, { node: any; position: { x: number; y: number } }> = new Map();
     crossDomainPositionSaveTimeout: NodeJS.Timeout | null = null;
     embedNodeSizeSaveTimeout: NodeJS.Timeout | null = null;
+    private changeRefreshTimer: NodeJS.Timeout | null = null;
 
     // 事件监听器跟踪（用于清理，防止内存泄漏）
     private registeredEventListeners: Array<{
@@ -393,6 +394,10 @@ export class ZKIndexView extends ItemView {
         if (this.embedNodeSizeSaveTimeout) {
             clearTimeout(this.embedNodeSizeSaveTimeout);
             this.embedNodeSizeSaveTimeout = null;
+        }
+        if (this.changeRefreshTimer) {
+            clearTimeout(this.changeRefreshTimer);
+            this.changeRefreshTimer = null;
         }
     }
 
@@ -1009,22 +1014,20 @@ cy.fit(null, 40);
 
         // 智能延迟刷新：监听文件内容变化
         let lastEditTime = 0;
-        let changeRefreshTimer: NodeJS.Timeout | null = null;
-
         const smartChangeRefresh = () => {
             const now = Date.now();
             const timeSinceLastEdit = now - lastEditTime;
 
             // 如果最后编辑在 2 秒内，说明还在编辑，再延迟 5 秒
             if (timeSinceLastEdit < 2000) {
-                if (changeRefreshTimer) {
-                    clearTimeout(changeRefreshTimer);
+                if (this.changeRefreshTimer) {
+                    clearTimeout(this.changeRefreshTimer);
                 }
-                changeRefreshTimer = setTimeout(smartChangeRefresh, 5000);
+                this.changeRefreshTimer = setTimeout(smartChangeRefresh, 5000);
             } else {
                 // 超过 2 秒没有编辑，执行刷新
                 this.plugin.RefreshIndexViewFlag = true;
-                changeRefreshTimer = null;
+                this.changeRefreshTimer = null;
             }
         };
 
@@ -1035,8 +1038,8 @@ cy.fit(null, 40);
                 lastEditTime = Date.now();
                 
                 // 如果没有定时器在运行，启动一个
-                if (!changeRefreshTimer) {                
-                    changeRefreshTimer = setTimeout(smartChangeRefresh, 5000);
+                if (!this.changeRefreshTimer) {                
+                    this.changeRefreshTimer = setTimeout(smartChangeRefresh, 5000);
                 }
             }
         }));
@@ -6397,6 +6400,9 @@ cy.fit(null, 40);
         // 清理缓存数据
         this.nodePositionMap.clear();
         this.renderedBranches.clear();
+        this.mocViewStates.clear();
+        this.placeholderNodes.clear();
+        this.undoStack = [];
         this.mocNodes = [];
         this.mocTreeStructure = [];
         this.mocReverseRelations.clear();
