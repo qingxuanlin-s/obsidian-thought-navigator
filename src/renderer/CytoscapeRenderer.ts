@@ -105,6 +105,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private activeOverlayDragAborters: Set<AbortController> = new Set();
     // 缓存已渲染的预览卡片 DOM，避免重建时 excalidraw/markdown 内容闪烁
     private embedCardCache: Map<string, HTMLElement> = new Map();
+    private managedDomListeners: Array<{
+        target: HTMLElement | Window | Document;
+        event: string;
+        handler: EventListenerOrEventListenerObject;
+        options?: boolean | AddEventListenerOptions;
+    }> = [];
+    private embedRendererComponents: Set<Component> = new Set();
+    private activeAlignmentOverlay: SVGSVGElement | null = null;
+    private boxSelectionElement: HTMLElement | null = null;
     private collapseHandleCleanup: (() => void) | null = null;
     private collapsedNodeIds: Set<string> = new Set();
     private activeTextSelectionToolbarCleanup: (() => void) | null = null;
@@ -136,6 +145,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private overlayListenerBound = false;
     private overlayInteracting = false;
     private overlayInteractTimer: number | null = null;
+    private overlayCoreUpdateHandler: (() => void) | null = null;
+    private overlayDragfreeHandler: (() => void) | null = null;
+    private overlayExtraUpdateHandler: (() => void) | null = null;
+    private overlaySelectionHandler: (() => void) | null = null;
     // 边控制点/端点手柄的 updaters（生命周期跟随选中边，需单独追踪清理）
     private edgeControlPointUpdaters: Set<() => void> = new Set();
     private edgeEndpointUpdaters: Set<() => void> = new Set();
@@ -543,28 +556,83 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private bindOverlayListeners(): void {
         if (this.overlayListenerBound || !this.cy) return;
         this.overlayListenerBound = true;
-
-        // 核心视口/拖动事件 → 单一 rAF 调度
-        this.cy.on('zoom pan viewport drag position', () => {
+        this.overlayCoreUpdateHandler = () => {
             this.markOverlayInteracting();
             this.scheduleOverlayUpdate();
-        });
-        // 拖动结束 → 立即同步
-        this.cy.on('dragfree', () => {
+        };
+        this.overlayDragfreeHandler = () => {
             this.overlayInteracting = false;
             if (this.overlayInteractTimer !== null) {
                 window.clearTimeout(this.overlayInteractTimer);
                 this.overlayInteractTimer = null;
             }
             this.immediateOverlayUpdate();
-        });
-        // 结构/状态变化事件 → 额外 updaters
-        this.cy.on('class data add remove layoutstop', () => this.scheduleOverlayExtraUpdate());
-        // 选择变化 → 同步 selection updaters + 调度位置更新
-        this.cy.on('select unselect', () => {
+        };
+        this.overlayExtraUpdateHandler = () => this.scheduleOverlayExtraUpdate();
+        this.overlaySelectionHandler = () => {
             this.handleOverlaySelectionChange();
             this.scheduleOverlayExtraUpdate();
+        };
+
+        // 核心视口/拖动事件 → 单一 rAF 调度
+        this.cy.on('zoom pan viewport drag position', this.overlayCoreUpdateHandler);
+        // 拖动结束 → 立即同步
+        this.cy.on('dragfree', this.overlayDragfreeHandler);
+        // 结构/状态变化事件 → 额外 updaters
+        this.cy.on('class data add remove layoutstop', this.overlayExtraUpdateHandler);
+        // 选择变化 → 同步 selection updaters + 调度位置更新
+        this.cy.on('select unselect', this.overlaySelectionHandler);
+    }
+
+    private cleanupOverlayEventBindings(): void {
+        if (!this.cy) return;
+        if (this.overlayCoreUpdateHandler) {
+            this.cy.off('zoom pan viewport drag position', this.overlayCoreUpdateHandler);
+            this.overlayCoreUpdateHandler = null;
+        }
+        if (this.overlayDragfreeHandler) {
+            this.cy.off('dragfree', this.overlayDragfreeHandler);
+            this.overlayDragfreeHandler = null;
+        }
+        if (this.overlayExtraUpdateHandler) {
+            this.cy.off('class data add remove layoutstop', this.overlayExtraUpdateHandler);
+            this.overlayExtraUpdateHandler = null;
+        }
+        if (this.overlaySelectionHandler) {
+            this.cy.off('select unselect', this.overlaySelectionHandler);
+            this.overlaySelectionHandler = null;
+        }
+    }
+
+    private addManagedDomListener<T extends HTMLElement | Window | Document>(
+        target: T,
+        event: string,
+        handler: EventListenerOrEventListenerObject,
+        options?: boolean | AddEventListenerOptions
+    ): void {
+        target.addEventListener(event, handler, options);
+        this.managedDomListeners.push({ target, event, handler, options });
+    }
+
+    private cleanupManagedDomListeners(): void {
+        this.managedDomListeners.forEach(({ target, event, handler, options }) => {
+            target.removeEventListener(event, handler, options);
         });
+        this.managedDomListeners = [];
+    }
+
+    private unloadEmbedRendererComponents(): void {
+        this.embedRendererComponents.forEach((component) => {
+            try { component.unload(); } catch { /* ignore */ }
+        });
+        this.embedRendererComponents.clear();
+    }
+
+    private cleanupBadgeInteractionBindings(): void {
+        if (!this.cy) return;
+        this.cy.off('.zk-edge-control');
+        this.cy.off('.zk-edge-endpoint');
+        this.cy.nodes().off('.zk-connection-handle');
     }
 
     /** 清理统一 overlay 调度器（只清空 updater 集合，不重置事件监听标记） */
@@ -581,8 +649,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
             window.clearTimeout(this.overlayInteractTimer);
             this.overlayInteractTimer = null;
         }
-        // 不重置 overlayListenerBound：事件监听器绑定在 cy 实例上未被移除
-        // 重置会导致 bindOverlayListeners 重复绑定，事件累积
     }
 
     /**
@@ -612,6 +678,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
         if (!this.cy || containerChanged) {
             // 销毁旧实例（如果存在）
             if (this.cy) {
+                this.cleanupManagedDomListeners();
+                this.cleanupOverlayEventBindings();
+                this.cleanupBadgeInteractionBindings();
+                this.cleanupOverlayScheduler();
+                this.overlayListenerBound = false;
+                this.activeAlignmentOverlay?.remove();
+                this.activeAlignmentOverlay = null;
+                this.boxSelectionElement?.remove();
+                this.boxSelectionElement = null;
                 this.cy.destroy();
                 this.cy = null;
             }
@@ -1001,6 +1076,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
      */
     destroy(): void {
         this.clearActiveTextSelectionToolbar();
+        this.cleanupManagedDomListeners();
+        this.cleanupOverlayEventBindings();
+        this.cleanupBadgeInteractionBindings();
+        this.cleanupOverlayScheduler();
+        this.overlayListenerBound = false;
 
         // 中止所有挂在 document 上、尚未释放的 overlay 拖拽/缩放监听器
         for (const ctrl of this.activeOverlayDragAborters) {
@@ -1020,6 +1100,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
             this.collapseHandleCleanup();
             this.collapseHandleCleanup = null;
         }
+        this.activeAlignmentOverlay?.remove();
+        this.activeAlignmentOverlay = null;
+        this.boxSelectionElement?.remove();
+        this.boxSelectionElement = null;
+        this.embedCardCache.forEach((card) => {
+            if (card.parentNode) card.remove();
+        });
+        this.embedCardCache.clear();
+        this.unloadEmbedRendererComponents();
         // 清理文本节点 MD overlay 缓存（unload 每个 Component）
         this.textMdOverlayCache.forEach(entry => {
             if (entry.mdEditor) {
@@ -1034,6 +1123,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
         this.textMdOverlayCache.clear();
         if (this.cy) {
+            (this.cy as any).off();
             this.cy.destroy();
             this.cy = null;
         }
@@ -2572,6 +2662,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         this.container.appendChild(previewContainer);
 
         const rendererComponent = new Component();
+        this.embedRendererComponents.add(rendererComponent);
         const updaters: Array<() => void> = [];
         // 记录用户手动调整后的尺寸（以画布坐标系存储，缩放时按 zoom 换算为像素）
         const cardSizeMap = new Map<string, { widthModel: number; heightModel: number }>();
@@ -3255,6 +3346,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 this.cy.userZoomingEnabled(true);
                 this.cy.userPanningEnabled(true);
             }
+            this.embedRendererComponents.delete(rendererComponent);
             rendererComponent.unload();
             previewContainer.remove();
         };
@@ -3792,6 +3884,7 @@ case 'dagre':
 
         // 清理旧的统一 overlay 调度器（badge 重建时所有子系统也会重建）
         this.cleanupOverlayScheduler();
+        this.cleanupBadgeInteractionBindings();
 
         // 先从旧 badgeContainer 中摘下缓存的 MD overlay（保持 DOM 节点存活，便于下面复用）
         this.textMdOverlayCache.forEach(entry => {
@@ -4779,6 +4872,7 @@ case 'dagre':
 
         // 所有 overlay 子系统注册完毕后，绑定统一事件监听
         this.bindOverlayListeners();
+        this.immediateOverlayUpdate();
     }
 
     /**
@@ -5007,6 +5101,7 @@ case 'dagre':
                 currentEntry.el.style.transform = `scale(${zoom})`;
             };
             badgeUpdaters.push(updateOverlayPos);
+            updateOverlayPos();
         });
 
         // 批量尺寸回写：先处理同步完成的（快路径），异步完成的在 Promise.all 后再批量
@@ -5400,12 +5495,13 @@ case 'dagre':
             handle.dataset.embedNodeId = nodeId;
 
             // Cytoscape mouseover/mouseout（对普通节点和嵌入预览节点有效）
-            node.on('mouseover', () => {
+            node.off('.zk-connection-handle');
+            node.on('mouseover.zk-connection-handle', () => {
                 if (this.isEdgeSelected) return;
                 handle.style.opacity = '1';
                 updateHandlePosition();
             });
-            node.on('mouseout', () => {
+            node.on('mouseout.zk-connection-handle', () => {
                 handle.style.opacity = '0';
                 handle.style.display = 'none';
             });
@@ -5655,7 +5751,7 @@ case 'dagre':
         this.container.appendChild(controlPointContainer);
 
         // 监听边选中事件
-        this.cy.on('select', 'edge', (evt: any) => {
+        this.cy.on('select.zk-edge-control', 'edge', (evt: any) => {
             const edge = evt.target;
             this.isEdgeSelected = true;
             // 隐藏所有连线手柄（小蓝点），避免误触
@@ -5667,7 +5763,7 @@ case 'dagre':
         });
 
         // 监听边取消选中事件
-        this.cy.on('unselect', 'edge', () => {
+        this.cy.on('unselect.zk-edge-control', 'edge', () => {
             this.isEdgeSelected = false;
             // 恢复连线手柄的事件响应
             this.container?.querySelectorAll('.zk-connection-handle').forEach((h: Element) => {
@@ -5677,7 +5773,7 @@ case 'dagre':
         });
 
         // 监听边移除事件，确保控制点被清除
-        this.cy.on('remove', 'edge', () => {
+        this.cy.on('remove.zk-edge-control', 'edge', () => {
             this.isEdgeSelected = false;
             this.container?.querySelectorAll('.zk-connection-handle').forEach((h: Element) => {
                 (h as HTMLElement).style.pointerEvents = 'auto';
@@ -5901,18 +5997,18 @@ case 'dagre':
         this.container.appendChild(handleContainer);
 
         // 监听边选中事件
-        this.cy.on('select', 'edge', (evt: any) => {
+        this.cy.on('select.zk-edge-endpoint', 'edge', (evt: any) => {
             const edge = evt.target;
             this.showEdgeEndpointHandles(edge, handleContainer);
         });
 
         // 监听边取消选中事件
-        this.cy.on('unselect', 'edge', () => {
+        this.cy.on('unselect.zk-edge-endpoint', 'edge', () => {
             this.hideEdgeEndpointHandles(handleContainer);
         });
 
         // 监听边移除事件，确保手柄被清除
-        this.cy.on('remove', 'edge', () => {
+        this.cy.on('remove.zk-edge-endpoint', 'edge', () => {
             this.hideEdgeEndpointHandles(handleContainer);
         });
     }
@@ -9317,7 +9413,7 @@ case 'dagre':
         });
 
         // 监听添加占位符节点事件
-        this.container?.addEventListener('add-placeholder-node', (event: any) => {
+        this.addManagedDomListener(this.container, 'add-placeholder-node', (event: any) => {
             const { nodeId, position, suggestedNodeId, parentNodeId } = event.detail;
 
             try {
@@ -9371,7 +9467,7 @@ case 'dagre':
         });
 
         // 监听移除占位符节点事件
-        this.container?.addEventListener('remove-placeholder-node', (event: any) => {
+        this.addManagedDomListener(this.container, 'remove-placeholder-node', (event: any) => {
             const { nodeId } = event.detail;
 
             // 先清理连接线（通过查询选择器，更可靠）
@@ -9416,7 +9512,7 @@ case 'dagre':
         });
 
         // 监听清理所有占位符连接线事件（用于视图刷新时）
-        this.container?.addEventListener('cleanup-all-placeholder-connections', () => {
+        this.addManagedDomListener(this.container, 'cleanup-all-placeholder-connections', () => {
             const connectionLines = this.container?.querySelectorAll('.placeholder-connection-line');
             if (connectionLines) {
                 connectionLines.forEach(line => {
@@ -9428,7 +9524,7 @@ case 'dagre':
         });
 
         // 监听通过 ID 选中节点事件（用于新建节点后自动选中）
-        this.container?.addEventListener('select-node-by-id', (event: any) => {
+        this.addManagedDomListener(this.container, 'select-node-by-id', (event: any) => {
             const { nodeId } = event.detail;
 
             // 延迟执行，确保视图刷新完成
@@ -9512,6 +9608,7 @@ case 'dagre':
             });
 
             this.container.appendChild(alignmentOverlay);
+            this.activeAlignmentOverlay = alignmentOverlay;
         };
 
         const hideAlignmentGuides = () => {
@@ -10458,9 +10555,9 @@ case 'dagre':
         };
 
         // 添加事件监听器
-        this.container.addEventListener('keydown', handleKeyDown);
-        this.container.addEventListener('keyup', handleKeyUp);
-        this.container.addEventListener('zk-open-search-bar', () => {
+        this.addManagedDomListener(this.container, 'keydown', handleKeyDown);
+        this.addManagedDomListener(this.container, 'keyup', handleKeyUp);
+        this.addManagedDomListener(this.container, 'zk-open-search-bar', () => {
             this.showSearchBar();
         });
 
@@ -10470,7 +10567,7 @@ case 'dagre':
         }
 
         // 当容器获得焦点时，自动聚焦
-        this.container.addEventListener('mousedown', () => {
+        this.addManagedDomListener(this.container, 'mousedown', () => {
             this.container?.focus();
         });
     }
@@ -10892,6 +10989,8 @@ case 'dagre':
     private initBoxSelection(): void {
         if (!this.cy || !this.container) return;
 
+        this.boxSelectionElement?.remove();
+
         // 创建选择框元素
         const selectionBox = document.createElement('div');
         selectionBox.className = 'zk-selection-box';
@@ -10908,6 +11007,7 @@ case 'dagre':
             will-change: transform;
         `;
         this.container.appendChild(selectionBox);
+        this.boxSelectionElement = selectionBox;
 
         let isDragging = false;
         let hasMoved = false;  // 标记是否真正移动了鼠标
@@ -10916,7 +11016,7 @@ case 'dagre':
         let isMultiSelect = false;
 
         // 鼠标按下开始框选
-        this.container.addEventListener('mousedown', (e: MouseEvent) => {
+        this.addManagedDomListener(this.container, 'mousedown', (e: MouseEvent) => {
             const target = e.target as HTMLElement;
 
             // 只在 canvas 上点击时才开始框选
@@ -11020,8 +11120,8 @@ case 'dagre':
             }
         };
 
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
+        this.addManagedDomListener(document, 'mousemove', handleMouseMove);
+        this.addManagedDomListener(document, 'mouseup', handleMouseUp);
     }
 
     /**
