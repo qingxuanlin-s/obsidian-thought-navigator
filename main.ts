@@ -562,17 +562,29 @@ export default class ZKNavigationPlugin extends Plugin {
 
         // 拦截 .moc 文件打开，用分支视图（IndexView）代替默认编辑器
         this.registerEvent(
-            this.app.workspace.on('file-open', (file) => {
+            this.app.workspace.on('file-open', async (file) => {
                 if (!file || !file.path.endsWith('.moc')) return;
-                // 找到刚打开 .moc 的 markdown leaf 并关闭它
+
+                // 复用当前刚打开 .moc 的 leaf，直接切换成 IndexView，
+                // 避免 detach markdown leaf 后 Obsidian 回退到上一个 markdown 文件，
+                // 从而触发文件树错误定位。
                 const activeLeaf = this.app.workspace.activeLeaf;
-                if (activeLeaf?.view?.getViewType() === 'markdown') {
-                    activeLeaf.detach();
-                }
-                // 设置当前 MOC 文件并打开分支视图
                 this.settings.mocCurrentFile = file.path;
-                this.saveData(this.settings);
-                this.openIndexView();
+                await this.saveData(this.settings);
+
+                if (activeLeaf?.view?.getViewType() === 'markdown') {
+                    await activeLeaf.setViewState({
+                        type: ZK_INDEX_TYPE,
+                        state: {
+                            file: file.path,
+                        },
+                        active: true,
+                    });
+                    this.app.workspace.revealLeaf(activeLeaf);
+                } else {
+                    await this.openIndexView();
+                }
+
                 this.app.workspace.trigger('zk-navigation:refresh-index-graph');
             })
         );
@@ -593,12 +605,24 @@ export default class ZKNavigationPlugin extends Plugin {
     }
 
     async openIndexView() {
+        const viewState = this.settings.mocCurrentFile
+            ? {
+                type: ZK_INDEX_TYPE,
+                state: {
+                    file: this.settings.mocCurrentFile,
+                },
+                active: true,
+            }
+            : {
+                type: ZK_INDEX_TYPE,
+                active: true,
+            };
+        const indexLeaves = this.app.workspace.getLeavesOfType(ZK_INDEX_TYPE);
 
-        if(this.app.workspace.getLeavesOfType(ZK_INDEX_TYPE).length === 0){
-         await this.app.workspace.getLeaf('tab')?.setViewState({
-             type:ZK_INDEX_TYPE,
-             active:true,
-         });
+        if(indexLeaves.length === 0){
+         await this.app.workspace.getLeaf('tab')?.setViewState(viewState);
+        } else if (this.settings.mocCurrentFile) {
+            await indexLeaves[0].setViewState(viewState);
         }
         
         this.app.workspace.revealLeaf(
