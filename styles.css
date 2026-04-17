@@ -2707,11 +2707,16 @@ align-items: center;
   line-height: 1.35 !important;
 }
 
-.zk-text-md-live-edit-host .cm-content {
-  padding: 24px 24px 12px 24px;
+.zk-text-md-live-edit-host .cm-editor .cm-scroller {
+  padding: 0 !important;
+}
+
+.zk-text-md-live-edit-host .cm-editor .cm-content {
+  padding: 24px 24px 12px 24px !important;
   white-space: break-spaces;
 }
 
-.zk-text-md-live-edit-host .cm-line {
+.zk-text-md-live-edit-host .cm-editor .cm-line {
+  padding: 0 !important;
   white-space: break-spaces;
 }

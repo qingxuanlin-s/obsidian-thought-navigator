@@ -174,6 +174,9 @@ export class EmbeddableMarkdownEditor extends Component {
 			onLoadFile: async () => {},
 			getScroll: () => 0,
 			setScroll: () => {},
+			syncScroll: () => {},
+			onMarkdownFold: () => {},
+			onResize: () => {},
 			registerEditorExtension: () => {},
 			registerExtensions: () => {},
 		};

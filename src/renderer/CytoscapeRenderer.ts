@@ -8061,7 +8061,7 @@ case 'dagre':
         editorHost.style.cssText = `
             position: absolute;
             inset: 0;
-            border: 2px solid rgba(91, 143, 217, 0.95);
+            box-shadow: inset 0 0 0 2px rgba(91, 143, 217, 0.95);
             border-radius: 12px;
             overflow: auto;
             background: var(--background-primary);
@@ -8340,7 +8340,7 @@ case 'dagre':
         editorHost.style.cssText = `
             position: absolute;
             inset: 0;
-            border: 2px solid rgba(91, 143, 217, 0.95);
+            box-shadow: inset 0 0 0 2px rgba(91, 143, 217, 0.95);
             border-radius: 12px;
             overflow: auto;
             background: var(--background-primary);
