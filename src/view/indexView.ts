@@ -1,6 +1,6 @@
 import { toPng } from "html-to-image";
 import ZKNavigationPlugin from "main";
-import { ExtraButtonComponent, FuzzySuggestModal, ItemView, Menu, Modal, Notice, Platform, Scope, Setting, TFile, WorkspaceLeaf, debounce, moment, setIcon, setTooltip } from "obsidian";
+import { ExtraButtonComponent, FileView, FuzzySuggestModal, Menu, Modal, Notice, Platform, Scope, Setting, TFile, WorkspaceLeaf, debounce, moment, setIcon, setTooltip } from "obsidian";
 import { t } from "src/lang/helper";
 import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
 import { AddFreeNodeModal } from "src/modal/addFreeNodeModal";
@@ -65,7 +65,7 @@ interface BrancAllhNodes {
     branchNodes: ZKNode[];
 }
 
-export class ZKIndexView extends ItemView {
+export class ZKIndexView extends FileView {
 
     plugin: ZKNavigationPlugin;
     branchAllNodes: BrancAllhNodes[];
@@ -230,6 +230,7 @@ export class ZKIndexView extends ItemView {
     constructor(leaf: WorkspaceLeaf, plugin: ZKNavigationPlugin) {
         super(leaf);
         this.plugin = plugin;
+        this.allowNoFile = true;
         this.scope = new Scope(this.app.scope);
         this.scope.register(['Mod'], 'f', (event: KeyboardEvent) => {
             const activeEl = document.activeElement as HTMLElement | null;
@@ -263,6 +264,18 @@ export class ZKIndexView extends ItemView {
 
     getIcon(): string {
         return "tree-pine";
+    }
+
+    async onLoadFile(file: TFile): Promise<void> {
+        if (file.extension !== 'moc') return;
+        if (this.plugin.settings.mocCurrentFile !== file.path) {
+            this.plugin.settings.mocCurrentFile = file.path;
+            await this.plugin.saveData(this.plugin.settings);
+        }
+        this.plugin.RefreshIndexViewFlag = true;
+    }
+
+    async onUnloadFile(_file: TFile): Promise<void> {
     }
 
     /**
