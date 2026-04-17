@@ -149,6 +149,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private overlayDragfreeHandler: (() => void) | null = null;
     private overlayExtraUpdateHandler: (() => void) | null = null;
     private overlaySelectionHandler: (() => void) | null = null;
+    private edgeControlSelectHandler: ((evt: any) => void) | null = null;
+    private edgeControlUnselectHandler: (() => void) | null = null;
+    private edgeControlRemoveHandler: (() => void) | null = null;
+    private edgeEndpointSelectHandler: ((evt: any) => void) | null = null;
+    private edgeEndpointUnselectHandler: (() => void) | null = null;
+    private edgeEndpointRemoveHandler: (() => void) | null = null;
     // 边控制点/端点手柄的 updaters（生命周期跟随选中边，需单独追踪清理）
     private edgeControlPointUpdaters: Set<() => void> = new Set();
     private edgeEndpointUpdaters: Set<() => void> = new Set();
@@ -630,9 +636,41 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
     private cleanupBadgeInteractionBindings(): void {
         if (!this.cy) return;
-        this.cy.off('.zk-edge-control');
-        this.cy.off('.zk-edge-endpoint');
-        this.cy.nodes().off('.zk-connection-handle');
+        if (this.edgeControlSelectHandler) {
+            this.cy.off('select', 'edge', this.edgeControlSelectHandler);
+            this.edgeControlSelectHandler = null;
+        }
+        if (this.edgeControlUnselectHandler) {
+            this.cy.off('unselect', 'edge', this.edgeControlUnselectHandler);
+            this.edgeControlUnselectHandler = null;
+        }
+        if (this.edgeControlRemoveHandler) {
+            this.cy.off('remove', 'edge', this.edgeControlRemoveHandler);
+            this.edgeControlRemoveHandler = null;
+        }
+        if (this.edgeEndpointSelectHandler) {
+            this.cy.off('select', 'edge', this.edgeEndpointSelectHandler);
+            this.edgeEndpointSelectHandler = null;
+        }
+        if (this.edgeEndpointUnselectHandler) {
+            this.cy.off('unselect', 'edge', this.edgeEndpointUnselectHandler);
+            this.edgeEndpointUnselectHandler = null;
+        }
+        if (this.edgeEndpointRemoveHandler) {
+            this.cy.off('remove', 'edge', this.edgeEndpointRemoveHandler);
+            this.edgeEndpointRemoveHandler = null;
+        }
+        this.cy.nodes().forEach((node: any) => {
+            const listeners = node.scratch('_zkConnectionHandleListeners');
+            if (!listeners) return;
+            if (listeners.mouseover) {
+                node.off('mouseover', listeners.mouseover);
+            }
+            if (listeners.mouseout) {
+                node.off('mouseout', listeners.mouseout);
+            }
+            node.removeScratch('_zkConnectionHandleListeners');
+        });
     }
 
     /** 清理统一 overlay 调度器（只清空 updater 集合，不重置事件监听标记） */
@@ -5495,15 +5533,20 @@ case 'dagre':
             handle.dataset.embedNodeId = nodeId;
 
             // Cytoscape mouseover/mouseout（对普通节点和嵌入预览节点有效）
-            node.off('.zk-connection-handle');
-            node.on('mouseover.zk-connection-handle', () => {
+            const handleMouseOver = () => {
                 if (this.isEdgeSelected) return;
                 handle.style.opacity = '1';
                 updateHandlePosition();
-            });
-            node.on('mouseout.zk-connection-handle', () => {
+            };
+            const handleMouseOut = () => {
                 handle.style.opacity = '0';
                 handle.style.display = 'none';
+            };
+            node.on('mouseover', handleMouseOver);
+            node.on('mouseout', handleMouseOut);
+            node.scratch('_zkConnectionHandleListeners', {
+                mouseover: handleMouseOver,
+                mouseout: handleMouseOut
             });
 
             // 鼠标离开蓝点时：如果移向对应的卡片则不隐藏
@@ -5751,7 +5794,7 @@ case 'dagre':
         this.container.appendChild(controlPointContainer);
 
         // 监听边选中事件
-        this.cy.on('select.zk-edge-control', 'edge', (evt: any) => {
+        this.edgeControlSelectHandler = (evt: any) => {
             const edge = evt.target;
             this.isEdgeSelected = true;
             // 隐藏所有连线手柄（小蓝点），避免误触
@@ -5760,26 +5803,29 @@ case 'dagre':
                 (h as HTMLElement).style.pointerEvents = 'none';
             });
             this.showEdgeControlPoint(edge, controlPointContainer);
-        });
+        };
+        this.cy.on('select', 'edge', this.edgeControlSelectHandler);
 
         // 监听边取消选中事件
-        this.cy.on('unselect.zk-edge-control', 'edge', () => {
+        this.edgeControlUnselectHandler = () => {
             this.isEdgeSelected = false;
             // 恢复连线手柄的事件响应
             this.container?.querySelectorAll('.zk-connection-handle').forEach((h: Element) => {
                 (h as HTMLElement).style.pointerEvents = 'auto';
             });
             this.hideEdgeControlPoints(controlPointContainer);
-        });
+        };
+        this.cy.on('unselect', 'edge', this.edgeControlUnselectHandler);
 
         // 监听边移除事件，确保控制点被清除
-        this.cy.on('remove.zk-edge-control', 'edge', () => {
+        this.edgeControlRemoveHandler = () => {
             this.isEdgeSelected = false;
             this.container?.querySelectorAll('.zk-connection-handle').forEach((h: Element) => {
                 (h as HTMLElement).style.pointerEvents = 'auto';
             });
             this.hideEdgeControlPoints(controlPointContainer);
-        });
+        };
+        this.cy.on('remove', 'edge', this.edgeControlRemoveHandler);
     }
 
     /**
@@ -5997,20 +6043,23 @@ case 'dagre':
         this.container.appendChild(handleContainer);
 
         // 监听边选中事件
-        this.cy.on('select.zk-edge-endpoint', 'edge', (evt: any) => {
+        this.edgeEndpointSelectHandler = (evt: any) => {
             const edge = evt.target;
             this.showEdgeEndpointHandles(edge, handleContainer);
-        });
+        };
+        this.cy.on('select', 'edge', this.edgeEndpointSelectHandler);
 
         // 监听边取消选中事件
-        this.cy.on('unselect.zk-edge-endpoint', 'edge', () => {
+        this.edgeEndpointUnselectHandler = () => {
             this.hideEdgeEndpointHandles(handleContainer);
-        });
+        };
+        this.cy.on('unselect', 'edge', this.edgeEndpointUnselectHandler);
 
         // 监听边移除事件，确保手柄被清除
-        this.cy.on('remove.zk-edge-endpoint', 'edge', () => {
+        this.edgeEndpointRemoveHandler = () => {
             this.hideEdgeEndpointHandles(handleContainer);
-        });
+        };
+        this.cy.on('remove', 'edge', this.edgeEndpointRemoveHandler);
     }
 
     /**
