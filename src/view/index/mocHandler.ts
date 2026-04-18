@@ -39,6 +39,7 @@ function deepCopyMOCResult(original: MOCParseResult): MOCParseResult {
         nodeRemarks: { ...(original as any).nodeRemarks || {} },
         nodeAnchors: { ...(original as any).nodeAnchors || {} },
         nodeLayoutStyle: original.nodeLayoutStyle,
+        nodeLayoutOverrides: original.nodeLayoutOverrides ? { ...original.nodeLayoutOverrides } : undefined,
         metadata: { ...original.metadata }
     };
 }
