@@ -1694,15 +1694,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
         const minVisualWidth = lineCount <= 1 ? 136 : 152;
         const width = Math.max(measured.width, minVisualWidth);
 
-        // 按圆角半径推导最小可视高度，避免 24px 圆角在短文本上退化为胶囊感
-        const minVisualHeight = cornerRadius * 2 + (lineCount <= 1 ? 24 : 32);
-        let height = Math.max(measured.height, minVisualHeight);
-
-        // 根据文本行数和宽度做宽高比补偿：短文本节点更偏矩形，长内容保持宽松比例
-        const maxRatio = width <= 180
-            ? (lineCount <= 1 ? 1.72 : 1.95)
-            : (lineCount <= 1 ? 1.88 : 2.1);
-        height = Math.max(height, width / maxRatio);
+        // 锁定最小可视高度到 80（对应渲染后 ~84），避免短文本被压扁
+        const minVisualHeight = 80;
+        const height = Math.max(measured.height, minVisualHeight);
 
         return {
             width: Math.round(width),
@@ -2226,7 +2220,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         paddingY: 20
                     });
                     const compensated = this.compensateFreeLikeNodeFrameSize(label, measured, {
-                        isFreeNode: !!ele.data('isTextOnly'),
+                        isFreeNode: true,
                         isStandaloneText: !!ele.data('isStandaloneText'),
                         maxWidth: 280,
                         charWidth: 11
@@ -2249,7 +2243,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         paddingY: 20
                     });
                     const compensated = this.compensateFreeLikeNodeFrameSize(label, measured, {
-                        isFreeNode: !!ele.data('isTextOnly'),
+                        isFreeNode: true,
                         isStandaloneText: !!ele.data('isStandaloneText'),
                         maxWidth: 280,
                         charWidth: 11
@@ -2314,6 +2308,13 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'background-opacity': 0,
                 'border-width': 0,
                 'shape': 'round-rectangle',
+                'padding': '0px'
+            } as any
+        },
+        // 普通节点（文本/文件）：与自由文本节点尺寸对齐（免去外扩 padding），保留卡片背景与边框
+        {
+            selector: 'node[!isStandaloneText][!isEmbed][!isRoot]',
+            style: {
                 'padding': '0px'
             } as any
         },
