@@ -205,14 +205,15 @@ export async function convertMOCToZKNodes(
         // 检查是否有父节点 - 基于节点ID的层级关系
         if (nodes[i].IDStr) {
             const idParts = nodes[i].IDStr.split('.');
-            if (idParts.length === 1) {
+            // 自由节点（free.*）是孤立节点，不应被视为根节点
+            if (nodes[i].IDStr.startsWith('free.')) {
+                nodes[i].isRoot = false;
+            } else if (idParts.length === 1) {
                 nodes[i].isRoot = true;
             } else {
                 const parentId = idParts.slice(0, -1).join('.');
                 const hasParent = nodes.find(n => n.IDStr === parentId);
-                // 如果找不到父节点，标记为根节点（如 free.1 找不到 free）
                 nodes[i].isRoot = !hasParent;
-                
             }
         } else {
             nodes[i].isRoot = parentIDArr.length === 0;
