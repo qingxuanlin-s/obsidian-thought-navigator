@@ -2948,13 +2948,27 @@ export class CytoscapeRenderer implements IGraphRenderer {
             interactionUpdaters.push(updateInteraction);
             updateInteraction();
 
+            // 缓存连线手柄 DOM 引用，避免每次 hover 都 querySelector
+            let cachedConnectionHandle: HTMLElement | null = null;
+            const resolveConnectionHandle = (): HTMLElement | null => {
+                if (!cachedConnectionHandle) {
+                    cachedConnectionHandle = this.container?.querySelector(`.zk-connection-handle[data-embed-node-id="${nodeId}"]`) as HTMLElement | null;
+                }
+                return cachedConnectionHandle;
+            };
+
             card.addEventListener('mouseenter', () => {
-                // 显示连线手柄并更新位置
-                const handle = this.container?.querySelector(`.zk-connection-handle[data-embed-node-id="${nodeId}"]`) as HTMLElement;
+                const handle = resolveConnectionHandle();
                 if (handle && this.cy) {
-                    const bb = node.renderedBoundingBox();
+                    const zoom = this.cy.zoom();
+                    const rp = node.renderedPosition();
+                    const outerW = node.outerWidth();
+                    const outerH = node.outerHeight();
+                    const bbX1 = rp.x - (outerW * zoom) / 2;
+                    const bbY1 = rp.y - (outerH * zoom) / 2;
+                    const bbY2 = bbY1 + outerH * zoom;
                     const cardW = card.offsetWidth;
-                    handle.style.transform = `translate(${bb.x1 + cardW}px, ${(bb.y1 + bb.y2) / 2}px) translate(-50%, -50%)`;
+                    handle.style.transform = `translate(${bbX1 + cardW}px, ${(bbY1 + bbY2) / 2}px) translate(-50%, -50%)`;
                     handle.style.opacity = '1';
                 }
                 if (!node.selected() || isHoveringCard) return;
@@ -2962,8 +2976,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 setCanvasInteractionSuppressed(true);
             });
             card.addEventListener('mouseleave', (e: MouseEvent) => {
-                // 鼠标移到蓝点上时不隐藏
-                const handle = this.container?.querySelector(`.zk-connection-handle[data-embed-node-id="${nodeId}"]`) as HTMLElement;
+                const handle = resolveConnectionHandle();
                 if (handle) {
                     if (!(e.relatedTarget === handle || handle.contains(e.relatedTarget as Node))) {
                         handle.style.opacity = '0';
@@ -3316,6 +3329,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
             let lastSyncedW = -1;
             let lastSyncedH = -1;
             let lastZoom = -1;
+            // 缓存节点 outer 尺寸（模型坐标，仅在节点 style 尺寸变化时失效）
+            let cachedOuterW = 0;
+            let cachedOuterH = 0;
+            let outerSizeStale = true;
 
             const updatePosition = () => {
                 if (!this.cy) return;
@@ -3343,10 +3360,19 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     node.style({ 'width': widthModel, 'height': heightModel });
                     lastSyncedW = widthModel;
                     lastSyncedH = heightModel;
+                    outerSizeStale = true;
                 }
 
-                const bb = node.renderedBoundingBox();
-                card.style.transform = `translate(${bb.x1}px, ${bb.y1}px)`;
+                // 用 renderedPosition + 缓存 outer 尺寸替代昂贵的 renderedBoundingBox（50+ 节点时每帧省数百次遍历）
+                if (outerSizeStale) {
+                    cachedOuterW = node.outerWidth();
+                    cachedOuterH = node.outerHeight();
+                    outerSizeStale = false;
+                }
+                const rp = node.renderedPosition();
+                const bbX1 = rp.x - (cachedOuterW * zoom) / 2;
+                const bbY1 = rp.y - (cachedOuterH * zoom) / 2;
+                card.style.transform = `translate(${bbX1}px, ${bbY1}px)`;
                 card.style.width = `${width}px`;
                 card.style.height = `${height}px`;
 
@@ -3379,7 +3405,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 }
 
                 const toggleSize = Math.max(20, 24 * zoom);
-                embedToggleEl.style.transform = `translate(${bb.x1 + (width - toggleSize) / 2}px, ${bb.y1 + height + 8 * zoom}px)`;
+                embedToggleEl.style.transform = `translate(${bbX1 + (width - toggleSize) / 2}px, ${bbY1 + height + 8 * zoom}px)`;
             };
 
             updaters.push(updatePosition);
@@ -3562,18 +3588,24 @@ export class CytoscapeRenderer implements IGraphRenderer {
             headerEl.appendChild(headerLink);
             card.appendChild(headerEl);
 
-            // 鼠标悬浮图片卡片时显示连线手柄并更新位置
+            // 鼠标悬浮图片卡片时显示连线手柄并更新位置（缓存 handle 引用，避免每次 querySelector）
+            let cachedImageHandle: HTMLElement | null = null;
+            const resolveImageHandle = (): HTMLElement | null => {
+                if (!cachedImageHandle) {
+                    cachedImageHandle = this.container?.querySelector(`.zk-connection-handle[data-image-node-id="${nodeId}"]`) as HTMLElement | null;
+                }
+                return cachedImageHandle;
+            };
             card.addEventListener('mouseenter', () => {
-                const handle = this.container?.querySelector(`.zk-connection-handle[data-image-node-id="${nodeId}"]`) as HTMLElement;
+                const handle = resolveImageHandle();
                 if (!handle || !this.cy) return;
                 const rp = node.renderedPosition();
                 const w = parseFloat(card.dataset.renderedWidth || '0');
-                const zoom = this.cy.zoom();
                 handle.style.transform = `translate(${rp.x + w / 2}px, ${rp.y}px) translate(-50%, -50%)`;
                 handle.style.opacity = '1';
             });
             card.addEventListener('mouseleave', (e: MouseEvent) => {
-                const handle = this.container?.querySelector(`.zk-connection-handle[data-image-node-id="${nodeId}"]`) as HTMLElement;
+                const handle = resolveImageHandle();
                 if (!handle) return;
                 if (e.relatedTarget === handle || handle.contains(e.relatedTarget as Node)) return;
                 handle.style.opacity = '0';
