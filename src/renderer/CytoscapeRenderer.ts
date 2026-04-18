@@ -1365,7 +1365,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     hasCustomColor: hasLegacyCustomColor,
                     isCrossDomain: node.isCrossDomain || false,  // 传递跨领域节点标记
                     isTextOnly: node.isTextOnly || false,  // 传递纯文字节点标记
-                    isStandaloneText: (node.isTextOnly || false) && !hasParentChildLink, // 无父子关系的文本节点
+                    isStandaloneText: (node.isTextOnly || false) && !hasParentChildLink && !node.isRoot, // 无父子关系的文本节点（根节点除外，需保留 navy 填充）
                     isEmbed: node.isEmbed || false,  // 嵌入节点标记（![[...]]）
                     isInlink: (node.ID || '').startsWith('inlink-'),
                     isOutlink: (node.ID || '').startsWith('outlink-'),
