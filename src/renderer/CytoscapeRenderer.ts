@@ -8153,8 +8153,9 @@ case 'dagre':
                 activeElementClass: activeEl?.className ?? null,
                 targetClass: (e.target as HTMLElement | null)?.className ?? null,
             });
-            if (scope === 'window' && isInThisEditor && (e.metaKey || e.ctrlKey) && mdEditor) {
-                console.log('[ZK][TextNodeLiveEdit] intercept Cmd/Ctrl+Enter at window', {
+            if (scope === 'window' && isInThisEditor && (e.shiftKey || e.metaKey || e.ctrlKey) && mdEditor) {
+                console.log('[ZK][TextNodeLiveEdit] intercept Shift/Cmd/Ctrl+Enter at window', {
+                    shiftKey: e.shiftKey,
                     metaKey: e.metaKey,
                     ctrlKey: e.ctrlKey,
                 });
@@ -8311,7 +8312,7 @@ case 'dagre':
                         valueLength: _value.length,
                         endsWithNewline: _value.endsWith('\n'),
                     });
-                    if (evt.metaKey || evt.ctrlKey) return false; // Cmd/Ctrl+Enter = 换行
+                    if (evt.shiftKey || evt.metaKey || evt.ctrlKey) return false; // Shift/Cmd/Ctrl+Enter = 换行
                     saveEdit();
                     return true; // Enter = 保存
                 },
@@ -8536,7 +8537,7 @@ case 'dagre':
                 sourcePath,
                 onChange: () => autoGrow(),
                 onEnter: (_value, evt) => {
-                    if (evt.metaKey || evt.ctrlKey) return false; // Cmd/Ctrl+Enter = 换行
+                    if (evt.shiftKey || evt.metaKey || evt.ctrlKey) return false; // Shift/Cmd/Ctrl+Enter = 换行
                     saveEdit();
                     return true; // Enter = 保存
                 },
