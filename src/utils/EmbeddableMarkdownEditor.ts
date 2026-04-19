@@ -87,6 +87,17 @@ export class EmbeddableMarkdownEditor extends Component {
 		this.mount();
 	}
 
+	// Obsidian 全局开启 vim 且当前处于 INSERT 模式时返回 true。
+	// 判定依据:vim NORMAL 模式下 CM 会给编辑器元素挂 .cm-fat-cursor(块状光标);
+	// 非 NORMAL 就视为 INSERT(含 visual 等子模态,行为上与 INSERT 一致 — 用户按 Esc 期待留在编辑器里)。
+	private isVimInsertMode(): boolean {
+		const vimEnabled = (this.opts.app.vault as any).getConfig?.('vimMode') === true;
+		if (!vimEnabled) return false;
+		const cm = this.cm;
+		if (!cm?.dom) return false;
+		return !cm.dom.querySelector('.cm-fat-cursor');
+	}
+
 	private insertNewline(): void {
 		const cm = this.cm;
 		if (!cm) return;
@@ -251,6 +262,13 @@ export class EmbeddableMarkdownEditor extends Component {
 		cm.dom.addEventListener('keyup', captureSelection, true);
 
 		cm.dom.addEventListener('keydown', (e: KeyboardEvent) => {
+			// vim INSERT 模式下 Esc 应交给 vim 切换到 NORMAL,不拦截、不取消;
+			// 本监听器在 cm.dom 捕获阶段,早于 CM contentDOM 上的 vim 处理,
+			// 此时读 .cm-fat-cursor 反映的是按键前的模式。
+			if (e.key === 'Escape' && this.isVimInsertMode()) {
+				return;
+			}
+
 			// 阻止冒泡到图级快捷键（方向键/Tab/Enter 等）
 			e.stopPropagation();
 
