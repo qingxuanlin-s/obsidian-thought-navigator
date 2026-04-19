@@ -1791,6 +1791,7 @@ cy.fit(null, 40);
             themeStyle: this.plugin.settings.themeStyle || 'modern',
             edgeStyle: this.plugin.settings.edgeStyle || 'bezier',
             nodeLayoutStyle: this.currentNodeLayoutStyle,
+            nodeLayoutOverrides: this.currentNodeLayoutOverrides,
             showNoteId: this.plugin.settings.showNoteIdInBranchView,
             smartConnection: this.plugin.settings.smartConnection === true,
             readOnly: this.isMobileReadOnly(),
@@ -3435,7 +3436,7 @@ cy.fit(null, 40);
         // 节点布局风格
         menu.createDiv('zk-node-ctx-sep');
         const nodeId = node.IDStr || node.ID;
-        const effectiveLayout = this.currentNodeLayoutOverrides[nodeId] ?? this.currentNodeLayoutStyle;
+        const effectiveLayout = this.getEffectiveNodeLayoutStyle(nodeId);
         const layoutLabel = menu.createDiv('zk-node-ctx-label');
         layoutLabel.textContent = t('ctx node layout');
         const layoutRow = menu.createDiv('zk-node-ctx-row');
@@ -5978,12 +5979,29 @@ cy.fit(null, 40);
     }
 
     /**
-     * 判断某个节点是否启用自动布局（节点级覆盖优先，否则回退到文件级默认）
+     * 从节点 ID 向上寻找最近的祖先布局覆盖；找不到则返回文件默认
+     */
+    private getEffectiveNodeLayoutStyle(
+        nodeId: string,
+        overrides: Record<string, 'auto' | 'free'> = this.currentNodeLayoutOverrides,
+        fileDefault: 'auto' | 'free' = this.currentNodeLayoutStyle
+    ): 'auto' | 'free' {
+        let current: string = nodeId;
+        while (current.length > 0) {
+            const override = overrides[current];
+            if (override !== undefined) return override;
+            const parts: string[] = current.split('.');
+            if (parts.length <= 1) break;
+            current = parts.slice(0, -1).join('.');
+        }
+        return fileDefault;
+    }
+
+    /**
+     * 判断某个节点是否启用自动布局（沿父级链继承，最后回退到文件级默认）
      */
     private isNodeAutoLayout(nodeId: string): boolean {
-        const override = this.currentNodeLayoutOverrides[nodeId];
-        if (override !== undefined) return override === 'auto';
-        return this.isAutoNodeLayoutStyle();
+        return this.getEffectiveNodeLayoutStyle(nodeId) === 'auto';
     }
 
     /**
@@ -5994,20 +6012,34 @@ cy.fit(null, 40);
         const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
         if (!mocFile) return;
 
+        const getInherited = (
+            overrides: Record<string, 'auto' | 'free'>,
+            fileDefault: 'auto' | 'free'
+        ): 'auto' | 'free' => {
+            const parts = nodeId.split('.');
+            if (parts.length <= 1) return fileDefault;
+            const parentId = parts.slice(0, -1).join('.');
+            return this.getEffectiveNodeLayoutStyle(parentId, overrides, fileDefault);
+        };
+
         await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
             if (!mocData.nodeLayoutOverrides) mocData.nodeLayoutOverrides = {};
-            // 若与文件默认相同则清除覆盖（保持数据干净）
-            const fileDefault = mocData.nodeLayoutStyle || this.plugin.settings.nodeLayoutStyle || 'free';
-            if (style === fileDefault) {
+            const fileDefault = this.normalizeNodeLayoutStyle(
+                mocData.nodeLayoutStyle,
+                this.plugin.settings.nodeLayoutStyle
+            );
+            // 与父链继承值相同则清除覆盖（避免冗余数据）
+            const inherited = getInherited(mocData.nodeLayoutOverrides, fileDefault);
+            if (style === inherited) {
                 delete mocData.nodeLayoutOverrides[nodeId];
             } else {
                 mocData.nodeLayoutOverrides[nodeId] = style;
             }
         });
 
-        // 同步本地缓存
-        const fileDefault = this.currentNodeLayoutStyle;
-        if (style === fileDefault) {
+        // 同步本地缓存（与持久化保持一致的清理策略）
+        const inheritedLocal = getInherited(this.currentNodeLayoutOverrides, this.currentNodeLayoutStyle);
+        if (style === inheritedLocal) {
             delete this.currentNodeLayoutOverrides[nodeId];
         } else {
             this.currentNodeLayoutOverrides[nodeId] = style;

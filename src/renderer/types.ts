@@ -59,6 +59,7 @@ export interface RenderOptions {
     themeStyle?: 'default' | 'modern';
     edgeStyle?: 'straight' | 'bezier' | 'polyline';
     nodeLayoutStyle?: 'free' | 'auto';
+    nodeLayoutOverrides?: Record<string, 'auto' | 'free'>;
     showNoteId?: boolean;
     smartConnection?: boolean;
     readOnly?: boolean;
