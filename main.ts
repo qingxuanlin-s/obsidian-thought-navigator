@@ -843,7 +843,7 @@ export default class ZKNavigationPlugin extends Plugin {
             const mocFolder = this.settings.mocFolderPath;
 
             // 获取旧文件名和新文件名（不含扩展名）
-            const oldBasename = oldPath.split('/').pop()?.replace('.md', '') || '';
+            const oldBasename = this.getPathBasenameWithoutExtension(oldPath);
             const newBasename = file.basename;
 
             // 如果文件名没变，不需要更新
@@ -856,6 +856,66 @@ export default class ZKNavigationPlugin extends Plugin {
             for (const mocFile of mocFiles) {
                 let content = await this.app.vault.read(mocFile);
                 let modified = false;
+
+                if (mocFile.extension === 'moc') {
+                    let json: any;
+                    try {
+                        json = JSON.parse(content);
+                    } catch {
+                        continue;
+                    }
+
+                    // rename 事件触发时,oldPath 对应的文件已不存在,无法走 metadataCache 解析,
+                    // 只能按原字符串形式直接匹配 node.wikiLink。
+                    const oldName = oldPath.split('/').pop() || '';
+                    const oldPathNoExt = this.getPathWithoutExtension(oldPath);
+                    const newPathNoExt = this.getPathWithoutExtension(file.path);
+
+                    const nextWikiLinkFor = (wl: string): string | null => {
+                        if (wl === oldBasename) return file.basename;
+                        if (wl === oldPath) return file.path;
+                        if (wl === oldPathNoExt) return newPathNoExt;
+                        if (wl === oldName) return file.name;
+                        return null;
+                    };
+
+                    const walkNodes = (nodes: any[]) => {
+                        for (const node of nodes || []) {
+                            if (!node?.isTextOnly && typeof node?.wikiLink === 'string') {
+                                const next = nextWikiLinkFor(node.wikiLink);
+                                if (next !== null && next !== node.wikiLink) {
+                                    // displayText 与 wikiLink 一致时跟随变化;用户自定义别名保留
+                                    if (node.displayText === node.wikiLink) {
+                                        node.displayText = next;
+                                    }
+                                    node.wikiLink = next;
+                                    modified = true;
+                                }
+                            }
+                            if (node?.children?.length) walkNodes(node.children);
+                        }
+                    };
+
+                    walkNodes(json.nodes || []);
+
+                    // 跨域关联存的是完整 filePath,直接按路径比对
+                    if (json.crossDomainLinks && typeof json.crossDomainLinks === 'object') {
+                        for (const links of Object.values(json.crossDomainLinks) as any[]) {
+                            if (!Array.isArray(links)) continue;
+                            for (const link of links) {
+                                if (link?.filePath === oldPath) {
+                                    link.filePath = file.path;
+                                    modified = true;
+                                }
+                            }
+                        }
+                    }
+
+                    if (modified) {
+                        await this.app.vault.modify(mocFile, JSON.stringify(json, null, 2));
+                    }
+                    continue;
+                }
 
                 // 替换 [[oldName]] 格式的链接
                 const wikiLinkRegex = new RegExp(`\\[\\[${this.escapeRegex(oldBasename)}\\]\\]`, 'g');
@@ -888,6 +948,17 @@ export default class ZKNavigationPlugin extends Plugin {
      */
     private escapeRegex(str: string): string {
         return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    private getPathBasenameWithoutExtension(path: string): string {
+        const name = path.split('/').pop() || '';
+        const extIndex = name.lastIndexOf('.');
+        return extIndex > 0 ? name.slice(0, extIndex) : name;
+    }
+
+    private getPathWithoutExtension(path: string): string {
+        const extIndex = path.lastIndexOf('.');
+        return extIndex > path.lastIndexOf('/') ? path.slice(0, extIndex) : path;
     }
 
     onunload() {

@@ -1650,6 +1650,29 @@ cy.fit(null, 40);
         return await this.promptCreateInitialMOCFile(mocFolder);
     }
 
+    // 依赖 onLoadFile/onUnloadFile 不做重渲染:setViewState 切换 file 会回调这两个钩子,
+    // 当前实现只更新 settings 与 flag,否则会在 render 中途销毁 cytoscape 实例。
+    private async syncCurrentMOCToLeafState(mocFile: TFile): Promise<void> {
+        const currentState = this.leaf?.getViewState?.();
+        if (!currentState || currentState.type !== ZK_INDEX_TYPE) return;
+
+        const stateFile = currentState.state?.file;
+        const loadedFilePath = this.file?.path || '';
+        if (stateFile === mocFile.path && loadedFilePath === mocFile.path) {
+            return;
+        }
+
+        await this.leaf.setViewState({
+            ...currentState,
+            type: ZK_INDEX_TYPE,
+            state: {
+                ...(currentState.state || {}),
+                file: mocFile.path,
+            },
+            active: currentState.active ?? (this.app.workspace.activeLeaf === this.leaf),
+        });
+    }
+
     // MOC 模式专用的刷新方法
     // MOC 模式专用的刷新方法 - 使用 Cytoscape 渲染
     async refreshBranchMermaidMOC(indexMermaidDiv: HTMLElement, force: boolean = false) {
@@ -1686,6 +1709,7 @@ cy.fit(null, 40);
             return;
         }
         const currentMOCPath = currentMOCFile.path;
+        await this.syncCurrentMOCToLeafState(currentMOCFile);
 
         // 性能优化：如果文件 mtime 和影响渲染的设置都没变，且 cy 实例仍对应同一文件，
         // 说明这是一次无实质变化的刷新（如窗口 resize、其他模块触发的事件），直接跳过
