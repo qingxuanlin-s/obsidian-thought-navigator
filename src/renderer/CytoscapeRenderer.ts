@@ -9695,6 +9695,8 @@ case 'dagre':
         let autoHierarchyGrabStartX = 0;
         let autoHierarchyGrabStartY = 0;
         let isAutoHierarchyDrag = false;
+        let autoHierarchyGrabbedNode: any = null;
+        let autoHierarchyStyled = false;
 
         const ensureAlignmentOverlay = () => {
             if (alignmentOverlay || !this.container) return;
@@ -9960,9 +9962,11 @@ case 'dagre':
             ensureAlignmentOverlay();
             hideAlignmentGuides();
 
-            // 自动布局节点：拖动时带上所有后代一起平移
+            // 自动布局节点：收集后代 & 起始位置；样式延迟到真正开始移动时再加
             autoHierarchyDescendants = [];
             isAutoHierarchyDrag = false;
+            autoHierarchyGrabbedNode = null;
+            autoHierarchyStyled = false;
             if (!isMultiNodeDrag && !data.isPlaceholder && !data.isGroup && !data.isCrossDomain) {
                 const grabbedId = data.originalNode?.ID || data.originalSource || data.id;
                 if (typeof grabbedId === 'string' && grabbedId.length > 0 && this.isNodeAutoLayoutForId(grabbedId)) {
@@ -9982,19 +9986,7 @@ case 'dagre':
                     });
                     if (autoHierarchyDescendants.length > 0) {
                         isAutoHierarchyDrag = true;
-                        // 视觉提示：给后代节点及其内部连边加上虚线高亮
-                        const descendantIds = new Set<string>(
-                            autoHierarchyDescendants.map(({ node: n }) => n.id())
-                        );
-                        descendantIds.add(node.id());
-                        autoHierarchyDescendants.forEach(({ node: n }) => {
-                            n.addClass('auto-hierarchy-descendant');
-                        });
-                        this.cy!.edges().forEach((e: any) => {
-                            if (descendantIds.has(e.source().id()) && descendantIds.has(e.target().id())) {
-                                e.addClass('auto-hierarchy-descendant-edge');
-                            }
-                        });
+                        autoHierarchyGrabbedNode = node;
                     }
                 }
             }
@@ -10050,6 +10042,21 @@ case 'dagre':
                 const curPos = node.position();
                 const dx = curPos.x - autoHierarchyGrabStartX;
                 const dy = curPos.y - autoHierarchyGrabStartY;
+                if (!autoHierarchyStyled && (dx !== 0 || dy !== 0)) {
+                    autoHierarchyStyled = true;
+                    const descendantIds = new Set<string>(
+                        autoHierarchyDescendants.map(({ node: n }) => n.id())
+                    );
+                    if (autoHierarchyGrabbedNode) descendantIds.add(autoHierarchyGrabbedNode.id());
+                    autoHierarchyDescendants.forEach(({ node: n }) => {
+                        n.addClass('auto-hierarchy-descendant');
+                    });
+                    this.cy!.edges().forEach((e: any) => {
+                        if (descendantIds.has(e.source().id()) && descendantIds.has(e.target().id())) {
+                            e.addClass('auto-hierarchy-descendant-edge');
+                        }
+                    });
+                }
                 this.cy!.batch(() => {
                     autoHierarchyDescendants.forEach(({ node: n, startX, startY }) => {
                         n.position({ x: startX + dx, y: startY + dy });
@@ -10236,6 +10243,8 @@ case 'dagre':
                 this.cy!.edges('.auto-hierarchy-descendant-edge').removeClass('auto-hierarchy-descendant-edge');
                 isAutoHierarchyDrag = false;
                 autoHierarchyDescendants = [];
+                autoHierarchyGrabbedNode = null;
+                autoHierarchyStyled = false;
             }
 
             // 移除临时连接线和 SVG 叠加层

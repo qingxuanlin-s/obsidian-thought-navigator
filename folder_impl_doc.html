@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>ZK · 文件夹分类实现文档</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0b0f;
+    --panel: #0d0f14;
+    --panel-2: #12141a;
+    --panel-3: #181b24;
+    --ink: #e6e7ea;
+    --ink-dim: #8a8e98;
+    --ink-faint: #4b4f59;
+    --rule: rgba(255,255,255,0.08);
+    --rule-strong: rgba(255,255,255,0.14);
+    --blue: #6ba3ff;
+    --green: #7fd49a;
+    --amber: #f2a65a;
+    --purple: #b79dff;
+    --red: #ff8585;
+    --font-sans: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
+    --font-serif: 'Noto Serif SC', Georgia, serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+  .page { max-width: 1120px; margin: 0 auto; padding: 56px 56px 140px; }
+
+  /* Header */
+  .doc-header { margin-bottom: 56px; padding-bottom: 32px; border-bottom: 1px solid var(--rule); }
+  .doc-header .kicker { font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 14px; display: flex; gap: 14px; }
+  .doc-header .kicker span.v { color: var(--purple); }
+  .doc-header h1 { font-size: 38px; font-weight: 600; letter-spacing: -0.025em; margin: 0 0 12px; line-height: 1.15; }
+  .doc-header .lead { color: var(--ink-dim); font-size: 15px; max-width: 760px; line-height: 1.65; }
+  .doc-header .meta-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin-top: 28px; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; }
+  .doc-header .mcell { padding: 12px 14px; border-right: 1px solid var(--rule); }
+  .doc-header .mcell:last-child { border-right: none; }
+  .doc-header .mcell .k { font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 4px; }
+  .doc-header .mcell .v { font-size: 13px; color: var(--ink); font-weight: 500; }
+
+  /* TOC */
+  .toc { border: 1px solid var(--rule); border-radius: 10px; padding: 20px 24px; background: var(--panel); margin-bottom: 56px; }
+  .toc .title { font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 14px; }
+  .toc ol { margin: 0; padding-left: 0; list-style: none; counter-reset: toc; }
+  .toc li { counter-increment: toc; padding: 5px 0; font-size: 13px; color: var(--ink-dim); display: flex; align-items: baseline; gap: 10px; }
+  .toc li::before { content: counter(toc, decimal-leading-zero); font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); min-width: 24px; }
+  .toc li a { color: var(--ink); text-decoration: none; }
+  .toc li a:hover { color: var(--purple); }
+  .toc li .pg { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); }
+
+  /* Sections */
+  h2 { font-size: 24px; font-weight: 600; letter-spacing: -0.015em; margin: 64px 0 6px; display: flex; align-items: baseline; gap: 14px; padding-top: 20px; border-top: 1px solid var(--rule); }
+  h2 .num { font-family: var(--font-mono); font-size: 12px; color: var(--ink-faint); letter-spacing: 0.1em; min-width: 30px; }
+  h2:first-of-type { border-top: none; padding-top: 0; }
+  h3 { font-size: 16px; font-weight: 600; margin: 28px 0 10px; letter-spacing: -0.005em; }
+  h4 { font-size: 13px; font-weight: 600; margin: 20px 0 8px; color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.08em; font-family: var(--font-mono); }
+
+  p { font-size: 14px; line-height: 1.75; color: var(--ink-dim); max-width: 780px; margin: 0 0 14px; }
+  p b, p strong { color: var(--ink); font-weight: 600; }
+  a { color: var(--blue); text-decoration: none; border-bottom: 1px dotted var(--blue); }
+
+  ul, ol { font-size: 14px; line-height: 1.75; color: var(--ink-dim); max-width: 780px; padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  li b { color: var(--ink); }
+
+  code { font-family: var(--font-mono); font-size: 12.5px; padding: 2px 7px; background: rgba(147,104,255,0.08); border: 1px solid rgba(147,104,255,0.15); border-radius: 4px; color: #d4c4ff; }
+
+  pre { background: #06080c; border: 1px solid var(--rule); border-radius: 10px; padding: 18px 20px; overflow-x: auto; margin: 16px 0; position: relative; }
+  pre code { background: transparent; border: none; padding: 0; font-size: 12.5px; line-height: 1.65; color: #d8dae0; display: block; }
+  pre .lang { position: absolute; top: 10px; right: 14px; font-family: var(--font-mono); font-size: 9.5px; color: var(--ink-faint); letter-spacing: 0.1em; text-transform: uppercase; }
+  .kw { color: #c792ea; }
+  .str { color: #7fd49a; }
+  .com { color: var(--ink-faint); font-style: italic; }
+  .fn { color: #82aaff; }
+  .num-lit { color: #f78c6c; }
+  .ty { color: #ffcb6b; }
+  .pr { color: #89ddff; }
+
+  /* Callout */
+  .callout { border-left: 3px solid var(--blue); background: rgba(107,163,255,0.05); padding: 14px 18px; border-radius: 0 6px 6px 0; margin: 18px 0; font-size: 13.5px; line-height: 1.65; color: var(--ink); }
+  .callout.warn { border-color: var(--amber); background: rgba(242,166,90,0.05); }
+  .callout.danger { border-color: var(--red); background: rgba(255,133,133,0.04); }
+  .callout.tip { border-color: var(--green); background: rgba(127,212,154,0.05); }
+  .callout .h { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; font-weight: 600; }
+  .callout.warn .h { color: var(--amber); }
+  .callout .h { color: var(--blue); }
+  .callout.danger .h { color: var(--red); }
+  .callout.tip .h { color: var(--green); }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 14px 0; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; }
+  th { background: var(--panel-2); font-weight: 600; font-size: 11.5px; color: var(--ink); text-align: left; padding: 10px 14px; text-transform: uppercase; letter-spacing: 0.05em; font-family: var(--font-mono); border-bottom: 1px solid var(--rule); }
+  td { padding: 10px 14px; border-top: 1px solid var(--rule); color: var(--ink-dim); vertical-align: top; }
+  td:first-child { color: var(--ink); }
+  td code { font-size: 11.5px; }
+
+  /* File tree */
+  .tree { background: #06080c; border: 1px solid var(--rule); border-radius: 10px; padding: 18px 22px; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.8; color: var(--ink); margin: 16px 0; }
+  .tree .d { color: var(--blue); }
+  .tree .f { color: var(--ink); }
+  .tree .md { color: var(--green); }
+  .tree .cm { color: var(--ink-faint); font-style: italic; margin-left: 14px; font-family: var(--font-sans); font-size: 11.5px; }
+  .tree .zk { color: var(--purple); }
+
+  /* UI mock - folder tree */
+  .ui-mock { border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; margin: 18px 0; background: var(--panel); }
+  .ui-mock .head { padding: 10px 14px; border-bottom: 1px solid var(--rule); background: var(--panel-2); font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-faint); letter-spacing: 0.08em; text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
+  .ui-mock .head .dots { display: flex; gap: 4px; }
+  .ui-mock .head .dots span { width: 8px; height: 8px; border-radius: 50%; background: var(--rule-strong); }
+  .ui-mock .body { padding: 10px 0; max-height: 500px; overflow-y: auto; }
+  .ui-mock .row { padding: 5px 14px; display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+  .ui-mock .row:hover { background: rgba(255,255,255,0.03); }
+  .ui-mock .row.active { background: rgba(107,163,255,0.12); }
+  .ui-mock .row .ic { width: 14px; display: inline-flex; justify-content: center; color: var(--ink-faint); font-size: 11px; }
+  .ui-mock .row .chev { width: 10px; color: var(--ink-faint); font-size: 10px; }
+  .ui-mock .row .name { flex: 1; }
+  .ui-mock .row .badge { font-family: var(--font-mono); font-size: 9.5px; color: var(--ink-faint); padding: 1px 6px; border-radius: 99px; }
+  .ui-mock .row .badge.canvas { background: rgba(183,157,255,0.12); color: var(--purple); }
+  .ui-mock .row .badge.proj { background: rgba(107,163,255,0.12); color: var(--blue); }
+  .ui-mock .row .badge.cnt { background: rgba(255,255,255,0.04); }
+  .ui-mock .row .stage { font-family: var(--font-mono); font-size: 9px; padding: 1px 6px; border-radius: 99px; }
+  .ui-mock .row .stage.f { background: rgba(242,166,90,0.12); color: var(--amber); }
+  .ui-mock .row .stage.p { background: rgba(127,212,154,0.12); color: var(--green); }
+  .ui-mock .indent-1 { padding-left: 30px; }
+  .ui-mock .indent-2 { padding-left: 50px; }
+  .ui-mock .indent-3 { padding-left: 70px; }
+  .ui-mock .indent-4 { padding-left: 90px; }
+  .ui-mock .indent-5 { padding-left: 110px; }
+  .ui-mock .section-label { padding: 10px 14px 4px; font-family: var(--font-mono); font-size: 9.5px; color: var(--ink-faint); letter-spacing: 0.12em; text-transform: uppercase; display: flex; align-items: center; gap: 6px; }
+  .ui-mock .section-label .add { margin-left: auto; color: var(--ink-faint); cursor: pointer; font-size: 12px; }
+
+  /* Context menu mock */
+  .ctx-menu { display: inline-block; background: var(--panel-2); border: 1px solid var(--rule-strong); border-radius: 7px; padding: 5px 0; min-width: 240px; box-shadow: 0 10px 32px rgba(0,0,0,0.5); font-size: 12.5px; }
+  .ctx-menu .item { padding: 6px 14px; display: flex; align-items: center; gap: 10px; color: var(--ink); cursor: pointer; }
+  .ctx-menu .item:hover { background: rgba(107,163,255,0.08); }
+  .ctx-menu .item .sh { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); }
+  .ctx-menu .item .ic { width: 14px; color: var(--ink-faint); }
+  .ctx-menu .div { border-top: 1px solid var(--rule); margin: 5px 0; }
+  .ctx-menu .item.danger { color: var(--red); }
+  .ctx-menu .item.danger .ic { color: var(--red); }
+  .ctx-menu .sub { font-size: 11px; color: var(--ink-faint); padding: 4px 14px; }
+
+  /* Diagram */
+  .diagram { border: 1px solid var(--rule); border-radius: 10px; padding: 24px; margin: 18px 0; background: var(--panel); }
+  .arch-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+  .arch-box { border: 1px solid var(--rule-strong); border-radius: 8px; padding: 14px 16px; background: var(--panel-2); }
+  .arch-box.m { border-color: rgba(183,157,255,0.3); background: rgba(183,157,255,0.04); }
+  .arch-box.i { border-color: rgba(107,163,255,0.3); background: rgba(107,163,255,0.04); }
+  .arch-box.ui { border-color: rgba(127,212,154,0.3); background: rgba(127,212,154,0.04); }
+  .arch-box .kt { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px; }
+  .arch-box.m .kt { color: var(--purple); }
+  .arch-box.i .kt { color: var(--blue); }
+  .arch-box.ui .kt { color: var(--green); }
+  .arch-box .t { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .arch-box .d { font-size: 11.5px; color: var(--ink-dim); line-height: 1.55; }
+  .arch-arrow { text-align: center; font-family: var(--font-mono); color: var(--ink-faint); font-size: 11px; margin: 8px 0; letter-spacing: 0.1em; }
+
+  /* Checklist */
+  .check-list { border: 1px solid var(--rule); border-radius: 10px; padding: 0; overflow: hidden; }
+  .check-list .item { padding: 12px 18px; border-top: 1px solid var(--rule); display: flex; align-items: flex-start; gap: 14px; font-size: 13px; }
+  .check-list .item:first-child { border-top: none; }
+  .check-list .item .box { width: 16px; height: 16px; border: 1.5px solid var(--rule-strong); border-radius: 4px; flex-shrink: 0; margin-top: 2px; }
+  .check-list .item .body { flex: 1; }
+  .check-list .item .body .t { font-weight: 600; color: var(--ink); margin-bottom: 3px; }
+  .check-list .item .body .d { color: var(--ink-dim); font-size: 12.5px; line-height: 1.55; }
+  .check-list .item .phase { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.06em; padding: 2px 7px; border-radius: 99px; margin-left: auto; flex-shrink: 0; margin-top: 2px; }
+  .check-list .item .phase.p0 { background: rgba(255,133,133,0.1); color: var(--red); border: 1px solid rgba(255,133,133,0.2); }
+  .check-list .item .phase.p1 { background: rgba(242,166,90,0.1); color: var(--amber); border: 1px solid rgba(242,166,90,0.2); }
+  .check-list .item .phase.p2 { background: rgba(127,212,154,0.1); color: var(--green); border: 1px solid rgba(127,212,154,0.2); }
+
+  .split-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 18px 0; }
+
+  .templates { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 18px 0; }
+  .tmpl { border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; background: var(--panel); }
+  .tmpl .n { font-size: 13px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+  .tmpl .n .ic { font-size: 14px; }
+  .tmpl .d { font-size: 11.5px; color: var(--ink-dim); line-height: 1.55; margin-bottom: 8px; }
+  .tmpl .struct { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink); line-height: 1.65; background: rgba(255,255,255,0.02); border-radius: 4px; padding: 8px 10px; }
+  .tmpl .struct .sub { color: var(--ink-faint); padding-left: 12px; }
+
+  hr.sep { border: none; border-top: 1px solid var(--rule); margin: 40px 0; }
+
+  .foot { margin-top: 72px; padding: 20px 24px; border: 1px dashed var(--rule-strong); border-radius: 10px; color: var(--ink-dim); font-size: 13px; line-height: 1.65; }
+  .foot b { color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="doc-header">
+    <div class="kicker">
+      <span>ZK · IMPLEMENTATION DOC</span>
+      <span class="v">v 0.1 · 2026.04.19</span>
+      <span>MODULE / FOLDER-CLASSIFICATION</span>
+    </div>
+    <h1>可自定义文件夹分类 · 实现文档</h1>
+    <p class="lead">
+      为 ZK Obsidian 插件实现任意命名、任意嵌套的用户自定义空间（Space）。不预设 PARA 结构；PARA 只是一键模板之一。本文覆盖数据模型、索引层、服务层、UI 层、交互细节、迁移与边界情况。目标读者：你自己（作为工程师实现时的参考）。
+    </p>
+    <div class="meta-grid">
+      <div class="mcell"><div class="k">Stack</div><div class="v">TypeScript + Obsidian API</div></div>
+      <div class="mcell"><div class="k">Path</div><div class="v">B · 自己实现索引层</div></div>
+      <div class="mcell"><div class="k">Storage</div><div class="v">Vault markdown + .zk/</div></div>
+      <div class="mcell"><div class="k">ETA</div><div class="v">~2 weeks (P0 only)</div></div>
+    </div>
+  </header>
+
+  <!-- TOC -->
+  <div class="toc">
+    <div class="title">TABLE OF CONTENTS</div>
+    <ol>
+      <li><a href="#goals">目标与非目标</a><span class="pg">§1</span></li>
+      <li><a href="#model">数据模型 · Space / Folder / Project</a><span class="pg">§2</span></li>
+      <li><a href="#storage">存储格式 · 文件布局与 Frontmatter</a><span class="pg">§3</span></li>
+      <li><a href="#index">索引层 · VaultIndex 设计</a><span class="pg">§4</span></li>
+      <li><a href="#service">服务层 · SpaceService API</a><span class="pg">§5</span></li>
+      <li><a href="#ui">UI 层 · 侧边栏树组件</a><span class="pg">§6</span></li>
+      <li><a href="#interactions">交互细节 · 新建 / 重命名 / 拖拽 / 删除</a><span class="pg">§7</span></li>
+      <li><a href="#templates">模板系统 · PARA 作为可选</a><span class="pg">§8</span></li>
+      <li><a href="#edge">边界情况与性能</a><span class="pg">§9</span></li>
+      <li><a href="#plan">实现计划 · 两周分阶段</a><span class="pg">§10</span></li>
+    </ol>
+  </div>
+
+  <!-- 1 -->
+  <h2 id="goals"><span class="num">§1</span>目标与非目标</h2>
+  <h3>目标（MUST）</h3>
+  <ul>
+    <li><b>任意命名</b>：用户可自由命名顶层 Space 和所有层级子文件夹，无预设关键字</li>
+    <li><b>任意嵌套</b>：理论上支持 N 层嵌套，实际建议软限制 10 层</li>
+    <li><b>任何文件夹都能升级为"项目"</b>：成为项目后，该文件夹可拥有结构图 + 生长中的文章</li>
+    <li><b>与 Obsidian vault 结构共存</b>：不改变 vault 的文件组织，卡片依旧是 markdown</li>
+    <li><b>模板可选</b>：首次使用提供 PARA / GTD / 空白等模板的一键创建，但不强制</li>
+    <li><b>拖拽重组</b>：像文件管理器一样可以拖拽移动文件夹</li>
+  </ul>
+
+  <h3>非目标（WON'T）</h3>
+  <ul>
+    <li>不实现任意复杂的"智能文件夹"（动态查询构建的虚拟文件夹） —— 放 v2</li>
+    <li>不限制文件夹命名字符（除 OS 非法字符外，都允许包括 emoji）</li>
+    <li>不把卡片"锁进"文件夹 —— 卡片池始终扁平、跨空间引用</li>
+  </ul>
+
+  <div class="callout">
+    <div class="h">核心前提</div>
+    文件夹只是<b>组织"项目"和"引用"的容器</b>，不存储卡片本体。卡片住在 vault 的 <code>zk-cards/</code> 下，是扁平结构；文件夹组织的是项目元数据与文章。
+  </div>
+
+  <!-- 2 -->
+  <h2 id="model"><span class="num">§2</span>数据模型</h2>
+
+  <p>三层抽象 —— <b>Space</b>（顶层）、<b>Folder</b>（中间任意层）、<b>Project</b>（任何 Folder 可升级）。其中 Project 不是独立类型，而是 Folder 的一个 <b>flag</b>。</p>
+
+  <div class="diagram">
+    <div class="arch-grid">
+      <div class="arch-box m">
+        <div class="kt">MODEL · Space</div>
+        <div class="t">Space（顶层空间）</div>
+        <div class="d">用户定义的顶层容器。无预设名字。例如："工作"、"学习"、"生活"、或者按 PARA 分四个。</div>
+      </div>
+      <div class="arch-box i">
+        <div class="kt">MODEL · Folder</div>
+        <div class="t">Folder（中间文件夹）</div>
+        <div class="d">任意深度嵌套。仅用于组织 Projects 和其他 Folders。本身不含结构图。</div>
+      </div>
+      <div class="arch-box ui">
+        <div class="kt">MODEL · Project flag</div>
+        <div class="t">Project（项目标记）</div>
+        <div class="d">任何 Folder 可设 <code>isProject: true</code>。成为 Project 后可拥有 canvas.json + articles/。</div>
+      </div>
+    </div>
+  </div>
+
+  <h3>TypeScript 类型定义</h3>
+
+<pre><span class="lang">TypeScript</span><code><span class="com">// src/types/folder.ts</span>
+
+<span class="kw">export interface</span> <span class="ty">FolderNode</span> {
+  <span class="pr">id</span>: <span class="ty">string</span>;             <span class="com">// UUID, 永不改变（改名时保持）</span>
+  <span class="pr">name</span>: <span class="ty">string</span>;           <span class="com">// 用户看到的名字，可任意改</span>
+  <span class="pr">path</span>: <span class="ty">string</span>;           <span class="com">// 相对 vault 的路径，例如 "zk-spaces/工作/2026 Q2"</span>
+  <span class="pr">parentId</span>: <span class="ty">string</span> | <span class="kw">null</span>;   <span class="com">// null = 顶层 Space</span>
+  <span class="pr">childIds</span>: <span class="ty">string</span>[];    <span class="com">// 子文件夹 id（显式存储，用于排序稳定）</span>
+  <span class="pr">depth</span>: <span class="ty">number</span>;          <span class="com">// 0 = Space, &gt;=1 = 子层</span>
+
+  <span class="com">// 扩展能力</span>
+  <span class="pr">isProject</span>: <span class="ty">boolean</span>;     <span class="com">// 是否是"项目"（能拥有 canvas + articles）</span>
+  <span class="pr">icon</span>?: <span class="ty">string</span>;          <span class="com">// 可选 emoji 或 Lucide 图标名</span>
+  <span class="pr">color</span>?: <span class="ty">string</span>;         <span class="com">// 可选颜色（用于树视图上的小点）</span>
+
+  <span class="com">// 排序 / UI 状态</span>
+  <span class="pr">order</span>: <span class="ty">number</span>;          <span class="com">// 同层级排序</span>
+  <span class="pr">collapsed</span>: <span class="ty">boolean</span>;     <span class="com">// UI 折叠状态，持久化</span>
+
+  <span class="com">// 时间戳</span>
+  <span class="pr">createdAt</span>: <span class="ty">number</span>;
+  <span class="pr">updatedAt</span>: <span class="ty">number</span>;
+}
+
+<span class="kw">export interface</span> <span class="ty">ProjectMeta</span> {
+  <span class="pr">folderId</span>: <span class="ty">string</span>;        <span class="com">// 关联的 FolderNode.id</span>
+  <span class="pr">description</span>?: <span class="ty">string</span>;
+  <span class="pr">status</span>: <span class="str">'active'</span> | <span class="str">'paused'</span> | <span class="str">'done'</span> | <span class="str">'archived'</span>;
+  <span class="pr">deadline</span>?: <span class="ty">number</span>;      <span class="com">// 可选 deadline（不是必须的）</span>
+  <span class="pr">cardRefs</span>: <span class="ty">CardRef</span>[];    <span class="com">// 引用的卡片列表（影子）</span>
+  <span class="pr">canvas</span>?: <span class="ty">CanvasData</span>;
+  <span class="pr">articleIds</span>: <span class="ty">string</span>[];   <span class="com">// 关联的文章文件</span>
+}
+
+<span class="kw">export interface</span> <span class="ty">CardRef</span> {
+  <span class="pr">cardId</span>: <span class="ty">string</span>;          <span class="com">// 指向 zk-cards/ 下的卡片 id</span>
+  <span class="pr">pos</span>?: { <span class="pr">x</span>: <span class="ty">number</span>; <span class="pr">y</span>: <span class="ty">number</span> };
+  <span class="pr">localNote</span>?: <span class="ty">string</span>;     <span class="com">// 项目内注释（不影响卡片本体）</span>
+  <span class="pr">addedAt</span>: <span class="ty">number</span>;
+}
+</code></pre>
+
+  <div class="callout tip">
+    <div class="h">为什么 path 和 id 都存</div>
+    <b>id</b> 是稳定的（重命名/移动时不变），所有引用用 id 关联。<b>path</b> 是当前文件系统位置，用户可见、方便 reveal in vault。两者通过 <code>PathIndex</code> 维护映射，任何改名/移动要同步更新。
+  </div>
+
+  <!-- 3 -->
+  <h2 id="storage"><span class="num">§3</span>存储格式</h2>
+
+  <h3>Vault 文件布局</h3>
+  <div class="tree">
+    <span class="d">&lt;vault&gt;/</span>
+<span class="d">├─ zk-cards/</span>                       <span class="cm">扁平的卡片池，所有卡片本体</span>
+<span class="d">│  ├─ </span><span class="md">21a-reachability.md</span>
+<span class="d">│  ├─ </span><span class="md">21b-generational.md</span>
+<span class="d">│  └─ </span>...
+<span class="d">├─ zk-spaces/</span>                      <span class="cm">用户自定义的 Space 根</span>
+<span class="d">│  ├─ 工作/</span>                         <span class="cm">Space（用户自由命名）</span>
+<span class="d">│  │  ├─ </span><span class="zk">_folder.json</span>             <span class="cm">FolderNode meta</span>
+<span class="d">│  │  ├─ 2026 Q2/</span>                   <span class="cm">子 Folder</span>
+<span class="d">│  │  │  ├─ </span><span class="zk">_folder.json</span>
+<span class="d">│  │  │  └─ JVM 调优手册/</span>            <span class="cm">子 Folder · 是项目</span>
+<span class="d">│  │  │     ├─ </span><span class="zk">_folder.json</span>       <span class="cm">isProject: true</span>
+<span class="d">│  │  │     ├─ </span><span class="zk">_project.json</span>      <span class="cm">ProjectMeta</span>
+<span class="d">│  │  │     ├─ </span><span class="zk">canvas.json</span>         <span class="cm">结构图数据</span>
+<span class="d">│  │  │     └─ articles/</span>
+<span class="d">│  │  │        ├─ </span><span class="md">分代收集.md</span>
+<span class="d">│  │  │        └─ </span><span class="md">Region 化的代价.md</span>
+<span class="d">│  │  └─ 日常杂事/</span>                   <span class="cm">子 Folder · 非项目</span>
+<span class="d">│  │     └─ </span><span class="zk">_folder.json</span>
+<span class="d">│  └─ 学习/</span>                          <span class="cm">另一个 Space</span>
+<span class="d">│     └─ ...</span>
+<span class="d">└─ .zk/</span>                             <span class="cm">插件内部状态</span>
+<span class="d">   ├─ </span><span class="zk">index.json</span>                  <span class="cm">全局索引快照</span>
+<span class="d">   ├─ </span><span class="zk">ui-state.json</span>               <span class="cm">UI 折叠、选中等</span>
+<span class="d">   └─ templates/</span>                  <span class="cm">用户自定义模板</span>
+  </div>
+
+  <h3><code>_folder.json</code> 示例</h3>
+<pre><span class="lang">JSON</span><code>{
+  <span class="pr">"id"</span>: <span class="str">"flt_3f8a21c9"</span>,
+  <span class="pr">"name"</span>: <span class="str">"JVM 调优手册"</span>,
+  <span class="pr">"parentId"</span>: <span class="str">"flt_72bb0a31"</span>,
+  <span class="pr">"isProject"</span>: <span class="kw">true</span>,
+  <span class="pr">"icon"</span>: <span class="str">"📘"</span>,
+  <span class="pr">"color"</span>: <span class="str">"#6ba3ff"</span>,
+  <span class="pr">"order"</span>: <span class="num-lit">2</span>,
+  <span class="pr">"collapsed"</span>: <span class="kw">false</span>,
+  <span class="pr">"createdAt"</span>: <span class="num-lit">1713456000000</span>,
+  <span class="pr">"updatedAt"</span>: <span class="num-lit">1713520000000</span>
+}</code></pre>
+
+  <div class="callout warn">
+    <div class="h">为什么每个文件夹都放 _folder.json</div>
+    便于 Obsidian <b>原生文件操作</b>（用户在资源管理器直接移动/改名文件夹）也能被正确识别 —— 插件只要看到 <code>_folder.json</code> 就知道这是一个 ZK 空间/文件夹节点。id 保存在文件里，<b>移动不丢身份</b>。
+  </div>
+
+  <!-- 4 -->
+  <h2 id="index"><span class="num">§4</span>索引层设计</h2>
+
+  <p>在插件加载时扫描所有 <code>_folder.json</code>，构建内存中的双向树，订阅 vault 事件实时同步。</p>
+
+<pre><span class="lang">TypeScript</span><code><span class="com">// src/index/VaultIndex.ts</span>
+
+<span class="kw">export class</span> <span class="ty">VaultIndex</span> {
+  <span class="kw">private</span> nodes = <span class="kw">new</span> <span class="ty">Map</span>&lt;<span class="ty">string</span>, <span class="ty">FolderNode</span>&gt;();          <span class="com">// id → node</span>
+  <span class="kw">private</span> pathToId = <span class="kw">new</span> <span class="ty">Map</span>&lt;<span class="ty">string</span>, <span class="ty">string</span>&gt;();          <span class="com">// path → id</span>
+  <span class="kw">private</span> rootIds: <span class="ty">string</span>[] = [];                       <span class="com">// 顶层 Space ids</span>
+  <span class="kw">private</span> emitter = <span class="kw">new</span> <span class="ty">EventEmitter</span>();
+
+  <span class="kw">async</span> <span class="fn">bootstrap</span>(vault: <span class="ty">Vault</span>): <span class="ty">Promise</span>&lt;<span class="ty">void</span>&gt; {
+    <span class="com">// 1. 扫描 zk-spaces/ 下所有 _folder.json</span>
+    <span class="kw">const</span> files = <span class="kw">await</span> <span class="fn">findFolderFiles</span>(vault, <span class="str">'zk-spaces'</span>);
+    <span class="kw">for</span> (<span class="kw">const</span> f <span class="kw">of</span> files) {
+      <span class="kw">const</span> node = <span class="ty">JSON</span>.<span class="fn">parse</span>(<span class="kw">await</span> vault.<span class="fn">read</span>(f));
+      <span class="kw">this</span>.nodes.<span class="fn">set</span>(node.id, { ...node, path: <span class="fn">dirname</span>(f.path) });
+      <span class="kw">this</span>.pathToId.<span class="fn">set</span>(<span class="fn">dirname</span>(f.path), node.id);
+    }
+    <span class="com">// 2. 解析 parent/child 关系</span>
+    <span class="kw">this</span>.<span class="fn">rebuildTree</span>();
+    <span class="com">// 3. 订阅 vault 事件</span>
+    <span class="kw">this</span>.<span class="fn">subscribeVaultEvents</span>(vault);
+  }
+
+  <span class="com">// 订阅 vault 事件，实时维护索引</span>
+  <span class="kw">private</span> <span class="fn">subscribeVaultEvents</span>(vault: <span class="ty">Vault</span>) {
+    vault.<span class="fn">on</span>(<span class="str">'rename'</span>, (file, oldPath) =&gt; {
+      <span class="kw">if</span> (file.path.<span class="fn">endsWith</span>(<span class="str">'_folder.json'</span>)) <span class="kw">this</span>.<span class="fn">handleRename</span>(file, oldPath);
+    });
+    vault.<span class="fn">on</span>(<span class="str">'delete'</span>, (file) =&gt; {
+      <span class="kw">if</span> (file.path.<span class="fn">endsWith</span>(<span class="str">'_folder.json'</span>)) <span class="kw">this</span>.<span class="fn">handleDelete</span>(file);
+    });
+    vault.<span class="fn">on</span>(<span class="str">'create'</span>, (file) =&gt; {
+      <span class="kw">if</span> (file.path.<span class="fn">endsWith</span>(<span class="str">'_folder.json'</span>)) <span class="kw">this</span>.<span class="fn">handleCreate</span>(file);
+    });
+  }
+
+  <span class="com">// Public API</span>
+  <span class="fn">getNode</span>(id: <span class="ty">string</span>): <span class="ty">FolderNode</span> | <span class="kw">undefined</span> { <span class="kw">return</span> <span class="kw">this</span>.nodes.<span class="fn">get</span>(id); }
+  <span class="fn">getChildren</span>(id: <span class="ty">string</span>): <span class="ty">FolderNode</span>[] { <span class="com">/* ... */</span> }
+  <span class="fn">getPath</span>(id: <span class="ty">string</span>): <span class="ty">string</span>[] { <span class="com">// 返回从根到该节点的 id 链 */ }</span>
+  <span class="fn">getRoots</span>(): <span class="ty">FolderNode</span>[] { <span class="kw">return</span> <span class="kw">this</span>.rootIds.<span class="fn">map</span>(id =&gt; <span class="kw">this</span>.nodes.<span class="fn">get</span>(id)!); }
+
+  <span class="fn">on</span>(event: <span class="str">'change'</span>, cb: () =&gt; <span class="ty">void</span>) { <span class="kw">this</span>.emitter.<span class="fn">on</span>(event, cb); }
+}</code></pre>
+
+  <div class="callout">
+    <div class="h">关键不变式</div>
+    索引中任意 <code>FolderNode</code> 必须满足：① 存在对应的 <code>_folder.json</code> 文件；② <code>path</code> 与文件实际位置一致；③ <code>parentId</code> 对应的节点一定存在（或为 null）。任何 vault 事件都要通过 <b>事务式修改</b> 保证不变式。
+  </div>
+
+  <!-- 5 -->
+  <h2 id="service"><span class="num">§5</span>服务层 API</h2>
+
+  <p>UI 层不直接操作文件或索引，统一通过 <code>SpaceService</code> —— 把"业务动作"封装成原子操作，内部处理文件创建、索引更新、事件广播。</p>
+
+<pre><span class="lang">TypeScript</span><code><span class="com">// src/services/SpaceService.ts</span>
+
+<span class="kw">export class</span> <span class="ty">SpaceService</span> {
+  <span class="kw">constructor</span>(
+    <span class="kw">private</span> vault: <span class="ty">Vault</span>,
+    <span class="kw">private</span> index: <span class="ty">VaultIndex</span>,
+  ) {}
+
+  <span class="com">// 创建顶层 Space</span>
+  <span class="kw">async</span> <span class="fn">createSpace</span>(name: <span class="ty">string</span>, opts?: { icon?: <span class="ty">string</span>; color?: <span class="ty">string</span> }): <span class="ty">Promise</span>&lt;<span class="ty">FolderNode</span>&gt; {
+    <span class="fn">assertValidName</span>(name);
+    <span class="fn">assertNoConflict</span>(<span class="str">'zk-spaces/'</span> + name);
+    <span class="kw">const</span> node: <span class="ty">FolderNode</span> = {
+      id: <span class="fn">genId</span>(<span class="str">'flt'</span>),
+      name, parentId: <span class="kw">null</span>, childIds: [], depth: <span class="num-lit">0</span>,
+      isProject: <span class="kw">false</span>, order: <span class="kw">this</span>.index.<span class="fn">getRoots</span>().length,
+      collapsed: <span class="kw">false</span>, createdAt: <span class="ty">Date</span>.<span class="fn">now</span>(), updatedAt: <span class="ty">Date</span>.<span class="fn">now</span>(),
+      ...opts,
+    };
+    <span class="kw">await</span> <span class="kw">this</span>.vault.<span class="fn">createFolder</span>(<span class="str">`zk-spaces/${name}`</span>);
+    <span class="kw">await</span> <span class="kw">this</span>.<span class="fn">writeFolderMeta</span>(node);
+    <span class="kw">return</span> node;
+  }
+
+  <span class="com">// 在任意父节点下创建子文件夹</span>
+  <span class="kw">async</span> <span class="fn">createFolder</span>(parentId: <span class="ty">string</span>, name: <span class="ty">string</span>): <span class="ty">Promise</span>&lt;<span class="ty">FolderNode</span>&gt; { <span class="com">/* ... */</span> }
+
+  <span class="com">// 将任意文件夹升级为项目</span>
+  <span class="kw">async</span> <span class="fn">promoteToProject</span>(folderId: <span class="ty">string</span>): <span class="ty">Promise</span>&lt;<span class="ty">void</span>&gt; {
+    <span class="kw">const</span> node = <span class="kw">this</span>.index.<span class="fn">getNode</span>(folderId);
+    <span class="kw">if</span> (!node || node.isProject) <span class="kw">return</span>;
+    node.isProject = <span class="kw">true</span>;
+    <span class="kw">await</span> <span class="kw">this</span>.<span class="fn">writeFolderMeta</span>(node);
+    <span class="kw">await</span> <span class="kw">this</span>.<span class="fn">writeProjectMeta</span>({ folderId, status: <span class="str">'active'</span>, cardRefs: [], articleIds: [] });
+    <span class="kw">await</span> <span class="kw">this</span>.vault.<span class="fn">createFolder</span>(<span class="str">`${node.path}/articles`</span>);
+  }
+
+  <span class="com">// 重命名（保持 id 不变）</span>
+  <span class="kw">async</span> <span class="fn">rename</span>(folderId: <span class="ty">string</span>, newName: <span class="ty">string</span>): <span class="ty">Promise</span>&lt;<span class="ty">void</span>&gt; { <span class="com">/* ... */</span> }
+
+  <span class="com">// 移动（改变父节点）</span>
+  <span class="kw">async</span> <span class="fn">move</span>(folderId: <span class="ty">string</span>, newParentId: <span class="ty">string</span> | <span class="kw">null</span>, beforeId?: <span class="ty">string</span>): <span class="ty">Promise</span>&lt;<span class="ty">void</span>&gt; { <span class="com">/* ... */</span> }
+
+  <span class="com">// 删除（两段式：项目内有引用时提醒）</span>
+  <span class="kw">async</span> <span class="fn">delete</span>(folderId: <span class="ty">string</span>, opts: { keepArticles?: <span class="ty">boolean</span> }): <span class="ty">Promise</span>&lt;<span class="ty">void</span>&gt; { <span class="com">/* ... */</span> }
+
+  <span class="com">// 按模板批量创建</span>
+  <span class="kw">async</span> <span class="fn">applyTemplate</span>(tmpl: <span class="ty">SpaceTemplate</span>): <span class="ty">Promise</span>&lt;<span class="ty">FolderNode</span>[]&gt; { <span class="com">/* ... */</span> }
+}</code></pre>
+
+  <h3>关键算法：move 的原子性</h3>
+
+  <div class="callout warn">
+    <div class="h">陷阱</div>
+    把 <code>/工作/Q2/JVM</code> 移到 <code>/学习</code> 下时，必须原子完成：① 文件系统 rename 整个目录；② 更新所有子孙节点的 <code>path</code>；③ 更新 parentId；④ 索引 pathToId 全部刷新。任一步失败要回滚。
+  </div>
+
+  <h2 id="ui"><span class="num">§6</span>UI 层 · 侧边栏树组件</h2>
+
+  <p>React 组件，挂载为 Obsidian 的 left-ribbon view。支持任意层级折叠、拖拽、右键菜单。</p>
+
+  <h3>视觉规范</h3>
+  <div class="ui-mock">
+    <div class="head"><div class="dots"><span></span><span></span><span></span></div>ZK · SPACES</div>
+    <div class="body">
+      <div class="section-label">MY SPACES <span class="add">+</span></div>
+
+      <div class="row" style="padding-left: 14px;">
+        <span class="chev">▾</span><span class="ic">📘</span><span class="name">工作</span><span class="badge cnt">3</span>
+      </div>
+      <div class="row indent-1">
+        <span class="chev">▾</span><span class="ic">📁</span><span class="name">2026 Q2</span>
+      </div>
+      <div class="row indent-2 active">
+        <span class="chev">▾</span><span class="ic">📐</span><span class="name">JVM 调优手册</span><span class="badge canvas">canvas</span>
+      </div>
+      <div class="row indent-3">
+        <span class="ic">📄</span><span class="name">分代收集.md</span>
+      </div>
+      <div class="row indent-3">
+        <span class="ic">📄</span><span class="name">Region 化的代价.md</span>
+      </div>
+      <div class="row indent-2">
+        <span class="chev">▸</span><span class="ic">📁</span><span class="name">周报归档</span>
+      </div>
+      <div class="row indent-1">
+        <span class="chev">▸</span><span class="ic">📁</span><span class="name">日常杂事</span>
+      </div>
+
+      <div class="row" style="padding-left: 14px;">
+        <span class="chev">▾</span><span class="ic">🎓</span><span class="name">学习</span><span class="badge cnt">5</span>
+      </div>
+      <div class="row indent-1">
+        <span class="chev">▾</span><span class="ic">📁</span><span class="name">计算机基础</span>
+      </div>
+      <div class="row indent-2">
+        <span class="chev">▸</span><span class="ic">📐</span><span class="name">操作系统</span><span class="badge proj">project</span>
+      </div>
+      <div class="row indent-2">
+        <span class="chev">▾</span><span class="ic">📁</span><span class="name">网络</span>
+      </div>
+      <div class="row indent-3">
+        <span class="chev">▾</span><span class="ic">📁</span><span class="name">TCP/IP</span>
+      </div>
+      <div class="row indent-4">
+        <span class="chev">▸</span><span class="ic">📐</span><span class="name">TLS 1.3 源码阅读</span><span class="badge canvas">canvas</span>
+      </div>
+      <div class="row indent-1">
+        <span class="chev">▸</span><span class="ic">📁</span><span class="name">机器学习</span>
+      </div>
+
+      <div class="row" style="padding-left: 14px;">
+        <span class="chev">▸</span><span class="ic">🌱</span><span class="name">生活 &amp; 思考</span>
+      </div>
+
+      <div class="section-label">GLOBAL · 卡片池</div>
+      <div class="row" style="padding-left: 14px;"><span class="ic">◆</span><span class="name">全部卡片</span><span class="badge cnt">218</span></div>
+      <div class="row" style="padding-left: 14px;"><span class="ic">✉</span><span class="name">收件箱</span><span class="stage f">7</span></div>
+      <div class="row" style="padding-left: 14px;"><span class="ic">◌</span><span class="name">孤岛卡片</span><span class="stage f">12</span></div>
+    </div>
+  </div>
+
+  <h4>视觉规则</h4>
+  <table>
+    <thead><tr><th>元素</th><th>表现</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>Space</td><td>顶层无缩进，用户自定义 emoji</td><td>折叠状态持久化到 <code>_folder.json.collapsed</code></td></tr>
+      <tr><td>普通 Folder</td><td>📁 图标</td><td>只是组织容器，无额外能力</td></tr>
+      <tr><td>Project Folder</td><td>📐 图标 + <code>canvas</code> 徽章</td><td>带结构图的项目文件夹</td></tr>
+      <tr><td>.md 文件</td><td>📄 图标，缩进比父层再深一级</td><td>项目内的文章</td></tr>
+      <tr><td>缩进</td><td>每层 +20px</td><td>层级很深时用户可双击 Space 快速折叠</td></tr>
+      <tr><td>颜色点</td><td>节点名左侧 4×4 方点（可选）</td><td>用户为 Space 设的 <code>color</code></td></tr>
+    </tbody>
+  </table>
+
+  <!-- 7 -->
+  <h2 id="interactions"><span class="num">§7</span>交互细节</h2>
+
+  <h3>7.1 新建 —— 永远"所见即所得"</h3>
+  <p>点击 <code>+</code> 按钮或按 <code>⌘N</code>：</p>
+  <ul>
+    <li>在当前选中节点下 <b>原位展开</b> 一个输入框（不弹 modal）</li>
+    <li>回车确认，<code>Esc</code> 取消</li>
+    <li>名字有冲突时实时显示红色下划线 + 提示</li>
+    <li>支持用 <code>/</code> 分隔一次性创建多层：输入 <code>2026 Q3/周报/04.20</code> 会自动建三层</li>
+  </ul>
+
+  <h3>7.2 重命名</h3>
+  <ul>
+    <li>双击节点名或 <code>F2</code> 进入原位编辑</li>
+    <li>同步改 <code>_folder.json.name</code> 和实际文件夹名</li>
+    <li><b>ID 不变</b>，所有引用仍然有效</li>
+  </ul>
+
+  <h3>7.3 拖拽</h3>
+  <p>最复杂的交互。三种放下位置必须视觉可区分：</p>
+  <div class="split-cols">
+    <div class="callout tip">
+      <div class="h">放到节点上方（加横线）</div>
+      = 作为兄弟节点插入上方
+    </div>
+    <div class="callout tip">
+      <div class="h">放到节点下方（加横线）</div>
+      = 作为兄弟节点插入下方
+    </div>
+  </div>
+  <div class="callout">
+    <div class="h">放到节点中间（整行高亮）</div>
+    = 作为子节点移入。如果节点是 .md 文件或叶子项目，禁止此状态（拒绝 drop）。
+  </div>
+
+  <h3>7.4 右键菜单</h3>
+  <p>根据节点类型动态显示选项：</p>
+  <div style="display: flex; gap: 20px; flex-wrap: wrap; margin: 16px 0;">
+    <div>
+      <div style="font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); letter-spacing: 0.08em; margin-bottom: 8px;">FOLDER（未升级为项目）</div>
+      <div class="ctx-menu">
+        <div class="item"><span class="ic">+</span>新建子文件夹<span class="sh">⌘N</span></div>
+        <div class="item"><span class="ic">📐</span>升级为项目…</div>
+        <div class="item"><span class="ic">✎</span>重命名<span class="sh">F2</span></div>
+        <div class="item"><span class="ic">🎨</span>设置图标 &amp; 颜色…</div>
+        <div class="div"></div>
+        <div class="item"><span class="ic">↑</span>移到最上</div>
+        <div class="item"><span class="ic">↗</span>在 Vault 中显示</div>
+        <div class="div"></div>
+        <div class="item danger"><span class="ic">✕</span>删除<span class="sh">⌫</span></div>
+      </div>
+    </div>
+    <div>
+      <div style="font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); letter-spacing: 0.08em; margin-bottom: 8px;">PROJECT FOLDER</div>
+      <div class="ctx-menu">
+        <div class="item"><span class="ic">📐</span>打开结构图</div>
+        <div class="item"><span class="ic">+</span>新建文章</div>
+        <div class="item"><span class="ic">⇄</span>引用已有卡片…</div>
+        <div class="div"></div>
+        <div class="item"><span class="ic">✎</span>重命名</div>
+        <div class="item"><span class="ic">📁</span>降级为普通文件夹</div>
+        <div class="div"></div>
+        <div class="item"><span class="ic">📦</span>归档项目</div>
+        <div class="item danger"><span class="ic">✕</span>删除</div>
+      </div>
+    </div>
+  </div>
+
+  <h3>7.5 删除（两段式）</h3>
+  <div class="callout danger">
+    <div class="h">DANGEROUS</div>
+    删除一个项目文件夹时必须弹确认框，列出：① 子文件夹数量；② 文章数量；③ 被引用的卡片（<b>卡片不会被删</b>，只是项目内的"影子"断开）。提供 "移到 Archive" 的轻量选项。
+  </div>
+
+  <h3>7.6 键盘快捷键</h3>
+  <table>
+    <tbody>
+      <tr><td><code>↑ ↓</code></td><td>上下移动选中</td></tr>
+      <tr><td><code>← →</code></td><td>折叠 / 展开</td></tr>
+      <tr><td><code>⌘N</code></td><td>在当前节点下新建子文件夹</td></tr>
+      <tr><td><code>⇧⌘N</code></td><td>新建顶层 Space</td></tr>
+      <tr><td><code>F2</code></td><td>重命名</td></tr>
+      <tr><td><code>⌫</code></td><td>删除（弹两段式确认）</td></tr>
+      <tr><td><code>⌘⇧P</code></td><td>Command Palette（"升级为项目"等命令）</td></tr>
+    </tbody>
+  </table>
+
+  <!-- 8 -->
+  <h2 id="templates"><span class="num">§8</span>模板系统</h2>
+
+  <p>第一次启用插件或用户点击"用模板创建 Space"时呈现。模板是 <b>可选的</b>、<b>一键的</b>、可自定义扩展。</p>
+
+  <div class="templates">
+    <div class="tmpl">
+      <div class="n"><span class="ic">📊</span>PARA</div>
+      <div class="d">Tiago Forte 经典。适合行动导向、有项目管理需求的用户。</div>
+      <div class="struct">
+        Projects<br>
+        Areas<br>
+        Resources<br>
+        Archive
+      </div>
+    </div>
+    <div class="tmpl">
+      <div class="n"><span class="ic">📂</span>GTD</div>
+      <div class="d">任务管理派。清单式组织。</div>
+      <div class="struct">
+        Inbox<br>
+        Next Actions<br>
+        Waiting For<br>
+        Someday / Maybe<br>
+        Reference
+      </div>
+    </div>
+    <div class="tmpl">
+      <div class="n"><span class="ic">🎓</span>学生版</div>
+      <div class="d">按学期/课程组织，内置"考试"项目。</div>
+      <div class="struct">
+        2026 春季<br>
+        <span class="sub">· 操作系统</span><br>
+        <span class="sub">· 数据库</span><br>
+        2025 秋季…
+      </div>
+    </div>
+    <div class="tmpl">
+      <div class="n"><span class="ic">📝</span>写作者</div>
+      <div class="d">按稿件状态组织。</div>
+      <div class="struct">
+        Ideas<br>
+        Drafts<br>
+        Published<br>
+        Research
+      </div>
+    </div>
+    <div class="tmpl">
+      <div class="n"><span class="ic">⚪</span>空白</div>
+      <div class="d">什么都不预设，用户自己命名。</div>
+      <div class="struct">
+        （空）
+      </div>
+    </div>
+    <div class="tmpl">
+      <div class="n"><span class="ic">＋</span>我的自定义</div>
+      <div class="d">导出当前空间结构，保存为私有模板。</div>
+      <div class="struct">
+        用户定义
+      </div>
+    </div>
+  </div>
+
+<pre><span class="lang">TypeScript</span><code><span class="com">// 模板格式</span>
+<span class="kw">export interface</span> <span class="ty">SpaceTemplate</span> {
+  <span class="pr">id</span>: <span class="ty">string</span>;
+  <span class="pr">name</span>: <span class="ty">string</span>;
+  <span class="pr">description</span>: <span class="ty">string</span>;
+  <span class="pr">roots</span>: <span class="ty">TemplateNode</span>[];
+}
+
+<span class="kw">export interface</span> <span class="ty">TemplateNode</span> {
+  <span class="pr">name</span>: <span class="ty">string</span>;
+  <span class="pr">icon</span>?: <span class="ty">string</span>;
+  <span class="pr">color</span>?: <span class="ty">string</span>;
+  <span class="pr">isProject</span>?: <span class="ty">boolean</span>;
+  <span class="pr">children</span>?: <span class="ty">TemplateNode</span>[];
+}
+
+<span class="com">// 示例：PARA</span>
+<span class="kw">const</span> PARA: <span class="ty">SpaceTemplate</span> = {
+  id: <span class="str">'para'</span>, name: <span class="str">'PARA'</span>, description: <span class="str">'...'</span>,
+  roots: [
+    { name: <span class="str">'Projects'</span>, icon: <span class="str">'📊'</span>, color: <span class="str">'#6ba3ff'</span> },
+    { name: <span class="str">'Areas'</span>, icon: <span class="str">'🎯'</span>, color: <span class="str">'#7fd49a'</span> },
+    { name: <span class="str">'Resources'</span>, icon: <span class="str">'📚'</span>, color: <span class="str">'#f2a65a'</span> },
+    { name: <span class="str">'Archive'</span>, icon: <span class="str">'📦'</span>, color: <span class="str">'#8a8e98'</span> },
+  ],
+};</code></pre>
+
+  <!-- 9 -->
+  <h2 id="edge"><span class="num">§9</span>边界情况与性能</h2>
+
+  <h3>9.1 同名冲突</h3>
+  <ul>
+    <li>同层级禁止同名。保存时检测。</li>
+    <li>跨层级允许同名（"工作/周报" 和 "生活/周报" 共存）。</li>
+  </ul>
+
+  <h3>9.2 外部改动 vault</h3>
+  <ul>
+    <li>用户在 Obsidian 文件管理器里直接删除/改名 —— <b>watch vault events</b>，自动同步索引。</li>
+    <li>用户外部（Finder）移动了 <code>_folder.json</code> —— 下次 bootstrap 扫描时根据其路径重建 parent 关系。</li>
+    <li>丢失的 <code>_folder.json</code> —— 树里该节点消失，但下级 <code>_folder.json</code> 还在时，将它们标记为"孤儿"并在 UI 顶部显示"修复"入口。</li>
+  </ul>
+
+  <h3>9.3 性能</h3>
+  <table>
+    <thead><tr><th>规模</th><th>策略</th></tr></thead>
+    <tbody>
+      <tr><td>≤ 500 节点</td><td>全量加载到内存，无需优化</td></tr>
+      <tr><td>500-5000</td><td>树视图用虚拟滚动（react-virtual）</td></tr>
+      <tr><td>&gt; 5000</td><td>索引 JSON 快照写入 <code>.zk/index.json</code>，启动时直接读快照 + 增量校验；考虑分层懒加载 <code>_folder.json</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>9.4 循环引用</h3>
+  <p>move 操作时必须检查：目标 parent 不能是源节点的子孙。否则拒绝并提示。</p>
+
+  <h3>9.5 跨空间移动项目的卡片引用</h3>
+  <div class="callout tip">
+    <div class="h">好消息</div>
+    卡片引用用的是 <b>cardId</b>，不依赖项目的 path。把一个项目从"工作/Q2"移到"学习/课程"，所有卡片引用保持有效。<b>这就是 id + path 分离的最大红利</b>。
+  </div>
+
+  <!-- 10 -->
+  <h2 id="plan"><span class="num">§10</span>实现计划 · 两周分阶段</h2>
+
+  <div class="check-list">
+    <div class="item">
+      <div class="box"></div>
+      <div class="body">
+        <div class="t">Day 1-2 · 数据模型 + 存储</div>
+        <div class="d">定义 <code>FolderNode</code>、<code>ProjectMeta</code>；实现 <code>_folder.json</code> 读写；建立 vault 目录约定。</div>
+      </div>
+      <div class="phase p0">P0 · MUST</div>
+    </div>
+    <div class="item">
+      <div class="box"></div>
+      <div class="body">
+        <div class="t">Day 3-4 · VaultIndex</div>
+        <div class="d">扫描、内存树、订阅 vault 事件。单元测试覆盖增删改查与重建。</div>
+      </div>
+      <div class="phase p0">P0 · MUST</div>
+    </div>
+    <div class="item">
+      <div class="box"></div>
+      <div class="body">
+        <div class="t">Day 5-6 · SpaceService</div>
+        <div class="d">createSpace / createFolder / rename / move / delete / promoteToProject。原子化、事件广播。</div>
+      </div>
+      <div class="phase p0">P0 · MUST</div>
+    </div>
+    <div class="item">
+      <div class="box"></div>
+      <div class="body">
+        <div class="t">Day 7-9 · UI 树组件 v1</div>
+        <div class="d">React 渲染任意深度树；折叠/展开；单击选中；右键菜单；双击重命名。暂不做拖拽。</div>
+      </div>
+      <div class="phase p0">P0 · MUST</div>
+    </div>
+    <div class="item">
+      <div class="box"></div>
+      <div class="body">
+        <div class="t">Day 10 · 新建流程 + 模板</div>
+        <div class="d">原位输入框新建；⌘N / ⇧⌘N；PARA / GTD / Blank 三个内置模板。</div>
+      </div>
+      <div class="phase p1">P1 · SHOULD</div>
+    </div>
+    <div class="item">
+      <div class="box"></div>
+      <div class="body">
+        <div class="t">Day 11-12 · 拖拽重排</div>
+        <div class="d">react-dnd。三种 drop 位置；循环检查；原子 move 操作。</div>
+      </div>
+      <div class="phase p1">P1 · SHOULD</div>
+    </div>
+    <div class="item">
+      <div class="box"></div>
+      <div class="body">
+        <div class="t">Day 13 · 删除 + 归档</div>
+        <div class="d">两段式确认；归档 = 移动到特殊 Archive space 而非真删除。</div>
+      </div>
+      <div class="phase p1">P1 · SHOULD</div>
+    </div>
+    <div class="item">
+      <div class="box"></div>
+      <div class="body">
+        <div class="t">Day 14 · 冲突修复 &amp; 发布</div>
+        <div class="d">外部改动修复、孤儿节点处理、图标 &amp; 颜色编辑器。文档化；beta 发布。</div>
+      </div>
+      <div class="phase p2">P2 · NICE</div>
+    </div>
+    <div class="item">
+      <div class="box"></div>
+      <div class="body">
+        <div class="t">Post-v1 · 智能文件夹</div>
+        <div class="d">虚拟文件夹 = 保存的查询（"所有 deadline 7 天内的项目"）。v2 再说。</div>
+      </div>
+      <div class="phase p2">P2 · NICE</div>
+    </div>
+  </div>
+
+  <hr class="sep"/>
+
+  <h2><span class="num">§</span>附录 · 关键决策对照</h2>
+  <table>
+    <thead><tr><th>决策</th><th>选择</th><th>理由</th></tr></thead>
+    <tbody>
+      <tr><td>Project 是独立类型还是 flag</td><td>Folder 的 flag</td><td>允许任何文件夹升级/降级，最大灵活性</td></tr>
+      <tr><td>id 存哪里</td><td><code>_folder.json</code> 文件内</td><td>跟随文件夹移动/改名而不丢失</td></tr>
+      <tr><td>卡片存放位置</td><td><code>zk-cards/</code> 扁平</td><td>保证跨空间引用不受文件夹结构影响</td></tr>
+      <tr><td>文章存放位置</td><td>各 Project 文件夹下 <code>articles/</code></td><td>文章属于项目、跟着项目走；与卡片分开</td></tr>
+      <tr><td>PARA 是否内置</td><td>作为可选模板</td><td>尊重用户自由，不做架构性绑定</td></tr>
+      <tr><td>外部文件系统改动</td><td>监听并同步</td><td>与 Obsidian 的开放性原则一致</td></tr>
+    </tbody>
+  </table>
+
+  <div class="foot">
+    <b>这份文档的适用范围：</b>仅覆盖"可自定义文件夹分类"这一模块。与之相关但独立的模块 —— 卡片池索引、结构图画布、跨项目引用 UI、AI 联想推荐 —— 各有独立文档。实现时按此顺序：文件夹 → 卡片池 → 结构图 → 引用 UI → 推荐。<br><br>
+    <b>写完这个模块的验收：</b>用户能自由创建任意命名空间与嵌套文件夹，任意文件夹可升降级为项目，项目可存放结构图和文章，所有改动通过 UI 或文件管理器都能正确同步。
+  </div>
+
+</div>
+</body>
+</html>
