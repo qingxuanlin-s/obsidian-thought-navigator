@@ -40,6 +40,7 @@ function deepCopyMOCResult(original: MOCParseResult): MOCParseResult {
         nodeAnchors: { ...(original as any).nodeAnchors || {} },
         nodeLayoutStyle: original.nodeLayoutStyle,
         nodeLayoutOverrides: original.nodeLayoutOverrides ? { ...original.nodeLayoutOverrides } : undefined,
+        isProject: original.isProject,
         metadata: { ...original.metadata }
     };
 }

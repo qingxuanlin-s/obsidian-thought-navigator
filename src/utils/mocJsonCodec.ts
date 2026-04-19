@@ -29,6 +29,7 @@ interface MOCJsonSchema {
     nodeAnchors: Record<string, boolean>;
     nodeLayoutStyle?: 'free' | 'auto';
     nodeLayoutOverrides?: Record<string, 'auto' | 'free'>;
+    isProject?: boolean;
 }
 
 // ---- 内部转换工具 ----
@@ -142,6 +143,7 @@ export function parseMOCJson(content: string, filePath: string, app: App): MOCPa
         nodeAnchors: json.nodeAnchors || {},
         nodeLayoutStyle: json.nodeLayoutStyle,
         nodeLayoutOverrides: json.nodeLayoutOverrides,
+        isProject: json.isProject === true,
         metadata: {
             totalNodes: total,
             maxDepth,
@@ -180,6 +182,9 @@ export function serializeMOCJson(data: MOCParseResult): string {
     }
     if (data.nodeLayoutOverrides && Object.keys(data.nodeLayoutOverrides).length > 0) {
         json.nodeLayoutOverrides = data.nodeLayoutOverrides;
+    }
+    if (data.isProject) {
+        json.isProject = true;
     }
     return JSON.stringify(json, null, 2);
 }

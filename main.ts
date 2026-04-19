@@ -539,6 +539,46 @@ export default class ZKNavigationPlugin extends Plugin {
             }
         })
 
+        // v0.5: 切换当前 MOC 的项目标记
+        this.addCommand({
+            id: "zk-toggle-project-flag",
+            name: "切换当前 MOC 的项目标记",
+            callback: async () => {
+                const currentPath = this.settings.mocCurrentFile;
+                if (!currentPath) {
+                    new Notice("当前未选中 MOC 文件");
+                    return;
+                }
+                const file = this.app.vault.getFileByPath(currentPath);
+                if (!file || file.extension !== 'moc') {
+                    new Notice("项目标记仅支持 .moc 文件");
+                    return;
+                }
+                try {
+                    const content = await this.app.vault.read(file);
+                    let json: any;
+                    try {
+                        json = JSON.parse(content);
+                    } catch {
+                        new Notice("MOC 文件格式异常,无法修改");
+                        return;
+                    }
+                    const next = !(json.isProject === true);
+                    if (next) {
+                        json.isProject = true;
+                    } else {
+                        delete json.isProject;
+                    }
+                    await this.app.vault.modify(file, JSON.stringify(json, null, 2));
+                    new Notice(next ? `📐 已标记为项目: ${file.basename}` : `已取消项目标记: ${file.basename}`);
+                    this.app.workspace.trigger("zk-navigation:refresh-index-graph");
+                } catch (e) {
+                    console.error('[zk-navigation] 切换项目标记失败', e);
+                    new Notice(`操作失败: ${e.message}`);
+                }
+            }
+        })
+
         this.registerHoverLinkSource(
         ZK_NAVIGATION,
         {
