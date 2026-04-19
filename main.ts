@@ -550,32 +550,11 @@ export default class ZKNavigationPlugin extends Plugin {
                     return;
                 }
                 const file = this.app.vault.getFileByPath(currentPath);
-                if (!file || file.extension !== 'moc') {
-                    new Notice("项目标记仅支持 .moc 文件");
+                if (!file) {
+                    new Notice("当前 MOC 文件不存在");
                     return;
                 }
-                try {
-                    const content = await this.app.vault.read(file);
-                    let json: any;
-                    try {
-                        json = JSON.parse(content);
-                    } catch {
-                        new Notice("MOC 文件格式异常,无法修改");
-                        return;
-                    }
-                    const next = !(json.isProject === true);
-                    if (next) {
-                        json.isProject = true;
-                    } else {
-                        delete json.isProject;
-                    }
-                    await this.app.vault.modify(file, JSON.stringify(json, null, 2));
-                    new Notice(next ? `📐 已标记为项目: ${file.basename}` : `已取消项目标记: ${file.basename}`);
-                    this.app.workspace.trigger("zk-navigation:refresh-index-graph");
-                } catch (e) {
-                    console.error('[zk-navigation] 切换项目标记失败', e);
-                    new Notice(`操作失败: ${e.message}`);
-                }
+                await this.toggleMOCProjectFlag(file);
             }
         })
 
@@ -820,6 +799,39 @@ export default class ZKNavigationPlugin extends Plugin {
                 await this.openIndexView();
             }
             return;            
+        }
+    }
+
+    /**
+     * v0.5: 切换 MOC 文件的项目标记(.moc JSON 里的 isProject 字段)
+     * 命令面板和视图头部菜单共用
+     */
+    async toggleMOCProjectFlag(file: TFile): Promise<void> {
+        if (file.extension !== 'moc') {
+            new Notice("项目标记仅支持 .moc 文件");
+            return;
+        }
+        try {
+            const content = await this.app.vault.read(file);
+            let json: any;
+            try {
+                json = JSON.parse(content);
+            } catch {
+                new Notice("MOC 文件格式异常,无法修改");
+                return;
+            }
+            const next = !(json.isProject === true);
+            if (next) {
+                json.isProject = true;
+            } else {
+                delete json.isProject;
+            }
+            await this.app.vault.modify(file, JSON.stringify(json, null, 2));
+            new Notice(next ? `📐 已标记为项目: ${file.basename}` : `已取消项目标记: ${file.basename}`);
+            this.app.workspace.trigger("zk-navigation:refresh-index-graph");
+        } catch (e) {
+            console.error('[zk-navigation] 切换项目标记失败', e);
+            new Notice(`操作失败: ${e.message}`);
         }
     }
 
