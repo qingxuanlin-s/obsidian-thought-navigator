@@ -2696,7 +2696,7 @@ align-items: center;
   font-family: var(--font-text) !important;
   font-size: 20px !important;
   font-weight: 500 !important;
-  line-height: 1.35 !important;
+  /* line-height 放开给 CM 自己算,避免 vim fat cursor 定位与实际行高不一致导致偏移 */
 }
 
 .zk-text-md-live-edit-host .cm-content,
@@ -2704,7 +2704,25 @@ align-items: center;
 .zk-text-md-live-edit-host .cm-editor .cm-line {
   font-size: 20px !important;
   font-weight: 500 !important;
-  line-height: 1.35 !important;
+}
+
+/* Obsidian 给 heading 内层 span (.cm-header-*, .HyperMD-header-*) 单独设了大字号,
+   会让 H1 行实际渲染高度远大于 CM 按 20px 测到的行高,vim fat cursor 的 Y 就会
+   沿着 H1 往下所有行累计偏移。强制 heading 内层也用 20px,CM 测量和渲染一致。
+   字重保留 600 让 heading 仍然可辨,但不改变行高。 */
+.zk-text-md-live-edit-host .HyperMD-header,
+.zk-text-md-live-edit-host [class*="HyperMD-header-"],
+.zk-text-md-live-edit-host .cm-header,
+.zk-text-md-live-edit-host [class*="cm-header-"] {
+  font-size: 20px !important;
+  line-height: inherit !important;
+  font-weight: 600 !important;
+}
+
+/* 再把 heading 行占位 span / fold indicator 彻底删掉(不用 :empty,有的版本会塞 ZWSP) */
+.zk-text-md-live-edit-host .HyperMD-header > span[contenteditable="false"],
+.zk-text-md-live-edit-host .HyperMD-header > .cm-fold-indicator {
+  display: none !important;
 }
 
 .zk-text-md-live-edit-host .cm-editor .cm-scroller {
@@ -2734,13 +2752,19 @@ align-items: center;
 .zk-text-md-live-edit-host .cm-vimMode-panel {
   display: none !important;
 }
-/* live preview 在 heading 行前渲染的折叠/级别徽章(如截图里溢出的 "H1 #") */
+/* live preview 在 heading 行前渲染的折叠/级别徽章(截图里 "H1 #" 的两块):
+   1. .cm-fold-indicator → 折叠箭头
+   2. .HyperMD-header 下直接挂的空 contenteditable span → Obsidian 通过它的 ::before 画 "H1" 徽章 */
 .zk-text-md-live-edit-host .cm-fold-indicator,
-.zk-text-md-live-edit-host .HyperMD-header-gutter,
-.zk-text-md-live-edit-host .cm-heading-collapse-indicator,
-.zk-text-md-live-edit-host .cm-html-embed[data-heading],
-.zk-text-md-live-edit-host .cm-embed-block.cm-embed-heading,
-.zk-text-md-live-edit-host .markdown-preview-sizer > .el-h1::before,
-.zk-text-md-live-edit-host .cm-line .cm-header-1::before {
+.zk-text-md-live-edit-host .HyperMD-header > span[contenteditable="false"]:empty,
+.zk-text-md-live-edit-host .cm-widgetBuffer {
   display: none !important;
+}
+
+/* vim 浏览(NORMAL)模式下的 fat cursor:CM vim 测出来的 height/line-height 偏小(~12px),
+   与实际行高(~32px)不匹配,视觉上"缩到一半、偏上一行"。强制跟随行内实际高度。 */
+.zk-text-md-live-edit-host .cm-fat-cursor.cm-cursor-primary,
+.zk-text-md-live-edit-host .cm-vimCursorLayer .cm-fat-cursor {
+  height: 1.6em !important;
+  line-height: 1.6em !important;
 }

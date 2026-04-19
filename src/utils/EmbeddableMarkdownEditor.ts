@@ -156,6 +156,17 @@ export class EmbeddableMarkdownEditor extends Component {
 		} else {
 			this.bindCallbacks();
 		}
+
+		// CM 初始化时量到的字符度量是默认样式下的结果;我们叠加了字号覆盖 + 隐藏
+		// heading widget/fold indicator,两轮 reflow 后行高才稳定,需要多次重量才能
+		// 让 vim fat cursor 的 top/height 贴合实际。
+		if (this.cm?.requestMeasure) {
+			const measure = () => { if (!this.destroyed) this.cm?.requestMeasure?.(); };
+			requestAnimationFrame(() => {
+				measure();
+				requestAnimationFrame(measure);
+			});
+		}
 	}
 
 	private resolveSourceFile(sourcePath?: string): TFile | null {
