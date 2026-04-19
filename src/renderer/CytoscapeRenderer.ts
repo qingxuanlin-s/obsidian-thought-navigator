@@ -2648,6 +2648,27 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'background-color': 'rgba(16, 185, 129, 0.1)'
             } as any
         },
+        // 自动布局父节点拖动时，跟随移动的后代节点
+        {
+            selector: 'node.auto-hierarchy-descendant',
+            style: {
+                'border-color': '#4dabf7',
+                'border-width': '2.5px',
+                'border-style': 'dashed',
+                'border-opacity': 0.9
+            } as any
+        },
+        {
+            selector: 'edge.auto-hierarchy-descendant-edge',
+            style: {
+                'line-color': '#4dabf7',
+                'target-arrow-color': '#4dabf7',
+                'source-arrow-color': '#4dabf7',
+                'width': 2,
+                'opacity': 0.85,
+                'line-style': 'dashed'
+            } as any
+        },
         // 高亮子节点箭头
         {
             selector: 'edge.child-edge-highlight',
@@ -9669,6 +9690,11 @@ case 'dagre':
         const SPACING_THRESHOLD = 8;
         const AXIS_GROUP_THRESHOLD = 24;
         let isMultiNodeDrag = false; // grab 时缓存，避免 drag 高频查选择器
+        // 自动布局节点的子树同步拖动状态
+        let autoHierarchyDescendants: Array<{ node: any; startX: number; startY: number }> = [];
+        let autoHierarchyGrabStartX = 0;
+        let autoHierarchyGrabStartY = 0;
+        let isAutoHierarchyDrag = false;
 
         const ensureAlignmentOverlay = () => {
             if (alignmentOverlay || !this.container) return;
@@ -9934,6 +9960,45 @@ case 'dagre':
             ensureAlignmentOverlay();
             hideAlignmentGuides();
 
+            // 自动布局节点：拖动时带上所有后代一起平移
+            autoHierarchyDescendants = [];
+            isAutoHierarchyDrag = false;
+            if (!isMultiNodeDrag && !data.isPlaceholder && !data.isGroup && !data.isCrossDomain) {
+                const grabbedId = data.originalNode?.ID || data.originalSource || data.id;
+                if (typeof grabbedId === 'string' && grabbedId.length > 0 && this.isNodeAutoLayoutForId(grabbedId)) {
+                    const prefix = `${grabbedId}.`;
+                    const grabPos = node.position();
+                    autoHierarchyGrabStartX = grabPos.x;
+                    autoHierarchyGrabStartY = grabPos.y;
+                    this.cy!.nodes().forEach((n: any) => {
+                        if (n.id() === node.id()) return;
+                        const d = n.data();
+                        if (d.isPlaceholder || d.isGroup || d.isCrossDomain) return;
+                        const nid = d.originalNode?.ID || d.originalSource || n.id();
+                        if (typeof nid === 'string' && nid.startsWith(prefix)) {
+                            const p = n.position();
+                            autoHierarchyDescendants.push({ node: n, startX: p.x, startY: p.y });
+                        }
+                    });
+                    if (autoHierarchyDescendants.length > 0) {
+                        isAutoHierarchyDrag = true;
+                        // 视觉提示：给后代节点及其内部连边加上虚线高亮
+                        const descendantIds = new Set<string>(
+                            autoHierarchyDescendants.map(({ node: n }) => n.id())
+                        );
+                        descendantIds.add(node.id());
+                        autoHierarchyDescendants.forEach(({ node: n }) => {
+                            n.addClass('auto-hierarchy-descendant');
+                        });
+                        this.cy!.edges().forEach((e: any) => {
+                            if (descendantIds.has(e.source().id()) && descendantIds.has(e.target().id())) {
+                                e.addClass('auto-hierarchy-descendant-edge');
+                            }
+                        });
+                    }
+                }
+            }
+
             if (!smartEnabled) {
                 if (tempConnectionLine && svgOverlay) {
                     svgOverlay.removeChild(tempConnectionLine);
@@ -9979,6 +10044,18 @@ case 'dagre':
         this.cy.on('drag', 'node', (evt: any) => {
             const node = evt.target;
             const data = node.data();
+
+            // 自动布局：把后代同步平移
+            if (isAutoHierarchyDrag && !isMultiNodeDrag) {
+                const curPos = node.position();
+                const dx = curPos.x - autoHierarchyGrabStartX;
+                const dy = curPos.y - autoHierarchyGrabStartY;
+                this.cy!.batch(() => {
+                    autoHierarchyDescendants.forEach(({ node: n, startX, startY }) => {
+                        n.position({ x: startX + dx, y: startY + dy });
+                    });
+                });
+            }
 
             // 多节点拖动时跳过辅助线和智能连线，避免 N 个节点 × 每帧的重复计算
             if (isMultiNodeDrag) return;
@@ -10140,6 +10217,26 @@ case 'dagre':
             const data = node.data();
             const smartEnabled = this.isSmartConnectionEnabled();
             hideAlignmentGuides();
+
+            // 自动布局：为同步平移的后代派发位置变化事件（以便批量持久化）
+            if (isAutoHierarchyDrag) {
+                autoHierarchyDescendants.forEach(({ node: n }) => {
+                    const d = n.data();
+                    n.removeClass('auto-hierarchy-descendant');
+                    if (!d || !d.originalNode) return;
+                    const pos = n.position();
+                    this.container?.dispatchEvent(new CustomEvent('node-position-changed', {
+                        detail: {
+                            node: d.originalNode,
+                            nodeId: d.id,
+                            position: { x: pos.x, y: pos.y }
+                        }
+                    }));
+                });
+                this.cy!.edges('.auto-hierarchy-descendant-edge').removeClass('auto-hierarchy-descendant-edge');
+                isAutoHierarchyDrag = false;
+                autoHierarchyDescendants = [];
+            }
 
             // 移除临时连接线和 SVG 叠加层
             if (tempConnectionLine && svgOverlay) {
@@ -11788,6 +11885,22 @@ case 'dagre':
         const style = this.currentOptions?.nodeLayoutStyle;
         if (typeof style !== 'string') return false;
         return style.trim().toLowerCase() === 'auto';
+    }
+
+    /**
+     * 沿 ID 父链向上查找覆盖；未命中则回退到文件级默认
+     */
+    private isNodeAutoLayoutForId(nodeId: string): boolean {
+        const overrides = this.currentOptions?.nodeLayoutOverrides || {};
+        let current = nodeId;
+        while (current.length > 0) {
+            const override = overrides[current];
+            if (override !== undefined) return override === 'auto';
+            const parts: string[] = current.split('.');
+            if (parts.length <= 1) break;
+            current = parts.slice(0, -1).join('.');
+        }
+        return this.isAutoNodeLayoutStyle();
     }
 
     private estimateCollisionBox(referenceNode: any): { width: number; height: number } {
