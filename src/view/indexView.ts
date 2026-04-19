@@ -138,6 +138,7 @@ export class ZKIndexView extends FileView {
 
     // MOC 芯片标签引用（用于更新显示）
     private mocChipLabel: HTMLElement | null = null;
+    private mocChipProjectBadge: HTMLElement | null = null;
     private multiverseContainer: HTMLElement | null = null;
 
     // 性能优化：防止重复刷新的标志位
@@ -625,6 +626,12 @@ export class ZKIndexView extends FileView {
         setIcon(mocChip.createSpan("zk-chip-icon"), "git-fork");
         const mocLabel = mocChip.createSpan("zk-chip-label");
 
+        // 项目徽章(默认隐藏,加载 MOC 后根据 isProject 决定显示)
+        const projectBadge = mocChip.createSpan("zk-chip-project-badge");
+        projectBadge.setText("📐");
+        projectBadge.style.cssText = "margin-left: 4px; font-size: 11px; display: none;";
+        projectBadge.setAttribute("title", "项目");
+
         // 获取当前MOC名称
         const currentMOCPath = this.plugin.settings.mocCurrentFile;
         const currentMOCFile = currentMOCPath ? this.app.vault.getAbstractFileByPath(currentMOCPath) : null;
@@ -637,6 +644,7 @@ export class ZKIndexView extends FileView {
 
         // 保存引用以便后续更新
         this.mocChipLabel = mocLabel;
+        this.mocChipProjectBadge = projectBadge;
         mocChip.addEventListener("click", () => {
             this.openMOCSelectorModal();
         });
@@ -1679,6 +1687,11 @@ cy.fit(null, 40);
         }
 
         const mocParseResult = await parseMOCStructure(this.app, currentMOCPath, headingTitle);
+
+        // v0.5: 项目徽章可见性跟随 isProject 标志
+        if (this.mocChipProjectBadge) {
+            this.mocChipProjectBadge.style.display = mocParseResult.isProject ? "inline" : "none";
+        }
 
         // 读取 MOC 文件中持久化的节点布局风格；若未记录则使用全局设置
         this.currentNodeLayoutStyle = this.normalizeNodeLayoutStyle(

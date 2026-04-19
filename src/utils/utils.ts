@@ -40,6 +40,7 @@ export interface MOCParseResult {
     nodeAnchors?: Record<string, boolean>; // 锚点节点
     nodeLayoutStyle?: 'free' | 'auto'; // 节点布局风格（新建文件时锁定，后期修改设置不受影响）
     nodeLayoutOverrides?: Record<string, 'auto' | 'free'>; // 节点级布局风格覆盖（优先于文件级 nodeLayoutStyle）
+    isProject?: boolean; // v0.5: 是否为项目（标记后在选择器中置顶并显示项目徽章）
     metadata: {                 // 扩展信息
         totalNodes: number;     // 总节点数
         maxDepth: number;       // 最大深度
