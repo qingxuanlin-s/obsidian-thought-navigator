@@ -736,6 +736,24 @@ export class ZKIndexView extends FileView {
         menu.style.position = 'fixed';
         menu.style.zIndex = '10000';
 
+        // v0.5: 切换当前 MOC 的项目标记(仅 .moc 文件可用)
+        const currentPath = this.plugin.settings.mocCurrentFile;
+        const currentFile = currentPath ? this.app.vault.getFileByPath(currentPath) : null;
+        if (currentFile && currentFile.extension === 'moc') {
+            const isProject = this.mocChipProjectBadge?.style.display === 'inline';
+            const projectOption = menu.createDiv('zk-menu-option');
+            setIcon(projectOption.createSpan('zk-menu-option-icon'), isProject ? 'square' : 'square-check-big');
+            projectOption.createSpan().setText(isProject ? '取消项目标记' : '标记为项目');
+            projectOption.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                menu.remove();
+                await this.plugin.toggleMOCProjectFlag(currentFile);
+            });
+
+            // 分隔线
+            menu.createDiv('zk-menu-separator');
+        }
+
         // 导出为图片（带子菜单）
         const exportOption = menu.createDiv('zk-menu-option');
         setIcon(exportOption.createSpan('zk-menu-option-icon'), 'image');
