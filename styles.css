@@ -2720,3 +2720,27 @@ align-items: center;
   padding: 0 !important;
   white-space: break-spaces;
 }
+
+/* 节点内联编辑框:屏蔽全局开启的 CM chrome(行号 / fold / vim 状态栏 / heading 折叠标记)
+   仅隐藏视觉,vim 模态逻辑依旧可用;避免小弹框里挤得乱七八糟。 */
+.zk-text-md-live-edit-host .cm-gutters,
+.zk-text-md-live-edit-host .cm-lineNumbers,
+.zk-text-md-live-edit-host .cm-foldGutter {
+  display: none !important;
+}
+.zk-text-md-live-edit-host .cm-panels,
+.zk-text-md-live-edit-host .cm-panels-bottom,
+.zk-text-md-live-edit-host .cm-panels-top,
+.zk-text-md-live-edit-host .cm-vimMode-panel {
+  display: none !important;
+}
+/* live preview 在 heading 行前渲染的折叠/级别徽章(如截图里溢出的 "H1 #") */
+.zk-text-md-live-edit-host .cm-fold-indicator,
+.zk-text-md-live-edit-host .HyperMD-header-gutter,
+.zk-text-md-live-edit-host .cm-heading-collapse-indicator,
+.zk-text-md-live-edit-host .cm-html-embed[data-heading],
+.zk-text-md-live-edit-host .cm-embed-block.cm-embed-heading,
+.zk-text-md-live-edit-host .markdown-preview-sizer > .el-h1::before,
+.zk-text-md-live-edit-host .cm-line .cm-header-1::before {
+  display: none !important;
+}
