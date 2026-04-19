@@ -265,7 +265,7 @@ export class EmbeddableMarkdownEditor extends Component {
 				e.preventDefault();
 				if (!this.opts.onEnter(this.getValue(), e)) {
 					// onEnter 返回 false 表示"允许换行"；这里统一显式插入，
-					// 避免 Meta/Ctrl 组合键依赖浏览器/编辑器默认行为而失效
+					// 避免 Shift/Meta/Ctrl + Enter 依赖浏览器/编辑器默认行为而失效
 					this.insertNewline();
 				}
 				return;
