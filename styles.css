@@ -2685,41 +2685,48 @@ align-items: center;
   border-radius: 999px;
 }
 
+/* 缩放策略:overlay 通过 font-size * zoom 模拟 canvas 缩放(替代 transform: scale)。
+   这里的 CM 子元素统一用 font-size: inherit + em padding,跟随 overlay 的 font-size
+   等比伸缩。CM/vim 在任何 zoom 下都在"自然像素"里工作,fat cursor 不会错位。 */
+
+/* 关键:Obsidian 在 .markdown-source-view 上塞了默认 font-size,会截断继承链。
+   强制所有中间层都 inherit,让 overlay 的 base*zoom 一路传到 cm-editor。 */
+.zk-text-md-live-edit-host,
+.zk-text-md-live-edit-host .markdown-source-view {
+  font-size: inherit !important;
+}
+
 .zk-text-md-live-edit-host .cm-editor {
   height: 100%;
   background: transparent;
-  font-size: 20px !important;
+  font-size: inherit !important;
   font-weight: 500 !important;
 }
 
 .zk-text-md-live-edit-host .cm-scroller {
   font-family: var(--font-text) !important;
-  font-size: 20px !important;
+  font-size: inherit !important;
   font-weight: 500 !important;
-  /* line-height 放开给 CM 自己算,避免 vim fat cursor 定位与实际行高不一致导致偏移 */
 }
 
 .zk-text-md-live-edit-host .cm-content,
 .zk-text-md-live-edit-host .cm-line,
 .zk-text-md-live-edit-host .cm-editor .cm-line {
-  font-size: 20px !important;
+  font-size: inherit !important;
   font-weight: 500 !important;
 }
 
-/* Obsidian 给 heading 内层 span (.cm-header-*, .HyperMD-header-*) 单独设了大字号,
-   会让 H1 行实际渲染高度远大于 CM 按 20px 测到的行高,vim fat cursor 的 Y 就会
-   沿着 H1 往下所有行累计偏移。强制 heading 内层也用 20px,CM 测量和渲染一致。
-   字重保留 600 让 heading 仍然可辨,但不改变行高。 */
+/* Obsidian 给 heading 内层 span 单独设大字号会让行高与 CM 测量发散。强制跟随父 font-size。 */
 .zk-text-md-live-edit-host .HyperMD-header,
 .zk-text-md-live-edit-host [class*="HyperMD-header-"],
 .zk-text-md-live-edit-host .cm-header,
 .zk-text-md-live-edit-host [class*="cm-header-"] {
-  font-size: 20px !important;
+  font-size: inherit !important;
   line-height: inherit !important;
   font-weight: 600 !important;
 }
 
-/* 再把 heading 行占位 span / fold indicator 彻底删掉(不用 :empty,有的版本会塞 ZWSP) */
+/* heading 行占位 span / fold indicator 彻底删掉(Obsidian 通过它们画 "H1" 徽章) */
 .zk-text-md-live-edit-host .HyperMD-header > span[contenteditable="false"],
 .zk-text-md-live-edit-host .HyperMD-header > .cm-fold-indicator {
   display: none !important;
@@ -2730,7 +2737,7 @@ align-items: center;
 }
 
 .zk-text-md-live-edit-host .cm-editor .cm-content {
-  padding: 24px 24px 12px 24px !important;
+  padding: 1.2em 1.2em 0.6em 1.2em !important;
   white-space: break-spaces;
 }
 
@@ -2761,10 +2768,11 @@ align-items: center;
   display: none !important;
 }
 
-/* vim 浏览(NORMAL)模式下的 fat cursor:CM vim 测出来的 height/line-height 偏小(~12px),
-   与实际行高(~32px)不匹配,视觉上"缩到一半、偏上一行"。强制跟随行内实际高度。 */
+/* vim 浏览(NORMAL)模式下的 fat cursor:vim 扩展写的 inline font-size 会脱离父级,
+   强制 inherit 让 em 正确解析(1em == overlay 的 base*zoom),再按 1.6em 补齐行高。 */
 .zk-text-md-live-edit-host .cm-fat-cursor.cm-cursor-primary,
 .zk-text-md-live-edit-host .cm-vimCursorLayer .cm-fat-cursor {
+  font-size: inherit !important;
   height: 1.6em !important;
   line-height: 1.6em !important;
 }

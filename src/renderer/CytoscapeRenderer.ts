@@ -5022,11 +5022,16 @@ case 'dagre':
             const isRootTextNode = !!data.isRoot && !data.isFreeNode;
             const applyTextOverlayBaseStyle = (overlayEl: HTMLElement) => {
                 const overlayDisplay = isRootTextNode ? 'flex' : 'block';
-                const overlayPadding = isRootTextNode ? '0 24px' : '24px 24px 12px 24px';
-                const overlayFontSize = isRootTextNode ? '26px' : '20px';
+                // padding 用 em,跟随当前 font-size(== base * zoom)等比伸缩
+                const overlayPadding = isRootTextNode ? '0 0.923em' : '1.2em 1.2em 0.6em 1.2em';
+                const overlayFontSize = isRootTextNode ? 26 : 20;
                 const overlayFontWeight = isRootTextNode ? '700' : '500';
                 const overlayTextAlign = isRootTextNode ? 'center' : 'left';
                 const overlayAlignItems = isRootTextNode ? 'center' : 'stretch';
+                // 缩放策略:不用 transform: scale,改用 font-size * zoom 让文本与布局随白板缩放伸缩
+                // (对齐 Obsidian Canvas 的做法)。这样 CM/vim 永远在"自然像素"里工作,fat cursor
+                // 不会被 scaled parent 的亚像素误差弄歪。updateOverlayPos 会改写 font-size。
+                overlayEl.dataset.baseFontSize = String(overlayFontSize);
                 overlayEl.style.cssText = `
                     position: absolute;
                     left: 0;
@@ -5035,7 +5040,6 @@ case 'dagre':
                     flex-direction: column;
                     justify-content: center;
                     align-items: ${overlayAlignItems};
-                    transform-origin: 0 0;
                     pointer-events: none;
                     overflow: hidden;
                     box-sizing: border-box;
@@ -5043,7 +5047,7 @@ case 'dagre':
                     max-width: none;
                     color: var(--text-normal);
                     font-family: var(--font-text);
-                    font-size: ${overlayFontSize};
+                    font-size: ${overlayFontSize}px;
                     font-weight: ${overlayFontWeight};
                     line-height: 1.35;
                     word-wrap: break-word;
@@ -5169,6 +5173,7 @@ case 'dagre':
 
             // 位置同步 updater
             const currentEntry = entry;
+            const baseFontSize = isRootTextNode ? 26 : 20;
             const updateOverlayPos = () => {
                 if (!this.cy || node.removed()) {
                     currentEntry.el.style.display = 'none';
@@ -5182,24 +5187,19 @@ case 'dagre':
                     return;
                 }
                 const zoom = this.cy.zoom();
-                // 原地编辑：textarea 内嵌在 overlay 里，所以编辑期保持可见，
-                // 但跟随节点的实际渲染尺寸（autoGrow 后 node 会变高）
                 const isEditing = currentEntry.el.dataset.editing === '1';
                 currentEntry.el.style.display = 'block';
                 currentEntry.el.style.left = `${bb.x1}px`;
                 currentEntry.el.style.top = `${bb.y1}px`;
-                if (isEditing) {
-                    // 编辑期用节点的实际渲染尺寸（cy.batch 同步更新后可立即读到）
-                    currentEntry.el.style.width = `${bb.w / zoom}px`;
-                    currentEntry.el.style.height = `${bb.h / zoom}px`;
-                } else {
-                    // 非编辑态也跟随节点当前尺寸，确保手动拉伸后文本实时重排，不再使用旧缓存宽高。
-                    const modelWidth = bb.w / zoom;
-                    const modelHeight = bb.h / zoom;
-                    currentEntry.width = modelWidth;
-                    currentEntry.height = modelHeight;
-                    currentEntry.el.style.width = `${modelWidth}px`;
-                    currentEntry.el.style.height = `${modelHeight}px`;
+                // 直接按屏幕像素赋尺寸 + 用 font-size * zoom 模拟缩放(替代 transform: scale)。
+                // 内部 padding / heading / cm editor 都用 em,跟随 font-size 等比伸缩。
+                currentEntry.el.style.width = `${bb.w}px`;
+                currentEntry.el.style.height = `${bb.h}px`;
+                currentEntry.el.style.fontSize = `${baseFontSize * zoom}px`;
+                // 非编辑态缓存 model 尺寸(供手动拉伸等逻辑使用)
+                if (!isEditing) {
+                    currentEntry.width = bb.w / zoom;
+                    currentEntry.height = bb.h / zoom;
                 }
                 const isSelected = node.selected();
                 const overflowY = (currentEntry.el.scrollHeight - currentEntry.el.clientHeight) > 1;
@@ -5207,7 +5207,6 @@ case 'dagre':
                 currentEntry.el.style.overflowX = 'hidden';
                 currentEntry.el.style.overflowY = (isSelected && overflowY) ? 'auto' : 'hidden';
                 currentEntry.el.style.pointerEvents = (isSelected && overflowY) ? 'auto' : 'none';
-                currentEntry.el.style.transform = `scale(${zoom})`;
             };
             badgeUpdaters.push(updateOverlayPos);
             updateOverlayPos();
@@ -5218,10 +5217,11 @@ case 'dagre':
             if (!el || width <= 0) return fallbackHeight;
             const prevWidth = el.style.width;
             const prevHeight = el.style.height;
-            const prevTransform = el.style.transform;
+            const prevFontSize = el.style.fontSize;
+            const base = Number(el.dataset.baseFontSize || '20');
             try {
-                // 以模型坐标测量内容高度，避免缩放态下尺寸误差。
-                el.style.transform = 'scale(1)';
+                // 以模型坐标测量内容高度(font-size 复位到 base,对应 zoom=1 的自然尺寸)
+                el.style.fontSize = `${base}px`;
                 el.style.width = `${width}px`;
                 el.style.height = 'auto';
                 const measured = Math.ceil(Math.max(el.scrollHeight, el.getBoundingClientRect().height)) + 4;
@@ -5231,7 +5231,7 @@ case 'dagre':
             } finally {
                 el.style.width = prevWidth;
                 el.style.height = prevHeight;
-                el.style.transform = prevTransform;
+                el.style.fontSize = prevFontSize;
             }
         };
 
@@ -8363,15 +8363,19 @@ case 'dagre':
         // 创建临时 overlay，定位到节点位置
         const overlayEl = document.createElement('div');
         overlayEl.className = 'zk-text-md-overlay zk-placeholder-edit-overlay';
+        overlayEl.dataset.baseFontSize = '20';
         overlayEl.style.cssText = `
             position: absolute;
             pointer-events: auto;
             box-sizing: border-box;
             z-index: 10;
+            font-family: var(--font-text);
+            font-weight: 500;
+            line-height: 1.35;
         `;
         this.container.appendChild(overlayEl);
 
-        // 同步 overlay 位置到节点（模型坐标 + scale(zoom)，与文本节点 overlay 一致）
+        // 同步 overlay 位置到节点(font-size * zoom 缩放,与文本节点 overlay 策略一致)
         const syncOverlayPos = () => {
             if (!this.cy || node.removed()) {
                 overlayEl.style.display = 'none';
@@ -8380,12 +8384,12 @@ case 'dagre':
             const bb = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
             if (!bb || bb.w <= 0) { overlayEl.style.display = 'none'; return; }
             const zoom = this.cy.zoom();
+            overlayEl.style.display = 'block';
             overlayEl.style.left = `${bb.x1}px`;
             overlayEl.style.top = `${bb.y1}px`;
-            overlayEl.style.width = `${bb.w / zoom}px`;
-            overlayEl.style.height = `${bb.h / zoom}px`;
-            overlayEl.style.transformOrigin = '0 0';
-            overlayEl.style.transform = `scale(${zoom})`;
+            overlayEl.style.width = `${bb.w}px`;
+            overlayEl.style.height = `${bb.h}px`;
+            overlayEl.style.fontSize = `${20 * zoom}px`;
         };
         syncOverlayPos();
 
