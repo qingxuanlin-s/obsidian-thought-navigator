@@ -91,8 +91,12 @@ export class MOCReverseIndex {
 
                 const walk = (nodes: any[]) => {
                     for (const n of nodes) {
-                        if (!n.isTextOnly && n.wikiLink) {
-                            const linkedFile = resolveWikiLink(n.wikiLink);
+                        // 新 shape: nodeType !== 'text' 且 target 存在
+                        // 旧 shape: !isTextOnly 且 wikiLink 存在
+                        const isText = n.nodeType === 'text' || n.isTextOnly;
+                        const link = n.target ?? n.wikiLink;
+                        if (!isText && link) {
+                            const linkedFile = resolveWikiLink(link);
                             if (linkedFile) {
                                 this.addToIndex(linkedFile.path, file, n.nodeID);
                             }

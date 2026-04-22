@@ -1,17 +1,69 @@
 import { App } from "obsidian";
-import { MOCParseResult, MOCTreeNode, ReverseRelation, GroupInfo, CrossDomainLink } from "./utils";
+import { MOCParseResult, MOCTreeNode, MOCNodeType, ReverseRelation, GroupInfo, CrossDomainLink, createMOCTreeNode } from "./utils";
 
-// ---- JSON 存储 Schema ----
+// ---- JSON 存储 Schema（新）----
 
 interface JsonNodeData {
+    nodeID: string;
+    nodeType: MOCNodeType;      // 'file' | 'text' | 'embed'
+    target: string;             // file/embed: wiki link；text: 原始文本
+    alias?: string;             // 仅 file + [[link|alias]] 时存在
+    depth: number;
+    children: JsonNodeData[];
+    relationText: string;
+}
+
+// ---- 旧 Schema（兼容读取）----
+
+interface LegacyJsonNodeData {
     wikiLink: string;
     nodeID: string;
     displayText: string;
     depth: number;
-    children: JsonNodeData[];
+    children: LegacyJsonNodeData[];
     relationText: string;
     isTextOnly?: boolean;
     isEmbed?: boolean;
+}
+
+function isLegacyNode(data: any): data is LegacyJsonNodeData {
+    return data && typeof data === 'object' && 'wikiLink' in data && !('nodeType' in data);
+}
+
+// 旧 shape → 新 shape
+function migrateLegacyNode(legacy: LegacyJsonNodeData): JsonNodeData {
+    let nodeType: MOCNodeType;
+    if (legacy.isTextOnly) nodeType = 'text';
+    else if (legacy.isEmbed) nodeType = 'embed';
+    else nodeType = 'file';
+
+    const data: JsonNodeData = {
+        nodeID: legacy.nodeID,
+        nodeType,
+        target: legacy.wikiLink,
+        depth: legacy.depth,
+        children: (legacy.children || []).map(migrateLegacyNode),
+        relationText: legacy.relationText || '',
+    };
+    // 仅 file 类型 + displayText 与 wikiLink 不同时保留 alias
+    if (nodeType === 'file' && legacy.displayText && legacy.displayText !== legacy.wikiLink) {
+        data.alias = legacy.displayText;
+    }
+    return data;
+}
+
+function normalizeNode(data: any): JsonNodeData {
+    if (isLegacyNode(data)) return migrateLegacyNode(data);
+    // 已是新 shape，递归规范化子节点
+    return {
+        nodeID: data.nodeID,
+        nodeType: data.nodeType,
+        target: data.target ?? '',
+        ...(data.alias ? { alias: data.alias } : {}),
+        depth: data.depth,
+        children: (data.children || []).map(normalizeNode),
+        relationText: data.relationText || '',
+    };
 }
 
 interface MOCJsonSchema {
@@ -36,45 +88,43 @@ interface MOCJsonSchema {
 
 function resolveJsonNode(app: App, data: JsonNodeData, basePath: string, resolvedFileCache: Map<string, any>): MOCTreeNode {
     let file: any = null;
-    if (!data.isTextOnly && data.wikiLink) {
-        if (resolvedFileCache.has(data.wikiLink)) {
-            file = resolvedFileCache.get(data.wikiLink) ?? null;
+    if (data.nodeType !== 'text' && data.target) {
+        if (resolvedFileCache.has(data.target)) {
+            file = resolvedFileCache.get(data.target) ?? null;
         } else {
-            file = app.metadataCache.getFirstLinkpathDest(data.wikiLink, basePath) ?? null;
+            file = app.metadataCache.getFirstLinkpathDest(data.target, basePath) ?? null;
             // metadataCache 解析失败时，回退到 vault 路径查找（兼容图片/excalidraw/.moc）
             if (!file) {
-                file = app.vault.getAbstractFileByPath(data.wikiLink)
-                    || app.vault.getAbstractFileByPath(basePath ? `${basePath}/${data.wikiLink}` : data.wikiLink)
+                file = app.vault.getAbstractFileByPath(data.target)
+                    || app.vault.getAbstractFileByPath(basePath ? `${basePath}/${data.target}` : data.target)
                     || null;
             }
-            resolvedFileCache.set(data.wikiLink, file);
+            resolvedFileCache.set(data.target, file);
         }
     }
 
-    return {
-        wikiLink: data.wikiLink,
+    return createMOCTreeNode({
         nodeID: data.nodeID,
-        displayText: data.displayText,
+        nodeType: data.nodeType,
+        target: data.target,
+        alias: data.alias,
         depth: data.depth,
         children: (data.children || []).map(c => resolveJsonNode(app, c, basePath, resolvedFileCache)),
         file,
         relationText: data.relationText || '',
-        ...(data.isTextOnly ? { isTextOnly: true } : {}),
-        ...(data.isEmbed ? { isEmbed: true } : {}),
-    };
+    });
 }
 
 function treeNodeToJson(node: MOCTreeNode): JsonNodeData {
     const d: JsonNodeData = {
-        wikiLink: node.wikiLink,
         nodeID: node.nodeID,
-        displayText: node.displayText,
+        nodeType: node.nodeType,
+        target: node.target,
         depth: node.depth,
         children: node.children.map(treeNodeToJson),
         relationText: node.relationText || '',
     };
-    if (node.isTextOnly) d.isTextOnly = true;
-    if (node.isEmbed) d.isEmbed = true;
+    if (node.alias !== undefined && node.alias !== node.target) d.alias = node.alias;
     return d;
 }
 
@@ -116,7 +166,9 @@ export function parseMOCJson(content: string, filePath: string, app: App): MOCPa
     }
 
     const resolvedFileCache = new Map<string, any>();
-    const nodes = (json.nodes || []).map(n => resolveJsonNode(app, n, basePath, resolvedFileCache));
+    // 兼容读取：旧 shape (wikiLink/displayText/isTextOnly/isEmbed) 自动迁移到新 shape
+    const normalized = (json.nodes || []).map(normalizeNode);
+    const nodes = normalized.map(n => resolveJsonNode(app, n, basePath, resolvedFileCache));
 
     const reverseRelations = new Map<string, ReverseRelation>();
     for (const rel of (json.reverseRelations || [])) {

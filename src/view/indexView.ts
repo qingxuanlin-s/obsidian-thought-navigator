@@ -1460,15 +1460,13 @@ cy.fit(null, 40);
                 createdNodeIds.push(nodeID);
 
                 const newNode: MOCTreeNode = {
-                    wikiLink: file.basename,
                     nodeID,
-                    displayText: file.basename,
+                    nodeType: 'file',
+                    target: file.basename,
                     depth: 0,
                     children: [],
                     file,
                     relationText: '',
-                    isTextOnly: false,
-                    isEmbed: false
                 };
 
                 mocData.nodes.push(newNode);
@@ -2487,19 +2485,27 @@ cy.fit(null, 40);
                     existingIds.add(newID);
                     nextFree++;
 
+                    // originalNode 来自 Cytoscape，是 ZKNode（保留旧字段）；映射为新 MOCTreeNode 形状
+                    const zkIsTextOnly = !!originalNode.isTextOnly;
+                    const zkIsEmbed = !!originalNode.isEmbed;
+                    const zkTarget = zkIsTextOnly
+                        ? (originalNode.displayText || '')
+                        : (originalNode.wikiLink || originalNode.displayText || '');
                     const newNode: MOCTreeNode = {
-                        wikiLink: originalNode.isTextOnly
-                            ? (originalNode.displayText || '')
-                            : (originalNode.wikiLink || originalNode.displayText || ''),
                         nodeID: newID,
-                        displayText: originalNode.displayText || '',
+                        nodeType: zkIsTextOnly ? 'text' : (zkIsEmbed ? 'embed' : 'file'),
+                        target: zkTarget,
                         depth: 0,
                         children: [],
-                        file: originalNode.isTextOnly ? null : (originalNode.file || null),
+                        file: zkIsTextOnly ? null : (originalNode.file || null),
                         relationText: '',
-                        isTextOnly: originalNode.isTextOnly || false,
-                        isEmbed: originalNode.isEmbed || false
                     };
+                    // 仅 file 节点 + displayText 与 target 不同时保留 alias
+                    if (!zkIsTextOnly && !zkIsEmbed
+                        && originalNode.displayText
+                        && originalNode.displayText !== zkTarget) {
+                        newNode.alias = originalNode.displayText;
+                    }
                     mocData.nodes.push(newNode);
 
                     if (!mocData.nodePositions) mocData.nodePositions = {};
@@ -6417,20 +6423,16 @@ cy.fit(null, 40);
         try {
             await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
                 // 创建新节点
+                const resTextOnly = !!result.isTextOnly;
+                const resEmbed = !!result.isEmbed;
                 const newNode: MOCTreeNode = {
-                    wikiLink: result.isTextOnly
-                        ? (result.text || '')  // 纯文字节点使用 text
-                        : (result.wikiLink || ''),  // 文件节点使用 wikiLink
                     nodeID: result.nodeID,
-                    displayText: result.isTextOnly
-                        ? (result.text || '')
-                        : (result.wikiLink || ''),
+                    nodeType: resTextOnly ? 'text' : (resEmbed ? 'embed' : 'file'),
+                    target: resTextOnly ? (result.text || '') : (result.wikiLink || ''),
                     depth: 0,
                     children: [],
-                    file: result.isTextOnly ? null : result.file,  // 纯文字节点无文件
+                    file: resTextOnly ? null : result.file,
                     relationText: result.connectionRelation || result.relationText || '',
-                    isTextOnly: result.isTextOnly || false,  // 新增标记
-                    isEmbed: result.isEmbed || false
                 };
 
                 const isFreeNode = this.isFreeNodeID(result.nodeID);

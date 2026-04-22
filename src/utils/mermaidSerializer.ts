@@ -11,26 +11,23 @@ export class MermaidSerializer {
      * @returns Mermaid 节点定义字符串
      */
     serializeNode(node: MOCTreeNode): string {
-        // 转义特殊字符
-        const escapedWikiLink = node.wikiLink.replace(/"/g, '\\"');
+        const escapedTarget = node.target.replace(/"/g, '\\"');
 
         // 纯文字节点：显示为纯文本（无 [[]]），换行符编码为 \\n 保持单行存储
-        if (node.isTextOnly) {
-            const singleLineText = escapedWikiLink.replace(/\r\n/g, '\n').replace(/\n/g, '\\n');
+        if (node.nodeType === 'text') {
+            const singleLineText = escapedTarget.replace(/\r\n/g, '\n').replace(/\n/g, '\\n');
             return `${node.nodeID}["${singleLineText}"]`;
         }
 
-        // 文件节点：显示为 wiki link
-        const displayText = node.displayText || node.wikiLink;
-        const escapedDisplayText = displayText.replace(/"/g, '\\"');
-        const linkPrefix = node.isEmbed ? '!' : '';
+        const linkPrefix = node.nodeType === 'embed' ? '!' : '';
 
-        // 显示文本和 wikiLink 不同时，使用 alias 语法：[[link|alias]]
-        if (displayText !== node.wikiLink) {
-            return `${node.nodeID}["${linkPrefix}[[${escapedWikiLink}|${escapedDisplayText}]]"]`;
+        // file 节点带 alias 时：[[link|alias]]（embed 不支持 alias）
+        if (node.nodeType === 'file' && node.alias && node.alias !== node.target) {
+            const escapedAlias = node.alias.replace(/"/g, '\\"');
+            return `${node.nodeID}["${linkPrefix}[[${escapedTarget}|${escapedAlias}]]"]`;
         }
 
-        return `${node.nodeID}["${linkPrefix}[[${escapedWikiLink}]]"]`;
+        return `${node.nodeID}["${linkPrefix}[[${escapedTarget}]]"]`;
     }
 
     /**

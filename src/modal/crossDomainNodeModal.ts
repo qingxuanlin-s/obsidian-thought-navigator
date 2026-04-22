@@ -117,8 +117,9 @@ export class CrossDomainNodeModal extends FuzzySuggestModal<any> {
 
     getItemText(item: any): string {
         // 兼容 MOCTreeNode 和 ZKNode 两种类型
+        // MOCTreeNode: nodeID + (alias ?? target)；ZKNode: ID/IDStr + title/displayText
         const nodeId = item.nodeID || item.IDStr || item.ID;
-        const title = item.title || item.displayText || '';
+        const title = item.title || item.displayText || item.alias || item.target || '';
 
         // 根据层级添加缩进
         const indent = '  '.repeat(item._level || 0);
