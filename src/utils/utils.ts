@@ -2,20 +2,62 @@ import ZKNavigationPlugin, { ZoomPanScale } from "main";
 import { App, loadMermaid, moment, Notice, TFile } from "obsidian";
 import { ZKNode } from "src/view/indexView";
 
+// 节点类型
+// - file:  文件节点（[[link]] 或 [[link|alias]]）
+// - text:  纯文字节点（不关联文件）
+// - embed: 嵌入节点（![[link]]）
+export type MOCNodeType = 'file' | 'text' | 'embed';
+
 // MOC 解析的节点结构
 export interface MOCTreeNode {
-    wikiLink: string;           // wiki链接，如 "20251214-波函数"（对于纯文字节点，存储原始文本）
     nodeID: string;             // 节点ID，如 "a", "a.1", "a.1.a"
-    displayText: string;        // 显示文本（链接后的描述）
+    nodeType: MOCNodeType;      // 节点类型
+    target: string;             // file/embed: wiki 链接目标；text: 原始文本内容
+    alias?: string;             // 显示别名（仅 file 类型 + [[link|alias]] 语法；与 target 不同时才有值）
     depth: number;              // 缩进深度（用于确定父子关系）
     children: MOCTreeNode[];    // 子节点
-    file: TFile | null;         // 对应的文件（纯文字节点为 null）
+    file: TFile | null;         // 对应的文件（text 节点为 null）
     relationText: string;       // 关系描述，如 "引出", "相关"
     isArrowRelation?: boolean;  // 是否是箭头关系节点
     arrowSource?: string;       // 箭头关系的源节点ID
     arrowTarget?: string;       // 箭头关系的目标节点ID
-    isTextOnly?: boolean;       // 是否为纯文字节点（不关联文件）
-    isEmbed?: boolean;          // 是否为嵌入节点（![[...]]）
+}
+
+// ---- 辅助函数 ----
+
+// 构造 MOCTreeNode，提供默认值以降低 16 处构造点的出错概率
+export function createMOCTreeNode(opts: {
+    nodeID: string;
+    nodeType?: MOCNodeType;
+    target?: string;
+    alias?: string;
+    depth?: number;
+    children?: MOCTreeNode[];
+    file?: TFile | null;
+    relationText?: string;
+    isArrowRelation?: boolean;
+    arrowSource?: string;
+    arrowTarget?: string;
+}): MOCTreeNode {
+    const node: MOCTreeNode = {
+        nodeID: opts.nodeID,
+        nodeType: opts.nodeType ?? 'file',
+        target: opts.target ?? '',
+        depth: opts.depth ?? 0,
+        children: opts.children ?? [],
+        file: opts.file ?? null,
+        relationText: opts.relationText ?? '',
+    };
+    if (opts.alias !== undefined && opts.alias !== node.target) node.alias = opts.alias;
+    if (opts.isArrowRelation) node.isArrowRelation = opts.isArrowRelation;
+    if (opts.arrowSource !== undefined) node.arrowSource = opts.arrowSource;
+    if (opts.arrowTarget !== undefined) node.arrowTarget = opts.arrowTarget;
+    return node;
+}
+
+// 获取节点显示文本（alias 优先，无则用 target）
+export function getNodeDisplay(node: MOCTreeNode): string {
+    return node.alias ?? node.target;
 }
 
 // 反向关系信息
@@ -143,8 +185,11 @@ export async function convertMOCToZKNodes(
             nodeIDArr.push(index.toString());
         }
 
+        const isTextOnly = mocNode.nodeType === 'text';
+        const isEmbed = mocNode.nodeType === 'embed';
+
         // 只有当文件存在或是纯文字节点时才创建并添加节点
-        if (!mocNode.file && !mocNode.isTextOnly) {
+        if (!mocNode.file && !isTextOnly) {
             // 既没有文件也不是纯文字节点，跳过但递归处理子节点
             for (let i = 0; i < mocNode.children.length; i++) {
                 await processNode(mocNode.children[i], nodeIDArr, i);
@@ -155,17 +200,18 @@ export async function convertMOCToZKNodes(
         // 对于 MOC 节点，IDStr 直接使用 nodeID（如 "a", "a.1"）
         // 这样父子关系判断才能正确工作
         const idStr = mocNode.nodeID || nodeIDArr.join(',');
+        const display = getNodeDisplay(mocNode);
 
         const zkNode: ZKNode = {
-            ID: mocNode.nodeID || mocNode.wikiLink,
+            ID: mocNode.nodeID || mocNode.target,
             IDArr: nodeIDArr,
             IDStr: idStr,
             position: position++,
             file: mocNode.file,  // 纯文字节点为 null
-            title: mocNode.displayText,
+            title: display,
             relationText: mocNode.relationText,
             displayText: getDisplayText(plugin, mocNode),
-            wikiLink: mocNode.wikiLink,
+            wikiLink: mocNode.target,
             ctime: mocNode.file?.stat?.ctime || Date.now(),  // 纯文字节点使用当前时间
             randomId: random(16),
             nodeSons: 1,
@@ -175,12 +221,12 @@ export async function convertMOCToZKNodes(
             fixWidth: 0,
             branchName: "",
             gitNodePos: 0,
-            isTextOnly: mocNode.isTextOnly || false,  // 传递纯文字节点标记
-            isEmbed: mocNode.isEmbed || false,
+            isTextOnly,
+            isEmbed,
         };
 
         // 如果有保存的位置信息，添加到节点
-        const nodeID = mocNode.nodeID || mocNode.wikiLink;
+        const nodeID = mocNode.nodeID || mocNode.target;
         if (nodePositions[nodeID]) {
             zkNode.savedPosition = nodePositions[nodeID];
         }
@@ -226,8 +272,8 @@ export async function convertMOCToZKNodes(
 
 // 根据设置生成显示文本
 function getDisplayText(plugin: ZKNavigationPlugin, mocNode: MOCTreeNode): string {
-    const id = mocNode.nodeID || mocNode.wikiLink;
-    const title = mocNode.displayText;
+    const id = mocNode.nodeID || mocNode.target;
+    const title = getNodeDisplay(mocNode);
 
     // 如果有关系描述，加入显示
     //let prefix = relation ? `${relation} ` : '';

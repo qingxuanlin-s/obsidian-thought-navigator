@@ -1,15 +1,14 @@
 import { App, TFile } from "obsidian";
-import { MOCTreeNode, MOCParseResult, ReverseRelation, GroupInfo } from "./utils";
+import { MOCTreeNode, MOCNodeType, MOCParseResult, ReverseRelation, GroupInfo, createMOCTreeNode } from "./utils";
 
 /**
  * 节点定义
  */
 interface NodeDefinition {
     id: string;              // 节点 ID，如 "a", "a.1"
-    wikiLink: string;        // Wiki 链接，如 "20251214 波函数"（对于纯文字节点，存储原始文本）
-    displayText: string;     // 显示文本
-    isTextOnly?: boolean;    // 是否为纯文字节点
-    isEmbed?: boolean;       // 是否为嵌入节点 ![[...]]
+    nodeType: MOCNodeType;   // 节点类型：file / text / embed
+    target: string;          // file/embed: wiki 链接；text: 原始文本
+    alias?: string;          // 仅 file 节点 + [[link|alias]] 语法时存在
 }
 
 /**
@@ -98,17 +97,19 @@ export class MermaidParser {
         if (fileNodeMatch) {
             const id = fileNodeMatch[1];
             const isEmbed = !!fileNodeMatch[2];
-            const wikiLink = fileNodeMatch[3];
-            const displayText = fileNodeMatch[4] || fileNodeMatch[3];
+            const target = fileNodeMatch[3];
+            const aliasRaw = fileNodeMatch[4];
 
-
-            return {
+            const def: NodeDefinition = {
                 id,
-                wikiLink,
-                displayText,
-                isTextOnly: false,  // 文件节点
-                isEmbed
+                nodeType: isEmbed ? 'embed' : 'file',
+                target,
             };
+            // 仅 file 节点且 alias 与 target 不同时保留 alias（embed 不支持 alias）
+            if (!isEmbed && aliasRaw && aliasRaw !== target) {
+                def.alias = aliasRaw;
+            }
+            return def;
         }
 
         // 如果不是文件节点，尝试匹配纯文字节点格式：nodeId["text"]
@@ -125,9 +126,8 @@ export class MermaidParser {
                 const text = rawText.replace(/\\n/g, '\n');
                 return {
                     id,
-                    wikiLink: text,
-                    displayText: text,
-                    isTextOnly: true  // 纯文字节点
+                    nodeType: 'text',
+                    target: text,
                 };
             }
         }
@@ -588,24 +588,20 @@ export class MermaidParser {
 
         // 创建所有节点
         for (const [id, nodeDef] of nodesMap) {
-            // 使用 basePath 解析 wikilink，这样跨领域 MOC 文件中的链接才能正确解析
-            const file = resolveWikiLink(nodeDef.wikiLink);
-
+            // text 节点无文件；file/embed 节点通过 basePath 解析 wiki link
+            const file = nodeDef.nodeType === 'text' ? null : resolveWikiLink(nodeDef.target);
 
             const idParts = id.split('.');
             const depth = idParts.length - 1;
 
-            const treeNode: MOCTreeNode = {
-                wikiLink: nodeDef.wikiLink,
+            const treeNode = createMOCTreeNode({
                 nodeID: id,
-                displayText: nodeDef.displayText,
+                nodeType: nodeDef.nodeType,
+                target: nodeDef.target,
+                alias: nodeDef.alias,
                 depth,
-                children: [],
                 file,
-                relationText: '',
-                isTextOnly: nodeDef.isTextOnly || false,  // 传递纯文字节点标记
-                isEmbed: nodeDef.isEmbed || false
-            };
+            });
 
             nodeMap.set(id, treeNode);
         }

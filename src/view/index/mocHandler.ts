@@ -6,20 +6,20 @@ import { MOCParseResult, CrossDomainLink, MOCTreeNode } from "src/utils/utils";
  * 深拷贝 MOCTreeNode 树结构
  */
 function deepCopyMOCTreeNode(node: MOCTreeNode): MOCTreeNode {
-    return {
-        wikiLink: node.wikiLink,
+    const copy: MOCTreeNode = {
         nodeID: node.nodeID,
-        displayText: node.displayText,
+        nodeType: node.nodeType,
+        target: node.target,
         depth: node.depth,
         children: node.children.map(child => deepCopyMOCTreeNode(child)),
         file: node.file,
         relationText: node.relationText,
-        isArrowRelation: node.isArrowRelation,
-        arrowSource: node.arrowSource,
-        arrowTarget: node.arrowTarget,
-        isTextOnly: node.isTextOnly || false,  // 保留纯文字节点标记
-        isEmbed: node.isEmbed || false
     };
+    if (node.alias !== undefined) copy.alias = node.alias;
+    if (node.isArrowRelation) copy.isArrowRelation = node.isArrowRelation;
+    if (node.arrowSource !== undefined) copy.arrowSource = node.arrowSource;
+    if (node.arrowTarget !== undefined) copy.arrowTarget = node.arrowTarget;
+    return copy;
 }
 
 /**
@@ -296,8 +296,9 @@ export class MOCHandler {
 
     /**
      * 在 MOC 文件中更新节点内容
-     * - 纯文字节点：更新 wikiLink + displayText
-     * - 文件节点：更新 displayText；若传入 newWikiLink，则同时更新 wikiLink
+     * - text 节点：newContent 即节点文本，写入 target
+     * - file/embed 节点：newContent 为显示文本；若传入 newWikiLink，则更新 target；
+     *   对 file 类型，newContent 与 target 不同时作为 alias，相同则清空 alias
      */
     async updateNodeContentInMOC(
         mocFile: TFile,
@@ -307,27 +308,33 @@ export class MOCHandler {
         newIsEmbed?: boolean
     ): Promise<void> {
         await this.modifyMOCData(mocFile, (mocData) => {
-            const updateNodeContentInTree = (nodes: any[]): boolean => {
+            const updateNodeContentInTree = (nodes: MOCTreeNode[]): boolean => {
                 for (const node of nodes) {
                     if (node.nodeID === nodeID) {
-                        if (node.isTextOnly) {
-                            node.wikiLink = newContent;
-                            node.displayText = newContent;
+                        if (node.nodeType === 'text') {
+                            node.target = newContent;
+                            delete node.alias;
                             return true;
                         }
 
-                        // 文件节点：只改显示文本，不改 wikiLink
                         if (typeof newWikiLink === 'string') {
-                            node.wikiLink = newWikiLink;
+                            node.target = newWikiLink;
                         }
                         if (typeof newIsEmbed === 'boolean') {
-                            node.isEmbed = newIsEmbed;
+                            node.nodeType = newIsEmbed ? 'embed' : 'file';
                             // 从 embed 切回文件节点时，清除预览卡片尺寸持久化，避免节点沿用大尺寸
                             if (!newIsEmbed && (mocData as any).embedNodeSizes) {
                                 delete (mocData as any).embedNodeSizes[nodeID];
                             }
                         }
-                        node.displayText = newContent;
+                        // embed 节点不支持 alias；file 节点仅在 alias 与 target 不同时保留
+                        if (node.nodeType === 'embed') {
+                            delete node.alias;
+                        } else if (newContent && newContent !== node.target) {
+                            node.alias = newContent;
+                        } else {
+                            delete node.alias;
+                        }
                         return true;
                     }
 
