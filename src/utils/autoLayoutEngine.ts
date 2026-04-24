@@ -333,9 +333,9 @@ export function computeBidirectionalAutoLayout(input: ComputeAutoLayoutInput): R
 	const buildLayout = (nodeId: string): LayoutNode => {
 		const node = input.nodes[nodeId];
 		const dir = getDirection(nodeId);
-		const stackAxis = dir ? stackAxisOf(dir) : null;
+		const stackAxis: Vec2 | null = dir ? { x: 0, y: 1 } : null;
 		const groupChildren = input.realMocRootIds.has(nodeId) || isBranchStart(nodeId);
-		const childAxis = stackAxis || { x: 0, y: 1 };
+		const childAxis: Vec2 = { x: 0, y: 1 };
 		const childIds = sortChildren(input.childrenById[nodeId] || [], childAxis, node.position);
 		const children = childIds.map((childId) => buildLayout(childId));
 		const childrenSpan = children.reduce((sum, child) => sum + child.subtreeSpan, 0)
@@ -390,7 +390,7 @@ export function computeBidirectionalAutoLayout(input: ComputeAutoLayoutInput): R
 			const children = groups.get(dir) || [];
 			if (children.length === 0) continue;
 			const dirVec = DIR_VECTORS[dir];
-			const axis = stackAxisOf(dir);
+			const axis: Vec2 = { x: 0, y: 1 };
 			const forward = projectSize(layout.size, dirVec) / 2 + forwardGap + avgProjection(children, dirVec) / 2;
 			const total = children.reduce((sum, child) => sum + child.subtreeSpan, 0)
 				+ Math.max(0, children.length - 1) * stackGap;
