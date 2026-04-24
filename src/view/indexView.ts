@@ -14,6 +14,8 @@ import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
 import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
 import { RenderOptions } from "src/renderer/types";
 import { MOCHandler } from "src/view/index/mocHandler";
+import { computeAutoLayout, AutoLayoutNodeInput } from "src/utils/autoLayoutEngine";
+import { DEFAULT_LAYOUT_PRESET, LayoutPreset, normalizeLayoutPreset } from "src/utils/growthDirection";
 import {
     DEBOUNCE_DELAY,
     ERROR_MESSAGES,
@@ -97,6 +99,8 @@ export class ZKIndexView extends FileView {
     private nodeAnchors: Record<string, boolean> = {};
     private currentNodeLayoutStyle: 'free' | 'auto' = 'free'; // 当前 MOC 文件的节点布局风格（从 ext 读取，新建时锁定）
     private currentNodeLayoutOverrides: Record<string, 'auto' | 'free'> = {}; // 节点级布局风格覆盖
+    private currentLayoutPreset: LayoutPreset = DEFAULT_LAYOUT_PRESET;
+    private currentNodeLayoutPresets: Record<string, LayoutPreset> = {};
 
     // 防抖相关属性
     resizeTimeout: NodeJS.Timeout | null = null;
@@ -1524,6 +1528,7 @@ cy.fit(null, 40);
             // 布局
             s.DirectionOfBranchGraph || 'LR',
             s.nodeLayoutStyle || 'free',
+            s.autoLayoutDefaultGrowthDirection || DEFAULT_LAYOUT_PRESET,
             s.graphType || 'structure',
             // 节点标签 / 显示
             s.NodeText || 'both',
@@ -1739,6 +1744,8 @@ cy.fit(null, 40);
             this.plugin.settings.nodeLayoutStyle
         );
         this.currentNodeLayoutOverrides = mocParseResult.nodeLayoutOverrides || {};
+        this.currentLayoutPreset = normalizeLayoutPreset(this.plugin.settings.autoLayoutDefaultGrowthDirection);
+        this.currentNodeLayoutPresets = mocParseResult.nodeLayoutPresets || {};
 
         // 转换为 ZKNode（即使为空也继续）
         this.mocNodes = mocParseResult.nodes.length > 0
@@ -3519,6 +3526,30 @@ cy.fit(null, 40);
             document.removeEventListener('click', closeMenu);
             await this.setNodeLayoutStyle(node, 'free');
         });
+
+        if (this.isFirstLevelMocChildNode(nodeId) && this.isNodeAutoLayout(nodeId)) {
+            menu.createDiv('zk-node-ctx-sep');
+            const presetLabel = menu.createDiv('zk-node-ctx-label');
+            presetLabel.textContent = '本分支布局';
+            const presetRow = menu.createDiv('zk-node-ctx-row');
+            const effectivePreset = this.currentNodeLayoutPresets[nodeId] || this.currentLayoutPreset;
+            const addPresetItem = (preset: LayoutPreset, icon: string, label: string) => {
+                const item = presetRow.createDiv('zk-node-ctx-item');
+                const itemIcon = item.createSpan();
+                setIcon(itemIcon, icon);
+                const selected = effectivePreset === preset;
+                item.createSpan({ text: (selected ? '✓ ' : '') + label });
+                item.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    menu.remove();
+                    document.removeEventListener('click', closeMenu);
+                    await this.setBranchLayoutPreset(nodeId, preset);
+                });
+            };
+            addPresetItem('bidirectional', 'columns-2', '双向');
+            addPresetItem('top-down', 'rows-2', '上下');
+            addPresetItem('radial', 'sparkles', '斜角');
+        }
 
         // 定位：先在屏幕外渲染以获取尺寸
         menu.style.visibility = 'hidden';
@@ -6068,6 +6099,18 @@ cy.fit(null, 40);
         return this.getEffectiveNodeLayoutStyle(nodeId) === 'auto';
     }
 
+    private getPrimaryMocRootId(): string | null {
+        const root = this.mocNodes.find((node) => node.isRoot) || this.mocNodes[0];
+        return root ? (root.IDStr || root.ID) : null;
+    }
+
+    private isFirstLevelMocChildNode(nodeId: string): boolean {
+        if (!nodeId) return false;
+        const parentId = nodeId.split('.').slice(0, -1).join('.');
+        if (!parentId) return false;
+        return this.mocNodes.some((node) => node.isRoot && (node.IDStr === parentId || node.ID === parentId));
+    }
+
     /**
      * 设置节点级布局风格，并持久化到 MOC 文件
      */
@@ -6110,6 +6153,21 @@ cy.fit(null, 40);
         }
     }
 
+    private async setBranchLayoutPreset(nodeId: string, preset: LayoutPreset): Promise<void> {
+        const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+        if (!mocFile) return;
+
+        await this.mocHandler.setNodeLayoutPreset(mocFile, nodeId, preset);
+        if (preset === this.currentLayoutPreset) {
+            delete this.currentNodeLayoutPresets[nodeId];
+        } else {
+            this.currentNodeLayoutPresets[nodeId] = preset;
+        }
+        await this.relayoutAutoLayoutSiblings(this.getPrimaryMocRootId() || nodeId);
+        this.lastRenderSignature = null;
+        this.app.workspace.trigger("zk-navigation:refresh-index-graph");
+    }
+
     private normalizeNodeLayoutStyle(
         style: unknown,
         fallback: unknown = 'free'
@@ -6150,19 +6208,16 @@ cy.fit(null, 40);
             return;
         }
 
-        const HORIZONTAL_GAP = 150;
-        const VERTICAL_GAP = 56;
+        const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+        if (!mocFile) {
+            return;
+        }
+
+        const mocData = await parseMOCStructure(this.app, mocFile.path, this.plugin.settings.mocHeadingTitle);
         const getNodeSize = (node: any) => ({
             width: Math.max(Number(node.width?.() || 0), 80),
             height: Math.max(Number(node.height?.() || 0), 44)
         });
-
-        const getChildNodes = (node: any): any[] => {
-            return node.outgoers('edge').targets().filter((child: any) => {
-                const data = child.data();
-                return !data.isGroup && !data.isPlaceholder;
-            }).toArray();
-        };
 
         const getColorKey = (node: any): string => {
             return node?.data?.('branchNodeBorder')
@@ -6170,197 +6225,60 @@ cy.fit(null, 40);
                 || '__default__';
         };
 
-        const getDirectParent = (node: any): any | null => {
-            const parents = node.incomers('edge').sources().filter((parent: any) => {
-                const data = parent.data();
-                return !data.isGroup && !data.isPlaceholder;
-            });
-            return parents && parents.length > 0 ? parents.first() : null;
-        };
-
-        const quantizeDirection = (fromPos: { x: number; y: number }, toPos: { x: number; y: number }): { x: number; y: number } => {
-            const dx = toPos.x - fromPos.x;
-            const dy = toPos.y - fromPos.y;
-            if (Math.abs(dx) >= Math.abs(dy)) {
-                return { x: dx >= 0 ? 1 : -1, y: 0 };
-            }
-            return { x: 0, y: dy >= 0 ? 1 : -1 };
-        };
-
-        const getLayoutDirection = (node: any): { x: number; y: number } => {
-            const parent = getDirectParent(node);
-            if (!parent) {
-                return { x: 1, y: 0 };
-            }
-
-            const grandParent = getDirectParent(parent);
-            if (!grandParent) {
-                return quantizeDirection(parent.position(), node.position());
-            }
-
-            return getLayoutDirection(parent);
-        };
-
-        const getStackAxis = (dir: { x: number; y: number }): { x: number; y: number } => {
-            return Math.abs(dir.x) > 0.5 ? { x: 0, y: 1 } : { x: 1, y: 0 };
-        };
-
-        const getNodeSpan = (size: { width: number; height: number }, dir: { x: number; y: number }): number => {
-            return Math.abs(dir.x) > 0.5 ? size.height : size.width;
-        };
-
-        const directionKey = (dir: { x: number; y: number }): 'right' | 'left' | 'down' | 'up' => {
-            if (Math.abs(dir.x) >= Math.abs(dir.y)) {
-                return dir.x >= 0 ? 'right' : 'left';
-            }
-            return dir.y >= 0 ? 'down' : 'up';
-        };
-
-        const sortChildren = (children: any[], stackAxis: { x: number; y: number }, center: { x: number; y: number }): any[] => {
-            const sorted = [...children].sort((a, b) => {
-                const ap = a.position();
-                const bp = b.position();
-                const aproj = (ap.x - center.x) * stackAxis.x + (ap.y - center.y) * stackAxis.y;
-                const bproj = (bp.x - center.x) * stackAxis.x + (bp.y - center.y) * stackAxis.y;
-                return aproj - bproj;
-            });
-            const colorOrder = new Map<string, number>();
-            sorted.forEach((child) => {
-                const colorKey = getColorKey(child);
-                if (!colorOrder.has(colorKey)) {
-                    colorOrder.set(colorKey, colorOrder.size);
-                }
-            });
-
-            return sorted.sort((a, b) => {
-                const colorRankA = colorOrder.get(getColorKey(a)) ?? Number.MAX_SAFE_INTEGER;
-                const colorRankB = colorOrder.get(getColorKey(b)) ?? Number.MAX_SAFE_INTEGER;
-                if (colorRankA !== colorRankB) {
-                    return colorRankA - colorRankB;
-                }
-                const ap = a.position();
-                const bp = b.position();
-                const aproj = (ap.x - center.x) * stackAxis.x + (ap.y - center.y) * stackAxis.y;
-                const bproj = (bp.x - center.x) * stackAxis.x + (bp.y - center.y) * stackAxis.y;
-                return aproj - bproj;
-            });
-        };
-
-        const buildLayout = (node: any, inheritedDir?: { x: number; y: number }): any => {
-            const size = getNodeSize(node);
-            const parents = node.incomers('edge').sources().filter((parent: any) => {
-                const data = parent.data();
-                return !data.isGroup && !data.isPlaceholder;
-            });
-            const isRoot = !parents || parents.length === 0;
-            const dir = isRoot ? { x: 1, y: 0 } : (inheritedDir || getLayoutDirection(node));
-            const stackAxis = getStackAxis(dir);
-            const center = node.position();
-            const children = sortChildren(getChildNodes(node), stackAxis, center).map((child) => buildLayout(child, dir));
-            const childrenSpan = children.reduce((sum: number, child: any) => sum + child.subtreeSpan, 0)
-                + Math.max(0, children.length - 1) * VERTICAL_GAP;
-            return {
-                node,
-                dir,
-                stackAxis,
-                size,
-                children,
-                isRoot,
-                subtreeSpan: Math.max(getNodeSpan(size, dir), childrenSpan)
-            };
-        };
-
-        const layoutTree = buildLayout(startNode);
-        const rootPos = startNode.position();
-        const nodePositions: Record<string, { x: number; y: number }> = {};
-
-        const placeLayout = (layoutNode: any, centerX: number, centerY: number) => {
-            const { node, size, children, dir, stackAxis, isRoot } = layoutNode;
-            node.position({ x: centerX, y: centerY });
-
-            const originalNode = node.data('originalNode');
+        const nodes: Record<string, AutoLayoutNodeInput> = {};
+        const parentById: Record<string, string | undefined> = {};
+        const childrenById: Record<string, string[]> = {};
+        cy.$('node').forEach((node: any) => {
+            const data = node.data();
+            const originalNode = data.originalNode;
             const nodeId = originalNode?.IDStr || originalNode?.ID;
-            if (nodeId) {
-                nodePositions[nodeId] = {
-                    x: Math.round(centerX * 100) / 100,
-                    y: Math.round(centerY * 100) / 100
-                };
-            }
-
-            if (children.length === 0) {
-                return;
-            }
-
-            if (isRoot) {
-                const groups: Record<'right' | 'left' | 'down' | 'up', any[]> = {
-                    right: [],
-                    left: [],
-                    down: [],
-                    up: []
-                };
-
-                children.forEach((childLayout: any) => {
-                    groups[directionKey(childLayout.dir)].push(childLayout);
-                });
-
-                const placeGroup = (groupDir: 'right' | 'left' | 'down' | 'up', groupChildren: any[]) => {
-                    if (groupChildren.length === 0) return;
-
-                    const groupVector =
-                        groupDir === 'right' ? { x: 1, y: 0 } :
-                        groupDir === 'left' ? { x: -1, y: 0 } :
-                        groupDir === 'down' ? { x: 0, y: 1 } :
-                        { x: 0, y: -1 };
-                    const groupStackAxis = getStackAxis(groupVector);
-                    const totalGroupSpan = groupChildren.reduce((sum: number, child: any) => sum + child.subtreeSpan, 0)
-                        + Math.max(0, groupChildren.length - 1) * VERTICAL_GAP;
-                    let groupCursor = (Math.abs(groupStackAxis.x) > 0.5 ? centerX : centerY) - totalGroupSpan / 2;
-
-                    groupChildren.forEach((childLayout: any) => {
-                        const childSpanCenter = groupCursor + childLayout.subtreeSpan / 2;
-                        const childCenterX = Math.abs(groupVector.x) > 0.5
-                            ? centerX + groupVector.x * (size.width / 2 + HORIZONTAL_GAP + childLayout.size.width / 2)
-                            : childSpanCenter;
-                        const childCenterY = Math.abs(groupVector.y) > 0.5
-                            ? centerY + groupVector.y * (size.height / 2 + HORIZONTAL_GAP + childLayout.size.height / 2)
-                            : childSpanCenter;
-                        placeLayout(childLayout, childCenterX, childCenterY);
-                        groupCursor += childLayout.subtreeSpan + VERTICAL_GAP;
-                    });
-                };
-
-                placeGroup('right', groups.right);
-                placeGroup('left', groups.left);
-                placeGroup('down', groups.down);
-                placeGroup('up', groups.up);
-                return;
-            }
-
-            const totalChildrenSpan = children.reduce((sum: number, child: any) => sum + child.subtreeSpan, 0)
-                + Math.max(0, children.length - 1) * VERTICAL_GAP;
-            let cursor = (Math.abs(stackAxis.x) > 0.5 ? centerX : centerY) - totalChildrenSpan / 2;
-
-            children.forEach((childLayout: any) => {
-                const childSpanCenter = cursor + childLayout.subtreeSpan / 2;
-                const childCenterX = Math.abs(dir.x) > 0.5
-                    ? centerX + dir.x * (size.width / 2 + HORIZONTAL_GAP + childLayout.size.width / 2)
-                    : childSpanCenter;
-                const childCenterY = Math.abs(dir.y) > 0.5
-                    ? centerY + dir.y * (size.height / 2 + HORIZONTAL_GAP + childLayout.size.height / 2)
-                    : childSpanCenter;
-                placeLayout(childLayout, childCenterX, childCenterY);
-                cursor += childLayout.subtreeSpan + VERTICAL_GAP;
-            });
-        };
-
-        cy.batch(() => {
-            placeLayout(layoutTree, rootPos.x, rootPos.y);
+            if (!nodeId || data.isGroup || data.isPlaceholder) return;
+            nodes[nodeId] = {
+                id: nodeId,
+                size: getNodeSize(node),
+                position: node.position(),
+                colorKey: getColorKey(node)
+            };
+            childrenById[nodeId] = [];
         });
 
-        const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
-        if (!mocFile) {
-            return;
-        }
+        cy.$('edge').filter((edge: any) => edge.data('type') === 'parent').forEach((edge: any) => {
+            const source = edge.source();
+            const target = edge.target();
+            const sourceOriginal = source.data('originalNode');
+            const targetOriginal = target.data('originalNode');
+            const sourceId = sourceOriginal?.IDStr || sourceOriginal?.ID;
+            const targetId = targetOriginal?.IDStr || targetOriginal?.ID;
+            if (!sourceId || !targetId || !nodes[sourceId] || !nodes[targetId]) return;
+            parentById[targetId] = sourceId;
+            if (this.isNodeAutoLayout(targetId)) {
+                childrenById[sourceId].push(targetId);
+            }
+        });
+
+        const realMocRootIds = new Set<string>(mocData.nodes.map((node) => node.nodeID));
+        const nodePositions = computeAutoLayout({
+            relayoutRootId: parentNodeId,
+            nodes,
+            parentById,
+            childrenById,
+            realMocRootIds,
+            nodePositions: mocData.nodePositions || {},
+            layoutPreset: normalizeLayoutPreset(this.plugin.settings.autoLayoutDefaultGrowthDirection),
+            nodeLayoutPresets: mocData.nodeLayoutPresets,
+        });
+
+        cy.batch(() => {
+            Object.entries(nodePositions).forEach(([nodeId, position]) => {
+                const cyNode: any = cy.$('node').filter((node: any) => {
+                    const originalNode = node.data('originalNode');
+                    return originalNode && (originalNode.IDStr === nodeId || originalNode.ID === nodeId);
+                }).first();
+                if (cyNode && cyNode.length > 0) {
+                    cyNode.position(position);
+                }
+            });
+        });
 
         await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
             if (!mocData.nodePositions) {

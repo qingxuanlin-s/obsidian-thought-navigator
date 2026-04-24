@@ -23,6 +23,8 @@ export interface MOCExtData {
     edge_curvatures?: Record<string, { distance: number; weight: number }>;
     node_layout_style?: 'free' | 'auto';
     node_layout_overrides?: Record<string, 'auto' | 'free'>;
+    layout_preset?: 'bidirectional' | 'top-down' | 'radial';
+    node_layout_presets?: Record<string, 'bidirectional' | 'top-down' | 'radial'>;
 }
 
 /**
@@ -95,6 +97,8 @@ export class MOCFileUtils {
                     extData.edge_curvatures = parsed.edge_curvatures || {};
                     extData.node_layout_style = parsed.node_layout_style || undefined;
                     extData.node_layout_overrides = parsed.node_layout_overrides || undefined;
+                    extData.layout_preset = parsed.layout_preset || undefined;
+                    extData.node_layout_presets = parsed.node_layout_presets || undefined;
                     extLineIndex = i;
                     break;
                 } catch (e) {
@@ -148,6 +152,12 @@ export class MOCFileUtils {
         }
         if (extData.node_layout_overrides && Object.keys(extData.node_layout_overrides).length > 0) {
             cleanData.node_layout_overrides = extData.node_layout_overrides;
+        }
+        if (extData.layout_preset) {
+            cleanData.layout_preset = extData.layout_preset;
+        }
+        if (extData.node_layout_presets && Object.keys(extData.node_layout_presets).length > 0) {
+            cleanData.node_layout_presets = extData.node_layout_presets;
         }
 
         const extLine = Object.keys(cleanData).length > 0

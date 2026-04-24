@@ -1,5 +1,6 @@
 import ZKNavigationPlugin, { ZoomPanScale } from "main";
 import { App, loadMermaid, moment, Notice, TFile } from "obsidian";
+import { LayoutPreset } from "src/utils/growthDirection";
 import { ZKNode } from "src/view/indexView";
 
 // 节点类型
@@ -82,6 +83,8 @@ export interface MOCParseResult {
     nodeAnchors?: Record<string, boolean>; // 锚点节点
     nodeLayoutStyle?: 'free' | 'auto'; // 节点布局风格（新建文件时锁定，后期修改设置不受影响）
     nodeLayoutOverrides?: Record<string, 'auto' | 'free'>; // 节点级布局风格覆盖（优先于文件级 nodeLayoutStyle）
+    layoutPreset?: LayoutPreset; // 自动布局 preset（bidirectional/top-down/radial）
+    nodeLayoutPresets?: Record<string, LayoutPreset>; // 根节点第一层子代的布局 preset 覆盖
     isProject?: boolean; // v0.5: 是否为项目（标记后在选择器中置顶并显示项目徽章）
     metadata: {                 // 扩展信息
         totalNodes: number;     // 总节点数

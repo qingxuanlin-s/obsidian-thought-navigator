@@ -11,6 +11,7 @@ import { MOCReverseIndex } from "src/utils/mocReverseIndex";
 import { ZKGraphView, ZK_GRAPH_TYPE } from "src/view/graphView";
 import { ZKIndexView, ZKNode, ZK_INDEX_TYPE, ZK_NAVIGATION } from "src/view/indexView";
 import { ZK_RECENT_TYPE, ZKRecentView } from "src/view/recentView";
+import { LayoutPreset, normalizeLayoutPreset } from "src/utils/growthDirection";
 
 interface Point {
     x: number;
@@ -121,6 +122,7 @@ interface ZKNavigationSettings {
     themeStyle: 'default' | 'modern';   // 主题风格（默认/现代）
     edgeStyle: 'straight' | 'bezier' | 'polyline'; // 连线风格
     nodeLayoutStyle: 'free' | 'auto';  // 节点布局风格（自由/自动）
+    autoLayoutDefaultGrowthDirection: LayoutPreset; // 自动布局默认生长方向
     showNoteIdInBranchView: boolean;   // 分支视图是否显示笔记编号
 }
 
@@ -200,6 +202,7 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     themeStyle: 'modern', // 默认风格
     edgeStyle: 'bezier', // 默认贝塞尔曲线
     nodeLayoutStyle: 'free', // 默认自由节点布局
+    autoLayoutDefaultGrowthDirection: 'bidirectional',
     showNoteIdInBranchView: true,
 }
 
@@ -233,6 +236,9 @@ export default class ZKNavigationPlugin extends Plugin {
         if ((this.settings as any).themeStyle === 'vivid') {
             this.settings.themeStyle = 'modern';
         }
+        this.settings.autoLayoutDefaultGrowthDirection = normalizeLayoutPreset(
+            this.settings.autoLayoutDefaultGrowthDirection
+        );
     }
 
     applyTheme() {
