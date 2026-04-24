@@ -21,8 +21,8 @@ export class MermaidSerializer {
 
         const linkPrefix = node.nodeType === 'embed' ? '!' : '';
 
-        // file 节点带 alias 时：[[link|alias]]（embed 不支持 alias）
-        if (node.nodeType === 'file' && node.alias && node.alias !== node.target) {
+        // file / embed 都支持 [[link|alias]] 语法
+        if (node.alias && node.alias !== node.target) {
             const escapedAlias = node.alias.replace(/"/g, '\\"');
             return `${node.nodeID}["${linkPrefix}[[${escapedTarget}|${escapedAlias}]]"]`;
         }

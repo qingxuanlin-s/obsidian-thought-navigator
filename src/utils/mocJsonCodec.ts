@@ -45,8 +45,8 @@ function migrateLegacyNode(legacy: LegacyJsonNodeData): JsonNodeData {
         children: (legacy.children || []).map(migrateLegacyNode),
         relationText: legacy.relationText || '',
     };
-    // 仅 file 类型 + displayText 与 wikiLink 不同时保留 alias
-    if (nodeType === 'file' && legacy.displayText && legacy.displayText !== legacy.wikiLink) {
+    // file / embed 都支持 alias；displayText 与 wikiLink 不同时保留
+    if (nodeType !== 'text' && legacy.displayText && legacy.displayText !== legacy.wikiLink) {
         data.alias = legacy.displayText;
     }
     return data;
@@ -92,11 +92,15 @@ function resolveJsonNode(app: App, data: JsonNodeData, basePath: string, resolve
         if (resolvedFileCache.has(data.target)) {
             file = resolvedFileCache.get(data.target) ?? null;
         } else {
-            file = app.metadataCache.getFirstLinkpathDest(data.target, basePath) ?? null;
+            // 剥离 #heading / #^blockRef（Excalidraw 的 #^group=xxx 等），只用文件路径部分解析
+            const hashIdx = data.target.indexOf('#');
+            const pathOnly = hashIdx >= 0 ? data.target.substring(0, hashIdx) : data.target;
+
+            file = app.metadataCache.getFirstLinkpathDest(pathOnly, basePath) ?? null;
             // metadataCache 解析失败时，回退到 vault 路径查找（兼容图片/excalidraw/.moc）
             if (!file) {
-                file = app.vault.getAbstractFileByPath(data.target)
-                    || app.vault.getAbstractFileByPath(basePath ? `${basePath}/${data.target}` : data.target)
+                file = app.vault.getAbstractFileByPath(pathOnly)
+                    || app.vault.getAbstractFileByPath(basePath ? `${basePath}/${pathOnly}` : pathOnly)
                     || null;
             }
             resolvedFileCache.set(data.target, file);

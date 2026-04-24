@@ -2818,9 +2818,16 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 cursor: move;
                 user-select: none;
             `;
-            // 文件名链接
+            // 文件名链接；若节点有 alias（ZKNode.title 与 wikiLink 不同），拼成 "basename|alias"
             const headerLink = document.createElement('span');
-            headerLink.textContent = sourceFile.basename;
+            const aliasCandidate = String(originalNode?.title || '').trim();
+            const rawWikiLink = String(originalNode?.wikiLink || '').trim();
+            const hasAlias = aliasCandidate && aliasCandidate !== rawWikiLink
+                && aliasCandidate !== sourceFile.basename
+                && !aliasCandidate.includes('/');  // 路径字符串不算 alias
+            headerLink.textContent = hasAlias
+                ? `${sourceFile.basename}|${aliasCandidate}`
+                : sourceFile.basename;
             this.applyPreviewHeaderLinkStyle(headerLink);
             headerLink.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -2832,13 +2839,37 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     }));
                     return;
                 }
+
+                // 带 subpath（如 Excalidraw 的 #^group=xxx）：透传给 ExcalidrawView 做元素级定位
+                const rawLink = String(originalNode?.wikiLink || '').trim();
+                const hashIdx = rawLink.indexOf('#');
+                const subpath = hashIdx >= 0 ? rawLink.substring(hashIdx) : '';
+                const newLeaf = e.ctrlKey || e.metaKey;
+
+                if (subpath) {
+                    const existingLeaf = !newLeaf ? app.workspace.getLeavesOfType('markdown')
+                        .concat(app.workspace.getLeavesOfType('excalidraw' as any))
+                        .find((leaf: any) => leaf.view?.file?.path === sourceFile.path) : null;
+
+                    if (existingLeaf) {
+                        app.workspace.setActiveLeaf(existingLeaf, { focus: true });
+                        (existingLeaf.view as any).setEphemeralState?.({ subpath });
+                    } else {
+                        app.workspace.getLeaf(newLeaf).openFile(sourceFile, {
+                            eState: { subpath },
+                            active: true,
+                        } as any);
+                    }
+                    return;
+                }
+
                 // 查找已打开的 tab，有则激活，无则新开
                 const existingLeaf = app.workspace.getLeavesOfType('markdown')
                     .find((leaf: any) => leaf.view?.file?.path === sourceFile.path);
                 if (existingLeaf) {
                     app.workspace.setActiveLeaf(existingLeaf, { focus: true });
                 } else {
-                    app.workspace.openLinkText(sourceFile.path, '', e.ctrlKey || e.metaKey);
+                    app.workspace.openLinkText(sourceFile.path, '', newLeaf);
                 }
             });
             headerEl.appendChild(headerLink);
@@ -3255,14 +3286,29 @@ export class CytoscapeRenderer implements IGraphRenderer {
                             const excalidrawPlugin = (app as any).plugins?.plugins?.['obsidian-excalidraw-plugin'];
                             if (excalidrawPlugin) {
                                 let svg: any = null;
+                                // 带 block ref 的链接（如 "file.excalidraw.md#^groupId"）优先传给 Excalidraw，
+                                // 让插件自己按 block ref 过滤只渲染对应 group
+                                const rawLink = (originalNode?.wikiLink || '').trim();
+                                const hasBlockRef = /#\^[^|\]]+$/.test(rawLink) || /#[^|\]]+$/.test(rawLink);
+                                const preferredPath = hasBlockRef ? rawLink : sourceFile.path;
                                 // 尝试 ExcalidrawAutomate API
                                 const ea = excalidrawPlugin.ea;
                                 if (ea && typeof ea.createSVG === 'function') {
-                                    svg = await ea.createSVG(sourceFile.path);
+                                    try {
+                                        svg = await ea.createSVG(preferredPath);
+                                    } catch { /* 带 block ref 的路径可能不被支持，回退 */ }
+                                    if (!svg && hasBlockRef) {
+                                        svg = await ea.createSVG(sourceFile.path);
+                                    }
                                 }
                                 // 回退：尝试 plugin 级别的 createSVG
                                 if (!svg && typeof excalidrawPlugin.createSVG === 'function') {
-                                    svg = await excalidrawPlugin.createSVG(sourceFile.path);
+                                    try {
+                                        svg = await excalidrawPlugin.createSVG(preferredPath);
+                                    } catch { /* 同上 */ }
+                                    if (!svg && hasBlockRef) {
+                                        svg = await excalidrawPlugin.createSVG(sourceFile.path);
+                                    }
                                 }
                                 if (typeof svg === 'string') {
                                     const wrapped = document.createElement('div');

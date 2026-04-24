@@ -2265,6 +2265,33 @@ cy.fit(null, 40);
             const isMouseEvent = triggerEvent instanceof MouseEvent;
             const openInNewLeaf = isMouseEvent && (triggerEvent.metaKey || triggerEvent.ctrlKey || triggerEvent.button === 1);
 
+            // 带 #heading / #^blockRef 的链接（如 Excalidraw 的 #^group=xxx）：
+            // 用 leaf.openFile + eState.subpath 让 ExcalidrawView.setEphemeralState 解析 subpath 并自动 zoomToElementId
+            const rawLink = String(node.wikiLink || '').trim();
+            const hashIdx = rawLink.indexOf('#');
+            const subpath = hashIdx >= 0 ? rawLink.substring(hashIdx) : '';
+
+            if (subpath) {
+                // 查已有 leaf；有则直接 setEphemeralState，避免重复 openFile 打断 Excalidraw 状态
+                const existingLeaf = !openInNewLeaf ? this.app.workspace.getLeavesOfType('markdown').concat(
+                    this.app.workspace.getLeavesOfType('excalidraw' as any)
+                ).find(
+                    leaf => (leaf.view as any)?.file?.path === targetFile.path
+                ) : null;
+
+                if (existingLeaf) {
+                    this.app.workspace.setActiveLeaf(existingLeaf, { focus: true });
+                    // 让 Excalidraw view 自己处理 subpath
+                    (existingLeaf.view as any).setEphemeralState?.({ subpath });
+                } else {
+                    this.app.workspace.getLeaf(openInNewLeaf).openFile(targetFile, {
+                        eState: { subpath },
+                        active: true,
+                    } as any);
+                }
+                return;
+            }
+
             // 如果不是强制新开，先查已有 tab
             if (!openInNewLeaf) {
                 const existingLeaf = this.app.workspace.getLeavesOfType('markdown').find(
@@ -2659,7 +2686,9 @@ cy.fit(null, 40);
             const parsed = this.parseRawWikiLinkInput(label);
             if (parsed) {
                 // 情况 1：检测到 wiki link/嵌入 link → 创建文件节点
-                await this.finalizeFileNode(nodeId, parsed.wikiLink, label, position, parsed.isEmbed);
+                const aliasToSave = parsed.displayText && parsed.displayText !== parsed.wikiLink
+                    ? parsed.displayText : undefined;
+                await this.finalizeFileNode(nodeId, parsed.wikiLink, label, position, parsed.isEmbed, aliasToSave);
             } else if (label.trim()) {
                 // 情况 2：无 wiki link → 创建纯文字节点
                 await this.finalizeTextOnlyNode(nodeId, label.trim(), position);
@@ -5701,7 +5730,8 @@ cy.fit(null, 40);
         wikiLink: string,
         label: string,
         position: { x: number; y: number },
-        isEmbed: boolean = false
+        isEmbed: boolean = false,
+        alias?: string
     ): Promise<void> {
         // 获取占位符信息
         const placeholderInfo = this.placeholderNodes.get(tempId);
@@ -5709,8 +5739,10 @@ cy.fit(null, 40);
         // 优先使用预生成的节点 ID，否则生成新的自由节点 ID
         const suggestedID = placeholderInfo?.suggestedNodeId || this.generateNextFreeNodeID();
 
-        // 查找文件
-        const file = this.app.metadataCache.getFirstLinkpathDest(wikiLink, '');
+        // 查找文件：剥离 #heading / #^blockRef，只用文件路径部分解析
+        const hashIdx = wikiLink.indexOf('#');
+        const wikiPathOnly = hashIdx >= 0 ? wikiLink.substring(0, hashIdx) : wikiLink;
+        const file = this.app.metadataCache.getFirstLinkpathDest(wikiPathOnly, '');
 
         const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
 
@@ -5719,6 +5751,7 @@ cy.fit(null, 40);
             // 先创建为自由节点，然后移动到父节点下
             await this.saveFreeNodeToMOC({
                 wikiLink: wikiLink,
+                alias,
                 nodeID: suggestedID,
                 relationText: '',
                 file: file,
@@ -5741,6 +5774,7 @@ cy.fit(null, 40);
             // 保存到 MOC
             await this.saveFreeNodeToMOC({
                 wikiLink: wikiLink,
+                alias,
                 nodeID: suggestedID,
                 relationText: '',
                 file: file,
@@ -6395,6 +6429,7 @@ cy.fit(null, 40);
     async saveFreeNodeToMOC(result: {
         wikiLink?: string;      // 可选：用于文件节点
         text?: string;          // 可选：用于纯文字节点
+        alias?: string;         // 可选：file / embed 节点的 [[link|alias]] 别名
         nodeID: string;
         relationText: string;
         file: TFile | null;
@@ -6425,15 +6460,20 @@ cy.fit(null, 40);
                 // 创建新节点
                 const resTextOnly = !!result.isTextOnly;
                 const resEmbed = !!result.isEmbed;
+                const resTarget = resTextOnly ? (result.text || '') : (result.wikiLink || '');
                 const newNode: MOCTreeNode = {
                     nodeID: result.nodeID,
                     nodeType: resTextOnly ? 'text' : (resEmbed ? 'embed' : 'file'),
-                    target: resTextOnly ? (result.text || '') : (result.wikiLink || ''),
+                    target: resTarget,
                     depth: 0,
                     children: [],
                     file: resTextOnly ? null : result.file,
                     relationText: result.connectionRelation || result.relationText || '',
                 };
+                // file / embed 节点支持 alias；alias 与 target 不同时才保留
+                if (!resTextOnly && result.alias && result.alias !== resTarget) {
+                    newNode.alias = result.alias;
+                }
 
                 const isFreeNode = this.isFreeNodeID(result.nodeID);
                 const parentNodeId = result.connectToNodeID;
