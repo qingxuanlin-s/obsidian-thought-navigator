@@ -105,8 +105,8 @@ export class MermaidParser {
                 nodeType: isEmbed ? 'embed' : 'file',
                 target,
             };
-            // 仅 file 节点且 alias 与 target 不同时保留 alias（embed 不支持 alias）
-            if (!isEmbed && aliasRaw && aliasRaw !== target) {
+            // file / embed 都支持 [[link|alias]] 语法；alias 与 target 不同时才保留
+            if (aliasRaw && aliasRaw !== target) {
                 def.alias = aliasRaw;
             }
             return def;
@@ -575,11 +575,15 @@ export class MermaidParser {
                 return resolvedFileCache.get(wikiLink) || null;
             }
 
-            let file = this.app.metadataCache.getFirstLinkpathDest(wikiLink, basePath) || null;
+            // 剥离 #heading / #^blockRef（Excalidraw 的 #^group=xxx 等），只用文件路径部分解析
+            const hashIdx = wikiLink.indexOf('#');
+            const pathOnly = hashIdx >= 0 ? wikiLink.substring(0, hashIdx) : wikiLink;
+
+            let file = this.app.metadataCache.getFirstLinkpathDest(pathOnly, basePath) || null;
             // .moc 文件不被 metadata cache 索引，直接从 vault 查找
-            if (!file && wikiLink.endsWith('.moc')) {
-                file = (this.app.vault.getAbstractFileByPath(wikiLink) ||
-                    this.app.vault.getAbstractFileByPath(`${basePath}/${wikiLink}`)) as TFile | null;
+            if (!file && pathOnly.endsWith('.moc')) {
+                file = (this.app.vault.getAbstractFileByPath(pathOnly) ||
+                    this.app.vault.getAbstractFileByPath(`${basePath}/${pathOnly}`)) as TFile | null;
             }
 
             resolvedFileCache.set(wikiLink, file);

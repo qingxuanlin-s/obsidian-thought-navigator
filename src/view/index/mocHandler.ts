@@ -327,10 +327,8 @@ export class MOCHandler {
                                 delete (mocData as any).embedNodeSizes[nodeID];
                             }
                         }
-                        // embed 节点不支持 alias；file 节点仅在 alias 与 target 不同时保留
-                        if (node.nodeType === 'embed') {
-                            delete node.alias;
-                        } else if (newContent && newContent !== node.target) {
+                        // file / embed：alias 与 target 不同时才保留
+                        if (newContent && newContent !== node.target) {
                             node.alias = newContent;
                         } else {
                             delete node.alias;
