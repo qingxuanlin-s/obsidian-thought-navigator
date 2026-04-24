@@ -1,5 +1,6 @@
 import { App, TFile } from "obsidian";
 import { MOCTreeNode, MOCNodeType, MOCParseResult, ReverseRelation, GroupInfo, createMOCTreeNode } from "./utils";
+import { LayoutPreset, normalizeLayoutPreset, normalizeNodeLayoutPresets } from "src/utils/growthDirection";
 
 /**
  * 节点定义
@@ -284,6 +285,8 @@ export class MermaidParser {
         nodeAnchors: Record<string, boolean>;
         nodeLayoutStyle?: 'free' | 'auto';
         nodeLayoutOverrides?: Record<string, 'auto' | 'free'>;
+        layoutPreset?: LayoutPreset;
+        nodeLayoutPresets?: Record<string, LayoutPreset>;
     } {
         const defaultMetadata = {
             nodePositions: {} as Record<string, { x: number; y: number }>,
@@ -296,7 +299,9 @@ export class MermaidParser {
             nodeRemarks: {} as Record<string, string>,
             nodeAnchors: {} as Record<string, boolean>,
             nodeLayoutStyle: undefined as ('free' | 'auto' | undefined),
-            nodeLayoutOverrides: undefined as (Record<string, 'auto' | 'free'> | undefined)
+            nodeLayoutOverrides: undefined as (Record<string, 'auto' | 'free'> | undefined),
+            layoutPreset: undefined as (LayoutPreset | undefined),
+            nodeLayoutPresets: undefined as (Record<string, LayoutPreset> | undefined)
         };
         
         // 匹配元数据注释：%% ext:{JSON} %%
@@ -324,7 +329,9 @@ export class MermaidParser {
                 nodeRemarks: metadata.nodeRemarks || {},
                 nodeAnchors: metadata.nodeAnchors || {},
                 nodeLayoutStyle: metadata.node_layout_style || undefined,
-                nodeLayoutOverrides: metadata.node_layout_overrides || undefined
+                nodeLayoutOverrides: metadata.node_layout_overrides || undefined,
+                layoutPreset: metadata.layout_preset ? normalizeLayoutPreset(metadata.layout_preset) : undefined,
+                nodeLayoutPresets: normalizeNodeLayoutPresets(metadata.node_layout_presets)
             };
         } catch (e) {
             this.warnings.push({
@@ -372,6 +379,8 @@ export class MermaidParser {
                     embedNodeSizes: { ...(cached as any).embedNodeSizes || {} },
                     nodeRemarks: { ...(cached as any).nodeRemarks || {} },
                     nodeAnchors: { ...(cached as any).nodeAnchors || {} },
+                    layoutPreset: cached.layoutPreset,
+                    nodeLayoutPresets: cached.nodeLayoutPresets ? { ...cached.nodeLayoutPresets } : undefined,
                     metadata: { ...cached.metadata }
                 };
             }
@@ -533,6 +542,8 @@ export class MermaidParser {
             nodeAnchors: metadata.nodeAnchors,
             nodeLayoutStyle: metadata.nodeLayoutStyle,
             nodeLayoutOverrides: metadata.nodeLayoutOverrides,
+            layoutPreset: metadata.layoutPreset,
+            nodeLayoutPresets: metadata.nodeLayoutPresets,
             metadata: {
                 totalNodes: nodesMap.size,
                 maxDepth: this.calculateMaxDepth(mocNodes),
@@ -689,6 +700,8 @@ export class MermaidParser {
             embedNodeSizes: {},
             nodeRemarks: {},
             nodeAnchors: {},
+            layoutPreset: undefined,
+            nodeLayoutPresets: undefined,
             metadata: {
                 totalNodes: 0,
                 maxDepth: 0,

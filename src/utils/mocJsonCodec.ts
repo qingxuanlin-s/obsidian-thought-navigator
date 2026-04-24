@@ -1,5 +1,6 @@
 import { App } from "obsidian";
 import { MOCParseResult, MOCTreeNode, MOCNodeType, ReverseRelation, GroupInfo, CrossDomainLink, createMOCTreeNode } from "./utils";
+import { LayoutPreset, normalizeLayoutPreset, normalizeNodeLayoutPresets } from "src/utils/growthDirection";
 
 // ---- JSON 存储 Schema（新）----
 
@@ -81,6 +82,8 @@ interface MOCJsonSchema {
     nodeAnchors: Record<string, boolean>;
     nodeLayoutStyle?: 'free' | 'auto';
     nodeLayoutOverrides?: Record<string, 'auto' | 'free'>;
+    layoutPreset?: LayoutPreset;
+    nodeLayoutPresets?: Record<string, LayoutPreset>;
     isProject?: boolean;
 }
 
@@ -199,6 +202,8 @@ export function parseMOCJson(content: string, filePath: string, app: App): MOCPa
         nodeAnchors: json.nodeAnchors || {},
         nodeLayoutStyle: json.nodeLayoutStyle,
         nodeLayoutOverrides: json.nodeLayoutOverrides,
+        layoutPreset: json.layoutPreset ? normalizeLayoutPreset(json.layoutPreset) : undefined,
+        nodeLayoutPresets: normalizeNodeLayoutPresets(json.nodeLayoutPresets),
         isProject: json.isProject === true,
         metadata: {
             totalNodes: total,
@@ -238,6 +243,12 @@ export function serializeMOCJson(data: MOCParseResult): string {
     }
     if (data.nodeLayoutOverrides && Object.keys(data.nodeLayoutOverrides).length > 0) {
         json.nodeLayoutOverrides = data.nodeLayoutOverrides;
+    }
+    if (data.layoutPreset) {
+        json.layoutPreset = data.layoutPreset;
+    }
+    if (data.nodeLayoutPresets && Object.keys(data.nodeLayoutPresets).length > 0) {
+        json.nodeLayoutPresets = data.nodeLayoutPresets;
     }
     if (data.isProject) {
         json.isProject = true;

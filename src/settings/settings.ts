@@ -356,6 +356,20 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                 })
             );
 
+        new Setting(structureSettingDiv)
+            .setName("自动风格默认生长方向")
+            .setDesc("自动节点未单独设置分支布局时使用的默认生长方向")
+            .addDropdown(options => options
+                .addOption("bidirectional", "双向")
+                .addOption("top-down", "上下")
+                .addOption("radial", "斜角")
+                .setValue(this.plugin.settings.autoLayoutDefaultGrowthDirection || "bidirectional")
+                .onChange((value) => {
+                    this.plugin.settings.autoLayoutDefaultGrowthDirection = value as 'bidirectional' | 'top-down' | 'radial';
+                    this.plugin.RefreshIndexViewFlag = true;
+                })
+            );
+
         // 添加"快捷操作"展开项
         const quickActionDetails = structureSettingDiv.createEl('details');
         quickActionDetails.addClass('zk-details');

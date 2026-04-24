@@ -1,6 +1,7 @@
 import { TFile } from "obsidian";
 import ZKNavigationPlugin from "main";
 import { MOCParseResult, CrossDomainLink, MOCTreeNode } from "src/utils/utils";
+import { LayoutPreset, normalizeLayoutPreset } from "src/utils/growthDirection";
 
 /**
  * 深拷贝 MOCTreeNode 树结构
@@ -40,6 +41,8 @@ function deepCopyMOCResult(original: MOCParseResult): MOCParseResult {
         nodeAnchors: { ...(original as any).nodeAnchors || {} },
         nodeLayoutStyle: original.nodeLayoutStyle,
         nodeLayoutOverrides: original.nodeLayoutOverrides ? { ...original.nodeLayoutOverrides } : undefined,
+        layoutPreset: original.layoutPreset,
+        nodeLayoutPresets: original.nodeLayoutPresets ? { ...original.nodeLayoutPresets } : undefined,
         isProject: original.isProject,
         metadata: { ...original.metadata }
     };
@@ -198,6 +201,9 @@ export class MOCHandler {
         if ((mocData as any).nodeRemarks && (mocData as any).nodeRemarks[nodeID]) {
             delete (mocData as any).nodeRemarks[nodeID];
         }
+        if (mocData.nodeLayoutPresets && mocData.nodeLayoutPresets[nodeID]) {
+            delete mocData.nodeLayoutPresets[nodeID];
+        }
 
         if (mocData.edgeCurvatures) {
             Object.keys(mocData.edgeCurvatures).forEach((key) => {
@@ -264,6 +270,9 @@ export class MOCHandler {
             }
             if ((mocData as any).nodeRemarks && (mocData as any).nodeRemarks[nodeID]) {
                 delete (mocData as any).nodeRemarks[nodeID];
+            }
+            if (mocData.nodeLayoutPresets && mocData.nodeLayoutPresets[nodeID]) {
+                delete mocData.nodeLayoutPresets[nodeID];
             }
 
             if (mocData.edgeCurvatures) {
@@ -621,7 +630,7 @@ export class MOCHandler {
                 }
 
                 // 其他键值映射字段
-                for (const field of ['nodeColors', 'nodeStyleColors', 'embedNodeSizes', 'nodeRemarks', 'crossDomainLinks']) {
+                for (const field of ['nodeColors', 'nodeStyleColors', 'embedNodeSizes', 'nodeRemarks', 'crossDomainLinks', 'nodeLayoutPresets']) {
                     const obj = (mocData as any)[field];
                     if (!obj) continue;
                     const nb: Record<string, any> = {};
@@ -1101,6 +1110,55 @@ export class MOCHandler {
 
             mocData.nodePositions[nodeID] = position;
         });
+    }
+
+    async setMocLayoutPreset(mocFile: TFile, preset: LayoutPreset): Promise<void> {
+        await this.modifyMOCData(mocFile, (mocData) => {
+            const normalized = normalizeLayoutPreset(preset);
+            mocData.layoutPreset = normalized;
+            if (mocData.nodeLayoutPresets) {
+                for (const [nodeId, nodePreset] of Object.entries(mocData.nodeLayoutPresets)) {
+                    if (nodePreset === normalized) {
+                        delete mocData.nodeLayoutPresets[nodeId];
+                    }
+                }
+                if (Object.keys(mocData.nodeLayoutPresets).length === 0) {
+                    delete mocData.nodeLayoutPresets;
+                }
+            }
+        });
+    }
+
+    async setNodeLayoutPreset(mocFile: TFile, nodeId: string, preset: LayoutPreset | null): Promise<void> {
+        await this.modifyMOCData(mocFile, (mocData) => {
+            if (!this.isFirstLevelChild(mocData, nodeId)) {
+                throw new Error(`节点 ${nodeId} 不是根的第一层子代，不能独立设置布局 preset`);
+            }
+
+            if (!mocData.nodeLayoutPresets) {
+                mocData.nodeLayoutPresets = {};
+            }
+
+            if (preset === null) {
+                delete mocData.nodeLayoutPresets[nodeId];
+            } else {
+                const filePreset = normalizeLayoutPreset(mocData.layoutPreset);
+                const normalized = normalizeLayoutPreset(preset);
+                if (normalized === filePreset) {
+                    delete mocData.nodeLayoutPresets[nodeId];
+                } else {
+                    mocData.nodeLayoutPresets[nodeId] = normalized;
+                }
+            }
+
+            if (Object.keys(mocData.nodeLayoutPresets).length === 0) {
+                delete mocData.nodeLayoutPresets;
+            }
+        });
+    }
+
+    isFirstLevelChild(mocData: MOCParseResult, nodeId: string): boolean {
+        return mocData.nodes.some((root) => root.children.some((child) => child.nodeID === nodeId));
     }
 
     /**
