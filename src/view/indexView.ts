@@ -77,6 +77,7 @@ export class ZKIndexView extends FileView {
     branchEntranceNodes: ZKNode[] = [];
     renderedBranches: Set<number> = new Set();
     indexMermaidContainer: HTMLElement | null = null;
+    private lastPickedNodeFillColor: string | null = null;
 
     // Cytoscape 渲染器
     private branchRenderer: CytoscapeRenderer | null = null;
@@ -4009,117 +4010,75 @@ cy.fit(null, 40);
         }
     }
 
-    /**
-     * 显示批量颜色选择对话框
-     */
-    private showBatchColorPickerDialog(colors: Array<{ name: string; value: string }>, nodeIds: string[]): Promise<string | null> {
+    private showNodeFillColorDialog(
+        colors: Array<{ name: string; value: string }>,
+        title: string,
+        targetLabel: string
+    ): Promise<string | null> {
         return new Promise((resolve) => {
             const modal = new Modal(this.app);
-            modal.titleEl.setText('批量修改节点底色');
+            modal.titleEl.setText(title);
+            modal.modalEl.addClass('zk-node-edit-modal');
 
             const { contentEl } = modal;
             contentEl.empty();
-            contentEl.style.padding = '20px';
+            contentEl.addClass('zk-node-edit-content');
 
-            const infoDiv = contentEl.createDiv();
-            infoDiv.style.marginBottom = '15px';
-            infoDiv.style.padding = '10px';
-            infoDiv.style.backgroundColor = 'var(--background-secondary)';
-            infoDiv.style.borderRadius = '4px';
-            infoDiv.style.color = 'var(--text-muted)';
-            infoDiv.innerHTML = `
-                <div>选中节点: <strong>${nodeIds.length} 个</strong></div>
-                <div style="font-size: 0.9em; margin-top: 5px;">选择一个颜色应用到所有选中的节点底色</div>
-            `;
+            const meta = contentEl.createDiv('zk-node-edit-meta');
+            meta.createSpan({ text: targetLabel });
 
-            const colorGrid = contentEl.createDiv();
-            colorGrid.style.display = 'grid';
-            colorGrid.style.gridTemplateColumns = 'repeat(5, 1fr)';
-            colorGrid.style.gap = '10px';
-            colorGrid.style.marginBottom = '20px';
-
+            const initialColor = this.lastPickedNodeFillColor || colors.find((color) => !!color.value)?.value || '#00a8ff';
             let selectedColor: string | null = null;
 
-            colors.forEach((color) => {
-                const colorButton = colorGrid.createDiv();
-                colorButton.style.cssText = `
-                    width: 84px;
-                    height: 56px;
-                    border-radius: 12px;
-                    cursor: pointer;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-size: 14px;
-                    font-weight: 600;
-                    color: var(--text-normal);
-                    transition: all 0.2s;
-                    border: 1px solid var(--background-modifier-border);
-                `;
-
-                if (color.value) {
-                    colorButton.style.background = `linear-gradient(135deg, ${color.value}26, ${color.value}40)`;
+            const selectedRow = contentEl.createDiv('zk-node-color-current');
+            selectedRow.createSpan({ text: '当前选择' });
+            const selectedPreview = selectedRow.createSpan('zk-node-color-preview');
+            const selectedValue = selectedRow.createSpan({ cls: 'zk-node-color-value', text: '未选择' });
+            const updateSelectedPreview = (color: string) => {
+                if (color) {
+                    selectedPreview.style.backgroundImage = 'none';
+                    selectedPreview.style.backgroundColor = color;
                 } else {
-                    colorButton.style.backgroundColor = 'var(--background-secondary)';
+                    selectedPreview.style.backgroundImage = '';
+                    selectedPreview.style.backgroundColor = 'transparent';
                 }
+            };
+            updateSelectedPreview(initialColor);
 
-                colorButton.textContent = color.name;
+            const panel = (this.branchRenderer || new CytoscapeRenderer()).createSelectionColorPanel(
+                initialColor,
+                this.lastPickedNodeFillColor,
+                '自定义底色',
+                (hexColor) => {
+                    selectedColor = hexColor;
+                    this.lastPickedNodeFillColor = hexColor;
+                    updateSelectedPreview(hexColor);
+                    selectedValue.setText(hexColor);
+                }
+            );
+            panel.addClass('zk-node-color-picker-panel');
+            contentEl.appendChild(panel);
 
-                colorButton.addEventListener('mouseenter', () => {
-                    colorButton.style.transform = 'scale(1.1)';
-                    colorButton.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
-                });
+            const actions = contentEl.createDiv('zk-node-edit-actions');
 
-                colorButton.addEventListener('mouseleave', () => {
-                    if (selectedColor !== color.value) {
-                        colorButton.style.transform = 'scale(1)';
-                        colorButton.style.boxShadow = 'none';
-                    }
-                });
-
-                colorButton.addEventListener('click', () => {
-                    colorGrid.querySelectorAll('div').forEach(btn => {
-                        btn.style.transform = 'scale(1)';
-                        btn.style.border = '1px solid var(--background-modifier-border)';
-                    });
-
-                    selectedColor = color.value;
-                    colorButton.style.transform = 'scale(1.1)';
-                    colorButton.style.border = '2px solid var(--interactive-accent)';
-                    colorButton.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
-                });
-
-                colorButton.addEventListener('dblclick', () => {
-                    selectedColor = color.value;
-                    modal.close();
-                    resolve(selectedColor);
-                });
+            const resetButton = actions.createEl('button', { text: '默认' });
+            resetButton.addClass('zk-node-edit-btn');
+            resetButton.addEventListener('click', () => {
+                selectedColor = '';
+                updateSelectedPreview('');
+                selectedValue.setText('默认');
             });
 
-            const buttonContainer = contentEl.createDiv();
-            buttonContainer.style.display = 'flex';
-            buttonContainer.style.justifyContent = 'flex-end';
-            buttonContainer.style.gap = '10px';
-
-            const cancelButton = buttonContainer.createEl('button', { text: '取消' });
-            cancelButton.style.padding = '6px 16px';
-            cancelButton.style.border = '1px solid var(--background-modifier-border)';
-            cancelButton.style.borderRadius = '4px';
-            cancelButton.style.backgroundColor = 'var(--background-primary)';
-            cancelButton.style.color = 'var(--text-normal)';
-            cancelButton.style.cursor = 'pointer';
+            const cancelButton = actions.createEl('button', { text: '取消' });
+            cancelButton.addClass('zk-node-edit-btn');
             cancelButton.addEventListener('click', () => {
                 modal.close();
                 resolve(null);
             });
 
-            const confirmButton = buttonContainer.createEl('button', { text: '确认' });
-            confirmButton.style.padding = '6px 16px';
-            confirmButton.style.border = 'none';
-            confirmButton.style.borderRadius = '4px';
-            confirmButton.style.backgroundColor = '#5b8fd9';
-            confirmButton.style.color = '#ffffff';
-            confirmButton.style.cursor = 'pointer';
+            const confirmButton = actions.createEl('button', { text: '确认' });
+            confirmButton.addClass('zk-node-edit-btn');
+            confirmButton.addClass('mod-cta');
             confirmButton.addEventListener('click', () => {
                 if (selectedColor === null) {
                     new Notice('请选择一个颜色');
@@ -4128,135 +4087,20 @@ cy.fit(null, 40);
                 modal.close();
                 resolve(selectedColor);
             });
-
+            
             modal.open();
         });
     }
 
+    /**
+     * 显示批量颜色选择对话框
+     */
+    private showBatchColorPickerDialog(colors: Array<{ name: string; value: string }>, nodeIds: string[]): Promise<string | null> {
+        return this.showNodeFillColorDialog(colors, '批量修改节点底色', `选中节点: ${nodeIds.length} 个`);
+    }
+
     private showColorPickerDialog(colors: Array<{ name: string; value: string }>, node: ZKNode): Promise<string | null> {
-        return new Promise((resolve) => {
-            const modal = new Modal(this.app);
-            modal.titleEl.setText('选择节点底色');
-            
-            const { contentEl } = modal;
-            contentEl.empty();
-            contentEl.style.padding = '20px';
-            
-            const infoDiv = contentEl.createDiv();
-            infoDiv.style.marginBottom = '15px';
-            infoDiv.style.padding = '10px';
-            infoDiv.style.backgroundColor = 'var(--background-secondary)';
-            infoDiv.style.borderRadius = '4px';
-            infoDiv.style.color = 'var(--text-muted)';
-            infoDiv.innerHTML = `
-                <div>节点: <strong>${node.ID}</strong></div>
-                <div style="font-size: 0.9em; margin-top: 5px;">选择一个颜色作为节点底色</div>
-            `;
-            
-            const colorGrid = contentEl.createDiv();
-            colorGrid.style.display = 'grid';
-            colorGrid.style.gridTemplateColumns = 'repeat(5, 1fr)';
-            colorGrid.style.gap = '10px';
-            colorGrid.style.marginBottom = '20px';
-            
-            let selectedColor: string | null = null;
-            
-            colors.forEach((color) => {
-                const colorButton = colorGrid.createDiv();
-                colorButton.style.cssText = `
-                    width: 84px;
-                    height: 56px;
-                    border-radius: 12px;
-                    cursor: pointer;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-size: 14px;
-                    font-weight: 600;
-                    color: var(--text-normal);
-                    transition: all 0.2s;
-                    border: 1px solid var(--background-modifier-border);
-                `;
-                
-                if (color.value) {
-                    colorButton.style.background = `linear-gradient(135deg, ${color.value}26, ${color.value}40)`;
-                } else {
-                    colorButton.style.backgroundColor = 'var(--background-secondary)';
-                }
-                
-                colorButton.textContent = color.name;
-                
-                // 悬停效果
-                colorButton.addEventListener('mouseenter', () => {
-                    colorButton.style.transform = 'scale(1.1)';
-                    colorButton.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
-                });
-                
-                colorButton.addEventListener('mouseleave', () => {
-                    if (selectedColor !== color.value) {
-                        colorButton.style.transform = 'scale(1)';
-                        colorButton.style.boxShadow = 'none';
-                    }
-                });
-                
-                // 点击选择
-                colorButton.addEventListener('click', () => {
-                    // 取消之前的选中
-                    colorGrid.querySelectorAll('div').forEach(btn => {
-                        btn.style.transform = 'scale(1)';
-                        btn.style.border = '1px solid var(--background-modifier-border)';
-                    });
-                    
-                    // 选中当前颜色
-                    selectedColor = color.value;
-                    colorButton.style.transform = 'scale(1.1)';
-                    colorButton.style.border = '2px solid var(--interactive-accent)';
-                    colorButton.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
-                });
-                
-                // 双击直接确认
-                colorButton.addEventListener('dblclick', () => {
-                    selectedColor = color.value;
-                    modal.close();
-                    resolve(selectedColor);
-                });
-            });
-            
-            const buttonContainer = contentEl.createDiv();
-            buttonContainer.style.display = 'flex';
-            buttonContainer.style.justifyContent = 'flex-end';
-            buttonContainer.style.gap = '10px';
-            
-            const cancelButton = buttonContainer.createEl('button', { text: '取消' });
-            cancelButton.style.padding = '6px 16px';
-            cancelButton.style.border = '1px solid var(--background-modifier-border)';
-            cancelButton.style.borderRadius = '4px';
-            cancelButton.style.backgroundColor = 'var(--background-primary)';
-            cancelButton.style.color = 'var(--text-normal)';
-            cancelButton.style.cursor = 'pointer';
-            cancelButton.addEventListener('click', () => {
-                modal.close();
-                resolve(null);
-            });
-            
-            const confirmButton = buttonContainer.createEl('button', { text: '确认' });
-            confirmButton.style.padding = '6px 16px';
-            confirmButton.style.border = 'none';
-            confirmButton.style.borderRadius = '4px';
-            confirmButton.style.backgroundColor = '#5b8fd9';
-            confirmButton.style.color = '#ffffff';
-            confirmButton.style.cursor = 'pointer';
-            confirmButton.addEventListener('click', () => {
-                if (selectedColor === null) {
-                    new Notice('请选择一个颜色');
-                    return;
-                }
-                modal.close();
-                resolve(selectedColor);
-            });
-            
-            modal.open();
-        });
+        return this.showNodeFillColorDialog(colors, '选择节点底色', `节点: ${node.ID}`);
     }
 
     /**
@@ -4395,65 +4239,39 @@ cy.fit(null, 40);
         return new Promise((resolve) => {
             const modal = new Modal(this.app);
             modal.titleEl.setText('修改节点 ID');
+            modal.modalEl.addClass('zk-node-edit-modal');
             
             const { contentEl } = modal;
             contentEl.empty();
-            contentEl.style.padding = '20px';
-            
-            const infoDiv = contentEl.createDiv();
-            infoDiv.style.marginBottom = '15px';
-            infoDiv.style.padding = '10px';
-            infoDiv.style.backgroundColor = 'var(--background-secondary)';
-            infoDiv.style.borderRadius = '4px';
-            infoDiv.style.color = 'var(--text-muted)';
-            infoDiv.innerHTML = `
-                <div style="margin-bottom: 5px;">当前 ID: <strong>${currentID}</strong></div>
-                <div style="font-size: 0.9em;">注意：修改 ID 后，所有子节点的 ID 前缀也会自动更新（例如：1.a 改为 1.c，则 1.a.1 会改为 1.c.1）</div>
-            `;
+            contentEl.addClass('zk-node-edit-content');
+
+            const meta = contentEl.createDiv('zk-node-edit-meta');
+            meta.createSpan({ text: '当前 ID: ' });
+            meta.createSpan({ cls: 'zk-node-edit-strong', text: currentID });
             
             const inputContainer = contentEl.createDiv();
-            inputContainer.style.marginBottom = '15px';
+            inputContainer.addClass('zk-node-edit-field');
             
             const label = inputContainer.createEl('label', { text: '新的节点 ID：' });
-            label.style.display = 'block';
-            label.style.marginBottom = '5px';
-            label.style.color = 'var(--text-normal)';
             
             const input = inputContainer.createEl('input', {
                 type: 'text',
                 value: currentID
             });
-            input.style.width = '100%';
-            input.style.padding = '8px';
-            input.style.border = '1px solid var(--background-modifier-border)';
-            input.style.borderRadius = '4px';
-            input.style.backgroundColor = 'var(--background-primary)';
-            input.style.color = 'var(--text-normal)';
+            input.addClass('zk-node-edit-input');
             
-            const buttonContainer = contentEl.createDiv();
-            buttonContainer.style.display = 'flex';
-            buttonContainer.style.justifyContent = 'flex-end';
-            buttonContainer.style.gap = '10px';
+            const actions = contentEl.createDiv('zk-node-edit-actions');
             
-            const cancelButton = buttonContainer.createEl('button', { text: '取消' });
-            cancelButton.style.padding = '6px 16px';
-            cancelButton.style.border = '1px solid var(--background-modifier-border)';
-            cancelButton.style.borderRadius = '4px';
-            cancelButton.style.backgroundColor = 'var(--background-primary)';
-            cancelButton.style.color = 'var(--text-normal)';
-            cancelButton.style.cursor = 'pointer';
+            const cancelButton = actions.createEl('button', { text: '取消' });
+            cancelButton.addClass('zk-node-edit-btn');
             cancelButton.addEventListener('click', () => {
                 modal.close();
                 resolve(null);
             });
             
-            const confirmButton = buttonContainer.createEl('button', { text: '确认' });
-            confirmButton.style.padding = '6px 16px';
-            confirmButton.style.border = 'none';
-            confirmButton.style.borderRadius = '4px';
-            confirmButton.style.backgroundColor = '#5b8fd9';
-            confirmButton.style.color = '#ffffff';
-            confirmButton.style.cursor = 'pointer';
+            const confirmButton = actions.createEl('button', { text: '确认' });
+            confirmButton.addClass('zk-node-edit-btn');
+            confirmButton.addClass('mod-cta');
             confirmButton.addEventListener('click', () => {
                 const newID = input.value.trim();
                 if (!newID) {
