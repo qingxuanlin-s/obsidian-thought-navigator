@@ -23,7 +23,7 @@ export const DIR_VECTORS: Record<GrowthDirection, Vec2> = {
 
 export const PRESET_POOL: Record<LayoutPreset, GrowthDirection[]> = {
 	bidirectional: ['E', 'W'],
-	'top-down': ['S'],
+	'top-down': ['S', 'N'],
 	radial: ['NE', 'SE', 'SW', 'NW'],
 };
 

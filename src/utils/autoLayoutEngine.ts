@@ -48,11 +48,12 @@ export function computeAutoLayout(input: ComputeAutoLayoutInput): Record<string,
 	const stackGap = input.stackGap ?? 56;
 	const positions: Record<string, Vec2> = {};
 	const filePreset = normalizeLayoutPreset(input.layoutPreset, DEFAULT_LAYOUT_PRESET);
-	if (
-		filePreset === 'bidirectional'
-		&& Object.values(input.nodeLayoutPresets || {}).every((preset) => normalizeLayoutPreset(preset) === 'bidirectional')
-	) {
-		return computeBidirectionalAutoLayout(input);
+	const isUniformPreset = Object.values(input.nodeLayoutPresets || {})
+		.every((preset) => normalizeLayoutPreset(preset) === filePreset);
+	if (isUniformPreset) {
+		if (filePreset === 'bidirectional') return computeBidirectionalAutoLayout(input);
+		if (filePreset === 'top-down') return computeTopDownAutoLayout(input);
+		if (filePreset === 'radial') return computeRadialAutoLayout(input);
 	}
 	const branchPresetCache = new Map<string, LayoutPreset>();
 	const directionCache = new Map<string, GrowthDirection | null>();
@@ -392,6 +393,367 @@ export function computeBidirectionalAutoLayout(input: ComputeAutoLayoutInput): R
 			const dirVec = DIR_VECTORS[dir];
 			const axis: Vec2 = { x: 0, y: 1 };
 			const forward = projectSize(layout.size, dirVec) / 2 + forwardGap + avgProjection(children, dirVec) / 2;
+			const total = children.reduce((sum, child) => sum + child.subtreeSpan, 0)
+				+ Math.max(0, children.length - 1) * stackGap;
+			let cursor = -total / 2;
+
+			for (const child of children) {
+				const stackOff = cursor + child.subtreeSpan / 2;
+				placeLayout(
+					child,
+					cx + dirVec.x * forward + axis.x * stackOff,
+					cy + dirVec.y * forward + axis.y * stackOff
+				);
+				cursor += child.subtreeSpan + stackGap;
+			}
+		}
+	};
+
+	const placeLayout = (layout: LayoutNode, cx: number, cy: number) => {
+		positions[layout.id] = {
+			x: Math.round(cx * 100) / 100,
+			y: Math.round(cy * 100) / 100,
+		};
+		if (layout.children.length === 0) return;
+		if (layout.groupChildren) {
+			placeGroupedChildren(layout, cx, cy);
+			return;
+		}
+		placeDirectedChildren(layout, cx, cy);
+	};
+
+	const root = input.nodes[input.relayoutRootId];
+	if (!root) return positions;
+	placeLayout(buildLayout(input.relayoutRootId), root.position.x, root.position.y);
+	return positions;
+}
+
+export function computeTopDownAutoLayout(input: ComputeAutoLayoutInput): Record<string, Vec2> {
+	const forwardGap = input.forwardGap ?? 150;
+	const stackGap = input.stackGap ?? 56;
+	const positions: Record<string, Vec2> = {};
+	const directionCache = new Map<string, GrowthDirection | null>();
+	const stackAxis: Vec2 = { x: 1, y: 0 };
+
+	const isBranchStart = (nodeId: string): boolean => {
+		const parentId = input.parentById[nodeId];
+		return !!parentId && input.realMocRootIds.has(parentId);
+	};
+
+	const resolveTopDown = (nodeId: string, parentId: string): GrowthDirection => {
+		const savedPos = input.nodePositions[nodeId];
+		const parentPos = input.nodePositions[parentId] || input.nodes[parentId]?.position;
+		if (savedPos && parentPos) {
+			return quantizeToPool(savedPos.x - parentPos.x, savedPos.y - parentPos.y, ['S', 'N']);
+		}
+		const siblings = input.childrenById[parentId] || [];
+		const index = Math.max(0, siblings.indexOf(nodeId));
+		return index % 2 === 0 ? 'S' : 'N';
+	};
+
+	const getDirection = (nodeId: string): GrowthDirection | null => {
+		if (directionCache.has(nodeId)) {
+			return directionCache.get(nodeId) ?? null;
+		}
+		if (input.realMocRootIds.has(nodeId)) {
+			directionCache.set(nodeId, null);
+			return null;
+		}
+
+		const parentId = input.parentById[nodeId];
+		if (!parentId || !input.nodes[parentId]) {
+			directionCache.set(nodeId, 'S');
+			return 'S';
+		}
+
+		let direction: GrowthDirection;
+		if (input.realMocRootIds.has(parentId) || isBranchStart(parentId)) {
+			direction = resolveTopDown(nodeId, parentId);
+		} else {
+			direction = getDirection(parentId) || 'S';
+		}
+		directionCache.set(nodeId, direction);
+		return direction;
+	};
+
+	const sortChildren = (children: string[], axis: Vec2, center: Vec2): string[] => {
+		const getSortPosition = (id: string): Vec2 => input.nodePositions[id] || input.nodes[id].position;
+		const sorted = [...children].sort((a, b) => {
+			const ap = getSortPosition(a);
+			const bp = getSortPosition(b);
+			const aproj = (ap.x - center.x) * axis.x + (ap.y - center.y) * axis.y;
+			const bproj = (bp.x - center.x) * axis.x + (bp.y - center.y) * axis.y;
+			return aproj - bproj;
+		});
+
+		const colorOrder = new Map<string, number>();
+		for (const childId of sorted) {
+			const colorKey = input.nodes[childId].colorKey;
+			if (!colorOrder.has(colorKey)) {
+				colorOrder.set(colorKey, colorOrder.size);
+			}
+		}
+
+		return sorted.sort((a, b) => {
+			const colorRankA = colorOrder.get(input.nodes[a].colorKey) ?? Number.MAX_SAFE_INTEGER;
+			const colorRankB = colorOrder.get(input.nodes[b].colorKey) ?? Number.MAX_SAFE_INTEGER;
+			if (colorRankA !== colorRankB) return colorRankA - colorRankB;
+			const ap = getSortPosition(a);
+			const bp = getSortPosition(b);
+			const aproj = (ap.x - center.x) * axis.x + (ap.y - center.y) * axis.y;
+			const bproj = (bp.x - center.x) * axis.x + (bp.y - center.y) * axis.y;
+			return aproj - bproj;
+		});
+	};
+
+	const buildLayout = (nodeId: string): LayoutNode => {
+		const node = input.nodes[nodeId];
+		const dir = getDirection(nodeId);
+		const groupChildren = input.realMocRootIds.has(nodeId) || isBranchStart(nodeId);
+		const childIds = sortChildren(input.childrenById[nodeId] || [], stackAxis, node.position);
+		const children = childIds.map((childId) => buildLayout(childId));
+		const childrenSpan = children.reduce((sum, child) => sum + child.subtreeSpan, 0)
+			+ Math.max(0, children.length - 1) * stackGap;
+		const selfSpan = projectSize(node.size, stackAxis);
+		return {
+			id: nodeId,
+			size: node.size,
+			dir,
+			stackAxis: dir ? stackAxis : null,
+			groupChildren,
+			children,
+			subtreeSpan: Math.max(selfSpan, childrenSpan),
+		};
+	};
+
+	const avgProjection = (children: LayoutNode[], axis: Vec2): number => {
+		if (children.length === 0) return 0;
+		return children.reduce((sum, child) => sum + projectSize(child.size, axis), 0) / children.length;
+	};
+
+	const placeDirectedChildren = (layout: LayoutNode, cx: number, cy: number) => {
+		if (!layout.dir) return;
+		const dirVec = DIR_VECTORS[layout.dir];
+		const forward = projectSize(layout.size, dirVec) / 2 + forwardGap + avgProjection(layout.children, dirVec) / 2;
+		const total = layout.children.reduce((sum, child) => sum + child.subtreeSpan, 0)
+			+ Math.max(0, layout.children.length - 1) * stackGap;
+		let cursor = -total / 2;
+
+		for (const child of layout.children) {
+			const stackOff = cursor + child.subtreeSpan / 2;
+			placeLayout(
+				child,
+				cx + dirVec.x * forward + stackAxis.x * stackOff,
+				cy + dirVec.y * forward + stackAxis.y * stackOff
+			);
+			cursor += child.subtreeSpan + stackGap;
+		}
+	};
+
+	const placeGroupedChildren = (layout: LayoutNode, cx: number, cy: number) => {
+		const groups = new Map<GrowthDirection, LayoutNode[]>();
+		for (const child of layout.children) {
+			if (!child.dir) continue;
+			const group = groups.get(child.dir) || [];
+			group.push(child);
+			groups.set(child.dir, group);
+		}
+
+		for (const dir of ['S', 'N'] as GrowthDirection[]) {
+			const children = groups.get(dir) || [];
+			if (children.length === 0) continue;
+			const dirVec = DIR_VECTORS[dir];
+			const forward = projectSize(layout.size, dirVec) / 2 + forwardGap + avgProjection(children, dirVec) / 2;
+			const total = children.reduce((sum, child) => sum + child.subtreeSpan, 0)
+				+ Math.max(0, children.length - 1) * stackGap;
+			let cursor = -total / 2;
+
+			for (const child of children) {
+				const stackOff = cursor + child.subtreeSpan / 2;
+				placeLayout(
+					child,
+					cx + dirVec.x * forward + stackAxis.x * stackOff,
+					cy + dirVec.y * forward + stackAxis.y * stackOff
+				);
+				cursor += child.subtreeSpan + stackGap;
+			}
+		}
+	};
+
+	const placeLayout = (layout: LayoutNode, cx: number, cy: number) => {
+		positions[layout.id] = {
+			x: Math.round(cx * 100) / 100,
+			y: Math.round(cy * 100) / 100,
+		};
+		if (layout.children.length === 0) return;
+		if (layout.groupChildren) {
+			placeGroupedChildren(layout, cx, cy);
+			return;
+		}
+		placeDirectedChildren(layout, cx, cy);
+	};
+
+	const root = input.nodes[input.relayoutRootId];
+	if (!root) return positions;
+	placeLayout(buildLayout(input.relayoutRootId), root.position.x, root.position.y);
+	return positions;
+}
+
+export function computeRadialAutoLayout(input: ComputeAutoLayoutInput): Record<string, Vec2> {
+	const forwardGap = input.forwardGap ?? 150;
+	const stackGap = input.stackGap ?? 56;
+	const positions: Record<string, Vec2> = {};
+	const directionCache = new Map<string, GrowthDirection | null>();
+	const radialPool: GrowthDirection[] = ['NE', 'SE', 'SW', 'NW'];
+	const diagonalGap = forwardGap * DIAGONAL_GAP_FACTOR;
+
+	const isBranchStart = (nodeId: string): boolean => {
+		const parentId = input.parentById[nodeId];
+		return !!parentId && input.realMocRootIds.has(parentId);
+	};
+
+	const getRadialStackAxis = (dir: GrowthDirection | null): Vec2 => {
+		switch (dir) {
+			case 'NE':
+				return { x: Math.SQRT1_2, y: Math.SQRT1_2 };
+			case 'SE':
+				return { x: -Math.SQRT1_2, y: Math.SQRT1_2 };
+			case 'SW':
+				return { x: -Math.SQRT1_2, y: -Math.SQRT1_2 };
+			case 'NW':
+				return { x: Math.SQRT1_2, y: -Math.SQRT1_2 };
+			default:
+				return { x: 0, y: 1 };
+		}
+	};
+
+	const resolveRadial = (nodeId: string, parentId: string): GrowthDirection => {
+		const savedPos = input.nodePositions[nodeId];
+		const parentPos = input.nodePositions[parentId] || input.nodes[parentId]?.position;
+		if (savedPos && parentPos) {
+			return quantizeToPool(savedPos.x - parentPos.x, savedPos.y - parentPos.y, radialPool);
+		}
+		const siblings = input.childrenById[parentId] || [];
+		const index = Math.max(0, siblings.indexOf(nodeId));
+		return radialPool[index % radialPool.length];
+	};
+
+	const getDirection = (nodeId: string): GrowthDirection | null => {
+		if (directionCache.has(nodeId)) {
+			return directionCache.get(nodeId) ?? null;
+		}
+		if (input.realMocRootIds.has(nodeId)) {
+			directionCache.set(nodeId, null);
+			return null;
+		}
+
+		const parentId = input.parentById[nodeId];
+		if (!parentId || !input.nodes[parentId]) {
+			directionCache.set(nodeId, 'SE');
+			return 'SE';
+		}
+
+		let direction: GrowthDirection;
+		if (input.realMocRootIds.has(parentId) || isBranchStart(parentId)) {
+			direction = resolveRadial(nodeId, parentId);
+		} else {
+			direction = getDirection(parentId) || 'SE';
+		}
+		directionCache.set(nodeId, direction);
+		return direction;
+	};
+
+	const sortChildren = (children: string[], axis: Vec2, center: Vec2): string[] => {
+		const getSortPosition = (id: string): Vec2 => input.nodePositions[id] || input.nodes[id].position;
+		const sorted = [...children].sort((a, b) => {
+			const ap = getSortPosition(a);
+			const bp = getSortPosition(b);
+			const aproj = (ap.x - center.x) * axis.x + (ap.y - center.y) * axis.y;
+			const bproj = (bp.x - center.x) * axis.x + (bp.y - center.y) * axis.y;
+			return aproj - bproj;
+		});
+
+		const colorOrder = new Map<string, number>();
+		for (const childId of sorted) {
+			const colorKey = input.nodes[childId].colorKey;
+			if (!colorOrder.has(colorKey)) {
+				colorOrder.set(colorKey, colorOrder.size);
+			}
+		}
+
+		return sorted.sort((a, b) => {
+			const colorRankA = colorOrder.get(input.nodes[a].colorKey) ?? Number.MAX_SAFE_INTEGER;
+			const colorRankB = colorOrder.get(input.nodes[b].colorKey) ?? Number.MAX_SAFE_INTEGER;
+			if (colorRankA !== colorRankB) return colorRankA - colorRankB;
+			const ap = getSortPosition(a);
+			const bp = getSortPosition(b);
+			const aproj = (ap.x - center.x) * axis.x + (ap.y - center.y) * axis.y;
+			const bproj = (bp.x - center.x) * axis.x + (bp.y - center.y) * axis.y;
+			return aproj - bproj;
+		});
+	};
+
+	const buildLayout = (nodeId: string): LayoutNode => {
+		const node = input.nodes[nodeId];
+		const dir = getDirection(nodeId);
+		const stackAxis = getRadialStackAxis(dir);
+		const groupChildren = input.realMocRootIds.has(nodeId) || isBranchStart(nodeId);
+		const childIds = sortChildren(input.childrenById[nodeId] || [], stackAxis, node.position);
+		const children = childIds.map((childId) => buildLayout(childId));
+		const childrenSpan = children.reduce((sum, child) => sum + child.subtreeSpan, 0)
+			+ Math.max(0, children.length - 1) * stackGap;
+		const selfSpan = projectSize(node.size, stackAxis);
+		return {
+			id: nodeId,
+			size: node.size,
+			dir,
+			stackAxis: dir ? stackAxis : null,
+			groupChildren,
+			children,
+			subtreeSpan: Math.max(selfSpan, childrenSpan),
+		};
+	};
+
+	const avgProjection = (children: LayoutNode[], axis: Vec2): number => {
+		if (children.length === 0) return 0;
+		return children.reduce((sum, child) => sum + projectSize(child.size, axis), 0) / children.length;
+	};
+
+	const placeDirectedChildren = (layout: LayoutNode, cx: number, cy: number) => {
+		if (!layout.dir || !layout.stackAxis) return;
+		const dirVec = DIR_VECTORS[layout.dir];
+		const axis = layout.stackAxis;
+		const forward = projectSize(layout.size, dirVec) / 2 + diagonalGap + avgProjection(layout.children, dirVec) / 2;
+		const total = layout.children.reduce((sum, child) => sum + child.subtreeSpan, 0)
+			+ Math.max(0, layout.children.length - 1) * stackGap;
+		let cursor = -total / 2;
+
+		for (const child of layout.children) {
+			const stackOff = cursor + child.subtreeSpan / 2;
+			placeLayout(
+				child,
+				cx + dirVec.x * forward + axis.x * stackOff,
+				cy + dirVec.y * forward + axis.y * stackOff
+			);
+			cursor += child.subtreeSpan + stackGap;
+		}
+	};
+
+	const placeGroupedChildren = (layout: LayoutNode, cx: number, cy: number) => {
+		const groups = new Map<GrowthDirection, LayoutNode[]>();
+		for (const child of layout.children) {
+			if (!child.dir) continue;
+			const group = groups.get(child.dir) || [];
+			group.push(child);
+			groups.set(child.dir, group);
+		}
+
+		for (const dir of radialPool) {
+			const children = groups.get(dir) || [];
+			if (children.length === 0) continue;
+			const dirVec = DIR_VECTORS[dir];
+			const axis = getRadialStackAxis(dir);
+			const forward = projectSize(layout.size, dirVec) / 2 + diagonalGap + avgProjection(children, dirVec) / 2;
 			const total = children.reduce((sum, child) => sum + child.subtreeSpan, 0)
 				+ Math.max(0, children.length - 1) * stackGap;
 			let cursor = -total / 2;

@@ -2748,7 +2748,7 @@ cy.fit(null, 40);
                 // 然后移动到父节点下
                 const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
                 if (mocFile) {
-                    if (placeholderInfo.layoutStyle === 'free' || this.isFreeNodeID(suggestedID) || this.isFreeNodeID(placeholderInfo.parentNodeId)) {
+                    if (this.isFreeNodeID(suggestedID) || this.isFreeNodeID(placeholderInfo.parentNodeId)) {
                         await this.addArrowRelationToMOC(mocFile, placeholderInfo.parentNodeId, suggestedID, '');
                     } else {
                         await this.mocHandler.moveNodeToParent(mocFile, suggestedID, placeholderInfo.parentNodeId, suggestedID);
@@ -2822,7 +2822,7 @@ cy.fit(null, 40);
                 // 然后移动到父节点下
                 const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
                 if (mocFile) {
-                    if (placeholderInfo.layoutStyle === 'free' || this.isFreeNodeID(suggestedID) || this.isFreeNodeID(placeholderInfo.parentNodeId)) {
+                    if (this.isFreeNodeID(suggestedID) || this.isFreeNodeID(placeholderInfo.parentNodeId)) {
                         await this.addArrowRelationToMOC(mocFile, placeholderInfo.parentNodeId, suggestedID, '');
                     } else {
                         await this.mocHandler.moveNodeToParent(mocFile, suggestedID, placeholderInfo.parentNodeId, suggestedID);
@@ -5625,7 +5625,7 @@ cy.fit(null, 40);
 
         // 存储占位符信息
         const placeholderLayoutStyle = this.resolvePlaceholderLayoutStyle(parentId);
-        const effectiveSuggestedId = placeholderLayoutStyle === 'auto' ? siblingId : this.generateNextFreeNodeID();
+        const effectiveSuggestedId = this.isFreeNodeID(parentId) ? this.generateNextFreeNodeID() : siblingId;
         const finalPosition = placeholderLayoutStyle === 'auto'
             ? this.getAutoPlaceholderPosition(parentId, position, activeNode.IDStr)
             : position;
@@ -5676,7 +5676,7 @@ cy.fit(null, 40);
 
         // 存储占位符信息
         const placeholderLayoutStyle = this.resolvePlaceholderLayoutStyle(this.getParentNodeId(activeNode) || undefined);
-        const effectiveSuggestedId = placeholderLayoutStyle === 'auto' ? parentId : this.generateNextFreeNodeID();
+        const effectiveSuggestedId = this.isFreeNodeID(parentId) ? this.generateNextFreeNodeID() : parentId;
         this.createPlaceholderRecord(tempId, position, {
             suggestedNodeId: effectiveSuggestedId,
             childNodeId: activeNodeId,
@@ -5715,9 +5715,9 @@ cy.fit(null, 40);
         if (explicitParentId) {
             parentNodeId = explicitParentId;
             placeholderLayoutStyle = this.resolvePlaceholderLayoutStyle(parentNodeId);
-            suggestedNodeId = placeholderLayoutStyle === 'auto'
-                ? this.generateChildNodeID(explicitParentId)
-                : this.generateNextFreeNodeID();
+            suggestedNodeId = this.isFreeNodeID(explicitParentId)
+                ? this.generateNextFreeNodeID()
+                : this.generateChildNodeID(explicitParentId);
     
         }
         // 否则，在以下场景查找最近节点并作为父节点：
@@ -5765,9 +5765,9 @@ cy.fit(null, 40);
                 if (shouldAttachByDistance) {
                     parentNodeId = nearestNode.IDStr;
                     placeholderLayoutStyle = this.resolvePlaceholderLayoutStyle(parentNodeId);
-                    suggestedNodeId = placeholderLayoutStyle === 'auto'
-                        ? this.generateChildNodeID(parentNodeId)
-                        : this.generateNextFreeNodeID();
+                    suggestedNodeId = this.isFreeNodeID(parentNodeId)
+                        ? this.generateNextFreeNodeID()
+                        : this.generateChildNodeID(parentNodeId);
                 }
             }
         }
@@ -5840,7 +5840,7 @@ cy.fit(null, 40);
 
             // 然后移动到父节点下
             if (mocFile) {
-                if (placeholderInfo.layoutStyle === 'free' || this.isFreeNodeID(suggestedID) || this.isFreeNodeID(placeholderInfo.parentNodeId)) {
+                if (this.isFreeNodeID(suggestedID) || this.isFreeNodeID(placeholderInfo.parentNodeId)) {
                     await this.addArrowRelationToMOC(mocFile, placeholderInfo.parentNodeId, suggestedID, '');
                 } else {
                     await this.mocHandler.moveNodeToParent(mocFile, suggestedID, placeholderInfo.parentNodeId, suggestedID);
@@ -5861,7 +5861,7 @@ cy.fit(null, 40);
 
         if (placeholderInfo?.childNodeId && mocFile) {
             MermaidParser.clearCacheForFile(this.plugin.settings.mocCurrentFile);
-            if (placeholderInfo.layoutStyle === 'free' || this.isFreeNodeID(suggestedID) || this.isFreeNodeID(placeholderInfo.childNodeId)) {
+            if (this.isFreeNodeID(suggestedID) || this.isFreeNodeID(placeholderInfo.childNodeId)) {
                 await this.addArrowRelationToMOC(mocFile, suggestedID, placeholderInfo.childNodeId, '');
             } else {
                 const newChildID = this.generateChildNodeID(suggestedID);
@@ -5890,7 +5890,10 @@ cy.fit(null, 40);
         if (placeholderInfo?.childNodeId) {
             await this.relayoutAutoLayoutSiblings(suggestedID);
         } else if (placeholderInfo?.parentNodeId) {
-            await this.relayoutAutoLayoutSiblings(placeholderInfo.parentNodeId);
+            const parentPreset = this.getPresetForChildren(placeholderInfo.parentNodeId);
+            if (parentPreset !== 'top-down') {
+                await this.relayoutAutoLayoutSiblings(placeholderInfo.parentNodeId);
+            }
         }
 
         // 清理所有占位符连接线（因为视图已经刷新，占位符节点已不存在）
@@ -5942,7 +5945,7 @@ cy.fit(null, 40);
 
             // 然后移动到父节点下
             if (mocFile) {
-                if (placeholderInfo.layoutStyle === 'free' || this.isFreeNodeID(suggestedID) || this.isFreeNodeID(placeholderInfo.parentNodeId)) {
+                if (this.isFreeNodeID(suggestedID) || this.isFreeNodeID(placeholderInfo.parentNodeId)) {
                     await this.addArrowRelationToMOC(mocFile, placeholderInfo.parentNodeId, suggestedID, '');
                 } else {
                     await this.mocHandler.moveNodeToParent(mocFile, suggestedID, placeholderInfo.parentNodeId, suggestedID);
@@ -5961,7 +5964,7 @@ cy.fit(null, 40);
 
         if (placeholderInfo?.childNodeId && mocFile) {
             MermaidParser.clearCacheForFile(this.plugin.settings.mocCurrentFile);
-            if (placeholderInfo.layoutStyle === 'free' || this.isFreeNodeID(suggestedID) || this.isFreeNodeID(placeholderInfo.childNodeId)) {
+            if (this.isFreeNodeID(suggestedID) || this.isFreeNodeID(placeholderInfo.childNodeId)) {
                 await this.addArrowRelationToMOC(mocFile, suggestedID, placeholderInfo.childNodeId, '');
             } else {
                 const newChildID = this.generateChildNodeID(suggestedID);
@@ -5990,7 +5993,10 @@ cy.fit(null, 40);
         if (placeholderInfo?.childNodeId) {
             await this.relayoutAutoLayoutSiblings(suggestedID);
         } else if (placeholderInfo?.parentNodeId) {
-            await this.relayoutAutoLayoutSiblings(placeholderInfo.parentNodeId);
+            const parentPreset = this.getPresetForChildren(placeholderInfo.parentNodeId);
+            if (parentPreset !== 'top-down') {
+                await this.relayoutAutoLayoutSiblings(placeholderInfo.parentNodeId);
+            }
         }
 
         // 清理所有占位符连接线（因为视图已经刷新，占位符节点已不存在）
@@ -6180,6 +6186,26 @@ cy.fit(null, 40);
         return node?.savedPosition ? { ...node.savedPosition } : null;
     }
 
+    private getNodeSizeForLayout(nodeId: string): { width: number; height: number } {
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        if (cy) {
+            const cyNode: any = cy.$('node').filter((node: any) => {
+                const originalNode = node.data('originalNode');
+                return originalNode && (originalNode.IDStr === nodeId || originalNode.ID === nodeId);
+            }).first();
+            if (cyNode && cyNode.length > 0) {
+                return { width: cyNode.outerWidth(), height: cyNode.outerHeight() };
+            }
+        }
+        return { width: 200, height: 80 };
+    }
+
+    private computeSiblingSlotGap(referenceNodeId: string, axis: { x: number; y: number }): number {
+        const size = this.getNodeSizeForLayout(referenceNodeId);
+        const projected = Math.abs(size.width * axis.x) + Math.abs(size.height * axis.y);
+        return projected + 56;
+    }
+
     private getChildNodeIds(parentNodeId: string): string[] {
         return this.mocNodes
             .filter((node) => this.getParentNodeId(node) === parentNodeId)
@@ -6220,6 +6246,9 @@ cy.fit(null, 40);
         if (preset === 'bidirectional') {
             return { x: 0, y: 1 };
         }
+        if (preset === 'top-down') {
+            return { x: 1, y: 0 };
+        }
         return stackAxisOf(dir);
     }
 
@@ -6235,16 +6264,39 @@ cy.fit(null, 40);
         const pool = PRESET_POOL[preset];
         const childIds = this.getChildNodeIds(parentNodeId);
         const sameParentReference = referenceNodeId && childIds.includes(referenceNodeId) ? referenceNodeId : undefined;
-        const referenceId = sameParentReference || childIds[childIds.length - 1];
+
+        let direction: GrowthDirection;
+        if (sameParentReference) {
+            direction = this.getNodeDirectionFromParent(sameParentReference, preset);
+        } else if (childIds.length > 0) {
+            const lastChild = childIds[childIds.length - 1];
+            direction = this.getNodeDirectionFromParent(lastChild, preset);
+        } else {
+            const inherited = this.getNodeDirectionFromParent(parentNodeId, preset);
+            direction = pool.includes(inherited) ? inherited : pool[0];
+        }
+        const stackAxis = this.getAutoStackAxis(direction, preset);
+
+        let referenceId = sameParentReference;
+        if (!referenceId && childIds.length > 0) {
+            const sameDirSiblings = childIds.filter((childId) =>
+                this.getNodeDirectionFromParent(childId, preset) === direction
+            );
+            if (sameDirSiblings.length > 0) {
+                referenceId = sameDirSiblings.reduce((best, candidate) => {
+                    const bestPos = this.getNodePositionForLayout(best);
+                    const candPos = this.getNodePositionForLayout(candidate);
+                    if (!bestPos || !candPos) return best;
+                    const bestProj = (bestPos.x - parentPos.x) * stackAxis.x + (bestPos.y - parentPos.y) * stackAxis.y;
+                    const candProj = (candPos.x - parentPos.x) * stackAxis.x + (candPos.y - parentPos.y) * stackAxis.y;
+                    return candProj > bestProj ? candidate : best;
+                });
+            }
+        }
         const referencePos = referenceId ? this.getNodePositionForLayout(referenceId) : null;
 
-        const direction = referenceId
-            ? this.getNodeDirectionFromParent(referenceId, preset)
-            : pool[childIds.length % pool.length];
-        const stackAxis = this.getAutoStackAxis(direction, preset);
-        const siblingGap = 96;
-
-        if (referencePos) {
+        if (referencePos && referenceId) {
+            const siblingGap = this.computeSiblingSlotGap(referenceId, stackAxis);
             return {
                 x: referencePos.x + stackAxis.x * siblingGap,
                 y: referencePos.y + stackAxis.y * siblingGap
@@ -6261,7 +6313,7 @@ cy.fit(null, 40);
     private pushAutoSiblingsAfterReference(
         parentNodeId: string,
         referenceNodeId: string,
-        gap: number = 96
+        gap?: number
     ): Record<string, { x: number; y: number }> {
         const parentPos = this.getNodePositionForLayout(parentNodeId);
         const referencePos = this.getNodePositionForLayout(referenceNodeId);
@@ -6270,6 +6322,7 @@ cy.fit(null, 40);
         const preset = this.getPresetForChildren(parentNodeId);
         const referenceDir = this.getNodeDirectionFromParent(referenceNodeId, preset);
         const axis = this.getAutoStackAxis(referenceDir, preset);
+        const slotGap = gap ?? this.computeSiblingSlotGap(referenceNodeId, axis);
         const referenceProj = (referencePos.x - parentPos.x) * axis.x + (referencePos.y - parentPos.y) * axis.y;
         const referenceDirVec = DIR_VECTORS[referenceDir];
         const referenceDirProj = (referencePos.x - parentPos.x) * referenceDirVec.x + (referencePos.y - parentPos.y) * referenceDirVec.y;
@@ -6310,8 +6363,8 @@ cy.fit(null, 40);
                 if (cyNode && cyNode.length > 0) {
                     const pos = cyNode.position();
                     const nextPos = {
-                        x: pos.x + axis.x * gap,
-                        y: pos.y + axis.y * gap
+                        x: pos.x + axis.x * slotGap,
+                        y: pos.y + axis.y * slotGap
                     };
                     shiftedPositions[nodeId] = {
                         x: Math.round(nextPos.x * 100) / 100,
