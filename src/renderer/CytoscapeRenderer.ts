@@ -1825,17 +1825,13 @@ export class CytoscapeRenderer implements IGraphRenderer {
             text-overflow: ellipsis;
             cursor: pointer;
             color: var(--text-muted);
-            border-bottom: 1px solid rgba(148, 163, 184, 0.3);
-            padding-bottom: 1px;
-            transition: color 0.15s ease, border-color 0.15s ease;
+            transition: color 0.15s ease;
         `;
         linkEl.addEventListener('mouseenter', () => {
             linkEl.style.color = 'var(--text-normal)';
-            linkEl.style.borderBottomColor = 'rgba(148, 163, 184, 0.6)';
         });
         linkEl.addEventListener('mouseleave', () => {
             linkEl.style.color = 'var(--text-muted)';
-            linkEl.style.borderBottomColor = 'rgba(148, 163, 184, 0.3)';
         });
     }
 
@@ -2807,7 +2803,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 display: flex;
                 align-items: center;
                 gap: 6px;
-                border-bottom: 1px solid ${theme.headerDivider};
                 background: ${theme.headerBackground};
                 color: var(--text-muted);
                 font-size: 12px;
@@ -2815,7 +2810,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 letter-spacing: 0.2px;
                 white-space: nowrap;
                 overflow: hidden;
-                cursor: move;
                 user-select: none;
             `;
             // 文件名链接；若节点有 alias（ZKNode.title 与 wikiLink 不同），拼成 "basename|alias"
@@ -2993,6 +2987,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 resizeHandle.style.opacity = isSelected ? '1' : '0';
                 embedToggleEl.style.pointerEvents = isSelected ? 'auto' : 'none';
                 embedToggleEl.style.opacity = isSelected ? '1' : '0';
+                contentEl.style.cursor = isSelected ? 'move' : 'default';
                 if (!isSelected) {
                     releaseCanvasSuppression();
                 }
@@ -3094,12 +3089,18 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 }));
             };
 
-            headerEl.addEventListener('mousedown', (e: MouseEvent) => {
+            contentEl.addEventListener('mousedown', (e: MouseEvent) => {
                 if (!this.cy) return;
                 if (e.button !== 0) return;
                 if (e.detail >= 2) return; // 双击交给编辑逻辑
+                const target = e.target as HTMLElement | null;
+                if (target?.closest('a, button, input, textarea, select, [contenteditable="true"], .cm-editor')) return;
                 e.preventDefault();
                 e.stopPropagation();
+                if (!node.selected()) {
+                    this.cy.$(':selected').unselect();
+                    node.select();
+                }
                 draggingFromHeader = true;
                 setCanvasInteractionSuppressed(true);
                 dragStartMouseX = e.clientX;
@@ -3625,7 +3626,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 display: flex;
                 align-items: center;
                 gap: 6px;
-                border-bottom: 1px solid ${theme.headerDivider};
                 background: ${theme.headerBackground};
                 color: var(--text-muted);
                 font-size: 12px;
@@ -3633,7 +3633,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 letter-spacing: 0.2px;
                 white-space: nowrap;
                 overflow: hidden;
-                cursor: move;
                 user-select: none;
             `;
 
@@ -3739,10 +3738,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 const isSelected = node.selected();
                 resizeHandle.style.pointerEvents = isSelected ? 'auto' : 'none';
                 resizeHandle.style.opacity = isSelected ? '1' : '0';
-                card.style.borderColor = isSelected
-                    ? 'rgba(91, 143, 217, 0.9)'
-                    : 'rgba(90, 111, 127, 0.4)';
-                card.style.cursor = isSelected ? 'move' : 'default';
+                card.style.borderColor = 'transparent';
+                card.style.cursor = 'default';
+                img.style.cursor = isSelected ? 'move' : 'default';
             };
             interactionUpdaters.push(updateInteraction);
             updateInteraction();
@@ -3782,7 +3780,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 }));
             };
 
-            // 点击卡片：选中节点；选中状态下拖拽移动
+            // 点击卡片：选中节点；图片内容区拖拽移动
             card.addEventListener('mousedown', (e: MouseEvent) => {
                 if (!this.cy) return;
                 if (e.button !== 0) return;
@@ -3794,31 +3792,39 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     return;
                 }
 
-                if (node.selected()) {
-                    // 已选中 → 开始拖拽
-                    e.preventDefault();
-                    e.stopPropagation();
-                    draggingCard = true;
-                    setCanvasInteractionSuppressed(true);
-                    dragStartMouseX = e.clientX;
-                    dragStartMouseY = e.clientY;
-                    const renderedPos = node.renderedPosition();
-                    dragStartRenderedX = renderedPos.x;
-                    dragStartRenderedY = renderedPos.y;
-                    const ctrl = new AbortController();
-                    this.activeOverlayDragAborters.add(ctrl);
-                    const finalize = () => {
-                        this.activeOverlayDragAborters.delete(ctrl);
-                        try { ctrl.abort(); } catch { /* ignore */ }
-                    };
-                    document.addEventListener('mousemove', onCardMouseMove, { signal: ctrl.signal });
-                    document.addEventListener('mouseup', () => { onCardMouseUp(); finalize(); }, { signal: ctrl.signal });
-                } else {
+                if (!node.selected()) {
                     // 未选中 → 选中
                     this.cy.$(':selected').unselect();
                     node.select();
-                    e.stopPropagation();
                 }
+                e.stopPropagation();
+            });
+
+            img.addEventListener('mousedown', (e: MouseEvent) => {
+                if (!this.cy) return;
+                if (e.button !== 0) return;
+                if (e.detail >= 2) return;
+                e.preventDefault();
+                e.stopPropagation();
+                if (!node.selected()) {
+                    this.cy.$(':selected').unselect();
+                    node.select();
+                }
+                draggingCard = true;
+                setCanvasInteractionSuppressed(true);
+                dragStartMouseX = e.clientX;
+                dragStartMouseY = e.clientY;
+                const renderedPos = node.renderedPosition();
+                dragStartRenderedX = renderedPos.x;
+                dragStartRenderedY = renderedPos.y;
+                const ctrl = new AbortController();
+                this.activeOverlayDragAborters.add(ctrl);
+                const finalize = () => {
+                    this.activeOverlayDragAborters.delete(ctrl);
+                    try { ctrl.abort(); } catch { /* ignore */ }
+                };
+                document.addEventListener('mousemove', onCardMouseMove, { signal: ctrl.signal });
+                document.addEventListener('mouseup', () => { onCardMouseUp(); finalize(); }, { signal: ctrl.signal });
             });
 
             // 右下角拖拽调整尺寸
