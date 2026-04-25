@@ -431,7 +431,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * @param customTitle  "+" 按钮的 title（"自定义颜色" / "自定义背景色"）
      * @param onPick       用户选定颜色后的回调（选预设或确认 HSV 都走这里）
      */
-    private createSelectionColorPanel(
+    createSelectionColorPanel(
         initialColor: string,
         recentColor: string | null,
         customTitle: string,

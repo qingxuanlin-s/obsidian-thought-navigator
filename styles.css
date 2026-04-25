@@ -946,49 +946,53 @@ align-items: center;
 
 /* 添加节点菜单样式 */
 .zk-add-node-menu {
-    background: #1a1f2e;
-    border: 1px solid #2a3f5f;
-    border-radius: 6px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-    padding: 4px;
+    background: var(--background-secondary, #242424);
+    border: 1px solid var(--background-modifier-border, #3a3a3a);
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.38);
+    padding: 6px;
     min-width: 180px;
 }
 
 .zk-menu-option {
-    padding: 10px 16px;
+    padding: 8px 10px;
     cursor: pointer;
-    border-radius: 4px;
-    transition: all 0.2s ease;
-    font-size: 14px;
-    color: #e0e8f0;
+    border-radius: 6px;
+    transition: background-color 0.12s ease, color 0.12s ease;
+    font-size: var(--font-ui-small, 13px);
+    line-height: 1.4;
+    color: var(--text-normal, #dcddde);
     display: flex;
     align-items: center;
     gap: 8px;
+    min-height: 34px;
+    white-space: nowrap;
 }
 
 .zk-menu-option:hover {
-    background: #2a3f5f;
-    color: #00a8ff;
+    background: var(--background-modifier-hover, rgba(255, 255, 255, 0.075));
+    color: var(--text-normal, #dcddde);
 }
 
 .zk-menu-option:active {
-    background: #3a4f6f;
+    background: var(--background-modifier-active-hover, rgba(255, 255, 255, 0.12));
 }
 
 .zk-menu-separator {
     height: 1px;
-    background: #2a3f5f;
-    margin: 4px 0;
+    background: var(--background-modifier-border, #3a3a3a);
+    margin: 6px 4px;
 }
 
 /* 更多菜单 */
 .zk-more-menu {
-    background: #1a1f2e;
-    border: 1px solid #2a3f5f;
+    background: var(--background-secondary, #242424);
+    border: 1px solid var(--background-modifier-border, #3a3a3a);
     border-radius: 8px;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
-    padding: 4px;
-    min-width: 200px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
+    padding: 6px;
+    min-width: 220px;
+    color: var(--text-normal, #dcddde);
 }
 
 .zk-more-menu .zk-menu-option {
@@ -998,8 +1002,11 @@ align-items: center;
 .zk-menu-option-icon {
     display: flex;
     align-items: center;
+    justify-content: center;
     width: 18px;
     height: 18px;
+    color: var(--text-muted, #b3b3b3);
+    flex: 0 0 18px;
 }
 
 .zk-menu-option-icon svg {
@@ -1011,9 +1018,10 @@ align-items: center;
     margin-left: auto;
     display: flex;
     align-items: center;
+    justify-content: center;
     width: 16px;
     height: 16px;
-    opacity: 0.5;
+    color: var(--text-faint, #8a8a8a);
 }
 
 .zk-menu-option-arrow svg {
@@ -1022,14 +1030,14 @@ align-items: center;
 }
 
 .zk-more-submenu {
-    border-top: 1px solid #2a3f5f;
-    margin-top: 4px;
-    padding-top: 4px;
+    border-top: 1px solid var(--background-modifier-border, #3a3a3a);
+    margin: 6px 4px 0;
+    padding-top: 6px;
 }
 
 .zk-more-submenu .zk-menu-option {
-    padding-left: 24px;
-    font-size: 13px;
+    padding-left: 30px;
+    font-size: var(--font-ui-smaller, 12px);
 }
 
 /* 节点右键菜单 —— 对齐工具栏 chip 风格 */
@@ -1344,6 +1352,141 @@ align-items: center;
 .zk-inline-color-picker-btn:hover {
     border-color: color-mix(in srgb, var(--interactive-accent) 45%, transparent);
     color: var(--interactive-accent);
+}
+
+.modal.zk-node-edit-modal,
+.zk-node-edit-modal .modal {
+    border-radius: 8px;
+}
+
+.zk-node-edit-content {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 4px 2px 2px;
+}
+
+.zk-node-edit-meta {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 32px;
+    padding: 6px 10px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    font-size: var(--font-ui-small, 13px);
+}
+
+.zk-node-edit-strong {
+    color: var(--text-normal);
+    font-weight: 600;
+}
+
+.zk-node-edit-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.zk-node-edit-field label {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small, 13px);
+}
+
+.zk-node-edit-input {
+    width: 100%;
+    height: 34px;
+    padding: 6px 10px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-size: var(--font-ui-small, 13px);
+}
+
+.zk-node-edit-input:focus {
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 24%, transparent);
+    outline: none;
+}
+
+.zk-node-color-current {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small, 13px);
+}
+
+.zk-node-color-preview {
+    width: 18px;
+    height: 18px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 999px;
+    background-image:
+        linear-gradient(45deg, var(--background-modifier-border) 25%, transparent 25%),
+        linear-gradient(-45deg, var(--background-modifier-border) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, var(--background-modifier-border) 75%),
+        linear-gradient(-45deg, transparent 75%, var(--background-modifier-border) 75%);
+    background-size: 8px 8px;
+    background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+}
+
+.zk-node-color-value {
+    color: var(--text-normal);
+    font-family: var(--font-monospace);
+    font-size: var(--font-ui-smaller, 12px);
+}
+
+.zk-node-color-picker-panel {
+    position: static;
+    transform: none;
+    display: grid;
+    grid-template-columns: repeat(7, 22px);
+    width: max-content;
+    max-width: 100%;
+    border-radius: 8px;
+    box-shadow: none;
+    z-index: auto;
+}
+
+.zk-node-color-picker-panel .zk-text-selection-color-swatch {
+    width: 22px;
+    height: 22px;
+}
+
+.zk-node-color-picker-panel .zk-inline-color-picker {
+    width: 220px;
+}
+
+.zk-node-edit-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.zk-node-edit-btn {
+    min-width: 64px;
+    height: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-size: var(--font-ui-small, 13px);
+    cursor: pointer;
+}
+
+.zk-node-edit-btn:hover {
+    background: var(--background-modifier-hover);
+}
+
+.zk-node-edit-btn.mod-cta {
+    border-color: var(--interactive-accent);
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
 }
 
 .zk-text-selection-size-panel {
@@ -1697,36 +1840,36 @@ align-items: center;
 }
 
 .zk-theme-light .zk-add-node-menu {
-  background: #e8e8e8;
-  border: 1px solid #d0d0d0;
+  background: var(--background-secondary, #ffffff);
+  border: 1px solid var(--background-modifier-border, #d0d0d0);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .zk-theme-light .zk-menu-option {
-  color: #333333;
+  color: var(--text-normal, #333333);
 }
 
 .zk-theme-light .zk-menu-option:hover {
-  background: #d0d0d0;
-  color: #0066cc;
+  background: var(--background-modifier-hover, #e9e9e9);
+  color: var(--text-normal, #333333);
 }
 
 .zk-theme-light .zk-menu-option:active {
-  background: #c0c0c0;
+  background: var(--background-modifier-active-hover, #dedede);
 }
 
 .zk-theme-light .zk-menu-separator {
-  background: #d0d0d0;
+  background: var(--background-modifier-border, #d0d0d0);
 }
 
 .zk-theme-light .zk-more-menu {
-    background: #ffffff;
-    border-color: #e0e0e0;
+    background: var(--background-secondary, #ffffff);
+    border-color: var(--background-modifier-border, #e0e0e0);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
 }
 
 .zk-theme-light .zk-more-submenu {
-    border-top-color: #e0e0e0;
+    border-top-color: var(--background-modifier-border, #e0e0e0);
 }
 
 .zk-theme-light .zk-node-ctx-menu {
