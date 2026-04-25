@@ -2665,6 +2665,16 @@ align-items: center;
   pointer-events: auto;
 }
 
+.zk-text-md-overlay .zk-text-md-embed-image {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 4px;
+  pointer-events: auto;
+  cursor: zoom-in;
+}
+
 /* 编辑期容器 */
 .zk-text-md-overlay[data-editing="1"] {
   pointer-events: auto;
