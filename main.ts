@@ -590,19 +590,32 @@ export default class ZKNavigationPlugin extends Plugin {
             this.app.workspace.on('file-open', async (file) => {
                 if (!file || !file.path.endsWith('.moc')) return;
 
-                // 复用当前刚打开 .moc 的 leaf，直接切换成 IndexView，
-                // 避免 detach markdown leaf 后 Obsidian 回退到上一个 markdown 文件，
-                // 从而触发文件树错误定位。
                 const activeLeaf = this.app.workspace.activeLeaf;
                 this.settings.mocCurrentFile = file.path;
                 await this.saveData(this.settings);
 
-                if (activeLeaf?.view?.getViewType() === 'markdown') {
+                // 优先复用已存在的思维树视图，避免重复打开
+                const existingLeaves = this.app.workspace.getLeavesOfType(ZK_INDEX_TYPE);
+                const reuseLeaf = existingLeaves.find((l) => l !== activeLeaf);
+
+                if (reuseLeaf) {
+                    await reuseLeaf.setViewState({
+                        type: ZK_INDEX_TYPE,
+                        state: { file: file.path },
+                        active: true,
+                    });
+                    this.app.workspace.revealLeaf(reuseLeaf);
+                    // 已经把焦点切到现有思维树视图后，再关闭刚被 Obsidian 打开的 .moc markdown 标签
+                    if (activeLeaf?.view?.getViewType() === 'markdown') {
+                        activeLeaf.detach();
+                    }
+                } else if (activeLeaf?.view?.getViewType() === 'markdown') {
+                    // 无现有视图：复用当前刚打开 .moc 的 markdown leaf，直接切换成 IndexView，
+                    // 避免 detach markdown leaf 后 Obsidian 回退到上一个 markdown 文件，
+                    // 从而触发文件树错误定位。
                     await activeLeaf.setViewState({
                         type: ZK_INDEX_TYPE,
-                        state: {
-                            file: file.path,
-                        },
+                        state: { file: file.path },
                         active: true,
                     });
                     this.app.workspace.revealLeaf(activeLeaf);
