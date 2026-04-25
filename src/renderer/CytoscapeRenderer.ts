@@ -5140,8 +5140,73 @@ case 'dagre':
                 const normalizedSource = rawSource.replace(/\r\n?/g, '\n');
                 // 粗糙渲染：用 DOM API 构建，避免 innerHTML 大量字符串拼接
                 const applyRoughInlineMarkdown = (container: HTMLElement, input: string): void => {
+                    const createExternalLink = (rawUrl: string, text?: string): HTMLAnchorElement => {
+                        const a = document.createElement('a');
+                        const href = rawUrl.startsWith('www.') ? `https://${rawUrl}` : rawUrl;
+                        a.href = href;
+                        a.textContent = text || rawUrl;
+                        a.rel = 'noopener';
+                        a.addEventListener('click', (e: MouseEvent) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            window.open(href, '_blank');
+                        });
+                        return a;
+                    };
+                    const createInternalLink = (rawTarget: string): HTMLAnchorElement => {
+                        const [targetPart, aliasPart] = rawTarget.split('|');
+                        const linkText = (targetPart || '').trim();
+                        const displayText = (aliasPart || linkText).trim();
+                        const a = document.createElement('a');
+                        a.className = 'internal-link';
+                        a.href = linkText;
+                        a.dataset.href = linkText;
+                        a.textContent = displayText || linkText;
+                        a.addEventListener('click', (e: MouseEvent) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (!linkText) return;
+                            app?.workspace?.openLinkText?.(linkText, sourcePath, e.ctrlKey || e.metaKey);
+                        });
+                        a.addEventListener('mouseover', (e: MouseEvent) => {
+                            if (!linkText) return;
+                            app?.workspace?.trigger?.('hover-link', {
+                                event: e,
+                                source: 'zk-navigation',
+                                hoverParent: this.container ?? badgeContainer,
+                                targetEl: a,
+                                linktext: linkText,
+                                sourcePath,
+                            });
+                        });
+                        return a;
+                    };
+                    const createEmbedNode = (rawTarget: string): HTMLElement => {
+                        const [targetPart] = rawTarget.split('|');
+                        const linkText = (targetPart || '').trim();
+                        const pathWithoutSubpath = linkText.split('#')[0].trim();
+                        const ext = pathWithoutSubpath.split('.').pop()?.toLowerCase() || '';
+                        const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext);
+                        if (!isImage) return createInternalLink(rawTarget);
+
+                        const file = app?.metadataCache?.getFirstLinkpathDest?.(linkText, sourcePath)
+                            || app?.vault?.getAbstractFileByPath?.(pathWithoutSubpath);
+                        if (!file) return createInternalLink(rawTarget);
+
+                        const img = document.createElement('img');
+                        img.className = 'zk-text-md-embed-image';
+                        img.src = app.vault.getResourcePath(file);
+                        img.alt = linkText;
+                        img.draggable = false;
+                        img.addEventListener('click', (e: MouseEvent) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            app?.workspace?.openLinkText?.(linkText, sourcePath, e.ctrlKey || e.metaKey);
+                        });
+                        return img;
+                    };
                     // 按内联标记拆分并逐段追加 DOM 节点
-                    const tokenRe = /\*\*(.+?)\*\*|~~(.+?)~~|__(.+?)__|(\[([^\]]+)\]\(([^)\s]+)(?:\s+"([^"]*)")?\))|<span\s+style=["']([^"']+)["']>(.*?)<\/span>/g;
+                    const tokenRe = /!\[\[([^\]\n]+)\]\]|\[\[([^\]\n]+)\]\]|\*\*(.+?)\*\*|~~(.+?)~~|__(.+?)__|\[([^\]]+)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)|<span\s+style=["']([^"']+)["']>(.*?)<\/span>|((?:https?:\/\/|www\.)[^\s<>()\]]+)/g;
                     let lastIndex = 0;
                     let m: RegExpExecArray | null;
                     while ((m = tokenRe.exec(input)) !== null) {
@@ -5149,28 +5214,38 @@ case 'dagre':
                             container.appendChild(document.createTextNode(input.slice(lastIndex, m.index)));
                         }
                         if (m[1] !== undefined) {
-                            const strong = document.createElement('strong');
-                            strong.textContent = m[1];
-                            container.appendChild(strong);
+                            container.appendChild(createEmbedNode(m[1]));
                         } else if (m[2] !== undefined) {
-                            const del = document.createElement('del');
-                            del.textContent = m[2];
-                            container.appendChild(del);
+                            container.appendChild(createInternalLink(m[2]));
                         } else if (m[3] !== undefined) {
-                            const u = document.createElement('u');
-                            u.textContent = m[3];
-                            container.appendChild(u);
+                            const strong = document.createElement('strong');
+                            strong.textContent = m[3];
+                            container.appendChild(strong);
+                        } else if (m[4] !== undefined) {
+                            const del = document.createElement('del');
+                            del.textContent = m[4];
+                            container.appendChild(del);
                         } else if (m[5] !== undefined) {
-                            const a = document.createElement('a');
-                            a.href = m[6] || '';
-                            if (m[7]) a.title = m[7];
-                            a.textContent = m[5];
+                            const u = document.createElement('u');
+                            u.textContent = m[5];
+                            container.appendChild(u);
+                        } else if (m[6] !== undefined) {
+                            const a = createExternalLink(m[7] || '', m[6]);
+                            if (m[8]) a.title = m[8];
                             container.appendChild(a);
-                        } else if (m[8] !== undefined) {
+                        } else if (m[9] !== undefined) {
                             const span = document.createElement('span');
-                            span.style.cssText = m[8].trim();
-                            span.textContent = m[9];
+                            span.style.cssText = m[9].trim();
+                            span.textContent = m[10];
                             container.appendChild(span);
+                        } else if (m[11] !== undefined) {
+                            const rawUrl = m[11];
+                            const trimmedUrl = rawUrl.replace(/[.,;:!?，。；：！？]+$/, '');
+                            const trailing = rawUrl.slice(trimmedUrl.length);
+                            container.appendChild(createExternalLink(trimmedUrl));
+                            if (trailing) {
+                                container.appendChild(document.createTextNode(trailing));
+                            }
                         }
                         lastIndex = m.index + m[0].length;
                     }
