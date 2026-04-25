@@ -1,4 +1,5 @@
 import { App, MarkdownRenderChild, TFile } from "obsidian";
+import { toBlob } from "html-to-image";
 import ZKNavigationPlugin from "main";
 import { parseMOCJson } from "src/utils/mocJsonCodec";
 import { convertMOCToZKNodes } from "src/utils/utils";
@@ -19,20 +20,6 @@ function getPNGPath(mocFile: TFile): string {
 
 function delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function blobToImage(blob: Blob): Promise<HTMLImageElement> {
-    // 使用 try/finally 模式确保 object URL 无论 resolve/reject 都会被释放，
-    // 避免 onload/onerror 在边缘情况下都未触发时的泄漏
-    const url = URL.createObjectURL(blob);
-    return new Promise<HTMLImageElement>((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = (error) => reject(error);
-        img.src = url;
-    }).finally(() => {
-        URL.revokeObjectURL(url);
-    });
 }
 
 function waitForImages(root: HTMLElement, timeoutMs: number = 1800): Promise<void> {
@@ -92,95 +79,6 @@ async function waitForPreviewContentReady(root: HTMLElement, timeoutMs: number =
     }
 }
 
-function parsePx(value: string | null | undefined, fallback: number): number {
-    if (!value) return fallback;
-    const n = Number.parseFloat(value);
-    return Number.isFinite(n) ? n : fallback;
-}
-
-async function drawPreviewOverlays(
-    hiddenDiv: HTMLElement,
-    canvas: HTMLCanvasElement,
-    originX: number,
-    originY: number,
-    scaleX: number = 1,
-    scaleY: number = 1
-): Promise<void> {
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const cards = Array.from(
-        hiddenDiv.querySelectorAll('.zk-embed-preview-card, .zk-image-preview-card')
-    ) as HTMLElement[];
-
-    for (const card of cards) {
-        const style = getComputedStyle(card);
-        if (style.display === 'none' || style.visibility === 'hidden') continue;
-
-        const cardRect = card.getBoundingClientRect();
-        const x = (cardRect.left - originX) * scaleX;
-        const y = (cardRect.top - originY) * scaleY;
-        const w = cardRect.width * scaleX;
-        const h = cardRect.height * scaleY;
-        if (w <= 1 || h <= 1) continue;
-
-        // 卡片背景（当前多为 transparent，这里兼容未来样式）
-        const bg = style.backgroundColor;
-        if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
-            ctx.fillStyle = bg;
-            ctx.fillRect(x, y, w, h);
-        }
-
-        const header = card.querySelector('[data-role="embed-header"], [data-role="image-header"]') as HTMLElement | null;
-        const content = card.querySelector('[data-role="embed-content"]') as HTMLElement | null;
-        const headerH = (header ? header.getBoundingClientRect().height : parsePx(style.height, 0) * 0.14) * scaleY;
-
-        if (header) {
-            const hs = getComputedStyle(header);
-            const hb = hs.backgroundColor;
-            if (hb && hb !== 'rgba(0, 0, 0, 0)' && hb !== 'transparent') {
-                ctx.fillStyle = hb;
-                ctx.fillRect(x, y, w, headerH);
-            }
-
-            const label = (header.textContent || '').trim();
-            if (label) {
-                ctx.fillStyle = hs.color || '#cbd5e1';
-                const fontSize = parsePx(hs.fontSize, 12) * Math.min(scaleX, scaleY);
-                const fontWeight = hs.fontWeight || '500';
-                const fontFamily = hs.fontFamily || 'sans-serif';
-                ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
-                ctx.textBaseline = 'middle';
-                ctx.fillText(label, x + 12 * scaleX, y + headerH / 2);
-            }
-        }
-
-        const contentRect = content?.getBoundingClientRect();
-        const cx = contentRect ? (contentRect.left - originX) * scaleX : x;
-        const cy = contentRect ? (contentRect.top - originY) * scaleY : y + headerH;
-        const cw = contentRect ? contentRect.width * scaleX : w;
-        const ch = contentRect ? contentRect.height * scaleY : (h - headerH);
-
-        const img = card.querySelector('img') as HTMLImageElement | null;
-        if (img && img.complete && img.naturalWidth > 0) {
-            ctx.drawImage(img, cx, cy, cw, ch);
-            continue;
-        }
-
-        const svg = card.querySelector('svg') as SVGElement | null;
-        if (svg) {
-            try {
-                const serialized = new XMLSerializer().serializeToString(svg);
-                const svgBlob = new Blob([serialized], { type: 'image/svg+xml;charset=utf-8' });
-                const svgImage = await blobToImage(svgBlob);
-                ctx.drawImage(svgImage, cx, cy, cw, ch);
-            } catch {
-                // ignore svg draw failures
-            }
-        }
-    }
-}
-
 /**
  * 将 .moc 文件渲染为 PNG，返回 PNG 的 TFile
  */
@@ -217,10 +115,10 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
         mocData.nodeAnchors || {}
     );
 
-    // 创建隐藏容器（Cytoscape 需要真实 DOM）
-    // 缩小尺寸加快布局计算和 PNG 导出
+    // 创建隐藏容器（Cytoscape 需要真实 DOM 才能完成布局/overlay 渲染）
+    // opacity 必须保持 1，否则 html-to-image 截图全透明
     const hiddenDiv = document.createElement('div');
-    hiddenDiv.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:900px;height:600px;opacity:0;pointer-events:none;';
+    hiddenDiv.style.cssText = 'position:fixed;left:-99999px;top:-99999px;width:900px;height:600px;pointer-events:none;';
     document.body.appendChild(hiddenDiv);
 
     const renderer = new CytoscapeRenderer();
@@ -241,38 +139,63 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
         };
 
         await renderer.render(hiddenDiv, graphData, options);
-        await delay(500);
-        await waitForPreviewCardsReady(hiddenDiv, 5000);
-        await waitForPreviewContentReady(hiddenDiv, 6000);
-        await waitForImages(hiddenDiv);
 
         const cy = renderer.getCytoscapeInstance();
         if (!cy) throw new Error('Cytoscape 实例不存在');
 
-        // 底图：先导出 Cytoscape 画布，再叠加 HTML overlay（图片/excalidraw 预览）
-        const canvasBg = getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || (plugin.settings.themeMode === 'light' ? '#ffffff' : '#0f172a');
+        // 撑开容器到全图尺寸，让 cytoscape canvas + 所有 overlay 一起被截
+        const bb = cy.elements().boundingBox();
+        const padding = 60;
+        const maxCanvasDim = 8192;
         const exportScale = Math.max(2, Math.ceil(window.devicePixelRatio || 1));
-        const blob: Blob = await (cy as any).png({ output: 'blob-promise', bg: canvasBg, full: false, scale: exportScale });
-        const baseImage = await blobToImage(blob);
 
-        const composedCanvas = document.createElement('canvas');
-        composedCanvas.width = baseImage.width;
-        composedCanvas.height = baseImage.height;
-        const composedCtx = composedCanvas.getContext('2d');
-        if (!composedCtx) throw new Error('导出画布初始化失败');
-        composedCtx.imageSmoothingEnabled = true;
-        composedCtx.imageSmoothingQuality = 'high';
-        composedCtx.drawImage(baseImage, 0, 0);
+        const rawW = bb.w + padding * 2;
+        const rawH = bb.h + padding * 2;
+        let exportZoom = 1;
+        const maxDim = Math.max(rawW, rawH) * exportScale;
+        if (maxDim > maxCanvasDim) {
+            exportZoom = maxCanvasDim / (Math.max(rawW, rawH) * exportScale);
+        }
 
-        const hostRect = hiddenDiv.getBoundingClientRect();
-        const scaleX = composedCanvas.width / Math.max(1, hostRect.width);
-        const scaleY = composedCanvas.height / Math.max(1, hostRect.height);
-        await drawPreviewOverlays(hiddenDiv, composedCanvas, hostRect.left, hostRect.top, scaleX, scaleY);
+        const fullW = Math.ceil(rawW * exportZoom);
+        const fullH = Math.ceil(rawH * exportZoom);
 
-        const composedBlob: Blob = await new Promise((resolve, reject) => {
-            composedCanvas.toBlob((b) => (b ? resolve(b) : reject(new Error('PNG 合成失败'))), 'image/png');
+        hiddenDiv.style.width = `${fullW}px`;
+        hiddenDiv.style.height = `${fullH}px`;
+        cy.resize();
+        cy.viewport({
+            zoom: exportZoom,
+            pan: { x: (-bb.x1 + padding) * exportZoom, y: (-bb.y1 + padding) * exportZoom }
         });
-        pngBytes = await composedBlob.arrayBuffer();
+
+        // 等 overlay 重新定位 + 异步预览内容（excalidraw、markdown、图片）就绪
+        await delay(300);
+        await waitForPreviewCardsReady(hiddenDiv, 5000);
+        await waitForPreviewContentReady(hiddenDiv, 6000);
+        await waitForImages(hiddenDiv);
+
+        const canvasBg = getComputedStyle(document.body).getPropertyValue('--background-primary').trim()
+            || (plugin.settings.themeMode === 'light' ? '#ffffff' : '#0f172a');
+
+        // 一次截图同时拿到 cytoscape canvas 和 HTML overlay（含 markdown 富文本）
+        // 关键：用 style 覆盖克隆根的定位，否则 position:fixed/left:-99999px 会被一并克隆到
+        // foreignObject 里，导致内容渲染到 SVG 视口之外，结果一片纯背景色
+        const blob = await toBlob(hiddenDiv, {
+            pixelRatio: exportScale,
+            backgroundColor: canvasBg,
+            width: fullW,
+            height: fullH,
+            cacheBust: true,
+            style: {
+                position: 'static',
+                left: '0',
+                top: '0',
+                margin: '0',
+                transform: 'none',
+            },
+        });
+        if (!blob) throw new Error('PNG 导出失败');
+        pngBytes = await blob.arrayBuffer();
     } finally {
         renderer.destroy();
         document.body.removeChild(hiddenDiv);
