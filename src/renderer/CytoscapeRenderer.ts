@@ -85,6 +85,18 @@ const registerExtensions = () => {
     }
 };
 
+// 让 Image Toolkit 插件能识别我们渲染的预览图：
+// 它的事件委托只挂在 `.modal-content img` / `.workspace-leaf-content[data-type='markdown'] img` 等选择器上，
+// 自定义 ItemView 默认不在白名单里。包一层带 `modal-content` 类的容器即可命中,
+// `display: contents` 让 wrapper 在布局上完全消失，不影响 img 的尺寸/定位。
+const wrapForImageToolkit = (img: HTMLElement): HTMLElement => {
+    const wrap = document.createElement('div');
+    wrap.className = 'modal-content';
+    wrap.style.display = 'contents';
+    wrap.appendChild(img);
+    return wrap;
+};
+
 /**
  * Cytoscape.js 渲染器
  * 提供高性能的图形可视化和增量更新支持
@@ -3263,7 +3275,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         `;
                         if (!contentEl.isConnected) return;
                         contentEl.textContent = '';
-                        contentEl.appendChild(img);
+                        contentEl.appendChild(wrapForImageToolkit(img));
                         return;
                     }
 
@@ -3317,12 +3329,20 @@ export class CytoscapeRenderer implements IGraphRenderer {
                                     svg = wrapped.querySelector('svg');
                                 }
                                 if (svg instanceof SVGElement || svg instanceof HTMLElement) {
-                                    svg.style.cssText = 'position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;';
                                     svg.removeAttribute('width');
                                     svg.removeAttribute('height');
+                                    // 序列化成 data URI 通过 <img> 装载，让 Image Toolkit 能识别并支持放大
+                                    const svgString = new XMLSerializer().serializeToString(svg);
+                                    const encoded = encodeURIComponent(svgString)
+                                        .replace(/'/g, '%27')
+                                        .replace(/"/g, '%22');
+                                    const img = document.createElement('img');
+                                    img.src = `data:image/svg+xml;charset=utf-8,${encoded}`;
+                                    img.draggable = false;
+                                    img.style.cssText = 'position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; background: transparent;';
                                     contentEl.style.position = 'relative';
                                     contentEl.style.overflow = 'hidden';
-                                    contentEl.appendChild(svg);
+                                    contentEl.appendChild(wrapForImageToolkit(img));
                                     rendered = true;
                                 }
                             }
@@ -3356,7 +3376,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                             contentEl.style.position = 'relative';
                             contentEl.style.overflow = 'hidden';
                             contentEl.textContent = '';
-                            contentEl.appendChild(img);
+                            contentEl.appendChild(wrapForImageToolkit(img));
                             rendered = true;
                         }
                     }
@@ -3688,7 +3708,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 display: block;
                 background: var(--background-secondary);
             `;
-            card.appendChild(img);
+            card.appendChild(wrapForImageToolkit(img));
 
             // 图片加载后根据自然尺寸设置默认大小
             img.addEventListener('load', () => {

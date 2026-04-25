@@ -334,12 +334,7 @@ export class MOCEmbedRenderChild extends MarkdownRenderChild {
     }
 
     async onload() {
-        // 立即移除 src 属性，并从 Obsidian 默认 internal-embed 点击链路中摘出，
-        // 避免点击/刷新后被当作普通内嵌文件再次打开。
-        this.containerEl.removeAttribute('src');
-        this.containerEl.removeAttribute('alt');
-        this.containerEl.removeAttribute('data-href');
-        this.containerEl.classList.remove('internal-embed');
+        // 保留 Obsidian 原始 embed 标记，方便依赖 markdown/embed DOM 的插件识别。
         this.containerEl.empty();
         this.containerEl.addClass('zk-moc-embed');
         this.preventDefaultOpenBehavior(this.containerEl);
@@ -364,7 +359,11 @@ export class MOCEmbedRenderChild extends MarkdownRenderChild {
             img.src = app.vault.getResourcePath(pngFile);
             img.style.cssText = 'width:100%;height:auto;border-radius:6px;';
             img.alt = this.mocFile.basename;
-            this.preventDefaultOpenBehavior(img);
+            img.addEventListener('click', (evt: MouseEvent) => {
+                evt.preventDefault();
+                evt.stopPropagation();
+                this.forwardImageClickToMarkdownLeaf(img, evt);
+            });
             this.currentImg = img;
         } catch (e) {
             this.containerEl.createDiv('zk-moc-embed-error').setText(`思维树预览失败: ${e.message}`);
@@ -403,8 +402,37 @@ export class MOCEmbedRenderChild extends MarkdownRenderChild {
         }, 5000);
     }
 
+    private forwardImageClickToMarkdownLeaf(img: HTMLImageElement, evt: MouseEvent): void {
+        const leafContent = img.closest(".workspace-leaf-content[data-type='markdown']");
+        if (!(leafContent instanceof HTMLElement)) return;
+
+        const proxyImg = document.createElement('img');
+        proxyImg.src = img.src;
+        proxyImg.alt = img.alt;
+        proxyImg.style.cssText = 'position:absolute;left:-99999px;top:-99999px;width:1px;height:1px;opacity:0;pointer-events:none;';
+        leafContent.appendChild(proxyImg);
+
+        proxyImg.dispatchEvent(new MouseEvent('click', {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+            ctrlKey: evt.ctrlKey,
+            altKey: evt.altKey,
+            shiftKey: evt.shiftKey,
+            metaKey: evt.metaKey,
+            button: evt.button,
+            buttons: evt.buttons
+        }));
+
+        window.setTimeout(() => proxyImg.remove(), 1000);
+    }
+
     private preventDefaultOpenBehavior(el: HTMLElement): void {
         const stop = (evt: Event) => {
+            const target = evt.target as HTMLElement | null;
+            if (target?.closest?.('.zk-moc-embed-img')) {
+                return;
+            }
             evt.preventDefault();
             evt.stopPropagation();
         };
