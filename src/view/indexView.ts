@@ -7,7 +7,7 @@ import { AddFreeNodeModal } from "src/modal/addFreeNodeModal";
 import { expandGraphModal } from "src/modal/expandGraphModal";
 import { MOCSelectorModal } from "src/modal/mocSelectorModal";
 import { NoteSearchModal } from "src/modal/noteSearchModal";
-import { convertMOCToZKNodes, getMOCFilesInFolder, MOCParseResult, MOCTreeNode, parseMOCStructure } from "src/utils/utils";
+import { convertMOCToZKNodes, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX, MOCParseResult, MOCTreeNode, parseMOCStructure, stripMocSuffix } from "src/utils/utils";
 import { createEmptyMOCJson } from "src/utils/mocJsonCodec";
 import { MermaidParser } from "src/utils/mermaidParser";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
@@ -275,7 +275,7 @@ export class ZKIndexView extends FileView {
     }
 
     async onLoadFile(file: TFile): Promise<void> {
-        if (file.extension !== 'moc') return;
+        if (!isMocFile(file)) return;
         if (this.plugin.settings.mocCurrentFile !== file.path) {
             this.plugin.settings.mocCurrentFile = file.path;
             await this.plugin.saveData(this.plugin.settings);
@@ -750,7 +750,7 @@ export class ZKIndexView extends FileView {
         // v0.5: 切换当前 MOC 的项目标记(仅 .moc 文件可用)
         const currentPath = this.plugin.settings.mocCurrentFile;
         const currentFile = currentPath ? this.app.vault.getFileByPath(currentPath) : null;
-        if (currentFile && currentFile.extension === 'moc') {
+        if (currentFile && isMocFile(currentFile)) {
             const isProject = this.mocChipProjectBadge?.style.display === 'inline';
             const projectOption = menu.createDiv('zk-menu-option');
             setIcon(projectOption.createSpan('zk-menu-option-icon'), isProject ? 'square' : 'square-check-big');
@@ -1556,7 +1556,7 @@ cy.fit(null, 40);
 
     private buildMOCFilePath(mocFolder: string, baseName: string): string {
         const normalizedFolder = (mocFolder || '').replace(/^\/+|\/+$/g, '');
-        return normalizedFolder ? `${normalizedFolder}/${baseName}.moc` : `${baseName}.moc`;
+        return normalizedFolder ? `${normalizedFolder}/${baseName}${MOC_FILE_SUFFIX}` : `${baseName}${MOC_FILE_SUFFIX}`;
     }
 
     private async promptCreateInitialMOCFile(mocFolder: string): Promise<TFile | null> {
@@ -1583,7 +1583,7 @@ cy.fit(null, 40);
 
             new Setting(contentEl)
                 .setName('文件名')
-                .setDesc('会自动添加 .moc 后缀')
+                .setDesc(`会自动添加 ${MOC_FILE_SUFFIX} 后缀`)
                 .addText((text) => {
                     text.setPlaceholder(defaultBaseName);
                     text.setValue(defaultBaseName);
@@ -1607,7 +1607,7 @@ cy.fit(null, 40);
             const createBtn = buttonRow.createEl('button', { text: '创建' });
             createBtn.addClass('mod-cta');
             createBtn.onclick = async () => {
-                const normalizedBaseName = (draftBaseName || defaultBaseName).replace(/\.moc$/i, '').trim();
+                const normalizedBaseName = stripMocSuffix(draftBaseName || defaultBaseName).trim();
                 if (!normalizedBaseName) {
                     new Notice('文件名不能为空');
                     return;
@@ -2426,8 +2426,8 @@ cy.fit(null, 40);
                 const path = String(detailFilePath || node?.file?.path || '').trim();
                 if (!path) return '';
                 const name = path.includes('/') ? path.substring(path.lastIndexOf('/') + 1) : path;
-                if (name.toLowerCase().endsWith('.moc')) {
-                    return name; // .moc 需要保留扩展名
+                if (isMocPath(name)) {
+                    return name; // .moc / .moc.md 需要保留扩展名
                 }
                 return name.replace(/\.md$/i, '');
             })();

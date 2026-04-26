@@ -24,6 +24,25 @@ export interface MOCTreeNode {
     arrowTarget?: string;       // 箭头关系的目标节点ID
 }
 
+// ---- MOC 文件后缀识别 ----
+// 支持 .moc（旧）和 .moc.md（新）两种后缀
+export const MOC_FILE_SUFFIX = '.moc.md';
+
+export function isMocPath(path: string | null | undefined): boolean {
+    if (!path) return false;
+    const lower = path.toLowerCase();
+    return lower.endsWith('.moc.md') || lower.endsWith('.moc');
+}
+
+export function isMocFile(file: TFile | null | undefined): boolean {
+    if (!file) return false;
+    return isMocPath(file.path);
+}
+
+export function stripMocSuffix(name: string): string {
+    return name.replace(/\.moc\.md$/i, '').replace(/\.moc$/i, '');
+}
+
 // ---- 辅助函数 ----
 
 // 构造 MOCTreeNode，提供默认值以降低 16 处构造点的出错概率
@@ -148,8 +167,8 @@ export async function parseMOCStructure(
 
     const content = await app.vault.read(file);
 
-    // .moc 文件使用 JSON codec，.md 文件使用 Mermaid 解析器
-    if (file.extension === 'moc') {
+    // .moc / .moc.md 文件使用 JSON codec，普通 .md 文件使用 Mermaid 解析器
+    if (isMocFile(file)) {
         const { parseMOCJson } = await import('./mocJsonCodec');
         return parseMOCJson(content, filePath, app);
     }
@@ -793,8 +812,8 @@ export async function saveMOCStructure(
         throw new Error(`File not found: ${filePath}`);
     }
 
-    // .moc 文件：直接写 JSON，无需标题替换逻辑
-    if (file.extension === 'moc') {
+    // .moc / .moc.md 文件：直接写 JSON，无需标题替换逻辑
+    if (isMocFile(file)) {
         const { serializeMOCJson } = await import('./mocJsonCodec');
         await app.vault.modify(file, serializeMOCJson(data));
         await new Promise(resolve => setTimeout(resolve, 50));
@@ -864,12 +883,12 @@ a --> a.2
 
 /**
  * 获取所有 MOC 文件：
- * - .moc 文件全局识别，不限文件夹
- * - .md 文件限定在指定文件夹内（兼容旧格式）
+ * - .moc / .moc.md 文件全局识别，不限文件夹
+ * - 其它 .md 文件限定在指定文件夹内（兼容旧格式）
  */
 export function getMOCFilesInFolder(app: App, folderPath: string): TFile[] {
     return app.vault.getFiles().filter(f => {
-        if (f.extension === 'moc') return true;
+        if (isMocFile(f)) return true;
         if (f.extension === 'md' && folderPath) return f.path.startsWith(folderPath + '/');
         return false;
     });

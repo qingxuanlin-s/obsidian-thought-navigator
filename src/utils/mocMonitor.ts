@@ -1,5 +1,6 @@
 import { TFile, debounce, Notice } from "obsidian";
 import ZKNavigationPlugin from "main";
+import { isMocFile } from "src/utils/utils";
 
 /**
  * MOC 文件监听器
@@ -76,7 +77,7 @@ export class MOCFileMonitor {
     isMOCFile(file: TFile): boolean {
         // 只处理 .md 和 .moc 文件，避免 PNG 等附件误触发
         if (file.extension !== 'md' && file.extension !== 'moc') return false;
-        if (file.extension === 'moc') return true;
+        if (isMocFile(file)) return true;
         const mocFolder = this.plugin.settings.mocFolderPath;
         if (!mocFolder) return false;
         return file.path.startsWith(mocFolder + '/') || file.path.startsWith(mocFolder);
