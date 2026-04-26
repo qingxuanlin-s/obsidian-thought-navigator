@@ -1,4 +1,5 @@
 import { App, SuggestModal, TFile } from "obsidian";
+import { isMocFile } from "src/utils/utils";
 
 interface MOCItem {
     type: 'moc' | 'roadmap';
@@ -48,7 +49,7 @@ export class MOCSelectorModal extends SuggestModal<MOCItem> {
 
     private async scanProjectFlags() {
         await Promise.all(this.sortedFiles.map(async (f) => {
-            if (f.extension !== 'moc') return;
+            if (!isMocFile(f)) return;
             try {
                 const content = await this.app.vault.cachedRead(f);
                 if (PROJECT_FLAG_RE.test(content)) {

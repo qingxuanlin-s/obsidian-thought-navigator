@@ -3,7 +3,7 @@ import { t } from "src/lang/helper";
 import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
 import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
 import { ZKNavigationSettngTab } from "src/settings/settings";
-import { mainNoteInit, getMOCFilesInFolder } from "src/utils/utils";
+import { mainNoteInit, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX } from "src/utils/utils";
 import { createEmptyMOCJson } from "src/utils/mocJsonCodec";
 import { MOCFileMonitor } from "src/utils/mocMonitor";
 import { MOCEmbedRenderChild } from "src/embed/mocEmbedExporter";
@@ -261,10 +261,12 @@ export default class ZKNavigationPlugin extends Plugin {
         // 注册 .moc 扩展名，使 Obsidian 在文件浏览器中显示并正确索引这些文件
         this.registerExtensions(['moc'], 'markdown');
 
-        // 注册 ![[xxx.moc]] 内嵌处理：渲染为 PNG 图片附件
+        // 注册 ![[xxx.moc]] / ![[xxx.moc.md]] 内嵌处理：渲染为 PNG 图片附件
         // Reading View 通过 post-processor 处理
         this.registerMarkdownPostProcessor((element, context) => {
-            const embeds = element.querySelectorAll<HTMLElement>('.internal-embed[src$=".moc"]');
+            const embeds = element.querySelectorAll<HTMLElement>(
+                '.internal-embed[src$=".moc"], .internal-embed[src$=".moc.md"]'
+            );
             embeds.forEach(embedEl => {
                 const src = embedEl.getAttribute('src');
                 if (!src || embedEl.dataset.mocHandled) return;
@@ -275,7 +277,7 @@ export default class ZKNavigationPlugin extends Plugin {
                     : '';
                 const mocFile = this.app.metadataCache.getFirstLinkpathDest(src, basePath)
                     ?? this.app.vault.getFileByPath(src);
-                if (!mocFile || !(mocFile instanceof TFile) || mocFile.extension !== 'moc') return;
+                if (!mocFile || !(mocFile instanceof TFile) || !isMocFile(mocFile)) return;
 
                 const child = new MOCEmbedRenderChild(embedEl, mocFile, this);
                 context.addChild(child);
@@ -286,12 +288,12 @@ export default class ZKNavigationPlugin extends Plugin {
         const livePreviewEmbedChildren = new WeakMap<HTMLElement, MOCEmbedRenderChild>();
         const handleMocEmbed = (embedEl: HTMLElement) => {
             const src = embedEl.getAttribute('src');
-            if (!src?.endsWith('.moc') || embedEl.dataset.mocHandled) return;
+            if (!src || !isMocPath(src) || embedEl.dataset.mocHandled) return;
             embedEl.dataset.mocHandled = '1';
 
             const mocFile = this.app.metadataCache.getFirstLinkpathDest(src, '')
                 ?? this.app.vault.getFileByPath(src);
-            if (!mocFile || !(mocFile instanceof TFile) || mocFile.extension !== 'moc') return;
+            if (!mocFile || !(mocFile instanceof TFile) || !isMocFile(mocFile)) return;
 
             const child = new MOCEmbedRenderChild(embedEl, mocFile, this);
             livePreviewEmbedChildren.set(embedEl, child);
@@ -433,7 +435,7 @@ export default class ZKNavigationPlugin extends Plugin {
                                 try {
                                     const folder = file as TFolder;
                                     const baseName = '思维树-' + moment().format('YYYYMMDDHHmmss');
-                                    const filePath = folder.path ? `${folder.path}/${baseName}.moc` : `${baseName}.moc`;
+                                    const filePath = folder.path ? `${folder.path}/${baseName}${MOC_FILE_SUFFIX}` : `${baseName}${MOC_FILE_SUFFIX}`;
                                     const content = createEmptyMOCJson(
                                         this.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free'
                                     );
@@ -532,7 +534,7 @@ export default class ZKNavigationPlugin extends Plugin {
                 try {
                     const folder = activeFile.parent;
                     const baseName = '思维树-' + moment().format('YYYYMMDDHHmmss');
-                    const filePath = folder?.path ? folder.path + '/' + baseName + '.moc' : baseName + '.moc';
+                    const filePath = folder?.path ? folder.path + '/' + baseName + MOC_FILE_SUFFIX : baseName + MOC_FILE_SUFFIX;
                     const mocContent = createEmptyMOCJson(this.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free');
                     const newFile = await this.app.vault.create(filePath, mocContent);
                     editor.replaceSelection('![[' + newFile.name + ']]');
@@ -588,7 +590,7 @@ export default class ZKNavigationPlugin extends Plugin {
         // 拦截 .moc 文件打开，用分支视图（IndexView）代替默认编辑器
         this.registerEvent(
             this.app.workspace.on('file-open', async (file) => {
-                if (!file || !file.path.endsWith('.moc')) return;
+                if (!file || !isMocFile(file)) return;
 
                 const activeLeaf = this.app.workspace.activeLeaf;
                 this.settings.mocCurrentFile = file.path;
@@ -826,7 +828,7 @@ export default class ZKNavigationPlugin extends Plugin {
      * 命令面板和视图头部菜单共用
      */
     async toggleMOCProjectFlag(file: TFile): Promise<void> {
-        if (file.extension !== 'moc') {
+        if (!isMocFile(file)) {
             new Notice("项目标记仅支持 .moc 文件");
             return;
         }
@@ -876,7 +878,7 @@ export default class ZKNavigationPlugin extends Plugin {
                 let content = await this.app.vault.read(mocFile);
                 let modified = false;
 
-                if (mocFile.extension === 'moc') {
+                if (isMocFile(mocFile)) {
                     let json: any;
                     try {
                         json = JSON.parse(content);

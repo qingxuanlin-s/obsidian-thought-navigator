@@ -1,5 +1,6 @@
 import { App, TFile } from "obsidian";
 import { MermaidParser } from "./mermaidParser";
+import { isMocFile } from "./utils";
 
 /**
  * MOC 中笔记的位置信息
@@ -84,7 +85,7 @@ export class MOCReverseIndex {
                 return linkedFile;
             };
 
-            if (file.extension === 'moc') {
+            if (isMocFile(file)) {
                 // JSON 格式：遍历节点树提取 wikilink
                 let json: any;
                 try { json = JSON.parse(content); } catch { return; }
@@ -186,7 +187,7 @@ export class MOCReverseIndex {
      */
     private getMOCFiles(): TFile[] {
         return this.app.vault.getFiles().filter(f => {
-            if (f.extension === 'moc') return true;
+            if (isMocFile(f)) return true;
             if (f.extension === 'md' && this.mocFolderPath) return f.path.startsWith(this.mocFolderPath + '/');
             return false;
         });

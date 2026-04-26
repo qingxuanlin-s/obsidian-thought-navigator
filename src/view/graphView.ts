@@ -2,7 +2,7 @@ import ZKNavigationPlugin from "main";
 import { ExtraButtonComponent, FileView, ItemView, Notice, TFile, WorkspaceLeaf, debounce, loadMermaid, setIcon } from "obsidian";
 import { ZKNode, ZK_NAVIGATION } from "./indexView";
 import { t } from "src/lang/helper";
-import { convertMOCToZKNodes, getMOCFilesInFolder, parseMOCStructure, ReverseRelation } from "src/utils/utils";
+import { convertMOCToZKNodes, getMOCFilesInFolder, isMocFile, parseMOCStructure, ReverseRelation } from "src/utils/utils";
 
 import { CytoscapeExpandModal } from "src/modal/cytoscapeExpandModal";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
@@ -287,7 +287,7 @@ export class ZKGraphView extends ItemView {
 
     // 检查文件是否是 MOC 文件
     isMOCFile(file: TFile): boolean {
-        if (file.extension === 'moc') return true;
+        if (isMocFile(file)) return true;
         if (file.extension !== 'md') return false;
         const mocFolder = this.plugin.settings.mocFolderPath;
         if (!mocFolder) return false;

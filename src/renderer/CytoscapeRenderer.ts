@@ -6,6 +6,7 @@ import { ZKNode } from 'src/view/indexView';
 import { Component, MarkdownRenderer, Notice, Platform, setIcon } from 'obsidian';
 import { t } from 'src/lang/helper';
 import { EmbeddableMarkdownEditor } from 'src/utils/EmbeddableMarkdownEditor';
+import { isMocPath, stripMocSuffix } from 'src/utils/utils';
 
 // 处理 CommonJS 和 ESM 模块的兼容性
 const getCytoscape = (): any => {
@@ -1967,16 +1968,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
     /**
      * 生成用于保存的 wikilink：
      * - .md 继续使用 basename（保持现有习惯）
-     * - .moc 使用文件名（带扩展名），避免与同名 .md 冲突
+     * - .moc / .moc.md 使用文件名（带扩展名），避免与同名 .md 冲突
      */
     private buildWikiLinkForFile(file: any): string {
         const path = String(file?.path || '').trim();
         const name = String(file?.name || '').trim();
         const basename = String(file?.basename || '').trim();
-        const extension = String(file?.extension || '').toLowerCase();
 
-        if ((path && path.toLowerCase().endsWith('.moc')) || extension === 'moc') {
-            return name || `${basename}.moc`;
+        if (isMocPath(path) || isMocPath(name)) {
+            return name || basename;
         }
 
         return basename || name || path;
@@ -1988,11 +1988,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
      */
     private getMocPreviewPngCandidates(mocFilePath: string): string[] {
         const normalized = String(mocFilePath || '').trim();
-        if (!normalized.toLowerCase().endsWith('.moc')) return [];
+        if (!isMocPath(normalized)) return [];
 
         const dir = normalized.includes('/') ? normalized.substring(0, normalized.lastIndexOf('/')) : '';
         const mocFileName = normalized.includes('/') ? normalized.substring(normalized.lastIndexOf('/') + 1) : normalized;
-        const mocBasename = mocFileName.replace(/\.moc$/i, '');
+        const mocBasename = stripMocSuffix(mocFileName);
 
         const candidates = [
             dir ? `${dir}/attachments/${mocFileName}.png` : `attachments/${mocFileName}.png`,
@@ -2838,8 +2838,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
             headerLink.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                if (sourceFile.path.endsWith('.moc')) {
-                    // .moc 文件：触发分支视图打开
+                if (isMocPath(sourceFile.path)) {
+                    // .moc / .moc.md 文件：触发分支视图打开
                     this.container?.dispatchEvent(new CustomEvent('open-moc-in-index-view', {
                         detail: { filePath: sourceFile.path }
                     }));
@@ -3223,7 +3223,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 document.addEventListener('mouseup', () => { onMouseUp(); finalize(); }, { signal: ctrl.signal });
             });
 
-            const isMOCFile = sourceFile.path.endsWith('.moc');
+            const isMOCFile = isMocPath(sourceFile.path);
             const isExcalidraw = sourceFile.path.includes('.excalidraw');
             const hasExcalidrawCache = isExcalidrawFile && !!contentEl.querySelector('svg, img');
 
