@@ -2494,7 +2494,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             selector: 'edge[type="reverse"]',
             style: {
                 'line-style': 'dashed',
-                'line-dash-pattern': [6, 4],
+                'line-dash-pattern': [12, 8],
                 'line-color': '#64748b',  // 暗灰色（降噪）
                 'target-arrow-color': '#64748b',
                 'width': 3,    // 加粗一倍
@@ -2508,7 +2508,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             selector: 'edge[type="cross-domain"]',
             style: {
                 'line-style': 'dashed',
-                'line-dash-pattern': [8, 4],  // 虚线模式
+                'line-dash-pattern': [14, 8],  // 虚线模式
                 'line-color': '#8b5cf6',  // 紫色（跨领域标识）
                 'target-arrow-color': '#8b5cf6',
                 'width': 2,
@@ -5796,6 +5796,12 @@ case 'dagre':
         let isDragging = false;
         let dragLine: SVGLineElement | null = null;
         let svgOverlay: SVGSVGElement | null = null;
+        // 仅在 mousedown 时往 document 挂 mousemove/mouseup，mouseup 立即解绑——
+        // 否则每节点一份 handler 永驻 document，鼠标每动一次都要扫一遍所有节点。
+        const detachDocListeners = () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
 
         handle.addEventListener('mousedown', (e: MouseEvent) => {
             e.preventDefault();
@@ -5830,6 +5836,9 @@ case 'dagre':
             dragLine.setAttribute('y1', sourcePos.y.toString());
             dragLine.setAttribute('x2', sourcePos.x.toString());
             dragLine.setAttribute('y2', sourcePos.y.toString());
+
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
         });
 
         let dragMoveRafId: number | null = null;
@@ -5871,6 +5880,8 @@ case 'dagre':
         };
 
         const handleMouseUp = async (e: MouseEvent) => {
+            // 第一行解绑：无论后续走哪条 return 都不残留 document 监听
+            detachDocListeners();
             if (!isDragging || !this.cy) return;
 
             isDragging = false;
@@ -5931,28 +5942,6 @@ case 'dagre':
             }
         };
 
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-
-        // 清理函数
-        const cleanup = () => {
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-        };
-
-        // 当手柄被移除时清理
-        const observer = new MutationObserver((mutations) => {
-            mutations.forEach((mutation) => {
-                mutation.removedNodes.forEach((node) => {
-                    if (node === handle) {
-                        cleanup();
-                        observer.disconnect();
-                    }
-                });
-            });
-        });
-
-        observer.observe(container, { childList: true });
     }
 
     /**
@@ -6116,6 +6105,11 @@ case 'dagre':
         let dragStartDistance = distance;
         let dragStartProjection = 0;
         const CURVATURE_DRAG_SENSITIVITY = 1.5;
+        // 仅在 mousedown 时才挂 document 监听，避免每条选中边一份 handler 永驻
+        const detachDocListeners = () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
 
         controlPoint.addEventListener('mousedown', (e: MouseEvent) => {
             e.preventDefault();
@@ -6138,6 +6132,9 @@ case 'dagre':
             dragStartDistance = edge.data('controlPointDistance') !== undefined ? edge.data('controlPointDistance') : distance;
             dragStartProjection = (mouseX - midX) * perpX + (mouseY - midY) * perpY;
             controlPoint.style.cursor = 'grabbing';
+
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
         });
 
         const handleMouseMove = (e: MouseEvent) => {
@@ -6188,28 +6185,19 @@ case 'dagre':
         };
 
         const handleMouseUp = () => {
+            detachDocListeners();
             if (isDragging) {
                 isDragging = false;
                 controlPoint.style.cursor = 'grab';
             }
         };
 
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-
-        // 清理函数
-        const cleanup = () => {
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-            // updater 清理由 hideEdgeControlPoints 统一处理
-        };
-
-        // 当控制点被移除时清理
+        // 控制点 DOM 移除时（hideEdgeControlPoints 主动 remove）若拖拽中也兜底解绑
         const observer = new MutationObserver((mutations) => {
             mutations.forEach((mutation) => {
                 mutation.removedNodes.forEach((node) => {
                     if (node === controlPoint) {
-                        cleanup();
+                        detachDocListeners();
                         observer.disconnect();
                     }
                 });
@@ -6402,6 +6390,11 @@ case 'dagre':
         let isDragging = false;
         let dragLine: SVGLineElement | null = null;
         let svgOverlay: SVGSVGElement | null = null;
+        // 仅在 mousedown 时挂 document 监听，每条边端点不残留 handler
+        const detachDocListeners = () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
 
         handle.addEventListener('mousedown', (e: MouseEvent) => {
             e.preventDefault();
@@ -6445,6 +6438,9 @@ case 'dagre':
             dragLine.setAttribute('y1', startPos.y.toString());
             dragLine.setAttribute('x2', startPos.x.toString());
             dragLine.setAttribute('y2', startPos.y.toString());
+
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
         });
 
         let endpointMoveRafId: number | null = null;
@@ -6490,6 +6486,7 @@ case 'dagre':
         };
 
         const handleMouseUp = async (e: MouseEvent) => {
+            detachDocListeners();
             if (!isDragging || !this.cy) return;
 
             isDragging = false;
@@ -6554,21 +6551,12 @@ case 'dagre':
             }
         };
 
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-
-        // 清理函数
-        const cleanup = () => {
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-        };
-
-        // 当手柄被移除时清理
+        // 端点手柄 DOM 移除时若拖拽中也兜底解绑（addEdgeEndpointHandles 会整体重建容器）
         const observer = new MutationObserver((mutations) => {
             mutations.forEach((mutation) => {
                 mutation.removedNodes.forEach((node) => {
                     if (node === handle) {
-                        cleanup();
+                        detachDocListeners();
                         observer.disconnect();
                     }
                 });
@@ -9850,6 +9838,69 @@ case 'dagre':
         let autoHierarchyGrabbedNode: any = null;
         let autoHierarchyStyled = false;
 
+        // 拖拽期静态候选快照：grab 时构建一次，drag 期间复用，避免每帧 N 次 renderedPosition
+        type DragCandidate = {
+            node: any;
+            id: string;
+            isPlaceholder: boolean;
+            isGroup: boolean;
+            isFreeNode: boolean;
+            isCrossDomain: boolean;
+            metrics: { x: number; y: number; x1: number; x2: number; y1: number; y2: number; width: number; height: number };
+        };
+        let dragCandidateSnapshot: DragCandidate[] = [];
+        let snapshotZoom = 0;
+        let snapshotPanX = 0;
+        let snapshotPanY = 0;
+
+        const buildDragCandidateSnapshot = (draggedId: string) => {
+            if (!this.cy) {
+                dragCandidateSnapshot = [];
+                return;
+            }
+            const arr: DragCandidate[] = [];
+            this.cy.nodes().forEach((other: any) => {
+                if (other.id() === draggedId) return;
+                if (other.removed() || !other.visible()) return;
+                if (other.hasClass('zk-collapsed-hidden')) return;
+                const d = other.data();
+                const originalId = d.originalNode?.ID || d.originalSource || other.id();
+                const isFreeNode = !!d.isFreeNode || (typeof originalId === 'string' && originalId.startsWith('free.'));
+                arr.push({
+                    node: other,
+                    id: other.id(),
+                    isPlaceholder: !!d.isPlaceholder,
+                    isGroup: !!d.isGroup,
+                    isFreeNode,
+                    isCrossDomain: !!d.isCrossDomain,
+                    metrics: getRenderedMetrics(other),
+                });
+            });
+            dragCandidateSnapshot = arr;
+            snapshotZoom = this.cy.zoom();
+            const pan = this.cy.pan();
+            snapshotPanX = pan.x;
+            snapshotPanY = pan.y;
+        };
+
+        // 拖拽中如发生 zoom/pan 变化（罕见但可能），重算快照 metrics（保留候选数组，不重建）
+        const refreshSnapshotMetricsIfViewportChanged = () => {
+            if (!this.cy || dragCandidateSnapshot.length === 0) return;
+            const zoom = this.cy.zoom();
+            const pan = this.cy.pan();
+            if (zoom === snapshotZoom && pan.x === snapshotPanX && pan.y === snapshotPanY) return;
+            for (const cand of dragCandidateSnapshot) {
+                cand.metrics = getRenderedMetrics(cand.node);
+            }
+            snapshotZoom = zoom;
+            snapshotPanX = pan.x;
+            snapshotPanY = pan.y;
+        };
+
+        const clearDragCandidateSnapshot = () => {
+            dragCandidateSnapshot = [];
+        };
+
         const ensureAlignmentOverlay = () => {
             if (alignmentOverlay || !this.container) return;
             alignmentOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -9932,6 +9983,8 @@ case 'dagre':
             ensureAlignmentOverlay();
             if (!verticalAlignmentLine || !horizontalAlignmentLine || !spacingGuideLineA || !spacingGuideLineB) return;
 
+            refreshSnapshotMetricsIfViewportChanged();
+
             const originalMetrics = getRenderedMetrics(draggedNode);
             let snappedX = originalMetrics.x;
             let snappedY = originalMetrics.y;
@@ -9943,99 +9996,103 @@ case 'dagre':
             let horizontalSpacing: { left: any; right: any; y: number } | null = null;
             let verticalSpacing: { top: any; bottom: any; x: number } | null = null;
 
-            this.cy.nodes('[!isGroup]').forEach((otherNode: any) => {
-                if (otherNode.id() === draggedNode.id()) return;
-                if (otherNode.data('isPlaceholder')) return;
-                if (otherNode.removed() || !otherNode.visible()) return;
-                if (otherNode.hasClass('zk-collapsed-hidden')) return;
+            // 单次遍历：同时算对齐候选 + 收集 axis peers，metrics 来自 grab 时建立的快照
+            const proximitySq = GUIDE_PROXIMITY * GUIDE_PROXIMITY;
+            const horizontalPeerMetrics: typeof originalMetrics[] = [];
+            const verticalPeerMetrics: typeof originalMetrics[] = [];
+            const draggedId = draggedNode.id();
 
-                // 只对附近 400px 内的节点做辅助
-                const otherPos = otherNode.renderedPosition();
-                const dist = Math.hypot(originalMetrics.x - otherPos.x, originalMetrics.y - otherPos.y);
-                if (dist > GUIDE_PROXIMITY) return;
+            for (let i = 0; i < dragCandidateSnapshot.length; i++) {
+                const cand = dragCandidateSnapshot[i];
+                if (cand.id === draggedId) continue;
+                if (cand.isPlaceholder || cand.isGroup) continue;
+                const other = cand.metrics;
+                const dx = originalMetrics.x - other.x;
+                const dy = originalMetrics.y - other.y;
+                if (dx * dx + dy * dy > proximitySq) continue;
 
-                const other = getRenderedMetrics(otherNode);
-                const verticalCandidates = [
-                    { delta: Math.abs(originalMetrics.x - other.x), snapX: other.x, guideX: other.x, y1: Math.min(originalMetrics.y1, other.y1) - 40, y2: Math.max(originalMetrics.y2, other.y2) + 40 },
-                    { delta: Math.abs(originalMetrics.x1 - other.x1), snapX: other.x1 + originalMetrics.width / 2, guideX: other.x1, y1: Math.min(originalMetrics.y1, other.y1) - 40, y2: Math.max(originalMetrics.y2, other.y2) + 40 },
-                    { delta: Math.abs(originalMetrics.x2 - other.x2), snapX: other.x2 - originalMetrics.width / 2, guideX: other.x2, y1: Math.min(originalMetrics.y1, other.y1) - 40, y2: Math.max(originalMetrics.y2, other.y2) + 40 }
-                ];
-                const horizontalCandidates = [
-                    { delta: Math.abs(originalMetrics.y - other.y), snapY: other.y, guideY: other.y, x1: Math.min(originalMetrics.x1, other.x1) - 40, x2: Math.max(originalMetrics.x2, other.x2) + 40 },
-                    { delta: Math.abs(originalMetrics.y1 - other.y1), snapY: other.y1 + originalMetrics.height / 2, guideY: other.y1, x1: Math.min(originalMetrics.x1, other.x1) - 40, x2: Math.max(originalMetrics.x2, other.x2) + 40 },
-                    { delta: Math.abs(originalMetrics.y2 - other.y2), snapY: other.y2 - originalMetrics.height / 2, guideY: other.y2, x1: Math.min(originalMetrics.x1, other.x1) - 40, x2: Math.max(originalMetrics.x2, other.x2) + 40 }
-                ];
+                // 对齐候选（X 轴：中心 / 左缘 / 右缘）
+                const vc1 = Math.abs(originalMetrics.x - other.x);
+                if (vc1 <= ALIGNMENT_THRESHOLD && vc1 < verticalBest) {
+                    verticalBest = vc1;
+                    snappedX = other.x;
+                    verticalGuide = { x: other.x, y1: Math.min(originalMetrics.y1, other.y1) - 40, y2: Math.max(originalMetrics.y2, other.y2) + 40 };
+                }
+                const vc2 = Math.abs(originalMetrics.x1 - other.x1);
+                if (vc2 <= ALIGNMENT_THRESHOLD && vc2 < verticalBest) {
+                    verticalBest = vc2;
+                    snappedX = other.x1 + originalMetrics.width / 2;
+                    verticalGuide = { x: other.x1, y1: Math.min(originalMetrics.y1, other.y1) - 40, y2: Math.max(originalMetrics.y2, other.y2) + 40 };
+                }
+                const vc3 = Math.abs(originalMetrics.x2 - other.x2);
+                if (vc3 <= ALIGNMENT_THRESHOLD && vc3 < verticalBest) {
+                    verticalBest = vc3;
+                    snappedX = other.x2 - originalMetrics.width / 2;
+                    verticalGuide = { x: other.x2, y1: Math.min(originalMetrics.y1, other.y1) - 40, y2: Math.max(originalMetrics.y2, other.y2) + 40 };
+                }
 
-                verticalCandidates.forEach((candidate) => {
-                    if (candidate.delta <= ALIGNMENT_THRESHOLD && candidate.delta < verticalBest) {
-                        verticalBest = candidate.delta;
-                        snappedX = candidate.snapX;
-                        verticalGuide = { x: candidate.guideX, y1: candidate.y1, y2: candidate.y2 };
-                    }
-                });
+                // 对齐候选（Y 轴：中心 / 上缘 / 下缘）
+                const hc1 = Math.abs(originalMetrics.y - other.y);
+                if (hc1 <= ALIGNMENT_THRESHOLD && hc1 < horizontalBest) {
+                    horizontalBest = hc1;
+                    snappedY = other.y;
+                    horizontalGuide = { y: other.y, x1: Math.min(originalMetrics.x1, other.x1) - 40, x2: Math.max(originalMetrics.x2, other.x2) + 40 };
+                }
+                const hc2 = Math.abs(originalMetrics.y1 - other.y1);
+                if (hc2 <= ALIGNMENT_THRESHOLD && hc2 < horizontalBest) {
+                    horizontalBest = hc2;
+                    snappedY = other.y1 + originalMetrics.height / 2;
+                    horizontalGuide = { y: other.y1, x1: Math.min(originalMetrics.x1, other.x1) - 40, x2: Math.max(originalMetrics.x2, other.x2) + 40 };
+                }
+                const hc3 = Math.abs(originalMetrics.y2 - other.y2);
+                if (hc3 <= ALIGNMENT_THRESHOLD && hc3 < horizontalBest) {
+                    horizontalBest = hc3;
+                    snappedY = other.y2 - originalMetrics.height / 2;
+                    horizontalGuide = { y: other.y2, x1: Math.min(originalMetrics.x1, other.x1) - 40, x2: Math.max(originalMetrics.x2, other.x2) + 40 };
+                }
 
-                horizontalCandidates.forEach((candidate) => {
-                    if (candidate.delta <= ALIGNMENT_THRESHOLD && candidate.delta < horizontalBest) {
-                        horizontalBest = candidate.delta;
-                        snappedY = candidate.snapY;
-                        horizontalGuide = { y: candidate.guideY, x1: candidate.x1, x2: candidate.x2 };
-                    }
-                });
-            });
+                // 等距辅助：按轴分组
+                if (Math.abs(other.y - originalMetrics.y) <= AXIS_GROUP_THRESHOLD) {
+                    horizontalPeerMetrics.push(other);
+                }
+                if (Math.abs(other.x - originalMetrics.x) <= AXIS_GROUP_THRESHOLD) {
+                    verticalPeerMetrics.push(other);
+                }
+            }
 
-            const peers = this.cy.nodes('[!isGroup]').filter((otherNode: any) => {
-                if (otherNode.id() === draggedNode.id()) return false;
-                if (otherNode.data('isPlaceholder')) return false;
-                if (otherNode.removed() || !otherNode.visible()) return false;
-                if (otherNode.hasClass('zk-collapsed-hidden')) return false;
-                // 只对附近 400px 内的节点做等距辅助
-                const otherPos = otherNode.renderedPosition();
-                const dist = Math.hypot(originalMetrics.x - otherPos.x, originalMetrics.y - otherPos.y);
-                if (dist > GUIDE_PROXIMITY) return false;
-                return true;
-            });
-
-            const horizontalPeers = peers
-                .map((node: any) => ({ node, metrics: getRenderedMetrics(node) }))
-                .filter(({ metrics }) => Math.abs(metrics.y - originalMetrics.y) <= AXIS_GROUP_THRESHOLD)
-                .sort((a, b) => a.metrics.x - b.metrics.x);
-
-            for (let i = 0; i < horizontalPeers.length - 1; i++) {
-                const left = horizontalPeers[i];
-                const right = horizontalPeers[i + 1];
-                if (left.metrics.x >= originalMetrics.x || right.metrics.x <= originalMetrics.x) continue;
-                const midpoint = (left.metrics.x + right.metrics.x) / 2;
+            horizontalPeerMetrics.sort((a, b) => a.x - b.x);
+            for (let i = 0; i < horizontalPeerMetrics.length - 1; i++) {
+                const left = horizontalPeerMetrics[i];
+                const right = horizontalPeerMetrics[i + 1];
+                if (left.x >= originalMetrics.x || right.x <= originalMetrics.x) continue;
+                const midpoint = (left.x + right.x) / 2;
                 const delta = Math.abs(originalMetrics.x - midpoint);
                 if (delta <= SPACING_THRESHOLD) {
                     snappedX = midpoint;
                     verticalGuide = null;
                     horizontalSpacing = {
-                        left: left.metrics,
-                        right: right.metrics,
-                        y: (left.metrics.y + right.metrics.y + originalMetrics.y) / 3
+                        left,
+                        right,
+                        y: (left.y + right.y + originalMetrics.y) / 3
                     };
                     break;
                 }
             }
 
-            const verticalPeers = peers
-                .map((node: any) => ({ node, metrics: getRenderedMetrics(node) }))
-                .filter(({ metrics }) => Math.abs(metrics.x - originalMetrics.x) <= AXIS_GROUP_THRESHOLD)
-                .sort((a, b) => a.metrics.y - b.metrics.y);
-
-            for (let i = 0; i < verticalPeers.length - 1; i++) {
-                const top = verticalPeers[i];
-                const bottom = verticalPeers[i + 1];
-                if (top.metrics.y >= originalMetrics.y || bottom.metrics.y <= originalMetrics.y) continue;
-                const midpoint = (top.metrics.y + bottom.metrics.y) / 2;
+            verticalPeerMetrics.sort((a, b) => a.y - b.y);
+            for (let i = 0; i < verticalPeerMetrics.length - 1; i++) {
+                const top = verticalPeerMetrics[i];
+                const bottom = verticalPeerMetrics[i + 1];
+                if (top.y >= originalMetrics.y || bottom.y <= originalMetrics.y) continue;
+                const midpoint = (top.y + bottom.y) / 2;
                 const delta = Math.abs(originalMetrics.y - midpoint);
                 if (delta <= SPACING_THRESHOLD) {
                     snappedY = midpoint;
                     horizontalGuide = null;
                     verticalSpacing = {
-                        top: top.metrics,
-                        bottom: bottom.metrics,
-                        x: (top.metrics.x + bottom.metrics.x + originalMetrics.x) / 3
+                        top,
+                        bottom,
+                        x: (top.x + bottom.x + originalMetrics.x) / 3
                     };
                     break;
                 }
@@ -10105,6 +10162,69 @@ case 'dagre':
             }
         };
 
+        // 智能连线：从快照里找最近的合法目标节点
+        const findNearestSmartTarget = (
+            draggedNode: any,
+            draggedRenderedPos: { x: number; y: number },
+            allowFreeNodeAsTarget: boolean
+        ): any => {
+            const draggedId = draggedNode.id();
+            const proximitySq = PROXIMITY_THRESHOLD * PROXIMITY_THRESHOLD;
+            let nearest: any = null;
+            let bestDistSq = proximitySq;
+            for (let i = 0; i < dragCandidateSnapshot.length; i++) {
+                const cand = dragCandidateSnapshot[i];
+                if (cand.id === draggedId) continue;
+                if (cand.isPlaceholder) continue;
+                if (cand.isGroup) continue;
+                if (!allowFreeNodeAsTarget && cand.isFreeNode) continue;
+                const dx = draggedRenderedPos.x - cand.metrics.x;
+                const dy = draggedRenderedPos.y - cand.metrics.y;
+                const distSq = dx * dx + dy * dy;
+                if (distSq < bestDistSq) {
+                    bestDistSq = distSq;
+                    nearest = cand.node;
+                }
+            }
+            return nearest;
+        };
+
+        // 智能连线虚线：复用单个 SVG line，避免每帧 remove/create
+        const ensureTempConnectionLine = (): SVGLineElement | null => {
+            if (!svgOverlay) return null;
+            if (tempConnectionLine && tempConnectionLine.parentNode === svgOverlay) {
+                return tempConnectionLine;
+            }
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('stroke', '#10b981');
+            line.setAttribute('stroke-width', '2');
+            line.setAttribute('stroke-dasharray', '5,5');
+            line.style.display = 'none';
+            svgOverlay.appendChild(line);
+            tempConnectionLine = line;
+            return line;
+        };
+
+        const hideTempConnectionLine = () => {
+            if (tempConnectionLine) tempConnectionLine.style.display = 'none';
+        };
+
+        // 切换智能连线高亮目标（仅当目标变化时操作 class）
+        let smartHoverTargetId: string | null = null;
+        const setSmartHoverTarget = (targetId: string | null) => {
+            if (smartHoverTargetId === targetId) return;
+            if (smartHoverTargetId) {
+                const prev = this.cy!.$id(smartHoverTargetId);
+                if (prev && prev.length) prev.removeClass('connection-target-hover');
+            }
+            if (targetId) {
+                const cur = this.cy!.$id(targetId);
+                if (cur && cur.length) cur.addClass('connection-target-hover');
+            }
+            smartHoverTargetId = targetId;
+            nearbyNodeId = targetId;
+        };
+
         // 节点开始拖动事件
         this.cy.on('grab', 'node', (evt: any) => {
             const node = evt.target;
@@ -10113,6 +10233,13 @@ case 'dagre':
             isMultiNodeDrag = this.cy!.nodes(':selected').length > 1;
             ensureAlignmentOverlay();
             hideAlignmentGuides();
+
+            // 单节点拖拽：建静态候选快照（drag 期间复用），多节点拖拽不需要辅助/智能连线
+            if (!isMultiNodeDrag) {
+                buildDragCandidateSnapshot(node.id());
+            } else {
+                clearDragCandidateSnapshot();
+            }
 
             // 自动布局节点：收集后代 & 起始位置；样式延迟到真正开始移动时再加
             autoHierarchyDescendants = [];
@@ -10144,12 +10271,8 @@ case 'dagre':
             }
 
             if (!smartEnabled) {
-                if (tempConnectionLine && svgOverlay) {
-                    svgOverlay.removeChild(tempConnectionLine);
-                    tempConnectionLine = null;
-                }
-                this.cy!.nodes('.connection-target-hover').removeClass('connection-target-hover');
-                nearbyNodeId = null;
+                hideTempConnectionLine();
+                setSmartHoverTarget(null);
                 return;
             }
 
@@ -10182,6 +10305,7 @@ case 'dagre':
                 `;
                 this.container.appendChild(svgOverlay);
             }
+            ensureTempConnectionLine();
         });
 
         // 节点拖动事件
@@ -10226,146 +10350,47 @@ case 'dagre':
             }
 
             if (!smartEnabled) {
-                if (tempConnectionLine && svgOverlay) {
-                    svgOverlay.removeChild(tempConnectionLine);
-                    tempConnectionLine = null;
-                }
-                this.cy!.nodes('.connection-target-hover').removeClass('connection-target-hover');
-                nearbyNodeId = null;
+                hideTempConnectionLine();
+                setSmartHoverTarget(null);
                 return;
             }
 
-            // 处理占位符节点的智能连线
-            if (data.isPlaceholder) {
-                const pos = node.renderedPosition();
-
-                // 查找最近的节点
-                let nearestNode: any = null;
-                let minDistance = Infinity;
-
-                this.cy!.nodes().forEach((otherNode: any) => {
-                    if (otherNode.id() === node.id()) return;  // 跳过自己
-                    if (otherNode.data().isPlaceholder) return;  // 跳过其他占位符
-                    if (otherNode.data().isGroup) return;  // 跳过分组
-
-                    const otherPos = otherNode.renderedPosition();
-                    const distance = Math.sqrt(
-                        Math.pow(pos.x - otherPos.x, 2) +
-                        Math.pow(pos.y - otherPos.y, 2)
-                    );
-
-                    if (distance < minDistance && distance < PROXIMITY_THRESHOLD) {
-                        minDistance = distance;
-                        nearestNode = otherNode;
-                    }
-                });
-
-                // 移除旧的临时连接
-                if (tempConnectionLine && svgOverlay) {
-                    svgOverlay.removeChild(tempConnectionLine);
-                    tempConnectionLine = null;
+            // 智能连线扫描：占位符 vs 自由节点共用快照 + helper
+            const isPlaceholderDrag = !!data.isPlaceholder;
+            if (!isPlaceholderDrag) {
+                if (data.isGroup || data.isCrossDomain) return;
+                const originalNodeId = data.originalNode?.ID || data.originalSource || data.id;
+                if (!originalNodeId.startsWith('free.')) return;
+                if (node.connectedEdges().length > 0) {
+                    hideTempConnectionLine();
+                    setSmartHoverTarget(null);
+                    return;
                 }
-                this.cy!.nodes('.connection-target-hover').removeClass('connection-target-hover');
-                nearbyNodeId = null;
-
-                // 如果找到附近的节点，创建虚线连接
-                if (nearestNode && svgOverlay) {
-                    nearbyNodeId = nearestNode.id();
-
-                    // 获取目标节点位置
-                    const targetPos = nearestNode.renderedPosition();
-
-                    // 创建 SVG 连线
-                    tempConnectionLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                    tempConnectionLine.setAttribute('x1', targetPos.x.toString());
-                    tempConnectionLine.setAttribute('y1', targetPos.y.toString());
-                    tempConnectionLine.setAttribute('x2', pos.x.toString());
-                    tempConnectionLine.setAttribute('y2', pos.y.toString());
-                    tempConnectionLine.setAttribute('stroke', '#10b981');  // 绿色表示可以连接
-                    tempConnectionLine.setAttribute('stroke-width', '2');
-                    tempConnectionLine.setAttribute('stroke-dasharray', '5,5');  // 虚线
-                    svgOverlay.appendChild(tempConnectionLine);
-
-                    // 高亮目标节点
-                    nearestNode.addClass('connection-target-hover');
-                }
-                return;  // 处理完占位符节点后返回
             }
 
-            // 只对自由节点启用自动连接
-            if (data.isPlaceholder || data.isGroup || data.isCrossDomain) return;
-
-            // 检查是否是自由节点（ID 以 'free.' 开头）
-            const originalNodeId = data.originalNode?.ID || data.originalSource || data.id;
-
-            if (!originalNodeId.startsWith('free.')) {
-                return;  // 只允许自由节点拖动自动连接
-            }
-
-            // 限制：自由节点一旦已有任意连线（父子/反向），不再允许智能连线到其他节点
-            if (node.connectedEdges().length > 0) {
-                if (tempConnectionLine && svgOverlay) {
-                    svgOverlay.removeChild(tempConnectionLine);
-                    tempConnectionLine = null;
-                }
-                this.cy!.nodes('.connection-target-hover').removeClass('connection-target-hover');
-                nearbyNodeId = null;
+            // svgOverlay 仅在自由节点 grab 时创建；占位符路径如果还没建过 overlay 也不应绘制连线
+            if (!svgOverlay) {
+                setSmartHoverTarget(null);
                 return;
             }
 
-            // 获取当前节点位置
             const pos = node.renderedPosition();
+            const nearestNode = findNearestSmartTarget(node, pos, /* allowFreeNodeAsTarget */ isPlaceholderDrag);
 
-            // 查找最近的节点
-            let nearestNode: any = null;
-            let minDistance = Infinity;
-
-            this.cy!.nodes().forEach((otherNode: any) => {
-                if (otherNode.id() === node.id()) return;  // 跳过自己
-                if (otherNode.data().isPlaceholder) return;  // 跳过占位符
-                if (otherNode.data().isGroup) return;  // 跳过分组
-                if (otherNode.data().isFreeNode) return; // 自由节点不作为智能连线目标
-
-                const otherPos = otherNode.renderedPosition();
-                const distance = Math.sqrt(
-                    Math.pow(pos.x - otherPos.x, 2) +
-                    Math.pow(pos.y - otherPos.y, 2)
-                );
-
-                if (distance < minDistance && distance < PROXIMITY_THRESHOLD) {
-                    minDistance = distance;
-                    nearestNode = otherNode;
+            if (nearestNode) {
+                const line = ensureTempConnectionLine();
+                if (line) {
+                    const targetPos = nearestNode.renderedPosition();
+                    line.setAttribute('x1', targetPos.x.toString());
+                    line.setAttribute('y1', targetPos.y.toString());
+                    line.setAttribute('x2', pos.x.toString());
+                    line.setAttribute('y2', pos.y.toString());
+                    line.style.display = 'block';
                 }
-            });
-
-            // 移除旧的临时连接
-            if (tempConnectionLine && svgOverlay) {
-                svgOverlay.removeChild(tempConnectionLine);
-                tempConnectionLine = null;
-            }
-            this.cy!.nodes('.connection-target-hover').removeClass('connection-target-hover');
-            nearbyNodeId = null;
-
-            // 如果找到附近的节点，创建虚线连接
-            if (nearestNode && svgOverlay) {
-                nearbyNodeId = nearestNode.id();
-
-                // 获取目标节点位置
-                const targetPos = nearestNode.renderedPosition();
-
-                // 创建 SVG 连线
-                tempConnectionLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                tempConnectionLine.setAttribute('x1', targetPos.x.toString());
-                tempConnectionLine.setAttribute('y1', targetPos.y.toString());
-                tempConnectionLine.setAttribute('x2', pos.x.toString());
-                tempConnectionLine.setAttribute('y2', pos.y.toString());
-                tempConnectionLine.setAttribute('stroke', '#10b981');  // 绿色表示可以连接
-                tempConnectionLine.setAttribute('stroke-width', '2');
-                tempConnectionLine.setAttribute('stroke-dasharray', '5,5');  // 虚线
-                svgOverlay.appendChild(tempConnectionLine);
-
-                // 高亮目标节点
-                nearestNode.addClass('connection-target-hover');
+                setSmartHoverTarget(nearestNode.id());
+            } else {
+                hideTempConnectionLine();
+                setSmartHoverTarget(null);
             }
         });
 
@@ -10399,12 +10424,9 @@ case 'dagre':
                 autoHierarchyStyled = false;
             }
 
-            // 移除临时连接线和 SVG 叠加层
-            if (tempConnectionLine && svgOverlay) {
-                svgOverlay.removeChild(tempConnectionLine);
-                tempConnectionLine = null;
-            }
-            this.cy!.nodes('.connection-target-hover').removeClass('connection-target-hover');
+            // 隐藏临时连接线（不移除 DOM，free 事件会整体清理 svgOverlay）
+            hideTempConnectionLine();
+            setSmartHoverTarget(null);
 
             // 如果是分组节点，不触发位置保存
             if (data.isGroup) return;
@@ -10507,6 +10529,7 @@ case 'dagre':
             const node = evt.target;
             const data = node.data();
             hideAlignmentGuides();
+            clearDragCandidateSnapshot();
 
             // 只对自由节点进行清理
             const originalNodeId = data.originalNode?.ID || data.originalSource || data.id;
@@ -10516,18 +10539,13 @@ case 'dagre':
 
             // 延迟清理，确保 dragfree 事件已经处理完成
             setTimeout(() => {
-                // 移除 SVG 叠加层
+                // 移除 SVG 叠加层（连同复用的 tempConnectionLine 一起清理）
                 if (svgOverlay && this.container) {
                     this.container.removeChild(svgOverlay);
                     svgOverlay = null;
                 }
-
-                if (tempConnectionLine) {
-                    tempConnectionLine = null;
-                }
-
-                this.cy!.nodes('.connection-target-hover').removeClass('connection-target-hover');
-                nearbyNodeId = null;
+                tempConnectionLine = null;
+                setSmartHoverTarget(null);
             }, 0);
         });
 

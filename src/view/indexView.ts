@@ -3523,26 +3523,38 @@ cy.fit(null, 40);
         const layoutLabel = menu.createDiv('zk-node-ctx-label');
         layoutLabel.textContent = t('ctx node layout');
         const layoutRow = menu.createDiv('zk-node-ctx-row');
+        // 根节点有子节点时不允许切换布局风格（会破坏已布局子树）
+        const isRootWithChildren = !!node.isRoot && this.getChildNodeIds(nodeId).length > 0;
         const autoItem = layoutRow.createDiv('zk-node-ctx-item');
         const autoIcon = autoItem.createSpan();
         setIcon(autoIcon, 'git-fork');
         autoItem.createSpan({ text: (effectiveLayout === 'auto' ? '✓ ' : '') + t('ctx layout auto') });
-        autoItem.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            menu.remove();
-            document.removeEventListener('click', closeMenu);
-            await this.setNodeLayoutStyle(node, 'auto');
-        });
+        if (isRootWithChildren) {
+            autoItem.addClass('zk-node-ctx-disabled');
+            setTooltip(autoItem, t('ctx layout root locked'));
+        } else {
+            autoItem.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                menu.remove();
+                document.removeEventListener('click', closeMenu);
+                await this.setNodeLayoutStyle(node, 'auto');
+            });
+        }
         const freeItem = layoutRow.createDiv('zk-node-ctx-item');
         const freeIcon = freeItem.createSpan();
         setIcon(freeIcon, 'move');
         freeItem.createSpan({ text: (effectiveLayout === 'free' ? '✓ ' : '') + t('ctx layout free') });
-        freeItem.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            menu.remove();
-            document.removeEventListener('click', closeMenu);
-            await this.setNodeLayoutStyle(node, 'free');
-        });
+        if (isRootWithChildren) {
+            freeItem.addClass('zk-node-ctx-disabled');
+            setTooltip(freeItem, t('ctx layout root locked'));
+        } else {
+            freeItem.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                menu.remove();
+                document.removeEventListener('click', closeMenu);
+                await this.setNodeLayoutStyle(node, 'free');
+            });
+        }
 
         if (this.isFirstLevelMocChildNode(nodeId) && this.isNodeAutoLayout(nodeId)) {
             menu.createDiv('zk-node-ctx-sep');

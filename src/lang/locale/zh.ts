@@ -252,6 +252,7 @@ export default {
     "ctx node layout": "节点布局风格",
     "ctx layout auto": "自动布局",
     "ctx layout free": "自由布局",
+    "ctx layout root locked": "根节点已有子节点，不能切换布局风格",
     "add node forward": "➡️ 正向",
     "add node reverse": "⬅️ 反向",
 }

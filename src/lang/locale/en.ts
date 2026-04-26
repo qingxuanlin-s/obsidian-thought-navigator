@@ -254,6 +254,7 @@ export default {
     "ctx node layout": "Node layout",
     "ctx layout auto": "Auto layout",
     "ctx layout free": "Free layout",
+    "ctx layout root locked": "Root node already has children; layout style is locked",
     "add node forward": "➡️ Forward",
     "add node reverse": "⬅️ Reverse",
 }

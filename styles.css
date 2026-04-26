@@ -1086,6 +1086,23 @@ align-items: center;
     background: rgba(120, 120, 180, 0.2);
 }
 
+.zk-node-ctx-item.zk-node-ctx-disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.zk-node-ctx-item.zk-node-ctx-disabled:hover {
+    border-color: #4a4a6a;
+    background: transparent;
+    color: #c8c8e0;
+}
+
+.zk-theme-light .zk-node-ctx-item.zk-node-ctx-disabled:hover {
+    border-color: #b0b0c8;
+    background: transparent;
+    color: #333355;
+}
+
 .zk-node-ctx-sep {
     height: 1px;
     background: #3a3a3a;
