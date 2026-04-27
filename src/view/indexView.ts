@@ -8,6 +8,7 @@ import { expandGraphModal } from "src/modal/expandGraphModal";
 import { MOCSelectorModal } from "src/modal/mocSelectorModal";
 import { NoteSearchModal } from "src/modal/noteSearchModal";
 import { convertMOCToZKNodes, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX, MOCParseResult, MOCTreeNode, parseMOCStructure, stripMocSuffix } from "src/utils/utils";
+import { FolderDrawer } from "src/view/folderDrawer";
 import { createEmptyMOCJson } from "src/utils/mocJsonCodec";
 import { MermaidParser } from "src/utils/mermaidParser";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
@@ -155,6 +156,8 @@ export class ZKIndexView extends FileView {
     // 性能优化：静态 UI 层标记
     private staticUICreated: boolean = false;
     private staticToolbarDiv: HTMLElement | null = null;
+    private folderDrawer: FolderDrawer | null = null;
+    private vaultIndexUnsubscribe: (() => void) | null = null;
 
     // 性能优化：追踪事件监听器初始化状态，避免重复添加
     private branchGraphListenersInitialized: boolean = false;
@@ -570,6 +573,21 @@ export class ZKIndexView extends FileView {
             const indexMermaidDiv = containerEl.createDiv("zk-index-mermaid-container");
             indexMermaidDiv.id = "zk-index-mermaid-container";
 
+            // 文件夹抽屉（绝对定位，覆盖在图上）
+            if (this.plugin.vaultIndex && this.plugin.spaceService) {
+                this.folderDrawer = new FolderDrawer(
+                    containerEl, this.app, this.plugin,
+                    this.plugin.vaultIndex, this.plugin.spaceService
+                );
+            }
+
+            // 订阅 VaultIndex 变化,实时刷新项目徽章
+            if (this.plugin.vaultIndex && !this.vaultIndexUnsubscribe) {
+                this.vaultIndexUnsubscribe = this.plugin.vaultIndex.onChange(() => {
+                    this.refreshProjectBadge(this.plugin.settings.mocCurrentFile);
+                });
+            }
+
             this.staticUICreated = true;
         } else {
             // 已创建过静态 UI，不清空图形容器（由各渲染函数内部增量更新）
@@ -697,6 +715,12 @@ export class ZKIndexView extends FileView {
         // 创建右侧按钮容器
         const rightBtns = toolbarDiv.createDiv("zk-toolbar-right-buttons");
 
+        const folderBtn = new ExtraButtonComponent(rightBtns);
+        folderBtn.setIcon("folder-tree").setTooltip("文件夹");
+        folderBtn.onClick(() => {
+            this.folderDrawer?.toggle();
+        });
+
         const searchBtn = new ExtraButtonComponent(rightBtns);
         searchBtn.setIcon("search").setTooltip(t("search placeholder"));
         searchBtn.onClick(() => {
@@ -747,18 +771,22 @@ export class ZKIndexView extends FileView {
         menu.style.position = 'fixed';
         menu.style.zIndex = '10000';
 
-        // v0.5: 切换当前 MOC 的项目标记(仅 .moc 文件可用)
+        // 添加到项目文件夹(仅 .moc / .moc.md 可用)
         const currentPath = this.plugin.settings.mocCurrentFile;
         const currentFile = currentPath ? this.app.vault.getFileByPath(currentPath) : null;
         if (currentFile && isMocFile(currentFile)) {
-            const isProject = this.mocChipProjectBadge?.style.display === 'inline';
-            const projectOption = menu.createDiv('zk-menu-option');
-            setIcon(projectOption.createSpan('zk-menu-option-icon'), isProject ? 'square' : 'square-check-big');
-            projectOption.createSpan().setText(isProject ? '取消项目标记' : '标记为项目');
-            projectOption.addEventListener('click', async (e) => {
+            const mountedCount = this.plugin.vaultIndex
+                ?.getFoldersHostingMoc(currentFile.path).length ?? 0;
+            const mountOption = menu.createDiv('zk-menu-option');
+            setIcon(mountOption.createSpan('zk-menu-option-icon'), 'folder-plus');
+            const labelText = mountedCount > 0
+                ? `管理项目文件夹挂载 (已挂 ${mountedCount})`
+                : '添加到项目文件夹...';
+            mountOption.createSpan().setText(labelText);
+            mountOption.addEventListener('click', (e) => {
                 e.stopPropagation();
                 menu.remove();
-                await this.plugin.toggleMOCProjectFlag(currentFile);
+                this.plugin.openFolderMountModal(currentFile);
             });
 
             // 分隔线
@@ -1740,10 +1768,8 @@ cy.fit(null, 40);
 
         const mocParseResult = await parseMOCStructure(this.app, currentMOCPath, headingTitle);
 
-        // v0.5: 项目徽章可见性跟随 isProject 标志
-        if (this.mocChipProjectBadge) {
-            this.mocChipProjectBadge.style.display = mocParseResult.isProject ? "inline" : "none";
-        }
+        // 项目徽章:当前 MOC 是否被挂载到任意 FolderNode 下
+        this.refreshProjectBadge(currentMOCPath);
 
         // 读取 MOC 文件中持久化的节点布局风格；若未记录则使用全局设置
         this.currentNodeLayoutStyle = this.normalizeNodeLayoutStyle(
@@ -2687,7 +2713,7 @@ cy.fit(null, 40);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { nodeId, label, position, suggestedNodeId } = event.detail;
+            const { nodeId, label, position, suggestedNodeId, nodeSize } = event.detail;
 
             // 如果有预生成的节点 ID，更新占位符信息
             if (suggestedNodeId) {
@@ -2704,8 +2730,8 @@ cy.fit(null, 40);
                     ? parsed.displayText : undefined;
                 await this.finalizeFileNode(nodeId, parsed.wikiLink, label, position, parsed.isEmbed, aliasToSave);
             } else if (label.trim()) {
-                // 情况 2：无 wiki link → 创建纯文字节点
-                await this.finalizeTextOnlyNode(nodeId, label.trim(), position);
+                // 情况 2：无 wiki link → 创建纯文字节点（保留编辑时的可视尺寸）
+                await this.finalizeTextOnlyNode(nodeId, label.trim(), position, nodeSize);
             } else {
                 // 情况 3：空输入 → 移除占位符
                 await this.removePlaceholderNode(nodeId);
@@ -3342,7 +3368,7 @@ cy.fit(null, 40);
         }
 
         // 使用 MOCSelectorModal 创建搜索界面
-        new MOCSelectorModal(this.app, mocFiles, async (item) => {
+        new MOCSelectorModal(this.app, mocFiles, this.plugin.vaultIndex, async (item) => {
             if (item.file) {
                 this.plugin.settings.mocCurrentFile = item.file.path;
                 this.plugin.settings.BranchTab = 0;
@@ -5749,7 +5775,8 @@ cy.fit(null, 40);
     private async finalizeTextOnlyNode(
         tempId: string,
         text: string,
-        position: { x: number; y: number }
+        position: { x: number; y: number },
+        nodeSize?: { width: number; height: number }
     ): Promise<void> {
         // 获取占位符信息
         const placeholderInfo = this.placeholderNodes.get(tempId);
@@ -5812,6 +5839,15 @@ cy.fit(null, 40);
                 finalPosition,
                 placeholderInfo?.shiftedNodePositions
             );
+        }
+
+        // 保留占位符编辑时的可视尺寸（写入 embed_node_sizes，文本节点会作为 manualWidth/HeightModel 使用）
+        if (mocFile && nodeSize && nodeSize.width > 0 && nodeSize.height > 0) {
+            MermaidParser.clearCacheForFile(this.plugin.settings.mocCurrentFile);
+            await this.saveEmbedNodeSizeToMOC(mocFile, suggestedID, {
+                widthModel: nodeSize.width,
+                heightModel: nodeSize.height
+            });
         }
 
         // 从占位符追踪中移除
@@ -6299,6 +6335,13 @@ cy.fit(null, 40);
         });
     }
 
+    /** 项目徽章:当前 MOC 是否被挂载到任何 FolderNode 下 */
+    private refreshProjectBadge(mocPath: string | null | undefined): void {
+        if (!this.mocChipProjectBadge) return;
+        const mounted = !!(mocPath && this.plugin.vaultIndex?.isMocMounted(mocPath));
+        this.mocChipProjectBadge.style.display = mounted ? "inline" : "none";
+    }
+
     private normalizeNodeLayoutStyle(
         style: unknown,
         fallback: unknown = 'free'
@@ -6612,6 +6655,12 @@ cy.fit(null, 40);
     async onClose() {
         // 保存插件设置
         this.plugin.saveData(this.plugin.settings);
+
+        // 取消 VaultIndex 订阅
+        if (this.vaultIndexUnsubscribe) {
+            this.vaultIndexUnsubscribe();
+            this.vaultIndexUnsubscribe = null;
+        }
 
         // 清理所有防抖定时器
         this.cleanupTimers();
