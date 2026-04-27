@@ -232,6 +232,8 @@ export default class ZKNavigationPlugin extends Plugin {
     vaultIndex: VaultIndex | null = null;
     spaceService: SpaceService | null = null;
     private originalWindowOnError: OnErrorEventHandler | null = null;
+    // notebook-navigator 文件夹右键菜单注销函数
+    private nnFolderMenuDispose: (() => void) | null = null;
 
     async loadSettings() {
         this.settings = Object.assign(
@@ -596,6 +598,7 @@ export default class ZKNavigationPlugin extends Plugin {
                 this.settings.mocHeadingTitle
             );
             await this.vaultIndex?.bootstrap();
+            this.registerNotebookNavigatorFolderMenu();
         });
 
         // 拦截 .moc 文件打开，用分支视图（IndexView）代替默认编辑器
@@ -992,15 +995,59 @@ export default class ZKNavigationPlugin extends Plugin {
         return extIndex > path.lastIndexOf('/') ? path.slice(0, extIndex) : path;
     }
 
+    private async createMOCInFolder(folder: TFolder): Promise<TFile | null> {
+        try {
+            const baseName = '思维树-' + moment().format('YYYYMMDDHHmmss');
+            const filePath = folder.path
+                ? `${folder.path}/${baseName}${MOC_FILE_SUFFIX}`
+                : `${baseName}${MOC_FILE_SUFFIX}`;
+            const content = createEmptyMOCJson(
+                this.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free'
+            );
+            return await this.app.vault.create(filePath, content);
+        } catch (e) {
+            console.error('[zk-navigation] 新建思维树失败', e);
+            new Notice(`新建失败: ${e.message}`);
+            return null;
+        }
+    }
+
+    private registerNotebookNavigatorFolderMenu() {
+        const nn = (this.app as any).plugins?.plugins?.['notebook-navigator']?.api;
+        const register = nn?.menus?.registerFolderMenu;
+        if (typeof register !== 'function') return;
+        try {
+            this.nnFolderMenuDispose = register.call(
+                nn.menus,
+                ({ addItem, folder }: { addItem: (cb: (item: any) => void) => void; folder: TFolder }) => {
+                    addItem((item: any) => {
+                        item.setTitle(t('New MOC file'))
+                            .setIcon('git-branch')
+                            .onClick(async () => {
+                                await this.createMOCInFolder(folder);
+                            });
+                    });
+                }
+            );
+        } catch (e) {
+            console.error('[zk-navigation] 注册 notebook-navigator 文件夹菜单失败', e);
+        }
+    }
+
     onunload() {
         // 清理 MOC 文件监听器
         if (this.mocFileMonitor) {
             this.mocFileMonitor.cleanup();
             this.mocFileMonitor = null;
         }
+        // 注销 notebook-navigator 文件夹右键菜单
+        if (this.nnFolderMenuDispose) {
+            try { this.nnFolderMenuDispose(); } catch {}
+            this.nnFolderMenuDispose = null;
+        }
         window.onerror = this.originalWindowOnError;
         this.originalWindowOnError = null;
-        
+
         this.saveData(this.settings);
     }
 }
