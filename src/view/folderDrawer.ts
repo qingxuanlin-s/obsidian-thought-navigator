@@ -1,10 +1,12 @@
-import { App, Notice, setIcon, setTooltip, TFile } from "obsidian";
+import { App, EventRef, Notice, setIcon, setTooltip, TFile } from "obsidian";
 import ZKNavigationPlugin from "main";
 import { FolderNode, SpaceTemplate } from "src/types/folder";
 import { VaultIndex } from "src/index/VaultIndex";
 import { SpaceService } from "src/services/SpaceService";
 import { BUILTIN_TEMPLATES } from "src/templates";
 import { isMocFile, stripMocSuffix } from "src/utils/utils";
+import { FolderMountModal } from "src/modal/folderMountModal";
+import { writeFolderMeta } from "src/services/folderJson";
 
 /**
  * 文件夹抽屉(Layer 1)
@@ -23,8 +25,11 @@ export class FolderDrawer {
     private bodyEl: HTMLElement;
     private isOpen: boolean = false;
     private unsubscribe: (() => void) | null = null;
+    private mocChangeRef: EventRef | null = null;
     // MOC 拖拽载荷:跨节点共享,避免依赖 DataTransfer 序列化
     private dragMocPayload: { mocPath: string; fromFolderId: string } | null = null;
+    // 上次定位过的 MOC 路径:仅在切换到新 MOC 时自动展开祖先文件夹,避免反复覆盖用户折叠操作
+    private lastFocusedMoc: string = '';
 
     constructor(parent: HTMLElement, app: App, plugin: ZKNavigationPlugin, index: VaultIndex, service: SpaceService) {
         this.app = app;
@@ -70,16 +75,28 @@ export class FolderDrawer {
         if (!this.isOpen) return;
         this.unsubscribe?.();
         this.unsubscribe = null;
+        if (this.mocChangeRef) {
+            this.app.workspace.offref(this.mocChangeRef);
+            this.mocChangeRef = null;
+        }
         this.root.removeClass("is-open");
         this.root.setAttribute("aria-hidden", "true");
         this.isOpen = false;
     }
 
     private subscribe(): void {
-        if (this.unsubscribe) return;
-        this.unsubscribe = this.index.onChange(() => {
-            if (this.isOpen) this.render();
-        });
+        if (!this.unsubscribe) {
+            this.unsubscribe = this.index.onChange(() => {
+                if (this.isOpen) this.render();
+            });
+        }
+        if (!this.mocChangeRef) {
+            // 思维树视图切换 MOC 时,本抽屉跟随刷新并定位到当前 MOC
+            this.mocChangeRef = this.app.workspace.on(
+                "zk-navigation:refresh-index-graph",
+                () => { if (this.isOpen) this.render(); },
+            );
+        }
     }
 
     // ---------- 渲染 ----------
@@ -90,10 +107,76 @@ export class FolderDrawer {
             this.renderEmptyState();
             return;
         }
+
+        // 切换到新 MOC 时自动展开其所在文件夹链(只触发一次,允许用户随后再折叠)
+        const currentMoc = this.plugin.settings.mocCurrentFile;
+        if (currentMoc && currentMoc !== this.lastFocusedMoc) {
+            this.lastFocusedMoc = currentMoc;
+            this.expandAncestorsForMoc(currentMoc);
+        }
+
+        // 当前 MOC 未挂载到任何文件夹时,顶部展示快捷挂载入口(主要解决"新建 MOC 看不到"的问题)
+        if (currentMoc) {
+            const hostFolders = this.index.getFoldersHostingMoc(currentMoc);
+            if (hostFolders.length === 0) {
+                this.renderUnmountedCurrentBanner(currentMoc);
+            }
+        }
+
         const tree = this.bodyEl.createDiv("zk-folder-drawer-tree");
         for (const root of this.index.getRoots()) {
             this.renderNode(tree, root);
         }
+
+        // 渲染完成后把高亮行滚入视口
+        requestAnimationFrame(() => {
+            const target = this.bodyEl.querySelector(".zk-folder-drawer-row.is-current") as HTMLElement | null;
+            if (target) target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        });
+    }
+
+    /**
+     * 把承载该 MOC 的文件夹及其所有祖先标记为展开。
+     * 异步把 collapsed=false 写回 _folder.json,但内存里同步生效,首次渲染就能看到。
+     */
+    private expandAncestorsForMoc(mocPath: string): void {
+        const hosts = this.index.getFoldersHostingMoc(mocPath);
+        if (hosts.length === 0) return;
+        const visited = new Set<string>();
+        for (const host of hosts) {
+            let cur: FolderNode | undefined = host;
+            while (cur && !visited.has(cur.id)) {
+                visited.add(cur.id);
+                if (cur.collapsed) {
+                    cur.collapsed = false;
+                    cur.updatedAt = Date.now();
+                    const target = cur;
+                    writeFolderMeta(this.app.vault, target).catch((e) => {
+                        console.error("[zk-navigation] 自动展开持久化失败", e);
+                    });
+                }
+                cur = cur.parentId ? this.index.getNode(cur.parentId) : undefined;
+            }
+        }
+    }
+
+    private renderUnmountedCurrentBanner(mocPath: string): void {
+        const file = this.app.vault.getFileByPath(mocPath);
+        if (!file || !(file instanceof TFile) || !isMocFile(file)) return;
+
+        const banner = this.bodyEl.createDiv("zk-folder-drawer-unmounted-banner");
+        const icon = banner.createSpan("zk-folder-drawer-unmounted-icon");
+        setIcon(icon, "git-branch");
+        const text = banner.createDiv("zk-folder-drawer-unmounted-text");
+        text.createDiv("zk-folder-drawer-unmounted-name").setText(stripMocSuffix(file.basename));
+        text.createDiv("zk-folder-drawer-unmounted-hint").setText("当前 MOC 未挂载到任何文件夹");
+        const mountBtn = banner.createDiv("zk-folder-drawer-unmounted-action");
+        setIcon(mountBtn, "folder-plus");
+        setTooltip(mountBtn, "挂载到文件夹");
+        mountBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            new FolderMountModal(this.app, this.index, this.service, file).open();
+        });
     }
 
     private renderEmptyState(): void {
