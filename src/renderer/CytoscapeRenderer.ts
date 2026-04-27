@@ -8622,6 +8622,12 @@ case 'dagre':
                 cancelEdit();
                 return;
             }
+            // 捕获占位符当前的模型尺寸（含 autoGrow 后的高度），
+            // 以便提交后保留编辑时所见的视觉尺寸，避免回落到默认估算导致缩水/换行
+            const editWidthModel = Number(node.width()) || defaultW;
+            const editHeightModel = Number(node.height()) || defaultH;
+            const nodeSize = { width: editWidthModel, height: editHeightModel };
+
             isSaved = true;
             cleanup();
 
@@ -8643,7 +8649,8 @@ case 'dagre':
                             nodeId: data.id,
                             label: newValue,
                             position,
-                            suggestedNodeId: data.suggestedNodeId
+                            suggestedNodeId: data.suggestedNodeId,
+                            nodeSize
                         }
                     }));
                     this.container?.focus();
@@ -8657,7 +8664,8 @@ case 'dagre':
                     nodeId: data.id,
                     label: newValue,
                     position,
-                    suggestedNodeId: data.suggestedNodeId
+                    suggestedNodeId: data.suggestedNodeId,
+                    nodeSize
                 }
             }));
             this.container?.focus();

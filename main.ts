@@ -8,6 +8,9 @@ import { createEmptyMOCJson } from "src/utils/mocJsonCodec";
 import { MOCFileMonitor } from "src/utils/mocMonitor";
 import { MOCEmbedRenderChild } from "src/embed/mocEmbedExporter";
 import { MOCReverseIndex } from "src/utils/mocReverseIndex";
+import { VaultIndex } from "src/index/VaultIndex";
+import { SpaceService } from "src/services/SpaceService";
+import { FolderMountModal } from "src/modal/folderMountModal";
 import { ZKGraphView, ZK_GRAPH_TYPE } from "src/view/graphView";
 import { ZKIndexView, ZKNode, ZK_INDEX_TYPE, ZK_NAVIGATION } from "src/view/indexView";
 import { ZK_RECENT_TYPE, ZKRecentView } from "src/view/recentView";
@@ -225,6 +228,9 @@ export default class ZKNavigationPlugin extends Plugin {
     mocFileMonitor: MOCFileMonitor | null = null;
     // MOC 反向索引
     mocReverseIndex: MOCReverseIndex | null = null;
+    // 自建 Space 树索引(_folder.json)
+    vaultIndex: VaultIndex | null = null;
+    spaceService: SpaceService | null = null;
     private originalWindowOnError: OnErrorEventHandler | null = null;
 
     async loadSettings() {
@@ -547,10 +553,10 @@ export default class ZKNavigationPlugin extends Plugin {
             }
         })
 
-        // v0.5: 切换当前 MOC 的项目标记
+        // 添加当前 MOC 到项目文件夹(挂载/取消挂载)
         this.addCommand({
-            id: "zk-toggle-project-flag",
-            name: "切换当前 MOC 的项目标记",
+            id: "zk-mount-moc-to-folder",
+            name: "添加当前 MOC 到项目文件夹",
             callback: async () => {
                 const currentPath = this.settings.mocCurrentFile;
                 if (!currentPath) {
@@ -562,7 +568,7 @@ export default class ZKNavigationPlugin extends Plugin {
                     new Notice("当前 MOC 文件不存在");
                     return;
                 }
-                await this.toggleMOCProjectFlag(file);
+                this.openFolderMountModal(file);
             }
         })
 
@@ -579,12 +585,17 @@ export default class ZKNavigationPlugin extends Plugin {
 
         // 初始化 MOC 反向索引（后台构建）
         this.mocReverseIndex = new MOCReverseIndex(this.app);
+        // 初始化自建 Space 树索引
+        this.vaultIndex = new VaultIndex(this.app);
+        this.addChild(this.vaultIndex);
+        this.spaceService = new SpaceService(this.app, this.vaultIndex);
         // 等 layout-ready 后再构建索引，确保 metadataCache 已初始化
         this.app.workspace.onLayoutReady(async () => {
             await this.mocReverseIndex?.initialize(
                 this.settings.mocFolderPath,
                 this.settings.mocHeadingTitle
             );
+            await this.vaultIndex?.bootstrap();
         });
 
         // 拦截 .moc 文件打开，用分支视图（IndexView）代替默认编辑器
@@ -638,6 +649,19 @@ export default class ZKNavigationPlugin extends Plugin {
                         this.mocReverseIndex.handleNoteRename(oldPath, file.path);
                     }
                     await this.updateMOCLinksAfterRename(file, oldPath);
+                    // MOC 文件改名:同步所有 _folder.json.mocRefs
+                    if (isMocFile(file) || isMocPath(oldPath)) {
+                        await this.spaceService?.handleMocRename(oldPath, file.path);
+                    }
+                }
+            })
+        );
+
+        // 监听 MOC 文件删除,清理 mocRefs
+        this.registerEvent(
+            this.app.vault.on("delete", async (file) => {
+                if (file instanceof TFile && isMocFile(file)) {
+                    await this.spaceService?.handleMocDelete(file.path);
                 }
             })
         );
@@ -824,36 +848,22 @@ export default class ZKNavigationPlugin extends Plugin {
     }
 
     /**
-     * v0.5: 切换 MOC 文件的项目标记(.moc JSON 里的 isProject 字段)
-     * 命令面板和视图头部菜单共用
+     * 打开"挂载到项目文件夹"选择器,把指定 MOC 加入/移出某个 FolderNode 的 mocRefs
      */
-    async toggleMOCProjectFlag(file: TFile): Promise<void> {
+    openFolderMountModal(file: TFile): void {
         if (!isMocFile(file)) {
-            new Notice("项目标记仅支持 .moc 文件");
+            new Notice("仅支持 .moc / .moc.md 文件");
             return;
         }
-        try {
-            const content = await this.app.vault.read(file);
-            let json: any;
-            try {
-                json = JSON.parse(content);
-            } catch {
-                new Notice("MOC 文件格式异常,无法修改");
-                return;
-            }
-            const next = !(json.isProject === true);
-            if (next) {
-                json.isProject = true;
-            } else {
-                delete json.isProject;
-            }
-            await this.app.vault.modify(file, JSON.stringify(json, null, 2));
-            new Notice(next ? `📐 已标记为项目: ${file.basename}` : `已取消项目标记: ${file.basename}`);
-            this.app.workspace.trigger("zk-navigation:refresh-index-graph");
-        } catch (e) {
-            console.error('[zk-navigation] 切换项目标记失败', e);
-            new Notice(`操作失败: ${e.message}`);
+        if (!this.vaultIndex || !this.spaceService) {
+            new Notice("Space 索引尚未就绪,请稍候再试");
+            return;
         }
+        if (this.vaultIndex.isEmpty()) {
+            new Notice("还没有任何 Space,先在右侧抽屉创建一个吧");
+            return;
+        }
+        new FolderMountModal(this.app, this.vaultIndex, this.spaceService, file).open();
     }
 
     /**

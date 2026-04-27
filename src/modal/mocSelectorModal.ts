@@ -1,5 +1,5 @@
 import { App, SuggestModal, TFile } from "obsidian";
-import { isMocFile } from "src/utils/utils";
+import { VaultIndex } from "src/index/VaultIndex";
 
 interface MOCItem {
     type: 'moc' | 'roadmap';
@@ -24,44 +24,25 @@ function formatRelativeTime(ms: number): string {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// 轻量探测:只匹配 JSON 里的 isProject: true,避免全量解析
-const PROJECT_FLAG_RE = /"isProject"\s*:\s*true/;
-
 export class MOCSelectorModal extends SuggestModal<MOCItem> {
     mocFiles: TFile[];
     onSubmit: (item: MOCItem) => void;
     private sortedFiles: TFile[];
-    private projectPaths: Set<string> = new Set();
-    private scanDone = false;
+    private vaultIndex: VaultIndex | null;
 
-    constructor(app: App, mocFiles: TFile[], onSubmit: (item: MOCItem) => void) {
+    constructor(app: App, mocFiles: TFile[], vaultIndex: VaultIndex | null, onSubmit: (item: MOCItem) => void) {
         super(app);
         this.mocFiles = mocFiles;
         this.onSubmit = onSubmit;
-        this.setPlaceholder("搜索 MOC 文件(📐 项目置顶)...");
+        this.vaultIndex = vaultIndex;
+        this.setPlaceholder("搜索 MOC 文件(项目置顶)...");
 
         // 按 mtime 倒序
         this.sortedFiles = [...mocFiles].sort((a, b) => b.stat.mtime - a.stat.mtime);
-
-        // 后台扫描项目标志,扫完刷新建议
-        this.scanProjectFlags();
     }
 
-    private async scanProjectFlags() {
-        await Promise.all(this.sortedFiles.map(async (f) => {
-            if (!isMocFile(f)) return;
-            try {
-                const content = await this.app.vault.cachedRead(f);
-                if (PROJECT_FLAG_RE.test(content)) {
-                    this.projectPaths.add(f.path);
-                }
-            } catch {
-                // 读失败忽略
-            }
-        }));
-        this.scanDone = true;
-        // 重新渲染(输入框值不变触发重新过滤)
-        (this as any).onInput?.();
+    private isProjectMoc(file: TFile): boolean {
+        return !!this.vaultIndex?.isMocMounted(file.path);
     }
 
     getSuggestions(query: string): MOCItem[] {
@@ -73,7 +54,7 @@ export class MOCSelectorModal extends SuggestModal<MOCItem> {
         const projects: MOCItem[] = [];
         const normals: MOCItem[] = [];
         for (const f of filtered) {
-            const isProject = this.projectPaths.has(f.path);
+            const isProject = this.isProjectMoc(f);
             const item: MOCItem = { type: 'moc', file: f, isProject };
             if (isProject) projects.push(item);
             else normals.push(item);
@@ -81,11 +62,11 @@ export class MOCSelectorModal extends SuggestModal<MOCItem> {
 
         const result: MOCItem[] = [];
         if (projects.length > 0) {
-            result.push({ type: 'moc', file: null, sectionHeader: `📐 项目 · ${projects.length}` });
+            result.push({ type: 'moc', file: null, sectionHeader: `项目 · ${projects.length}` });
             result.push(...projects);
         }
         if (normals.length > 0) {
-            result.push({ type: 'moc', file: null, sectionHeader: `📄 普通思维树 · ${normals.length}` });
+            result.push({ type: 'moc', file: null, sectionHeader: `普通思维树 · ${normals.length}` });
             result.push(...normals);
         }
         return result;
@@ -109,17 +90,21 @@ export class MOCSelectorModal extends SuggestModal<MOCItem> {
         el.style.alignItems = 'center';
 
         const left = el.createDiv();
-        left.style.cssText = 'display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1;';
-
-        if (item.isProject) {
-            const badge = left.createSpan();
-            badge.setText('📐');
-            badge.style.cssText = 'flex-shrink: 0; font-size: 13px;';
-        }
+        left.style.cssText = 'display: flex; align-items: baseline; gap: 8px; min-width: 0; flex: 1;';
 
         const name = left.createSpan();
         name.setText(file.basename);
-        name.style.cssText = 'overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+        name.style.cssText = 'overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0;';
+
+        // 项目挂载所在的文件夹名(可能多个)
+        if (item.isProject && this.vaultIndex) {
+            const folders = this.vaultIndex.getFoldersHostingMoc(file.path);
+            if (folders.length > 0) {
+                const folderEl = left.createSpan();
+                folderEl.style.cssText = 'overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--text-muted); min-width: 0;';
+                folderEl.setText('· ' + folders.map(f => f.name).join(' / '));
+            }
+        }
 
         const timeEl = el.createDiv();
         timeEl.style.cssText = 'font-size: 11px; color: var(--text-muted); flex-shrink: 0; margin-left: 8px;';

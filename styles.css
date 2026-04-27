@@ -1,5 +1,439 @@
 .zk-view-content{
   background-color: #2a2a2a;
+  position: relative;
+}
+
+/* 文件夹抽屉 (FolderDrawer) */
+.zk-folder-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 280px;
+  background: #1f1f1f;
+  border-left: 1px solid #3a3a3a;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
+  transform: translateX(100%);
+  transition: transform 0.22s ease-out;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.zk-folder-drawer.is-open {
+  transform: translateX(0);
+}
+
+.zk-folder-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid #2f2f2f;
+  flex-shrink: 0;
+}
+
+.zk-folder-drawer-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e6e7ea;
+  letter-spacing: 0.04em;
+}
+
+.zk-folder-drawer-close,
+.zk-folder-drawer-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #8a8e98;
+  transition: background 0.12s, color 0.12s;
+}
+
+.zk-folder-drawer-action {
+  margin-left: auto;
+  margin-right: 4px;
+}
+
+.zk-folder-drawer-close:hover,
+.zk-folder-drawer-action:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e6e7ea;
+}
+
+.zk-folder-drawer-close svg,
+.zk-folder-drawer-action svg {
+  width: 14px;
+  height: 14px;
+}
+
+.zk-folder-drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.zk-folder-drawer-tree {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0;
+  font-size: 13px;
+  color: #c8c8d0;
+}
+
+.zk-folder-drawer-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.1s;
+}
+
+.zk-folder-drawer-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* MOC 拖拽中:让源行变淡,落点行高亮 */
+.zk-folder-drawer-row-dragging {
+  opacity: 0.45;
+}
+.zk-folder-drawer-row-drop-target {
+  background: rgba(107, 163, 255, 0.18) !important;
+  box-shadow: inset 0 0 0 1px rgba(107, 163, 255, 0.55);
+  border-radius: 4px;
+}
+.zk-theme-light .zk-folder-drawer-row-drop-target {
+  background: rgba(64, 120, 220, 0.12) !important;
+  box-shadow: inset 0 0 0 1px rgba(64, 120, 220, 0.45);
+}
+
+.zk-folder-drawer-chev {
+  display: inline-flex;
+  width: 14px;
+  flex-shrink: 0;
+  color: #6c6c75;
+}
+
+.zk-folder-drawer-chev svg {
+  width: 12px;
+  height: 12px;
+}
+
+.zk-folder-drawer-icon {
+  display: inline-flex;
+  width: 16px;
+  flex-shrink: 0;
+  color: #8a8e98;
+}
+
+.zk-folder-drawer-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.zk-folder-drawer-row.is-moc .zk-folder-drawer-icon {
+  color: #b79dff;
+}
+
+.zk-folder-drawer-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+
+.zk-folder-drawer-row-folder .zk-folder-drawer-name {
+  color: #e6e7ea;
+}
+
+/* 浅色主题适配 */
+.zk-theme-light .zk-folder-drawer {
+  background: #f5f5f7;
+  border-left-color: #d8d8de;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+}
+
+.zk-theme-light .zk-folder-drawer-header {
+  border-bottom-color: #e0e0e6;
+}
+
+.zk-theme-light .zk-folder-drawer-title {
+  color: #2a2a33;
+}
+
+.zk-theme-light .zk-folder-drawer-tree {
+  color: #4a4a55;
+}
+
+.zk-theme-light .zk-folder-drawer-row:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.zk-theme-light .zk-folder-drawer-row-folder .zk-folder-drawer-name {
+  color: #2a2a33;
+}
+
+.zk-theme-light .zk-folder-drawer-row.is-moc .zk-folder-drawer-icon {
+  color: #6f57c4;
+}
+
+/* 行末尾操作(悬停显示) */
+.zk-folder-drawer-row-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+.zk-folder-drawer-row:hover .zk-folder-drawer-row-actions {
+  display: inline-flex;
+}
+.zk-folder-drawer-row-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  color: #8a8e98;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.zk-folder-drawer-row-action svg {
+  width: 12px;
+  height: 12px;
+}
+.zk-folder-drawer-row-action:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e6e7ea;
+}
+.zk-folder-drawer-row-action-danger:hover {
+  color: #ff7f7f;
+  background: rgba(255, 100, 100, 0.12);
+}
+.zk-folder-drawer-chev.is-leaf {
+  visibility: hidden;
+}
+
+/* MOC 叶子行 */
+.zk-folder-drawer-row-moc .zk-folder-drawer-icon {
+  color: #b79dff;
+}
+.zk-folder-drawer-row-moc.is-current {
+  background: rgba(107, 163, 255, 0.14);
+}
+.zk-folder-drawer-row-moc.is-current .zk-folder-drawer-name {
+  color: #e6e7ea;
+  font-weight: 600;
+}
+.zk-theme-light .zk-folder-drawer-row-moc .zk-folder-drawer-icon {
+  color: #6f57c4;
+}
+.zk-theme-light .zk-folder-drawer-row-moc.is-current {
+  background: rgba(107, 163, 255, 0.18);
+}
+.zk-theme-light .zk-folder-drawer-row-moc.is-current .zk-folder-drawer-name {
+  color: #2a2a33;
+}
+
+/* 空状态 + 模板卡片 */
+.zk-folder-drawer-empty {
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  color: #c8c8d0;
+}
+.zk-folder-drawer-empty-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e6e7ea;
+}
+.zk-folder-drawer-empty-desc {
+  font-size: 12px;
+  color: #8a8e98;
+  line-height: 1.55;
+}
+.zk-folder-drawer-templates {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.zk-folder-drawer-template-card {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  row-gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid #2f2f2f;
+  border-radius: 6px;
+  background: #232323;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, transform 0.12s;
+}
+.zk-folder-drawer-template-card:hover {
+  background: #2a2a2a;
+  border-color: #3a3a3a;
+  transform: translateY(-1px);
+}
+.zk-folder-drawer-template-icon {
+  grid-row: 1 / span 2;
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.zk-folder-drawer-template-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e6e7ea;
+}
+.zk-folder-drawer-template-desc {
+  font-size: 11px;
+  color: #8a8e98;
+  line-height: 1.4;
+}
+
+.zk-folder-drawer-new-space-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px dashed #3a3a3a;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #c8c8d0;
+  font-size: 12px;
+  align-self: flex-start;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.zk-folder-drawer-new-space-btn:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: #555;
+  color: #e6e7ea;
+}
+.zk-folder-drawer-new-space-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* 原位输入行 */
+.zk-folder-drawer-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+}
+.zk-folder-drawer-input-label {
+  font-size: 11px;
+  color: #8a8e98;
+  white-space: nowrap;
+}
+.zk-folder-drawer-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: 12px;
+  background: #161616;
+  border: 1px solid #3a3a3a;
+  border-radius: 4px;
+  color: #e6e7ea;
+  outline: none;
+}
+.zk-folder-drawer-input:focus {
+  border-color: #6ba3ff;
+}
+
+/* 模板 chip 行(快速建 Space 时复用模板) */
+.zk-folder-drawer-chips-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 6px 10px;
+  flex-wrap: wrap;
+}
+.zk-folder-drawer-chips-label {
+  font-size: 11px;
+  color: #8a8e98;
+  white-space: nowrap;
+}
+.zk-folder-drawer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  background: #1d1d1d;
+  border: 1px solid #3a3a3a;
+  border-radius: 10px;
+  color: #c8cad0;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+.zk-folder-drawer-chip:hover {
+  background: #262626;
+  border-color: #6ba3ff;
+  color: #e6e7ea;
+}
+.zk-folder-drawer-chip-icon { font-size: 12px; line-height: 1; }
+.zk-folder-drawer-chip-name { line-height: 1; }
+.zk-theme-light .zk-folder-drawer-chip {
+  background: #fff;
+  border-color: #d8d8de;
+  color: #4a4a55;
+}
+.zk-theme-light .zk-folder-drawer-chip:hover {
+  background: #f0f0f4;
+  border-color: #6ba3ff;
+  color: #2a2a33;
+}
+.zk-theme-light .zk-folder-drawer-chips-label { color: #6c6c75; }
+
+/* 浅色主题适配 */
+.zk-theme-light .zk-folder-drawer-row-action {
+  color: #6c6c75;
+}
+.zk-theme-light .zk-folder-drawer-row-action:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #2a2a33;
+}
+.zk-theme-light .zk-folder-drawer-template-card {
+  background: #fbfbfc;
+  border-color: #e0e0e6;
+}
+.zk-theme-light .zk-folder-drawer-template-card:hover {
+  background: #f0f0f4;
+  border-color: #c8c8d2;
+}
+.zk-theme-light .zk-folder-drawer-template-name { color: #2a2a33; }
+.zk-theme-light .zk-folder-drawer-template-desc { color: #6c6c75; }
+.zk-theme-light .zk-folder-drawer-empty-title { color: #2a2a33; }
+.zk-theme-light .zk-folder-drawer-empty-desc { color: #6c6c75; }
+.zk-theme-light .zk-folder-drawer-new-space-btn {
+  border-color: #d8d8de;
+  color: #4a4a55;
+}
+.zk-theme-light .zk-folder-drawer-new-space-btn:hover {
+  background: rgba(0, 0, 0, 0.03);
+  color: #2a2a33;
+  border-color: #b8b8c2;
+}
+.zk-theme-light .zk-folder-drawer-input {
+  background: #fff;
+  border-color: #d8d8de;
+  color: #2a2a33;
 }
 
 .zk-index-toolbar{
