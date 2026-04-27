@@ -103,6 +103,69 @@
   background: rgba(255, 255, 255, 0.04);
 }
 
+/* 未挂载当前 MOC 时的提示横条 */
+.zk-folder-drawer-unmounted-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 10px 8px 10px;
+  padding: 6px 10px;
+  background: rgba(107, 163, 255, 0.08);
+  border: 1px solid rgba(107, 163, 255, 0.3);
+  border-radius: 6px;
+}
+.zk-folder-drawer-unmounted-icon {
+  color: #b48cff;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+}
+.zk-folder-drawer-unmounted-icon svg { width: 14px; height: 14px; }
+.zk-folder-drawer-unmounted-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.zk-folder-drawer-unmounted-name {
+  font-size: 12px;
+  color: #e6e7ea;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.zk-folder-drawer-unmounted-hint {
+  font-size: 10px;
+  color: #8a8e98;
+}
+.zk-folder-drawer-unmounted-action {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #c8cad0;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.zk-folder-drawer-unmounted-action:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e6e7ea;
+}
+.zk-folder-drawer-unmounted-action svg { width: 14px; height: 14px; }
+.zk-theme-light .zk-folder-drawer-unmounted-banner {
+  background: rgba(64, 120, 220, 0.08);
+  border-color: rgba(64, 120, 220, 0.32);
+}
+.zk-theme-light .zk-folder-drawer-unmounted-name { color: #2a2a33; }
+.zk-theme-light .zk-folder-drawer-unmounted-hint { color: #6c6c75; }
+.zk-theme-light .zk-folder-drawer-unmounted-action { color: #4a4a55; }
+.zk-theme-light .zk-folder-drawer-unmounted-action:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #2a2a33;
+}
+
 /* MOC 拖拽中:让源行变淡,落点行高亮 */
 .zk-folder-drawer-row-dragging {
   opacity: 0.45;
