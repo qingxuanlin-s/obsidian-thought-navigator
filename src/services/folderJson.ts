@@ -1,5 +1,5 @@
-import { TFile, Vault } from "obsidian";
-import { FolderMetaFile, FolderNode, FOLDER_META_FILENAME } from "src/types/folder";
+import { DataAdapter } from "obsidian";
+import { FolderNode, SpaceStoreFile, SpaceStoreNode } from "src/types/folder";
 
 /** id 生成:`flt_` + 8 位 base36 + 时间戳尾 */
 export function genFolderId(): string {
@@ -9,8 +9,8 @@ export function genFolderId(): string {
 }
 
 /** 把内存 FolderNode 投影成磁盘 schema(去掉派生字段) */
-export function nodeToMeta(node: FolderNode): FolderMetaFile {
-    const meta: FolderMetaFile = {
+export function nodeToStore(node: FolderNode): SpaceStoreNode {
+    const out: SpaceStoreNode = {
         id: node.id,
         name: node.name,
         parentId: node.parentId,
@@ -22,17 +22,16 @@ export function nodeToMeta(node: FolderNode): FolderMetaFile {
         createdAt: node.createdAt,
         updatedAt: node.updatedAt,
     };
-    if (node.mocRefs && node.mocRefs.length > 0) meta.mocRefs = node.mocRefs.slice();
-    return meta;
+    if (node.mocRefs && node.mocRefs.length > 0) out.mocRefs = node.mocRefs.slice();
+    return out;
 }
 
-/** 把磁盘 schema 还原为内存节点(path/depth/childIds 由扫描端补) */
-export function metaToNode(meta: FolderMetaFile, path: string): FolderNode {
+/** 把磁盘 schema 还原为内存节点(depth/childIds 由扫描端补) */
+export function storeToNode(meta: SpaceStoreNode): FolderNode {
     return {
         id: meta.id,
         name: meta.name,
         parentId: meta.parentId ?? null,
-        path,
         childIds: [],
         depth: 0,
         isProject: !!meta.isProject,
@@ -46,23 +45,24 @@ export function metaToNode(meta: FolderMetaFile, path: string): FolderNode {
     };
 }
 
-export async function readFolderMeta(vault: Vault, file: TFile): Promise<FolderMetaFile | null> {
+export async function readSpaceStore(adapter: DataAdapter, storePath: string): Promise<FolderNode[]> {
     try {
-        const raw = await vault.read(file);
-        return JSON.parse(raw) as FolderMetaFile;
+        const exists = await adapter.exists(storePath);
+        if (!exists) return [];
+        const raw = await adapter.read(storePath);
+        const parsed = JSON.parse(raw) as SpaceStoreFile;
+        if (!parsed || !Array.isArray(parsed.nodes)) return [];
+        return parsed.nodes.map(storeToNode);
     } catch (e) {
-        console.warn('[zk-navigation] _folder.json parse failed:', file.path, e);
-        return null;
+        console.warn('[zk-navigation] spaces.json 读取失败:', storePath, e);
+        return [];
     }
 }
 
-export async function writeFolderMeta(vault: Vault, node: FolderNode): Promise<void> {
-    const metaPath = `${node.path}/${FOLDER_META_FILENAME}`;
-    const content = JSON.stringify(nodeToMeta(node), null, 2);
-    const existing = vault.getFileByPath(metaPath);
-    if (existing) {
-        await vault.modify(existing, content);
-    } else {
-        await vault.create(metaPath, content);
-    }
+export async function writeSpaceStore(adapter: DataAdapter, storePath: string, nodes: FolderNode[]): Promise<void> {
+    const data: SpaceStoreFile = {
+        version: 1,
+        nodes: nodes.map(nodeToStore),
+    };
+    await adapter.write(storePath, JSON.stringify(data, null, 2));
 }

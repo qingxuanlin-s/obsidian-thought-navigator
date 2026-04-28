@@ -6,12 +6,11 @@ import { SpaceService } from "src/services/SpaceService";
 import { BUILTIN_TEMPLATES } from "src/templates";
 import { isMocFile, stripMocSuffix } from "src/utils/utils";
 import { FolderMountModal } from "src/modal/folderMountModal";
-import { writeFolderMeta } from "src/services/folderJson";
 
 /**
  * 文件夹抽屉(Layer 1)
  *
- * - 渲染来自 VaultIndex 的自建 Space 树(zk-spaces/<...>/_folder.json)
+ * - 渲染来自 VaultIndex 的自建 Space 树(单文件持久化在插件数据目录的 spaces.json)
  * - 空树时展示模板卡片(PARA / GTD / 空白)
  * - 顶部「+ 新建 Space」原位输入
  * - 单击行 = 折叠/展开;子节点行末尾按钮 = 新建子文件夹;垃圾桶 = 删除
@@ -137,27 +136,25 @@ export class FolderDrawer {
 
     /**
      * 把承载该 MOC 的文件夹及其所有祖先标记为展开。
-     * 异步把 collapsed=false 写回 _folder.json,但内存里同步生效,首次渲染就能看到。
+     * 通过 SpaceService 一次性 commit 所有要展开的祖先,持久化到 spaces.json。
      */
     private expandAncestorsForMoc(mocPath: string): void {
         const hosts = this.index.getFoldersHostingMoc(mocPath);
         if (hosts.length === 0) return;
+        const toExpand: string[] = [];
         const visited = new Set<string>();
         for (const host of hosts) {
             let cur: FolderNode | undefined = host;
             while (cur && !visited.has(cur.id)) {
                 visited.add(cur.id);
-                if (cur.collapsed) {
-                    cur.collapsed = false;
-                    cur.updatedAt = Date.now();
-                    const target = cur;
-                    writeFolderMeta(this.app.vault, target).catch((e) => {
-                        console.error("[zk-navigation] 自动展开持久化失败", e);
-                    });
-                }
+                if (cur.collapsed) toExpand.push(cur.id);
                 cur = cur.parentId ? this.index.getNode(cur.parentId) : undefined;
             }
         }
+        if (toExpand.length === 0) return;
+        this.service.expandAncestors(toExpand).catch((e) => {
+            console.error("[zk-navigation] 自动展开持久化失败", e);
+        });
     }
 
     private renderUnmountedCurrentBanner(mocPath: string): void {
@@ -343,15 +340,11 @@ export class FolderDrawer {
     private async toggleCollapse(node: FolderNode): Promise<void> {
         const mocCount = (node.mocRefs ?? []).filter(p => !!this.app.vault.getFileByPath(p)).length;
         if (node.childIds.length === 0 && mocCount === 0) return;
-        node.collapsed = !node.collapsed;
-        node.updatedAt = Date.now();
         try {
-            const { writeFolderMeta } = await import("src/services/folderJson");
-            await writeFolderMeta(this.app.vault, node);
+            await this.service.setCollapsed(node.id, !node.collapsed);
         } catch (e) {
             console.error("[zk-navigation] 折叠状态保存失败", e);
         }
-        this.render();
     }
 
     private showNewSpaceInput(): void {
@@ -426,9 +419,7 @@ export class FolderDrawer {
             try {
                 // 自动展开父节点
                 if (parentNode.collapsed) {
-                    parentNode.collapsed = false;
-                    const { writeFolderMeta } = await import("src/services/folderJson");
-                    await writeFolderMeta(this.app.vault, parentNode);
+                    await this.service.setCollapsed(parentNode.id, false);
                 }
                 await this.service.createFolder(parentNode.id, name);
             } catch (e: any) {
@@ -439,7 +430,7 @@ export class FolderDrawer {
     }
 
     private async confirmDelete(node: FolderNode): Promise<void> {
-        const ok = window.confirm(`确认删除「${node.name}」及其下所有内容?(可以从系统垃圾桶恢复)`);
+        const ok = window.confirm(`确认删除「${node.name}」及其下所有子文件夹?(只删除虚拟分类,不会动到 MOC 文件本身)`);
         if (!ok) return;
         try {
             await this.service.delete(node.id);

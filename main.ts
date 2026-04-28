@@ -228,7 +228,7 @@ export default class ZKNavigationPlugin extends Plugin {
     mocFileMonitor: MOCFileMonitor | null = null;
     // MOC 反向索引
     mocReverseIndex: MOCReverseIndex | null = null;
-    // 自建 Space 树索引(_folder.json)
+    // 自建 Space 树索引(spaces.json,只虚拟存在,不创建真实文件夹)
     vaultIndex: VaultIndex | null = null;
     spaceService: SpaceService | null = null;
     private originalWindowOnError: OnErrorEventHandler | null = null;
@@ -587,8 +587,9 @@ export default class ZKNavigationPlugin extends Plugin {
 
         // 初始化 MOC 反向索引（后台构建）
         this.mocReverseIndex = new MOCReverseIndex(this.app);
-        // 初始化自建 Space 树索引
-        this.vaultIndex = new VaultIndex(this.app);
+        // 初始化自建 Space 树索引(单文件存储,纯虚拟分类)
+        const storePath = `${this.manifest.dir ?? `.obsidian/plugins/${this.manifest.id}`}/spaces.json`;
+        this.vaultIndex = new VaultIndex(this.app, storePath);
         this.addChild(this.vaultIndex);
         this.spaceService = new SpaceService(this.app, this.vaultIndex);
         // 等 layout-ready 后再构建索引，确保 metadataCache 已初始化
@@ -652,7 +653,7 @@ export default class ZKNavigationPlugin extends Plugin {
                         this.mocReverseIndex.handleNoteRename(oldPath, file.path);
                     }
                     await this.updateMOCLinksAfterRename(file, oldPath);
-                    // MOC 文件改名:同步所有 _folder.json.mocRefs
+                    // MOC 文件改名:同步 spaces.json 里所有 mocRefs
                     if (isMocFile(file) || isMocPath(oldPath)) {
                         await this.spaceService?.handleMocRename(oldPath, file.path);
                     }

@@ -1,15 +1,16 @@
 /**
  * Space / Folder 数据模型
  *
- * - 每个 FolderNode 在 vault 中对应一个文件夹,文件夹下放 `_folder.json`
- * - id 永不改变(用 UUID 风格);path 跟随文件系统位置变化
+ * 整棵 Space 树持久化在插件数据目录下的单个 spaces.json 文件里,
+ * 不再为每个文件夹在 vault 里创建真实目录。
+ * - id 永不改变(用 UUID 风格)
+ * - 父子关系靠 parentId,不依赖文件系统路径
  * - depth=0 的节点是顶层 Space
  */
 
 export interface FolderNode {
     id: string;             // "flt_xxxxxxxx",永不改变
-    name: string;           // 用户可见名(等同文件夹名)
-    path: string;           // 相对 vault 的路径,如 "zk-spaces/工作/2026 Q2"
+    name: string;           // 用户可见名
     parentId: string | null; // null = 顶层 Space
     childIds: string[];     // 子节点 id,显式存储用于稳定排序
     depth: number;          // 0 = Space, >=1 子层
@@ -31,8 +32,11 @@ export interface FolderNode {
     updatedAt: number;
 }
 
-/** 写入磁盘的 _folder.json schema(不含 path / childIds / depth,这些由扫描重建) */
-export interface FolderMetaFile {
+/**
+ * 写入磁盘的整棵树 schema(spaces.json 顶层结构)
+ * - childIds / depth 不持久化(由内存重建)
+ */
+export interface SpaceStoreNode {
     id: string;
     name: string;
     parentId: string | null;
@@ -44,6 +48,11 @@ export interface FolderMetaFile {
     mocRefs?: string[];
     createdAt: number;
     updatedAt: number;
+}
+
+export interface SpaceStoreFile {
+    version: 1;
+    nodes: SpaceStoreNode[];
 }
 
 export interface ProjectMeta {
@@ -78,6 +87,3 @@ export interface TemplateNode {
     isProject?: boolean;
     children?: TemplateNode[];
 }
-
-export const FOLDER_META_FILENAME = '_folder.json';
-export const SPACES_ROOT = 'zk-spaces';
