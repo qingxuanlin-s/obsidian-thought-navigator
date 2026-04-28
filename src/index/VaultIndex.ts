@@ -1,66 +1,68 @@
-import { App, Component, EventRef, TAbstractFile, TFile, TFolder } from "obsidian";
-import { FolderNode, FOLDER_META_FILENAME, SPACES_ROOT } from "src/types/folder";
-import { metaToNode, readFolderMeta } from "src/services/folderJson";
+import { App, Component } from "obsidian";
+import { FolderNode } from "src/types/folder";
+import { readSpaceStore, writeSpaceStore } from "src/services/folderJson";
 
 type ChangeListener = () => void;
 
 /**
  * 内存中的 Space 树索引。
  *
- * - bootstrap 时全量扫描 `zk-spaces/` 下所有 `_folder.json`,构建双向树
- * - 订阅 vault 事件保持同步:create / delete / rename(只关心 _folder.json)
- * - 通过 onChange 让 UI 订阅刷新
+ * 持久化:整棵树存在 storePath(插件数据目录下的 spaces.json),
+ * 不再为每个文件夹在 vault 创建真实目录。
+ *
+ * 写路径:SpaceService → index.commit(mutator) → 重建派生字段 → 写 spaces.json → emit。
  */
 export class VaultIndex extends Component {
     private app: App;
+    private storePath: string;
     private nodes: Map<string, FolderNode> = new Map(); // id → node
-    private pathToId: Map<string, string> = new Map();  // 文件夹 path → id
     private rootIds: string[] = [];
     /** mocPath → folderIds 反向索引,O(1) 查询某 MOC 挂在哪些文件夹下 */
     private mocToFolders: Map<string, Set<string>> = new Map();
     private listeners: Set<ChangeListener> = new Set();
     private bootstrapped = false;
+    private flushChain: Promise<void> = Promise.resolve();
 
-    constructor(app: App) {
+    constructor(app: App, storePath: string) {
         super();
         this.app = app;
+        this.storePath = storePath;
     }
 
     async bootstrap(): Promise<void> {
         if (this.bootstrapped) return;
-        await this.scanAll();
-        this.subscribeVaultEvents();
+        await this.reload();
         this.bootstrapped = true;
     }
 
-    /** 扫描全部 _folder.json,重建内存树 */
-    async scanAll(): Promise<void> {
+    /** 从磁盘重新加载(仅在初始化或外部数据被替换时使用) */
+    async reload(): Promise<void> {
+        const list = await readSpaceStore(this.app.vault.adapter, this.storePath);
         this.nodes.clear();
-        this.pathToId.clear();
-        this.rootIds = [];
-        this.mocToFolders.clear();
-
-        const rootFolder = this.app.vault.getAbstractFileByPath(SPACES_ROOT);
-        if (!(rootFolder instanceof TFolder)) {
-            this.emitChange();
-            return;
-        }
-
-        const metaFiles: TFile[] = [];
-        this.collectFolderMetaFiles(rootFolder, metaFiles);
-
-        for (const f of metaFiles) {
-            const meta = await readFolderMeta(this.app.vault, f);
-            if (!meta) continue;
-            const folderPath = parentDir(f.path);
-            const node = metaToNode(meta, folderPath);
-            this.nodes.set(node.id, node);
-            this.pathToId.set(folderPath, node.id);
-        }
-
+        for (const n of list) this.nodes.set(n.id, n);
         this.rebuildTree();
         this.rebuildMocReverseMap();
         this.emitChange();
+    }
+
+    /**
+     * SpaceService 用的统一变更入口:
+     * 1. 在 mutator 里随便改 nodes;2. 自动重建 childIds/depth/反向索引;3. 串行落盘;4. 通知监听者。
+     */
+    async commit(mutator: (nodes: Map<string, FolderNode>) => void | Promise<void>): Promise<void> {
+        await mutator(this.nodes);
+        this.rebuildTree();
+        this.rebuildMocReverseMap();
+        this.emitChange();
+        // 串行写磁盘,避免并发覆盖
+        this.flushChain = this.flushChain.then(() => this.flush()).catch((e) => {
+            console.error('[zk-navigation] spaces.json 写入失败', e);
+        });
+        await this.flushChain;
+    }
+
+    private async flush(): Promise<void> {
+        await writeSpaceStore(this.app.vault.adapter, this.storePath, Array.from(this.nodes.values()));
     }
 
     private rebuildMocReverseMap(): void {
@@ -71,16 +73,6 @@ export class VaultIndex extends Component {
                 let set = this.mocToFolders.get(p);
                 if (!set) { set = new Set(); this.mocToFolders.set(p, set); }
                 set.add(node.id);
-            }
-        }
-    }
-
-    private collectFolderMetaFiles(folder: TFolder, out: TFile[]): void {
-        for (const child of folder.children) {
-            if (child instanceof TFile && child.name === FOLDER_META_FILENAME) {
-                out.push(child);
-            } else if (child instanceof TFolder) {
-                this.collectFolderMetaFiles(child, out);
             }
         }
     }
@@ -99,7 +91,6 @@ export class VaultIndex extends Component {
                 this.rootIds.push(node.id);
             }
         }
-        // 排序
         const orderSort = (a: string, b: string) => {
             const na = this.nodes.get(a)!;
             const nb = this.nodes.get(b)!;
@@ -110,7 +101,6 @@ export class VaultIndex extends Component {
         for (const node of this.nodes.values()) {
             node.childIds.sort(orderSort);
         }
-        // depth
         const setDepth = (id: string, d: number) => {
             const n = this.nodes.get(id);
             if (!n) return;
@@ -120,54 +110,9 @@ export class VaultIndex extends Component {
         for (const id of this.rootIds) setDepth(id, 0);
     }
 
-    private subscribeVaultEvents(): void {
-        const vault = this.app.vault;
-        const onCreate = vault.on('create', (file) => {
-            if (this.isFolderMeta(file)) this.scheduleRescan();
-        });
-        const onDelete = vault.on('delete', (file) => {
-            if (this.isFolderMeta(file)) this.scheduleRescan();
-        });
-        const onRename = vault.on('rename', (file, oldPath) => {
-            if (this.isFolderMeta(file) || oldPath.endsWith('/' + FOLDER_META_FILENAME) || oldPath === FOLDER_META_FILENAME) {
-                this.scheduleRescan();
-                return;
-            }
-            // 文件夹改名会改变 _folder.json 的 path
-            if (file instanceof TFolder) this.scheduleRescan();
-        });
-        const onModify = vault.on('modify', (file) => {
-            if (this.isFolderMeta(file)) this.scheduleRescan();
-        });
-        this.registerEvent(onCreate);
-        this.registerEvent(onDelete);
-        this.registerEvent(onRename);
-        this.registerEvent(onModify);
-    }
-
-    private isFolderMeta(file: TAbstractFile): boolean {
-        return file instanceof TFile && file.name === FOLDER_META_FILENAME;
-    }
-
-    // 防抖避免重复扫描(用户连续创建多个文件时)
-    private rescanTimer: number | null = null;
-    private scheduleRescan(): void {
-        if (this.rescanTimer != null) {
-            window.clearTimeout(this.rescanTimer);
-        }
-        this.rescanTimer = window.setTimeout(() => {
-            this.rescanTimer = null;
-            this.scanAll();
-        }, 80);
-    }
-
     // ---------- 查询 API ----------
 
     getNode(id: string): FolderNode | undefined { return this.nodes.get(id); }
-    getNodeByPath(path: string): FolderNode | undefined {
-        const id = this.pathToId.get(path);
-        return id ? this.nodes.get(id) : undefined;
-    }
     getRoots(): FolderNode[] {
         return this.rootIds.map(id => this.nodes.get(id)!).filter(Boolean);
     }
@@ -206,6 +151,19 @@ export class VaultIndex extends Component {
         return parts.join(separator);
     }
 
+    /** 收集某个节点的所有后代 id(含自身) */
+    collectSubtreeIds(rootId: string): string[] {
+        const out: string[] = [];
+        const dfs = (id: string) => {
+            const n = this.nodes.get(id);
+            if (!n) return;
+            out.push(id);
+            for (const c of n.childIds) dfs(c);
+        };
+        dfs(rootId);
+        return out;
+    }
+
     // ---------- 订阅 ----------
 
     onChange(listener: ChangeListener): () => void {
@@ -218,14 +176,4 @@ export class VaultIndex extends Component {
             try { l(); } catch (e) { console.error('[zk-navigation] VaultIndex listener error', e); }
         }
     }
-
-    /** 显式触发刷新(SpaceService 写完文件后调用,无需等 vault 事件) */
-    async refreshNow(): Promise<void> {
-        await this.scanAll();
-    }
-}
-
-function parentDir(p: string): string {
-    const i = p.lastIndexOf('/');
-    return i < 0 ? '' : p.slice(0, i);
 }
