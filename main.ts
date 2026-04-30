@@ -6,7 +6,7 @@ import { ZKNavigationSettngTab } from "src/settings/settings";
 import { mainNoteInit, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX } from "src/utils/utils";
 import { createEmptyMOCJson } from "src/utils/mocJsonCodec";
 import { MOCFileMonitor } from "src/utils/mocMonitor";
-import { MOCEmbedRenderChild } from "src/embed/mocEmbedExporter";
+import { ensureMOCPreviewPNG } from "src/embed/mocEmbedExporter";
 import { MOCReverseIndex } from "src/utils/mocReverseIndex";
 import { VaultIndex } from "src/index/VaultIndex";
 import { SpaceService } from "src/services/SpaceService";
@@ -269,74 +269,148 @@ export default class ZKNavigationPlugin extends Plugin {
         // 注册 .moc 扩展名，使 Obsidian 在文件浏览器中显示并正确索引这些文件
         this.registerExtensions(['moc'], 'markdown');
 
-        // 注册 ![[xxx.moc]] / ![[xxx.moc.md]] 内嵌处理：渲染为 PNG 图片附件
-        // Reading View 通过 post-processor 处理
+        const mocPreviewImages = new Map<string, Set<HTMLImageElement>>();
+
+        const updateMOCPreviewImageSize = (img: HTMLImageElement, containerEl: HTMLElement): void => {
+            if (containerEl.parentElement?.classList.contains('popover')) {
+                containerEl.addClass('zk-moc-popover-img-preview-content');
+                return;
+            }
+
+            const width = Number(containerEl.getAttribute('width') || 0);
+            const height = Number(containerEl.getAttribute('height') || 0);
+            if (width > 0) img.width = width;
+            if (height > 0) img.height = height;
+        };
+
+        const createMOCPreviewImage = async (mocFile: TFile): Promise<HTMLImageElement | null> => {
+            try {
+                const pngFile = await ensureMOCPreviewPNG(mocFile, this);
+                const img = document.createElement('img');
+                img.className = 'zk-moc-embed-img';
+                img.dataset.mocFile = mocFile.path;
+                img.src = this.app.vault.getResourcePath(pngFile);
+                img.style.cssText = 'display:block;width:100%;height:auto;border-radius:6px;';
+                img.alt = mocFile.basename;
+                img.draggable = false;
+                img.addEventListener('dblclick', (evt: MouseEvent) => {
+                    evt.preventDefault();
+                    evt.stopPropagation();
+                    this.app.workspace.openLinkText(mocFile.path, '', evt.ctrlKey || evt.metaKey);
+                });
+                let imageSet = mocPreviewImages.get(mocFile.path);
+                if (!imageSet) {
+                    imageSet = new Set();
+                    mocPreviewImages.set(mocFile.path, imageSet);
+                }
+                imageSet.add(img);
+
+                const observer = new MutationObserver(() => {
+                    if (document.body.contains(img)) return;
+                    imageSet?.delete(img);
+                    observer.disconnect();
+                });
+                observer.observe(document.body, { childList: true, subtree: true });
+                return img;
+            } catch {
+                return null;
+            }
+        };
+
+        const isMocMarkdownFile = (file: TFile | null | undefined): file is TFile => {
+            return !!file && file.path.toLowerCase().endsWith('.moc.md');
+        };
+
+        const resolveMOCLink = (linkText: string | null | undefined, sourcePath: string): TFile | null => {
+            const fileName = linkText?.split('#')[0]?.trim();
+            if (!fileName) return null;
+            const file = this.app.metadataCache.getFirstLinkpathDest(fileName, sourcePath)
+                ?? this.app.vault.getFileByPath(fileName);
+            return file instanceof TFile && isMocMarkdownFile(file) ? file : null;
+        };
+
+        const renderMOCPreviewInto = async (containerEl: HTMLElement, mocFile: TFile): Promise<void> => {
+            if (containerEl.dataset.mocHandled) return;
+            containerEl.dataset.mocHandled = '1';
+            const img = await createMOCPreviewImage(mocFile);
+            if (!img) {
+                containerEl.empty();
+                containerEl.addClass('zk-moc-embed');
+                containerEl.createDiv('zk-moc-embed-error').setText('没有可预览图片');
+                return;
+            }
+            containerEl.empty();
+            if (containerEl.hasClass('canvas-node-content')) {
+                containerEl.addClass('zk-moc-canvas-node-content');
+            }
+            containerEl.addClass('zk-moc-embed');
+            updateMOCPreviewImageSize(img, containerEl);
+            containerEl.appendChild(img);
+        };
+
+        const findValidMOCEmbedContainer = (containerEl: HTMLElement): HTMLElement | null => {
+            let el: HTMLElement | null = containerEl;
+            while (el && el !== document.body) {
+                if (
+                    el.classList.contains('dataview') ||
+                    el.classList.contains('cm-preview-code-block') ||
+                    el.classList.contains('cm-embed-block')
+                ) {
+                    return null;
+                }
+                if (
+                    el.classList.contains('internal-embed') ||
+                    el.classList.contains('markdown-embed') ||
+                    el.classList.contains('markdown-reading-view') ||
+                    el.classList.contains('excalidraw-md-host') ||
+                    el.classList.contains('canvas-node-content')
+                ) {
+                    return el;
+                }
+                el = el.parentElement;
+            }
+            return containerEl;
+        };
+
+        const processMOCReadingMode = (element: HTMLElement, sourcePath: string): void => {
+            const embeddedItems = Array.from(element.querySelectorAll<HTMLElement>('.internal-embed'));
+            embeddedItems.forEach((item) => {
+                const mocFile = resolveMOCLink(item.getAttribute('src'), sourcePath);
+                if (!mocFile) return;
+                void createMOCPreviewImage(mocFile).then((img) => {
+                    if (!img || !item.parentElement) return;
+                    updateMOCPreviewImageSize(img, item);
+                    item.parentElement.replaceChild(img, item);
+                });
+            });
+        };
+
+        const processMOCEditMode = (element: HTMLElement, sourcePath: string): void => {
+            const file = this.app.vault.getFileByPath(sourcePath);
+            if (!(file instanceof TFile) || !isMocMarkdownFile(file)) return;
+            const containerEl = findValidMOCEmbedContainer(element);
+            if (!containerEl) return;
+            void renderMOCPreviewInto(containerEl, file);
+        };
+
         this.registerMarkdownPostProcessor((element, context) => {
-            const embeds = element.querySelectorAll<HTMLElement>(
-                '.internal-embed[src$=".moc"], .internal-embed[src$=".moc.md"]'
-            );
-            embeds.forEach(embedEl => {
-                const src = embedEl.getAttribute('src');
-                if (!src || embedEl.dataset.mocHandled) return;
-                embedEl.dataset.mocHandled = '1';
-
-                const basePath = context.sourcePath.includes('/')
-                    ? context.sourcePath.substring(0, context.sourcePath.lastIndexOf('/'))
-                    : '';
-                const mocFile = this.app.metadataCache.getFirstLinkpathDest(src, basePath)
-                    ?? this.app.vault.getFileByPath(src);
-                if (!mocFile || !(mocFile instanceof TFile) || !isMocFile(mocFile)) return;
-
-                const child = new MOCEmbedRenderChild(embedEl, mocFile, this);
-                context.addChild(child);
-            });
-        });
-
-        // Live Preview 通过 MutationObserver 处理动态插入的 embed 元素
-        const livePreviewEmbedChildren = new WeakMap<HTMLElement, MOCEmbedRenderChild>();
-        const handleMocEmbed = (embedEl: HTMLElement) => {
-            const src = embedEl.getAttribute('src');
-            if (!src || !isMocPath(src) || embedEl.dataset.mocHandled) return;
-            embedEl.dataset.mocHandled = '1';
-
-            const mocFile = this.app.metadataCache.getFirstLinkpathDest(src, '')
-                ?? this.app.vault.getFileByPath(src);
-            if (!mocFile || !(mocFile instanceof TFile) || !isMocFile(mocFile)) return;
-
-            const child = new MOCEmbedRenderChild(embedEl, mocFile, this);
-            livePreviewEmbedChildren.set(embedEl, child);
-            child.load();
-        };
-
-        const cleanupRemovedEmbed = (root: HTMLElement) => {
-            const embeds: HTMLElement[] = [];
-            if (root.dataset.mocHandled === '1') embeds.push(root);
-            root.querySelectorAll<HTMLElement>('[data-moc-handled="1"]').forEach((el) => embeds.push(el));
-
-            embeds.forEach((embedEl) => {
-                const child = livePreviewEmbedChildren.get(embedEl);
-                if (child) {
-                    child.unload();
-                    livePreviewEmbedChildren.delete(embedEl);
-                }
-            });
-        };
-
-        const mocEmbedObserver = new MutationObserver(mutations => {
-            for (const mutation of mutations) {
-                for (const node of Array.from(mutation.addedNodes)) {
-                    if (!(node instanceof HTMLElement)) continue;
-                    if (node.classList.contains('internal-embed')) handleMocEmbed(node);
-                    node.querySelectorAll<HTMLElement>('.internal-embed').forEach(handleMocEmbed);
-                }
-                for (const node of Array.from(mutation.removedNodes)) {
-                    if (!(node instanceof HTMLElement)) continue;
-                    cleanupRemovedEmbed(node);
-                }
+            if (element.querySelector('.internal-embed')) {
+                processMOCReadingMode(element, context.sourcePath);
+            } else {
+                processMOCEditMode(element, context.sourcePath);
             }
         });
-        mocEmbedObserver.observe(document.body, { childList: true, subtree: true });
-        this.register(() => mocEmbedObserver.disconnect());
+
+        this.registerEvent(this.app.vault.on('modify', async (file) => {
+            if (!(file instanceof TFile) || !isMocMarkdownFile(file)) return;
+            const images = mocPreviewImages.get(file.path);
+            if (!images || images.size === 0) return;
+            const pngFile = await ensureMOCPreviewPNG(file, this);
+            const nextSrc = this.app.vault.getResourcePath(pngFile) + '?t=' + Date.now();
+            images.forEach((img) => {
+                img.src = nextSrc;
+            });
+        }));
 
         // 应用主题
         this.applyTheme();

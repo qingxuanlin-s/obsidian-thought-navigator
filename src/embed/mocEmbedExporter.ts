@@ -1,4 +1,4 @@
-import { App, MarkdownRenderChild, TFile } from "obsidian";
+import { App, TFile } from "obsidian";
 import { toBlob } from "html-to-image";
 import ZKNavigationPlugin from "main";
 import { parseMOCJson } from "src/utils/mocJsonCodec";
@@ -39,6 +39,19 @@ function waitForImages(root: HTMLElement, timeoutMs = 1800): Promise<void> {
 		Promise.all(waits).then(() => undefined),
 		delay(timeoutMs)
 	]);
+}
+
+function getVisibleExportBoundingBox(cy: any): { x1: number; y1: number; w: number; h: number } {
+	const visibleElements = cy.elements().filter((ele: any) => {
+		if (ele.removed?.()) return false;
+		if (ele.hasClass?.('zk-collapsed-hidden')) return false;
+		if (ele.style?.('display') === 'none') return false;
+		if (!ele.visible?.()) return false;
+		if (ele.isNode?.() && ele.data?.('isPlaceholder')) return false;
+		return true;
+	});
+	const target = visibleElements.length > 0 ? visibleElements : cy.elements();
+	return target.boundingBox();
 }
 
 async function waitForPreviewCardsReady(root: HTMLElement, timeoutMs = 5000): Promise<void> {
@@ -144,7 +157,7 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
 		if (!cy) throw new Error('Cytoscape 实例不存在');
 
 		// 撑开容器到全图尺寸，让 cytoscape canvas + 所有 overlay 一起被截
-		const bb = cy.elements().boundingBox();
+		const bb = getVisibleExportBoundingBox(cy);
 		const padding = 60;
 		const maxCanvasDim = 8192;
 		const exportScale = Math.max(2, Math.ceil(window.devicePixelRatio || 1));
@@ -239,107 +252,4 @@ export async function ensureMOCPreviewPNG(mocFile: TFile, plugin: ZKNavigationPl
 function pngNeedsUpdate(mocFile: TFile, pngFile: TFile | null): boolean {
 	if (!pngFile) return true;
 	return mocFile.stat.mtime > pngFile.stat.mtime;
-}
-
-/**
- * MarkdownRenderChild：处理 ![[xxx.moc]] 内嵌，展示为 PNG 图片
- */
-export class MOCEmbedRenderChild extends MarkdownRenderChild {
-	private currentImg: HTMLImageElement | null = null;
-	private regenerateTimer: ReturnType<typeof setTimeout> | null = null;
-
-	constructor(
-		containerEl: HTMLElement,
-		private mocFile: TFile,
-		private plugin: ZKNavigationPlugin
-	) {
-		super(containerEl);
-	}
-
-	async onload() {
-		// 立即移除 src 属性，并从 Obsidian 默认 internal-embed 点击链路中摘出，
-		// 避免点击/刷新后被当作普通内嵌文件再次打开。
-		this.containerEl.removeAttribute('src');
-		this.containerEl.removeAttribute('alt');
-		this.containerEl.removeAttribute('data-href');
-		this.containerEl.classList.remove('internal-embed');
-		this.containerEl.empty();
-		this.containerEl.addClass('zk-moc-embed');
-		this.preventDefaultOpenBehavior(this.containerEl);
-
-		const app = this.plugin.app;
-		const pngPath = getPNGPath(this.mocFile);
-
-		try {
-			let pngFile = app.vault.getFileByPath(pngPath);
-
-			if (pngNeedsUpdate(this.mocFile, pngFile)) {
-				const loading = this.containerEl.createDiv('zk-moc-embed-loading');
-				loading.setText('渲染思维树...');
-				pngFile = await ensureMOCPreviewPNG(this.mocFile, this.plugin);
-				loading.remove();
-			}
-
-			if (!pngFile) throw new Error('PNG 生成失败');
-
-			const img = this.containerEl.createEl('img');
-			img.addClass('zk-moc-embed-img');
-			img.src = app.vault.getResourcePath(pngFile);
-			img.style.cssText = 'width:100%;height:auto;border-radius:6px;';
-			img.alt = this.mocFile.basename;
-			this.currentImg = img;
-		} catch (e) {
-			this.containerEl.createDiv('zk-moc-embed-error').setText(`思维树预览失败: ${e.message}`);
-		}
-
-		// 监听 .moc 文件修改，5 秒后重新生成 PNG
-		this.registerEvent(
-			app.vault.on('modify', (file) => {
-				if (file.path === this.mocFile.path) {
-					this.scheduleRegenerate();
-				}
-			})
-		);
-	}
-
-	onunload() {
-		if (this.regenerateTimer !== null) {
-			clearTimeout(this.regenerateTimer);
-			this.regenerateTimer = null;
-		}
-	}
-
-	private scheduleRegenerate() {
-		if (this.regenerateTimer !== null) clearTimeout(this.regenerateTimer);
-		this.regenerateTimer = setTimeout(async () => {
-			this.regenerateTimer = null;
-			try {
-				const pngFile = await ensureMOCPreviewPNG(this.mocFile, this.plugin);
-				if (this.currentImg) {
-					// 加时间戳破坏浏览器缓存，强制刷新图片
-					this.currentImg.src = this.plugin.app.vault.getResourcePath(pngFile) + '?t=' + Date.now();
-				}
-			} catch (e) {
-				console.error('[zk-moc-embed] 自动重新生成失败:', e);
-			}
-		}, 5000);
-	}
-
-	private preventDefaultOpenBehavior(el: HTMLElement): void {
-		const stop = (evt: Event) => {
-			const target = evt.target as HTMLElement | null;
-			if (target?.closest?.('.zk-moc-embed-img')) {
-				return;
-			}
-			evt.preventDefault();
-			evt.stopPropagation();
-		};
-
-		this.registerDomEvent(el, 'click', stop);
-		this.registerDomEvent(el, 'auxclick', stop);
-		this.registerDomEvent(el, 'dblclick', stop);
-		this.registerDomEvent(el, 'mousedown', stop);
-		this.registerDomEvent(el, 'mouseup', stop);
-		this.registerDomEvent(el, 'touchend', stop);
-	}
 }
