@@ -178,7 +178,7 @@ export default {
     "open zk-local-graph": "open zk-local-graph",
     "zk-local-graph": "zk-local-graph",
     "zk-index-graph": "zk-index-graph",    
-    "Main notes": "📄Main notes",
+    "Main notes": "Main notes",
     '📖index': '📖keywords',
     "Copy zk-navigation URI":"Copy zk-navigation URI",
     "New MOC file": "New MOC file",
