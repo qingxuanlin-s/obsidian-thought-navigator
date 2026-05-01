@@ -270,8 +270,6 @@ export default class ZKNavigationPlugin extends Plugin {
         // 注册 .moc 扩展名，使 Obsidian 在文件浏览器中显示并正确索引这些文件
         this.registerExtensions(['moc'], 'markdown');
 
-        const mocPreviewImages = new Map<string, Set<HTMLImageElement>>();
-
         const updateMOCPreviewImageSize = (img: HTMLImageElement, containerEl: HTMLElement): void => {
             if (containerEl.parentElement?.classList.contains('popover')) {
                 containerEl.addClass('zk-moc-popover-img-preview-content');
@@ -302,19 +300,6 @@ export default class ZKNavigationPlugin extends Plugin {
                     await this.openIndexView();
                     this.app.workspace.trigger("zk-navigation:refresh-index-graph");
                 });
-                let imageSet = mocPreviewImages.get(mocFile.path);
-                if (!imageSet) {
-                    imageSet = new Set();
-                    mocPreviewImages.set(mocFile.path, imageSet);
-                }
-                imageSet.add(img);
-
-                const observer = new MutationObserver(() => {
-                    if (document.body.contains(img)) return;
-                    imageSet?.delete(img);
-                    observer.disconnect();
-                });
-                observer.observe(document.body, { childList: true, subtree: true });
                 return img;
             } catch {
                 return null;
@@ -389,17 +374,6 @@ export default class ZKNavigationPlugin extends Plugin {
                 });
             }
         });
-
-        this.registerEvent(this.app.vault.on('modify', async (file) => {
-            if (!(file instanceof TFile) || !isMocFile(file)) return;
-            const images = mocPreviewImages.get(file.path);
-            if (!images || images.size === 0) return;
-            const pngFile = await ensureMOCPreviewPNG(file, this);
-            const nextSrc = this.app.vault.getResourcePath(pngFile) + '?t=' + Date.now();
-            images.forEach((img) => {
-                img.src = nextSrc;
-            });
-        }));
 
         // 注册自定义 View:打开 .moc.md / .moc 文件时显示 PNG 预览(参考 SimpleMindMap)
         this.registerView(MOC_PREVIEW_VIEW_TYPE, (leaf) => new MOCPreviewView(leaf, this));

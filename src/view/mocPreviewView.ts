@@ -1,4 +1,4 @@
-import { TextFileView, TFile, WorkspaceLeaf, Menu, IconName } from "obsidian";
+import { TextFileView, WorkspaceLeaf, Menu, IconName } from "obsidian";
 import ZKNavigationPlugin from "main";
 import { ensureMOCPreviewPNG } from "src/embed/mocEmbedExporter";
 
@@ -6,7 +6,6 @@ export const MOC_PREVIEW_VIEW_TYPE = 'moc-preview';
 
 export class MOCPreviewView extends TextFileView {
     private plugin: ZKNavigationPlugin;
-    private imageEl: HTMLImageElement | null = null;
     private renderToken = 0;
 
     constructor(leaf: WorkspaceLeaf, plugin: ZKNavigationPlugin) {
@@ -29,16 +28,9 @@ export class MOCPreviewView extends TextFileView {
     async onOpen(): Promise<void> {
         this.contentEl.empty();
         this.contentEl.addClass('zk-moc-preview-view');
-
-        this.registerEvent(this.app.vault.on('modify', (file) => {
-            if (file instanceof TFile && this.file && file.path === this.file.path) {
-                void this.refreshImage();
-            }
-        }));
     }
 
     async onClose(): Promise<void> {
-        this.imageEl = null;
         this.contentEl.empty();
     }
 
@@ -81,22 +73,11 @@ export class MOCPreviewView extends TextFileView {
             img.src = this.app.vault.getResourcePath(pngFile);
             img.alt = this.file.basename;
             img.draggable = false;
-            this.imageEl = img;
         } catch (e: any) {
             if (token !== this.renderToken) return;
             this.contentEl.empty();
             this.contentEl.createDiv('zk-moc-preview-error')
                 .setText(`预览生成失败: ${e?.message ?? e}`);
-        }
-    }
-
-    private async refreshImage(): Promise<void> {
-        if (!this.file || !this.imageEl) return;
-        try {
-            const pngFile = await ensureMOCPreviewPNG(this.file, this.plugin);
-            this.imageEl.src = this.app.vault.getResourcePath(pngFile) + '?t=' + Date.now();
-        } catch {
-            // 忽略刷新失败
         }
     }
 

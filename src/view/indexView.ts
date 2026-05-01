@@ -1857,15 +1857,6 @@ cy.fit(null, 40);
             showNoteId: this.plugin.settings.showNoteIdInBranchView,
             smartConnection: this.plugin.settings.smartConnection === true,
             readOnly: this.isMobileReadOnly(),
-            mocPreviewExporter: async (mocFile: TFile) => {
-                try {
-                    const { ensureMOCPreviewPNG } = await import('src/embed/mocEmbedExporter');
-                    return await ensureMOCPreviewPNG(mocFile, this.plugin);
-                } catch (error) {
-                    console.error('[indexView] ensureMOCPreviewPNG failed:', error);
-                    return null;
-                }
-            }
         };
 
         // 性能优化：复用或创建渲染器，避免每次都销毁重建
