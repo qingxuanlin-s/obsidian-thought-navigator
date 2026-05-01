@@ -2930,10 +2930,7 @@ align-items: center;
 }
 
 .zk-level-divider {
-  width: 1px;
-  height: 14px;
-  background: rgba(120, 120, 160, 0.35);
-  margin-right: 4px;
+  display: none;
 }
 
 .zk-level-seg {
@@ -2969,10 +2966,7 @@ align-items: center;
 }
 
 .zk-level-sep {
-  color: rgba(150, 150, 170, 0.55);
-  font-size: 12px;
-  user-select: none;
-  line-height: 1;
+  display: none;
 }
 
 .zk-level-reset {
@@ -3006,7 +3000,7 @@ align-items: center;
   justify-content: center;
   width: 14px;
   height: 18px;
-  font-size: 9px;
+  font-size: 18px;
   color: rgba(150, 150, 200, 0.7);
   cursor: pointer;
   border-radius: 4px;

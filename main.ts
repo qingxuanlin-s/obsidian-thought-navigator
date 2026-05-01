@@ -245,6 +245,10 @@ export default class ZKNavigationPlugin extends Plugin {
         if ((this.settings as any).themeStyle === 'vivid') {
             this.settings.themeStyle = 'modern';
         }
+        const legacyFileIcon = String.fromCodePoint(0x1F4C4);
+        if (this.settings.MainNoteButtonText.startsWith(legacyFileIcon)) {
+            this.settings.MainNoteButtonText = this.settings.MainNoteButtonText.slice(legacyFileIcon.length);
+        }
         this.settings.autoLayoutDefaultGrowthDirection = normalizeLayoutPreset(
             this.settings.autoLayoutDefaultGrowthDirection
         );
