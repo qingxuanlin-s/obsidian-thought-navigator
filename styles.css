@@ -2917,6 +2917,223 @@ align-items: center;
   color: #ffcc44;
 }
 
+/* ==================== 层级面包屑 (Level Breadcrumb) ==================== */
+
+.zk-level-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 8px;
+  border-radius: 14px;
+  background: rgba(120, 120, 160, 0.08);
+  border: 1px solid rgba(120, 120, 160, 0.18);
+}
+
+.zk-level-divider {
+  width: 1px;
+  height: 14px;
+  background: rgba(120, 120, 160, 0.35);
+  margin-right: 4px;
+}
+
+.zk-level-seg {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  padding: 2px 7px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.zk-level-seg:hover {
+  background: rgba(120, 120, 200, 0.18);
+  color: var(--text-normal);
+}
+
+.zk-level-seg-active {
+  background: linear-gradient(135deg, rgba(130, 110, 230, 0.45), rgba(170, 120, 230, 0.35));
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 0 6px rgba(150, 120, 230, 0.35);
+}
+
+.zk-level-seg-active:hover {
+  background: linear-gradient(135deg, rgba(130, 110, 230, 0.55), rgba(170, 120, 230, 0.45));
+  color: #fff;
+}
+
+.zk-level-sep {
+  color: rgba(150, 150, 170, 0.55);
+  font-size: 12px;
+  user-select: none;
+  line-height: 1;
+}
+
+.zk-level-reset {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.zk-level-reset:hover {
+  background: rgba(220, 80, 80, 0.25);
+  color: #ff8080;
+}
+
+.zk-level-seg-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.zk-level-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 18px;
+  font-size: 9px;
+  color: rgba(150, 150, 200, 0.7);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.zk-level-chevron:hover {
+  background: rgba(120, 120, 200, 0.22);
+  color: var(--text-normal);
+}
+
+.zk-level-drill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 2px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(150, 150, 200, 0.85);
+  border: 1px dashed rgba(150, 150, 200, 0.45);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.zk-level-drill:hover {
+  background: rgba(120, 120, 200, 0.2);
+  border-color: rgba(150, 150, 230, 0.85);
+  color: var(--text-normal);
+}
+
+.zk-level-drill-all {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 18px;
+  padding: 0 6px;
+  margin-left: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(150, 150, 200, 0.85);
+  border: 1px solid rgba(150, 150, 200, 0.45);
+  border-radius: 9px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  letter-spacing: -1px;
+}
+
+.zk-level-drill-all:hover {
+  background: linear-gradient(135deg, rgba(130, 110, 230, 0.3), rgba(170, 120, 230, 0.2));
+  border-color: rgba(150, 150, 230, 0.9);
+  color: #fff;
+}
+
+.zk-level-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: rgba(120, 120, 200, 0.12);
+  border: 1px solid rgba(120, 120, 200, 0.28);
+  color: rgba(180, 180, 220, 0.95);
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.zk-level-mode-toggle:hover {
+  background: linear-gradient(135deg, rgba(130, 110, 230, 0.32), rgba(170, 120, 230, 0.22));
+  border-color: rgba(150, 150, 230, 0.85);
+  color: #fff;
+  transform: rotate(180deg);
+}
+
+.zk-level-mode-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.zk-level-mode-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.zk-level-dropdown {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 160px;
+  max-width: 280px;
+  max-height: 320px;
+  overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.zk-level-dropdown-item {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-normal);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.zk-level-dropdown-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.zk-level-dropdown-item-active {
+  background: linear-gradient(135deg, rgba(130, 110, 230, 0.35), rgba(170, 120, 230, 0.25));
+  color: #fff;
+  font-weight: 600;
+}
+
+.zk-level-dropdown-item-active:hover {
+  background: linear-gradient(135deg, rgba(130, 110, 230, 0.5), rgba(170, 120, 230, 0.4));
+}
+
 .zk-multiverse-panel {
   position: absolute;
   top: 100%;

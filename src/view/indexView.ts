@@ -148,6 +148,10 @@ export class ZKIndexView extends FileView {
     private mocChipLabel: HTMLElement | null = null;
     private mocChipProjectBadge: HTMLElement | null = null;
     private multiverseContainer: HTMLElement | null = null;
+    private levelBreadcrumbContainer: HTMLElement | null = null;
+    private currentDimLevel: number | null = null;
+    private levelPath: string[] = [];
+    private dimMode: 'subtree' | 'level' = 'subtree';
 
     // 性能优化：防止重复刷新的标志位
     private isRefreshing: boolean = false;
@@ -708,6 +712,10 @@ export class ZKIndexView extends FileView {
         // 平行宇宙面包屑：选中节点 + MOC 徽章（动态区域）
         this.multiverseContainer = breadcrumbNav.createDiv("zk-multiverse-container");
         this.multiverseContainer.style.display = "none";
+
+        // 层级面包屑：选中节点的 Luhmann 层级路径，点击可暗淡更深层的节点
+        this.levelBreadcrumbContainer = breadcrumbNav.createDiv("zk-level-breadcrumb");
+        this.levelBreadcrumbContainer.style.display = "none";
 
         // 右侧工具按钮（用 spacer 推到右边）
         const spacer = toolbarDiv.createDiv("zk-toolbar-spacer");
@@ -1898,6 +1906,9 @@ cy.fit(null, 40);
             }
         }
 
+        // 图加载/切换 MOC 后,初始化或校验层级面包屑路径
+        this.initLevelBreadcrumbForCurrentGraph();
+
         // 性能优化：只在容器变化或首次初始化时重建事件监听器
         // Cytoscape 增量更新不会替换容器，所以监听器可以复用
         const needsListenerInit = !this.branchGraphListenersInitialized || this.currentBranchGraphDiv !== branchGraphDiv;
@@ -2367,15 +2378,18 @@ cy.fit(null, 40);
             this.lastHoverPreviewAt = 0;
         });
 
-        // 监听节点选中事件（单击）— 更新平行宇宙面包屑
+        // 监听节点选中事件（单击）— 更新平行宇宙面包屑 + 同步层级面包屑到该节点的路径
         this.addTrackedListener(branchGraphDiv, 'node-select', (event: any) => {
             const { node } = event.detail;
             this.updateMultiverseBadge(node);
+            this.syncLevelBreadcrumbWithNode(node);
         });
 
-        // 点击画布空白处 — 隐藏平行宇宙面包屑
+        // 点击画布空白处 — 隐藏平行宇宙徽章,清除暗淡;层级面包屑保持显示
         this.addTrackedListener(branchGraphDiv, 'background-click', () => {
             this.updateMultiverseBadge(null);
+            this.clearLevelDim();
+            this.refreshLevelBreadcrumb();
         });
 
         // 监听节点编辑事件（双击）
@@ -3341,6 +3355,447 @@ cy.fit(null, 40);
         badge.addEventListener("click", () => {
             setTimeout(() => document.addEventListener("click", closePanel), 0);
         });
+    }
+
+    /**
+     * 在 cy 中按 IDStr 找节点
+     */
+    private findCyNodeByIdStr(idStr: string): any | null {
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        if (!cy) return null;
+        const matches = cy.nodes().filter((n: any) => {
+            const original = n.data('originalNode') as ZKNode | undefined;
+            return original?.IDStr === idStr;
+        });
+        return matches.length > 0 ? matches[0] : null;
+    }
+
+    /**
+     * 收集所有 level-1 根节点(过滤跨域/占位/free)
+     */
+    private getLevelRoots(): ZKNode[] {
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        if (!cy) return [];
+        const roots: ZKNode[] = [];
+        cy.nodes().forEach((n: any) => {
+            const original = n.data('originalNode') as ZKNode | undefined;
+            if (!original) return;
+            if (original.isCrossDomain || original.isPlaceholder) return;
+            if ((original.IDStr || '').startsWith('free.')) return;
+            if (original.IDArr?.length === 1) roots.push(original);
+        });
+        // 按 IDStr 排序,保持稳定顺序
+        roots.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
+        return roots;
+    }
+
+    /**
+     * 收集某个父节点的直接子节点(基于 cy 当前可见节点)
+     */
+    private getCyDirectChildren(parentIdStr: string): ZKNode[] {
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        if (!cy) return [];
+        const parent = this.findCyNodeByIdStr(parentIdStr);
+        if (!parent) return [];
+        const parentDepth = (parent.data('originalNode') as ZKNode).IDArr.length;
+        const children: ZKNode[] = [];
+        const prefix = parentIdStr + '.';
+        cy.nodes().forEach((n: any) => {
+            const original = n.data('originalNode') as ZKNode | undefined;
+            if (!original) return;
+            if (original.isCrossDomain || original.isPlaceholder) return;
+            if (original.IDArr?.length === parentDepth + 1
+                && (original.IDStr || '').startsWith(prefix)) {
+                children.push(original);
+            }
+        });
+        children.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
+        return children;
+    }
+
+    /**
+     * 给定 IDStr 取展示标签:优先 title,否则 ID 末段
+     */
+    private getNodeLabelByIdStr(idStr: string): string {
+        const cyNode = this.findCyNodeByIdStr(idStr);
+        if (cyNode) {
+            const original = cyNode.data('originalNode') as ZKNode;
+            const text = original.title || original.displayText || '';
+            if (text.trim()) return text.trim();
+        }
+        return idStr.split('.').pop() || idStr;
+    }
+
+    private truncateLabel(s: string, max: number): string {
+        return s.length > max ? s.substring(0, max) + '…' : s;
+    }
+
+    /**
+     * 由用户在画布上选中节点 → 同步面包屑路径到该节点
+     */
+    private syncLevelBreadcrumbWithNode(node: ZKNode | null): void {
+        if (!node || !node.IDArr || node.IDArr.length === 0) {
+            this.refreshLevelBreadcrumb();
+            return;
+        }
+        if (node.isCrossDomain || node.isPlaceholder) return;
+        if ((node.IDStr || '').startsWith('free.')) return;
+        this.levelPath = [...node.IDArr];
+        // 校验暗淡级别是否仍有效
+        if (this.currentDimLevel !== null && this.currentDimLevel > this.levelPath.length) {
+            this.clearLevelDim();
+        } else if (this.currentDimLevel !== null) {
+            this.applyLevelDim(this.currentDimLevel, this.levelPath[this.currentDimLevel - 1]);
+        }
+        this.refreshLevelBreadcrumb();
+    }
+
+    /**
+     * 从 levelPath 末端继续向下钻,每层取第一个子节点,直到没有子节点
+     */
+    private extendLevelPathToDeepest(): void {
+        if (this.levelPath.length === 0) return;
+        let current = this.levelPath[this.levelPath.length - 1];
+        for (let i = 0; i < 100; i++) {
+            const children = this.getCyDirectChildren(current);
+            if (children.length === 0) break;
+            const firstChild = children[0];
+            this.levelPath.push(firstChild.IDStr);
+            current = firstChild.IDStr;
+        }
+    }
+
+    /**
+     * 图渲染完成后调用:校验当前 levelPath,失效则重置;首次进入自动钻到最深
+     */
+    private initLevelBreadcrumbForCurrentGraph(): void {
+        const roots = this.getLevelRoots();
+        if (roots.length === 0) {
+            this.levelPath = [];
+            this.clearLevelDim();
+            this.refreshLevelBreadcrumb();
+            return;
+        }
+        const needsReset = this.levelPath.length === 0 || !roots.some(r => r.IDStr === this.levelPath[0]);
+        if (needsReset) {
+            this.levelPath = [roots[0].IDStr];
+            // 首次/重置:自动钻到当前分支最深叶子
+            this.extendLevelPathToDeepest();
+        } else {
+            // 校验下游路径每一段都还存在
+            for (let i = 1; i < this.levelPath.length; i++) {
+                const children = this.getCyDirectChildren(this.levelPath[i - 1]);
+                if (!children.some(c => c.IDStr === this.levelPath[i])) {
+                    this.levelPath = this.levelPath.slice(0, i);
+                    break;
+                }
+            }
+        }
+        if (this.currentDimLevel !== null && this.currentDimLevel > this.levelPath.length) {
+            this.clearLevelDim();
+        }
+        this.refreshLevelBreadcrumb();
+    }
+
+    /**
+     * 基于当前 levelPath 重新渲染面包屑 DOM
+     */
+    private refreshLevelBreadcrumb(): void {
+        if (!this.levelBreadcrumbContainer) return;
+        this.levelBreadcrumbContainer.empty();
+
+        if (this.levelPath.length === 0) {
+            this.levelBreadcrumbContainer.style.display = "none";
+            return;
+        }
+
+        this.levelBreadcrumbContainer.style.display = "flex";
+        this.levelBreadcrumbContainer.createSpan("zk-level-divider");
+
+        for (let i = 0; i < this.levelPath.length; i++) {
+            const segmentDepth = i + 1;
+            const idStr = this.levelPath[i];
+            const rawLabel = this.getNodeLabelByIdStr(idStr);
+            const label = this.truncateLabel(rawLabel, 10);
+
+            const siblings = i === 0
+                ? this.getLevelRoots()
+                : this.getCyDirectChildren(this.levelPath[i - 1]);
+            const hasMultiple = siblings.length > 1;
+
+            const segWrap = this.levelBreadcrumbContainer.createSpan("zk-level-seg-wrap");
+            const seg = segWrap.createSpan("zk-level-seg");
+            seg.setText(label);
+            seg.setAttribute("title", `层级 ${segmentDepth}: ${idStr}（点击聚焦,深层节点暗淡）`);
+
+            if (this.currentDimLevel === segmentDepth) seg.addClass("zk-level-seg-active");
+
+            seg.addEventListener("click", (e) => {
+                e.stopPropagation();
+                if (this.currentDimLevel === segmentDepth) {
+                    this.clearLevelDim();
+                } else {
+                    this.applyLevelDim(segmentDepth, idStr);
+                }
+                this.refreshLevelBreadcrumb();
+            });
+
+            if (hasMultiple) {
+                const chevron = segWrap.createSpan("zk-level-chevron");
+                chevron.setText("\u25BE");
+                chevron.setAttribute("title", `切换其他兄弟节点（共 ${siblings.length} 个）`);
+                chevron.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    this.showSiblingDropdown(segWrap, siblings, i, false);
+                });
+            }
+
+            if (i < this.levelPath.length - 1) {
+                this.levelBreadcrumbContainer.createSpan("zk-level-sep").setText("\u203A");
+            }
+        }
+
+        // 末端「下钻」按钮:若当前最深节点还有子节点,允许选一个继续往下
+        const deepestId = this.levelPath[this.levelPath.length - 1];
+        const childrenOfDeepest = this.getCyDirectChildren(deepestId);
+        if (childrenOfDeepest.length > 0) {
+            this.levelBreadcrumbContainer.createSpan("zk-level-sep").setText("\u203A");
+            const drillBtn = this.levelBreadcrumbContainer.createSpan("zk-level-drill");
+            drillBtn.setText("+");
+            drillBtn.setAttribute("title", `下钻到下一层（${childrenOfDeepest.length} 个子节点）`);
+            drillBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                this.showSiblingDropdown(drillBtn, childrenOfDeepest, this.levelPath.length, true);
+            });
+
+            // 一键钻到最深
+            const drillAllBtn = this.levelBreadcrumbContainer.createSpan("zk-level-drill-all");
+            drillAllBtn.setText("\u00BB");
+            drillAllBtn.setAttribute("title", "一键展开到当前分支最深层");
+            drillAllBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                this.extendLevelPathToDeepest();
+                this.refreshLevelBreadcrumb();
+            });
+        }
+
+        // 模式切换按钮(始终显示):子树聚焦 ↔ 同层切片
+        const modeBtn = this.levelBreadcrumbContainer.createSpan("zk-level-mode-toggle");
+        const modeIconWrap = modeBtn.createSpan("zk-level-mode-icon");
+        setIcon(modeIconWrap, this.dimMode === 'subtree' ? 'git-branch' : 'layers');
+        modeBtn.setAttribute("title",
+            this.dimMode === 'subtree'
+                ? '当前模式: 子树聚焦（点击切到同层切片）'
+                : '当前模式: 同层切片（点击切到子树聚焦）'
+        );
+        modeBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            this.dimMode = this.dimMode === 'subtree' ? 'level' : 'subtree';
+            if (this.currentDimLevel !== null && this.currentDimLevel <= this.levelPath.length) {
+                this.applyLevelDim(this.currentDimLevel, this.levelPath[this.currentDimLevel - 1]);
+            }
+            this.refreshLevelBreadcrumb();
+        });
+
+        if (this.currentDimLevel !== null) {
+            const resetBtn = this.levelBreadcrumbContainer.createSpan("zk-level-reset");
+            resetBtn.setText("\u2715");
+            resetBtn.setAttribute("title", "清除层级筛选");
+            resetBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                this.clearLevelDim();
+                this.refreshLevelBreadcrumb();
+            });
+        }
+    }
+
+    /**
+     * 弹出兄弟节点选择面板
+     */
+    private showSiblingDropdown(
+        anchor: HTMLElement,
+        options: ZKNode[],
+        levelIndex: number,
+        isExtension: boolean
+    ): void {
+        document.querySelectorAll('.zk-level-dropdown').forEach(el => el.remove());
+
+        const dropdown = document.body.createDiv('zk-level-dropdown');
+        const rect = anchor.getBoundingClientRect();
+        dropdown.style.position = 'fixed';
+        dropdown.style.top = `${rect.bottom + 4}px`;
+        dropdown.style.left = `${rect.left}px`;
+        dropdown.style.zIndex = '10000';
+
+        for (const node of options) {
+            const item = dropdown.createDiv('zk-level-dropdown-item');
+            const rawLabel = node.title || node.displayText || (node.IDStr.split('.').pop() || node.IDStr);
+            const label = this.truncateLabel(rawLabel, 24);
+            item.setText(label);
+            item.setAttribute('title', node.IDStr);
+            if (!isExtension && this.levelPath[levelIndex] === node.IDStr) {
+                item.addClass('zk-level-dropdown-item-active');
+            }
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.levelPath = this.levelPath.slice(0, levelIndex);
+                this.levelPath.push(node.IDStr);
+                dropdown.remove();
+                if (this.currentDimLevel !== null && this.currentDimLevel > this.levelPath.length) {
+                    this.clearLevelDim();
+                } else if (this.currentDimLevel !== null) {
+                    this.applyLevelDim(this.currentDimLevel, this.levelPath[this.currentDimLevel - 1]);
+                }
+                this.refreshLevelBreadcrumb();
+            });
+        }
+
+        const closeHandler = (ev: MouseEvent) => {
+            if (!dropdown.contains(ev.target as Node)) {
+                dropdown.remove();
+                document.removeEventListener('click', closeHandler);
+            }
+        };
+        setTimeout(() => document.addEventListener('click', closeHandler), 0);
+    }
+
+    private applyLevelDim(level: number, ancestorId: string): void {
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        if (!cy) return;
+
+        this.currentDimLevel = level;
+        const visibleCyIds = new Set<string>();
+
+        if (this.dimMode === 'subtree') {
+            const focusPrefix = ancestorId + '.';
+            const ancestorIds = new Set<string>();
+            const parts = ancestorId.split('.');
+            for (let i = 1; i <= parts.length; i++) {
+                ancestorIds.add(parts.slice(0, i).join('.'));
+            }
+            const isVisible = (idStr: string) =>
+                ancestorIds.has(idStr) || idStr.startsWith(focusPrefix);
+
+            // 先计算哪些非组节点可见,再处理 compound 父子关系
+            cy.nodes().forEach((n: any) => {
+                if (n.data('isGroup')) return;
+                const id = (n.data('originalNode') as ZKNode | undefined)?.IDStr || '';
+                if (isVisible(id)) visibleCyIds.add(n.id());
+            });
+
+            cy.batch(() => {
+                // 先 show/hide 组节点(compound parent),确保父节点状态正确
+                cy.nodes('.group-node').forEach((groupNode: any) => {
+                    const memberIds: string[] = groupNode.data('nodeIds') || [];
+                    const escapedMemberIds = memberIds.map((id: string) => id.replace(/[^a-zA-Z0-9_-]/g, '_'));
+                    if (escapedMemberIds.some((id: string) => visibleCyIds.has(id))) {
+                        groupNode.show();
+                    } else {
+                        groupNode.hide();
+                    }
+                });
+                // 再处理普通节点(compound children 在父节点 show 后才能正确显示)
+                cy.nodes().forEach((n: any) => {
+                    if (n.data('isGroup')) return;
+                    if (visibleCyIds.has(n.id())) {
+                        n.show();
+                    } else {
+                        n.hide();
+                    }
+                });
+                cy.edges().forEach((e: any) => {
+                    const srcId = (e.source().data('originalNode') as ZKNode | undefined)?.IDStr || '';
+                    const tgtId = (e.target().data('originalNode') as ZKNode | undefined)?.IDStr || '';
+                    if (isVisible(srcId) && isVisible(tgtId)) {
+                        e.show();
+                    } else {
+                        e.hide();
+                    }
+                });
+            });
+        } else {
+            cy.nodes().forEach((n: any) => {
+                if (n.data('isGroup')) return;
+                const depth = (n.data('originalNode') as ZKNode | undefined)?.IDArr?.length ?? 1;
+                if (depth <= level) visibleCyIds.add(n.id());
+            });
+
+            cy.batch(() => {
+                cy.nodes('.group-node').forEach((groupNode: any) => {
+                    const memberIds: string[] = groupNode.data('nodeIds') || [];
+                    const escapedMemberIds = memberIds.map((id: string) => id.replace(/[^a-zA-Z0-9_-]/g, '_'));
+                    if (escapedMemberIds.some((id: string) => visibleCyIds.has(id))) {
+                        groupNode.show();
+                    } else {
+                        groupNode.hide();
+                    }
+                });
+                cy.nodes().forEach((n: any) => {
+                    if (n.data('isGroup')) return;
+                    if (visibleCyIds.has(n.id())) {
+                        n.show();
+                    } else {
+                        n.hide();
+                    }
+                });
+                cy.edges().forEach((e: any) => {
+                    const srcDepth = (e.source().data('originalNode') as ZKNode | undefined)?.IDArr?.length ?? 1;
+                    const tgtDepth = (e.target().data('originalNode') as ZKNode | undefined)?.IDArr?.length ?? 1;
+                    if (srcDepth > level || tgtDepth > level) {
+                        e.hide();
+                    } else {
+                        e.show();
+                    }
+                });
+            });
+        }
+
+        // 同步 DOM overlay(embed 卡片)的透明度
+        this.applyDimToOverlays(visibleCyIds);
+
+        const ancestor = cy.nodes().filter((n: any) => {
+            const original = n.data('originalNode') as ZKNode | undefined;
+            return original?.IDStr === ancestorId;
+        });
+        if (ancestor.length > 0) {
+            cy.animate({ center: { eles: ancestor }, duration: 250 });
+        }
+    }
+
+    private applyDimToOverlays(visibleCyIds: Set<string> | null): void {
+        const clearing = visibleCyIds === null;
+
+        // Embed / Image 预览卡片:先全部隐藏,再还原可见的
+        document.querySelectorAll<HTMLElement>('.zk-embed-preview-card, .zk-image-preview-card')
+            .forEach(card => {
+                card.style.display = clearing ? '' : 'none';
+            });
+
+        if (!clearing) {
+            visibleCyIds!.forEach(cyId => {
+                const selector = `.zk-embed-preview-card[data-node-id="${cyId}"], .zk-image-preview-card[data-node-id="${cyId}"]`;
+                document.querySelectorAll<HTMLElement>(selector).forEach(card => {
+                    card.style.display = '';
+                });
+            });
+        }
+
+        // 分组 glass 层
+        document.querySelectorAll<HTMLElement>('.zk-group-glass-layer').forEach(layer => {
+            layer.style.display = clearing ? '' : 'none';
+        });
+    }
+
+    private clearLevelDim(): void {
+        if (this.currentDimLevel === null) return;
+        this.currentDimLevel = null;
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        if (!cy) return;
+        cy.batch(() => {
+            (cy.nodes() as any).show();
+            (cy.edges() as any).show();
+        });
+        this.applyDimToOverlays(null);
     }
 
     // MOC 文件选择器
@@ -5268,7 +5723,7 @@ cy.fit(null, 40);
      */
     private generateLetterSuffix(parentNodeID: string): string {
         const letters = 'abcdefghijklmnopqrstuvwxyz';
-        
+
         // 获取父节点的所有子节点
         const existingChildren = this.getDirectChildren(parentNodeID);
 
