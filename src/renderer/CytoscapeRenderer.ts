@@ -4525,7 +4525,12 @@ case 'dagre':
                 remarkEl.style.display = 'flex';
                 tooltipEl.style.display = 'block';
                 const zoom = this.cy.zoom();
-                const boundingBox = node.renderedBoundingBox();
+                // 文本节点的 Canvas label 会被 markdown overlay 替换（text-opacity:0），
+                // 但仍会撑大默认 boundingBox。排除 labels 后位置才贴合实际可视卡片。
+                const bbOpts = node.data('hasMarkdownOverlay')
+                    ? { includeLabels: false, includeOverlays: false }
+                    : undefined;
+                const boundingBox = bbOpts ? node.renderedBoundingBox(bbOpts) : node.renderedBoundingBox();
                 const size = 28 * zoom;
 
                 let x: number, y: number;
@@ -4918,7 +4923,9 @@ case 'dagre':
                     resizeEl.style.pointerEvents = 'auto';
                     resizeEl.style.opacity = '1';
                     const zoom = this.cy.zoom();
-                    const bb = node.renderedBoundingBox();
+                    // 文本节点 Canvas label 透明但仍参与默认 boundingBox 计算，
+                    // 大段文本会让句柄飘到节点下方很远 — 用纯形状 box 修正
+                    const bb = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
                     const size = Math.max(14, 18 * zoom);
                     resizeEl.style.width = `${size}px`;
                     resizeEl.style.height = `${size}px`;
@@ -9094,7 +9101,9 @@ case 'dagre':
     private ensureNodeVisibleInViewport(node: any, padding: number = 40): void {
         if (!this.cy || !this.container || !node || node.length === 0) return;
 
-        const box = node.renderedBoundingBox();
+        // 文本节点用 markdown overlay 渲染，Canvas label 透明但仍参与默认 boundingBox。
+        // 若包含 labels，长文本会让 box 远超实际卡片，触发误判把画布平移开。
+        const box = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
         const containerWidth = this.container.clientWidth;
         const containerHeight = this.container.clientHeight;
 
