@@ -37,7 +37,19 @@ const BLANK: SpaceTemplate = {
     ],
 };
 
-export const BUILTIN_TEMPLATES: SpaceTemplate[] = [PARA, GTD, BLANK];
+const ZK_THREE_LAYER: SpaceTemplate = {
+    id: 'zk-three-layer',
+    name: '总览 / 主题 / 局部',
+    description: '三层结构:总览作入口,主题分领域,局部知识沉淀细节',
+    icon: '🧭',
+    roots: [
+        { name: '总览', icon: '🗺️', color: '#6ba3ff' },
+        { name: '主题', icon: '🎯', color: '#7fd49a' },
+        { name: '局部知识', icon: '📍', color: '#cf94e5' },
+    ],
+};
+
+export const BUILTIN_TEMPLATES: SpaceTemplate[] = [PARA, GTD, ZK_THREE_LAYER, BLANK];
 
 export function findTemplate(id: string): SpaceTemplate | undefined {
     return BUILTIN_TEMPLATES.find(t => t.id === id);
