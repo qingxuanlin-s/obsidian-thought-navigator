@@ -1,4 +1,4 @@
-import { Editor, FileView, loadMermaid, moment, Notice, Plugin, TFile, TFolder } from "obsidian";
+import { Editor, FileView, loadMermaid, MarkdownView, moment, Notice, Plugin, TFile, TFolder, WorkspaceLeaf } from "obsidian";
 import { t } from "src/lang/helper";
 import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
 import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
@@ -14,6 +14,7 @@ import { FolderMountModal } from "src/modal/folderMountModal";
 import { ZKGraphView, ZK_GRAPH_TYPE } from "src/view/graphView";
 import { ZKIndexView, ZKNode, ZK_INDEX_TYPE, ZK_NAVIGATION } from "src/view/indexView";
 import { ZK_RECENT_TYPE, ZKRecentView } from "src/view/recentView";
+import { MOCPreviewView, MOC_PREVIEW_VIEW_TYPE } from "src/view/mocPreviewView";
 import { LayoutPreset, normalizeLayoutPreset } from "src/utils/growthDirection";
 
 interface Point {
@@ -317,65 +318,40 @@ export default class ZKNavigationPlugin extends Plugin {
             }
         };
 
-        const isMocMarkdownFile = (file: TFile | null | undefined): file is TFile => {
-            return !!file && file.path.toLowerCase().endsWith('.moc.md');
-        };
-
         const resolveMOCLink = (linkText: string | null | undefined, sourcePath: string): TFile | null => {
             const fileName = linkText?.split('#')[0]?.trim();
             if (!fileName) return null;
             const file = this.app.metadataCache.getFirstLinkpathDest(fileName, sourcePath)
                 ?? this.app.vault.getFileByPath(fileName);
-            return file instanceof TFile && isMocMarkdownFile(file) ? file : null;
+            return file instanceof TFile && isMocFile(file) ? file : null;
         };
 
-        const renderMOCPreviewInto = async (containerEl: HTMLElement, mocFile: TFile): Promise<void> => {
-            if (containerEl.dataset.mocHandled) return;
-            containerEl.dataset.mocHandled = '1';
-            const img = await createMOCPreviewImage(mocFile);
-            if (!img) {
-                containerEl.empty();
-                containerEl.addClass('zk-moc-embed');
-                containerEl.createDiv('zk-moc-embed-error').setText('没有可预览图片');
-                return;
-            }
-            containerEl.empty();
-            if (containerEl.hasClass('canvas-node-content')) {
-                containerEl.addClass('zk-moc-canvas-node-content');
-            }
-            containerEl.addClass('zk-moc-embed');
-            updateMOCPreviewImageSize(img, containerEl);
-            containerEl.appendChild(img);
-        };
-
-        const findValidMOCEmbedContainer = (containerEl: HTMLElement): HTMLElement | null => {
-            let el: HTMLElement | null = containerEl;
-            while (el && el !== document.body) {
-                if (
-                    el.classList.contains('dataview') ||
-                    el.classList.contains('cm-preview-code-block') ||
-                    el.classList.contains('cm-embed-block')
-                ) {
+        // 向上找 embed 包裹元素;只匹配 .internal-embed / .markdown-embed / canvas / excalidraw,
+        // 不匹配 .markdown-reading-view —— 那是「文件被作为 markdown 直接打开」的容器,不能动
+        const findMocEmbedWrapper = (el: HTMLElement): HTMLElement | null => {
+            let curr: HTMLElement | null = el;
+            while (curr && curr !== document.body) {
+                if (curr.classList.contains('dataview') ||
+                    curr.classList.contains('cm-preview-code-block') ||
+                    curr.classList.contains('cm-embed-block')) {
                     return null;
                 }
-                if (
-                    el.classList.contains('internal-embed') ||
-                    el.classList.contains('markdown-embed') ||
-                    el.classList.contains('markdown-reading-view') ||
-                    el.classList.contains('excalidraw-md-host') ||
-                    el.classList.contains('canvas-node-content')
-                ) {
-                    return el;
+                if (curr.classList.contains('internal-embed') ||
+                    curr.classList.contains('markdown-embed') ||
+                    curr.classList.contains('excalidraw-md-host') ||
+                    curr.classList.contains('canvas-node-content')) {
+                    return curr;
                 }
-                el = el.parentElement;
+                curr = curr.parentElement;
             }
-            return containerEl;
+            return null;
         };
 
-        const processMOCReadingMode = (element: HTMLElement, sourcePath: string): void => {
+        this.registerMarkdownPostProcessor((element, context) => {
+            // Case 1 (Reading View / 宿主文件):宿主文件渲染时,element 内含 .internal-embed,直接替换
             const embeddedItems = Array.from(element.querySelectorAll<HTMLElement>('.internal-embed'));
             embeddedItems.forEach((item) => {
-                const mocFile = resolveMOCLink(item.getAttribute('src'), sourcePath);
+                const mocFile = resolveMOCLink(item.getAttribute('src'), context.sourcePath);
                 if (!mocFile) return;
                 void createMOCPreviewImage(mocFile).then((img) => {
                     if (!img || !item.parentElement) return;
@@ -383,26 +359,36 @@ export default class ZKNavigationPlugin extends Plugin {
                     item.parentElement.replaceChild(img, item);
                 });
             });
-        };
 
-        const processMOCEditMode = (element: HTMLElement, sourcePath: string): void => {
-            const file = this.app.vault.getFileByPath(sourcePath);
-            if (!(file instanceof TFile) || !isMocMarkdownFile(file)) return;
-            const containerEl = findValidMOCEmbedContainer(element);
-            if (!containerEl) return;
-            void renderMOCPreviewInto(containerEl, file);
-        };
-
-        this.registerMarkdownPostProcessor((element, context) => {
-            if (element.querySelector('.internal-embed')) {
-                processMOCReadingMode(element, context.sourcePath);
-            } else {
-                processMOCEditMode(element, context.sourcePath);
+            // Case 2 (Live Preview / 被嵌入文件自身):post-processor 是为 .moc 文件本身触发的,
+            // 从 ctx.containerEl(渲染目标容器,Obsidian 内部属性)向上找 embed 包裹并替换
+            if (isMocPath(context.sourcePath)) {
+                const file = this.app.vault.getFileByPath(context.sourcePath);
+                if (!(file instanceof TFile) || !isMocFile(file)) return;
+                const containerEl = (context as any).containerEl as HTMLElement | undefined;
+                const startEl = containerEl ?? element;
+                const wrapper = findMocEmbedWrapper(startEl);
+                if (!wrapper) return;
+                if (wrapper.dataset.mocHandled) return;
+                wrapper.dataset.mocHandled = '1';
+                void createMOCPreviewImage(file).then((img) => {
+                    if (!img) return;
+                    wrapper.empty();
+                    wrapper.addClass('zk-moc-embed');
+                    if (wrapper.classList.contains('canvas-node-content')) {
+                        wrapper.addClass('zk-moc-canvas-node-content');
+                    }
+                    if (wrapper.classList.contains('markdown-embed')) {
+                        wrapper.classList.remove('markdown-embed', 'inline-embed');
+                    }
+                    updateMOCPreviewImageSize(img, wrapper);
+                    wrapper.appendChild(img);
+                });
             }
         });
 
         this.registerEvent(this.app.vault.on('modify', async (file) => {
-            if (!(file instanceof TFile) || !isMocMarkdownFile(file)) return;
+            if (!(file instanceof TFile) || !isMocFile(file)) return;
             const images = mocPreviewImages.get(file.path);
             if (!images || images.size === 0) return;
             const pngFile = await ensureMOCPreviewPNG(file, this);
@@ -411,6 +397,50 @@ export default class ZKNavigationPlugin extends Plugin {
                 img.src = nextSrc;
             });
         }));
+
+        // 注册自定义 View:打开 .moc.md / .moc 文件时显示 PNG 预览(参考 SimpleMindMap)
+        this.registerView(MOC_PREVIEW_VIEW_TYPE, (leaf) => new MOCPreviewView(leaf, this));
+
+        // Monkey-patch WorkspaceLeaf.setViewState:拦截 .moc.md / .moc 的 markdown 打开,
+        // 替换为 MOC_PREVIEW_VIEW_TYPE。带 isSwitchToMarkdownViewFromMocView 标志的跳过(允许显式切回 markdown)
+        const originalSetViewState = WorkspaceLeaf.prototype.setViewState;
+        WorkspaceLeaf.prototype.setViewState = function (state: any, ...rest: any[]) {
+            if (
+                state?.type === 'markdown' &&
+                state?.state?.file &&
+                isMocPath(state.state.file) &&
+                !state.state.isSwitchToMarkdownViewFromMocView
+            ) {
+                const newState = { ...state, type: MOC_PREVIEW_VIEW_TYPE };
+                return originalSetViewState.apply(this, [newState, ...rest]);
+            }
+            return originalSetViewState.apply(this, [state, ...rest]);
+        };
+        this.register(() => {
+            WorkspaceLeaf.prototype.setViewState = originalSetViewState;
+            this.app.workspace.getLeavesOfType(MOC_PREVIEW_VIEW_TYPE).forEach((leaf) => {
+                const file = (leaf.view as any)?.file as TFile | undefined;
+                if (file) {
+                    void leaf.setViewState({
+                        type: 'markdown',
+                        state: { file: file.path },
+                    });
+                }
+            });
+        });
+
+        // 启动后:把已经打开的 markdown leaf 中的 .moc.md / .moc 文件转成预览 view
+        this.app.workspace.onLayoutReady(() => {
+            this.app.workspace.getLeavesOfType('markdown').forEach((leaf) => {
+                const view = leaf.view;
+                if (view instanceof MarkdownView && view.file && isMocFile(view.file)) {
+                    void leaf.setViewState({
+                        type: MOC_PREVIEW_VIEW_TYPE,
+                        state: { file: view.file.path },
+                    });
+                }
+            });
+        });
 
         // 应用主题
         this.applyTheme();

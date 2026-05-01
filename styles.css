@@ -3466,3 +3466,29 @@ align-items: center;
 	max-width: 100%;
 	max-height: 100%;
 }
+
+.zk-moc-preview-view {
+	overflow: auto;
+	padding: 12px;
+	display: flex;
+	justify-content: center;
+	align-items: flex-start;
+}
+
+.zk-moc-preview-img {
+	display: block;
+	max-width: 100%;
+	height: auto;
+	border-radius: 6px;
+}
+
+.zk-moc-preview-loading,
+.zk-moc-preview-error {
+	padding: 24px;
+	color: var(--text-muted);
+	font-size: 0.95em;
+}
+
+.zk-moc-preview-error {
+	color: var(--text-error);
+}
