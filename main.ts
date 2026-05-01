@@ -294,10 +294,13 @@ export default class ZKNavigationPlugin extends Plugin {
                 img.style.cssText = 'display:block;width:100%;height:auto;border-radius:6px;';
                 img.alt = mocFile.basename;
                 img.draggable = false;
-                img.addEventListener('dblclick', (evt: MouseEvent) => {
+                img.addEventListener('dblclick', async (evt: MouseEvent) => {
                     evt.preventDefault();
                     evt.stopPropagation();
-                    this.app.workspace.openLinkText(mocFile.path, '', evt.ctrlKey || evt.metaKey);
+                    this.settings.mocCurrentFile = mocFile.path;
+                    await this.saveData(this.settings);
+                    await this.openIndexView();
+                    this.app.workspace.trigger("zk-navigation:refresh-index-graph");
                 });
                 let imageSet = mocPreviewImages.get(mocFile.path);
                 if (!imageSet) {
