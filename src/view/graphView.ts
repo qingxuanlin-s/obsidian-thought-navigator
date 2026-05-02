@@ -1,6 +1,6 @@
 import ZKNavigationPlugin from "main";
 import { ExtraButtonComponent, FileView, ItemView, Notice, TFile, WorkspaceLeaf, debounce, loadMermaid, setIcon } from "obsidian";
-import { ZKNode, ZK_NAVIGATION } from "./indexView";
+import { ZKNode, ZK_INDEX_TYPE, ZK_NAVIGATION } from "./indexView";
 import { t } from "src/lang/helper";
 import { convertMOCToZKNodes, getMOCFilesInFolder, isMocFile, parseMOCStructure, ReverseRelation } from "src/utils/utils";
 
@@ -11,6 +11,14 @@ import { RenderOptions } from "src/renderer/types";
 
 export const ZK_GRAPH_TYPE: string = "zk-graph-type"
 export const ZK_GRAPH_VIEW: string = t("zk-local-graph")
+
+type LocalGraphMode = 'overview' | 'navigation';
+
+interface LocalMocContext {
+    file: TFile;
+    allNodes: ZKNode[];
+    currentNode: ZKNode | null;
+}
 
 export class ZKGraphView extends ItemView {
 
@@ -25,6 +33,7 @@ export class ZKGraphView extends ItemView {
     // Cytoscape 渲染器
     private familyGraphRenderer: CytoscapeRenderer | null = null;
     private inoutlinksRenderer: CytoscapeRenderer | null = null;
+    private localGraphMode: LocalGraphMode = 'overview';
 
     constructor(leaf: WorkspaceLeaf, plugin: ZKNavigationPlugin) {
         super(leaf);
@@ -56,6 +65,10 @@ export class ZKGraphView extends ItemView {
                 this.resizeTimeout = null;
             }, 300);
         }
+    }
+
+    private isIndexViewActive(): boolean {
+        return this.app.workspace.activeLeaf?.view.getViewType() === ZK_INDEX_TYPE;
     }
 
     async onOpen() {
@@ -151,6 +164,7 @@ export class ZKGraphView extends ItemView {
         }));
 
         this.registerEvent(this.app.workspace.on("active-leaf-change", async (leaf) => {
+            if (leaf?.view.getViewType() === ZK_INDEX_TYPE) return;
 
             if (this.app.workspace.getLeavesOfType(ZK_GRAPH_TYPE).length > 0) {
                 if (this.app.workspace.getActiveViewOfType(FileView)) {
@@ -194,6 +208,8 @@ export class ZKGraphView extends ItemView {
     }
 
     refreshLocalGraph = async () => {
+        if (this.isIndexViewActive()) return;
+
         let { containerEl } = this;
         containerEl.empty();
 
@@ -764,181 +780,238 @@ export class ZKGraphView extends ItemView {
         return false;
     }
 
+    private getLocalNodeLabel(node: ZKNode): string {
+        return node.title || node.displayText || node.IDStr || node.ID;
+    }
+
+    private isNodeMatchFile(node: ZKNode, file: TFile, mocPath: string, resolvedLinkCache: Map<string, TFile | null>): boolean {
+        if (node.file?.path === file.path) return true;
+
+        const wikiLink = (node.wikiLink || '').trim();
+        if (!wikiLink) return false;
+        if (wikiLink === file.path || wikiLink === file.name || wikiLink === file.basename) return true;
+        if (wikiLink.replace(/\.md$/i, '') === file.basename) return true;
+
+        const basePath = mocPath.includes('/') ? mocPath.substring(0, mocPath.lastIndexOf('/')) : '';
+        const cacheKey = `${basePath}::${wikiLink}`;
+        let resolved: TFile | null;
+        if (resolvedLinkCache.has(cacheKey)) {
+            resolved = resolvedLinkCache.get(cacheKey) || null;
+        } else {
+            resolved = this.app.metadataCache.getFirstLinkpathDest(wikiLink, basePath);
+            resolvedLinkCache.set(cacheKey, resolved);
+        }
+        return !!resolved && resolved.path === file.path;
+    }
+
+    private async getAvailableMocContexts(currentFile: TFile): Promise<LocalMocContext[]> {
+        const mocFolder = this.plugin.settings.mocFolderPath;
+        if (!mocFolder) return [];
+
+        const headingTitle = this.plugin.settings.mocHeadingTitle;
+        const resolvedLinkCache = new Map<string, TFile | null>();
+        const contexts: LocalMocContext[] = [];
+
+        for (const mocFileCandidate of getMOCFilesInFolder(this.app, mocFolder)) {
+            const tempParseResult = await parseMOCStructure(this.app, mocFileCandidate.path, headingTitle);
+            const tempNodes = await convertMOCToZKNodes(
+                this.plugin,
+                tempParseResult.nodes,
+                tempParseResult.reverseRelations,
+                [],
+                tempParseResult.nodePositions
+            );
+            const tempCurrentNode = tempNodes.find(n => this.isNodeMatchFile(n, currentFile, mocFileCandidate.path, resolvedLinkCache)) || null;
+            if (tempCurrentNode) {
+                contexts.push({
+                    file: mocFileCandidate,
+                    allNodes: tempNodes,
+                    currentNode: tempCurrentNode
+                });
+            }
+        }
+
+        return contexts.sort((a, b) => a.file.basename.localeCompare(b.file.basename));
+    }
+
+    private renderLocalModeHeader(
+        parent: HTMLElement,
+        currentFile: TFile,
+        allNodes: ZKNode[],
+        currentNode: ZKNode,
+        mocFile: TFile
+    ): void {
+        const header = parent.createDiv('zk-local-mode-header');
+        const titleWrap = header.createDiv('zk-local-mode-title-wrap');
+        titleWrap.createDiv('zk-local-mode-title').setText(currentFile.basename);
+        titleWrap.createDiv('zk-local-mode-subtitle').setText(mocFile.basename);
+
+        const switcher = header.createDiv('zk-local-mode-switch');
+        const modes: Array<{ mode: LocalGraphMode; label: string }> = [
+            { mode: 'overview', label: '概览' },
+            { mode: 'navigation', label: '导航' }
+        ];
+
+        for (const item of modes) {
+            const btn = switcher.createEl('button', {
+                type: 'button',
+                cls: `zk-local-mode-btn${this.localGraphMode === item.mode ? ' is-active' : ''}`,
+                text: item.label
+            });
+            btn.addEventListener('click', async () => {
+                if (this.localGraphMode === item.mode) return;
+                this.localGraphMode = item.mode;
+                await this.refreshLocalGraphMOCNode(parent, currentFile, allNodes, currentNode, mocFile);
+            });
+        }
+    }
+
+    private createLocalSection(parent: HTMLElement, title: string, subtitle?: string): {
+        container: HTMLElement;
+        body: HTMLElement;
+        actions: HTMLElement;
+    } {
+        const container = parent.createDiv('zk-local-section-panel');
+        const header = container.createDiv('zk-local-section-header');
+        const titleWrap = header.createDiv('zk-local-section-title-wrap');
+        titleWrap.createDiv('zk-local-section-title').setText(title);
+        if (subtitle) {
+            titleWrap.createDiv('zk-local-section-subtitle').setText(subtitle);
+        }
+        const actions = header.createDiv('zk-local-section-actions');
+        const body = container.createDiv('zk-local-section-body');
+        return { container, body, actions };
+    }
+
+    private renderMocContextControl(
+        actions: HTMLElement,
+        graphMermaidDiv: HTMLElement,
+        currentFile: TFile,
+        allNodes: ZKNode[],
+        currentNode: ZKNode,
+        mocFile: TFile,
+        availableMOCs: LocalMocContext[]
+    ): void {
+        if (availableMOCs.length > 0) {
+            const mocSelector = actions.createEl('select', { cls: 'zk-local-section-select' });
+            availableMOCs.forEach((mocInfo) => {
+                const option = mocSelector.createEl('option');
+                option.value = mocInfo.file.path;
+                option.textContent = mocInfo.file.basename;
+                if (mocInfo.file.path === mocFile.path) {
+                    option.selected = true;
+                }
+            });
+
+            mocSelector.addEventListener('change', async () => {
+                const selectedMOC = availableMOCs.find(m => m.file.path === mocSelector.value);
+                if (selectedMOC && selectedMOC.currentNode) {
+                    await this.refreshLocalGraphMOCNode(
+                        graphMermaidDiv,
+                        currentFile,
+                        selectedMOC.allNodes,
+                        selectedMOC.currentNode,
+                        selectedMOC.file
+                    );
+                }
+            });
+
+            if (availableMOCs.length > 1) {
+                actions.createDiv('zk-local-section-count').setText(`${availableMOCs.length}`);
+            }
+            return;
+        }
+
+        const mocButton = actions.createEl('button', {
+            type: 'button',
+            cls: 'zk-local-section-file',
+            text: mocFile.basename
+        });
+        mocButton.title = mocFile.path;
+        mocButton.addEventListener('click', () => {
+            this.app.workspace.openLinkText('', mocFile.path, 'tab');
+        });
+    }
+
+    private findNodeForFile(allNodes: ZKNode[], file: TFile): ZKNode | null {
+        return allNodes.find((node) => node.file?.path === file.path) || null;
+    }
+
+    private async focusLocalFile(graphMermaidDiv: HTMLElement, file: TFile): Promise<void> {
+        const result = await this.findNodeInMOCTrees(file);
+        if (result) {
+            await this.refreshLocalGraphMOCNode(
+                graphMermaidDiv,
+                file,
+                result.allNodes,
+                result.currentNode,
+                result.mocFile
+            );
+            return;
+        }
+
+        this.app.workspace.openLinkText('', file.path);
+    }
+
     // 渲染 MOC 节点的相关思维树
     async refreshLocalGraphMOCNode(graphMermaidDiv: HTMLElement, currentFile: TFile, allNodes: ZKNode[], currentNode: ZKNode, mocFile: TFile) {
         graphMermaidDiv.empty();
+        this.renderLocalModeHeader(graphMermaidDiv, currentFile, allNodes, currentNode, mocFile);
 
-        // 计算要显示的图数量
+        const availableMOCs = await this.getAvailableMocContexts(currentFile);
+
+        if (this.localGraphMode === 'navigation') {
+            await this.renderFocusNavigation(graphMermaidDiv, currentFile, allNodes, currentNode, mocFile, availableMOCs);
+            if (this.plugin.settings.InOutlinksGraphToggle) {
+                const linkFile = currentNode.file || currentFile;
+                const inlinkArr = await this.getInlinks(linkFile);
+                const outlinkArr = await this.getOutlinks(linkFile);
+                await this.renderInOutLinksWithCytoscape(graphMermaidDiv, linkFile, inlinkArr, outlinkArr);
+            }
+            return;
+        }
+
+        await this.renderOverviewMode(graphMermaidDiv, currentFile, allNodes, currentNode, mocFile, availableMOCs);
+    }
+
+    private async renderOverviewMode(
+        graphMermaidDiv: HTMLElement,
+        currentFile: TFile,
+        allNodes: ZKNode[],
+        currentNode: ZKNode,
+        mocFile: TFile,
+        availableMOCs: LocalMocContext[]
+    ): Promise<void> {
         let graphCount = 0;
         if (this.plugin.settings.FamilyGraphToggle) graphCount++;
         if (this.plugin.settings.InOutlinksGraphToggle) graphCount++;
 
-        // 安全检查：避免除以 0 或 NaN
-        const safeCount = Math.max(graphCount, 1);
-        const containerHeight = this.containerEl.offsetHeight || 400; // 默认高度 400px
-        const graphHeight = Math.max(Math.floor(containerHeight / safeCount - 10), 200); // 最小高度 200px
+        const containerHeight = this.containerEl.offsetHeight || 400;
+        const graphHeight = Math.max(Math.floor(containerHeight / Math.max(graphCount, 1) - 72), 180);
 
-        const mermaid = await loadMermaid();
-        const svgPanZoom = require("svg-pan-zoom");
-
-        // ========== 1. 思维树上下文 ==========
         if (this.plugin.settings.FamilyGraphToggle) {
-            // 获取相关节点（上级、当前级、下级）
             const relatedNodes = this.getRelatedNodes(allNodes, currentNode, 3);
+            this.familyNodeArr = relatedNodes;
 
-            if (relatedNodes.length > 0) {
-                // 设置到 familyNodeArr 供其他功能使用
-                this.familyNodeArr = relatedNodes;
+            const section = this.createLocalSection(
+                graphMermaidDiv,
+                '局部关系',
+                `${this.getLocalNodeLabel(currentNode)} · ${mocFile.basename}`
+            );
+            section.container.addClass('zk-family-graph-container');
+            this.renderMocContextControl(section.actions, graphMermaidDiv, currentFile, allNodes, currentNode, mocFile, availableMOCs);
 
-                // 创建思维树容器
-                const mocNodeGraphContainer = graphMermaidDiv.createDiv("zk-family-graph-container");
-                const mocNodeGraphTextDiv = mocNodeGraphContainer.createDiv("zk-graph-text");
-                mocNodeGraphTextDiv.empty();
-                mocNodeGraphTextDiv.createEl('span', { text: t("mind tree context") });
-
-                // 检查当前文件在哪些MOC文件中出现
-                const mocFolder = this.plugin.settings.mocFolderPath;
-                const headingTitle = this.plugin.settings.mocHeadingTitle;
-                const availableMOCs: Array<{file: TFile, hasCurrentFile: boolean, allNodes: ZKNode[], currentNode: ZKNode | null}> = [];
-                const currentFileName = currentFile.name;
-                const currentBasename = currentFile.basename;
-                const resolvedLinkCache = new Map<string, TFile | null>();
-
-                const isNodeMatchCurrentFile = (node: ZKNode, mocPath: string): boolean => {
-                    if (node.file?.path === currentFile.path) return true;
-
-                    const wikiLink = (node.wikiLink || '').trim();
-                    if (!wikiLink) return false;
-                    if (wikiLink === currentFile.path || wikiLink === currentFileName || wikiLink === currentBasename) return true;
-                    if (wikiLink.replace(/\.md$/i, '') === currentBasename) return true;
-
-                    const basePath = mocPath.includes('/') ? mocPath.substring(0, mocPath.lastIndexOf('/')) : '';
-                    const cacheKey = `${basePath}::${wikiLink}`;
-                    let resolved: TFile | null;
-                    if (resolvedLinkCache.has(cacheKey)) {
-                        resolved = resolvedLinkCache.get(cacheKey) || null;
-                    } else {
-                        resolved = this.app.metadataCache.getFirstLinkpathDest(wikiLink, basePath);
-                        resolvedLinkCache.set(cacheKey, resolved);
-                    }
-                    return !!resolved && resolved.path === currentFile.path;
-                };
-                
-                if (mocFolder) {
-                    const mocFiles = getMOCFilesInFolder(this.app, mocFolder);
-                        
-                    // 检查每个MOC文件是否包含当前文件
-                    for (const mocFileCandidate of mocFiles) {
-                        const tempParseResult = await parseMOCStructure(this.app, mocFileCandidate.path, headingTitle);
-                        const tempNodes = await convertMOCToZKNodes(this.plugin, tempParseResult.nodes, tempParseResult.reverseRelations, [], tempParseResult.nodePositions);
-                        const tempCurrentNode = tempNodes.find(n => isNodeMatchCurrentFile(n, mocFileCandidate.path));
-                        if (tempCurrentNode) {
-                            availableMOCs.push({
-                                file: mocFileCandidate,
-                                hasCurrentFile: true,
-                                allNodes: tempNodes,
-                                currentNode: tempCurrentNode
-                            });
-                        }
-                    }
-                }
-                
-                // 显示MOC选择器（始终显示下拉框，方便切换）
-                if (availableMOCs.length > 0) {
-                    // 创建下拉选择器
-                    const mocSelector = mocNodeGraphTextDiv.createEl('select', { cls: 'zk-moc-selector' });
-                    mocSelector.style.marginLeft = '10px';
-                    mocSelector.style.padding = '4px 8px';
-                    mocSelector.style.borderRadius = '4px';
-                    mocSelector.style.border = '1px solid var(--background-modifier-border)';
-                    mocSelector.style.backgroundColor = 'var(--background-primary)';
-                    mocSelector.style.color = 'var(--text-normal)';
-                    mocSelector.style.fontSize = '12px';
-                    mocSelector.style.minWidth = '120px';
-                    mocSelector.style.cursor = 'pointer';
-
-                    // 仅显示包含当前文件的 MOC
-                    const sortedMOCs = [...availableMOCs].sort((a, b) =>
-                        a.file.basename.localeCompare(b.file.basename)
-                    );
-
-                    sortedMOCs.forEach((mocInfo) => {
-                        const option = mocSelector.createEl('option');
-                        option.value = mocInfo.file.path;
-                        option.textContent = mocInfo.file.basename;
-                        if (mocInfo.file.path === mocFile.path) {
-                            option.selected = true;
-                        }
-                    });
-
-                    mocSelector.addEventListener('change', async () => {
-                        const selectedMOC = sortedMOCs.find(m => m.file.path === mocSelector.value);
-                        if (selectedMOC && selectedMOC.currentNode) {
-                            // 刷新视图显示选中的MOC
-                            await this.refreshLocalGraphMOCNode(
-                                graphMermaidDiv,
-                                currentFile,
-                                selectedMOC.allNodes,
-                                selectedMOC.currentNode,
-                                selectedMOC.file
-                            );
-                        } else {
-                            console.error('[graphView] 未找到选中的 MOC:', mocSelector.value);
-                        }
-                    });
-
-                    // 如果当前文件在多个思维树中，添加提示
-                    const mocsWithCurrentFile = availableMOCs.filter(m => m.hasCurrentFile);
-                    if (mocsWithCurrentFile.length > 1) {
-                        const hintSpan = mocNodeGraphTextDiv.createEl('small', {
-                            text: ` (在${mocsWithCurrentFile.length}个思维树中)`,
-                            cls: 'zk-moc-hint'
-                        });
-                        hintSpan.style.color = 'var(--text-muted)';
-                        hintSpan.style.marginLeft = '4px';
-                    }
-                } else {
-                    // 没有MOC文件时，显示当前MOC文件名（只读）
-                    const mocFileInput = mocNodeGraphTextDiv.createEl('input', {
-                        type: 'text',
-                        cls: 'zk-moc-file-input',
-                        value: mocFile.basename
-                    });
-                    mocFileInput.readOnly = true;
-                    mocFileInput.style.marginLeft = '10px';
-                    mocFileInput.style.padding = '2px 8px';
-                    mocFileInput.style.border = '1px solid var(--background-modifier-border)';
-                    mocFileInput.style.borderRadius = '4px';
-                    mocFileInput.style.backgroundColor = 'var(--background-secondary)';
-                    mocFileInput.style.color = 'var(--text-muted)';
-                    mocFileInput.style.fontSize = '12px';
-                    mocFileInput.style.cursor = 'pointer';
-                    mocFileInput.title = mocFile.path;
-                    // 点击输入框打开 MOC 文件
-                    mocFileInput.addEventListener('click', () => {
-                        this.app.workspace.openLinkText('', mocFile.path, 'tab');
-                    });
-                }
-
-                // 添加图标按钮
-                const graphIconDiv = mocNodeGraphContainer.createDiv("zk-graph-icon");
-                graphIconDiv.empty();
-                const expandBtn = new ExtraButtonComponent(graphIconDiv);
-                expandBtn.setIcon("expand").setTooltip(t("expand graph"));
-
-                // 创建图形容器
-                const mocNodeTreeDiv = mocNodeGraphContainer.createEl("div", {
-                    cls: "zk-graph-cytoscape"
+            if (relatedNodes.length === 0) {
+                section.body.createDiv('zk-local-empty').setText('暂无局部关系');
+            } else {
+                const mocNodeTreeDiv = section.body.createEl("div", {
+                    cls: "zk-graph-cytoscape zk-local-cytoscape"
                 });
                 mocNodeTreeDiv.id = "zk-moc-node-tree-cytoscape";
                 mocNodeTreeDiv.style.height = `${graphHeight}px`;
                 mocNodeTreeDiv.style.width = "100%";
-                mocNodeTreeDiv.style.backgroundColor = this.plugin.settings.themeMode === 'light' ? '#f5f5f5' : '#2a2a2a';
 
-                // 构建图形数据
                 const graphData = GraphDataBuilder.fromFamilyNodes(relatedNodes, currentFile);
-
-                // 配置渲染选项
                 const options: RenderOptions = {
                     direction: (this.plugin.settings.DirectionOfBranchGraph || 'LR') as 'TB' | 'BT' | 'LR' | 'RL',
                     layoutType: 'dagre',
@@ -950,98 +1023,63 @@ export class ZKGraphView extends ItemView {
                     edgeStyle: this.plugin.settings.edgeStyle || 'bezier',
                     readOnly: true
                 };
+
+                const expandBtn = new ExtraButtonComponent(section.actions);
+                expandBtn.setIcon("expand").setTooltip(t("expand graph"));
                 expandBtn.onClick(() => {
                     try {
-                        new CytoscapeExpandModal(this.app, t("mind tree context"), graphData, options).open();
+                        new CytoscapeExpandModal(this.app, '局部关系', graphData, options).open();
                     } catch (error) {
                         console.error('[GraphView] expand mind tree failed', error);
-                        new Notice('放大失败：思维树');
+                        new Notice('放大失败：局部关系');
                     }
                 });
 
-                // 创建或复用渲染器
                 if (this.familyGraphRenderer) {
                     this.familyGraphRenderer.destroy();
                 }
                 this.familyGraphRenderer = new CytoscapeRenderer();
-
-                // 渲染图形
                 await this.familyGraphRenderer.render(mocNodeTreeDiv, graphData, options);
 
-                // 局部视图：禁用节点拖动（只查看）
                 const cy = this.familyGraphRenderer.getCytoscapeInstance();
                 if (cy) {
-                    cy.nodes().ungrabify(); // 禁止拖动节点
+                    cy.nodes().ungrabify();
                 }
 
-                // 监听节点点击事件
                 mocNodeTreeDiv.addEventListener('node-click', async (event: any) => {
-                    const { node, ctrlKey, shiftKey, altKey } = event.detail;
+                    const { node, ctrlKey, metaKey, shiftKey, altKey } = event.detail;
                     if (!node) return;
 
-                    // 文本节点（无 file）：以该节点为核心重渲染周边节点
-                    if (!node.file) {
-                        const clicked = allNodes.find((n) =>
-                            n.IDStr === node.IDStr || n.ID === node.ID || n.IDStr === node.ID || n.ID === node.IDStr
-                        );
-                        if (clicked) {
-                            await this.refreshLocalGraphMOCNode(
-                                graphMermaidDiv,
-                                currentFile,
-                                allNodes,
-                                clicked,
-                                mocFile
-                            );
-                        }
-                        return;
-                    }
+                    const clicked = allNodes.find((n) =>
+                        n.IDStr === node.IDStr || n.ID === node.ID || n.IDStr === node.ID || n.ID === node.IDStr
+                    );
+                    if (!clicked?.file) return;
 
-                    if (ctrlKey) {
-                        this.app.workspace.openLinkText("", node.file.path, 'tab');
+                    if (ctrlKey || metaKey) {
+                        this.app.workspace.openLinkText("", clicked.file.path, 'tab');
                     } else if (shiftKey) {
                         this.plugin.retrivalforLocaLgraph = {
                             type: '1',
-                            ID: node.ID,
-                            filePath: node.file.path,
+                            ID: clicked.ID,
+                            filePath: clicked.file.path,
                         };
                         this.plugin.openGraphView();
                     } else if (altKey) {
                         this.plugin.clearShowingSettings();
                         this.plugin.settings.lastRetrival = {
                             type: 'main',
-                            ID: node.ID,
-                            displayText: node.displayText,
-                            filePath: node.file.path,
+                            ID: clicked.ID,
+                            displayText: clicked.displayText,
+                            filePath: clicked.file.path,
                             openTime: '',
                         };
                         this.plugin.RefreshIndexViewFlag = true;
                         this.plugin.openIndexView();
                     } else {
-                        this.app.workspace.openLinkText("", node.file.path);
+                        this.app.workspace.openLinkText("", clicked.file.path);
                     }
                 });
 
-                // 文本节点不走 node-click（无 hasFileIcon），通过 node-select 支持“点击后以该节点为中心重渲染”
-                mocNodeTreeDiv.addEventListener('node-select', async (event: any) => {
-                    const { node } = event.detail || {};
-                    if (!node || node.file) return;
-
-                    const clicked = allNodes.find((n) =>
-                        n.IDStr === node.IDStr || n.ID === node.ID || n.IDStr === node.ID || n.ID === node.IDStr
-                    );
-                    if (!clicked) return;
-                    if (clicked.IDStr === currentNode.IDStr) return;
-
-                    await this.refreshLocalGraphMOCNode(
-                        graphMermaidDiv,
-                        currentFile,
-                        allNodes,
-                        clicked,
-                        mocFile
-                    );
-                });
-
-                // 监听节点悬停事件
                 mocNodeTreeDiv.addEventListener('node-hover', (event: any) => {
                     const { node, event: mouseEvent } = event.detail;
                     if (!node || !node.file || !mouseEvent) return;
@@ -1058,14 +1096,226 @@ export class ZKGraphView extends ItemView {
             }
         }
 
-        // ========== 2. 出入链图 ==========
         if (this.plugin.settings.InOutlinksGraphToggle) {
             const inlinkArr = await this.getInlinks(currentFile);
             const outlinkArr = await this.getOutlinks(currentFile);
-
-            // 使用 Cytoscape 渲染入链出链图
             await this.renderInOutLinksWithCytoscape(graphMermaidDiv, currentFile, inlinkArr, outlinkArr);
         }
+    }
+
+    private getParentNode(allNodes: ZKNode[], currentNode: ZKNode): ZKNode | null {
+        const currentId = currentNode.IDStr || currentNode.ID;
+        if (currentId?.includes('.')) {
+            const parentId = currentId.split('.').slice(0, -1).join('.');
+            return allNodes.find((node) => node.IDStr === parentId || node.ID === parentId) || null;
+        }
+        if (currentNode.IDArr.length <= 1) return null;
+        const parentId = currentNode.IDArr.slice(0, -1).toString();
+        return allNodes.find((node) => node.IDArr.toString() === parentId || node.IDStr === parentId || node.ID === parentId) || null;
+    }
+
+    private getChildNodes(allNodes: ZKNode[], currentNode: ZKNode): ZKNode[] {
+        const currentId = currentNode.IDStr || currentNode.ID;
+        if (currentId) {
+            const currentDepth = currentId.split('.').length;
+            return allNodes.filter((node) => {
+                const nodeId = node.IDStr || node.ID;
+                return nodeId.startsWith(`${currentId}.`) && nodeId.split('.').length === currentDepth + 1;
+            });
+        }
+        return allNodes.filter((node) =>
+            node.IDArr.length === currentNode.IDArr.length + 1 &&
+            node.IDArr.slice(0, currentNode.IDArr.length).join(',') === currentNode.IDArr.join(',')
+        );
+    }
+
+    private getSiblingNodes(allNodes: ZKNode[], currentNode: ZKNode): ZKNode[] {
+        const currentId = currentNode.IDStr || currentNode.ID;
+        if (currentId?.includes('.')) {
+            const parentId = currentId.split('.').slice(0, -1).join('.');
+            const currentDepth = currentId.split('.').length;
+            return allNodes.filter((node) => {
+                const nodeId = node.IDStr || node.ID;
+                return nodeId !== currentId &&
+                    nodeId.startsWith(`${parentId}.`) &&
+                    nodeId.split('.').length === currentDepth;
+            });
+        }
+        if (currentNode.IDArr.length <= 1) return [];
+        const parentPrefix = currentNode.IDArr.slice(0, -1).join(',');
+        return allNodes.filter((node) =>
+            node.IDStr !== currentNode.IDStr &&
+            node.IDArr.length === currentNode.IDArr.length &&
+            node.IDArr.slice(0, -1).join(',') === parentPrefix
+        );
+    }
+
+    private async renderFocusNavigation(
+        graphMermaidDiv: HTMLElement,
+        currentFile: TFile,
+        allNodes: ZKNode[],
+        currentNode: ZKNode,
+        mocFile: TFile,
+        availableMOCs: LocalMocContext[]
+    ): Promise<void> {
+        const parentNode = this.getParentNode(allNodes, currentNode);
+        const childNodes = this.getChildNodes(allNodes, currentNode);
+        const siblingNodes = this.getSiblingNodes(allNodes, currentNode);
+        const orderedPeers = [...siblingNodes, currentNode].sort((a, b) =>
+            a.IDStr.localeCompare(b.IDStr, undefined, { numeric: true, sensitivity: 'base' })
+        );
+        const activePeerIndex = orderedPeers.findIndex((node) => node.IDStr === currentNode.IDStr);
+        const leftSiblings = activePeerIndex >= 0 ? orderedPeers.slice(0, activePeerIndex) : siblingNodes.slice(0, Math.ceil(siblingNodes.length / 2));
+        const rightSiblings = activePeerIndex >= 0 ? orderedPeers.slice(activePeerIndex + 1) : siblingNodes.slice(Math.ceil(siblingNodes.length / 2));
+
+        const section = this.createLocalSection(
+            graphMermaidDiv,
+            '导航',
+            '父级在上，同级在两侧，下级在下'
+        );
+        section.container.addClass('zk-focus-nav-section');
+        this.renderMocContextControl(section.actions, graphMermaidDiv, currentFile, allNodes, currentNode, mocFile, availableMOCs);
+
+        const canvas = section.body.createDiv('zk-focus-nav-canvas zk-focus-brain-canvas');
+        const parentZone = canvas.createDiv('zk-focus-zone zk-focus-zone-parent');
+        const middle = canvas.createDiv('zk-focus-nav-middle');
+        const leftZone = middle.createDiv('zk-focus-zone zk-focus-zone-siblings-left');
+        const centerZone = middle.createDiv('zk-focus-center-zone');
+        const rightZone = middle.createDiv('zk-focus-zone zk-focus-zone-siblings-right');
+        const childZone = canvas.createDiv('zk-focus-zone zk-focus-zone-children');
+
+        const openFile = (file: TFile, event?: MouseEvent | KeyboardEvent) => {
+            if (event && ('ctrlKey' in event) && (event.ctrlKey || event.metaKey)) {
+                this.app.workspace.openLinkText('', file.path, 'tab');
+            } else {
+                this.app.workspace.openLinkText('', file.path);
+            }
+        };
+
+        const focusNode = async (node: ZKNode) => {
+            const focusFile = node.file || currentFile;
+            await this.refreshLocalGraphMOCNode(graphMermaidDiv, focusFile, allNodes, node, mocFile);
+        };
+
+        const appendCard = (
+            zone: HTMLElement,
+            label: string,
+            variant: string,
+            node?: ZKNode | null
+        ) => {
+            const card = zone.createEl('button', {
+                type: 'button',
+                cls: `zk-focus-card zk-focus-card-${variant}`,
+                text: label
+            });
+            const targetFile = node?.file || null;
+
+            card.addEventListener('click', async () => {
+                if (node) {
+                    await focusNode(node);
+                }
+            });
+            card.addEventListener('dblclick', (event) => {
+                if (targetFile) openFile(targetFile, event);
+            });
+            card.addEventListener('keydown', async (event: KeyboardEvent) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    if (targetFile) openFile(targetFile, event);
+                } else if (event.key === ' ') {
+                    event.preventDefault();
+                    if (node) await focusNode(node);
+                }
+            });
+
+            if (targetFile) {
+                card.addEventListener('mouseover', (event: MouseEvent) => {
+                    this.app.workspace.trigger('hover-link', {
+                        event,
+                        source: 'zk-navigation',
+                        hoverParent: zone,
+                        linktext: '',
+                        targetEl: card,
+                        sourcePath: targetFile.path,
+                    });
+                });
+            }
+            return card;
+        };
+
+        const appendZone = (
+            zone: HTMLElement,
+            title: string,
+            items: Array<{ label: string; node?: ZKNode | null }>,
+            emptyText: string,
+            variant: string,
+            limit = 8
+        ) => {
+            const header = zone.createDiv('zk-focus-zone-title');
+            header.setText(`${title} · ${items.length}`);
+            const list = zone.createDiv('zk-focus-card-list');
+            const visibleItems = items.slice(0, limit);
+            if (visibleItems.length === 0) {
+                list.createDiv('zk-focus-empty').setText(emptyText);
+            } else {
+                visibleItems.forEach((item) => appendCard(list, item.label, variant, item.node));
+                if (items.length > limit) {
+                    list.createDiv('zk-focus-more').setText(`+${items.length - limit}`);
+                }
+            }
+        };
+
+        appendZone(
+            parentZone,
+            '上级',
+            parentNode ? [{ label: this.getLocalNodeLabel(parentNode), node: parentNode }] : [],
+            '暂无上级',
+            'parent',
+            4
+        );
+
+        appendZone(
+            leftZone,
+            '前序同级',
+            leftSiblings.map((node) => ({ label: this.getLocalNodeLabel(node), node })),
+            '暂无前序同级',
+            'sibling',
+            8
+        );
+
+        const focusCard = centerZone.createEl('button', {
+            type: 'button',
+            cls: 'zk-focus-current-card',
+        });
+        focusCard.createSpan('zk-focus-current-kicker').setText('当前焦点');
+        focusCard.createSpan('zk-focus-current-title').setText(this.getLocalNodeLabel(currentNode));
+        focusCard.addEventListener('dblclick', (event) => {
+            if (currentNode.file) openFile(currentNode.file, event);
+        });
+        focusCard.addEventListener('keydown', (event: KeyboardEvent) => {
+            if (event.key === 'Enter' && currentNode.file) {
+                event.preventDefault();
+                openFile(currentNode.file, event);
+            }
+        });
+
+        appendZone(
+            rightZone,
+            '后序同级',
+            rightSiblings.map((node) => ({ label: this.getLocalNodeLabel(node), node })),
+            '暂无后序同级',
+            'sibling',
+            8
+        );
+
+        appendZone(
+            childZone,
+            '下级',
+            childNodes.map((node) => ({ label: this.getLocalNodeLabel(node), node })),
+            '暂无下级',
+            'child',
+            12
+        );
     }
 
     // 检查文件是否在主笔记（索引笔记）目录下
@@ -1278,21 +1528,17 @@ export class ZKGraphView extends ItemView {
         inlinkArr: TFile[],
         outlinkArr: TFile[]
     ): Promise<void> {
-        // 创建入链出链图容器（带标题和展开按钮）
-        const inoutlinksGraphContainer = container.createDiv("zk-inoutlinks-graph-container");
-        inoutlinksGraphContainer.style.height = `${this.graphHeight}px`;
-        const inoutlinksGraphTextDiv = inoutlinksGraphContainer.createDiv("zk-graph-text");
-        inoutlinksGraphTextDiv.empty();
-        inoutlinksGraphTextDiv.createEl('span', { text: t("inoutlinks") });
-
-        // 添加展开按钮
-        const graphIconDiv = inoutlinksGraphContainer.createDiv("zk-graph-icon");
-        graphIconDiv.empty();
-        const expandBtn = new ExtraButtonComponent(graphIconDiv);
+        const section = this.createLocalSection(
+            container,
+            '出入链',
+            `入链 ${inlinkArr.length} · 出链 ${outlinkArr.length}`
+        );
+        section.container.addClass('zk-inoutlinks-graph-container');
+        const expandBtn = new ExtraButtonComponent(section.actions);
         expandBtn.setIcon("expand").setTooltip(t("expand graph"));
 
         // 创建卡片内容容器
-        const inoutlinksContainer = inoutlinksGraphContainer.createDiv("zk-inoutlinks-container");
+        const inoutlinksContainer = section.body.createDiv("zk-inoutlinks-container");
 
         // 通用点击处理
         const handleFileClick = (file: TFile, e: MouseEvent) => {
@@ -1347,17 +1593,12 @@ export class ZKGraphView extends ItemView {
         const inHeader = inoutlinksContainer.createDiv('zk-iol-header zk-iol-header-inlink');
         inHeader.createEl('span', { text: `${t("inlinks")} · ${inlinkArr.length}` });
 
-        // 入链卡片网格（空时用占位撑高度）
+        // 入链卡片网格
         const inGrid = inoutlinksContainer.createDiv('zk-iol-grid');
         if (inlinkArr.length > 0) {
             inlinkArr.forEach((file) => inGrid.appendChild(createNodeCard(file, 'inlink')));
         } else {
-            inGrid.addClass('zk-iol-grid-empty');
-            for (let i = 0; i < 2; i++) {
-                const placeholder = inGrid.createDiv('zk-iol-card zk-iol-card-inlink zk-iol-card-placeholder');
-                placeholder.createDiv('zk-iol-card-icon');
-                placeholder.createEl('span', { cls: 'zk-iol-card-name', text: ' ' });
-            }
+            inGrid.createDiv('zk-iol-empty').setText('暂无入链');
         }
 
         // 连接线（始终保留，保持上下分区对称）
@@ -1374,17 +1615,12 @@ export class ZKGraphView extends ItemView {
         // 连接线（始终保留，保证下半区结构稳定）
         inoutlinksContainer.createDiv('zk-iol-connector');
 
-        // 出链卡片网格（空时用占位撑高度）
+        // 出链卡片网格
         const outGrid = inoutlinksContainer.createDiv('zk-iol-grid');
         if (outlinkArr.length > 0) {
             outlinkArr.forEach((file) => outGrid.appendChild(createNodeCard(file, 'outlink')));
         } else {
-            outGrid.addClass('zk-iol-grid-empty');
-            for (let i = 0; i < 2; i++) {
-                const placeholder = outGrid.createDiv('zk-iol-card zk-iol-card-outlink zk-iol-card-placeholder');
-                placeholder.createDiv('zk-iol-card-icon');
-                placeholder.createEl('span', { cls: 'zk-iol-card-name', text: ' ' });
-            }
+            outGrid.createDiv('zk-iol-empty').setText('暂无出链');
         }
 
         // 出链标题（始终放在底部）
