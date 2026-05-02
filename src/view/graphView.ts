@@ -1006,11 +1006,7 @@ export class ZKGraphView extends ItemView {
             const railReserve = showRail ? 110 : 0;
             const graphHeight = Math.max(containerHeight - 110 - railReserve, 220);
 
-            const section = this.createLocalSection(
-                graphMermaidDiv,
-                '概览',
-                `${this.getLocalNodeLabel(currentNode)} · ${mocFile.basename}`
-            );
+            const section = this.createLocalSection(graphMermaidDiv, '概览');
             section.container.addClass('zk-family-graph-container');
             section.container.addClass('zk-overview-graph-container');
             this.renderMocContextControl(section.actions, graphMermaidDiv, currentFile, allNodes, currentNode, mocFile, availableMOCs);
