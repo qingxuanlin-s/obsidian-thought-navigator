@@ -21,12 +21,12 @@
   top: 0;
   right: 0;
   bottom: 0;
-  width: min(360px, 42vw);
-  min-width: 320px;
+  width: min(300px, 32vw);
+  min-width: 270px;
   background: var(--zk-surface-solid, #1f1f1f);
   background: color-mix(in srgb, var(--zk-surface-solid, #1f1f1f) 94%, transparent);
   border-left: 1px solid var(--zk-border-subtle, #3a3a3a);
-  box-shadow: -18px 0 44px rgba(0, 0, 0, 0.34);
+  box-shadow: -10px 0 28px rgba(0, 0, 0, 0.22);
   transform: translateX(100%);
   transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
   z-index: 50;

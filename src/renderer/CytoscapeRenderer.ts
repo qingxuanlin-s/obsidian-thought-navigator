@@ -180,6 +180,14 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private readonly VERTICAL_GAP = 80;       // 垂直间距
     private readonly HORIZONTAL_GAP = 200;    // 水平间距
     private readonly SIBLING_GAP = 100;       // 兄弟节点间距
+    private readonly ROOT_NODE_FONT_SIZE = 36;
+    private readonly ROOT_NODE_FONT_WEIGHT = 700;
+    private readonly FIRST_LEVEL_NODE_FONT_SIZE = 24;
+    private readonly FIRST_LEVEL_NODE_FONT_WEIGHT = 650;
+    private readonly ROOT_TO_FIRST_LEVEL_EDGE_WIDTH = 3.6;
+    private readonly ROOT_TO_FIRST_LEVEL_EDGE_OPACITY = 0.78;
+    private readonly ACTIVE_ROOT_TO_FIRST_LEVEL_EDGE_OPACITY = 0.85;
+    private readonly SECONDARY_PARENT_EDGE_OPACITY = 0.52;
 
     private isReadOnlyMode(): boolean {
         return this.currentOptions?.readOnly === true || Platform.isMobile;
@@ -988,6 +996,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             }
         }
         this.applyCollapsedState();
+        this.updateActiveFirstLevelBranch();
     }
 
     /**
@@ -1023,6 +1032,32 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     });
                 }
             });
+        });
+    }
+
+    private updateActiveFirstLevelBranch(): void {
+        if (!this.cy) return;
+
+        this.cy.nodes('.zk-active-first-level-branch').removeClass('zk-active-first-level-branch');
+        this.cy.edges('.zk-active-root-branch-edge').removeClass('zk-active-root-branch-edge');
+
+        const activeBranchIds = new Set<string>();
+        this.cy.$('node:selected').forEach((node: any) => {
+            if (node.data('isGroup') || node.data('isPlaceholder')) return;
+            const branchId = String(node.data('firstLevelBranchId') || '').trim();
+            if (branchId) {
+                activeBranchIds.add(branchId);
+            } else if (node.data('isFirstLevelNode')) {
+                activeBranchIds.add(String(node.data('originalNodeId') || node.data('id') || '').trim());
+            }
+        });
+
+        activeBranchIds.forEach((branchId) => {
+            const branchNode = this.cy!.$id(this.escapeId(branchId));
+            if (branchNode.length > 0) {
+                branchNode.addClass('zk-active-first-level-branch');
+                branchNode.connectedEdges('[?isRootToFirstLevel]').addClass('zk-active-root-branch-edge');
+            }
         });
     }
 
@@ -1337,6 +1372,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
         const elements = nodes.map(node => {
             const vividStyle = vividStyleMap.get(node.IDStr);
             const hasParentChildLink = parentLinkedNodeIds.has(node.ID) || parentLinkedNodeIds.has(node.IDStr);
+            const isFirstLevelNode = this.isDirectChildOfRootNode(node, resolvedContext.nodeById);
+            const firstLevelBranchNode = this.getFirstLevelBranchNode(node, resolvedContext.nodeById);
             const persistedSize = embedNodeSizes[node.ID] || embedNodeSizes[node.IDStr];
             const isTextNode = !!node.isTextOnly;
             const manualSize = (isTextNode && persistedSize && persistedSize.width > 0 && persistedSize.height > 0)
@@ -1372,6 +1409,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     isCurrentFile: node.file?.path === currentFilePath,  // 纯文字节点不匹配
                     originalNode: node,
                     isRoot: node.isRoot || false,  // 根节点标记
+                    isFirstLevelNode,
+                    firstLevelBranchId: firstLevelBranchNode?.ID || firstLevelBranchNode?.IDStr || '',
                     customColor: rawCustomColor,  // 兼容旧自定义颜色（色点/旧语义）
                     customFillColor: customFillColor,  // 新语义：节点底色
                     customFillTextColor: customFillTextColor,  // 预计算的底色文字颜色
@@ -1421,6 +1460,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         const elements = edges.map(edge => {
             const sourceNode = nodeById.get(edge.source);
             const targetNode = nodeById.get(edge.target);
+            const targetIdStr = targetNode?.IDStr || targetNode?.ID || '';
             // 判断是否为根节点→直接子节点的边：
             // 使用 isRoot 标记（支持 sa.1 等非顶层根节点），
             // 并检查 target 是 source 的直接子节点（IDStr 去掉最后一段等于 source 的 IDStr）
@@ -1428,8 +1468,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 !!sourceNode &&
                 !!targetNode &&
                 !!sourceNode.isRoot &&
-                targetNode.IDStr.includes('.') &&
-                targetNode.IDStr.substring(0, targetNode.IDStr.lastIndexOf('.')) === sourceNode.IDStr;
+                this.isDirectChildOfRootNode(targetNode, nodeById) &&
+                targetIdStr.substring(0, targetIdStr.lastIndexOf('.')) === sourceNode.IDStr;
 
             let branchEdgeColor = nodeStyleMap.get(edge.source)?.border || null;
             if (isRootToFirstLevel && targetNode) {
@@ -1483,6 +1523,27 @@ export class CytoscapeRenderer implements IGraphRenderer {
         return `${parts[0]}.${parts[1]}`;
     }
 
+    private isDirectChildOfRootNode(node: ZKNode, nodeMap: Map<string, ZKNode>): boolean {
+        const nodeId = (node.IDStr || node.ID || '').trim();
+        if (!nodeId.includes('.')) return false;
+
+        const parentId = nodeId.substring(0, nodeId.lastIndexOf('.'));
+        const parentNode = nodeMap.get(parentId);
+        return !!parentNode?.isRoot && parentNode.IDStr === parentId;
+    }
+
+    private getFirstLevelBranchNode(node: ZKNode, nodeMap: Map<string, ZKNode>): ZKNode | null {
+        let currentId = (node.IDStr || node.ID || '').trim();
+        while (currentId.includes('.')) {
+            const currentNode = nodeMap.get(currentId);
+            if (currentNode && this.isDirectChildOfRootNode(currentNode, nodeMap)) {
+                return currentNode;
+            }
+            currentId = currentId.substring(0, currentId.lastIndexOf('.'));
+        }
+        return null;
+    }
+
     private getDepthFromNearestRoot(nodeId: string, nodeMap: Map<string, ZKNode>): number {
         const normalizedId = (nodeId || '').trim();
         if (!normalizedId) return 1;
@@ -1501,10 +1562,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
     }
 
     private getHierarchyEdgeWidth(depthFromRoot: number | null): number {
-        // 1级最粗，随后逐级变细，最低保留 2px
+        // 1级边线突出主干，随后逐级变细，避免深层连线抢焦点
         const depth = Math.max(1, depthFromRoot || 1);
-        const width = 6.2 - (depth - 1) * 0.9;
-        return Math.max(1.8, Math.round(width * 10) / 10);
+        const width = this.ROOT_TO_FIRST_LEVEL_EDGE_WIDTH - (depth - 1) * 0.55;
+        return Math.max(1.6, Math.round(width * 10) / 10);
     }
 
     private loadEdgeControlPointsAndParentLinks(data: GraphData): Set<string> {
@@ -2215,7 +2276,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     }
                     return colors.nodeText;
                 },
-                'font-size': '20px',
+                'font-size': `${this.FIRST_LEVEL_NODE_FONT_SIZE - 4}px`,
                 'font-weight': '500',
                 // 使用函数动态计算宽度和高度
                 'width': (ele: any) => {
@@ -2332,21 +2393,109 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'padding': '0px'
             } as any
         },
-        // 根节点样式：尺寸放大 2 倍，边框加粗
+        // 1 级节点：只突出根节点的直接子节点，建立主干层级
         {
-            selector: 'node[?isRoot][!isFreeNode]',
+            selector: 'node[?isFirstLevelNode][!isRoot][!isFreeNode][!isEmbed][!isStandaloneText]',
             style: {
-                'background-color': '#0f2440',
-                'border-color': '#1a3558',
-                'font-size': '26px',
+                'background-color': (ele: any) => {
+                    const branchColor = this.normalizeHexColor(ele.data('branchNodeBorder') || '');
+                    return branchColor
+                        ? this.hexToRgba(this.darkenColor(branchColor, 0.62), 0.72)
+                        : '#132033';
+                },
+                'background-opacity': 0.78,
+                'border-color': (ele: any) => ele.data('branchNodeBorder') || '#5da6ff',
+                'border-width': '2.6px',
+                'border-opacity': 0.92,
+                'z-index': 1000,
+                'font-size': `${this.FIRST_LEVEL_NODE_FONT_SIZE}px`,
                 'font-weight': 'bold',
                 'text-max-width': (ele: any) => {
                     if (ele.data('isTextOnly')) {
                         const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
-                        const widthModel = manualWidthModel > 0 ? manualWidthModel : Number(ele.width() || 400);
-                        return Math.max(120, widthModel - 48);
+                        const widthModel = manualWidthModel > 0 ? manualWidthModel : Number(ele.width() || 340);
+                        return Math.max(160, widthModel - 52);
                     }
-                    return 400;
+                    return 340;
+                },
+                'width': (ele: any) => {
+                    const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
+                    if (manualWidthModel > 0 && ele.data('isTextOnly')) {
+                        return manualWidthModel;
+                    }
+                    return this.measureNodeLabel(ele.data('label') || '', {
+                        baseWidth: 118,
+                        minHeight: 54,
+                        maxWidth: 340,
+                        charWidth: 12,
+                        lineHeight: 28,
+                        paddingX: 44,
+                        paddingY: 22
+                    }).width;
+                },
+                'height': (ele: any) => {
+                    const manualHeightModel = Number(ele.data('manualHeightModel') || 0);
+                    if (manualHeightModel > 0 && ele.data('isTextOnly')) {
+                        return manualHeightModel;
+                    }
+                    return this.measureNodeLabel(ele.data('label') || '', {
+                        baseWidth: 118,
+                        minHeight: 54,
+                        maxWidth: 340,
+                        charWidth: 12,
+                        lineHeight: 28,
+                        paddingX: 44,
+                        paddingY: 22
+                    }).height;
+                }
+            } as any
+        },
+        // 当前激活的 1 级分支：只有这一支使用实心填充
+        {
+            selector: 'node.zk-active-first-level-branch[?isFirstLevelNode][!isRoot][!isFreeNode][!isEmbed][!isStandaloneText]',
+            style: {
+                'background-color': (ele: any) => ele.data('branchNodeBackground') || '#173b5f',
+                'background-opacity': 0.98,
+                'border-color': (ele: any) => {
+                    const branchColor = this.normalizeHexColor(ele.data('branchNodeBorder') || '');
+                    return branchColor ? this.lightenColor(branchColor, 0.30) : '#9ed0ff';
+                },
+                'border-width': '3.7px',
+                'border-opacity': 0.98,
+                'color': '#ffffff',
+                'text-outline-color': 'rgba(8, 16, 28, 0.42)',
+                'text-outline-width': 1.1,
+                'z-index': 1001
+            } as any
+        },
+        // 2级及以下节点降饱和：保留关系线索，不和根/1级争抢
+        {
+            selector: 'node[!isRoot][!isFirstLevelNode][!isFreeNode][!isEmbed][!isStandaloneText][!isCurrentFile]',
+            style: {
+                'background-opacity': 0.56,
+                'border-width': '1.4px',
+                'border-opacity': 0.58,
+                'color': isLight ? '#475569' : '#c5ceda'
+            } as any
+        },
+        // 根节点样式：当前图谱焦点
+        {
+            selector: 'node[?isRoot][!isFreeNode]',
+            style: {
+                'background-color': '#082746',
+                'border-color': '#9ed0ff',
+                'background-opacity': 0.98,
+                'border-opacity': 0.98,
+                'z-index': 1002,
+                'font-size': `${this.ROOT_NODE_FONT_SIZE}px`,
+                'font-weight': 'bold',
+                'text-max-width': (ele: any) => {
+                    if (ele.data('isTextOnly')) {
+                        const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
+                        const widthModel = manualWidthModel > 0 ? manualWidthModel : Number(ele.width() || 560);
+                        return Math.max(220, widthModel - 76);
+                    }
+                    return 560;
                 },
                 'width': (ele: any) => {
                     const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
@@ -2354,16 +2503,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         return manualWidthModel;
                     }
                     const label = ele.data('label') || '';
-                    const normalSize = this.measureNodeLabel(label, {
-                        baseWidth: 80,
-                        minHeight: 34,
-                        maxWidth: 220,
-                        charWidth: 8,
-                        lineHeight: 12,
-                        paddingX: 32,
-                        paddingY: 16
-                    });
-                    return normalSize.width * 2;
+                    return this.measureNodeLabel(label, {
+                        baseWidth: 210,
+                        minHeight: 78,
+                        maxWidth: 560,
+                        charWidth: 18,
+                        lineHeight: 42,
+                        paddingX: 88,
+                        paddingY: 38
+                    }).width;
                 },
                 'height': (ele: any) => {
                     const manualHeightModel = Number(ele.data('manualHeightModel') || 0);
@@ -2371,26 +2519,25 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         return manualHeightModel;
                     }
                     const label = ele.data('label') || '';
-                    const normalSize = this.measureNodeLabel(label, {
-                        baseWidth: 80,
-                        minHeight: 34,
-                        maxWidth: 220,
-                        charWidth: 8,
-                        lineHeight: 12,
-                        paddingX: 32,
-                        paddingY: 16
-                    });
-                    return normalSize.height * 2;
+                    return this.measureNodeLabel(label, {
+                        baseWidth: 210,
+                        minHeight: 78,
+                        maxWidth: 560,
+                        charWidth: 18,
+                        lineHeight: 42,
+                        paddingX: 88,
+                        paddingY: 38
+                    }).height;
                 },
-                'border-width': '4px'
+                'border-width': '4.5px'
             } as any
         },
         {
             selector: 'node[?isRoot][!isFreeNode]:selected',
             style: {
-                'background-color': '#162f52',
-                'border-color': '#2a4f7a',
-                'border-width': '4px',
+                'background-color': '#0b3158',
+                'border-color': '#8cc2ff',
+                'border-width': '5px',
                 'color': '#ffffff'
             } as any
         },
@@ -2485,6 +2632,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'z-index': 999
             } as any
         },
+        // 普通父子边降噪，让根 -> 1级主干成为第一眼路径
+        {
+            selector: 'edge[type="parent"][!isRootToFirstLevel]',
+            style: {
+                'opacity': this.SECONDARY_PARENT_EDGE_OPACITY,
+                'arrow-scale': 1.18,
+                'z-index': 997
+            } as any
+        },
         // 正向边
         {
             selector: 'edge[type="forward"]',
@@ -2561,6 +2717,24 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'z-index': 998
             } as any
         },
+        // 根节点 -> 1级节点：主干连线突出，但不过度抢占画布
+        {
+            selector: 'edge[?isRootToFirstLevel]',
+            style: {
+                'width': this.ROOT_TO_FIRST_LEVEL_EDGE_WIDTH,
+                'opacity': this.ROOT_TO_FIRST_LEVEL_EDGE_OPACITY,
+                'arrow-scale': 1.45,
+                'z-index': 1001
+            } as any
+        },
+        {
+            selector: 'edge.zk-active-root-branch-edge[?isRootToFirstLevel]',
+            style: {
+                'opacity': this.ACTIVE_ROOT_TO_FIRST_LEVEL_EDGE_OPACITY,
+                'arrow-scale': 1.5,
+                'z-index': 1002
+            } as any
+        },
         // 边选中状态
         {
             selector: 'edge:selected',
@@ -2569,7 +2743,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'target-arrow-color': colors.edgeSelected,
                 'width': 3,
                 'opacity': 1,
-                'z-index': 1000
+                'z-index': 1002
             } as any
         },
         // 节点悬停状态
@@ -2589,6 +2763,18 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'border-color': colors.nodeBorderSelected,
                 'border-width': '2.5px',
                 'border-opacity': 0.90,
+                'color': '#ffffff'
+            } as any
+        },
+        // 根节点选中态需要压过通用 node:selected，否则焦点节点会退回普通选中视觉
+        {
+            selector: 'node[?isRoot][!isFreeNode]:selected',
+            style: {
+                'background-color': '#0b3158',
+                'border-color': '#8cc2ff',
+                'border-width': '5px',
+                'border-opacity': 1,
+                'z-index': 1003,
                 'color': '#ffffff'
             } as any
         },
@@ -2887,6 +3073,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 color: var(--text-normal);
                 overflow: hidden;
                 pointer-events: auto;
+                opacity: 0.82;
+                filter: brightness(0.86) saturate(0.92);
+                transition: opacity 0.15s ease, filter 0.15s ease;
                 will-change: transform;
             `;
 
@@ -3083,6 +3272,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 embedToggleEl.style.pointerEvents = isSelected ? 'auto' : 'none';
                 embedToggleEl.style.opacity = isSelected ? '1' : '0';
                 contentEl.style.cursor = isSelected ? 'move' : 'default';
+                card.style.opacity = isSelected ? '1' : '0.82';
+                card.style.filter = isSelected ? 'brightness(1) saturate(1)' : 'brightness(0.86) saturate(0.92)';
                 if (!isSelected) {
                     releaseCanvasSuppression();
                 }
@@ -3715,7 +3906,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 overflow: hidden;
                 pointer-events: auto;
                 box-shadow: ${theme.cardShadow};
-                transition: border-color 0.15s ease;
+                opacity: 0.82;
+                filter: brightness(0.86) saturate(0.92);
+                transition: border-color 0.15s ease, opacity 0.15s ease, filter 0.15s ease;
                 will-change: transform;
             `;
             card.dataset.nodeId = nodeId;
@@ -3843,6 +4036,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 resizeHandle.style.opacity = isSelected ? '1' : '0';
                 card.style.borderColor = 'transparent';
                 card.style.cursor = 'default';
+                card.style.opacity = isSelected ? '1' : '0.82';
+                card.style.filter = isSelected ? 'brightness(1) saturate(1)' : 'brightness(0.86) saturate(0.92)';
                 img.style.cursor = isSelected ? 'move' : 'default';
             };
             interactionUpdaters.push(updateInteraction);
@@ -4216,16 +4411,16 @@ case 'dagre':
             glassEl.style.top = '0';
             glassEl.style.borderRadius = '12px';
             glassEl.style.border = isLightTheme
-                ? '1.5px solid rgba(180, 195, 220, 0.7)'
-                : '1.5px solid rgba(255, 255, 255, 0.13)';
+                ? '1px solid rgba(180, 195, 220, 0.34)'
+                : '1px solid rgba(255, 255, 255, 0.075)';
             glassEl.style.background = isLightTheme
-                ? 'rgba(255, 255, 255, 0.35)'
-                : 'rgba(255, 255, 255, 0.05)';
-            (glassEl.style as any).backdropFilter = 'blur(12px)';
-            (glassEl.style as any).webkitBackdropFilter = 'blur(12px)';
+                ? 'rgba(255, 255, 255, 0.18)'
+                : 'rgba(255, 255, 255, 0.022)';
+            (glassEl.style as any).backdropFilter = 'blur(6px)';
+            (glassEl.style as any).webkitBackdropFilter = 'blur(6px)';
             glassEl.style.boxShadow = isLightTheme
-                ? '0 2px 16px rgba(0,0,0,0.06)'
-                : '0 2px 16px rgba(0,0,0,0.25)';
+                ? '0 1px 8px rgba(0,0,0,0.035)'
+                : '0 1px 10px rgba(0,0,0,0.16)';
             glassLayer.appendChild(glassEl);
 
             // 标签下方的遮罩层：用于“切断”被标签覆盖区域的上边框，降低视觉噪声
@@ -4258,21 +4453,21 @@ case 'dagre':
             labelEl.style.alignItems = 'center';
             labelEl.style.justifyContent = 'center';
             labelEl.style.border = isLightTheme
-                ? '1px solid rgba(168, 184, 214, 0.72)'
-                : '1px solid rgba(206, 220, 245, 0.42)';
+                ? '1px solid rgba(168, 184, 214, 0.54)'
+                : '1px solid rgba(206, 220, 245, 0.30)';
             // 通过弱化底边制造“标签压在边框上”的半镶嵌感
             labelEl.style.borderBottomColor = isLightTheme
                 ? 'rgba(168, 184, 214, 0.15)'
                 : 'rgba(206, 220, 245, 0.12)';
             labelEl.style.borderRadius = '999px';
             labelEl.style.background = isLightTheme
-                ? 'rgba(255, 255, 255, 0.56)'
-                : 'rgba(14, 24, 40, 0.58)';
-            (labelEl.style as any).backdropFilter = 'blur(8px)';
-            (labelEl.style as any).webkitBackdropFilter = 'blur(8px)';
+                ? 'rgba(255, 255, 255, 0.42)'
+                : 'rgba(14, 24, 40, 0.46)';
+            (labelEl.style as any).backdropFilter = 'blur(5px)';
+            (labelEl.style as any).webkitBackdropFilter = 'blur(5px)';
             labelEl.style.boxShadow = isLightTheme
-                ? '0 1px 6px rgba(50, 70, 100, 0.14)'
-                : '0 1px 8px rgba(0, 0, 0, 0.35)';
+                ? '0 1px 4px rgba(50, 70, 100, 0.09)'
+                : '0 1px 5px rgba(0, 0, 0, 0.22)';
             labelEl.style.zIndex = '2';
             glassEl.appendChild(labelEl);
 
@@ -4329,15 +4524,21 @@ case 'dagre':
             let cachedWrappedLines: string[] = [];
             let cachedModelLineWidths: number[] = []; // 模型坐标系下的宽度（不含 zoom）
             let cachedIsRoot = false;
+            let cachedIsFirstLevel = false;
             // DOM 元素池：创建一次，后续只更新位置
             let lineElements: Array<{ hitEl: HTMLElement; underlineEl: HTMLElement }> = [];
 
-            const rebuildWrappedLinesCache = (label: string, isRoot: boolean) => {
+            const rebuildWrappedLinesCache = (label: string, isRoot: boolean, isFirstLevel: boolean) => {
                 cachedLabel = label;
                 cachedIsRoot = isRoot;
-                const fontPx = isRoot ? 26 : 20;
-                const fontWeight = isRoot ? '700' : '500';
-                const textMaxWidth = isRoot ? 400 : 280;
+                cachedIsFirstLevel = isFirstLevel;
+                const fontPx = isRoot
+                    ? this.ROOT_NODE_FONT_SIZE
+                    : (isFirstLevel ? this.FIRST_LEVEL_NODE_FONT_SIZE : 20);
+                const fontWeight = isRoot
+                    ? `${this.ROOT_NODE_FONT_WEIGHT}`
+                    : (isFirstLevel ? `${this.FIRST_LEVEL_NODE_FONT_WEIGHT}` : '500');
+                const textMaxWidth = isRoot ? 560 : (isFirstLevel ? 340 : 280);
 
                 if (underlineMeasureCtx) {
                     underlineMeasureCtx.font = `${fontWeight} ${fontPx}px sans-serif`;
@@ -4366,7 +4567,12 @@ case 'dagre':
                         underlineMeasureCtx!.measureText(line || ' ').width
                     );
                 } else {
-                    cachedWrappedLines = this.estimateWrappedLines(label, isRoot ? { maxWidth: 220, charWidth: 8 } : undefined);
+                    cachedWrappedLines = this.estimateWrappedLines(
+                        label,
+                        isRoot
+                            ? { maxWidth: 560, charWidth: 18 }
+                            : (isFirstLevel ? { maxWidth: 340, charWidth: 12 } : undefined)
+                    );
                     cachedModelLineWidths = cachedWrappedLines.map(line => {
                         const cjkCount = [...line].filter(ch => {
                             const code = ch.codePointAt(0) || 0;
@@ -4467,16 +4673,19 @@ case 'dagre':
                 }
 
                 const isRoot = !!node.data('isRoot');
+                const isFirstLevel = !!node.data('isFirstLevelNode');
 
                 // 仅在 label 或 isRoot 变化时重新计算换行（zoom/pan 期间跳过）
-                if (label !== cachedLabel || isRoot !== cachedIsRoot) {
-                    rebuildWrappedLinesCache(label, isRoot);
+                if (label !== cachedLabel || isRoot !== cachedIsRoot || isFirstLevel !== cachedIsFirstLevel) {
+                    rebuildWrappedLinesCache(label, isRoot, isFirstLevel);
                 }
 
                 const zoom = this.cy.zoom();
                 const box = node.renderedBoundingBox();
-                const fontPx = isRoot ? 26 : 20;
-                const lineHeightModel = isRoot ? 24 : 18;
+                const fontPx = isRoot
+                    ? this.ROOT_NODE_FONT_SIZE
+                    : (isFirstLevel ? this.FIRST_LEVEL_NODE_FONT_SIZE : 20);
+                const lineHeightModel = isRoot ? 42 : (isFirstLevel ? 28 : 18);
                 const lineHeight = lineHeightModel * zoom;
                 const centerX = box.x1 + box.w / 2;
                 const centerY = box.y1 + box.h / 2;
@@ -5182,12 +5391,17 @@ case 'dagre':
             );
             const cacheKey = `${sourcePath}||${nodeCacheId}||${rawSource}`;
             const isRootTextNode = !!data.isRoot && !data.isFreeNode;
+            const isFirstLevelTextNode = !!data.isFirstLevelNode && !data.isRoot && !data.isFreeNode;
             const applyTextOverlayBaseStyle = (overlayEl: HTMLElement) => {
                 const overlayDisplay = isRootTextNode ? 'flex' : 'block';
                 // padding 用 em,跟随当前 font-size(== base * zoom)等比伸缩
                 const overlayPadding = isRootTextNode ? '0 0.923em' : '1.2em 1.2em 0.6em 1.2em';
-                const overlayFontSize = isRootTextNode ? 26 : 20;
-                const overlayFontWeight = isRootTextNode ? '700' : '500';
+                const overlayFontSize = isRootTextNode
+                    ? this.ROOT_NODE_FONT_SIZE
+                    : (isFirstLevelTextNode ? this.FIRST_LEVEL_NODE_FONT_SIZE : 20);
+                const overlayFontWeight = isRootTextNode
+                    ? `${this.ROOT_NODE_FONT_WEIGHT}`
+                    : (isFirstLevelTextNode ? `${this.FIRST_LEVEL_NODE_FONT_WEIGHT}` : '500');
                 const overlayTextAlign = isRootTextNode ? 'center' : 'left';
                 const overlayAlignItems = isRootTextNode ? 'center' : 'stretch';
                 // 缩放策略:不用 transform: scale,改用 font-size * zoom 让文本与布局随白板缩放伸缩
@@ -5410,7 +5624,9 @@ case 'dagre':
 
             // 位置同步 updater
             const currentEntry = entry;
-            const baseFontSize = isRootTextNode ? 26 : 20;
+            const baseFontSize = isRootTextNode
+                ? this.ROOT_NODE_FONT_SIZE
+                : (isFirstLevelTextNode ? this.FIRST_LEVEL_NODE_FONT_SIZE : 20);
             const updateOverlayPos = () => {
                 if (!this.cy || node.removed()) {
                     currentEntry.el.style.display = 'none';
@@ -7919,12 +8135,17 @@ case 'dagre':
         // 文本节点使用与 MD overlay 一致的字体和左对齐
         const isTextOnlyEdit = !!originalNode?.isTextOnly;
         const isRootEdit = !!data.isRoot && !data.isFreeNode;
+        const isFirstLevelEdit = !!data.isFirstLevelNode && !data.isRoot && !data.isFreeNode;
         const nodeFontSize = isTextOnlyEdit
-            ? (isRootEdit ? '26px' : '20px')
+            ? (isRootEdit
+                ? `${this.ROOT_NODE_FONT_SIZE}px`
+                : (isFirstLevelEdit ? `${this.FIRST_LEVEL_NODE_FONT_SIZE}px` : '20px'))
             : getRenderedNodeFontSize();
         const nodeFontFamily = getRenderedNodeFontFamily();
         const nodeFontWeight = isTextOnlyEdit
-            ? (isRootEdit ? '700' : '500')
+            ? (isRootEdit
+                ? `${this.ROOT_NODE_FONT_WEIGHT}`
+                : (isFirstLevelEdit ? `${this.FIRST_LEVEL_NODE_FONT_WEIGHT}` : '500'))
             : getRenderedNodeFontWeight();
         const nodeLineHeight = isTextOnlyEdit ? '1.35' : getEditorLineHeight();
         const textAlign = isRootEdit ? 'center' : 'left';
@@ -9523,6 +9744,10 @@ case 'dagre':
 
         // 绑定分组创建事件（Command + 拖动）- 已禁用
         // this.bindGroupCreationEvents();
+
+        this.cy.on('select unselect', 'node', () => {
+            this.updateActiveFirstLevelBranch();
+        });
 
         // 节点点击事件（单击选中；Command/Ctrl + 单击打开文件节点）
         this.cy.on('tap', 'node', (evt: any) => {
