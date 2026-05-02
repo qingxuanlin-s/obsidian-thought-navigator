@@ -7,12 +7,13 @@ import { convertMOCToZKNodes, getMOCFilesInFolder, isMocFile, parseMOCStructure,
 import { CytoscapeExpandModal } from "src/modal/cytoscapeExpandModal";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
 import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
-import { RenderOptions } from "src/renderer/types";
+import { Edge, GraphData, RenderOptions } from "src/renderer/types";
 
 export const ZK_GRAPH_TYPE: string = "zk-graph-type"
 export const ZK_GRAPH_VIEW: string = t("zk-local-graph")
 
 type LocalGraphMode = 'overview' | 'navigation';
+type LocalRelationCanvasMode = 'overview' | 'navigation';
 
 interface LocalMocContext {
     file: TFile;
@@ -782,7 +783,19 @@ export class ZKGraphView extends ItemView {
     }
 
     private getLocalNodeLabel(node: ZKNode): string {
-        return node.title || node.displayText || node.IDStr || node.ID;
+        return this.cleanLocalLabel(node.title || node.displayText || node.file?.basename || node.IDStr || node.ID);
+    }
+
+    private getLocalFileLabel(file: TFile): string {
+        return this.cleanLocalLabel(file.basename);
+    }
+
+    private cleanLocalLabel(label: string): string {
+        return label
+            .replace(/\\n/g, ' ')
+            .replace(/^\s*[a-zA-Z0-9]+(?:[._-][a-zA-Z0-9]+)+(?:[:：]?\s+|$)/, '')
+            .replace(/^\s*\d{8}(?:\d{6})?(?:[-_]\d{4,6})?\s+/, '')
+            .trim() || label;
     }
 
     private truncateLabel(label: string, max = 10): string {
@@ -982,26 +995,27 @@ export class ZKGraphView extends ItemView {
         mocFile: TFile,
         availableMOCs: LocalMocContext[]
     ): Promise<void> {
-        let graphCount = 0;
-        if (this.plugin.settings.FamilyGraphToggle) graphCount++;
-        if (this.plugin.settings.InOutlinksGraphToggle) graphCount++;
-
         const containerHeight = this.containerEl.offsetHeight || 400;
-        const graphHeight = Math.max(Math.floor(containerHeight / Math.max(graphCount, 1) - 72), 180);
+        const graphHeight = Math.max(containerHeight - 110, 260);
 
         if (this.plugin.settings.FamilyGraphToggle) {
             const relatedNodes = this.getRelatedNodes(allNodes, currentNode, 3);
             this.familyNodeArr = relatedNodes;
+            const inlinkArr = this.plugin.settings.InOutlinksGraphToggle ? await this.getInlinks(currentFile) : [];
+            const outlinkArr = this.plugin.settings.InOutlinksGraphToggle ? await this.getOutlinks(currentFile) : [];
 
             const section = this.createLocalSection(
                 graphMermaidDiv,
-                '局部关系',
-                `${this.getLocalNodeLabel(currentNode)} · ${mocFile.basename}`
+                '概览',
+                this.plugin.settings.InOutlinksGraphToggle
+                    ? `实线为节点关系，虚线为出入链 · 入链 ${inlinkArr.length} · 出链 ${outlinkArr.length}`
+                    : `${this.getLocalNodeLabel(currentNode)} · ${mocFile.basename}`
             );
             section.container.addClass('zk-family-graph-container');
+            section.container.addClass('zk-overview-graph-container');
             this.renderMocContextControl(section.actions, graphMermaidDiv, currentFile, allNodes, currentNode, mocFile, availableMOCs);
 
-            if (relatedNodes.length === 0) {
+            if (relatedNodes.length === 0 && inlinkArr.length === 0 && outlinkArr.length === 0) {
                 section.body.createDiv('zk-local-empty').setText('暂无局部关系');
             } else {
                 const mocNodeTreeDiv = section.body.createEl("div", {
@@ -1011,9 +1025,12 @@ export class ZKGraphView extends ItemView {
                 mocNodeTreeDiv.style.height = `${graphHeight}px`;
                 mocNodeTreeDiv.style.width = "100%";
 
-                const graphData = GraphDataBuilder.fromFamilyNodes(relatedNodes, currentFile);
+                const graphData = this.plugin.settings.InOutlinksGraphToggle
+                    ? this.buildOverviewGraphData(relatedNodes, currentNode, currentFile, inlinkArr, outlinkArr)
+                    : GraphDataBuilder.fromFamilyNodes(relatedNodes, currentFile);
+                const isCombinedOverview = this.plugin.settings.InOutlinksGraphToggle;
                 const options: RenderOptions = {
-                    direction: (this.plugin.settings.DirectionOfBranchGraph || 'LR') as 'TB' | 'BT' | 'LR' | 'RL',
+                    direction: isCombinedOverview ? 'TB' : (this.plugin.settings.DirectionOfBranchGraph || 'LR') as 'TB' | 'BT' | 'LR' | 'RL',
                     layoutType: 'dagre',
                     animate: true,
                     animationDuration: 500,
@@ -1045,6 +1062,7 @@ export class ZKGraphView extends ItemView {
                 if (cy) {
                     cy.nodes().ungrabify();
                 }
+                this.familyGraphRenderer.fitAndCenter();
 
                 mocNodeTreeDiv.addEventListener('node-click', async (event: any) => {
                     const { node, ctrlKey, metaKey, shiftKey, altKey } = event.detail;
@@ -1052,7 +1070,7 @@ export class ZKGraphView extends ItemView {
 
                     const clicked = allNodes.find((n) =>
                         n.IDStr === node.IDStr || n.ID === node.ID || n.IDStr === node.ID || n.ID === node.IDStr
-                    );
+                    ) || node;
                     if (!clicked?.file) return;
 
                     if (ctrlKey || metaKey) {
@@ -1094,6 +1112,7 @@ export class ZKGraphView extends ItemView {
                     });
                 });
             }
+            return;
         }
 
         if (this.plugin.settings.InOutlinksGraphToggle) {
@@ -1101,6 +1120,102 @@ export class ZKGraphView extends ItemView {
             const outlinkArr = await this.getOutlinks(currentFile);
             await this.renderInOutLinksWithCytoscape(graphMermaidDiv, currentFile, inlinkArr, outlinkArr);
         }
+    }
+
+    private buildOverviewGraphData(
+        relatedNodes: ZKNode[],
+        currentNode: ZKNode,
+        currentFile: TFile,
+        inlinks: TFile[],
+        outlinks: TFile[]
+    ): GraphData {
+        const graphData = GraphDataBuilder.fromFamilyNodes(relatedNodes, currentFile);
+        const nodes = [...graphData.nodes];
+        const edges: Edge[] = [...graphData.edges];
+        const nodeByPath = new Map<string, ZKNode>();
+        const nodeById = new Map<string, ZKNode>();
+
+        nodes.forEach((node) => {
+            if (node.file?.path) nodeByPath.set(node.file.path, node);
+            nodeById.set(node.ID, node);
+            if (node.IDStr) nodeById.set(node.IDStr, node);
+        });
+
+        const currentGraphNode =
+            nodeByPath.get(currentFile.path) ||
+            nodeById.get(currentNode.ID) ||
+            nodeById.get(currentNode.IDStr) ||
+            currentNode;
+
+        if (!nodeById.has(currentGraphNode.ID)) {
+            nodes.push(currentGraphNode);
+            nodeById.set(currentGraphNode.ID, currentGraphNode);
+            if (currentGraphNode.file?.path) nodeByPath.set(currentGraphNode.file.path, currentGraphNode);
+        }
+
+        const makeLinkNode = (file: TFile, type: 'inlink' | 'outlink', index: number): ZKNode => ({
+            ID: `${type}-${index}-${file.path}`,
+            IDArr: [`${type}-${index}`],
+            IDStr: `${type}-${index}-${file.path}`,
+            position: relatedNodes.length + index + 1,
+            file,
+            title: file.basename,
+            displayText: file.basename,
+            relationText: '',
+            ctime: file.stat.ctime,
+            randomId: Math.random().toString(36),
+            nodeSons: 0,
+            startY: 0,
+            height: 0,
+            isRoot: false,
+            fixWidth: 0,
+            branchName: '',
+            gitNodePos: 0
+        });
+
+        const ensureFileNode = (file: TFile, type: 'inlink' | 'outlink', index: number): ZKNode => {
+            const existing = nodeByPath.get(file.path);
+            if (existing) return existing;
+
+            const node = makeLinkNode(file, type, index);
+            nodes.push(node);
+            nodeByPath.set(file.path, node);
+            nodeById.set(node.ID, node);
+            return node;
+        };
+
+        const edgeKeys = new Set(edges.map((edge) => `${edge.source}->${edge.target}:${edge.type}`));
+        const addEdge = (source: string, target: string, type: 'inlink' | 'outlink', index: number) => {
+            const key = `${source}->${target}:${type}`;
+            if (edgeKeys.has(key)) return;
+            edges.push({
+                id: `overview-${type}-${index}-${source}-${target}`,
+                source,
+                target,
+                type
+            });
+            edgeKeys.add(key);
+        };
+
+        inlinks.forEach((file, index) => {
+            const node = ensureFileNode(file, 'inlink', index);
+            addEdge(node.ID, currentGraphNode.ID, 'inlink', index);
+        });
+
+        outlinks.forEach((file, index) => {
+            const node = ensureFileNode(file, 'outlink', index);
+            addEdge(currentGraphNode.ID, node.ID, 'outlink', index);
+        });
+
+        return {
+            ...graphData,
+            nodes,
+            edges,
+            metadata: {
+                ...graphData.metadata,
+                renderType: 'family'
+            }
+        };
     }
 
     private getParentNode(allNodes: ZKNode[], currentNode: ZKNode): ZKNode | null {
@@ -1150,17 +1265,17 @@ export class ZKGraphView extends ItemView {
         );
     }
 
-    private async renderFocusNavigation(
+    private async renderLocalRelationCanvas(
+        section: { body: HTMLElement },
         graphMermaidDiv: HTMLElement,
         currentFile: TFile,
         allNodes: ZKNode[],
         currentNode: ZKNode,
         mocFile: TFile,
-        availableMOCs: LocalMocContext[]
+        inlinkArr: TFile[],
+        outlinkArr: TFile[],
+        mode: LocalRelationCanvasMode
     ): Promise<void> {
-        const linkFile = currentNode.file || currentFile;
-        const inlinkArr = await this.getInlinks(linkFile);
-        const outlinkArr = await this.getOutlinks(linkFile);
         const parentNode = this.getParentNode(allNodes, currentNode);
         const childNodes = this.getChildNodes(allNodes, currentNode);
         const siblingNodes = this.getSiblingNodes(allNodes, currentNode);
@@ -1171,13 +1286,8 @@ export class ZKGraphView extends ItemView {
         const leftSiblings = activePeerIndex >= 0 ? orderedPeers.slice(0, activePeerIndex) : siblingNodes.slice(0, Math.ceil(siblingNodes.length / 2));
         const rightSiblings = activePeerIndex >= 0 ? orderedPeers.slice(activePeerIndex + 1) : siblingNodes.slice(Math.ceil(siblingNodes.length / 2));
 
-        const section = this.createLocalSection(graphMermaidDiv, '导航');
-        section.container.addClass('zk-focus-nav-section');
-        this.renderMocContextControl(section.actions, graphMermaidDiv, currentFile, allNodes, currentNode, mocFile, availableMOCs);
-
         const canvas = section.body.createDiv('zk-focus-radial-canvas');
         const edgeLayer = canvas.createEl('div', { cls: 'zk-focus-edge-layer', attr: { 'aria-hidden': 'true' } });
-        const linkEdgeLayer = canvas.createEl('div', { cls: 'zk-focus-edge-layer zk-focus-link-edge-layer', attr: { 'aria-hidden': 'true' } });
         const centerZone = canvas.createDiv('zk-focus-center-zone zk-focus-radial-center-zone');
 
         const openFile = (file: TFile, event?: MouseEvent | KeyboardEvent) => {
@@ -1199,9 +1309,10 @@ export class ZKGraphView extends ItemView {
             posClass: string,
             node?: ZKNode | null,
             file?: TFile | null,
-            options: { dashed?: boolean; index?: number; total?: number; edgeAngle?: number; edgeLength?: number } = {}
+            options: { index?: number; total?: number; x?: number; y?: number; parent?: HTMLElement; drawEdge?: boolean } = {}
         ) => {
-            const card = canvas.createEl('button', {
+            const host = options.parent || canvas;
+            const card = host.createEl('button', {
                 type: 'button',
                 cls: `zk-focus-card zk-focus-card-${variant} ${posClass}`,
                 text: this.truncateLabel(label),
@@ -1214,8 +1325,18 @@ export class ZKGraphView extends ItemView {
             if (typeof options.total === 'number') {
                 card.style.setProperty('--n', String(Math.max(1, options.total)));
             }
+            if (typeof options.x === 'number' && typeof options.y === 'number') {
+                card.style.setProperty(
+                    '--focus-card-transform',
+                    `translate(calc(-50% + ${options.x}px), calc(-50% + ${options.y}px))`
+                );
+            }
 
-            card.addEventListener('click', async () => {
+            card.addEventListener('click', async (event: MouseEvent) => {
+                if (mode === 'overview') {
+                    if (targetFile) openFile(targetFile, event);
+                    return;
+                }
                 if (node) {
                     await focusNode(node);
                 } else if (targetFile) {
@@ -1231,8 +1352,13 @@ export class ZKGraphView extends ItemView {
                     if (targetFile) openFile(targetFile, event);
                 } else if (event.key === ' ') {
                     event.preventDefault();
-                    if (node) await focusNode(node);
-                    else if (targetFile) await this.focusLocalFile(graphMermaidDiv, targetFile);
+                    if (mode === 'overview') {
+                        if (targetFile) openFile(targetFile, event);
+                    } else if (node) {
+                        await focusNode(node);
+                    } else if (targetFile) {
+                        await this.focusLocalFile(graphMermaidDiv, targetFile);
+                    }
                 }
             });
 
@@ -1249,14 +1375,24 @@ export class ZKGraphView extends ItemView {
                 });
             }
 
-            const edge = (options.dashed ? linkEdgeLayer : edgeLayer).createDiv(`zk-focus-edge ${options.dashed ? 'zk-focus-edge-dashed' : 'zk-focus-edge-solid'}`);
-            edge.style.width = `${options.edgeLength ?? 170}px`;
-            edge.style.transform = `translate(0, -50%) rotate(${options.edgeAngle ?? 0}deg)`;
+            if (options.drawEdge === false) return card;
+
+            const edge = edgeLayer.createDiv('zk-focus-edge zk-focus-edge-solid');
+            const x = options.x ?? 0;
+            const y = options.y ?? 0;
+            const angle = Math.atan2(y, x) * 180 / Math.PI;
+            const distance = Math.sqrt(x * x + y * y);
+            const startInset = 104;
+            const endInset = 72;
+            const length = Math.max(18, distance - startInset - endInset);
+            const startX = distance > 0 ? (x / distance) * startInset : 0;
+            const startY = distance > 0 ? (y / distance) * startInset : 0;
+            edge.style.left = `calc(50% + ${startX}px)`;
+            edge.style.top = `calc(50% + ${startY}px)`;
+            edge.style.width = `${length}px`;
+            edge.style.transform = `translate(0, -50%) rotate(${angle}deg)`;
             return card;
         };
-
-        const spreadAngle = (baseAngle: number, step: number, index: number, total: number) =>
-            baseAngle + (index - (Math.max(1, total) - 1) / 2) * step;
 
         const focusLabel = this.getLocalNodeLabel(currentNode);
         const focusCard = centerZone.createEl('button', {
@@ -1265,6 +1401,9 @@ export class ZKGraphView extends ItemView {
             attr: { title: focusLabel },
         });
         focusCard.createSpan('zk-focus-current-title').setText(this.truncateLabel(focusLabel));
+        focusCard.addEventListener('click', (event: MouseEvent) => {
+            if (mode === 'overview' && currentNode.file) openFile(currentNode.file, event);
+        });
         focusCard.addEventListener('dblclick', (event) => {
             if (currentNode.file) openFile(currentNode.file, event);
         });
@@ -1277,60 +1416,119 @@ export class ZKGraphView extends ItemView {
 
         if (parentNode) {
             appendNode(this.getLocalNodeLabel(parentNode), 'parent', 'zk-focus-pos-parent', parentNode, null, {
-                edgeAngle: -90,
-                edgeLength: 180
+                x: 0,
+                y: -235
             });
         }
         leftSiblings.slice(-4).forEach((node, index, arr) => {
+            const y = (index - (arr.length - 1) / 2) * 58;
             appendNode(this.getLocalNodeLabel(node), 'sibling', 'zk-focus-pos-left', node, null, {
                 index,
                 total: arr.length,
-                edgeAngle: spreadAngle(180, 14, index, arr.length),
-                edgeLength: 210
+                x: -260,
+                y
             });
         });
         rightSiblings.slice(0, 4).forEach((node, index, arr) => {
+            const y = (index - (arr.length - 1) / 2) * 58;
             appendNode(this.getLocalNodeLabel(node), 'sibling', 'zk-focus-pos-right', node, null, {
                 index,
                 total: arr.length,
-                edgeAngle: spreadAngle(0, 14, index, arr.length),
-                edgeLength: 210
+                x: 260,
+                y
             });
         });
         childNodes.slice(0, 8).forEach((node, index, arr) => {
+            const x = (index - (arr.length - 1) / 2) * 210;
             appendNode(this.getLocalNodeLabel(node), 'child', 'zk-focus-pos-child', node, null, {
                 index,
                 total: arr.length,
-                edgeAngle: spreadAngle(90, 16, index, arr.length),
-                edgeLength: 145
+                x,
+                y: 190
             });
         });
-        inlinkArr.slice(0, 4).forEach((file, index, arr) => {
-            appendNode(file.basename, 'inlink', 'zk-focus-pos-inlink', null, file, {
-                dashed: true,
-                index,
-                total: arr.length,
-                edgeAngle: -138 - index * 14,
-                edgeLength: 220
-            });
-        });
-        outlinkArr.slice(0, 4).forEach((file, index, arr) => {
-            appendNode(file.basename, 'outlink', 'zk-focus-pos-outlink', null, file, {
-                dashed: true,
-                index,
-                total: arr.length,
-                edgeAngle: 38 + index * 14,
-                edgeLength: 220
-            });
-        });
-
-        const overflow =
-            Math.max(0, childNodes.length - 8) +
-            Math.max(0, inlinkArr.length - 4) +
-            Math.max(0, outlinkArr.length - 4);
+        const overflow = Math.max(0, childNodes.length - 8);
         if (overflow > 0) {
             canvas.createDiv('zk-focus-radial-more').setText(`+${overflow}`);
         }
+
+        this.renderFocusLinkRail(section.body, inlinkArr, outlinkArr);
+    }
+
+    private renderFocusLinkRail(
+        sectionBody: HTMLElement,
+        inlinkArr: TFile[],
+        outlinkArr: TFile[]
+    ): void {
+        if (inlinkArr.length === 0 && outlinkArr.length === 0) return;
+
+        const rail = sectionBody.createDiv('zk-focus-link-rail');
+
+        const appendRow = (title: string, files: TFile[], variant: 'inlink' | 'outlink') => {
+            if (files.length === 0) return;
+            const row = rail.createDiv(`zk-focus-link-row zk-focus-link-row-${variant}`);
+            const label = row.createDiv('zk-focus-link-row-label');
+            label.createSpan('zk-focus-link-row-label-text').setText(title);
+            label.createSpan('zk-focus-link-row-label-count').setText(String(files.length));
+            const list = row.createDiv('zk-focus-link-row-list');
+
+            files.forEach((file) => {
+                const chip = list.createEl('button', {
+                    type: 'button',
+                    cls: `zk-focus-link-chip zk-focus-link-chip-${variant}`,
+                    text: this.truncateLabel(this.getLocalFileLabel(file)),
+                    attr: { title: file.basename },
+                });
+                chip.addEventListener('click', (event: MouseEvent) => {
+                    if (event.ctrlKey || event.metaKey) {
+                        this.app.workspace.openLinkText('', file.path, 'tab');
+                    } else {
+                        this.app.workspace.openLinkText('', file.path);
+                    }
+                });
+                chip.addEventListener('mouseover', (event: MouseEvent) => {
+                    this.app.workspace.trigger('hover-link', {
+                        event,
+                        source: 'zk-navigation',
+                        hoverParent: rail,
+                        linktext: '',
+                        targetEl: chip,
+                        sourcePath: file.path,
+                    });
+                });
+            });
+        };
+
+        appendRow('入链', inlinkArr, 'inlink');
+        appendRow('出链', outlinkArr, 'outlink');
+    }
+
+    private async renderFocusNavigation(
+        graphMermaidDiv: HTMLElement,
+        currentFile: TFile,
+        allNodes: ZKNode[],
+        currentNode: ZKNode,
+        mocFile: TFile,
+        availableMOCs: LocalMocContext[]
+    ): Promise<void> {
+        const linkFile = currentNode.file || currentFile;
+        const inlinkArr = await this.getInlinks(linkFile);
+        const outlinkArr = await this.getOutlinks(linkFile);
+
+        const section = this.createLocalSection(graphMermaidDiv, '导航');
+        section.container.addClass('zk-focus-nav-section');
+        this.renderMocContextControl(section.actions, graphMermaidDiv, currentFile, allNodes, currentNode, mocFile, availableMOCs);
+        await this.renderLocalRelationCanvas(
+            section,
+            graphMermaidDiv,
+            currentFile,
+            allNodes,
+            currentNode,
+            mocFile,
+            inlinkArr,
+            outlinkArr,
+            'navigation'
+        );
     }
 
     // 检查文件是否在主笔记（索引笔记）目录下

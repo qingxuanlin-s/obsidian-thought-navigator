@@ -1872,7 +1872,16 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private getNodeLabel(node: ZKNode, options: RenderOptions | null): string {
         const nodeText = options?.nodeText || 'both';
         const isFreeNode = (node.ID || node.IDStr || '').startsWith('free.');
+        const isLocalLinkNode = (node.ID || '').startsWith('inlink-') || (node.ID || '').startsWith('outlink-');
         const showNoteId = (options?.showNoteId ?? true) && !isFreeNode;
+
+        if (isLocalLinkNode) {
+            return this.processDisplayText(
+                node.title || node.displayText || node.file?.basename || '',
+                'title',
+                false
+            ).replace(/\\n/g, '\n');
+        }
 
         let label = '';
         switch (nodeText) {
@@ -1907,9 +1916,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private getNodeBadge(node: ZKNode, options: RenderOptions | null): string {
         const nodeText = options?.nodeText || 'both';
         const isFreeNode = (node.ID || node.IDStr || '').startsWith('free.');
+        const isLocalLinkNode = (node.ID || '').startsWith('inlink-') || (node.ID || '').startsWith('outlink-');
         const showNoteId = (options?.showNoteId ?? true) && !isFreeNode;
 
-        if (!showNoteId) {
+        if (!showNoteId || isLocalLinkNode) {
             return '';
         }
         
@@ -2017,7 +2027,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         data.nodes.forEach(node => {
             if (node.ID.startsWith('inlink-')) inlinks.push(node);
             else if (node.ID.startsWith('outlink-')) outlinks.push(node);
-            else if (node.ID === 'current') node.savedPosition = { x: 0, y: 0 };
+            else if (node.ID === 'current' && !node.savedPosition) node.savedPosition = { x: 0, y: 0 };
         });
 
         // 网格布局参数
@@ -2033,7 +2043,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 const colsInRow = Math.min(COLS, nodes.length - row * COLS);
                 const x = (col - (colsInRow - 1) / 2) * COL_GAP;
                 const y = startY + direction * row * ROW_GAP;
-                nodes[i].savedPosition = { x, y };
+                if (!nodes[i].savedPosition) {
+                    nodes[i].savedPosition = { x, y };
+                }
             }
         };
 
@@ -2497,6 +2509,39 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'z-index': 999
             } as any
         },
+        // 局部概览中的入链/出链边：弱化为虚线，和节点导航实线区分
+        {
+            selector: 'edge[type="inlink"]',
+            style: {
+                'curve-style': 'bezier',
+                'control-point-distances': -80,
+                'control-point-weights': 0.5,
+                'line-style': 'dashed',
+                'line-dash-pattern': [7, 8],
+                'line-color': isLight ? '#d97706' : '#e8b86d',
+                'target-arrow-color': isLight ? '#d97706' : '#e8b86d',
+                'width': 1.6,
+                'arrow-scale': 0.95,
+                'opacity': 0.42,
+                'z-index': 998
+            } as any
+        },
+        {
+            selector: 'edge[type="outlink"]',
+            style: {
+                'curve-style': 'bezier',
+                'control-point-distances': 80,
+                'control-point-weights': 0.5,
+                'line-style': 'dashed',
+                'line-dash-pattern': [7, 8],
+                'line-color': isLight ? '#0f766e' : '#5cced6',
+                'target-arrow-color': isLight ? '#0f766e' : '#5cced6',
+                'width': 1.6,
+                'arrow-scale': 0.95,
+                'opacity': 0.42,
+                'z-index': 998
+            } as any
+        },
         // 跨领域边（虚线连接 + 特殊样式）
         {
             selector: 'edge[type="cross-domain"]',
@@ -2625,20 +2670,64 @@ export class CytoscapeRenderer implements IGraphRenderer {
         {
             selector: 'node[?isOutlink]',
             style: {
-                'background-color': isLight ? '#bfdbfe' : '#3b82c8',
-                'border-color': isLight ? '#93c5fd' : '#5ba0e0',
-                'border-width': '2px',
-                'color': isLight ? '#1e3a5f' : '#e0ecf8'
+                'background-color': isLight ? '#ccfbf1' : '#173b42',
+                'background-opacity': isLight ? 0.78 : 0.68,
+                'border-color': isLight ? '#2dd4bf' : '#5cced6',
+                'border-width': '1.5px',
+                'color': isLight ? '#134e4a' : '#d9fbff',
+                'font-size': '15px',
+                'font-weight': '500',
+                'text-max-width': '190px',
+                'width': (ele: any) => this.measureNodeLabel(ele.data('label') || '', {
+                    baseWidth: 88,
+                    minHeight: 34,
+                    maxWidth: 220,
+                    charWidth: 8,
+                    lineHeight: 16,
+                    paddingX: 30,
+                    paddingY: 12
+                }).width,
+                'height': (ele: any) => this.measureNodeLabel(ele.data('label') || '', {
+                    baseWidth: 88,
+                    minHeight: 34,
+                    maxWidth: 220,
+                    charWidth: 8,
+                    lineHeight: 16,
+                    paddingX: 30,
+                    paddingY: 12
+                }).height,
             } as any
         },
         // 入链节点样式（黄色）
         {
             selector: 'node[?isInlink]',
             style: {
-                'background-color': isLight ? '#fef3c7' : '#c8a832',
-                'border-color': isLight ? '#fcd34d' : '#dab840',
-                'border-width': '2px',
-                'color': isLight ? '#78350f' : '#fef3c7'
+                'background-color': isLight ? '#fef3c7' : '#4a3425',
+                'background-opacity': isLight ? 0.78 : 0.68,
+                'border-color': isLight ? '#f59e0b' : '#e8b86d',
+                'border-width': '1.5px',
+                'color': isLight ? '#78350f' : '#fff3dc',
+                'font-size': '15px',
+                'font-weight': '500',
+                'text-max-width': '190px',
+                'width': (ele: any) => this.measureNodeLabel(ele.data('label') || '', {
+                    baseWidth: 88,
+                    minHeight: 34,
+                    maxWidth: 220,
+                    charWidth: 8,
+                    lineHeight: 16,
+                    paddingX: 30,
+                    paddingY: 12
+                }).width,
+                'height': (ele: any) => this.measureNodeLabel(ele.data('label') || '', {
+                    baseWidth: 88,
+                    minHeight: 34,
+                    maxWidth: 220,
+                    charWidth: 8,
+                    lineHeight: 16,
+                    paddingX: 30,
+                    paddingY: 12
+                }).height,
             } as any
         },
         // 连接目标悬停状态
