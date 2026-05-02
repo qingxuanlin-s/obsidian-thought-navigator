@@ -2592,6 +2592,21 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'display': 'none'
             } as any
         },
+		{
+			selector: 'node.zk-level-dimmed',
+			style: {
+				'opacity': 0.18,
+				'text-opacity': 0.24,
+				'z-index': 1
+			} as any
+		},
+		{
+			selector: 'edge.zk-level-dimmed',
+			style: {
+				'opacity': 0.08,
+				'z-index': 1
+			} as any
+		},
         // 默认边样式 - 使用 unbundled-bezier 支持自定义控制点
         {
             selector: 'edge',
@@ -4511,12 +4526,13 @@ case 'dagre':
         this.cy.nodes('[?hasFileIcon]').forEach((node: any) => {
             // 跳过所有 embed 节点（由预览卡片渲染标题和内容）
             if (node.data('isEmbed')) return;
-            const underlineGroupEl = document.createElement('div');
-            underlineGroupEl.className = 'zk-node-file-underline-group';
-            underlineGroupEl.style.cssText = `
-                position: absolute;
-                pointer-events: none;
-            `;
+			const underlineGroupEl = document.createElement('div');
+			underlineGroupEl.className = 'zk-node-file-underline-group';
+			underlineGroupEl.dataset.nodeId = node.id();
+			underlineGroupEl.style.cssText = `
+				position: absolute;
+				pointer-events: none;
+			`;
             badgeContainer.appendChild(underlineGroupEl);
 
             // 缓存：label 不变时复用 wrappedLines 和 modelLineWidths，避免每帧 measureText
@@ -4727,9 +4743,10 @@ case 'dagre':
                 return;
             }
 
-            const remarkEl = document.createElement('div');
-            remarkEl.className = 'zk-node-remark-badge';
-            remarkEl.textContent = 'R';
+			const remarkEl = document.createElement('div');
+			remarkEl.className = 'zk-node-remark-badge';
+			remarkEl.dataset.nodeId = node.id();
+			remarkEl.textContent = 'R';
             let lastRemarkColor = '';
             const applyRemarkBadgeStyle = () => {
                 const remarkColor = node.data('branchNodeBorder') || '#ef4444';
@@ -4757,9 +4774,10 @@ case 'dagre':
             applyRemarkBadgeStyle();
             badgeContainer.appendChild(remarkEl);
 
-            const tooltipEl = document.createElement('div');
-            tooltipEl.className = 'zk-node-remark-tooltip';
-            tooltipEl.style.cssText = `
+			const tooltipEl = document.createElement('div');
+			tooltipEl.className = 'zk-node-remark-tooltip';
+			tooltipEl.dataset.nodeId = node.id();
+			tooltipEl.style.cssText = `
                 position: absolute;
                 max-width: 280px;
                 padding: 8px 10px;
@@ -4904,9 +4922,10 @@ case 'dagre':
         this.cy.nodes('[?isAnchor]').forEach((node: any) => {
             if (node.data('isGroup') || node.data('isPlaceholder')) return;
 
-            const starEl = document.createElement('div');
-            starEl.className = 'zk-node-anchor-badge';
-            starEl.textContent = '★';
+			const starEl = document.createElement('div');
+			starEl.className = 'zk-node-anchor-badge';
+			starEl.dataset.nodeId = node.id();
+			starEl.textContent = '★';
             starEl.style.cssText = `
                 position: absolute;
                 display: flex;
@@ -4965,9 +4984,10 @@ case 'dagre':
             const color = this.normalizeHexColor(rawColor);
             if (!color) return;
 
-            const dotEl = document.createElement('div');
-            dotEl.className = 'zk-node-color-dot';
-            dotEl.style.cssText = `
+			const dotEl = document.createElement('div');
+			dotEl.className = 'zk-node-color-dot';
+			dotEl.dataset.nodeId = node.id();
+			dotEl.style.cssText = `
                 position: absolute;
                 pointer-events: none;
                 border-radius: 999px;
@@ -5034,9 +5054,10 @@ case 'dagre':
                 ? this.hexToRgba(this.darkenColor(modernBase, 0.42), 0.38)
                 : 'transparent';
 
-            const badgeEl = document.createElement('div');
-            badgeEl.className = 'zk-node-badge';
-            badgeEl.textContent = badge;
+			const badgeEl = document.createElement('div');
+			badgeEl.className = 'zk-node-badge';
+			badgeEl.dataset.nodeId = node.id();
+			badgeEl.textContent = badge;
             badgeEl.style.cssText = `
                 position: absolute;
                 background-color: ${badgeBackgroundColor};
@@ -5623,8 +5644,9 @@ case 'dagre':
             (node.scratch as any) && node.scratch('_zkMdOverlay', entry.el);
 
             // 位置同步 updater
-            const currentEntry = entry;
-            const baseFontSize = isRootTextNode
+			const currentEntry = entry;
+			currentEntry.el.dataset.nodeId = node.id();
+			const baseFontSize = isRootTextNode
                 ? this.ROOT_NODE_FONT_SIZE
                 : (isFirstLevelTextNode ? this.FIRST_LEVEL_NODE_FONT_SIZE : 20);
             const updateOverlayPos = () => {

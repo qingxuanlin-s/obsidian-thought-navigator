@@ -3665,7 +3665,8 @@ align-items: center;
   color: #fff;
 }
 
-.zk-level-mode-toggle {
+.zk-level-mode-toggle,
+.zk-level-visibility-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3680,10 +3681,14 @@ align-items: center;
   transition: all 0.18s ease;
 }
 
-.zk-level-mode-toggle:hover {
+.zk-level-mode-toggle:hover,
+.zk-level-visibility-toggle:hover {
   background: linear-gradient(135deg, rgba(130, 110, 230, 0.32), rgba(170, 120, 230, 0.22));
   border-color: rgba(150, 150, 230, 0.85);
   color: #fff;
+}
+
+.zk-level-mode-toggle:hover {
   transform: rotate(180deg);
 }
 
