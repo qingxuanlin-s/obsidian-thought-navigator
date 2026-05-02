@@ -7,7 +7,7 @@ import { convertMOCToZKNodes, getMOCFilesInFolder, isMocFile, parseMOCStructure,
 import { CytoscapeExpandModal } from "src/modal/cytoscapeExpandModal";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
 import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
-import { Edge, GraphData, RenderOptions } from "src/renderer/types";
+import { RenderOptions } from "src/renderer/types";
 
 export const ZK_GRAPH_TYPE: string = "zk-graph-type"
 export const ZK_GRAPH_VIEW: string = t("zk-local-graph")
@@ -996,20 +996,20 @@ export class ZKGraphView extends ItemView {
         availableMOCs: LocalMocContext[]
     ): Promise<void> {
         const containerHeight = this.containerEl.offsetHeight || 400;
-        const graphHeight = Math.max(containerHeight - 110, 260);
 
         if (this.plugin.settings.FamilyGraphToggle) {
             const relatedNodes = this.getRelatedNodes(allNodes, currentNode, 3);
             this.familyNodeArr = relatedNodes;
             const inlinkArr = this.plugin.settings.InOutlinksGraphToggle ? await this.getInlinks(currentFile) : [];
             const outlinkArr = this.plugin.settings.InOutlinksGraphToggle ? await this.getOutlinks(currentFile) : [];
+            const showRail = this.plugin.settings.InOutlinksGraphToggle && (inlinkArr.length > 0 || outlinkArr.length > 0);
+            const railReserve = showRail ? 110 : 0;
+            const graphHeight = Math.max(containerHeight - 110 - railReserve, 220);
 
             const section = this.createLocalSection(
                 graphMermaidDiv,
                 '概览',
-                this.plugin.settings.InOutlinksGraphToggle
-                    ? `实线为节点关系，虚线为出入链 · 入链 ${inlinkArr.length} · 出链 ${outlinkArr.length}`
-                    : `${this.getLocalNodeLabel(currentNode)} · ${mocFile.basename}`
+                `${this.getLocalNodeLabel(currentNode)} · ${mocFile.basename}`
             );
             section.container.addClass('zk-family-graph-container');
             section.container.addClass('zk-overview-graph-container');
@@ -1025,12 +1025,9 @@ export class ZKGraphView extends ItemView {
                 mocNodeTreeDiv.style.height = `${graphHeight}px`;
                 mocNodeTreeDiv.style.width = "100%";
 
-                const graphData = this.plugin.settings.InOutlinksGraphToggle
-                    ? this.buildOverviewGraphData(relatedNodes, currentNode, currentFile, inlinkArr, outlinkArr)
-                    : GraphDataBuilder.fromFamilyNodes(relatedNodes, currentFile);
-                const isCombinedOverview = this.plugin.settings.InOutlinksGraphToggle;
+                const graphData = GraphDataBuilder.fromFamilyNodes(relatedNodes, currentFile);
                 const options: RenderOptions = {
-                    direction: isCombinedOverview ? 'TB' : (this.plugin.settings.DirectionOfBranchGraph || 'LR') as 'TB' | 'BT' | 'LR' | 'RL',
+                    direction: (this.plugin.settings.DirectionOfBranchGraph || 'LR') as 'TB' | 'BT' | 'LR' | 'RL',
                     layoutType: 'dagre',
                     animate: true,
                     animationDuration: 500,
@@ -1112,6 +1109,10 @@ export class ZKGraphView extends ItemView {
                     });
                 });
             }
+
+            if (showRail) {
+                this.renderFocusLinkRail(section.body, inlinkArr, outlinkArr);
+            }
             return;
         }
 
@@ -1120,102 +1121,6 @@ export class ZKGraphView extends ItemView {
             const outlinkArr = await this.getOutlinks(currentFile);
             await this.renderInOutLinksWithCytoscape(graphMermaidDiv, currentFile, inlinkArr, outlinkArr);
         }
-    }
-
-    private buildOverviewGraphData(
-        relatedNodes: ZKNode[],
-        currentNode: ZKNode,
-        currentFile: TFile,
-        inlinks: TFile[],
-        outlinks: TFile[]
-    ): GraphData {
-        const graphData = GraphDataBuilder.fromFamilyNodes(relatedNodes, currentFile);
-        const nodes = [...graphData.nodes];
-        const edges: Edge[] = [...graphData.edges];
-        const nodeByPath = new Map<string, ZKNode>();
-        const nodeById = new Map<string, ZKNode>();
-
-        nodes.forEach((node) => {
-            if (node.file?.path) nodeByPath.set(node.file.path, node);
-            nodeById.set(node.ID, node);
-            if (node.IDStr) nodeById.set(node.IDStr, node);
-        });
-
-        const currentGraphNode =
-            nodeByPath.get(currentFile.path) ||
-            nodeById.get(currentNode.ID) ||
-            nodeById.get(currentNode.IDStr) ||
-            currentNode;
-
-        if (!nodeById.has(currentGraphNode.ID)) {
-            nodes.push(currentGraphNode);
-            nodeById.set(currentGraphNode.ID, currentGraphNode);
-            if (currentGraphNode.file?.path) nodeByPath.set(currentGraphNode.file.path, currentGraphNode);
-        }
-
-        const makeLinkNode = (file: TFile, type: 'inlink' | 'outlink', index: number): ZKNode => ({
-            ID: `${type}-${index}-${file.path}`,
-            IDArr: [`${type}-${index}`],
-            IDStr: `${type}-${index}-${file.path}`,
-            position: relatedNodes.length + index + 1,
-            file,
-            title: file.basename,
-            displayText: file.basename,
-            relationText: '',
-            ctime: file.stat.ctime,
-            randomId: Math.random().toString(36),
-            nodeSons: 0,
-            startY: 0,
-            height: 0,
-            isRoot: false,
-            fixWidth: 0,
-            branchName: '',
-            gitNodePos: 0
-        });
-
-        const ensureFileNode = (file: TFile, type: 'inlink' | 'outlink', index: number): ZKNode => {
-            const existing = nodeByPath.get(file.path);
-            if (existing) return existing;
-
-            const node = makeLinkNode(file, type, index);
-            nodes.push(node);
-            nodeByPath.set(file.path, node);
-            nodeById.set(node.ID, node);
-            return node;
-        };
-
-        const edgeKeys = new Set(edges.map((edge) => `${edge.source}->${edge.target}:${edge.type}`));
-        const addEdge = (source: string, target: string, type: 'inlink' | 'outlink', index: number) => {
-            const key = `${source}->${target}:${type}`;
-            if (edgeKeys.has(key)) return;
-            edges.push({
-                id: `overview-${type}-${index}-${source}-${target}`,
-                source,
-                target,
-                type
-            });
-            edgeKeys.add(key);
-        };
-
-        inlinks.forEach((file, index) => {
-            const node = ensureFileNode(file, 'inlink', index);
-            addEdge(node.ID, currentGraphNode.ID, 'inlink', index);
-        });
-
-        outlinks.forEach((file, index) => {
-            const node = ensureFileNode(file, 'outlink', index);
-            addEdge(currentGraphNode.ID, node.ID, 'outlink', index);
-        });
-
-        return {
-            ...graphData,
-            nodes,
-            edges,
-            metadata: {
-                ...graphData.metadata,
-                renderType: 'family'
-            }
-        };
     }
 
     private getParentNode(allNodes: ZKNode[], currentNode: ZKNode): ZKNode | null {
