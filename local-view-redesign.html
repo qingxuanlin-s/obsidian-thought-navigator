@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>局部视图 · 重做</title>
+<style>
+:root {
+  --bg-base: #0a0a10;
+  --bg-drawer: #0d0d14;
+  --bg-elev-1: rgba(255,255,255,0.035);
+  --bg-elev-2: rgba(255,255,255,0.07);
+  --border-subtle: rgba(255,255,255,0.07);
+  --border-strong: rgba(255,255,255,0.16);
+  --text-primary: rgba(255,255,255,0.96);
+  --text-secondary: rgba(255,255,255,0.55);
+  --text-tertiary: rgba(255,255,255,0.30);
+
+  --brand: #7c5cff;
+  --brand-glow: rgba(124,92,255,0.45);
+
+  --rel-parent:  oklch(0.78 0.10 235);
+  --rel-child:   oklch(0.78 0.10 150);
+  --rel-sibling: oklch(0.82 0.09 70);
+  --rel-inlink:  oklch(0.75 0.11 350);
+  --rel-outlink: oklch(0.76 0.10 200);
+
+  --r-pill: 999px;
+  --r-card: 10px;
+  --r-large: 14px;
+
+  --font: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  background:
+    radial-gradient(ellipse 90% 50% at 50% 0%, rgba(124,92,255,0.07), transparent 60%),
+    var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-feature-settings: 'tnum' 1;
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  text-wrap: pretty;
+}
+
+/* ========== Drawer ========== */
+.drawer {
+  width: 460px;
+  height: 760px;
+  max-height: calc(100vh - 56px);
+  background: var(--bg-drawer);
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow:
+    0 32px 80px -16px rgba(0,0,0,0.7),
+    inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+/* ========== Header ========== */
+.header {
+  padding: 18px 20px 14px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+.h-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.h-name {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.h-name::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--brand);
+  box-shadow: 0 0 10px var(--brand-glow);
+}
+.h-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  font-feature-settings: 'tnum' 1;
+}
+.h-meta .dot {
+  width: 2.5px; height: 2.5px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  opacity: 0.6;
+}
+
+.toggle {
+  display: inline-flex;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+  padding: 2px;
+}
+.toggle button {
+  font-family: inherit;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 5px 11px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all 160ms var(--ease-out);
+}
+.toggle button.active {
+  background: var(--brand);
+  color: white;
+  box-shadow: 0 2px 10px var(--brand-glow);
+}
+.toggle button:not(.active):hover {
+  color: var(--text-primary);
+  background: rgba(255,255,255,0.04);
+}
+
+/* ========== Graph stage ========== */
+.graph-wrap {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+.graph-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.graph-stage {
+  position: absolute;
+  inset: 0;
+}
+
+/* ========== Node ========== */
+.node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6.5px 12px;
+  background: var(--bg-elev-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-pill);
+  font-size: 12.5px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 160ms var(--ease-out),
+              border-color 160ms var(--ease-out),
+              transform 200ms var(--ease-out);
+  --rel: var(--text-tertiary);
+  animation: nodeIn 380ms var(--ease-out) backwards;
+}
+.node::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--rel);
+  flex-shrink: 0;
+  box-shadow: 0 0 6px color-mix(in oklch, var(--rel), transparent 40%);
+}
+.node:hover {
+  background: var(--bg-elev-2);
+  border-color: color-mix(in oklch, var(--rel), transparent 50%);
+}
+.node[data-rel="parent"]  { --rel: var(--rel-parent); }
+.node[data-rel="child"]   { --rel: var(--rel-child); }
+.node[data-rel="sibling"] { --rel: var(--rel-sibling); }
+.node[data-rel="inlink"]  { --rel: var(--rel-inlink); }
+.node[data-rel="outlink"] { --rel: var(--rel-outlink); }
+
+/* ========== Focus node ========== */
+.node.focus {
+  padding: 13px 22px;
+  font-size: 15.5px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  background:
+    linear-gradient(135deg, rgba(124,92,255,0.16), rgba(124,92,255,0.04)),
+    var(--bg-drawer);
+  border: 1px solid rgba(124,92,255,0.45);
+  border-radius: var(--r-large);
+  box-shadow:
+    0 0 0 4px rgba(124,92,255,0.07),
+    0 12px 36px -8px rgba(124,92,255,0.45),
+    inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.node.focus::before {
+  width: 5px; height: 5px;
+  background: var(--brand);
+  box-shadow: 0 0 12px var(--brand-glow);
+}
+.node.focus:hover { transform: translate(-50%, -50%); }
+
+/* ========== Edge labels ========== */
+.edge-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+  background: var(--bg-drawer);
+  padding: 1px 5px;
+  border-radius: 4px;
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 200ms var(--ease-out);
+}
+.show-labels .edge-label { opacity: 1; }
+
+/* ========== SVG edges ========== */
+.edge {
+  fill: none;
+  stroke-width: 1.5;
+  opacity: 0.7;
+  animation: edgeIn 700ms var(--ease-out) backwards;
+  stroke-linecap: round;
+}
+.edge[data-rel="parent"]  { stroke: var(--rel-parent); }
+.edge[data-rel="child"]   { stroke: var(--rel-child); }
+.edge[data-rel="sibling"] { stroke: var(--rel-sibling); stroke-dasharray: 3 3; }
+.edge[data-rel="inlink"]  { stroke: var(--rel-inlink); stroke-dasharray: 1 4; stroke-linecap: round; }
+.edge[data-rel="outlink"] { stroke: var(--rel-outlink); stroke-dasharray: 1 4; stroke-linecap: round; }
+
+/* ========== Empty stage ========== */
+.empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  pointer-events: none;
+}
+
+/* ========== Footer ========== */
+.footer {
+  padding: 9px 18px;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  background: rgba(0,0,0,0.18);
+  flex-shrink: 0;
+}
+.footer .spacer { flex: 1; }
+
+/* ========== Tweaks ========== */
+.tweaks {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  width: 248px;
+  background: rgba(20, 20, 28, 0.92);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  font-size: 12px;
+  overflow: hidden;
+  transition: all 240ms var(--ease-out);
+  z-index: 100;
+  box-shadow: 0 24px 48px -12px rgba(0,0,0,0.6);
+}
+.tweaks.collapsed {
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+}
+.tw-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+  user-select: none;
+}
+.tweaks.collapsed .tw-head {
+  border-bottom: 0;
+  justify-content: center;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+}
+.tw-title {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.tweaks.collapsed .tw-title,
+.tweaks.collapsed .tw-body { display: none; }
+.tw-icon {
+  width: 16px; height: 16px;
+  color: var(--text-secondary);
+  transition: transform 240ms var(--ease-out);
+}
+.tweaks.collapsed .tw-icon { transform: rotate(0); }
+.tweaks:not(.collapsed) .tw-icon { transform: rotate(45deg); }
+
+.tw-body {
+  padding: 14px 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.tw-group { display: flex; flex-direction: column; gap: 7px; }
+.tw-label {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.seg {
+  display: flex;
+  background: rgba(255,255,255,0.04);
+  border-radius: 7px;
+  padding: 2px;
+  gap: 2px;
+}
+.seg button {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 11.5px;
+  padding: 5px 4px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 140ms var(--ease-out);
+}
+.seg button.active {
+  background: var(--brand);
+  color: white;
+  box-shadow: 0 2px 8px var(--brand-glow);
+}
+.seg button:not(.active):hover {
+  color: var(--text-primary);
+  background: rgba(255,255,255,0.04);
+}
+.tw-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.tw-row span { color: var(--text-secondary); font-size: 11.5px; }
+.sw {
+  width: 30px; height: 17px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 9px;
+  position: relative;
+  cursor: pointer;
+  transition: background 160ms var(--ease-out);
+}
+.sw.on { background: var(--brand); box-shadow: 0 0 8px var(--brand-glow); }
+.sw::after {
+  content: '';
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 13px; height: 13px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 200ms var(--ease-out);
+}
+.sw.on::after { transform: translateX(13px); }
+
+/* ========== Animations ========== */
+@keyframes nodeIn {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.86); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+@keyframes edgeIn {
+  from { stroke-dashoffset: 240; opacity: 0; }
+  to   { stroke-dashoffset: 0; opacity: 0.7; }
+}
+
+/* ========== Density compact ========== */
+.density-compact .node { font-size: 11.5px; padding: 5px 10px; }
+.density-compact .node.focus { font-size: 14.5px; padding: 11px 18px; }
+</style>
+</head>
+<body>
+
+<div class="drawer">
+  <header class="header">
+    <div class="h-title">
+      <div class="h-name" id="h-name">垃圾回收器</div>
+      <div class="h-meta">
+        <span>JVM</span><span class="dot"></span>
+        <span id="h-id">7a3f.b2</span><span class="dot"></span>
+        <span>50 词</span>
+      </div>
+    </div>
+    <div class="toggle">
+      <button>概览</button>
+      <button class="active">导航</button>
+    </div>
+  </header>
+
+  <div class="graph-wrap" id="graph-wrap">
+    <svg class="graph-svg" id="graph-svg"></svg>
+    <div class="graph-stage" id="graph-stage"></div>
+  </div>
+
+  <footer class="footer">
+    <span>0 反链</span>
+    <div class="spacer"></div>
+    <span id="sync-meta">同步 · 3 分钟前</span>
+  </footer>
+</div>
+
+<div class="tweaks" id="tweaks">
+  <div class="tw-head" onclick="toggleTweaks()">
+    <span class="tw-title">Tweaks</span>
+    <svg class="tw-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <path d="M12 5v14M5 12h14"/>
+    </svg>
+  </div>
+  <div class="tw-body">
+    <div class="tw-group">
+      <span class="tw-label">数据场景</span>
+      <div class="seg" id="seg-scenario">
+        <button data-v="sparse" class="active">原始</button>
+        <button data-v="rich">完整</button>
+        <button data-v="dense">密集</button>
+      </div>
+    </div>
+    <div class="tw-group">
+      <span class="tw-label">关系标签</span>
+      <div class="tw-row">
+        <span>显示在连线上</span>
+        <div class="sw" id="sw-labels" onclick="toggleLabels()"></div>
+      </div>
+    </div>
+    <div class="tw-group">
+      <span class="tw-label">视觉密度</span>
+      <div class="seg" id="seg-density">
+        <button data-v="comfortable" class="active">舒适</button>
+        <button data-v="compact">紧凑</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ========== Data ==========
+const scenarios = {
+  sparse: {
+    focus: '垃圾回收器',
+    parents: ['垃圾回收基础'],
+    siblingsBefore: [],
+    siblingsAfter: ['算法'],
+    children: ['G1'],
+    inLinks: [],
+    outLinks: []
+  },
+  rich: {
+    focus: '垃圾回收器',
+    parents: ['垃圾回收基础'],
+    siblingsBefore: ['内存模型'],
+    siblingsAfter: ['算法', '调优'],
+    children: ['G1', 'CMS', 'ZGC'],
+    inLinks: ['JVM 调优实战'],
+    outLinks: ['STW', 'GC Roots']
+  },
+  dense: {
+    focus: '垃圾回收器',
+    parents: ['垃圾回收基础', 'JVM 内存'],
+    siblingsBefore: ['内存模型', '类加载'],
+    siblingsAfter: ['算法', '调优', '监控'],
+    children: ['G1', 'CMS', 'ZGC', 'Shenandoah', 'Serial'],
+    inLinks: ['JVM 调优实战', 'GC 日志', 'OOM 排查'],
+    outLinks: ['STW', 'GC Roots', '可达性分析']
+  }
+};
+
+let state = {
+  scenario: 'sparse',
+  showLabels: false,
+  density: 'comfortable'
+};
+
+// ========== Layout ==========
+function layout(data, w, h, density) {
+  const cx = w / 2, cy = h / 2;
+  const k = density === 'compact' ? 0.78 : 1;
+
+  // direction radii (px from focus center)
+  const R = {
+    parentY: 105 * k,
+    childY: 110 * k,
+    siblingX: 130 * k,
+    inLinkX: 145 * k,
+    inLinkY: 155 * k,
+    outLinkX: 145 * k,
+    outLinkY: 155 * k,
+  };
+
+  const nodes = [];
+  // Focus
+  nodes.push({ id: '__focus', label: data.focus, rel: 'focus', x: cx, y: cy });
+
+  const fan = (count, baseX, baseY, axis = 'x', spread = 92) => {
+    const offsets = [];
+    for (let i = 0; i < count; i++) {
+      offsets.push((i - (count - 1) / 2) * spread);
+    }
+    return offsets.map(o => axis === 'x' ? { x: baseX + o, y: baseY } : { x: baseX, y: baseY + o });
+  };
+
+  // Parents (fan along x at top)
+  data.parents.forEach((label, i) => {
+    const positions = fan(data.parents.length, cx, cy - R.parentY, 'x', 110 * k);
+    nodes.push({ id: `p-${i}`, label, rel: 'parent', relLabel: '上级', ...positions[i] });
+  });
+
+  // Children (fan along x at bottom)
+  data.children.forEach((label, i) => {
+    const positions = fan(data.children.length, cx, cy + R.childY, 'x', 92 * k);
+    nodes.push({ id: `c-${i}`, label, rel: 'child', relLabel: '下级', ...positions[i] });
+  });
+
+  // Sibling-before (stack along y on left)
+  data.siblingsBefore.forEach((label, i) => {
+    const positions = fan(data.siblingsBefore.length, cx - R.siblingX, cy, 'y', 36 * k);
+    nodes.push({ id: `sb-${i}`, label, rel: 'sibling', relLabel: '前序', ...positions[i] });
+  });
+
+  // Sibling-after (stack along y on right)
+  data.siblingsAfter.forEach((label, i) => {
+    const positions = fan(data.siblingsAfter.length, cx + R.siblingX, cy, 'y', 36 * k);
+    nodes.push({ id: `sa-${i}`, label, rel: 'sibling', relLabel: '后序', ...positions[i] });
+  });
+
+  // In-links (top-left cluster)
+  data.inLinks.forEach((label, i) => {
+    const positions = fan(data.inLinks.length, cx - R.inLinkX, cy - R.inLinkY, 'y', 30 * k);
+    nodes.push({ id: `in-${i}`, label, rel: 'inlink', relLabel: '入链', ...positions[i] });
+  });
+
+  // Out-links (bottom-right cluster)
+  data.outLinks.forEach((label, i) => {
+    const positions = fan(data.outLinks.length, cx + R.outLinkX, cy + R.outLinkY, 'y', 30 * k);
+    nodes.push({ id: `o-${i}`, label, rel: 'outlink', relLabel: '出链', ...positions[i] });
+  });
+
+  return nodes;
+}
+
+// ========== Render ==========
+function render() {
+  const wrap = document.getElementById('graph-wrap');
+  const stage = document.getElementById('graph-stage');
+  const svg = document.getElementById('graph-svg');
+
+  stage.innerHTML = '';
+  svg.innerHTML = '';
+
+  const rect = wrap.getBoundingClientRect();
+  const w = rect.width, h = rect.height;
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+
+  const data = scenarios[state.scenario];
+  const nodes = layout(data, w, h, state.density);
+  const focus = nodes.find(n => n.id === '__focus');
+
+  // Empty?
+  if (nodes.length === 1) {
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = '这条笔记没有任何结构关联';
+    stage.appendChild(empty);
+    appendNode(stage, focus, 0);
+    return;
+  }
+
+  // Pass 1: render all nodes so we can measure them
+  const elMap = new Map();
+  nodes.filter(n => n.id !== '__focus').forEach((n, i) => {
+    elMap.set(n.id, appendNode(stage, n, 120 + i * 35));
+  });
+  elMap.set('__focus', appendNode(stage, focus, 0));
+
+  // Pass 2: measure + draw clipped edges (wait one frame for layout)
+  requestAnimationFrame(() => {
+    const stageRect = stage.getBoundingClientRect();
+    const measure = (el) => {
+      const r = el.getBoundingClientRect();
+      return {
+        cx: r.left - stageRect.left + r.width / 2,
+        cy: r.top - stageRect.top + r.height / 2,
+        w: r.width,
+        h: r.height,
+      };
+    };
+
+    const fBox = measure(elMap.get('__focus'));
+
+    nodes.filter(n => n.id !== '__focus').forEach((n, i) => {
+      const tBox = measure(elMap.get(n.id));
+      // Clip both ends to node borders (with small inset for breathing room)
+      const start = clipToRect(fBox, tBox.cx, tBox.cy, 4);
+      const end   = clipToRect(tBox, fBox.cx, fBox.cy, 3);
+
+      const path = makeEdgePath(start, end);
+      const el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      el.setAttribute('d', path);
+      el.setAttribute('class', 'edge');
+      el.setAttribute('data-rel', n.rel);
+      el.style.animationDelay = `${80 + i * 35}ms`;
+      svg.appendChild(el);
+
+      if (n.relLabel) {
+        const mid = midPoint(start, end);
+        const lbl = document.createElement('div');
+        lbl.className = 'edge-label';
+        lbl.textContent = n.relLabel;
+        lbl.style.left = `${mid.x}px`;
+        lbl.style.top = `${mid.y}px`;
+        stage.appendChild(lbl);
+      }
+    });
+  });
+}
+
+function appendNode(stage, n, delay) {
+  const el = document.createElement('div');
+  el.className = n.rel === 'focus' ? 'node focus' : 'node';
+  el.setAttribute('data-rel', n.rel);
+  el.textContent = n.label;
+  el.style.left = `${n.x}px`;
+  el.style.top = `${n.y}px`;
+  el.style.animationDelay = `${delay}ms`;
+  stage.appendChild(el);
+  return el;
+}
+
+// Find where ray from box center toward (tx,ty) exits the box
+function clipToRect(box, tx, ty, inset = 0) {
+  const dx = tx - box.cx, dy = ty - box.cy;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 0.001) return { x: box.cx, y: box.cy };
+  const ux = dx / dist, uy = dy / dist;
+  const halfW = box.w / 2 + inset;
+  const halfH = box.h / 2 + inset;
+  const tX = ux !== 0 ? halfW / Math.abs(ux) : Infinity;
+  const tY = uy !== 0 ? halfH / Math.abs(uy) : Infinity;
+  const t = Math.min(tX, tY);
+  return { x: box.cx + ux * t, y: box.cy + uy * t };
+}
+
+function makeEdgePath(a, b) {
+  // Mostly straight line — cleaner than heavy bezier for orthogonal layout
+  return `M ${a.x} ${a.y} L ${b.x} ${b.y}`;
+}
+
+function midPoint(a, b) {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+
+// ========== Tweaks handlers ==========
+function toggleTweaks() {
+  document.getElementById('tweaks').classList.toggle('collapsed');
+}
+function toggleLabels() {
+  state.showLabels = !state.showLabels;
+  document.getElementById('sw-labels').classList.toggle('on', state.showLabels);
+  document.body.classList.toggle('show-labels', state.showLabels);
+}
+function setScenario(v) {
+  state.scenario = v;
+  document.querySelectorAll('#seg-scenario button').forEach(b =>
+    b.classList.toggle('active', b.dataset.v === v));
+  render();
+}
+function setDensity(v) {
+  state.density = v;
+  document.body.classList.toggle('density-compact', v === 'compact');
+  document.querySelectorAll('#seg-density button').forEach(b =>
+    b.classList.toggle('active', b.dataset.v === v));
+  render();
+}
+
+document.querySelectorAll('#seg-scenario button').forEach(b =>
+  b.addEventListener('click', () => setScenario(b.dataset.v)));
+document.querySelectorAll('#seg-density button').forEach(b =>
+  b.addEventListener('click', () => setDensity(b.dataset.v)));
+
+// ========== Init ==========
+window.addEventListener('resize', () => render());
+render();
+</script>
+
+</body>
+</html>
