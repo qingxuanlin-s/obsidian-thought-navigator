@@ -152,6 +152,7 @@ export class ZKIndexView extends FileView {
     private currentDimLevel: number | null = null;
     private levelPath: string[] = [];
     private dimMode: 'subtree' | 'level' = 'subtree';
+    private focusVisibilityMode: 'hide' | 'dim' = 'hide';
 
     // 性能优化：防止重复刷新的标志位
     private isRefreshing: boolean = false;
@@ -3525,7 +3526,10 @@ cy.fit(null, 40);
             const segWrap = this.levelBreadcrumbContainer.createSpan("zk-level-seg-wrap");
             const seg = segWrap.createSpan("zk-level-seg");
             seg.setText(label);
-            seg.setAttribute("title", `层级 ${segmentDepth}: ${idStr}（点击聚焦,深层节点暗淡）`);
+            seg.setAttribute(
+                "title",
+                `层级 ${segmentDepth}: ${idStr}（点击聚焦,无关分支${this.focusVisibilityMode === 'hide' ? '隐藏' : '弱化'}）`
+            );
 
             if (this.currentDimLevel === segmentDepth) seg.addClass("zk-level-seg-active");
 
@@ -3590,6 +3594,25 @@ cy.fit(null, 40);
         modeBtn.addEventListener("click", (e) => {
             e.stopPropagation();
             this.dimMode = this.dimMode === 'subtree' ? 'level' : 'subtree';
+            if (this.currentDimLevel !== null && this.currentDimLevel <= this.levelPath.length) {
+                this.applyLevelDim(this.currentDimLevel, this.levelPath[this.currentDimLevel - 1]);
+            }
+            this.refreshLevelBreadcrumb();
+        });
+
+        // 可见性切换:隐藏无关分支 ↔ 弱化无关分支
+        const visibilityBtn = this.levelBreadcrumbContainer.createSpan("zk-level-visibility-toggle");
+        const visibilityIconWrap = visibilityBtn.createSpan("zk-level-mode-icon");
+        setIcon(visibilityIconWrap, this.focusVisibilityMode === 'hide' ? 'eye-off' : 'eye');
+        visibilityBtn.setAttribute(
+            "title",
+            this.focusVisibilityMode === 'hide'
+                ? '当前:隐藏无关分支（点击切到弱化）'
+                : '当前:弱化无关分支（点击切到隐藏）'
+        );
+        visibilityBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            this.focusVisibilityMode = this.focusVisibilityMode === 'hide' ? 'dim' : 'hide';
             if (this.currentDimLevel !== null && this.currentDimLevel <= this.levelPath.length) {
                 this.applyLevelDim(this.currentDimLevel, this.levelPath[this.currentDimLevel - 1]);
             }
@@ -3683,11 +3706,18 @@ cy.fit(null, 40);
             });
 
             cy.batch(() => {
-                // 先 show/hide 组节点(compound parent),确保父节点状态正确
+                cy.nodes().removeClass('zk-level-dimmed');
+                cy.edges().removeClass('zk-level-dimmed');
+
+                // 先处理组节点(compound parent),确保父节点状态正确
                 cy.nodes('.group-node').forEach((groupNode: any) => {
                     const memberIds: string[] = groupNode.data('nodeIds') || [];
                     const escapedMemberIds = memberIds.map((id: string) => id.replace(/[^a-zA-Z0-9_-]/g, '_'));
-                    if (escapedMemberIds.some((id: string) => visibleCyIds.has(id))) {
+                    const hasVisibleMember = escapedMemberIds.some((id: string) => visibleCyIds.has(id));
+                    if (this.focusVisibilityMode === 'dim') {
+                        groupNode.show();
+                        if (!hasVisibleMember) groupNode.addClass('zk-level-dimmed');
+                    } else if (hasVisibleMember) {
                         groupNode.show();
                     } else {
                         groupNode.hide();
@@ -3698,6 +3728,9 @@ cy.fit(null, 40);
                     if (n.data('isGroup')) return;
                     if (visibleCyIds.has(n.id())) {
                         n.show();
+                    } else if (this.focusVisibilityMode === 'dim') {
+                        n.show();
+                        n.addClass('zk-level-dimmed');
                     } else {
                         n.hide();
                     }
@@ -3707,6 +3740,9 @@ cy.fit(null, 40);
                     const tgtId = (e.target().data('originalNode') as ZKNode | undefined)?.IDStr || '';
                     if (isVisible(srcId) && isVisible(tgtId)) {
                         e.show();
+                    } else if (this.focusVisibilityMode === 'dim') {
+                        e.show();
+                        e.addClass('zk-level-dimmed');
                     } else {
                         e.hide();
                     }
@@ -3720,10 +3756,17 @@ cy.fit(null, 40);
             });
 
             cy.batch(() => {
+                cy.nodes().removeClass('zk-level-dimmed');
+                cy.edges().removeClass('zk-level-dimmed');
+
                 cy.nodes('.group-node').forEach((groupNode: any) => {
                     const memberIds: string[] = groupNode.data('nodeIds') || [];
                     const escapedMemberIds = memberIds.map((id: string) => id.replace(/[^a-zA-Z0-9_-]/g, '_'));
-                    if (escapedMemberIds.some((id: string) => visibleCyIds.has(id))) {
+                    const hasVisibleMember = escapedMemberIds.some((id: string) => visibleCyIds.has(id));
+                    if (this.focusVisibilityMode === 'dim') {
+                        groupNode.show();
+                        if (!hasVisibleMember) groupNode.addClass('zk-level-dimmed');
+                    } else if (hasVisibleMember) {
                         groupNode.show();
                     } else {
                         groupNode.hide();
@@ -3733,6 +3776,9 @@ cy.fit(null, 40);
                     if (n.data('isGroup')) return;
                     if (visibleCyIds.has(n.id())) {
                         n.show();
+                    } else if (this.focusVisibilityMode === 'dim') {
+                        n.show();
+                        n.addClass('zk-level-dimmed');
                     } else {
                         n.hide();
                     }
@@ -3740,17 +3786,21 @@ cy.fit(null, 40);
                 cy.edges().forEach((e: any) => {
                     const srcDepth = (e.source().data('originalNode') as ZKNode | undefined)?.IDArr?.length ?? 1;
                     const tgtDepth = (e.target().data('originalNode') as ZKNode | undefined)?.IDArr?.length ?? 1;
-                    if (srcDepth > level || tgtDepth > level) {
-                        e.hide();
-                    } else {
+                    const isEdgeVisible = srcDepth <= level && tgtDepth <= level;
+                    if (isEdgeVisible) {
                         e.show();
+                    } else if (this.focusVisibilityMode === 'dim') {
+                        e.show();
+                        e.addClass('zk-level-dimmed');
+                    } else {
+                        e.hide();
                     }
                 });
             });
         }
 
         // 同步 DOM overlay(embed 卡片)的透明度
-        this.applyDimToOverlays(visibleCyIds);
+        this.applyDimToOverlays(visibleCyIds, this.focusVisibilityMode);
 
         const ancestor = cy.nodes().filter((n: any) => {
             const original = n.data('originalNode') as ZKNode | undefined;
@@ -3761,29 +3811,104 @@ cy.fit(null, 40);
         }
     }
 
-    private applyDimToOverlays(visibleCyIds: Set<string> | null): void {
+    private applyDimToOverlays(visibleCyIds: Set<string> | null, visibilityMode: 'hide' | 'dim' = 'hide'): void {
         const clearing = visibleCyIds === null;
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        const restorePreviewWeight = (card: HTMLElement) => {
+            const nodeId = card.dataset.nodeId || '';
+            const isSelected = !!nodeId && !!cy?.$id(nodeId)?.selected?.();
+            card.style.opacity = isSelected ? '1' : '0.82';
+            card.style.filter = isSelected ? 'brightness(1) saturate(1)' : 'brightness(0.86) saturate(0.92)';
+            delete card.dataset.levelDimmed;
+        };
 
-        // Embed / Image 预览卡片:先全部隐藏,再还原可见的
-        document.querySelectorAll<HTMLElement>('.zk-embed-preview-card, .zk-image-preview-card')
-            .forEach(card => {
-                card.style.display = clearing ? '' : 'none';
-            });
-
-        if (!clearing) {
-            visibleCyIds!.forEach(cyId => {
-                const selector = `.zk-embed-preview-card[data-node-id="${cyId}"], .zk-image-preview-card[data-node-id="${cyId}"]`;
-                document.querySelectorAll<HTMLElement>(selector).forEach(card => {
+		// Embed / Image 预览卡片:隐藏模式直接 display:none;弱化模式保留上下文但降权
+		document.querySelectorAll<HTMLElement>('.zk-embed-preview-card, .zk-image-preview-card')
+			.forEach(card => {
+				if (clearing) {
                     card.style.display = '';
-                });
-            });
-        }
+                    if (card.dataset.levelDimmed === '1') restorePreviewWeight(card);
+                    return;
+                }
 
-        // 分组 glass 层
-        document.querySelectorAll<HTMLElement>('.zk-group-glass-layer').forEach(layer => {
-            layer.style.display = clearing ? '' : 'none';
-        });
-    }
+                const isVisible = visibleCyIds!.has(card.dataset.nodeId || '');
+                if (visibilityMode === 'dim') {
+                    card.style.display = '';
+                    if (isVisible) {
+                        if (card.dataset.levelDimmed === '1') restorePreviewWeight(card);
+                    } else {
+                        card.dataset.levelDimmed = '1';
+                        card.style.opacity = '0.28';
+                        card.style.filter = 'brightness(0.72) saturate(0.72)';
+                    }
+                } else {
+                    card.style.display = isVisible ? '' : 'none';
+					if (card.dataset.levelDimmed === '1') restorePreviewWeight(card);
+				}
+			});
+
+		// 节点周边的 DOM overlay 要跟随焦点模式一起降权,否则会显得比路径内节点还亮。
+		document.querySelectorAll<HTMLElement>([
+			'.zk-text-md-overlay',
+			'.zk-node-file-underline-group',
+			'.zk-node-remark-badge',
+			'.zk-node-anchor-badge',
+			'.zk-node-color-dot',
+			'.zk-node-badge'
+		].join(', '))
+			.forEach(el => {
+				if (clearing) {
+					if (el.dataset.levelHidden === '1') el.style.display = '';
+					if (el.dataset.levelDimmed === '1') {
+						el.style.opacity = '';
+						el.style.filter = '';
+						el.style.pointerEvents = '';
+					}
+					delete el.dataset.levelDimmed;
+					delete el.dataset.levelHidden;
+					return;
+				}
+
+				const nodeId = el.dataset.nodeId || '';
+				const isVisible = !!nodeId && visibleCyIds!.has(nodeId);
+				if (visibilityMode === 'dim') {
+					if (el.dataset.levelHidden === '1') el.style.display = '';
+					delete el.dataset.levelHidden;
+					if (isVisible) {
+						if (el.dataset.levelDimmed === '1') {
+							el.style.opacity = '';
+							el.style.filter = '';
+							el.style.pointerEvents = '';
+						}
+						delete el.dataset.levelDimmed;
+					} else {
+						el.dataset.levelDimmed = '1';
+						el.style.opacity = '0.16';
+						el.style.filter = 'brightness(0.62) saturate(0.58)';
+						el.style.pointerEvents = 'none';
+					}
+				} else {
+					if (isVisible) {
+						if (el.dataset.levelHidden === '1') el.style.display = '';
+					} else {
+						el.dataset.levelHidden = '1';
+						el.style.display = 'none';
+					}
+					if (el.dataset.levelDimmed === '1') {
+						el.style.opacity = '';
+						el.style.filter = '';
+						el.style.pointerEvents = '';
+					}
+					delete el.dataset.levelDimmed;
+				}
+			});
+
+		// 分组 glass 层
+		document.querySelectorAll<HTMLElement>('.zk-group-glass-layer').forEach(layer => {
+			layer.style.display = clearing || visibilityMode === 'dim' ? '' : 'none';
+			layer.style.opacity = clearing ? '' : (visibilityMode === 'dim' ? '0.26' : '');
+		});
+	}
 
     private clearLevelDim(): void {
         if (this.currentDimLevel === null) return;
@@ -3791,6 +3916,8 @@ cy.fit(null, 40);
         const cy = this.branchRenderer?.getCytoscapeInstance();
         if (!cy) return;
         cy.batch(() => {
+            cy.nodes().removeClass('zk-level-dimmed');
+            cy.edges().removeClass('zk-level-dimmed');
             (cy.nodes() as any).show();
             (cy.edges() as any).show();
         });
