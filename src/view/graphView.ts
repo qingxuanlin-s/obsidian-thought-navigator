@@ -219,7 +219,8 @@ export class ZKGraphView extends ItemView {
         const containerHeight = containerEl.offsetHeight || 400; // 默认高度 400px
         this.graphHeight = Math.max(Math.floor(containerHeight / safeCount - 10), 200); // 最小高度 200px
 
-        const graphMermaidDiv = containerEl.createDiv().createDiv("zk-graph-mermaid-container");
+        const graphWrapper = containerEl.createDiv("zk-graph-mermaid-wrapper");
+        const graphMermaidDiv = graphWrapper.createDiv("zk-graph-mermaid-container");
 
         const activeFile = this.app.workspace.getActiveFile();
         if (activeFile) {
@@ -784,6 +785,11 @@ export class ZKGraphView extends ItemView {
         return node.title || node.displayText || node.IDStr || node.ID;
     }
 
+    private truncateLabel(label: string, max = 10): string {
+        const chars = Array.from(label);
+        return chars.length > max ? chars.slice(0, max).join('') + '…' : label;
+    }
+
     private isNodeMatchFile(node: ZKNode, file: TFile, mocPath: string, resolvedLinkCache: Map<string, TFile | null>): boolean {
         if (node.file?.path === file.path) return true;
 
@@ -962,12 +968,6 @@ export class ZKGraphView extends ItemView {
 
         if (this.localGraphMode === 'navigation') {
             await this.renderFocusNavigation(graphMermaidDiv, currentFile, allNodes, currentNode, mocFile, availableMOCs);
-            if (this.plugin.settings.InOutlinksGraphToggle) {
-                const linkFile = currentNode.file || currentFile;
-                const inlinkArr = await this.getInlinks(linkFile);
-                const outlinkArr = await this.getOutlinks(linkFile);
-                await this.renderInOutLinksWithCytoscape(graphMermaidDiv, linkFile, inlinkArr, outlinkArr);
-            }
             return;
         }
 
@@ -1158,6 +1158,9 @@ export class ZKGraphView extends ItemView {
         mocFile: TFile,
         availableMOCs: LocalMocContext[]
     ): Promise<void> {
+        const linkFile = currentNode.file || currentFile;
+        const inlinkArr = await this.getInlinks(linkFile);
+        const outlinkArr = await this.getOutlinks(linkFile);
         const parentNode = this.getParentNode(allNodes, currentNode);
         const childNodes = this.getChildNodes(allNodes, currentNode);
         const siblingNodes = this.getSiblingNodes(allNodes, currentNode);
@@ -1168,21 +1171,14 @@ export class ZKGraphView extends ItemView {
         const leftSiblings = activePeerIndex >= 0 ? orderedPeers.slice(0, activePeerIndex) : siblingNodes.slice(0, Math.ceil(siblingNodes.length / 2));
         const rightSiblings = activePeerIndex >= 0 ? orderedPeers.slice(activePeerIndex + 1) : siblingNodes.slice(Math.ceil(siblingNodes.length / 2));
 
-        const section = this.createLocalSection(
-            graphMermaidDiv,
-            '导航',
-            '父级在上，同级在两侧，下级在下'
-        );
+        const section = this.createLocalSection(graphMermaidDiv, '导航');
         section.container.addClass('zk-focus-nav-section');
         this.renderMocContextControl(section.actions, graphMermaidDiv, currentFile, allNodes, currentNode, mocFile, availableMOCs);
 
-        const canvas = section.body.createDiv('zk-focus-nav-canvas zk-focus-brain-canvas');
-        const parentZone = canvas.createDiv('zk-focus-zone zk-focus-zone-parent');
-        const middle = canvas.createDiv('zk-focus-nav-middle');
-        const leftZone = middle.createDiv('zk-focus-zone zk-focus-zone-siblings-left');
-        const centerZone = middle.createDiv('zk-focus-center-zone');
-        const rightZone = middle.createDiv('zk-focus-zone zk-focus-zone-siblings-right');
-        const childZone = canvas.createDiv('zk-focus-zone zk-focus-zone-children');
+        const canvas = section.body.createDiv('zk-focus-radial-canvas');
+        const edgeLayer = canvas.createEl('div', { cls: 'zk-focus-edge-layer', attr: { 'aria-hidden': 'true' } });
+        const linkEdgeLayer = canvas.createEl('div', { cls: 'zk-focus-edge-layer zk-focus-link-edge-layer', attr: { 'aria-hidden': 'true' } });
+        const centerZone = canvas.createDiv('zk-focus-center-zone zk-focus-radial-center-zone');
 
         const openFile = (file: TFile, event?: MouseEvent | KeyboardEvent) => {
             if (event && ('ctrlKey' in event) && (event.ctrlKey || event.metaKey)) {
@@ -1197,22 +1193,33 @@ export class ZKGraphView extends ItemView {
             await this.refreshLocalGraphMOCNode(graphMermaidDiv, focusFile, allNodes, node, mocFile);
         };
 
-        const appendCard = (
-            zone: HTMLElement,
+        const appendNode = (
             label: string,
             variant: string,
-            node?: ZKNode | null
+            posClass: string,
+            node?: ZKNode | null,
+            file?: TFile | null,
+            options: { dashed?: boolean; index?: number; total?: number; edgeAngle?: number; edgeLength?: number } = {}
         ) => {
-            const card = zone.createEl('button', {
+            const card = canvas.createEl('button', {
                 type: 'button',
-                cls: `zk-focus-card zk-focus-card-${variant}`,
-                text: label
+                cls: `zk-focus-card zk-focus-card-${variant} ${posClass}`,
+                text: this.truncateLabel(label),
+                attr: { title: label },
             });
-            const targetFile = node?.file || null;
+            const targetFile = file || node?.file || null;
+            if (typeof options.index === 'number') {
+                card.style.setProperty('--i', String(options.index));
+            }
+            if (typeof options.total === 'number') {
+                card.style.setProperty('--n', String(Math.max(1, options.total)));
+            }
 
             card.addEventListener('click', async () => {
                 if (node) {
                     await focusNode(node);
+                } else if (targetFile) {
+                    await this.focusLocalFile(graphMermaidDiv, targetFile);
                 }
             });
             card.addEventListener('dblclick', (event) => {
@@ -1225,6 +1232,7 @@ export class ZKGraphView extends ItemView {
                 } else if (event.key === ' ') {
                     event.preventDefault();
                     if (node) await focusNode(node);
+                    else if (targetFile) await this.focusLocalFile(graphMermaidDiv, targetFile);
                 }
             });
 
@@ -1233,62 +1241,30 @@ export class ZKGraphView extends ItemView {
                     this.app.workspace.trigger('hover-link', {
                         event,
                         source: 'zk-navigation',
-                        hoverParent: zone,
+                        hoverParent: canvas,
                         linktext: '',
                         targetEl: card,
                         sourcePath: targetFile.path,
                     });
                 });
             }
+
+            const edge = (options.dashed ? linkEdgeLayer : edgeLayer).createDiv(`zk-focus-edge ${options.dashed ? 'zk-focus-edge-dashed' : 'zk-focus-edge-solid'}`);
+            edge.style.width = `${options.edgeLength ?? 170}px`;
+            edge.style.transform = `translate(0, -50%) rotate(${options.edgeAngle ?? 0}deg)`;
             return card;
         };
 
-        const appendZone = (
-            zone: HTMLElement,
-            title: string,
-            items: Array<{ label: string; node?: ZKNode | null }>,
-            emptyText: string,
-            variant: string,
-            limit = 8
-        ) => {
-            const header = zone.createDiv('zk-focus-zone-title');
-            header.setText(`${title} · ${items.length}`);
-            const list = zone.createDiv('zk-focus-card-list');
-            const visibleItems = items.slice(0, limit);
-            if (visibleItems.length === 0) {
-                list.createDiv('zk-focus-empty').setText(emptyText);
-            } else {
-                visibleItems.forEach((item) => appendCard(list, item.label, variant, item.node));
-                if (items.length > limit) {
-                    list.createDiv('zk-focus-more').setText(`+${items.length - limit}`);
-                }
-            }
-        };
+        const spreadAngle = (baseAngle: number, step: number, index: number, total: number) =>
+            baseAngle + (index - (Math.max(1, total) - 1) / 2) * step;
 
-        appendZone(
-            parentZone,
-            '上级',
-            parentNode ? [{ label: this.getLocalNodeLabel(parentNode), node: parentNode }] : [],
-            '暂无上级',
-            'parent',
-            4
-        );
-
-        appendZone(
-            leftZone,
-            '前序同级',
-            leftSiblings.map((node) => ({ label: this.getLocalNodeLabel(node), node })),
-            '暂无前序同级',
-            'sibling',
-            8
-        );
-
+        const focusLabel = this.getLocalNodeLabel(currentNode);
         const focusCard = centerZone.createEl('button', {
             type: 'button',
             cls: 'zk-focus-current-card',
+            attr: { title: focusLabel },
         });
-        focusCard.createSpan('zk-focus-current-kicker').setText('当前焦点');
-        focusCard.createSpan('zk-focus-current-title').setText(this.getLocalNodeLabel(currentNode));
+        focusCard.createSpan('zk-focus-current-title').setText(this.truncateLabel(focusLabel));
         focusCard.addEventListener('dblclick', (event) => {
             if (currentNode.file) openFile(currentNode.file, event);
         });
@@ -1299,23 +1275,62 @@ export class ZKGraphView extends ItemView {
             }
         });
 
-        appendZone(
-            rightZone,
-            '后序同级',
-            rightSiblings.map((node) => ({ label: this.getLocalNodeLabel(node), node })),
-            '暂无后序同级',
-            'sibling',
-            8
-        );
+        if (parentNode) {
+            appendNode(this.getLocalNodeLabel(parentNode), 'parent', 'zk-focus-pos-parent', parentNode, null, {
+                edgeAngle: -90,
+                edgeLength: 180
+            });
+        }
+        leftSiblings.slice(-4).forEach((node, index, arr) => {
+            appendNode(this.getLocalNodeLabel(node), 'sibling', 'zk-focus-pos-left', node, null, {
+                index,
+                total: arr.length,
+                edgeAngle: spreadAngle(180, 14, index, arr.length),
+                edgeLength: 210
+            });
+        });
+        rightSiblings.slice(0, 4).forEach((node, index, arr) => {
+            appendNode(this.getLocalNodeLabel(node), 'sibling', 'zk-focus-pos-right', node, null, {
+                index,
+                total: arr.length,
+                edgeAngle: spreadAngle(0, 14, index, arr.length),
+                edgeLength: 210
+            });
+        });
+        childNodes.slice(0, 8).forEach((node, index, arr) => {
+            appendNode(this.getLocalNodeLabel(node), 'child', 'zk-focus-pos-child', node, null, {
+                index,
+                total: arr.length,
+                edgeAngle: spreadAngle(90, 16, index, arr.length),
+                edgeLength: 145
+            });
+        });
+        inlinkArr.slice(0, 4).forEach((file, index, arr) => {
+            appendNode(file.basename, 'inlink', 'zk-focus-pos-inlink', null, file, {
+                dashed: true,
+                index,
+                total: arr.length,
+                edgeAngle: -138 - index * 14,
+                edgeLength: 220
+            });
+        });
+        outlinkArr.slice(0, 4).forEach((file, index, arr) => {
+            appendNode(file.basename, 'outlink', 'zk-focus-pos-outlink', null, file, {
+                dashed: true,
+                index,
+                total: arr.length,
+                edgeAngle: 38 + index * 14,
+                edgeLength: 220
+            });
+        });
 
-        appendZone(
-            childZone,
-            '下级',
-            childNodes.map((node) => ({ label: this.getLocalNodeLabel(node), node })),
-            '暂无下级',
-            'child',
-            12
-        );
+        const overflow =
+            Math.max(0, childNodes.length - 8) +
+            Math.max(0, inlinkArr.length - 4) +
+            Math.max(0, outlinkArr.length - 4);
+        if (overflow > 0) {
+            canvas.createDiv('zk-focus-radial-more').setText(`+${overflow}`);
+        }
     }
 
     // 检查文件是否在主笔记（索引笔记）目录下
