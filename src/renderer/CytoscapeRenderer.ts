@@ -1241,6 +1241,102 @@ export class CytoscapeRenderer implements IGraphRenderer {
         return this.cy;
     }
 
+    applyFocusOverlayState(visibleCyIds: Set<string> | null, visibilityMode: 'hide' | 'dim' = 'hide'): void {
+        if (!this.container) return;
+        const clearing = visibleCyIds === null;
+        const restorePreviewWeight = (card: HTMLElement) => {
+            const nodeId = card.dataset.nodeId || '';
+            const isSelected = !!nodeId && !!this.cy?.$id(nodeId)?.selected?.();
+            card.style.opacity = isSelected ? '1' : '0.82';
+            card.style.filter = isSelected ? 'brightness(1) saturate(1)' : 'brightness(0.86) saturate(0.92)';
+            delete card.dataset.levelDimmed;
+        };
+
+        this.container.querySelectorAll<HTMLElement>('.zk-embed-preview-card, .zk-image-preview-card')
+            .forEach(card => {
+                if (clearing) {
+                    card.style.display = '';
+                    if (card.dataset.levelDimmed === '1') restorePreviewWeight(card);
+                    return;
+                }
+
+                const isVisible = visibleCyIds!.has(card.dataset.nodeId || '');
+                if (visibilityMode === 'dim') {
+                    card.style.display = '';
+                    if (isVisible) {
+                        if (card.dataset.levelDimmed === '1') restorePreviewWeight(card);
+                    } else {
+                        card.dataset.levelDimmed = '1';
+                        card.style.opacity = '0.28';
+                        card.style.filter = 'brightness(0.72) saturate(0.72)';
+                    }
+                } else {
+                    card.style.display = isVisible ? '' : 'none';
+                    if (card.dataset.levelDimmed === '1') restorePreviewWeight(card);
+                }
+            });
+
+        this.container.querySelectorAll<HTMLElement>([
+            '.zk-text-md-overlay',
+            '.zk-node-file-underline-group',
+            '.zk-node-remark-badge',
+            '.zk-node-anchor-badge',
+            '.zk-node-color-dot',
+            '.zk-node-badge'
+        ].join(', '))
+            .forEach(el => {
+                if (clearing) {
+                    if (el.dataset.levelHidden === '1') el.style.display = '';
+                    if (el.dataset.levelDimmed === '1') {
+                        el.style.opacity = '';
+                        el.style.filter = '';
+                        el.style.pointerEvents = '';
+                    }
+                    delete el.dataset.levelDimmed;
+                    delete el.dataset.levelHidden;
+                    return;
+                }
+
+                const nodeId = el.dataset.nodeId || '';
+                const isVisible = !!nodeId && visibleCyIds!.has(nodeId);
+                if (visibilityMode === 'dim') {
+                    if (el.dataset.levelHidden === '1') el.style.display = '';
+                    delete el.dataset.levelHidden;
+                    if (isVisible) {
+                        if (el.dataset.levelDimmed === '1') {
+                            el.style.opacity = '';
+                            el.style.filter = '';
+                            el.style.pointerEvents = '';
+                        }
+                        delete el.dataset.levelDimmed;
+                    } else {
+                        el.dataset.levelDimmed = '1';
+                        el.style.opacity = '0.16';
+                        el.style.filter = 'brightness(0.62) saturate(0.58)';
+                        el.style.pointerEvents = 'none';
+                    }
+                } else {
+                    if (isVisible) {
+                        if (el.dataset.levelHidden === '1') el.style.display = '';
+                    } else {
+                        el.dataset.levelHidden = '1';
+                        el.style.display = 'none';
+                    }
+                    if (el.dataset.levelDimmed === '1') {
+                        el.style.opacity = '';
+                        el.style.filter = '';
+                        el.style.pointerEvents = '';
+                    }
+                    delete el.dataset.levelDimmed;
+                }
+            });
+
+        this.container.querySelectorAll<HTMLElement>('.zk-group-glass-layer').forEach(layer => {
+            layer.style.display = clearing || visibilityMode === 'dim' ? '' : 'none';
+            layer.style.opacity = clearing ? '' : (visibilityMode === 'dim' ? '0.26' : '');
+        });
+    }
+
     /**
      * 居中并适配视图
      */
