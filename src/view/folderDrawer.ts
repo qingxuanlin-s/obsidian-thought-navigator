@@ -29,6 +29,7 @@ export class FolderDrawer {
     private dragMocPayload: { mocPath: string; fromFolderId: string } | null = null;
     // 上次定位过的 MOC 路径:仅在切换到新 MOC 时自动展开祖先文件夹,避免反复覆盖用户折叠操作
     private lastFocusedMoc: string = '';
+    private revealCurrentOnNextRender = false;
 
     constructor(parent: HTMLElement, app: App, plugin: ZKNavigationPlugin, index: VaultIndex, service: SpaceService) {
         this.app = app;
@@ -64,6 +65,7 @@ export class FolderDrawer {
     open(): void {
         if (this.isOpen) return;
         this.subscribe();
+        this.revealCurrentOnNextRender = true;
         this.render();
         this.root.addClass("is-open");
         this.root.setAttribute("aria-hidden", "false");
@@ -111,6 +113,7 @@ export class FolderDrawer {
         const currentMoc = this.plugin.settings.mocCurrentFile;
         if (currentMoc && currentMoc !== this.lastFocusedMoc) {
             this.lastFocusedMoc = currentMoc;
+            this.revealCurrentOnNextRender = true;
             this.expandAncestorsForMoc(currentMoc);
         }
 
@@ -127,11 +130,23 @@ export class FolderDrawer {
             this.renderNode(tree, root);
         }
 
-        // 渲染完成后把高亮行滚入视口
-        requestAnimationFrame(() => {
-            const target = this.bodyEl.querySelector(".zk-folder-drawer-row.is-current") as HTMLElement | null;
-            if (target) target.scrollIntoView({ block: "nearest", behavior: "smooth" });
-        });
+        if (this.revealCurrentOnNextRender) {
+            this.revealCurrentOnNextRender = false;
+            requestAnimationFrame(() => this.revealCurrentRow());
+        }
+    }
+
+    private revealCurrentRow(): void {
+        const target = this.bodyEl.querySelector(".zk-folder-drawer-row.is-current") as HTMLElement | null;
+        if (!target) return;
+
+        const bodyRect = this.bodyEl.getBoundingClientRect();
+        const targetRect = target.getBoundingClientRect();
+        if (targetRect.top < bodyRect.top) {
+            this.bodyEl.scrollTop -= bodyRect.top - targetRect.top + 12;
+        } else if (targetRect.bottom > bodyRect.bottom) {
+            this.bodyEl.scrollTop += targetRect.bottom - bodyRect.bottom + 12;
+        }
     }
 
     /**
@@ -181,24 +196,24 @@ export class FolderDrawer {
         empty.createDiv("zk-folder-drawer-empty-title").setText("还没有 Space");
         empty.createDiv("zk-folder-drawer-empty-desc").setText("从下面挑一个模板,或自己新建一个空 Space。");
 
+        const newSpaceBtn = empty.createDiv("zk-folder-drawer-new-space-btn zk-folder-drawer-new-space-btn-primary");
+        setIcon(newSpaceBtn.createSpan(), "plus");
+        newSpaceBtn.createSpan().setText("新建空 Space");
+        newSpaceBtn.addEventListener("click", () => this.showNewSpaceInput());
+
         const cards = empty.createDiv("zk-folder-drawer-templates");
         for (const tmpl of BUILTIN_TEMPLATES) {
             const card = cards.createDiv("zk-folder-drawer-template-card");
             const icon = card.createDiv("zk-folder-drawer-template-icon");
-            icon.setText(tmpl.icon || "📁");
+            this.setTemplateIcon(icon, tmpl.icon || "folder");
             card.createDiv("zk-folder-drawer-template-name").setText(tmpl.name);
             card.createDiv("zk-folder-drawer-template-desc").setText(tmpl.description);
             card.addEventListener("click", () => this.applyTemplate(tmpl.id));
         }
-
-        const newSpaceBtn = empty.createDiv("zk-folder-drawer-new-space-btn");
-        setIcon(newSpaceBtn.createSpan(), "plus");
-        newSpaceBtn.createSpan().setText("新建空 Space");
-        newSpaceBtn.addEventListener("click", () => this.showNewSpaceInput());
     }
 
     private renderNode(parent: HTMLElement, node: FolderNode): void {
-        const row = parent.createDiv("zk-folder-drawer-row");
+        const row = parent.createDiv("zk-folder-drawer-row zk-folder-drawer-row-folder");
         row.style.paddingLeft = `${10 + node.depth * 14}px`;
 
         const chev = row.createSpan("zk-folder-drawer-chev");
@@ -388,7 +403,7 @@ export class FolderDrawer {
         chipsRow.createSpan("zk-folder-drawer-chips-label").setText("模板:");
         for (const tmpl of BUILTIN_TEMPLATES) {
             const chip = chipsRow.createDiv("zk-folder-drawer-chip");
-            chip.createSpan("zk-folder-drawer-chip-icon").setText(tmpl.icon || "📁");
+            this.setTemplateIcon(chip.createSpan("zk-folder-drawer-chip-icon"), tmpl.icon || "folder");
             chip.createSpan("zk-folder-drawer-chip-name").setText(tmpl.name);
             setTooltip(chip, tmpl.description);
             // mousedown + preventDefault:抢在 input.blur 之前,且不让输入框失焦
@@ -406,6 +421,14 @@ export class FolderDrawer {
         }
 
         setTimeout(() => input.focus(), 0);
+    }
+
+    private setTemplateIcon(target: HTMLElement, iconName: string): void {
+        if (/^\p{Extended_Pictographic}/u.test(iconName)) {
+            target.setText(iconName);
+            return;
+        }
+        setIcon(target, iconName);
     }
 
     private showNewChildInput(parentNode: FolderNode, parentEl: HTMLElement, anchorRow: HTMLElement): void {

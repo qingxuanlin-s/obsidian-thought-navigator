@@ -1503,8 +1503,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private getHierarchyEdgeWidth(depthFromRoot: number | null): number {
         // 1级最粗，随后逐级变细，最低保留 2px
         const depth = Math.max(1, depthFromRoot || 1);
-        const width = 7.2 - (depth - 1) * 1.1;
-        return Math.max(2, Math.round(width * 10) / 10);
+        const width = 6.2 - (depth - 1) * 0.9;
+        return Math.max(1.8, Math.round(width * 10) / 10);
     }
 
     private loadEdgeControlPointsAndParentLinks(data: GraphData): Set<string> {
@@ -1606,20 +1606,14 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private getBranchStylePalette(): Array<{ background: string; accent: string }> {
         // 深色珠宝调：background = 深底色，accent = 点缀色
         return [
-            { background: '#064e3b', accent: '#10b981' },  // 翡翠绿
-            { background: '#78350f', accent: '#f59e0b' },  // 琥珀黄
-            { background: '#7f1d1d', accent: '#ef4444' },  // 宝石红
-            { background: '#1e3a5f', accent: '#3b82f6' },  // 蓝宝石
-            { background: '#4c1d95', accent: '#8b5cf6' },  // 紫水晶
-            { background: '#134e4a', accent: '#14b8a6' },  // 碧玺青
-            { background: '#831843', accent: '#ec4899' },  // 玫瑰石
-            { background: '#312e81', accent: '#6366f1' },  // 靛蓝石
-            { background: '#365314', accent: '#84cc16' },  // 橄榄石
-            { background: '#0c4a6e', accent: '#0ea5e9' },  // 天河石
-            { background: '#3b0764', accent: '#a855f7' },  // 幽紫晶
-            { background: '#713f12', accent: '#eab308' },  // 黄玉
-            { background: '#14532d', accent: '#22c55e' },  // 翠绿石
-            { background: '#164e63', accent: '#06b6d4' },  // 水鸭石
+            { background: '#173f36', accent: '#5bbf9a' },
+            { background: '#4a3820', accent: '#d6a85d' },
+            { background: '#4a2630', accent: '#d07a8a' },
+            { background: '#213a55', accent: '#6ba7dc' },
+            { background: '#372b58', accent: '#a08be8' },
+            { background: '#203f46', accent: '#62bcc8' },
+            { background: '#46344c', accent: '#c58ad5' },
+            { background: '#31385d', accent: '#8c9de8' },
         ];
     }
 
@@ -2260,7 +2254,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 },
                 'padding': '20px',
                 'shape': 'round-rectangle',
-                'corner-radius': '24px',
+                'corner-radius': '10px',
                 'border-width': '2px',
                 'border-opacity': 0.72,
                 'border-color': (ele: any) => {
@@ -2497,9 +2491,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'line-dash-pattern': [12, 8],
                 'line-color': '#64748b',  // 暗灰色（降噪）
                 'target-arrow-color': '#64748b',
-                'width': 3,    // 加粗一倍
+                'width': 2.2,
                 'arrow-scale': 1.35,
-                'opacity': 0.5,  // 更淡
+                'opacity': 0.38,
                 'z-index': 999
             } as any
         },
@@ -2509,14 +2503,14 @@ export class CytoscapeRenderer implements IGraphRenderer {
             style: {
                 'line-style': 'dashed',
                 'line-dash-pattern': [14, 8],  // 虚线模式
-                'line-color': '#8b5cf6',  // 紫色（跨领域标识）
-                'target-arrow-color': '#8b5cf6',
-                'width': 2,
+                'line-color': '#a08be8',
+                'target-arrow-color': '#a08be8',
+                'width': 1.8,
                 'arrow-scale': 1.2,
-                'opacity': 0.7,
+                'opacity': 0.58,
                 'label': 'data(label)',
                 'font-size': '18px',
-                'color': '#8b5cf6',
+                'color': '#a08be8',
                 'text-background-opacity': 0,
                 'text-border-opacity': 0,
                 'z-index': 998
@@ -2548,7 +2542,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             style: {
                 'background-color': colors.nodeBackgroundSelected,
                 'border-color': colors.nodeBorderSelected,
-                'border-width': '3px',
+                'border-width': '2.5px',
                 'border-opacity': 0.90,
                 'color': '#ffffff'
             } as any
@@ -2565,7 +2559,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 // 保持自由节点原有半透明视觉：边框不显色
                 'border-opacity': 0,
                 'border-color': 'transparent',
-                'corner-radius': '24px',
+                'corner-radius': '10px',
             } as any
         },
         // 自由节点选中态：与普通节点保持一致（覆盖 isStandaloneText 选中样式）
@@ -2621,9 +2615,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
         {
             selector: 'node[?isCurrentFile]',
             style: {
-                'background-color': '#1e3a5f',
-                'border-color': '#2a4f7a',
-                'border-width': '3px',
+                'background-color': '#253b58',
+                'border-color': '#5da6ff',
+                'border-width': '2.5px',
                 'font-weight': '600'
             } as any
         },

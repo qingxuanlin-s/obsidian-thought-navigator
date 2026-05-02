@@ -661,9 +661,8 @@ export class ZKIndexView extends FileView {
 
         // 项目徽章(默认隐藏,加载 MOC 后根据 isProject 决定显示)
         const projectBadge = mocChip.createSpan("zk-chip-project-badge");
-        projectBadge.setText("📐");
-        projectBadge.style.cssText = "margin-left: 4px; font-size: 11px; display: none;";
-        projectBadge.setAttribute("title", "项目");
+        setIcon(projectBadge, "ruler");
+        setTooltip(projectBadge, "项目");
 
         // 获取当前MOC名称
         const currentMOCPath = this.plugin.settings.mocCurrentFile;
@@ -6785,7 +6784,7 @@ cy.fit(null, 40);
     private refreshProjectBadge(mocPath: string | null | undefined): void {
         if (!this.mocChipProjectBadge) return;
         const mounted = !!(mocPath && this.plugin.vaultIndex?.isMocMounted(mocPath));
-        this.mocChipProjectBadge.style.display = mounted ? "inline" : "none";
+        this.mocChipProjectBadge.style.display = mounted ? "inline-flex" : "none";
     }
 
     private normalizeNodeLayoutStyle(
