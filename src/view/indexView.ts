@@ -3544,8 +3544,9 @@ cy.fit(null, 40);
             });
 
             if (hasMultiple) {
-                const chevron = segWrap.createSpan("zk-level-chevron");
-                chevron.setText("\u25BE");
+                // 兄弟切换图标用 chevrons-up-down (↕),与工具栏 chevron-down (▾) 视图切换语义区分
+                const chevron = segWrap.createSpan("zk-level-chevron zk-level-sib");
+                setIcon(chevron, "chevrons-up-down");
                 chevron.setAttribute("title", `切换其他兄弟节点（共 ${siblings.length} 个）`);
                 chevron.addEventListener("click", (e) => {
                     e.stopPropagation();

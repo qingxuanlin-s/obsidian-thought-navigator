@@ -7,6 +7,7 @@ import { Component, MarkdownRenderer, Notice, Platform, setIcon } from 'obsidian
 import { t } from 'src/lang/helper';
 import { EmbeddableMarkdownEditor } from 'src/utils/EmbeddableMarkdownEditor';
 import { isMocPath, stripMocSuffix } from 'src/utils/utils';
+import { Minimap } from './Minimap';
 
 // 处理 CommonJS 和 ESM 模块的兼容性
 const getCytoscape = (): any => {
@@ -114,6 +115,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private isEdgeSelected = false; // 标记当前是否有选中的边（边编辑模式）
     private embedPreviewCleanup: (() => void) | null = null;
     private imagePreviewCleanup: (() => void) | null = null;
+    private minimap: Minimap | null = null;
     // 追踪正在进行中的 overlay 拖拽/缩放操作，确保 destroy() 时能中止挂在 document 上的监听器
     private activeOverlayDragAborters: Set<AbortController> = new Set();
     // 缓存已渲染的预览卡片 DOM，避免重建时 excalidraw/markdown 内容闪烁
@@ -763,6 +765,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 this.activeAlignmentOverlay = null;
                 this.boxSelectionElement?.remove();
                 this.boxSelectionElement = null;
+                if (this.minimap) {
+                    this.minimap.destroy();
+                    this.minimap = null;
+                }
                 this.cy.destroy();
                 this.cy = null;
             }
@@ -815,6 +821,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 this.addNodeBadges();
                 if (this.isReadOnlyMode()) {
                     this.hideBatchToolbar();
+                }
+                // Minimap —— 浮在画布右下角的缩略导航(exportMode 下不创建)
+                if (this.cy && this.container) {
+                    this.minimap = new Minimap(this.container, this.cy);
                 }
             }
 
@@ -973,6 +983,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             this.addNodeBadges();
             this.addEmbedNodePreviews();
             this.addImageNodePreviews();
+            this.minimap?.refresh();
         }
 
         // 运行布局
@@ -1185,6 +1196,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
         this.cleanupBadgeInteractionBindings();
         this.cleanupOverlayScheduler();
         this.overlayListenerBound = false;
+        if (this.minimap) {
+            this.minimap.destroy();
+            this.minimap = null;
+        }
 
         // 中止所有挂在 document 上、尚未释放的 overlay 拖拽/缩放监听器
         for (const ctrl of this.activeOverlayDragAborters) {
@@ -2321,7 +2336,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         nodeBorderSelected: '#0066cc',
         nodeText: '#333333',
         nodeTextMuted: '#666666',
-        edgeNormal: '#999999',
+        edgeNormal: '#7d8597',  // 抬亮:在浅底上更可见,但不抢戏
         edgeForward: '#60a5fa',  // 淡蓝色
         edgeReverse: '#dc2626',
         edgeSelected: '#7c3aed',
@@ -2338,7 +2353,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         nodeBorderSelected: '#5b8fd9',
         nodeText: '#ffffff',
         nodeTextMuted: '#94a3b8',
-        edgeNormal: '#4a5568',
+        edgeNormal: '#7c8aa3',  // 从 #4a5568 抬亮 —— 暗底上也能看清"连接"
         edgeForward: '#5b8fd9',
         edgeReverse: '#ef4444',
         edgeSelected: '#7c3aed',
@@ -2829,20 +2844,33 @@ export class CytoscapeRenderer implements IGraphRenderer {
             } as any
         },
         // 根节点 -> 1级节点：主干连线突出，但不过度抢占画布
+        // 让"连接"成为主角:用比 edgeNormal 更亮的色,与节点紫色调呼应
         {
             selector: 'edge[?isRootToFirstLevel]',
             style: {
                 'width': this.ROOT_TO_FIRST_LEVEL_EDGE_WIDTH,
                 'opacity': this.ROOT_TO_FIRST_LEVEL_EDGE_OPACITY,
+                'line-color': isLight ? '#94a4c8' : '#9aa5c8',
+                'target-arrow-color': isLight ? '#94a4c8' : '#9aa5c8',
                 'arrow-scale': 1.45,
                 'z-index': 1001
             } as any
         },
+        // 当前选中分支的主干边:渐变高光 + 微发光,作为视觉锚点
         {
             selector: 'edge.zk-active-root-branch-edge[?isRootToFirstLevel]',
             style: {
                 'opacity': this.ACTIVE_ROOT_TO_FIRST_LEVEL_EDGE_OPACITY,
-                'arrow-scale': 1.5,
+                'line-fill': 'linear-gradient',
+                'line-gradient-stop-colors': isLight
+                    ? '#7c6cdf #b696ff'
+                    : '#8a78e8 #c8a8ff',
+                'line-gradient-stop-positions': '0 100',
+                'target-arrow-color': isLight ? '#b696ff' : '#c8a8ff',
+                'arrow-scale': 1.55,
+                'overlay-color': isLight ? '#b696ff' : '#c8a8ff',
+                'overlay-opacity': 0.10,
+                'overlay-padding': 4,
                 'z-index': 1002
             } as any
         },
@@ -2855,6 +2883,19 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 'width': 3,
                 'opacity': 1,
                 'z-index': 1002
+            } as any
+        },
+        // 锚点节点 —— 金光从节点本体散发出来,不再仅靠角标贴纸
+        // 用 underlay 在节点下方画一层金色光晕,与现有 ★ badge 共同构成"被锚定"的双重信号
+        {
+            selector: 'node[?isAnchor][!isGroup][!isPlaceholder]',
+            style: {
+                'underlay-color': '#f5dc68',
+                'underlay-opacity': 0.18,
+                'underlay-padding': 8,
+                'underlay-shape': 'round-rectangle',
+                'border-color': 'rgba(216, 197, 119, 0.78)',
+                'border-opacity': 0.95
             } as any
         },
         // 节点悬停状态
