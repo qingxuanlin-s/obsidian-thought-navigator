@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>锐评 · Thought Tree Navigator v0.0.6</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Sans+SC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+    --bg:           oklch(14% .005 250);
+    --bg-raised:    oklch(18% .008 250);
+    --bg-elev:      oklch(22% .010 250);
+    --bg-inset:     oklch(11% .006 250);
+    --text:         oklch(94% .008 85);
+    --text-muted:   oklch(68% .010 85);
+    --text-dim:     oklch(48% .010 85);
+    --border:       oklch(26% .008 250);
+    --border-soft:  oklch(22% .006 250);
+    --border-strong:oklch(38% .010 250);
+
+    --good:         oklch(72% .12 150);
+    --warn:         oklch(78% .14 80);
+    --bad:          oklch(70% .17 30);
+    --hot:          oklch(68% .19 20);
+    --info:         oklch(72% .10 220);
+
+    --accent:       oklch(72% .17 38);
+    --accent-dim:   oklch(40% .12 38);
+
+    --space-1:  4px;
+    --space-2:  8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --space-6: 32px;
+    --space-7: 48px;
+    --space-8: 64px;
+    --space-9: 96px;
+
+    --serif: 'Source Serif 4', 'Noto Serif SC', ui-serif, Georgia, serif;
+    --sans:  'IBM Plex Sans', 'IBM Plex Sans SC', 'PingFang SC', sans-serif;
+    --mono:  'JetBrains Mono', 'SF Mono', ui-monospace, Consolas, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.65;
+    text-wrap: pretty;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: 'ss01' on, 'cv01' on;
+}
+
+.shell {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: clamp(32px, 5vw, 96px) clamp(20px, 4vw, 64px);
+}
+
+/* ============ HEADER ============ */
+.kicker {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: var(--space-7);
+}
+.kicker .dot {
+    width: 6px; height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+}
+.kicker .meta { margin-left: auto; }
+
+.hero-title {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: clamp(64px, 11vw, 160px);
+    line-height: .92;
+    letter-spacing: -.03em;
+    color: var(--text);
+    margin-bottom: var(--space-4);
+}
+.hero-title em {
+    font-style: italic;
+    font-weight: 400;
+    color: var(--accent);
+}
+
+.hero-sub {
+    font-family: var(--serif);
+    font-size: clamp(20px, 2.4vw, 28px);
+    color: var(--text-muted);
+    font-weight: 400;
+    max-width: 720px;
+    margin-bottom: var(--space-9);
+    line-height: 1.4;
+}
+
+/* ============ HERO STAT ============ */
+.hero-stat {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: var(--space-7);
+    align-items: end;
+    padding: var(--space-7) 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: var(--space-9);
+}
+.hero-stat .number {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: clamp(96px, 18vw, 240px);
+    line-height: .85;
+    letter-spacing: -.045em;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+}
+.hero-stat .desc {
+    text-align: right;
+    max-width: 320px;
+}
+.hero-stat .desc .file {
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--text-muted);
+    margin-bottom: var(--space-2);
+}
+.hero-stat .desc .label {
+    font-family: var(--serif);
+    font-size: 22px;
+    line-height: 1.3;
+    color: var(--text);
+    margin-bottom: var(--space-3);
+}
+.hero-stat .desc .pct {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    letter-spacing: .05em;
+}
+
+/* ============ SECTION ============ */
+.section {
+    margin-bottom: var(--space-9);
+}
+.section-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-4);
+    margin-bottom: var(--space-7);
+    padding-bottom: var(--space-4);
+    border-bottom: 1px solid var(--border-soft);
+}
+.section-num {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-dim);
+    letter-spacing: .08em;
+}
+.section-title {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: clamp(32px, 5vw, 56px);
+    line-height: 1.05;
+    letter-spacing: -.02em;
+    color: var(--text);
+}
+.section-tag {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: .1em;
+}
+
+/* ============ STAT GRID ============ */
+.stat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--border-soft);
+    border: 1px solid var(--border-soft);
+}
+.stat {
+    background: var(--bg);
+    padding: var(--space-6) var(--space-5);
+    transition: background .25s ease;
+}
+.stat:hover { background: var(--bg-raised); }
+.stat .v {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: clamp(40px, 5vw, 64px);
+    line-height: 1;
+    letter-spacing: -.03em;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    margin-bottom: var(--space-3);
+}
+.stat .v.warn { color: var(--warn); }
+.stat .v.bad  { color: var(--bad); }
+.stat .v.hot  { color: var(--hot); }
+.stat .l {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: var(--space-2);
+}
+.stat .h {
+    font-family: var(--sans);
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+@media (max-width: 800px) {
+    .stat-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ============ PROS ============ */
+.pros {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-5);
+}
+.pro {
+    background: var(--bg-raised);
+    border-left: 2px solid var(--good);
+    padding: var(--space-6);
+    transition: transform .3s ease, background .3s ease;
+}
+.pro:hover {
+    background: var(--bg-elev);
+    transform: translateY(-2px);
+}
+.pro .pro-num {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--good);
+    letter-spacing: .12em;
+    margin-bottom: var(--space-3);
+}
+.pro .pro-title {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: 22px;
+    color: var(--text);
+    margin-bottom: var(--space-3);
+    line-height: 1.25;
+}
+.pro .pro-body {
+    font-size: 14.5px;
+    color: var(--text-muted);
+    line-height: 1.65;
+}
+.pro .pro-body code {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    background: var(--bg-inset);
+    padding: 2px 6px;
+    color: var(--text);
+}
+@media (max-width: 800px) { .pros { grid-template-columns: 1fr; } }
+
+/* ============ CRITIQUE ============ */
+.crit {
+    border-top: 1px solid var(--border-soft);
+}
+.crit-item {
+    display: grid;
+    grid-template-columns: 80px 100px 1fr;
+    gap: var(--space-5);
+    padding: var(--space-7) 0;
+    border-bottom: 1px solid var(--border-soft);
+    align-items: start;
+}
+.crit-item:hover .crit-num { color: var(--accent); }
+.crit-num {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 56px;
+    line-height: 1;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+    transition: color .3s ease;
+}
+.severity {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    padding: 5px 10px;
+    border: 1px solid;
+    align-self: start;
+    white-space: nowrap;
+}
+.severity.high { color: var(--hot); border-color: var(--hot); }
+.severity.med  { color: var(--warn); border-color: var(--warn); }
+.severity.low  { color: var(--info); border-color: var(--info); }
+.severity.obs  { color: var(--text-dim); border-color: var(--text-dim); }
+
+.crit-body h3 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: 26px;
+    line-height: 1.25;
+    color: var(--text);
+    margin-bottom: var(--space-4);
+    letter-spacing: -.01em;
+}
+.crit-body p {
+    font-size: 15px;
+    color: var(--text-muted);
+    line-height: 1.7;
+    margin-bottom: var(--space-3);
+    max-width: 620px;
+}
+.crit-body p:last-child { margin-bottom: 0; }
+.crit-body code {
+    font-family: var(--mono);
+    font-size: 13px;
+    background: var(--bg-inset);
+    padding: 2px 6px;
+    color: var(--text);
+}
+.crit-body .verdict {
+    font-family: var(--serif);
+    font-style: italic;
+    color: var(--accent);
+    font-size: 16px;
+    border-left: 2px solid var(--accent-dim);
+    padding-left: var(--space-4);
+    margin-top: var(--space-4);
+}
+@media (max-width: 800px) {
+    .crit-item {
+        grid-template-columns: 1fr;
+        gap: var(--space-3);
+    }
+    .crit-num { font-size: 36px; }
+}
+
+/* ============ MATRIX ============ */
+.matrix-wrap {
+    background: var(--bg-raised);
+    padding: var(--space-7);
+    border: 1px solid var(--border-soft);
+}
+.matrix {
+    position: relative;
+    aspect-ratio: 16/9;
+    background:
+        linear-gradient(to right, transparent 49.5%, var(--border) 49.5%, var(--border) 50.5%, transparent 50.5%),
+        linear-gradient(to bottom, transparent 49.5%, var(--border) 49.5%, var(--border) 50.5%, transparent 50.5%);
+    border: 1px solid var(--border-strong);
+}
+.axis-y, .axis-x {
+    position: absolute;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+}
+.axis-y.top { top: var(--space-3); left: -8px; transform: rotate(-90deg); transform-origin: 0 0; }
+.axis-y.bot { bottom: -8px; left: -8px; transform: rotate(-90deg); transform-origin: 0 100%; white-space: nowrap; }
+.axis-x.left  { bottom: -24px; left: var(--space-3); }
+.axis-x.right { bottom: -24px; right: var(--space-3); }
+
+.quad-label {
+    position: absolute;
+    font-family: var(--serif);
+    font-size: 13px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    font-weight: 500;
+}
+.q-tl { top: 12px; left: 16px; }
+.q-tr { top: 12px; right: 16px; color: var(--accent); }
+.q-bl { bottom: 12px; left: 16px; }
+.q-br { bottom: 12px; right: 16px; }
+
+.dot-item {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    cursor: default;
+}
+.dot-item .dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 4px oklch(72% .17 38 / .15);
+    transition: transform .25s ease, box-shadow .25s ease;
+}
+.dot-item:hover .dot {
+    transform: scale(1.4);
+    box-shadow: 0 0 0 8px oklch(72% .17 38 / .25);
+}
+.dot-item .lbl {
+    position: absolute;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    font-family: var(--sans);
+    font-size: 12px;
+    color: var(--text);
+    background: var(--bg-inset);
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+}
+.dot-item.muted .dot {
+    background: var(--text-dim);
+    box-shadow: 0 0 0 4px oklch(48% .010 85 / .1);
+}
+
+.matrix-legend {
+    margin-top: var(--space-7);
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--space-5);
+}
+.matrix-legend .col h4 {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    color: var(--text);
+    margin-bottom: var(--space-3);
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--border);
+}
+.matrix-legend .col h4.hi { color: var(--accent); }
+.matrix-legend .col p {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.55;
+    margin-bottom: var(--space-2);
+}
+@media (max-width: 800px) {
+    .matrix-legend { grid-template-columns: repeat(2, 1fr); }
+    .dot-item .lbl { font-size: 10px; }
+}
+
+/* ============ NEXT STEPS ============ */
+.steps {
+    counter-reset: step;
+}
+.step {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: var(--space-5);
+    padding: var(--space-5) 0;
+    border-bottom: 1px solid var(--border-soft);
+    align-items: baseline;
+}
+.step::before {
+    counter-increment: step;
+    content: counter(step, decimal-leading-zero);
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--accent);
+    letter-spacing: .05em;
+}
+.step .what {
+    font-family: var(--serif);
+    font-size: 20px;
+    color: var(--text);
+    line-height: 1.35;
+}
+.step .what em {
+    font-style: italic;
+    color: var(--text-muted);
+    font-size: 15px;
+    display: block;
+    font-family: var(--sans);
+    margin-top: 4px;
+}
+.step .when {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    color: var(--text-dim);
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    white-space: nowrap;
+}
+
+/* ============ FOOTER ============ */
+.footer {
+    margin-top: var(--space-9);
+    padding-top: var(--space-6);
+    border-top: 1px solid var(--border-soft);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: .08em;
+}
+.footer .sig {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 14px;
+    color: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+</style>
+</head>
+<body>
+
+<main class="shell">
+
+<div class="kicker">
+    <span class="dot"></span>
+    <span>Code Audit · Editorial Review</span>
+    <span class="meta">2026·05·01</span>
+</div>
+
+<h1 class="hero-title">锐评<em>。</em></h1>
+<p class="hero-sub">
+    一份对 <span style="color:var(--text)">Thought Tree Navigator v0.0.6</span> 的代码与架构审查 ——
+    赞美你做对的,也直说哪里在埋雷。
+</p>
+
+<div class="hero-stat">
+    <div class="number">12,739</div>
+    <div class="desc">
+        <div class="file">src/renderer/CytoscapeRenderer.ts</div>
+        <div class="label">单文件行数 / 618 个方法签名</div>
+        <div class="pct">— 占整个代码库 38%</div>
+    </div>
+</div>
+
+<!-- ============================================== -->
+<!-- 数据快照                                       -->
+<!-- ============================================== -->
+<section class="section">
+    <header class="section-head">
+        <span class="section-num">01</span>
+        <h2 class="section-title">数据快照</h2>
+        <span class="section-tag">FACTS, NOT OPINIONS</span>
+    </header>
+
+    <div class="stat-grid">
+        <div class="stat">
+            <div class="v">33,759</div>
+            <div class="l">total LOC</div>
+            <div class="h">src/ 加 main.ts 的总行数。</div>
+        </div>
+        <div class="stat">
+            <div class="v hot">12,739</div>
+            <div class="l">single file max</div>
+            <div class="h">CytoscapeRenderer.ts —— 一个文件占了 38%。</div>
+        </div>
+        <div class="stat">
+            <div class="v warn">7,837</div>
+            <div class="l">2nd biggest</div>
+            <div class="h">indexView.ts —— 主 MOC 编辑器,171 个方法。</div>
+        </div>
+        <div class="stat">
+            <div class="v">5</div>
+            <div class="l">view types</div>
+            <div class="h">Index / Graph / Table / Outline / Recent。</div>
+        </div>
+        <div class="stat">
+            <div class="v">9</div>
+            <div class="l">runtime deps</div>
+            <div class="h">含 cytoscape + dagre + cose-bilkent + elkjs + d3。</div>
+        </div>
+        <div class="stat">
+            <div class="v">40+</div>
+            <div class="l">settings fields</div>
+            <div class="h">ZKNavigationSettings 接口字段数。</div>
+        </div>
+        <div class="stat">
+            <div class="v bad">0</div>
+            <div class="l">test cases</div>
+            <div class="h">无测试文件,无测试依赖。</div>
+        </div>
+        <div class="stat">
+            <div class="v">0</div>
+            <div class="l">TODO / FIXME</div>
+            <div class="h">这本身就是一个信号 —— 见 #08。</div>
+        </div>
+    </div>
+</section>
+
+<!-- ============================================== -->
+<!-- 优点                                           -->
+<!-- ============================================== -->
+<section class="section">
+    <header class="section-head">
+        <span class="section-num">02</span>
+        <h2 class="section-title">做对的事</h2>
+        <span class="section-tag">CREDIT WHERE DUE</span>
+    </header>
+
+    <div class="pros">
+        <article class="pro">
+            <div class="pro-num">SAFE 01 ─ 数据流</div>
+            <h3 class="pro-title">单一突变入口</h3>
+            <p class="pro-body">
+                所有 MOC 修改都走 <code>MOCHandler.modifyMOCData()</code> ——
+                深拷贝 → 回调 → 序列化 → 写盘。
+                这种"漏斗"结构让数据流可推理:任何 bug 都能在一个函数边界内复现。
+                这是整个项目最值钱的设计决策。
+            </p>
+        </article>
+
+        <article class="pro">
+            <div class="pro-num">SAFE 02 ─ 存储格式</div>
+            <h3 class="pro-title">Mermaid 即可视化</h3>
+            <p class="pro-body">
+                把 MOC 存成 <code>```mermaid</code> 代码块 ——
+                Obsidian 原生渲染、GitHub 直接看图、纯文本可 diff。
+                文件本身就是它的"预览图",这是真正聪明的设计妥协。
+            </p>
+        </article>
+
+        <article class="pro">
+            <div class="pro-num">SAFE 03 ─ 性能</div>
+            <h3 class="pro-title">反向索引 + 增量更新</h3>
+            <p class="pro-body">
+                <code>notePath → MOCLocation[]</code> 内存索引让
+                "这条笔记出现在哪些 MOC"是 O(1) 查询。
+                增量更新而非全量重建 —— 扩展性可以撑得住。
+            </p>
+        </article>
+
+        <article class="pro">
+            <div class="pro-num">SAFE 04 ─ 解耦</div>
+            <h3 class="pro-title">View 之间用事件交流</h3>
+            <p class="pro-body">
+                五个 ItemView 通过 <code>refresh-local-graph</code> 等命名事件交互,
+                不持有彼此引用。Obsidian 风格,符合直觉,
+                未来加新 view 不会导致级联修改。
+            </p>
+        </article>
+    </div>
+</section>
+
+<!-- ============================================== -->
+<!-- 锐评                                           -->
+<!-- ============================================== -->
+<section class="section">
+    <header class="section-head">
+        <span class="section-num">03</span>
+        <h2 class="section-title">锐评。</h2>
+        <span class="section-tag">UNVARNISHED</span>
+    </header>
+
+    <div class="crit">
+
+        <article class="crit-item">
+            <div class="crit-num">01</div>
+            <div><span class="severity high">严重</span></div>
+            <div class="crit-body">
+                <h3>CytoscapeRenderer.ts 是核反应堆级别的 God Class</h3>
+                <p>
+                    <strong>12,739 行 / 618 个方法签名 / 占代码库 38%</strong> ——
+                    你已经触碰了人类记忆无法容纳单文件的天花板。
+                </p>
+                <p>
+                    继续在这个文件里改任何东西,本质都是"我希望我没有破坏什么"的赌博。
+                    它至少应该被劈成 6–8 个文件:
+                    <code>events</code> · <code>layout-adapter</code> · <code>embed-preview</code> ·
+                    <code>edge-controls</code> · <code>overlay-drag</code> ·
+                    <code>embed-card-cache</code> · <code>inline-editor</code>。
+                </p>
+                <div class="verdict">不重构,后面每加一个功能都会越来越慢。</div>
+            </div>
+        </article>
+
+        <article class="crit-item">
+            <div class="crit-num">02</div>
+            <div><span class="severity high">严重</span></div>
+            <div class="crit-body">
+                <h3>0 测试 + 33K 行 = 倒计时炸弹</h3>
+                <p>
+                    解析器 + 序列化器 + 撤销 + 缓存 + 增量布局 + 跨域链接 ——
+                    这些都是"你以为它好了,直到下次重构才发现它一直坏"的典型模块。
+                </p>
+                <p>
+                    <code>MermaidParser.clearCacheForFile()</code> 那个同秒写入 mtime 缓存命中陈旧值的坑,
+                    就是个早期警告 —— 你已经在裸奔时被绊过一次了。
+                </p>
+                <div class="verdict">最高 ROI 的一项投入:写 parse → serialize → parse 等价测试。一周内能搞出来,十年内会持续救命。</div>
+            </div>
+        </article>
+
+        <article class="crit-item">
+            <div class="crit-num">03</div>
+            <div><span class="severity med">中</span></div>
+            <div class="crit-body">
+                <h3>%% ext:{JSON} %% 是穿着注释外衣的并行数据库</h3>
+                <p>
+                    你用一个看似"附属注释"的字段,塞进了
+                    <em>节点位置 / 颜色 / 分组 / 边曲率 / 嵌入尺寸 / 备注 / 布局风格</em> ——
+                    这已经远超"元数据"的体量,是一个完整的状态文件。
+                </p>
+                <p>
+                    它寄生在 Mermaid 块尾巴上,随时可能被外部编辑器手抖删掉,
+                    没有 schema 版本,没有合并冲突的语义。中间态最危险。
+                </p>
+                <div class="verdict">两条路选一条:① ext 移到 sidecar `.moc.json`;② 全量 JSON,Mermaid 降级为渲染产物。</div>
+            </div>
+        </article>
+
+        <article class="crit-item">
+            <div class="crit-num">04</div>
+            <div><span class="severity med">中</span></div>
+            <div class="crit-body">
+                <h3>三个布局引擎 = 选择困难症的具象化</h3>
+                <p>
+                    <code>dagre</code> + <code>cose-bilkent</code> + <code>elkjs</code> + <code>d3</code> + 又重复出现的 <code>dagre</code>。
+                    为了"灵活性"你付出了:bundle 体积、布局结果不一致、用户教学成本。
+                </p>
+                <p>
+                    Obsidian 插件体积是有口碑成本的,
+                    <code>"isDesktopOnly": false</code> 还得考虑移动端 ——
+                    这套依赖在 iPad 上加载会很难看。
+                </p>
+                <div class="verdict">挑一个做主力(我赌 ELK),其他做实验性 opt-in,别都默认进 bundle。</div>
+            </div>
+        </article>
+
+        <article class="crit-item">
+            <div class="crit-num">05</div>
+            <div><span class="severity med">中</span></div>
+            <div class="crit-body">
+                <h3>Undo 在内存里,且只有 7 步</h3>
+                <p>
+                    重启 Obsidian 一次,撤销栈清零。
+                    深度 7 在长操作会话里几乎注定触底 ——
+                    用户改了 8 个节点想撤销到一开始,会发现回不去了。
+                </p>
+                <p>
+                    且存的是<em>原始文件全文</em>而不是 patch,内存压力还不小。
+                </p>
+                <div class="verdict">持久化到 IndexedDB,深度提到 30,改存 patch。这是"用户感知"层面 ROI 最高的改动。</div>
+            </div>
+        </article>
+
+        <article class="crit-item">
+            <div class="crit-num">06</div>
+            <div><span class="severity low">轻</span></div>
+            <div class="crit-body">
+                <h3>ID 命名有三套互不相通的体系</h3>
+                <p>
+                    <code>cd-xxx</code>(跨域) · <code>placeholder-xxx</code>(占位) ·
+                    <code>free.1</code>(自由节点) · <code>a.1.b</code>(常规 Luhmann)。
+                    每加一种特殊节点就再发明一个 ID 前缀,字符串解析散布在多处。
+                </p>
+                <p>
+                    类型系统能帮你管住:
+                    <code>type NodeId = LuhmannId | FreeId | CrossDomainId | PlaceholderId</code>。
+                </p>
+                <div class="verdict">下次因为前缀字符串拼错而调试半小时,你会想起这条。</div>
+            </div>
+        </article>
+
+        <article class="crit-item">
+            <div class="crit-num">07</div>
+            <div><span class="severity low">轻</span></div>
+            <div class="crit-body">
+                <h3>ext JSON 没有 schemaVersion</h3>
+                <p>
+                    当你下次给 ext 加字段,旧版本插件遇到新文件会怎么处理?
+                    新版本插件遇到旧文件会怎么处理?目前都是"祈祷一下不出事"。
+                </p>
+                <p>
+                    一个 <code>schemaVersion: 2</code> 字段 + 一个 noop 迁移函数,
+                    就是 5 行代码换十年安心。
+                </p>
+                <div class="verdict">现在加便宜,等用户数据散落出去之后再加,代价指数级上升。</div>
+            </div>
+        </article>
+
+        <article class="crit-item">
+            <div class="crit-num">08</div>
+            <div><span class="severity obs">观察</span></div>
+            <div class="crit-body">
+                <h3>0 个 TODO / FIXME 注释 —— 这反而可疑</h3>
+                <p>
+                    要么你是宇宙级自律的开发者,
+                    要么"已知不完美但还没空修"的部分都散落在你脑子里 ——
+                    脑子里的 TODO 会忘。
+                </p>
+                <p>
+                    建议建立一个 <code>docs/known-issues.md</code> 或允许在代码里写
+                    <code>// TODO(name): ...</code>。当你从这个项目离开三个月再回来,
+                    你会感谢那时候肯写下来的自己。
+                </p>
+                <div class="verdict">代码注释不是污渍 —— 在合适的地方,它们是给未来的你的便利贴。</div>
+            </div>
+        </article>
+
+    </div>
+</section>
+
+<!-- ============================================== -->
+<!-- 影响 / 成本 矩阵                              -->
+<!-- ============================================== -->
+<section class="section">
+    <header class="section-head">
+        <span class="section-num">04</span>
+        <h2 class="section-title">怎么排序</h2>
+        <span class="section-tag">IMPACT × EFFORT</span>
+    </header>
+
+    <div class="matrix-wrap">
+        <div style="position: relative; padding: 32px 32px 56px 56px;">
+            <div class="matrix">
+                <div class="quad-label q-tl">Quick Wins</div>
+                <div class="quad-label q-tr">Big Bets</div>
+                <div class="quad-label q-bl">Fillers</div>
+                <div class="quad-label q-br">Question Marks</div>
+
+                <!-- Quick Wins (top-left) -->
+                <div class="dot-item" style="top: 18%; left: 16%;">
+                    <div class="dot"></div>
+                    <div class="lbl">round-trip 测试</div>
+                </div>
+                <div class="dot-item" style="top: 30%; left: 25%;">
+                    <div class="dot"></div>
+                    <div class="lbl">ext.schemaVersion</div>
+                </div>
+                <div class="dot-item" style="top: 42%; left: 18%;">
+                    <div class="dot"></div>
+                    <div class="lbl">类型化 ID 系统</div>
+                </div>
+                <div class="dot-item" style="top: 26%; left: 38%;">
+                    <div class="dot"></div>
+                    <div class="lbl">持久化撤销</div>
+                </div>
+
+                <!-- Big Bets (top-right) -->
+                <div class="dot-item" style="top: 16%; left: 78%;">
+                    <div class="dot"></div>
+                    <div class="lbl">拆分 CytoscapeRenderer</div>
+                </div>
+                <div class="dot-item" style="top: 30%; left: 68%;">
+                    <div class="dot"></div>
+                    <div class="lbl">拆分 indexView</div>
+                </div>
+                <div class="dot-item" style="top: 42%; left: 80%;">
+                    <div class="dot"></div>
+                    <div class="lbl">ext 移到 sidecar</div>
+                </div>
+
+                <!-- Fillers (bottom-left) -->
+                <div class="dot-item muted" style="top: 70%; left: 22%;">
+                    <div class="dot"></div>
+                    <div class="lbl">缩减布局引擎</div>
+                </div>
+                <div class="dot-item muted" style="top: 82%; left: 32%;">
+                    <div class="dot"></div>
+                    <div class="lbl">settings 分组</div>
+                </div>
+                <div class="dot-item muted" style="top: 75%; left: 12%;">
+                    <div class="dot"></div>
+                    <div class="lbl">bundle audit</div>
+                </div>
+
+                <!-- Question Marks (bottom-right) -->
+                <div class="dot-item muted" style="top: 78%; left: 76%;">
+                    <div class="dot"></div>
+                    <div class="lbl">换图渲染库</div>
+                </div>
+                <div class="dot-item muted" style="top: 88%; left: 88%;">
+                    <div class="dot"></div>
+                    <div class="lbl">重写为 web component</div>
+                </div>
+
+                <div class="axis-y top">↑ 影响大</div>
+                <div class="axis-y bot">影响小 ↓</div>
+                <div class="axis-x left">← 成本低</div>
+                <div class="axis-x right">成本高 →</div>
+            </div>
+        </div>
+
+        <div class="matrix-legend">
+            <div class="col">
+                <h4 class="hi">Quick Wins · 先做</h4>
+                <p>低成本、高影响。round-trip 测试 1 周内能搭起来,后续每次重构都会回报你。</p>
+            </div>
+            <div class="col">
+                <h4>Big Bets · 排进 roadmap</h4>
+                <p>需要一个完整 release cycle。拆分 CytoscapeRenderer 是其中最痛但最值的。</p>
+            </div>
+            <div class="col">
+                <h4>Fillers · 顺手做</h4>
+                <p>没人催但写起来轻松。等你需要 context-switch 休息一下时去做。</p>
+            </div>
+            <div class="col">
+                <h4>Question Marks · 暂缓</h4>
+                <p>大投入、不确定回报。在以上事项做完前不应启动。</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ============================================== -->
+<!-- 下一步                                         -->
+<!-- ============================================== -->
+<section class="section">
+    <header class="section-head">
+        <span class="section-num">05</span>
+        <h2 class="section-title">下一步</h2>
+        <span class="section-tag">PRIORITIZED</span>
+    </header>
+
+    <div class="steps">
+        <div class="step">
+            <div class="what">
+                给 Mermaid 解析器写 round-trip 测试
+                <em>选 3–5 个真实 MOC 文件作为 fixture,验证 parse → serialize → parse 等价。</em>
+            </div>
+            <div class="when">本周</div>
+        </div>
+        <div class="step">
+            <div class="what">
+                给 ext JSON 加 <code>schemaVersion</code> + noop 迁移函数
+                <em>5 行代码换以后所有迁移工作的可控性。</em>
+            </div>
+            <div class="when">本周</div>
+        </div>
+        <div class="step">
+            <div class="what">
+                把 CytoscapeRenderer 按职责拆成 6–8 个文件
+                <em>不改逻辑,纯抽离。事件 / 布局 / overlay / 嵌入 / 编辑各自独立。</em>
+            </div>
+            <div class="when">本月</div>
+        </div>
+        <div class="step">
+            <div class="what">
+                类型化所有节点 ID
+                <em>用判别联合替代字符串前缀,把分支从 if 字符串挪到类型系统。</em>
+            </div>
+            <div class="when">本月</div>
+        </div>
+        <div class="step">
+            <div class="what">
+                Undo 持久化到 IndexedDB,深度提到 30,改存 patch
+                <em>用户感知层面最直接的改善。</em>
+            </div>
+            <div class="when">下个 release</div>
+        </div>
+        <div class="step">
+            <div class="what">
+                评估 ext 是否搬到 <code>.moc.json</code> sidecar
+                <em>这是结构性决定,不要急,先把上面 5 步做完再说。</em>
+            </div>
+            <div class="when">未来</div>
+        </div>
+    </div>
+</section>
+
+<footer class="footer">
+    <span>Thought Tree Navigator · v0.0.6 · feature/folder-drawer-mvp</span>
+    <span class="sig">— 一份对未来的你的便利贴</span>
+</footer>
+
+</main>
+
+</body>
+</html>
