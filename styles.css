@@ -569,60 +569,78 @@ align-items: center;
 }
 
 /* ==================== 面包屑芯片导航 ==================== */
+/* 统一 design token —— 所有 chip 共用一套节奏(尺寸/圆角/字号/边框) */
 .zk-breadcrumb-nav {
+  --zk-chip-radius: 7px;
+  --zk-chip-padding-y: 4px;
+  --zk-chip-padding-x: 10px;
+  --zk-chip-gap: 6px;
+  --zk-chip-font-size: 12.5px;
+  --zk-chip-border: 1px solid rgba(148, 152, 184, 0.22);
+  --zk-chip-bg: rgba(255, 255, 255, 0.028);
+  --zk-chip-color: rgba(214, 216, 232, 0.82);
+  --zk-chip-bg-hover: rgba(255, 255, 255, 0.062);
+  --zk-chip-border-hover: rgba(170, 174, 210, 0.42);
+  --zk-chip-color-hover: #f1f2fa;
+  --zk-chip-accent: 138, 110, 230;        /* 主色 RGB(用于 filled / active) */
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   min-width: 0;
 }
 
+/* 分隔符 chevron —— 比之前更细更轻,与 chip 同行 baseline 对齐 */
 .zk-breadcrumb-sep {
-  color: rgba(180, 180, 205, 0.38);
-  font-size: 15px;
+  color: rgba(168, 172, 200, 0.32);
+  font-size: 12px;
+  font-weight: 400;
   user-select: none;
   line-height: 1;
+  margin: 0 1px;
+  transform: translateY(-0.5px);
 }
 
-/* 芯片基础样式 */
+/* 芯片基础样式 —— 所有变体共享 */
 .zk-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 11px;
-  border-radius: 9px;
-  font-size: 13px;
+  gap: var(--zk-chip-gap);
+  padding: var(--zk-chip-padding-y) var(--zk-chip-padding-x);
+  border-radius: var(--zk-chip-radius);
+  border: var(--zk-chip-border);
+  background: var(--zk-chip-bg);
+  color: var(--zk-chip-color);
+  font-size: var(--zk-chip-font-size);
   font-weight: 500;
+  letter-spacing: 0.01em;
   cursor: pointer;
-  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease, transform 0.14s ease;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
   user-select: none;
   white-space: nowrap;
   line-height: 1.4;
 }
 
-/* 描边芯片（主笔记、结构图） */
-.zk-chip-outlined {
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid rgba(150, 150, 190, 0.24);
-  color: rgba(210, 210, 228, 0.82);
+.zk-chip:hover {
+  background: var(--zk-chip-bg-hover);
+  border-color: var(--zk-chip-border-hover);
+  color: var(--zk-chip-color-hover);
 }
 
-.zk-chip-outlined:hover {
-  border-color: rgba(150, 150, 210, 0.45);
-  background: rgba(255, 255, 255, 0.06);
-  color: #f0f0ff;
-}
+/* 描边芯片 —— 直接继承基础(无须额外覆盖,保持视觉对齐) */
+.zk-chip-outlined { /* 兼容现有 className,样式由 .zk-chip 提供 */ }
 
-/* 填充芯片（MOC 选择器） */
+/* 填充芯片 —— 用同一组 token,只切换底色,圆角/边框/尺寸完全一致 */
 .zk-chip-filled {
-  background: linear-gradient(180deg, rgba(126, 92, 202, 0.92), rgba(95, 66, 158, 0.92));
-  border: 1px solid rgba(176, 146, 255, 0.48);
-  color: #f3ecff;
-  box-shadow: 0 4px 14px rgba(85, 58, 150, 0.24);
+  background: rgba(var(--zk-chip-accent), 0.16);
+  border-color: rgba(var(--zk-chip-accent), 0.42);
+  color: #ece6ff;
+  box-shadow: inset 0 0 0 1px rgba(var(--zk-chip-accent), 0.06);
 }
 
 .zk-chip-filled:hover {
-  background: linear-gradient(180deg, rgba(139, 105, 216, 0.96), rgba(104, 75, 172, 0.96));
-  border-color: rgba(196, 172, 255, 0.65);
+  background: rgba(var(--zk-chip-accent), 0.24);
+  border-color: rgba(var(--zk-chip-accent), 0.58);
+  color: #f4efff;
 }
 
 .zk-chip-project-badge {
@@ -657,10 +675,19 @@ align-items: center;
   line-height: 1;
 }
 
-/* 下拉芯片 */
+/* 下拉芯片 —— 虚线边表达"可切换"语义,与 outlined/filled 三层视觉差异化 */
 .zk-chip-dropdown {
   position: relative;
-  padding-right: 10px;
+  padding-right: 9px;
+  border-style: dashed;
+  border-color: rgba(148, 152, 184, 0.34);
+  color: rgba(196, 200, 220, 0.78);
+}
+
+.zk-chip-dropdown:hover {
+  border-style: solid;
+  border-color: rgba(178, 184, 220, 0.55);
+  color: var(--zk-chip-color-hover);
 }
 
 .zk-chip-chevron {
@@ -3606,18 +3633,27 @@ align-items: center;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
+  width: 16px;
   height: 18px;
-  font-size: 18px;
   color: rgba(150, 150, 200, 0.7);
   cursor: pointer;
   border-radius: 4px;
   transition: all 0.15s ease;
 }
 
+/* 兄弟切换 (chevrons-up-down) —— 暗示"水平切换",与下拉 chevron-down 区分 */
+.zk-level-chevron.zk-level-sib svg {
+  width: 11px;
+  height: 11px;
+}
+
 .zk-level-chevron:hover {
   background: rgba(120, 120, 200, 0.22);
   color: var(--text-normal);
+}
+
+.zk-level-chevron.zk-level-sib:hover {
+  color: rgba(155, 175, 230, 0.95);
 }
 
 .zk-level-drill {
@@ -4315,4 +4351,52 @@ align-items: center;
 
 .zk-moc-preview-error {
 	color: var(--text-error);
+}
+
+/* ==================== Minimap (缩略导航) ==================== */
+.zk-minimap {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  width: 148px;
+  height: 96px;
+  background: rgba(14, 18, 28, 0.78);
+  border: 1px solid rgba(150, 152, 184, 0.22);
+  border-radius: 6px;
+  backdrop-filter: blur(8px) saturate(140%);
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
+  z-index: 50;
+  overflow: hidden;
+  cursor: crosshair;
+  box-shadow: 0 8px 22px -10px rgba(0, 0, 0, 0.55);
+  user-select: none;
+  transition: border-color 0.18s ease, transform 0.25s ease;
+}
+
+.zk-minimap:hover {
+  border-color: rgba(170, 174, 210, 0.42);
+}
+
+.zk-minimap-canvas {
+  display: block;
+  pointer-events: none;
+}
+
+.zk-minimap-viewport {
+  position: absolute;
+  border: 1.5px solid rgba(170, 192, 240, 0.85);
+  background: rgba(140, 178, 240, 0.10);
+  border-radius: 2px;
+  pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3) inset;
+}
+
+.theme-light .zk-minimap {
+  background: rgba(248, 250, 254, 0.82);
+  border-color: rgba(120, 130, 160, 0.34);
+}
+
+.theme-light .zk-minimap-viewport {
+  border-color: rgba(80, 110, 180, 0.85);
+  background: rgba(80, 110, 180, 0.10);
 }
