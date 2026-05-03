@@ -1,12 +1,12 @@
 import * as cytoscapeNamespace from 'cytoscape';
 import * as dagreNamespace from 'cytoscape-dagre';
 import * as coseBilkentNamespace from 'cytoscape-cose-bilkent';
-import { IGraphRenderer, GraphData, RenderOptions, GraphChanges, ViewState, Edge } from './types';
+import { IGraphRenderer, GraphData, RenderOptions, GraphChanges, ViewState } from './types';
 import { ZKNode } from 'src/view/indexView';
 import { Component, MarkdownRenderer, Notice, Platform, setIcon } from 'obsidian';
 import { t } from 'src/lang/helper';
 import { EmbeddableMarkdownEditor } from 'src/utils/EmbeddableMarkdownEditor';
-import { isMocPath, stripMocSuffix } from 'src/utils/utils';
+import { isMocPath } from 'src/utils/utils';
 import { Minimap } from './Minimap';
 import { buildStylesheet } from './stylesheet';
 import * as layoutAdapter from './layoutAdapter';
@@ -17,15 +17,25 @@ import {
     applyPreviewHeaderLinkStyle,
     createSelectionColorPanel,
     darkenColor,
-    getBranchStylePalette,
     getPreviewCardTheme,
-    hashString,
     hexToRgba,
     isModernThemeStyle,
     lightenColor,
     normalizeHexColor,
-    softenColor,
 } from './colorUtils';
+import {
+    buildElementConversionContext,
+    buildWikiLinkForFile,
+    compensateFreeLikeNodeFrameSize,
+    convertEdgesToElements,
+    convertNodesToElements,
+    convertToElementsWithGroups,
+    escapeId,
+    estimateWrappedLines,
+    getMocPreviewPngCandidates,
+    getNodeLabel,
+    measureNodeLabel,
+} from './renderPipeline';
 
 // 处理 CommonJS 和 ESM 模块的兼容性
 const getCytoscape = (): any => {
@@ -45,46 +55,6 @@ const getCoseBilkent = (): any => {
 
 // 延迟注册扩展的标志
 let extensionsRegistered = false;
-
-/**
- * 自然比较 Luhmann ID
- * 例如: "a.11" > "a.9", "a.2.1" > "a.1.9"
- */
-function compareIds(id1: string, id2: string): number {
-    const parts1 = id1.split('.');
-    const parts2 = id2.split('.');
-
-    // 取两个数组长度的最大值，确保每一层都能比到
-    const maxLength = Math.max(parts1.length, parts2.length);
-
-    for (let i = 0; i < maxLength; i++) {
-        const p1 = parts1[i];
-        const p2 = parts2[i];
-
-        // 情况 1：id2 已经没有这一层级了（如 1.a.1 vs 1.a）
-        // 默认短的更小
-        if (p1 !== undefined && p2 === undefined) return 1;
-        if (p1 === undefined && p2 !== undefined) return -1;
-
-        // 情况 2：两个部分都有值，进行对比
-        // 使用 localeCompare 开启 numeric 模式，可以自动处理 '10' > '2' 的逻辑
-        const cmp = p1.localeCompare(p2, undefined, { numeric: true, sensitivity: 'base' });
-
-        if (cmp !== 0) {
-            return cmp > 0 ? 1 : -1;
-        }
-    }
-
-    return 0;
-}
-
-type NodeBranchStyle = { background: string; border: string; shadow: string };
-
-type ElementConversionContext = {
-    nodeStyleMap: Map<string, NodeBranchStyle>;
-    nodeById: Map<string, ZKNode>;
-    parentLinkedNodeIds: Set<string>;
-};
 
 // 注册布局扩展
 const registerExtensions = () => {
@@ -299,7 +269,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
         const hasSavedPositions = data.nodes.some(node => node.savedPosition);
 
         // 转换元素（包含分组）
-        const elements = this.convertToElementsWithGroups(data);
+        const elements = convertToElementsWithGroups(data, {
+            options: this.currentOptions,
+            edgeControlPoints: this.edgeControlPoints,
+            rootToFirstLevelEdgeWidth: this.ROOT_TO_FIRST_LEVEL_EDGE_WIDTH,
+        });
 
         // 如果没有 Cytoscape 实例或容器变化，需要完全重建
         if (!this.cy || containerChanged) {
@@ -586,7 +560,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         activeBranchIds.forEach((branchId) => {
-            const branchNode = this.cy!.$id(this.escapeId(branchId));
+            const branchNode = this.cy!.$id(escapeId(branchId));
             if (branchNode.length > 0) {
                 branchNode.addClass('zk-active-first-level-branch');
                 branchNode.connectedEdges('[?isRootToFirstLevel]').addClass('zk-active-root-branch-edge');
@@ -615,7 +589,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             if (changes.removedNodes.length > 0) {
                 // 检查是否删除了分组节点，如果是，先释放子节点
                 changes.removedNodes.forEach(node => {
-                    const nodeId = this.escapeId(node.ID);
+                    const nodeId = escapeId(node.ID);
                     const ele = this.cy!.$id(nodeId);
 
                     if (ele.length > 0 && ele.data('isGroup')) {
@@ -630,38 +604,45 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 });
 
                 // 现在可以安全地删除节点
-                const ids = changes.removedNodes.map(n => `#${this.escapeId(n.ID)}`).join(',');
+                const ids = changes.removedNodes.map(n => `#${escapeId(n.ID)}`).join(',');
                 this.cy!.remove(ids);
             }
 
             // 删除边
             if (changes.removedEdges.length > 0) {
-                const ids = changes.removedEdges.map(e => `#${this.escapeId(e.id)}`).join(',');
+                const ids = changes.removedEdges.map(e => `#${escapeId(e.id)}`).join(',');
                 this.cy!.remove(ids);
             }
 
             // 添加新节点
             if (changes.addedNodes.length > 0) {
-                this.cy!.add(this.convertNodesToElements(changes.addedNodes));
+                const context = buildElementConversionContext(this.currentData, this.currentOptions);
+                this.cy!.add(convertNodesToElements(changes.addedNodes, this.currentData, this.currentOptions, context));
             }
 
             // 添加新边
             if (changes.addedEdges.length > 0) {
-                this.cy!.add(this.convertEdgesToElements(changes.addedEdges));
+                const context = buildElementConversionContext(this.currentData, this.currentOptions);
+                this.cy!.add(convertEdgesToElements(
+                    changes.addedEdges,
+                    context,
+                    this.edgeControlPoints,
+                    this.ROOT_TO_FIRST_LEVEL_EDGE_WIDTH
+                ));
             }
 
             // 更新节点
             changes.updatedNodes.forEach(node => {
-                const ele = this.cy!.$id(this.escapeId(node.ID));
+                const ele = this.cy!.$id(escapeId(node.ID));
                 if (ele.length > 0) {
-                    ele.data('label', this.getNodeLabel(node, this.currentOptions));
+                    ele.data('label', getNodeLabel(node, this.currentOptions));
                     ele.data('title', node.title);
                 }
             });
 
             // 更新边
             changes.updatedEdges.forEach(edge => {
-                const ele = this.cy!.$id(this.escapeId(edge.id));
+                const ele = this.cy!.$id(escapeId(edge.id));
                 if (ele.length > 0) {
                     ele.data('label', edge.label || '');
                 }
@@ -897,638 +878,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
         // 恢复选中状态
         this.cy.$(':selected').unselect();
         state.selectedNodes.forEach(id => {
-            this.cy!.$id(this.escapeId(id)).select();
+            this.cy!.$id(escapeId(id)).select();
         });
-    }
-
-    /**
-     * 转换数据为 Cytoscape 元素（包含分组）
-     */
-    private convertToElementsWithGroups(data: GraphData): cytoscape.ElementDefinition[] {
-        const parentLinkedNodeIds = this.loadEdgeControlPointsAndParentLinks(data);
-        const context = this.buildElementConversionContext(data, parentLinkedNodeIds);
-        
-        // 然后转换节点和边
-        const nodes = this.convertNodesToElements(data.nodes, context);
-        const edges = this.convertEdgesToElements(data.edges, context);
-        
-        // 获取分组信息
-        const groups = (data.metadata as any)?.groups || [];
-        
-        // 创建分组节点（compound nodes）
-        const groupNodes = groups.map((group: any) => {
-            return {
-                group: 'nodes' as const,
-                data: {
-                    id: group.id,
-                    originalNodeId: group.id,
-                    label: group.label,
-                    isGroup: true,
-                    nodeIds: group.nodeIds || []  // 添加节点 ID 列表
-                },
-                classes: 'group-node'
-            };
-        });
-        
-        // 为分组内的节点设置 parent
-        nodes.forEach((node: any) => {
-            const nodeId = node.data.originalNode?.ID;
-            if (nodeId) {
-                const parentGroup = groups.find((g: any) => g.nodeIds.includes(nodeId));
-                if (parentGroup) {
-                    node.data.parent = parentGroup.id;
-                }
-            }
-        });
-        
-        return [...groupNodes, ...nodes, ...edges];
-    }
-
-    /**
-     * 转换数据为 Cytoscape 元素
-     */
-    private convertToElements(data: GraphData): cytoscape.ElementDefinition[] {
-        const parentLinkedNodeIds = this.loadEdgeControlPointsAndParentLinks(data);
-        const context = this.buildElementConversionContext(data, parentLinkedNodeIds);
-        const nodes = this.convertNodesToElements(data.nodes, context);
-        const edges = this.convertEdgesToElements(data.edges, context);
-        return [...nodes, ...edges];
-    }
-
-    /**
-     * 转换节点为 Cytoscape 元素
-     */
-    private convertNodesToElements(nodes: ZKNode[], context?: ElementConversionContext): any[] {
-        // 获取当前文件路径（如果有）
-        const currentFilePath = this.currentData?.metadata.currentFile || '';
-
-        // 获取节点颜色映射
-        const nodeColors = this.currentData?.metadata.nodeColors || {};
-        const nodeRemarks = this.currentData?.metadata.nodeRemarks || {};
-        const nodeAnchors = this.currentData?.metadata.nodeAnchors || {};
-        const embedNodeSizes = ((this.currentData?.metadata as any)?.embedNodeSizes || {}) as Record<string, { width: number; height: number }>;
-        const resolvedContext = context || this.buildElementConversionContext(this.currentData);
-        const vividStyleMap = resolvedContext.nodeStyleMap;
-        const parentLinkedNodeIds = resolvedContext.parentLinkedNodeIds;
-
-        const elements = nodes.map(node => {
-            const vividStyle = vividStyleMap.get(node.IDStr);
-            const hasParentChildLink = parentLinkedNodeIds.has(node.ID) || parentLinkedNodeIds.has(node.IDStr);
-            const isFirstLevelNode = this.isDirectChildOfRootNode(node, resolvedContext.nodeById);
-            const firstLevelBranchNode = this.getFirstLevelBranchNode(node, resolvedContext.nodeById);
-            const persistedSize = embedNodeSizes[node.ID] || embedNodeSizes[node.IDStr];
-            const isTextNode = !!node.isTextOnly;
-            const manualSize = (isTextNode && persistedSize && persistedSize.width > 0 && persistedSize.height > 0)
-                ? persistedSize
-                : null;
-            const rawCustomColor = nodeColors[node.IDStr] || nodeColors[node.ID] || null;
-            const customFillColor = (typeof rawCustomColor === 'string' && rawCustomColor.startsWith('fill2:'))
-                ? rawCustomColor.slice(6)
-                : null;
-            const hasLegacyCustomColor = !!rawCustomColor && !customFillColor;
-            // 预计算底色对应的文字颜色，避免样式函数中重复计算
-            let customFillTextColor: string | null = null;
-            if (customFillColor) {
-                const nc = normalizeHexColor(customFillColor);
-                if (nc) {
-                    const r = parseInt(nc.slice(1, 3), 16);
-                    const g = parseInt(nc.slice(3, 5), 16);
-                    const b = parseInt(nc.slice(5, 7), 16);
-                    customFillTextColor = (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.62 ? '#1f2937' : '#f8fafc';
-                }
-            }
-            const element: any = {
-                group: 'nodes' as const,
-                data: {
-                    id: this.escapeId(node.ID),
-                    originalNodeId: node.IDStr || node.ID,
-                    label: this.getNodeLabel(node, this.currentOptions),
-                    badge: this.getNodeBadge(node, this.currentOptions),
-                    title: node.title,
-                    filePath: node.file?.path || '',  // 纯文字节点 file 为 null
-                    displayText: node.displayText,
-                    position: node.position,
-                    isCurrentFile: node.file?.path === currentFilePath,  // 纯文字节点不匹配
-                    originalNode: node,
-                    isRoot: node.isRoot || false,  // 根节点标记
-                    isFirstLevelNode,
-                    firstLevelBranchId: firstLevelBranchNode?.ID || firstLevelBranchNode?.IDStr || '',
-                    customColor: rawCustomColor,  // 兼容旧自定义颜色（色点/旧语义）
-                    customFillColor: customFillColor,  // 新语义：节点底色
-                    customFillTextColor: customFillTextColor,  // 预计算的底色文字颜色
-                    hasCustomColor: hasLegacyCustomColor,
-                    isCrossDomain: node.isCrossDomain || false,  // 传递跨领域节点标记
-                    isTextOnly: node.isTextOnly || false,  // 传递纯文字节点标记
-                    isStandaloneText: (node.isTextOnly || false) && !hasParentChildLink && !node.isRoot, // 无父子关系的文本节点（根节点除外，需保留 navy 填充）
-                    isEmbed: node.isEmbed || false,  // 嵌入节点标记（![[...]]）
-                    isInlink: (node.ID || '').startsWith('inlink-'),
-                    isOutlink: (node.ID || '').startsWith('outlink-'),
-                    isFreeNode: (node.ID || '').startsWith('free.'),
-                    remark: nodeRemarks[node.IDStr] || nodeRemarks[node.ID] || '',
-                    hasRemark: !!(nodeRemarks[node.IDStr] || nodeRemarks[node.ID]),
-                    isAnchor: !!(nodeAnchors[node.IDStr] || nodeAnchors[node.ID]),
-                    hasFileIcon: (!node.isTextOnly && node.file) ? true : false, // 文件节点显示图标
-                    manualWidthModel: manualSize?.width || null,
-                    manualHeightModel: manualSize?.height || null,
-                    branchNodeBackground: vividStyle?.background || null,
-                    branchNodeBorder: vividStyle?.border || null,
-                    branchNodeShadow: vividStyle?.shadow || null
-                }
-            };
-
-            // 如果节点有保存的位置信息，使用它
-            if (node.savedPosition) {
-                element.position = {
-                    x: node.savedPosition.x,
-                    y: node.savedPosition.y
-                };
-            }
-
-            return element;
-        });
-        
-        
-        return elements;
-    }
-
-    /**
-     * 转换边为 Cytoscape 元素
-     */
-    private convertEdgesToElements(edges: Edge[], context?: ElementConversionContext): any[] {
-        const resolvedContext = context || this.buildElementConversionContext(this.currentData);
-        const nodeById = resolvedContext.nodeById;
-        const nodeStyleMap = resolvedContext.nodeStyleMap;
-
-        const elements = edges.map(edge => {
-            const sourceNode = nodeById.get(edge.source);
-            const targetNode = nodeById.get(edge.target);
-            const targetIdStr = targetNode?.IDStr || targetNode?.ID || '';
-            // 判断是否为根节点→直接子节点的边：
-            // 使用 isRoot 标记（支持 sa.1 等非顶层根节点），
-            // 并检查 target 是 source 的直接子节点（IDStr 去掉最后一段等于 source 的 IDStr）
-            const isRootToFirstLevel =
-                !!sourceNode &&
-                !!targetNode &&
-                !!sourceNode.isRoot &&
-                this.isDirectChildOfRootNode(targetNode, nodeById) &&
-                targetIdStr.substring(0, targetIdStr.lastIndexOf('.')) === sourceNode.IDStr;
-
-            let branchEdgeColor = nodeStyleMap.get(edge.source)?.border || null;
-            if (isRootToFirstLevel && targetNode) {
-                branchEdgeColor = nodeStyleMap.get(targetNode.IDStr)?.border || branchEdgeColor;
-            }
-            const hierarchyDepth = targetNode
-                ? this.getDepthFromNearestRoot(targetNode.IDStr, nodeById)
-                : null;
-            const hierarchyEdgeWidth = edge.type === 'parent'
-                ? this.getHierarchyEdgeWidth(hierarchyDepth)
-                : null;
-            const element: any = {
-                group: 'edges' as const,
-                data: {
-                    id: this.escapeId(edge.id),
-                    source: this.escapeId(edge.source),
-                    target: this.escapeId(edge.target),
-                    label: edge.label || '',
-                    type: edge.type,
-                    // 保存原始的 source 和 target ID（未转义）
-                    originalSource: edge.source,
-                    originalTarget: edge.target,
-                    branchEdgeColor,
-                    isRootToFirstLevel,
-                    hierarchyEdgeWidth
-                }
-            };
-            
-            // 使用标准格式: source-target (如 "a-a.1.a")
-            const key = `${edge.source}-${edge.target}`;
-            const curvature = this.edgeControlPoints.get(key);
-            
-            if (curvature) {
-                element.data.controlPointDistance = curvature.distance;
-                element.data.controlPointWeight = curvature.weight;
-            }
-            
-            return element;
-        });
-        
-        return elements;
-    }
-
-    private getTopBranchId(nodeId: string): string {
-        const parts = (nodeId || '').split('.').filter(Boolean);
-        if (parts.length <= 1) return nodeId;
-        return `${parts[0]}.${parts[1]}`;
-    }
-
-    private isDirectChildOfRootNode(node: ZKNode, nodeMap: Map<string, ZKNode>): boolean {
-        const nodeId = (node.IDStr || node.ID || '').trim();
-        if (!nodeId.includes('.')) return false;
-
-        const parentId = nodeId.substring(0, nodeId.lastIndexOf('.'));
-        const parentNode = nodeMap.get(parentId);
-        return !!parentNode?.isRoot && parentNode.IDStr === parentId;
-    }
-
-    private getFirstLevelBranchNode(node: ZKNode, nodeMap: Map<string, ZKNode>): ZKNode | null {
-        let currentId = (node.IDStr || node.ID || '').trim();
-        while (currentId.includes('.')) {
-            const currentNode = nodeMap.get(currentId);
-            if (currentNode && this.isDirectChildOfRootNode(currentNode, nodeMap)) {
-                return currentNode;
-            }
-            currentId = currentId.substring(0, currentId.lastIndexOf('.'));
-        }
-        return null;
-    }
-
-    private getDepthFromNearestRoot(nodeId: string, nodeMap: Map<string, ZKNode>): number {
-        const normalizedId = (nodeId || '').trim();
-        if (!normalizedId) return 1;
-        let current = normalizedId;
-        let depth = 0;
-        while (current.includes('.')) {
-            const parentId = current.substring(0, current.lastIndexOf('.'));
-            depth += 1;
-            const parentNode = nodeMap.get(parentId);
-            // 校验 IDStr 精确匹配，避免 nodeMap 中同时以 n.ID 建索引时的潜在冲突
-            if (parentNode?.isRoot && parentNode.IDStr === parentId) return depth;
-            current = parentId;
-        }
-        // 找不到显式 root 时，使用绝对层级近似
-        return Math.max(1, normalizedId.split('.').filter(Boolean).length - 1);
-    }
-
-    private getHierarchyEdgeWidth(depthFromRoot: number | null): number {
-        // 1级边线突出主干，随后逐级变细，避免深层连线抢焦点
-        const depth = Math.max(1, depthFromRoot || 1);
-        const width = this.ROOT_TO_FIRST_LEVEL_EDGE_WIDTH - (depth - 1) * 0.55;
-        return Math.max(1.6, Math.round(width * 10) / 10);
-    }
-
-    private loadEdgeControlPointsAndParentLinks(data: GraphData): Set<string> {
-        this.edgeControlPoints.clear();
-
-        const parentLinkedNodeIds = new Set<string>();
-        const edgeCurvatures = data.metadata.edgeCurvatures || {};
-        data.edges.forEach((edge) => {
-            if (edge.type === 'parent') {
-                parentLinkedNodeIds.add(edge.source);
-                parentLinkedNodeIds.add(edge.target);
-            }
-
-            const key = `${edge.source}-${edge.target}`;
-            const curvature = edgeCurvatures[key];
-            if (curvature) {
-                this.edgeControlPoints.set(key, curvature);
-            }
-        });
-
-        return parentLinkedNodeIds;
-    }
-
-    private buildElementConversionContext(data: GraphData | null, parentLinkedNodeIds?: Set<string>): ElementConversionContext {
-        const allNodes = data?.nodes || [];
-        const resolvedParentLinkedNodeIds = parentLinkedNodeIds || new Set<string>();
-        const nodeById = new Map<string, ZKNode>();
-
-        if (!parentLinkedNodeIds) {
-            (data?.edges || []).forEach((edge) => {
-                if (edge.type !== 'parent') return;
-                resolvedParentLinkedNodeIds.add(edge.source);
-                resolvedParentLinkedNodeIds.add(edge.target);
-            });
-        }
-
-        allNodes.forEach((node) => {
-            nodeById.set(node.ID, node);
-            nodeById.set(node.IDStr, node);
-        });
-
-        return {
-            nodeStyleMap: this.buildVividNodeStyleMap(allNodes),
-            nodeById,
-            parentLinkedNodeIds: resolvedParentLinkedNodeIds
-        };
-    }
-
-    private buildVividNodeStyleMap(nodes: ZKNode[]): Map<string, NodeBranchStyle> {
-        const styleMap = new Map<string, NodeBranchStyle>();
-        if (!isModernThemeStyle(this.currentOptions)) return styleMap;
-
-        const branchIds = Array.from(
-            new Set(
-                nodes
-                    .filter((node) => !node.isRoot)
-                    .map((node) => this.getTopBranchId(node.IDStr))
-                    .filter(Boolean)
-            )
-        ).sort(compareIds);
-
-        const isLight = this.currentOptions?.themeMode === 'light';
-        const branchColorById = new Map<string, NodeBranchStyle>();
-        const styleColorMap = (this.currentData?.metadata as any)?.nodeStyleColors || {};
-        const palette = getBranchStylePalette();
-        branchIds.forEach((branchId) => {
-            const storedColor = normalizeHexColor(styleColorMap[branchId]);
-            const paletteColor = palette[hashString(branchId) % palette.length];
-            const baseBackground = storedColor || paletteColor.background;
-            const accentColor = storedColor
-                ? lightenColor(baseBackground, isLight ? 0.10 : 0.22)
-                : paletteColor.accent;
-            let background: string;
-            let border: string;
-            let shadow: string;
-            if (isLight) {
-                // 浅色主题：淡色填充 + 软化边框
-                border = softenColor(accentColor, true);
-                background = hexToRgba(border, 0.12);
-                shadow = 'transparent';
-            } else {
-                // 现代风格：全填充深色 + 略亮边框
-                background = baseBackground;
-                border = lightenColor(baseBackground, 0.12);
-                shadow = hexToRgba(baseBackground, 0.22);
-            }
-            branchColorById.set(branchId, { background, border, shadow });
-        });
-
-        nodes.forEach((node) => {
-            if (node.isRoot) return;
-            const branchId = this.getTopBranchId(node.IDStr);
-            const style = branchColorById.get(branchId);
-            if (style) styleMap.set(node.IDStr, style);
-        });
-
-        return styleMap;
-    }
-    private measureNodeLabel(label: string, options?: {
-        baseWidth?: number;
-        minHeight?: number;
-        maxWidth?: number;
-        charWidth?: number;
-        lineHeight?: number;
-        paddingX?: number;
-        paddingY?: number;
-    }): { width: number; height: number } {
-        const {
-            baseWidth = 80,
-            minHeight = 34,
-            maxWidth = 220,
-            charWidth = 8,
-            lineHeight = 12,
-            paddingX = 32,
-            paddingY = 16
-        } = options || {};
-
-        // 计算字符串的实际估算宽度（CJK 字符按 2 倍宽度计算）
-        const estimateTextWidth = (text: string): number => {
-            let w = 0;
-            for (const ch of text) {
-                const code = ch.codePointAt(0) || 0;
-                // CJK 统一表意文字 + 全角标点
-                const isCJK = (code >= 0x4E00 && code <= 0x9FFF) ||
-                    (code >= 0x3000 && code <= 0x303F) ||
-                    (code >= 0xFF00 && code <= 0xFFEF) ||
-                    (code >= 0x3400 && code <= 0x4DBF) ||
-                    (code >= 0x20000 && code <= 0x2A6DF);
-                w += isCJK ? charWidth * 2 : charWidth;
-            }
-            return w;
-        };
-
-        const lines = String(label || '').split('\n');
-        const estimatedWrappedLines = lines.flatMap((line) => {
-            const raw = line || ' ';
-            const estimatedWidth = estimateTextWidth(raw);
-            const wrappedCount = Math.max(1, Math.ceil(estimatedWidth / maxWidth));
-            return new Array(wrappedCount).fill(raw);
-        });
-
-        const longestLineWidth = Math.min(
-            maxWidth,
-            Math.max(...lines.map((line) => estimateTextWidth(line || ' ')), charWidth)
-        );
-        const width = Math.max(baseWidth, longestLineWidth + paddingX);
-        const height = Math.max(minHeight, estimatedWrappedLines.length * lineHeight + paddingY);
-
-        return { width, height };
-    }
-
-    private compensateFreeLikeNodeFrameSize(
-        label: string,
-        measured: { width: number; height: number },
-        options?: {
-            isFreeNode?: boolean;
-            isStandaloneText?: boolean;
-            maxWidth?: number;
-            charWidth?: number;
-        }
-    ): { width: number; height: number } {
-        const isFreeLikeNode = !!(options?.isFreeNode || options?.isStandaloneText);
-        if (!isFreeLikeNode) return measured;
-
-        const maxWidth = options?.maxWidth ?? 280;
-        const charWidth = options?.charWidth ?? 11;
-        const lineCount = this.estimateWrappedLines(label, { maxWidth, charWidth }).length;
-        const cornerRadius = 24;
-
-        // 先补齐最小宽度，避免短文本节点初始过窄导致整体显得过小
-        const minVisualWidth = lineCount <= 1 ? 136 : 152;
-        const width = Math.max(measured.width, minVisualWidth);
-
-        // 锁定最小可视高度到 80（对应渲染后 ~84），避免短文本被压扁
-        const minVisualHeight = 80;
-        const height = Math.max(measured.height, minVisualHeight);
-
-        return {
-            width: Math.round(width),
-            height: Math.round(height)
-        };
-    }
-
-    private estimateWrappedLines(label: string, options?: {
-        maxWidth?: number;
-        charWidth?: number;
-    }): string[] {
-        const {
-            maxWidth = 220,
-            charWidth = 8
-        } = options || {};
-
-        const isCJKChar = (ch: string): boolean => {
-            const code = ch.codePointAt(0) || 0;
-            return (code >= 0x4E00 && code <= 0x9FFF) ||
-                (code >= 0x3000 && code <= 0x303F) ||
-                (code >= 0xFF00 && code <= 0xFFEF) ||
-                (code >= 0x3400 && code <= 0x4DBF) ||
-                (code >= 0x20000 && code <= 0x2A6DF);
-        };
-
-        const lines = String(label || '').split('\n');
-        const wrappedLines: string[] = [];
-
-        lines.forEach((line) => {
-            const raw = line || ' ';
-            let currentLine = '';
-            let currentWidth = 0;
-
-            for (const ch of raw) {
-                const w = isCJKChar(ch) ? charWidth * 2 : charWidth;
-                if (currentWidth + w > maxWidth && currentLine.length > 0) {
-                    wrappedLines.push(currentLine);
-                    currentLine = ch;
-                    currentWidth = w;
-                } else {
-                    currentLine += ch;
-                    currentWidth += w;
-                }
-            }
-            if (currentLine) wrappedLines.push(currentLine);
-        });
-
-        return wrappedLines.length > 0 ? wrappedLines : [' '];
-    }
-
-    /**
-     * 获取节点标签
-     */
-    private getNodeLabel(node: ZKNode, options: RenderOptions | null): string {
-        const nodeText = options?.nodeText || 'both';
-        const isFreeNode = (node.ID || node.IDStr || '').startsWith('free.');
-        const isLocalLinkNode = (node.ID || '').startsWith('inlink-') || (node.ID || '').startsWith('outlink-');
-        const showNoteId = (options?.showNoteId ?? true) && !isFreeNode;
-
-        if (isLocalLinkNode) {
-            return this.processDisplayText(
-                node.title || node.displayText || node.file?.basename || '',
-                'title',
-                false
-            ).replace(/\\n/g, '\n');
-        }
-
-        let label = '';
-        switch (nodeText) {
-            case 'id':
-                label = showNoteId ? node.ID : (node.title || node.displayText);
-                break;
-            case 'title':
-                label = node.title || node.displayText;
-                break;
-            case 'id-title':
-                // id-title 模式：只返回标题，ID 会在 badge 中显示
-                label = node.title || node.displayText;
-                break;
-            case 'both':
-            default:
-                label = showNoteId ? node.displayText : (node.title || node.displayText);
-                break;
-        }
-
-        // 处理显示文本：去掉时间戳前缀
-        label = this.processDisplayText(label, nodeText, showNoteId);
-        label = label.replace(/\\n/g, '\n');
-
-        // 文件图标通过 HTML 叠加层显示，不在这里添加
-
-        return label;
-    }
-
-    /**
-     * 获取节点徽章（左上角显示的 ID）
-     */
-    private getNodeBadge(node: ZKNode, options: RenderOptions | null): string {
-        const nodeText = options?.nodeText || 'both';
-        const isFreeNode = (node.ID || node.IDStr || '').startsWith('free.');
-        const isLocalLinkNode = (node.ID || '').startsWith('inlink-') || (node.ID || '').startsWith('outlink-');
-        const showNoteId = (options?.showNoteId ?? true) && !isFreeNode;
-
-        if (!showNoteId || isLocalLinkNode) {
-            return '';
-        }
-        
-        // 在 id-title 和 both 模式下显示 ID 徽章
-        if (nodeText === 'id-title' || nodeText === 'both') {
-            return node.ID;
-        }
-        
-        return '';
-    }
-
-    /**
-     * 处理显示文本：去掉时间戳前缀
-     * 支持的时间戳格式：
-     * - YYYYMMDD (8位数字)
-     * - YYYYMMDDHHMMSS (14位数字)
-     * - YYYY-MM-DD
-     * - YYYYMMDD-HHMMSS
-     */
-    private processDisplayText(text: string, nodeText: string, showNoteId: boolean): string {
-        if (!showNoteId) {
-            return text
-                .replace(/^[a-zA-Z0-9._]+(?::\s*|\s+)/, '')
-                .replace(/^\d+\s+/, '');
-        }
-
-        if (nodeText === 'id-title') {
-            // id-title 模式：去掉 ID 前缀和时间戳
-            // 支持冒号分隔：a.1: 20251215 薛定谔方程 -> 薛定谔方程
-            // 支持空格分隔：ai.b 什么是智能体 -> 什么是智能体（displayText 回退场景）
-            return text
-                .replace(/^[a-zA-Z0-9._]+(?::\s*|\s+)/, '')  // 去掉 "ID: " 或 "ID " 前缀
-                .replace(/^\d+\s+/, '');  // 去掉开头的纯数字时间戳
-        } else if (nodeText === 'title' || nodeText === 'both') {
-            // title 或 both 模式：去掉开头的时间戳
-            // 例如：20251215 薛定谔方程 -> 薛定谔方程
-            return text.replace(/^\d+\s+/, "");
-        }
-        
-        return text;
-    }
-
-    /**
-     * 转义 ID 中的特殊字符
-     */
-    private escapeId(id: string): string {
-        return id.replace(/[^a-zA-Z0-9_-]/g, '_');
-    }
-
-    /**
-     * 生成用于保存的 wikilink：
-     * - .md 继续使用 basename（保持现有习惯）
-     * - .moc / .moc.md 使用文件名（带扩展名），避免与同名 .md 冲突
-     */
-    private buildWikiLinkForFile(file: any): string {
-        const path = String(file?.path || '').trim();
-        const name = String(file?.name || '').trim();
-        const basename = String(file?.basename || '').trim();
-
-        if (isMocPath(path) || isMocPath(name)) {
-            return name || basename;
-        }
-
-        return basename || name || path;
-    }
-
-    /**
-     * .moc 预览 PNG 路径（与 mocEmbedExporter 保持一致）
-     * 默认：{moc目录}/attachments/{moc文件名}.png => 例如 a/demo.moc.png
-     */
-    private getMocPreviewPngCandidates(mocFilePath: string): string[] {
-        const normalized = String(mocFilePath || '').trim();
-        if (!isMocPath(normalized)) return [];
-
-        const dir = normalized.includes('/') ? normalized.substring(0, normalized.lastIndexOf('/')) : '';
-        const mocFileName = normalized.includes('/') ? normalized.substring(normalized.lastIndexOf('/') + 1) : normalized;
-        const mocBasename = stripMocSuffix(mocFileName);
-
-        const candidates = [
-            dir ? `${dir}/attachments/${mocFileName}.png` : `attachments/${mocFileName}.png`,
-            dir ? `${dir}/attachments/${mocBasename}.png` : `attachments/${mocBasename}.png`
-        ];
-
-        // 去重
-        return Array.from(new Set(candidates));
     }
 
     /**
@@ -1566,8 +917,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
             ROOT_TO_FIRST_LEVEL_EDGE_OPACITY: this.ROOT_TO_FIRST_LEVEL_EDGE_OPACITY,
             ACTIVE_ROOT_TO_FIRST_LEVEL_EDGE_OPACITY: this.ACTIVE_ROOT_TO_FIRST_LEVEL_EDGE_OPACITY,
             SECONDARY_PARENT_EDGE_OPACITY: this.SECONDARY_PARENT_EDGE_OPACITY,
-            measureNodeLabel: this.measureNodeLabel.bind(this),
-            compensateFreeLikeNodeFrameSize: this.compensateFreeLikeNodeFrameSize.bind(this),
+            measureNodeLabel,
+            compensateFreeLikeNodeFrameSize,
             normalizeHexColor,
             hexToRgba,
             lightenColor,
@@ -2118,7 +1469,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     let previewFile: any = null;
 
                     // 优先：直接读取已存在的预览 PNG 文件（附件路径）
-                    const candidates = this.getMocPreviewPngCandidates(sourceFile.path);
+                    const candidates = getMocPreviewPngCandidates(sourceFile.path);
                     for (const candidate of candidates) {
                         const f = app.vault.getAbstractFileByPath(candidate);
                         if (f) {
@@ -3109,7 +2460,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         underlineMeasureCtx!.measureText(line || ' ').width
                     );
                 } else {
-                    cachedWrappedLines = this.estimateWrappedLines(
+                    cachedWrappedLines = estimateWrappedLines(
                         label,
                         isRoot
                             ? { maxWidth: 560, charWidth: 18 }
@@ -6763,7 +6114,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
             const before = triggerStart >= 0 ? value.slice(0, triggerStart) : value.slice(0, cursorPos);
             const after = triggerStart >= 0 ? value.slice(cursorPos) : value.slice(cursorPos);
-            const wikiLink = this.buildWikiLinkForFile(file);
+            const wikiLink = buildWikiLinkForFile(file);
             const wikiText = `${embed ? '!' : ''}[[${wikiLink}]]`;
 
             textarea.value = `${before}${wikiText}${after}`;
@@ -7002,7 +6353,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 this.container?.dispatchEvent(new CustomEvent('placeholder-node-complete', {
                     detail: {
                         nodeId: data.id,
-                        wikiLink: this.buildWikiLinkForFile(file),
+                        wikiLink: buildWikiLinkForFile(file),
                         file,
                         isEmbed: embed
                     }
@@ -7896,7 +7247,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             }
             const before = triggerStart >= 0 ? value.slice(0, triggerStart) : value.slice(0, cursorPos);
             const after = triggerStart >= 0 ? value.slice(cursorPos) : value.slice(cursorPos);
-            const wikiLink = this.buildWikiLinkForFile(file);
+            const wikiLink = buildWikiLinkForFile(file);
             const wikiText = `${_embed ? '!' : ''}[[${wikiLink}]]`;
             textarea.value = `${before}${wikiText}${after}`;
             const newCursor = before.length + wikiText.length;
@@ -8109,7 +7460,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             this.container?.dispatchEvent(new CustomEvent('add-free-node-from-suggester', {
                 detail: {
                     nodeId: node.data().id,
-                    wikiLink: this.buildWikiLinkForFile(file),
+                    wikiLink: buildWikiLinkForFile(file),
                     file: file,
                     isEmbed
                 }
