@@ -10,6 +10,22 @@ import { isMocPath, stripMocSuffix } from 'src/utils/utils';
 import { Minimap } from './Minimap';
 import { buildStylesheet } from './stylesheet';
 import * as layoutAdapter from './layoutAdapter';
+import { OverlayScheduler } from './overlayScheduler';
+import {
+    DEFAULT_SELECTION_BG_COLOR,
+    DEFAULT_SELECTION_TEXT_COLOR,
+    applyPreviewHeaderLinkStyle,
+    createSelectionColorPanel,
+    darkenColor,
+    getBranchStylePalette,
+    getPreviewCardTheme,
+    hashString,
+    hexToRgba,
+    isModernThemeStyle,
+    lightenColor,
+    normalizeHexColor,
+    softenColor,
+} from './colorUtils';
 
 // 处理 CommonJS 和 ESM 模块的兼容性
 const getCytoscape = (): any => {
@@ -118,16 +134,14 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private embedPreviewCleanup: (() => void) | null = null;
     private imagePreviewCleanup: (() => void) | null = null;
     private minimap: Minimap | null = null;
+    private overlayScheduler = new OverlayScheduler({
+        getCy: () => this.cy,
+        getContainer: () => this.container,
+    });
     // 追踪正在进行中的 overlay 拖拽/缩放操作，确保 destroy() 时能中止挂在 document 上的监听器
     private activeOverlayDragAborters: Set<AbortController> = new Set();
     // 缓存已渲染的预览卡片 DOM，避免重建时 excalidraw/markdown 内容闪烁
     private embedCardCache: Map<string, HTMLElement> = new Map();
-    private managedDomListeners: Array<{
-        target: HTMLElement | Window | Document;
-        event: string;
-        handler: EventListenerOrEventListenerObject;
-        options?: boolean | AddEventListenerOptions;
-    }> = [];
     private embedRendererComponents: Set<Component> = new Set();
     private activeAlignmentOverlay: SVGSVGElement | null = null;
     private boxSelectionElement: HTMLElement | null = null;
@@ -138,9 +152,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
     // 记住用户上一次在文本选区工具条里选择的颜色，跨选区保持
     private lastPickedTextColor: string | null = null;
     private lastPickedBgColor: string | null = null;
-    private static readonly SELECTION_COLOR_CHOICES = ['#00a8ff', '#34d399', '#f59e0b', '#ef4444', '#a78bfa', '#e2e8f0'];
-    private static readonly DEFAULT_SELECTION_TEXT_COLOR = '#00a8ff';
-    private static readonly DEFAULT_SELECTION_BG_COLOR = '#f59e0b';
 
     // 文本节点 Markdown 渲染缓存：跨 addNodeBadges 重建复用已渲染的 overlay DOM + Component
     // key = `${sourcePath}||${rawSource}`
@@ -154,19 +165,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
         usedInCycle: boolean;
     }> = new Map();
 
-    // 统一 overlay rAF 调度器
-    private overlayUpdaters: Set<() => void> = new Set();
-    private overlayImmediateUpdaters: Set<() => void> = new Set();
-    private overlayExtraUpdaters: Set<() => void> = new Set(); // class/data/select 等额外事件触发的 updaters
-    private overlaySelectionUpdaters: Set<() => void> = new Set(); // select/unselect 独占 updaters
-    private overlayUpdateScheduled = false;
-    private overlayListenerBound = false;
-    private overlayInteracting = false;
-    private overlayInteractTimer: number | null = null;
-    private overlayCoreUpdateHandler: (() => void) | null = null;
-    private overlayDragfreeHandler: (() => void) | null = null;
-    private overlayExtraUpdateHandler: (() => void) | null = null;
-    private overlaySelectionHandler: (() => void) | null = null;
     private edgeControlSelectHandler: ((evt: any) => void) | null = null;
     private edgeControlUnselectHandler: (() => void) | null = null;
     private edgeControlRemoveHandler: (() => void) | null = null;
@@ -227,441 +225,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
         return result.replace(/<\/?[^>]+>/g, '');
     }
 
-    private hexToRgb(hex: string): { r: number; g: number; b: number } {
-        const normalized = hex.replace('#', '').trim();
-        const full = normalized.length === 3
-            ? normalized.split('').map((c) => c + c).join('')
-            : normalized.padStart(6, '0').slice(0, 6);
-        const intVal = Number.parseInt(full, 16);
-        return {
-            r: (intVal >> 16) & 255,
-            g: (intVal >> 8) & 255,
-            b: intVal & 255
-        };
-    }
-
-    private rgbToHex(r: number, g: number, b: number): string {
-        const toHex = (value: number) => Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, '0');
-        return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-    }
-
-    private rgbToHsv(r: number, g: number, b: number): { h: number; s: number; v: number } {
-        const rn = r / 255;
-        const gn = g / 255;
-        const bn = b / 255;
-        const max = Math.max(rn, gn, bn);
-        const min = Math.min(rn, gn, bn);
-        const delta = max - min;
-
-        let h = 0;
-        if (delta > 0) {
-            if (max === rn) h = ((gn - bn) / delta) % 6;
-            else if (max === gn) h = (bn - rn) / delta + 2;
-            else h = (rn - gn) / delta + 4;
-            h *= 60;
-            if (h < 0) h += 360;
-        }
-
-        const s = max === 0 ? 0 : delta / max;
-        return { h, s, v: max };
-    }
-
-    private hsvToRgb(h: number, s: number, v: number): { r: number; g: number; b: number } {
-        const c = v * s;
-        const hp = (h % 360) / 60;
-        const x = c * (1 - Math.abs((hp % 2) - 1));
-        let r1 = 0;
-        let g1 = 0;
-        let b1 = 0;
-        if (hp >= 0 && hp < 1) [r1, g1, b1] = [c, x, 0];
-        else if (hp < 2) [r1, g1, b1] = [x, c, 0];
-        else if (hp < 3) [r1, g1, b1] = [0, c, x];
-        else if (hp < 4) [r1, g1, b1] = [0, x, c];
-        else if (hp < 5) [r1, g1, b1] = [x, 0, c];
-        else [r1, g1, b1] = [c, 0, x];
-        const m = v - c;
-        return {
-            r: (r1 + m) * 255,
-            g: (g1 + m) * 255,
-            b: (b1 + m) * 255
-        };
-    }
-
-    private createInlineColorPicker(
-        initialColor: string,
-        onConfirm: (hexColor: string) => void,
-        onCancel?: () => void
-    ): HTMLElement {
-        const picker = document.createElement('div');
-        picker.className = 'zk-inline-color-picker';
-        picker.addEventListener('pointerdown', (e) => e.stopPropagation());
-        picker.addEventListener('mousedown', (e) => e.stopPropagation());
-
-        const svArea = document.createElement('div');
-        svArea.className = 'zk-inline-color-picker-sv';
-        const svWhite = document.createElement('div');
-        svWhite.className = 'zk-inline-color-picker-sv-white';
-        const svBlack = document.createElement('div');
-        svBlack.className = 'zk-inline-color-picker-sv-black';
-        const svHandle = document.createElement('div');
-        svHandle.className = 'zk-inline-color-picker-handle';
-        svArea.appendChild(svWhite);
-        svArea.appendChild(svBlack);
-        svArea.appendChild(svHandle);
-
-        // 自定义 hue 滑条（不用 <input type=range>，避免点击时抢占焦点
-        // 导致外层编辑器触发 focusout → onBlur → saveEdit，从而关闭工具条）
-        const hueSlider = document.createElement('div');
-        hueSlider.className = 'zk-inline-color-picker-hue';
-        const hueHandle = document.createElement('div');
-        hueHandle.className = 'zk-inline-color-picker-hue-handle';
-        hueSlider.appendChild(hueHandle);
-
-        const footer = document.createElement('div');
-        footer.className = 'zk-inline-color-picker-footer';
-        const preview = document.createElement('span');
-        preview.className = 'zk-inline-color-picker-preview';
-        const confirmBtn = document.createElement('button');
-        confirmBtn.type = 'button';
-        confirmBtn.className = 'zk-inline-color-picker-btn';
-        confirmBtn.textContent = '确认';
-        const cancelBtn = document.createElement('button');
-        cancelBtn.type = 'button';
-        cancelBtn.className = 'zk-inline-color-picker-btn';
-        cancelBtn.textContent = '取消';
-        footer.appendChild(preview);
-        footer.appendChild(confirmBtn);
-        footer.appendChild(cancelBtn);
-
-        picker.appendChild(svArea);
-        picker.appendChild(hueSlider);
-        picker.appendChild(footer);
-
-        const rgb = this.hexToRgb(initialColor);
-        const hsv = this.rgbToHsv(rgb.r, rgb.g, rgb.b);
-        let h = hsv.h;
-        let s = hsv.s;
-        let v = hsv.v;
-
-        const updateUi = () => {
-            const hueRgb = this.hsvToRgb(h, 1, 1);
-            const hueHex = this.rgbToHex(hueRgb.r, hueRgb.g, hueRgb.b);
-            svArea.style.backgroundColor = hueHex;
-            hueHandle.style.left = `${(h / 360) * 100}%`;
-            svHandle.style.left = `${s * 100}%`;
-            svHandle.style.top = `${(1 - v) * 100}%`;
-            const out = this.hsvToRgb(h, s, v);
-            preview.style.backgroundColor = this.rgbToHex(out.r, out.g, out.b);
-        };
-
-        const currentHex = () => {
-            const out = this.hsvToRgb(h, s, v);
-            return this.rgbToHex(out.r, out.g, out.b);
-        };
-
-        const updateSvFromEvent = (evt: MouseEvent | PointerEvent) => {
-            const rect = svArea.getBoundingClientRect();
-            const x = Math.max(0, Math.min(rect.width, evt.clientX - rect.left));
-            const y = Math.max(0, Math.min(rect.height, evt.clientY - rect.top));
-            s = rect.width <= 0 ? 0 : x / rect.width;
-            v = rect.height <= 0 ? 0 : 1 - (y / rect.height);
-            updateUi();
-        };
-
-        const startSvDrag = (evt: MouseEvent) => {
-            evt.preventDefault();
-            updateSvFromEvent(evt);
-            const onMove = (moveEvt: MouseEvent) => {
-                moveEvt.preventDefault();
-                updateSvFromEvent(moveEvt);
-            };
-            const onUp = () => {
-                document.removeEventListener('mousemove', onMove);
-                document.removeEventListener('mouseup', onUp);
-            };
-            document.addEventListener('mousemove', onMove);
-            document.addEventListener('mouseup', onUp);
-        };
-
-        const updateHueFromEvent = (evt: MouseEvent | PointerEvent) => {
-            const rect = hueSlider.getBoundingClientRect();
-            const x = Math.max(0, Math.min(rect.width, evt.clientX - rect.left));
-            h = rect.width <= 0 ? 0 : (x / rect.width) * 360;
-            updateUi();
-        };
-
-        const startHueDrag = (evt: MouseEvent) => {
-            evt.preventDefault();
-            updateHueFromEvent(evt);
-            const onMove = (moveEvt: MouseEvent) => {
-                moveEvt.preventDefault();
-                updateHueFromEvent(moveEvt);
-            };
-            const onUp = () => {
-                document.removeEventListener('mousemove', onMove);
-                document.removeEventListener('mouseup', onUp);
-            };
-            document.addEventListener('mousemove', onMove);
-            document.addEventListener('mouseup', onUp);
-        };
-
-        svArea.addEventListener('mousedown', startSvDrag);
-        hueSlider.addEventListener('mousedown', startHueDrag);
-
-        // 按钮的 mousedown 必须 preventDefault,否则点按钮会把焦点从外层编辑器
-        // 抢过来,触发外层编辑器的 onBlur → saveEdit,导致工具条和 picker 被销毁,
-        // 用户会看到"点确认没反应"。
-        confirmBtn.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-        });
-        confirmBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onConfirm(currentHex());
-        });
-        cancelBtn.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-        });
-        cancelBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onCancel?.();
-        });
-
-        updateUi();
-        return picker;
-    }
-
-    /**
-     * 构建文本选区工具条里的颜色面板（最近色 + 预设色板 + 自定义 HSV 取色器）。
-     * 文字颜色与背景色面板结构一致，用此方法统一生成，避免重复代码。
-     *
-     * @param initialColor 初始高亮的颜色（用来标记"当前激活"的色板并作为 HSV 起始值）
-     * @param recentColor  最近一次选中的颜色（null 表示本次会话还没选过）；非 null 时
-     *                     会作为"最近色"置于第一位，文本/背景色各自独立
-     * @param customTitle  "+" 按钮的 title（"自定义颜色" / "自定义背景色"）
-     * @param onPick       用户选定颜色后的回调（选预设或确认 HSV 都走这里）
-     */
-    createSelectionColorPanel(
-        initialColor: string,
-        recentColor: string | null,
-        customTitle: string,
-        onPick: (hexColor: string) => void
-    ): HTMLElement {
-        const panel = document.createElement('div');
-        panel.className = 'zk-text-selection-color-panel';
-        panel.addEventListener('pointerdown', (e) => e.stopPropagation());
-        panel.addEventListener('mousedown', (e) => e.stopPropagation());
-
-        const syncActiveSwatch = (targetColor: string) => {
-            panel.querySelectorAll('.zk-text-selection-color-swatch').forEach((el) => {
-                const swatch = el as HTMLElement;
-                const swatchColor = swatch.dataset.color || '';
-                swatch.classList.toggle(
-                    'is-active',
-                    swatchColor.toLowerCase() === targetColor.toLowerCase()
-                );
-            });
-        };
-
-        const appendSwatch = (color: string, extraClass: string, title: string) => {
-            const swatch = document.createElement('button');
-            swatch.type = 'button';
-            swatch.className = `zk-text-selection-color-swatch${extraClass ? ' ' + extraClass : ''}`;
-            swatch.dataset.color = color;
-            swatch.style.backgroundColor = color;
-            swatch.title = title;
-            swatch.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-            });
-            swatch.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                syncActiveSwatch(color);
-                onPick(color);
-            });
-            panel.appendChild(swatch);
-        };
-
-        if (recentColor) {
-            appendSwatch(recentColor, 'zk-text-selection-color-recent', `最近使用: ${recentColor}`);
-        }
-
-        CytoscapeRenderer.SELECTION_COLOR_CHOICES.forEach((color) => {
-            appendSwatch(color, '', color);
-        });
-
-        let inlinePicker: HTMLElement | null = null;
-        const customSwatch = document.createElement('button');
-        customSwatch.type = 'button';
-        customSwatch.className = 'zk-text-selection-color-swatch zk-text-selection-color-custom';
-        customSwatch.title = customTitle;
-        customSwatch.textContent = '+';
-        customSwatch.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-        });
-        customSwatch.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (inlinePicker?.parentNode) {
-                inlinePicker.remove();
-                inlinePicker = null;
-                return;
-            }
-            inlinePicker = this.createInlineColorPicker(
-                initialColor,
-                (hexColor) => {
-                    syncActiveSwatch(hexColor);
-                    onPick(hexColor);
-                },
-                () => {
-                    if (inlinePicker?.parentNode) inlinePicker.remove();
-                    inlinePicker = null;
-                }
-            );
-            panel.appendChild(inlinePicker);
-        });
-        panel.appendChild(customSwatch);
-
-        syncActiveSwatch(initialColor);
-        return panel;
-    }
-
-    /**
-     * 统一 overlay 更新调度：将所有 overlay 系统的 rAF 合并为单一调度
-     * 减少每帧 8 个独立 rAF → 1 个 rAF，事件监听数量减少 80%
-     */
-    private scheduleOverlayUpdate(): void {
-        if (this.overlayUpdateScheduled) return;
-        this.overlayUpdateScheduled = true;
-        requestAnimationFrame(() => {
-            this.overlayUpdateScheduled = false;
-            if (!this.cy || !this.container?.isConnected) return;
-            this.overlayUpdaters.forEach(fn => fn());
-        });
-    }
-
-    /** dragfree 等需要立即同步的场景，跳过 rAF */
-    private immediateOverlayUpdate(): void {
-        this.overlayUpdaters.forEach(fn => fn());
-        this.overlayImmediateUpdaters.forEach(fn => fn());
-        this.overlayUpdateScheduled = false;
-    }
-
-    /** class/data/add/remove/layoutstop 等额外事件触发调度 */
-    private scheduleOverlayExtraUpdate(): void {
-        if (this.overlayUpdateScheduled) return;
-        this.overlayUpdateScheduled = true;
-        requestAnimationFrame(() => {
-            this.overlayUpdateScheduled = false;
-            if (!this.cy || !this.container?.isConnected) return;
-            this.overlayUpdaters.forEach(fn => fn());
-            this.overlayExtraUpdaters.forEach(fn => fn());
-        });
-    }
-
-    private markOverlayInteracting(): void {
-        this.overlayInteracting = true;
-        if (this.overlayInteractTimer !== null) {
-            window.clearTimeout(this.overlayInteractTimer);
-        }
-        this.overlayInteractTimer = window.setTimeout(() => {
-            this.overlayInteracting = false;
-            this.overlayInteractTimer = null;
-            this.scheduleOverlayExtraUpdate();
-        }, 100);
-    }
-
-    /** select/unselect 专用更新（同步，不经过 rAF） */
-    private handleOverlaySelectionChange(): void {
-        this.overlaySelectionUpdaters.forEach(fn => fn());
-    }
-
-    /**
-     * 绑定统一的 overlay 事件监听（只绑定一次）
-     * 覆盖所有 overlay 系统需要的事件
-     */
-    private bindOverlayListeners(): void {
-        if (this.overlayListenerBound || !this.cy) return;
-        this.overlayListenerBound = true;
-        this.overlayCoreUpdateHandler = () => {
-            this.markOverlayInteracting();
-            this.scheduleOverlayUpdate();
-        };
-        this.overlayDragfreeHandler = () => {
-            this.overlayInteracting = false;
-            if (this.overlayInteractTimer !== null) {
-                window.clearTimeout(this.overlayInteractTimer);
-                this.overlayInteractTimer = null;
-            }
-            this.immediateOverlayUpdate();
-        };
-        this.overlayExtraUpdateHandler = () => this.scheduleOverlayExtraUpdate();
-        this.overlaySelectionHandler = () => {
-            this.handleOverlaySelectionChange();
-            this.scheduleOverlayExtraUpdate();
-        };
-
-        // 核心视口/拖动事件 → 单一 rAF 调度
-        this.cy.on('zoom pan viewport drag position', this.overlayCoreUpdateHandler);
-        // 拖动结束 → 立即同步
-        this.cy.on('dragfree', this.overlayDragfreeHandler);
-        // 结构/状态变化事件 → 额外 updaters
-        this.cy.on('class data add remove layoutstop', this.overlayExtraUpdateHandler);
-        // 选择变化 → 同步 selection updaters + 调度位置更新
-        this.cy.on('select unselect', this.overlaySelectionHandler);
-    }
-
-    private cleanupOverlayEventBindings(): void {
-        if (!this.cy) return;
-        if (this.overlayCoreUpdateHandler) {
-            this.cy.off('zoom', this.overlayCoreUpdateHandler);
-            this.cy.off('pan', this.overlayCoreUpdateHandler);
-            this.cy.off('viewport', this.overlayCoreUpdateHandler);
-            this.cy.off('drag', this.overlayCoreUpdateHandler);
-            this.cy.off('position', this.overlayCoreUpdateHandler);
-            this.overlayCoreUpdateHandler = null;
-        }
-        if (this.overlayDragfreeHandler) {
-            this.cy.off('dragfree', this.overlayDragfreeHandler);
-            this.overlayDragfreeHandler = null;
-        }
-        if (this.overlayExtraUpdateHandler) {
-            this.cy.off('class', this.overlayExtraUpdateHandler);
-            this.cy.off('data', this.overlayExtraUpdateHandler);
-            this.cy.off('add', this.overlayExtraUpdateHandler);
-            this.cy.off('remove', this.overlayExtraUpdateHandler);
-            this.cy.off('layoutstop', this.overlayExtraUpdateHandler);
-            this.overlayExtraUpdateHandler = null;
-        }
-        if (this.overlaySelectionHandler) {
-            this.cy.off('select', this.overlaySelectionHandler);
-            this.cy.off('unselect', this.overlaySelectionHandler);
-            this.overlaySelectionHandler = null;
-        }
-    }
-
-    private addManagedDomListener<T extends HTMLElement | Window | Document>(
-        target: T,
-        event: string,
-        handler: EventListenerOrEventListenerObject,
-        options?: boolean | AddEventListenerOptions
-    ): void {
-        target.addEventListener(event, handler, options);
-        this.managedDomListeners.push({ target, event, handler, options });
-    }
-
-    private cleanupManagedDomListeners(): void {
-        this.managedDomListeners.forEach(({ target, event, handler, options }) => {
-            target.removeEventListener(event, handler, options);
-        });
-        this.managedDomListeners = [];
-    }
-
     private unloadEmbedRendererComponents(): void {
         this.embedRendererComponents.forEach((component) => {
             try { component.unload(); } catch { /* ignore */ }
@@ -715,22 +278,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
     }
 
-    /** 清理统一 overlay 调度器（只清空 updater 集合，不重置事件监听标记） */
-    private cleanupOverlayScheduler(): void {
-        this.overlayUpdaters.clear();
-        this.overlayImmediateUpdaters.clear();
-        this.overlayExtraUpdaters.clear();
-        this.overlaySelectionUpdaters.clear();
-        this.edgeControlPointUpdaters.clear();
-        this.edgeEndpointUpdaters.clear();
-        this.overlayUpdateScheduled = false;
-        this.overlayInteracting = false;
-        if (this.overlayInteractTimer !== null) {
-            window.clearTimeout(this.overlayInteractTimer);
-            this.overlayInteractTimer = null;
-        }
-    }
-
     /**
      * 渲染图形
      * @性能优化：支持增量更新，避免每次都销毁重建
@@ -758,11 +305,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
         if (!this.cy || containerChanged) {
             // 销毁旧实例（如果存在）
             if (this.cy) {
-                this.cleanupManagedDomListeners();
-                this.cleanupOverlayEventBindings();
+                this.overlayScheduler.cleanupManagedDomListeners();
+                this.overlayScheduler.cleanupEventBindings();
                 this.cleanupBadgeInteractionBindings();
-                this.cleanupOverlayScheduler();
-                this.overlayListenerBound = false;
+                this.overlayScheduler.cleanupScheduler();
+                this.edgeControlPointUpdaters.clear();
+                this.edgeEndpointUpdaters.clear();
                 this.activeAlignmentOverlay?.remove();
                 this.activeAlignmentOverlay = null;
                 this.boxSelectionElement?.remove();
@@ -1133,11 +681,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
     destroy(): void {
         this.clearActiveTextSelectionToolbar();
         this.cleanupLiveEditHandlers();
-        this.cleanupManagedDomListeners();
-        this.cleanupOverlayEventBindings();
+        this.overlayScheduler.cleanupManagedDomListeners();
+        this.overlayScheduler.cleanupEventBindings();
         this.cleanupBadgeInteractionBindings();
-        this.cleanupOverlayScheduler();
-        this.overlayListenerBound = false;
+        this.overlayScheduler.cleanupScheduler();
+        this.edgeControlPointUpdaters.clear();
+        this.edgeEndpointUpdaters.clear();
         if (this.minimap) {
             this.minimap.destroy();
             this.minimap = null;
@@ -1440,7 +989,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             // 预计算底色对应的文字颜色，避免样式函数中重复计算
             let customFillTextColor: string | null = null;
             if (customFillColor) {
-                const nc = this.normalizeHexColor(customFillColor);
+                const nc = normalizeHexColor(customFillColor);
                 if (nc) {
                     const r = parseInt(nc.slice(1, 3), 16);
                     const g = parseInt(nc.slice(3, 5), 16);
@@ -1566,10 +1115,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
         return elements;
     }
 
-    private isModernThemeStyle(): boolean {
-        return (this.currentOptions?.themeStyle || 'modern') === 'modern';
-    }
-
     private getTopBranchId(nodeId: string): string {
         const parts = (nodeId || '').split('.').filter(Boolean);
         if (parts.length <= 1) return nodeId;
@@ -1669,7 +1214,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
     private buildVividNodeStyleMap(nodes: ZKNode[]): Map<string, NodeBranchStyle> {
         const styleMap = new Map<string, NodeBranchStyle>();
-        if (!this.isModernThemeStyle()) return styleMap;
+        if (!isModernThemeStyle(this.currentOptions)) return styleMap;
 
         const branchIds = Array.from(
             new Set(
@@ -1683,27 +1228,27 @@ export class CytoscapeRenderer implements IGraphRenderer {
         const isLight = this.currentOptions?.themeMode === 'light';
         const branchColorById = new Map<string, NodeBranchStyle>();
         const styleColorMap = (this.currentData?.metadata as any)?.nodeStyleColors || {};
-        const palette = this.getBranchStylePalette();
+        const palette = getBranchStylePalette();
         branchIds.forEach((branchId) => {
-            const storedColor = this.normalizeHexColor(styleColorMap[branchId]);
-            const paletteColor = palette[this.hashString(branchId) % palette.length];
+            const storedColor = normalizeHexColor(styleColorMap[branchId]);
+            const paletteColor = palette[hashString(branchId) % palette.length];
             const baseBackground = storedColor || paletteColor.background;
             const accentColor = storedColor
-                ? this.lightenColor(baseBackground, isLight ? 0.10 : 0.22)
+                ? lightenColor(baseBackground, isLight ? 0.10 : 0.22)
                 : paletteColor.accent;
             let background: string;
             let border: string;
             let shadow: string;
             if (isLight) {
                 // 浅色主题：淡色填充 + 软化边框
-                border = this.softenColor(accentColor, true);
-                background = this.hexToRgba(border, 0.12);
+                border = softenColor(accentColor, true);
+                background = hexToRgba(border, 0.12);
                 shadow = 'transparent';
             } else {
                 // 现代风格：全填充深色 + 略亮边框
                 background = baseBackground;
-                border = this.lightenColor(baseBackground, 0.12);
-                shadow = this.hexToRgba(baseBackground, 0.22);
+                border = lightenColor(baseBackground, 0.12);
+                shadow = hexToRgba(baseBackground, 0.22);
             }
             branchColorById.set(branchId, { background, border, shadow });
         });
@@ -1717,29 +1262,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
         return styleMap;
     }
-    private getBranchStylePalette(): Array<{ background: string; accent: string }> {
-        // 深色珠宝调：background = 深底色，accent = 点缀色
-        return [
-            { background: '#173f36', accent: '#5bbf9a' },
-            { background: '#4a3820', accent: '#d6a85d' },
-            { background: '#4a2630', accent: '#d07a8a' },
-            { background: '#213a55', accent: '#6ba7dc' },
-            { background: '#372b58', accent: '#a08be8' },
-            { background: '#203f46', accent: '#62bcc8' },
-            { background: '#46344c', accent: '#c58ad5' },
-            { background: '#31385d', accent: '#8c9de8' },
-        ];
-    }
-
-    private hashString(value: string): number {
-        let hash = 0;
-        for (let i = 0; i < value.length; i++) {
-            hash = ((hash << 5) - hash) + value.charCodeAt(i);
-            hash |= 0;
-        }
-        return Math.abs(hash);
-    }
-
     private measureNodeLabel(label: string, options?: {
         baseWidth?: number;
         minHeight?: number;
@@ -1866,118 +1388,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         return wrappedLines.length > 0 ? wrappedLines : [' '];
-    }
-
-    private normalizeHexColor(color: string | null | undefined): string | null {
-        if (!color || typeof color !== 'string') return null;
-        const trimmed = color.trim();
-        const isHex3 = /^#([0-9a-fA-F]{3})$/.test(trimmed);
-        const isHex6 = /^#([0-9a-fA-F]{6})$/.test(trimmed);
-        if (!isHex3 && !isHex6) return null;
-        if (isHex6) return trimmed.toLowerCase();
-        const [, shortHex] = trimmed.match(/^#([0-9a-fA-F]{3})$/)!;
-        return `#${shortHex.split('').map((c) => c + c).join('').toLowerCase()}`;
-    }
-
-    private hexToRgba(hex: string, alpha: number): string {
-        const normalized = this.normalizeHexColor(hex) || '#5b8fd9';
-        const r = parseInt(normalized.slice(1, 3), 16);
-        const g = parseInt(normalized.slice(3, 5), 16);
-        const b = parseInt(normalized.slice(5, 7), 16);
-        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-    }
-
-    private softenColor(hex: string, isLight: boolean): string {
-        const normalized = this.normalizeHexColor(hex) || '#5b8fd9';
-        const r = parseInt(normalized.slice(1, 3), 16);
-        const g = parseInt(normalized.slice(3, 5), 16);
-        const b = parseInt(normalized.slice(5, 7), 16);
-
-        // 保持色相，降低亮度与对比度
-        const target = isLight ? 98 : 132;
-        const ratio = isLight ? 0.54 : 0.50;
-        const sr = Math.round(r * (1 - ratio) + target * ratio);
-        const sg = Math.round(g * (1 - ratio) + target * ratio);
-        const sb = Math.round(b * (1 - ratio) + target * ratio);
-
-        return `#${sr.toString(16).padStart(2, '0')}${sg.toString(16).padStart(2, '0')}${sb.toString(16).padStart(2, '0')}`;
-    }
-
-    private getPreviewCardTheme(data: any): {
-        cardBackground: string;
-        cardBorder: string;
-        cardShadow: string;
-        headerBackground: string;
-        headerDivider: string;
-    } {
-        const isModern = this.isModernThemeStyle();
-        const isColored = isModern;
-        const branchBorderColor = typeof data?.branchNodeBorder === 'string' ? data.branchNodeBorder : '';
-        const vividHeaderBackground = isColored && branchBorderColor
-            ? this.hexToRgba(branchBorderColor, this.currentOptions?.themeMode === 'light' ? 0.18 : 0.28)
-            : 'rgba(11, 16, 25, 0.72)';
-        const vividHeaderDivider = isColored && branchBorderColor
-            ? this.hexToRgba(branchBorderColor, this.currentOptions?.themeMode === 'light' ? 0.55 : 0.7)
-            : 'rgba(90, 111, 127, 0.45)';
-
-        const cardBorder = isModern && branchBorderColor
-            ? `2.5px solid ${branchBorderColor}`
-            : `2px solid rgba(90, 111, 127, 0.4)`;
-        const cardShadow = isModern && branchBorderColor
-            ? `0 0 10px ${this.hexToRgba(branchBorderColor, 0.35)}, 0 4px 12px rgba(0, 0, 0, 0.25)`
-            : '0 4px 12px rgba(0, 0, 0, 0.25)';
-        const headerBackground = isModern ? 'transparent' : vividHeaderBackground;
-        const headerDivider = isModern && branchBorderColor
-            ? this.hexToRgba(branchBorderColor, 0.25)
-            : vividHeaderDivider;
-
-        return {
-            cardBackground: 'transparent',
-            cardBorder,
-            cardShadow,
-            headerBackground,
-            headerDivider
-        };
-    }
-
-    private applyPreviewHeaderLinkStyle(linkEl: HTMLElement): void {
-        linkEl.style.cssText = `
-            overflow: hidden;
-            text-overflow: ellipsis;
-            cursor: pointer;
-            color: var(--text-muted);
-            transition: color 0.15s ease;
-        `;
-        linkEl.addEventListener('mouseenter', () => {
-            linkEl.style.color = 'var(--text-normal)';
-        });
-        linkEl.addEventListener('mouseleave', () => {
-            linkEl.style.color = 'var(--text-muted)';
-        });
-    }
-
-    // 将颜色向白色方向提亮，amount=0~1
-    private lightenColor(hex: string, amount: number): string {
-        const normalized = this.normalizeHexColor(hex) || '#5b8fd9';
-        const r = parseInt(normalized.slice(1, 3), 16);
-        const g = parseInt(normalized.slice(3, 5), 16);
-        const b = parseInt(normalized.slice(5, 7), 16);
-        const lr = Math.min(255, Math.round(r + (255 - r) * amount));
-        const lg = Math.min(255, Math.round(g + (255 - g) * amount));
-        const lb = Math.min(255, Math.round(b + (255 - b) * amount));
-        return `#${lr.toString(16).padStart(2, '0')}${lg.toString(16).padStart(2, '0')}${lb.toString(16).padStart(2, '0')}`;
-    }
-
-    // 将颜色向黑色方向压暗，amount=0~1
-    private darkenColor(hex: string, amount: number): string {
-        const normalized = this.normalizeHexColor(hex) || '#5b8fd9';
-        const r = parseInt(normalized.slice(1, 3), 16);
-        const g = parseInt(normalized.slice(3, 5), 16);
-        const b = parseInt(normalized.slice(5, 7), 16);
-        const dr = Math.max(0, Math.round(r * (1 - amount)));
-        const dg = Math.max(0, Math.round(g * (1 - amount)));
-        const db = Math.max(0, Math.round(b * (1 - amount)));
-        return `#${dr.toString(16).padStart(2, '0')}${dg.toString(16).padStart(2, '0')}${db.toString(16).padStart(2, '0')}`;
     }
 
     /**
@@ -2158,10 +1568,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
             SECONDARY_PARENT_EDGE_OPACITY: this.SECONDARY_PARENT_EDGE_OPACITY,
             measureNodeLabel: this.measureNodeLabel.bind(this),
             compensateFreeLikeNodeFrameSize: this.compensateFreeLikeNodeFrameSize.bind(this),
-            normalizeHexColor: this.normalizeHexColor.bind(this),
-            hexToRgba: this.hexToRgba.bind(this),
-            lightenColor: this.lightenColor.bind(this),
-            darkenColor: this.darkenColor.bind(this),
+            normalizeHexColor,
+            hexToRgba,
+            lightenColor,
+            darkenColor,
         });
     }
 
@@ -2249,7 +1659,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     heightModel: persistedSize.height
                 });
             }
-            const theme = this.getPreviewCardTheme(data);
+            const theme = getPreviewCardTheme(data, this.currentOptions);
             const resolvedCardBorder = 'none';
             const resolvedCardBackground = isExcalidrawFile ? 'transparent' : theme.cardBackground;
             const resolvedCardShadow = isExcalidrawFile && !!data.isFreeNode ? 'none' : theme.cardShadow;
@@ -2301,7 +1711,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             headerLink.textContent = hasAlias
                 ? `${sourceFile.basename}|${aliasCandidate}`
                 : sourceFile.basename;
-            this.applyPreviewHeaderLinkStyle(headerLink);
+            applyPreviewHeaderLinkStyle(headerLink);
             headerLink.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
@@ -2975,12 +2385,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
         // 注册到统一 overlay 调度器
         const embedPositionUpdater = () => updaters.forEach(fn => fn());
         const embedSelectionUpdater = () => interactionUpdaters.forEach(fn => fn());
-        this.overlayUpdaters.add(embedPositionUpdater);
-        this.overlaySelectionUpdaters.add(embedSelectionUpdater);
+        this.overlayScheduler.updaters.add(embedPositionUpdater);
+        this.overlayScheduler.selectionUpdaters.add(embedSelectionUpdater);
 
         this.embedPreviewCleanup = () => {
-            this.overlayUpdaters.delete(embedPositionUpdater);
-            this.overlaySelectionUpdaters.delete(embedSelectionUpdater);
+            this.overlayScheduler.updaters.delete(embedPositionUpdater);
+            this.overlayScheduler.selectionUpdaters.delete(embedSelectionUpdater);
             if (this.cy) {
                 this.cy.userZoomingEnabled(true);
                 this.cy.userPanningEnabled(true);
@@ -3073,7 +2483,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 });
             }
 
-            const theme = this.getPreviewCardTheme(data);
+            const theme = getPreviewCardTheme(data, this.currentOptions);
             const resolvedCardBorder = 'none';
 
             // 完全隐藏 Cytoscape 节点（由 HTML 图片卡片处理视觉）
@@ -3130,7 +2540,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
             const headerLink = document.createElement('span');
             headerLink.textContent = (file as any).basename || filePath.split('/').pop() || '';
-            this.applyPreviewHeaderLinkStyle(headerLink);
+            applyPreviewHeaderLinkStyle(headerLink);
             headerLink.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
@@ -3443,12 +2853,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
         // 注册到统一 overlay 调度器
         const imagePositionUpdater = () => updaters.forEach(fn => fn());
         const imageSelectionUpdater = () => interactionUpdaters.forEach(fn => fn());
-        this.overlayUpdaters.add(imagePositionUpdater);
-        this.overlaySelectionUpdaters.add(imageSelectionUpdater);
+        this.overlayScheduler.updaters.add(imagePositionUpdater);
+        this.overlayScheduler.selectionUpdaters.add(imageSelectionUpdater);
 
         this.imagePreviewCleanup = () => {
-            this.overlayUpdaters.delete(imagePositionUpdater);
-            this.overlaySelectionUpdaters.delete(imageSelectionUpdater);
+            this.overlayScheduler.updaters.delete(imagePositionUpdater);
+            this.overlayScheduler.selectionUpdaters.delete(imageSelectionUpdater);
             if (this.cy) {
                 this.cy.userZoomingEnabled(true);
                 this.cy.userPanningEnabled(true);
@@ -3471,7 +2881,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
         if (!this.cy || !this.container) return;
 
         // 清理旧的统一 overlay 调度器（badge 重建时所有子系统也会重建）
-        this.cleanupOverlayScheduler();
+        this.overlayScheduler.cleanupScheduler();
+        this.edgeControlPointUpdaters.clear();
+        this.edgeEndpointUpdaters.clear();
         this.cleanupBadgeInteractionBindings();
 
         // 先从旧 badgeContainer 中摘下缓存的 MD overlay（保持 DOM 节点存活，便于下面复用）
@@ -3780,7 +3192,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
             const updateUnderlinePosition = () => {
                 if (!this.cy) return;
-                if (this.overlayInteracting) {
+                if (this.overlayScheduler.isInteracting) {
                     underlineGroupEl.style.display = 'none';
                     return;
                 }
@@ -4095,7 +3507,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             if (node.data('isGroup') || node.data('isEmbed')) return;
             const rawColor = String(node.data('customColor') || '');
             if (!rawColor || rawColor.startsWith('fill2:')) return;
-            const color = this.normalizeHexColor(rawColor);
+            const color = normalizeHexColor(rawColor);
             if (!color) return;
 
 			const dotEl = document.createElement('div');
@@ -4153,19 +3565,19 @@ export class CytoscapeRenderer implements IGraphRenderer {
         this.cy.nodes('[badge]').forEach((node: any) => {
             const badge = node.data('badge');
             if (!badge || node.data('isEmbed')) return;
-            const isModern = this.isModernThemeStyle();
+            const isModern = isModernThemeStyle(this.currentOptions);
             const branchBorderColor = typeof node.data('branchNodeBorder') === 'string'
-                ? this.normalizeHexColor(node.data('branchNodeBorder'))
+                ? normalizeHexColor(node.data('branchNodeBorder'))
                 : null;
             const modernBase = branchBorderColor || '#64748b';
             const badgeBackgroundColor = isModern
-                ? this.hexToRgba(this.darkenColor(modernBase, 0.62), 0.22)
+                ? hexToRgba(darkenColor(modernBase, 0.62), 0.22)
                 : 'rgba(0, 0, 0, 0.25)';
             const badgeTextColor = isModern
-                ? this.hexToRgba(this.darkenColor(modernBase, 0.30), 0.86)
+                ? hexToRgba(darkenColor(modernBase, 0.30), 0.86)
                 : 'rgba(255, 255, 255, 0.9)';
             const badgeBorderColor = isModern
-                ? this.hexToRgba(this.darkenColor(modernBase, 0.42), 0.38)
+                ? hexToRgba(darkenColor(modernBase, 0.42), 0.38)
                 : 'transparent';
 
 			const badgeEl = document.createElement('div');
@@ -4299,7 +3711,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     node.style({ width: widthModel, height: heightModel });
                     node.data('manualWidthModel', widthModel);
                     node.data('manualHeightModel', heightModel);
-                    this.immediateOverlayUpdate();
+                    this.overlayScheduler.immediate();
                 };
 
                 const onUp = () => {
@@ -4465,10 +3877,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
         // 注册到统一 overlay 调度器
         const badgePositionUpdater = () => badgeUpdaters.forEach(updater => updater());
-        this.overlayUpdaters.add(badgePositionUpdater);
-        this.overlayImmediateUpdaters.add(badgePositionUpdater);
-        this.overlayExtraUpdaters.add(badgePositionUpdater);
-        this.overlaySelectionUpdaters.add(badgePositionUpdater);
+        this.overlayScheduler.updaters.add(badgePositionUpdater);
+        this.overlayScheduler.immediateUpdaters.add(badgePositionUpdater);
+        this.overlayScheduler.extraUpdaters.add(badgePositionUpdater);
+        this.overlayScheduler.selectionUpdaters.add(badgePositionUpdater);
 
         // 添加边控制点
         this.addEdgeControlPoints();
@@ -4486,8 +3898,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
         this.addGroupResizeHandles();
 
         // 所有 overlay 子系统注册完毕后，绑定统一事件监听
-        this.bindOverlayListeners();
-        this.immediateOverlayUpdate();
+        this.overlayScheduler.bindListeners();
+        this.overlayScheduler.immediate();
     }
 
     /**
@@ -4991,12 +4403,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
         // 注册到统一 overlay 调度器
         const collapsePositionUpdater = () => handleUpdaters.forEach((fn) => fn());
-        this.overlayUpdaters.add(collapsePositionUpdater);
-        this.overlayExtraUpdaters.add(collapsePositionUpdater);
+        this.overlayScheduler.updaters.add(collapsePositionUpdater);
+        this.overlayScheduler.extraUpdaters.add(collapsePositionUpdater);
 
         this.collapseHandleCleanup = () => {
-            this.overlayUpdaters.delete(collapsePositionUpdater);
-            this.overlayExtraUpdaters.delete(collapsePositionUpdater);
+            this.overlayScheduler.updaters.delete(collapsePositionUpdater);
+            this.overlayScheduler.extraUpdaters.delete(collapsePositionUpdater);
             handleContainer.remove();
         };
     }
@@ -5185,8 +4597,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
         // 注册到统一 overlay 调度器
         const connectionPositionUpdater = () => handleUpdaters.forEach(updater => updater());
-        this.overlayUpdaters.add(connectionPositionUpdater);
-        this.overlayImmediateUpdaters.add(connectionPositionUpdater);
+        this.overlayScheduler.updaters.add(connectionPositionUpdater);
+        this.overlayScheduler.immediateUpdaters.add(connectionPositionUpdater);
     }
 
     /**
@@ -5498,8 +4910,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
         updateControlPointPosition();
 
         // 注册到统一 overlay 调度器
-        this.overlayUpdaters.add(updateControlPointPosition);
-        this.overlayImmediateUpdaters.add(updateControlPointPosition);
+        this.overlayScheduler.updaters.add(updateControlPointPosition);
+        this.overlayScheduler.immediateUpdaters.add(updateControlPointPosition);
         this.edgeControlPointUpdaters.add(updateControlPointPosition);
 
         // 拖动控制点
@@ -5615,8 +5027,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private hideEdgeControlPoints(container: HTMLElement): void {
         // 从统一调度器中移除边控制点的 updaters
         this.edgeControlPointUpdaters.forEach(fn => {
-            this.overlayUpdaters.delete(fn);
-            this.overlayImmediateUpdaters.delete(fn);
+            this.overlayScheduler.updaters.delete(fn);
+            this.overlayScheduler.immediateUpdaters.delete(fn);
         });
         this.edgeControlPointUpdaters.clear();
 
@@ -5704,7 +5116,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 this.updateEndpointHandlePosition(targetHandle, edge, 'target');
             }
         };
-        this.overlayUpdaters.add(endpointUpdater);
+        this.overlayScheduler.updaters.add(endpointUpdater);
         this.edgeEndpointUpdaters.add(endpointUpdater);
 
         // 立即定位一次，避免手柄先在左上角闪现
@@ -5769,7 +5181,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private hideEdgeEndpointHandles(container: HTMLElement): void {
         // 从统一调度器中移除边端点手柄的 updaters
         this.edgeEndpointUpdaters.forEach(fn => {
-            this.overlayUpdaters.delete(fn);
+            this.overlayScheduler.updaters.delete(fn);
         });
         this.edgeEndpointUpdaters.clear();
 
@@ -6471,8 +5883,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     closeColorPanel();
                     return;
                 }
-                const initial = this.lastPickedTextColor ?? CytoscapeRenderer.DEFAULT_SELECTION_TEXT_COLOR;
-                colorPanel = this.createSelectionColorPanel(initial, this.lastPickedTextColor, '自定义颜色', (color) => {
+                const initial = this.lastPickedTextColor ?? DEFAULT_SELECTION_TEXT_COLOR;
+                colorPanel = createSelectionColorPanel(initial, this.lastPickedTextColor, '自定义颜色', (color) => {
                     this.lastPickedTextColor = color;
                     applySelectionTransform((text) => `<span style='color: ${color};'>${text}</span>`);
                     closeColorPanel();
@@ -6487,8 +5899,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     closeBgColorPanel();
                     return;
                 }
-                const initial = this.lastPickedBgColor ?? CytoscapeRenderer.DEFAULT_SELECTION_BG_COLOR;
-                bgColorPanel = this.createSelectionColorPanel(initial, this.lastPickedBgColor, '自定义背景色', (color) => {
+                const initial = this.lastPickedBgColor ?? DEFAULT_SELECTION_BG_COLOR;
+                bgColorPanel = createSelectionColorPanel(initial, this.lastPickedBgColor, '自定义背景色', (color) => {
                     this.lastPickedBgColor = color;
                     applySelectionTransform((text) => `<span style='background-color: ${color};'>${text}</span>`);
                     closeBgColorPanel();
@@ -6790,8 +6202,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     closeColorPanel();
                     return;
                 }
-                const initial = this.lastPickedTextColor ?? CytoscapeRenderer.DEFAULT_SELECTION_TEXT_COLOR;
-                colorPanel = this.createSelectionColorPanel(initial, this.lastPickedTextColor, '自定义颜色', (color) => {
+                const initial = this.lastPickedTextColor ?? DEFAULT_SELECTION_TEXT_COLOR;
+                colorPanel = createSelectionColorPanel(initial, this.lastPickedTextColor, '自定义颜色', (color) => {
                     this.lastPickedTextColor = color;
                     applyAndRefresh((text) => `<span style='color: ${color};'>${text}</span>`);
                     closeColorPanel();
@@ -6806,8 +6218,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     closeBgColorPanel();
                     return;
                 }
-                const initial = this.lastPickedBgColor ?? CytoscapeRenderer.DEFAULT_SELECTION_BG_COLOR;
-                bgColorPanel = this.createSelectionColorPanel(initial, this.lastPickedBgColor, '自定义背景色', (color) => {
+                const initial = this.lastPickedBgColor ?? DEFAULT_SELECTION_BG_COLOR;
+                bgColorPanel = createSelectionColorPanel(initial, this.lastPickedBgColor, '自定义背景色', (color) => {
                     this.lastPickedBgColor = color;
                     applyAndRefresh((text) => `<span style='background-color: ${color};'>${text}</span>`);
                     closeBgColorPanel();
@@ -9096,7 +8508,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 监听添加占位符节点事件
-        this.addManagedDomListener(this.container, 'add-placeholder-node', (event: any) => {
+        this.overlayScheduler.addManagedDomListener(this.container, 'add-placeholder-node', (event: any) => {
             const { nodeId, position, suggestedNodeId, parentNodeId } = event.detail;
 
             try {
@@ -9150,7 +8562,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 监听移除占位符节点事件
-        this.addManagedDomListener(this.container, 'remove-placeholder-node', (event: any) => {
+        this.overlayScheduler.addManagedDomListener(this.container, 'remove-placeholder-node', (event: any) => {
             const { nodeId } = event.detail;
 
             // 先清理连接线（通过查询选择器，更可靠）
@@ -9173,7 +8585,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 // 从 overlay 调度器移除连接线更新器
                 const lineUpdater = (nodeData as any).connectionLineUpdater;
                 if (lineUpdater) {
-                    this.overlayUpdaters.delete(lineUpdater);
+                    this.overlayScheduler.updaters.delete(lineUpdater);
                 }
 
                 this.cy?.remove(node);
@@ -9195,7 +8607,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 监听清理所有占位符连接线事件（用于视图刷新时）
-        this.addManagedDomListener(this.container, 'cleanup-all-placeholder-connections', () => {
+        this.overlayScheduler.addManagedDomListener(this.container, 'cleanup-all-placeholder-connections', () => {
             const connectionLines = this.container?.querySelectorAll('.placeholder-connection-line');
             if (connectionLines) {
                 connectionLines.forEach(line => {
@@ -9207,7 +8619,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 监听通过 ID 选中节点事件（用于新建节点后自动选中）
-        this.addManagedDomListener(this.container, 'select-node-by-id', (event: any) => {
+        this.overlayScheduler.addManagedDomListener(this.container, 'select-node-by-id', (event: any) => {
             const { nodeId } = event.detail;
 
             // 延迟执行，确保视图刷新完成
@@ -10353,9 +9765,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
         };
 
         // 添加事件监听器
-        this.addManagedDomListener(this.container, 'keydown', handleKeyDown);
-        this.addManagedDomListener(this.container, 'keyup', handleKeyUp);
-        this.addManagedDomListener(this.container, 'zk-open-search-bar', () => {
+        this.overlayScheduler.addManagedDomListener(this.container, 'keydown', handleKeyDown);
+        this.overlayScheduler.addManagedDomListener(this.container, 'keyup', handleKeyUp);
+        this.overlayScheduler.addManagedDomListener(this.container, 'zk-open-search-bar', () => {
             this.showSearchBar();
         });
 
@@ -10365,7 +9777,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         }
 
         // 当容器获得焦点时，自动聚焦
-        this.addManagedDomListener(this.container, 'mousedown', () => {
+        this.overlayScheduler.addManagedDomListener(this.container, 'mousedown', () => {
             this.container?.focus();
         });
     }
@@ -10490,7 +9902,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 注册到统一 overlay 调度器
-        this.overlayUpdaters.add(updateHandlePositions);
+        this.overlayScheduler.updaters.add(updateHandlePositions);
     }
 
     /**
@@ -10804,7 +10216,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         let isMultiSelect = false;
 
         // 鼠标按下开始框选
-        this.addManagedDomListener(this.container, 'mousedown', (e: MouseEvent) => {
+        this.overlayScheduler.addManagedDomListener(this.container, 'mousedown', (e: MouseEvent) => {
             const target = e.target as HTMLElement;
 
             // 只在 canvas 上点击时才开始框选
@@ -10908,8 +10320,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
             }
         };
 
-        this.addManagedDomListener(document, 'mousemove', handleMouseMove);
-        this.addManagedDomListener(document, 'mouseup', handleMouseUp);
+        this.overlayScheduler.addManagedDomListener(document, 'mousemove', handleMouseMove);
+        this.overlayScheduler.addManagedDomListener(document, 'mouseup', handleMouseUp);
     }
 
     /**
@@ -11628,7 +11040,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         };
 
         // 注册到统一 overlay 调度器，而非单独绑定事件
-        this.overlayUpdaters.add(updateConnectionLine);
+        this.overlayScheduler.updaters.add(updateConnectionLine);
 
         // 保存更新处理器引用，以便后续清理
         (nodeData as any).connectionLineUpdater = updateConnectionLine;

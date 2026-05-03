@@ -12,6 +12,7 @@ import { FolderDrawer } from "src/view/folderDrawer";
 import { createEmptyMOCJson } from "src/utils/mocJsonCodec";
 import { MermaidParser } from "src/utils/mermaidParser";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
+import { createSelectionColorPanel } from "src/renderer/colorUtils";
 import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
 import { RenderOptions } from "src/renderer/types";
 import { MOCHandler } from "src/view/index/mocHandler";
@@ -4562,11 +4563,11 @@ cy.fit(null, 40);
             };
             updateSelectedPreview(initialColor);
 
-            const panel = (this.branchRenderer || new CytoscapeRenderer()).createSelectionColorPanel(
+            const panel = createSelectionColorPanel(
                 initialColor,
                 this.lastPickedNodeFillColor,
                 '自定义底色',
-                (hexColor) => {
+                (hexColor: string) => {
                     selectedColor = hexColor;
                     this.lastPickedNodeFillColor = hexColor;
                     updateSelectedPreview(hexColor);
