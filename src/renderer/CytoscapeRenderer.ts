@@ -9,6 +9,7 @@ import { EmbeddableMarkdownEditor } from 'src/utils/EmbeddableMarkdownEditor';
 import { isMocPath, stripMocSuffix } from 'src/utils/utils';
 import { Minimap } from './Minimap';
 import { buildStylesheet } from './stylesheet';
+import * as layoutAdapter from './layoutAdapter';
 
 // 处理 CommonJS 和 ESM 模块的兼容性
 const getCytoscape = (): any => {
@@ -1016,35 +1017,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 仅处理非分组节点，且只在坐标几乎完全一致时生效。
      */
     private resolveExactNodeOverlaps(): void {
-        if (!this.cy) return;
-
-        const buckets = new Map<string, any[]>();
-        this.cy.nodes().forEach((node: any) => {
-            if (node.data('isGroup')) return;
-            const pos = node.position();
-            const key = `${Math.round(pos.x * 10) / 10}:${Math.round(pos.y * 10) / 10}`;
-            const bucket = buckets.get(key);
-            if (bucket) {
-                bucket.push(node);
-            } else {
-                buckets.set(key, [node]);
-            }
-        });
-
-        this.cy.batch(() => {
-            buckets.forEach((nodes) => {
-                if (nodes.length <= 1) return;
-                const basePos = nodes[0].position();
-                for (let i = 1; i < nodes.length; i++) {
-                    const angle = (2 * Math.PI * i) / (nodes.length - 1);
-                    const radius = 14 + i * 6;
-                    nodes[i].position({
-                        x: basePos.x + Math.cos(angle) * radius,
-                        y: basePos.y + Math.sin(angle) * radius
-                    });
-                }
-            });
-        });
+        layoutAdapter.resolveExactNodeOverlaps(this.cy);
     }
 
     private updateActiveFirstLevelBranch(): void {
@@ -1079,39 +1052,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * - 首次布局失败时自动回退到 breadthfirst
      */
     private runLayoutSafely(layoutConfig: any): void {
-        if (!this.cy) return;
-
-        // 空图/单节点图不跑复杂布局，避免布局器内部边界计算异常
-        const nodeCount = this.cy.nodes().length;
-        if (nodeCount <= 1) {
-            this.cy.layout({ name: 'preset' }).run();
-            return;
-        }
-
-        try {
-            const layout = this.cy.layout(layoutConfig);
-            layout.run();
-        } catch (error) {
-            console.error('[CytoscapeRenderer] layout run failed, fallback to breadthfirst', {
-                layout: layoutConfig?.name,
-                error
-            });
-            try {
-                const fallbackGrid = this.cy.layout({
-                    name: 'grid',
-                    fit: true,
-                    padding: 40
-                });
-                fallbackGrid.run();
-            } catch (fallbackError) {
-                console.error('[CytoscapeRenderer] grid fallback failed, fallback to preset', fallbackError);
-                try {
-                    this.cy.layout({ name: 'preset' }).run();
-                } catch (presetError) {
-                    console.error('[CytoscapeRenderer] preset fallback failed', presetError);
-                }
-            }
-        }
+        layoutAdapter.runLayoutSafely(this.cy, layoutConfig);
     }
 
     /**
@@ -2189,46 +2130,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 直接设置 savedPosition，避免节点堆叠在原点导致 edge 无法绘制
      */
     private presetInOutLinksPositions(data: GraphData): void {
-        const hasInOutLinks = data.nodes.some(node =>
-            node.ID.startsWith('inlink-') || node.ID.startsWith('outlink-') || node.ID === 'current'
-        );
-        if (!hasInOutLinks) return;
-
-        const inlinks: ZKNode[] = [];
-        const outlinks: ZKNode[] = [];
-
-        data.nodes.forEach(node => {
-            if (node.ID.startsWith('inlink-')) inlinks.push(node);
-            else if (node.ID.startsWith('outlink-')) outlinks.push(node);
-            else if (node.ID === 'current' && !node.savedPosition) node.savedPosition = { x: 0, y: 0 };
-        });
-
-        // 网格布局参数
-        const COLS = 3;
-        const COL_GAP = 180;
-        const ROW_GAP = 100;
-        const CENTER_GAP = 120;
-
-        const assignGrid = (nodes: ZKNode[], startY: number, direction: 1 | -1) => {
-            for (let i = 0; i < nodes.length; i++) {
-                const row = Math.floor(i / COLS);
-                const col = i % COLS;
-                const colsInRow = Math.min(COLS, nodes.length - row * COLS);
-                const x = (col - (colsInRow - 1) / 2) * COL_GAP;
-                const y = startY + direction * row * ROW_GAP;
-                if (!nodes[i].savedPosition) {
-                    nodes[i].savedPosition = { x, y };
-                }
-            }
-        };
-
-        // 出链在上方
-        const outlinkRows = Math.ceil(outlinks.length / COLS);
-        const outlinkStartY = -CENTER_GAP - (outlinkRows - 1) * ROW_GAP;
-        assignGrid(outlinks, outlinkStartY, 1);
-
-        // 入链在下方
-        assignGrid(inlinks, CENTER_GAP, 1);
+        layoutAdapter.presetInOutLinksPositions(data);
     }
 
     /**
@@ -2236,91 +2138,14 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 用于局部关系视图的出入链图等需要自动布局的场景
      */
     private getLayoutConfig(options: RenderOptions): any {
-        const layoutType = options.layoutType || 'preset';
-
-        // 默认使用 preset 布局（索引视图等已有位置信息的情况）
-        if (layoutType === 'preset') {
-            return { name: 'preset' };
-        }
-
-        // 根据方向设置布局方向
-        const rankDir = this.directionToRankDir(options.direction || 'TB');
-
-        switch (layoutType) {
-            case 'dagre':
-                // dagre 层级布局，适合家族树结构
-                return {
-                    name: 'dagre',
-                    rankDir: rankDir,
-                    nodeSep: 50,
-                    rankSep: 100,
-                    edgeSep: 10
-                };
-
-            case 'cose':
-                // cose 力导向布局，适合入链出链图
-                return {
-                    name: 'cose',
-                    // 节点间距
-                    nodeRepulsion: 100000,
-                    // 理想边长
-                    idealEdgeLength: 100,
-                    // 边弹性
-                    edgeElasticity: 100,
-                    // 布局迭代次数
-                    nestingFactor: 5,
-                    // 初始布局时的温度
-                    initialTemp: 200,
-                    // 冷却因子
-                    coolingFactor: 0.95,
-                    // 最小温度
-                    minTemp: 1.0
-                };
-
-            case 'cose-bilkent':
-                // cose-bilkent 力导向布局，适合复杂的网络结构
-                return {
-                    name: 'cose-bilkent',
-                    // 布局质量
-                    quality: 'proof',
-                    // 是否为有向图
-                    directed: false,
-                    // 节点间距
-                    nodeRepulsion: 4500,
-                    // 理想边长
-                    idealEdgeLength: 50,
-                    // 边弹性
-                    edgeElasticity: 0.45
-                };
-
-            case 'breadthfirst':
-                return {
-                    name: 'breadthfirst',
-                    directed: false,
-                    spacingFactor: 1.5
-                };
-
-            case 'grid':
-                return {
-                    name: 'grid'
-                };
-
-            default:
-                return { name: 'preset' };
-        }
+        return layoutAdapter.getLayoutConfig(options);
     }
 
     /**
      * 将方向字符串转换为 dagre 的 rankDir 格式
      */
     private directionToRankDir(direction: string): string {
-        switch (direction) {
-            case 'TB': return 'TB'; // Top to Bottom
-            case 'BT': return 'BT'; // Bottom to Top
-            case 'LR': return 'LR'; // Left to Right
-            case 'RL': return 'RL'; // Right to Left
-            default: return 'TB';
-        }
+        return layoutAdapter.directionToRankDir(direction);
     }
 
     private getStylesheet(options: RenderOptions): any[] {
@@ -3636,73 +3461,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 获取布局配置
      */
     private getLayout(options: RenderOptions): any {
-     const layoutType = options.layoutType || 'dagre';  // 改为 dagre 默认
-    const animate = options.animate !== false;
-    const animationDuration = options.animationDuration || 500;
-
-    const baseLayout = {
-        animate: animate,
-        animationDuration: animationDuration,
-        fit: true,
-        padding: 80
-    };
-
-        switch (layoutType) {
-            case 'breadthfirst':
-                return {
-                    name: 'breadthfirst',
-                    ...baseLayout,
-                    directed: true,
-                    spacingFactor: 1.5,
-                    avoidOverlap: true,
-                    nodeDimensionsIncludeLabels: true
-                };
-case 'dagre':
-    return {
-        name: 'dagre',
-        ...baseLayout,
-        rankDir: 'LR',
-        nodeSep: 150,        // 同层节点间距（水平）
-        edgeSep: 50,         // 边的间距
-        rankSep: 200,        // 层级间距（垂直）
-        ranker: 'network-simplex',
-        nodeDimensionsIncludeLabels: true  // 考虑标签尺寸
-    };
-            case 'cose':
-                return {
-                    name: 'cose-bilkent',
-                    ...baseLayout,
-                    nodeRepulsion: 4500,
-                    idealEdgeLength: 100,
-                    edgeElasticity: 0.45,
-                    nestingFactor: 0.1,
-                    gravity: 0.25,
-                    numIter: 2500,
-                    tile: true,
-                    tilingPaddingVertical: 10,
-                    tilingPaddingHorizontal: 10,
-                    gravityRangeCompound: 1.5,
-                    gravityCompound: 1.0,
-                    gravityRange: 3.8
-                };
-
-            case 'grid':
-                return {
-                    name: 'grid',
-                    ...baseLayout,
-                    rows: undefined,
-                    cols: undefined,
-                    avoidOverlap: true,
-                    avoidOverlapPadding: 10,
-                    nodeDimensionsIncludeLabels: true
-                };
-
-            default:
-                return {
-                    name: 'breadthfirst',
-                    ...baseLayout
-                };
-        }
+        return layoutAdapter.getLayout(options);
     }
 
     /**
@@ -5244,47 +5003,7 @@ case 'dagre':
 
     private applyCollapsedState(): void {
         if (!this.cy) return;
-
-        const existingIds = new Set<string>();
-        this.cy.nodes().forEach((node: any) => {
-            const id = node.data()?.originalNode?.IDStr;
-            if (id) existingIds.add(id);
-        });
-        this.collapsedNodeIds = new Set(Array.from(this.collapsedNodeIds).filter((id) => existingIds.has(id)));
-
-        this.cy.nodes().removeClass('zk-collapsed-hidden');
-        this.cy.edges().removeClass('zk-collapsed-hidden');
-
-        const hiddenIds = new Set<string>();
-        this.collapsedNodeIds.forEach((collapsedId) => {
-            this.cy!.nodes().forEach((node: any) => {
-                const id = node.data()?.originalNode?.IDStr;
-                if (!id) return;
-                if (id !== collapsedId && id.startsWith(`${collapsedId}.`)) {
-                    hiddenIds.add(id);
-                    node.addClass('zk-collapsed-hidden');
-                }
-            });
-        });
-
-        this.cy.edges().forEach((edge: any) => {
-            const sourceId = edge.data()?.originalSource;
-            const targetId = edge.data()?.originalTarget;
-            if ((sourceId && hiddenIds.has(sourceId)) || (targetId && hiddenIds.has(targetId))) {
-                edge.addClass('zk-collapsed-hidden');
-            }
-        });
-
-        // 如果分组内成员全部隐藏，则分组容器也一并隐藏
-        this.cy.nodes('[?isGroup]').forEach((groupNode: any) => {
-            const groupNodeIds: string[] = groupNode.data('nodeIds') || [];
-            if (groupNodeIds.length === 0) return;
-
-            const hasVisibleMember = groupNodeIds.some((nodeId) => !hiddenIds.has(nodeId));
-            if (!hasVisibleMember) {
-                groupNode.addClass('zk-collapsed-hidden');
-            }
-        });
+        this.collapsedNodeIds = layoutAdapter.applyCollapsedState(this.cy, this.collapsedNodeIds);
     }
     
     /**
@@ -10656,17 +10375,7 @@ case 'dagre':
      */
     private shouldRelayout(changes: GraphChanges): boolean {
         if (!this.currentData) return true;
-
-        const totalChanges = changes.addedNodes.length +
-            changes.removedNodes.length +
-            changes.addedEdges.length +
-            changes.removedEdges.length;
-
-        const currentNodeCount = this.currentData.nodes.length;
-        const changeRatio = totalChanges / Math.max(currentNodeCount, 1);
-
-        // 如果变化超过 20%，重新布局
-        return changeRatio > 0.2;
+        return layoutAdapter.shouldRelayout(changes, this.currentData.nodes.length);
     }
 
     /**
@@ -11661,148 +11370,50 @@ case 'dagre':
     }
 
     private normalizeVector(vx: number, vy: number): { x: number; y: number } {
-        const len = Math.hypot(vx, vy);
-        if (len < 1e-6) return { x: 1, y: 0 };
-        return { x: vx / len, y: vy / len };
+        return layoutAdapter.normalizeVector(vx, vy);
     }
 
     private getBranchDirection(activeNode: any): { x: number; y: number } {
-        const nodePos = activeNode.position();
-        const parent = activeNode.incomers('edge').sources();
-        if (parent.length > 0) {
-            const parentPos = parent.first().position();
-            return this.normalizeVector(nodePos.x - parentPos.x, nodePos.y - parentPos.y);
-        }
-
-        // 根节点：优先使用占用最少的象限方向
-        const children = activeNode.outgoers('edge').targets();
-        if (children.length === 0) return { x: 1, y: 0 };
-
-        const cardinal = [
-            { x: 1, y: 0 },   // 右
-            { x: -1, y: 0 },  // 左
-            { x: 0, y: 1 },   // 下
-            { x: 0, y: -1 }   // 上
-        ];
-        const score = [0, 0, 0, 0];
-
-        children.forEach((child: any) => {
-            const cp = child.position();
-            const dir = this.normalizeVector(cp.x - nodePos.x, cp.y - nodePos.y);
-            let bestIndex = 0;
-            let bestDot = -Infinity;
-            cardinal.forEach((c, idx) => {
-                const dot = dir.x * c.x + dir.y * c.y;
-                if (dot > bestDot) {
-                    bestDot = dot;
-                    bestIndex = idx;
-                }
-            });
-            score[bestIndex] += 1;
-        });
-
-        let minIdx = 0;
-        for (let i = 1; i < score.length; i++) {
-            if (score[i] < score[minIdx]) minIdx = i;
-        }
-        return cardinal[minIdx];
+        return layoutAdapter.getBranchDirection(activeNode);
     }
 
     private getAutoLayoutDirection(node: any): { x: number; y: number } {
-        const lineage: any[] = [node];
-        let current = node;
-        while (true) {
-            const parents = current.incomers('edge').sources().filter((n: any) => !n.data('isGroup'));
-            if (!parents || parents.length === 0) break;
-            current = parents.first();
-            lineage.push(current);
-        }
-
-        const root = lineage[lineage.length - 1];
-        if (root.id() === node.id()) {
-            return { x: 1, y: 0 };
-        }
-
-        const branchAnchor = lineage.length >= 2 ? lineage[lineage.length - 2] : node;
-        const rootPos = root.position();
-        const anchorPos = branchAnchor.position();
-        const dx = anchorPos.x - rootPos.x;
-        const dy = anchorPos.y - rootPos.y;
-        if (Math.abs(dx) >= Math.abs(dy)) {
-            return { x: dx >= 0 ? 1 : -1, y: 0 };
-        }
-        return { x: 0, y: dy >= 0 ? 1 : -1 };
+        return layoutAdapter.getAutoLayoutDirection(node);
     }
 
     private getPerpendicular(dir: { x: number; y: number }): { x: number; y: number } {
-        return { x: -dir.y, y: dir.x };
+        return layoutAdapter.getPerpendicular(dir);
     }
 
     private getAutoLayoutStackDirection(dir: { x: number; y: number }): { x: number; y: number } {
-        if (Math.abs(dir.x) > 0.5) {
-            return { x: 0, y: 1 };
-        }
-        return { x: 1, y: 0 };
+        return layoutAdapter.getAutoLayoutStackDirection(dir);
     }
 
     private nextOffsetByProjection(points: any[], anchor: { x: number; y: number }, normal: { x: number; y: number }, gap: number): number {
-        const projections = points.map((n: any) => {
-            const p = n.position();
-            return (p.x - anchor.x) * normal.x + (p.y - anchor.y) * normal.y;
-        });
-
-        if (projections.length === 0) return 0;
-
-        // 让新增节点延续当前侧向增长：优先正向堆叠，碰撞则继续外扩
-        let offset = Math.max(...projections) + gap;
-        const isOccupied = (candidate: number) => projections.some(v => Math.abs(v - candidate) < gap * 0.8);
-        while (isOccupied(offset)) {
-            offset += gap;
-        }
-        return offset;
+        return layoutAdapter.nextOffsetByProjection(points, anchor, normal, gap);
     }
 
     private isAutoNodeLayoutStyle(): boolean {
-        const style = this.currentOptions?.nodeLayoutStyle;
-        if (typeof style !== 'string') return false;
-        return style.trim().toLowerCase() === 'auto';
+        return layoutAdapter.isAutoNodeLayoutStyle(this.currentOptions);
     }
 
     /**
      * 沿 ID 父链向上查找覆盖；未命中则回退到文件级默认
      */
     private isNodeAutoLayoutForId(nodeId: string): boolean {
-        const overrides = this.currentOptions?.nodeLayoutOverrides || {};
-        let current = nodeId;
-        while (current.length > 0) {
-            const override = overrides[current];
-            if (override !== undefined) return override === 'auto';
-            const parts: string[] = current.split('.');
-            if (parts.length <= 1) break;
-            current = parts.slice(0, -1).join('.');
-        }
-        return this.isAutoNodeLayoutStyle();
+        return layoutAdapter.isNodeAutoLayoutForId(nodeId, this.currentOptions);
     }
 
     private estimateCollisionBox(referenceNode: any): { width: number; height: number } {
-        const width = Math.max(Number(referenceNode.width?.() || 0), 120);
-        const height = Math.max(Number(referenceNode.height?.() || 0), 64);
-        return {
-            width: width + 36,
-            height: height + 30
-        };
+        return layoutAdapter.estimateCollisionBox(referenceNode);
     }
 
     private getAxisSpan(size: { width: number; height: number }, dir: { x: number; y: number }): number {
-        return Math.abs(dir.x) >= Math.abs(dir.y) ? size.width : size.height;
+        return layoutAdapter.getAxisSpan(size, dir);
     }
 
     private getDirectionalDistance(referenceNode: any, dir: { x: number; y: number }, extraGap: number = 48): number {
-        const referenceSize = this.estimateCollisionBox(referenceNode);
-        const estimatedNewSize = referenceSize;
-        const referenceSpan = this.getAxisSpan(referenceSize, dir);
-        const newSpan = this.getAxisSpan(estimatedNewSize, dir);
-        return referenceSpan / 2 + newSpan / 2 + extraGap;
+        return layoutAdapter.getDirectionalDistance(referenceNode, dir, extraGap);
     }
 
     private isPositionColliding(
@@ -11810,41 +11421,7 @@ case 'dagre':
         size: { width: number; height: number },
         excludeNodeIds: string[] = []
     ): boolean {
-        if (!this.cy) return false;
-
-        const marginX = 26;
-        const marginY = 22;
-        const candidateRect = {
-            x1: candidate.x - size.width / 2 - marginX,
-            x2: candidate.x + size.width / 2 + marginX,
-            y1: candidate.y - size.height / 2 - marginY,
-            y2: candidate.y + size.height / 2 + marginY
-        };
-
-        return this.cy.nodes('[!isGroup]').some((node: any) => {
-            if (node.removed() || !node.visible()) return false;
-            if (node.hasClass('zk-collapsed-hidden')) return false;
-            if (node.data('isPlaceholder')) return false;
-            if (excludeNodeIds.includes(node.id())) return false;
-
-            const pos = node.position();
-            const otherWidth = Math.max(Number(node.width?.() || 0), 80);
-            const otherHeight = Math.max(Number(node.height?.() || 0), 44);
-            const otherRect = {
-                x1: pos.x - otherWidth / 2 - marginX,
-                x2: pos.x + otherWidth / 2 + marginX,
-                y1: pos.y - otherHeight / 2 - marginY,
-                y2: pos.y + otherHeight / 2 + marginY
-            };
-
-            const separated =
-                candidateRect.x2 <= otherRect.x1 ||
-                candidateRect.x1 >= otherRect.x2 ||
-                candidateRect.y2 <= otherRect.y1 ||
-                candidateRect.y1 >= otherRect.y2;
-
-            return !separated;
-        });
+        return layoutAdapter.isPositionColliding(this.cy, candidate, size, excludeNodeIds);
     }
 
     private resolveShortcutPosition(
@@ -11855,61 +11432,16 @@ case 'dagre':
         secondaryAxis?: { x: number; y: number },
         maxAttempts: number = 7
     ): { x: number; y: number } {
-        const size = this.estimateCollisionBox(referenceNode);
-        const excludeNodeIds = [referenceNode.id()];
-        const tryCandidate = (candidate: { x: number; y: number }) =>
-            !this.isPositionColliding(candidate, size, excludeNodeIds);
-
-        for (let attempt = 0; attempt < maxAttempts; attempt++) {
-            let candidate = { ...basePosition };
-
-            if (attempt > 0) {
-                const ring = Math.ceil(attempt / 2);
-                const sign = attempt % 2 === 1 ? 1 : -1;
-                candidate = {
-                    x: basePosition.x + primaryAxis.x * step * ring * sign,
-                    y: basePosition.y + primaryAxis.y * step * ring * sign
-                };
-
-                if (secondaryAxis && attempt >= 3) {
-                    candidate.x += secondaryAxis.x * step * 0.35 * ring;
-                    candidate.y += secondaryAxis.y * step * 0.35 * ring;
-                }
-            }
-
-            if (tryCandidate(candidate)) {
-                return candidate;
-            }
-        }
-
-        const secondary = secondaryAxis || { x: -primaryAxis.y, y: primaryAxis.x };
-        for (let ring = 1; ring <= maxAttempts + 14; ring++) {
-            const offsets = [
-                { a: ring, b: 0 },
-                { a: ring, b: 1 },
-                { a: ring, b: -1 },
-                { a: ring, b: 2 },
-                { a: ring, b: -2 },
-                { a: -ring, b: 0 },
-                { a: -ring, b: 1 },
-                { a: -ring, b: -1 }
-            ];
-
-            for (const offset of offsets) {
-                const candidate = {
-                    x: basePosition.x + primaryAxis.x * step * offset.a + secondary.x * step * 0.7 * offset.b,
-                    y: basePosition.y + primaryAxis.y * step * offset.a + secondary.y * step * 0.7 * offset.b
-                };
-                if (tryCandidate(candidate)) {
-                    return candidate;
-                }
-            }
-        }
-
-        return {
-            x: basePosition.x + primaryAxis.x * step * (maxAttempts + 16) + secondary.x * step * 1.4,
-            y: basePosition.y + primaryAxis.y * step * (maxAttempts + 16) + secondary.y * step * 1.4
-        };
+        if (!this.cy) return basePosition;
+        return layoutAdapter.resolveShortcutPosition(
+            this.cy,
+            basePosition,
+            referenceNode,
+            primaryAxis,
+            step,
+            secondaryAxis,
+            maxAttempts
+        );
     }
 
     /**
@@ -11917,62 +11449,12 @@ case 'dagre':
      * SimpleMind 风格：子节点基于视觉位置而非 ID
      */
     private getFreeChildShortcutPosition(activeNode: any): { x: number; y: number } {
-        const nodePos = activeNode.position();
-        const children = activeNode.outgoers('edge').targets();
-        const dir = this.getBranchDirection(activeNode);
-        const normal = this.getPerpendicular(dir);
-        const directionalDistance = this.getDirectionalDistance(activeNode, dir);
-        const anchor = {
-            x: nodePos.x + dir.x * directionalDistance,
-            y: nodePos.y + dir.y * directionalDistance
-        };
-        const offset = this.nextOffsetByProjection(children, anchor, normal, this.VERTICAL_GAP);
-        const rawPosition = {
-            x: anchor.x + normal.x * offset,
-            y: anchor.y + normal.y * offset
-        };
-        return this.resolveShortcutPosition(
-            rawPosition,
-            activeNode,
-            normal,
-            this.VERTICAL_GAP,
-            dir
-        );
+        if (!this.cy) return activeNode.position();
+        return layoutAdapter.getFreeChildShortcutPosition(this.cy, activeNode);
     }
 
     private getAutoChildShortcutPosition(activeNode: any): { x: number; y: number } {
-        const nodePos = activeNode.position();
-        const children = activeNode.outgoers('edge').targets();
-        const dir = this.getAutoLayoutDirection(activeNode);
-        const normal = this.getAutoLayoutStackDirection(dir);
-
-        if (children.length > 0) {
-            let lastChild: any = null;
-            let maxProj = -Infinity;
-            children.forEach((child: any) => {
-                const cp = child.position();
-                const proj = (cp.x - nodePos.x) * normal.x + (cp.y - nodePos.y) * normal.y;
-                if (proj > maxProj) {
-                    maxProj = proj;
-                    lastChild = child;
-                }
-            });
-            const lastPos = lastChild.position();
-            return {
-                x: lastPos.x + normal.x * this.SIBLING_GAP,
-                y: lastPos.y + normal.y * this.SIBLING_GAP
-            };
-        }
-
-        const anchor = {
-            x: nodePos.x + dir.x * this.HORIZONTAL_GAP,
-            y: nodePos.y + dir.y * this.HORIZONTAL_GAP
-        };
-        const offset = this.nextOffsetByProjection(children, anchor, normal, this.VERTICAL_GAP);
-        return {
-            x: anchor.x + normal.x * offset,
-            y: anchor.y + normal.y * offset
-        };
+        return layoutAdapter.getAutoChildShortcutPosition(activeNode);
     }
 
     private handleCreateChildNode(): void {
@@ -11995,74 +11477,12 @@ case 'dagre':
      * SimpleMind 风格：自动推开下方的兄弟节点及其子树
      */
     private getFreeSiblingShortcutPosition(activeNode: any): { x: number; y: number } {
-        const nodePos = activeNode.position();
-        const parent = activeNode.incomers('edge').sources();
-        if (parent.length === 0) {
-            // 无父节点，直接在下方生成
-            const downDir = { x: 0, y: 1 };
-            const directionalDistance = this.getDirectionalDistance(activeNode, downDir, 36);
-            const basePosition = { x: nodePos.x, y: nodePos.y + directionalDistance };
-            return this.resolveShortcutPosition(
-                basePosition,
-                activeNode,
-                downDir,
-                directionalDistance,
-                { x: 1, y: 0 },
-                5
-            );
-        }
-
-        // 有父节点时，沿垂直于父→子方向排列兄弟
-        const parentPos = parent.first().position();
-        const dir = this.getBranchDirection(activeNode);
-        const normal = this.getPerpendicular(dir);
-        const siblings = parent.first().outgoers('edge').targets();
-        const siblingGap = this.getDirectionalDistance(activeNode, normal, 28);
-
-        // 基础位置：在活动节点的法线方向偏移一个间距
-        const basePosition = {
-            x: nodePos.x + normal.x * siblingGap,
-            y: nodePos.y + normal.y * siblingGap
-        };
-
-        return this.resolveShortcutPosition(
-            basePosition,
-            activeNode,
-            normal,
-            siblingGap,
-            dir,
-            5
-        );
+        if (!this.cy) return activeNode.position();
+        return layoutAdapter.getFreeSiblingShortcutPosition(this.cy, activeNode);
     }
 
     private getAutoSiblingShortcutPosition(activeNode: any): { x: number; y: number } {
-        const nodePos = activeNode.position();
-        const parent = activeNode.incomers('edge').sources();
-        const parentPos = parent.first().position();
-        const siblings = parent.first().outgoers('edge').targets();
-        const dir = this.getAutoLayoutDirection(activeNode);
-        const normal = this.getAutoLayoutStackDirection(dir);
-        const siblingGap = Math.max(this.SIBLING_GAP, this.VERTICAL_GAP + 40);
-        const anchor = {
-            x: parentPos.x + dir.x * this.HORIZONTAL_GAP,
-            y: parentPos.y + dir.y * this.HORIZONTAL_GAP
-        };
-        const activeProj = (nodePos.x - anchor.x) * normal.x + (nodePos.y - anchor.y) * normal.y;
-        let offset = activeProj + siblingGap;
-
-        const projections = siblings.map((sib: any) => {
-            const p = sib.position();
-            return (p.x - anchor.x) * normal.x + (p.y - anchor.y) * normal.y;
-        });
-        const isOccupied = (candidate: number) => projections.some((v: number) => Math.abs(v - candidate) < siblingGap * 0.8);
-        while (isOccupied(offset)) {
-            offset += siblingGap;
-        }
-
-        return {
-            x: anchor.x + normal.x * offset,
-            y: anchor.y + normal.y * offset
-        };
+        return layoutAdapter.getAutoSiblingShortcutPosition(activeNode);
     }
 
     private handleCreateSiblingNode(): void {
@@ -12092,29 +11512,12 @@ case 'dagre':
      * 处理创建父节点（Shift+Tab 键）
      */
     private getFreeParentShortcutPosition(activeNode: any): { x: number; y: number } {
-        const nodePos = activeNode.position();
-        const dir = this.getBranchDirection(activeNode);
-        const directionalDistance = this.getDirectionalDistance(activeNode, dir);
-        const rawPosition = {
-            x: nodePos.x - dir.x * directionalDistance,
-            y: nodePos.y - dir.y * directionalDistance
-        };
-        return this.resolveShortcutPosition(
-            rawPosition,
-            activeNode,
-            this.getPerpendicular(dir),
-            this.VERTICAL_GAP,
-            { x: -dir.x, y: -dir.y }
-        );
+        if (!this.cy) return activeNode.position();
+        return layoutAdapter.getFreeParentShortcutPosition(this.cy, activeNode);
     }
 
     private getAutoParentShortcutPosition(activeNode: any): { x: number; y: number } {
-        const nodePos = activeNode.position();
-        const dir = this.getBranchDirection(activeNode);
-        return {
-            x: nodePos.x - dir.x * this.HORIZONTAL_GAP,
-            y: nodePos.y - dir.y * this.HORIZONTAL_GAP
-        };
+        return layoutAdapter.getAutoParentShortcutPosition(activeNode);
     }
 
     private handleCreateParentNode(): void {
