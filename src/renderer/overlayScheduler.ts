@@ -71,6 +71,10 @@ export class OverlayScheduler {
 	}
 
 	markInteracting(): void {
+		// 拖拽/布局期间 position 事件可能 N 个节点 × 每帧触发,
+		// 仅在 idle → interacting 翻边时才安排尾随 timer,避免每事件 clearTimeout/setTimeout 风暴。
+		// timer 自然到期后若仍有事件,markInteracting 会再次激活。
+		if (this.interacting) return;
 		this.interacting = true;
 		if (this.interactTimer !== null) {
 			window.clearTimeout(this.interactTimer);
@@ -108,7 +112,9 @@ export class OverlayScheduler {
 			this.scheduleExtra();
 		};
 
-		cy.on('zoom pan viewport drag position', this.coreUpdateHandler);
+		// 注: zoom/pan ⊂ viewport,只订阅 viewport 避免同一变化三次触发。
+		// drag/position 在拖拽和布局期间会按节点逐个触发;markInteracting 已加 idempotent guard。
+		cy.on('viewport drag position', this.coreUpdateHandler);
 		cy.on('dragfree', this.dragfreeHandler);
 		cy.on('class data add remove layoutstop', this.extraUpdateHandler);
 		cy.on('select unselect', this.selectionHandler);
@@ -125,8 +131,6 @@ export class OverlayScheduler {
 			return;
 		}
 		if (this.coreUpdateHandler) {
-			cy.off('zoom', this.coreUpdateHandler);
-			cy.off('pan', this.coreUpdateHandler);
 			cy.off('viewport', this.coreUpdateHandler);
 			cy.off('drag', this.coreUpdateHandler);
 			cy.off('position', this.coreUpdateHandler);

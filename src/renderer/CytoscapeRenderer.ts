@@ -334,11 +334,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
             });
 
             // 绑定事件（exportMode 下跳过所有 DOM 交互绑定，避免 MutationObserver/focus 副作用）
+            // 注: addNodeBadges() 不在此处调用，由后续统一的 if (!options.exportMode) 块处理，避免首帧重复构建。
             if (!options.exportMode) {
                 this.bindEvents();
                 this.bindKeyboardEvents();
                 this.initBoxSelection();
-                this.addNodeBadges();
                 if (this.isReadOnlyMode()) {
                     this.hideBatchToolbar();
                 }
@@ -466,8 +466,18 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         if (existing.length > 0) {
                             const wasEmbed = !!existing.data('isEmbed');
                             const nextIsEmbed = !!ele.data.isEmbed;
-                            // 更新节点数据
-                            existing.data(ele.data);
+                            // 浅比较 ele.data 与现有 data,只有变化时才写入,避免触发不必要的 style/data 事件
+                            const currentData = existing.data();
+                            let dataChanged = false;
+                            for (const key in ele.data) {
+                                if (currentData[key] !== ele.data[key]) {
+                                    dataChanged = true;
+                                    break;
+                                }
+                            }
+                            if (dataChanged) {
+                                existing.data(ele.data);
+                            }
 
                             // 同步更新位置（savedPosition 对应的坐标在 ele.position 上，data 里不含位置）
                             if (ele.group === 'nodes' && (ele as any).position) {
