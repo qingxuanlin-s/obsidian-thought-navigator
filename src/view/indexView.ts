@@ -172,7 +172,8 @@ export class ZKIndexView extends FileView {
     private lastHoverPreviewPath: string | null = null;
     private lastHoverPreviewAt = 0;
     private undoStack: Array<{ filePath: string; content: string; timestamp: number }> = [];
-    private readonly MAX_UNDO_STEPS = 7;
+    // 30 步在长操作会话足够使用;30 × ~50KB MOC = ~1.5MB,V8 内存无压力
+    private readonly MAX_UNDO_STEPS = 30;
     private isApplyingUndo = false;
     private undoShortcutBound = false;
     private pasteListenerBound = false;
