@@ -236,16 +236,19 @@ export function computeAutoLayout(input: ComputeAutoLayoutInput): Record<string,
 	};
 
 	const placeLayout = (layout: LayoutNode, cx: number, cy: number) => {
+		const saved = layout.id !== input.relayoutRootId ? input.nodePositions[layout.id] : undefined;
+		const ax = saved ? saved.x : cx;
+		const ay = saved ? saved.y : cy;
 		positions[layout.id] = {
-			x: Math.round(cx * 100) / 100,
-			y: Math.round(cy * 100) / 100,
+			x: Math.round(ax * 100) / 100,
+			y: Math.round(ay * 100) / 100,
 		};
 		if (layout.children.length === 0) return;
 		if (layout.groupChildren) {
-			placeRootGrouped(layout, cx, cy);
+			placeRootGrouped(layout, ax, ay);
 			return;
 		}
-		placeDirectedChildren(layout, cx, cy);
+		placeDirectedChildren(layout, ax, ay);
 	};
 
 	const root = input.nodes[input.relayoutRootId];
@@ -410,16 +413,19 @@ export function computeBidirectionalAutoLayout(input: ComputeAutoLayoutInput): R
 	};
 
 	const placeLayout = (layout: LayoutNode, cx: number, cy: number) => {
+		const saved = layout.id !== input.relayoutRootId ? input.nodePositions[layout.id] : undefined;
+		const ax = saved ? saved.x : cx;
+		const ay = saved ? saved.y : cy;
 		positions[layout.id] = {
-			x: Math.round(cx * 100) / 100,
-			y: Math.round(cy * 100) / 100,
+			x: Math.round(ax * 100) / 100,
+			y: Math.round(ay * 100) / 100,
 		};
 		if (layout.children.length === 0) return;
 		if (layout.groupChildren) {
-			placeGroupedChildren(layout, cx, cy);
+			placeGroupedChildren(layout, ax, ay);
 			return;
 		}
-		placeDirectedChildren(layout, cx, cy);
+		placeDirectedChildren(layout, ax, ay);
 	};
 
 	const root = input.nodes[input.relayoutRootId];
@@ -581,16 +587,19 @@ export function computeTopDownAutoLayout(input: ComputeAutoLayoutInput): Record<
 	};
 
 	const placeLayout = (layout: LayoutNode, cx: number, cy: number) => {
+		const saved = layout.id !== input.relayoutRootId ? input.nodePositions[layout.id] : undefined;
+		const ax = saved ? saved.x : cx;
+		const ay = saved ? saved.y : cy;
 		positions[layout.id] = {
-			x: Math.round(cx * 100) / 100,
-			y: Math.round(cy * 100) / 100,
+			x: Math.round(ax * 100) / 100,
+			y: Math.round(ay * 100) / 100,
 		};
 		if (layout.children.length === 0) return;
 		if (layout.groupChildren) {
-			placeGroupedChildren(layout, cx, cy);
+			placeGroupedChildren(layout, ax, ay);
 			return;
 		}
-		placeDirectedChildren(layout, cx, cy);
+		placeDirectedChildren(layout, ax, ay);
 	};
 
 	const root = input.nodes[input.relayoutRootId];
@@ -771,16 +780,19 @@ export function computeRadialAutoLayout(input: ComputeAutoLayoutInput): Record<s
 	};
 
 	const placeLayout = (layout: LayoutNode, cx: number, cy: number) => {
+		const saved = layout.id !== input.relayoutRootId ? input.nodePositions[layout.id] : undefined;
+		const ax = saved ? saved.x : cx;
+		const ay = saved ? saved.y : cy;
 		positions[layout.id] = {
-			x: Math.round(cx * 100) / 100,
-			y: Math.round(cy * 100) / 100,
+			x: Math.round(ax * 100) / 100,
+			y: Math.round(ay * 100) / 100,
 		};
 		if (layout.children.length === 0) return;
 		if (layout.groupChildren) {
-			placeGroupedChildren(layout, cx, cy);
+			placeGroupedChildren(layout, ax, ay);
 			return;
 		}
-		placeDirectedChildren(layout, cx, cy);
+		placeDirectedChildren(layout, ax, ay);
 	};
 
 	const root = input.nodes[input.relayoutRootId];

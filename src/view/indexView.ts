@@ -6918,7 +6918,8 @@ cy.fit(null, 40);
             if (!parentId || !nodes[parentId] || visitedRelayoutRoots.has(parentId)) {
                 break;
             }
-            if (realMocRootIds.has(parentId)) {
+            // 当前节点有保存位置(已拖动过)时,以它为锚点,不再向上
+            if (mocData.nodePositions?.[relayoutRootId]) {
                 break;
             }
             visitedRelayoutRoots.add(relayoutRootId);
