@@ -1,4 +1,4 @@
-import { Component, MarkdownRenderer, setIcon } from 'obsidian';
+import { Component, MarkdownRenderer, resolveSubpath, setIcon } from 'obsidian';
 import { ZKNode } from 'src/view/indexView';
 import { isMocPath } from 'src/utils/utils';
 import { applyPreviewHeaderLinkStyle, getPreviewCardTheme } from './colorUtils';
@@ -10,6 +10,45 @@ const wrapForImageToolkit = (img: HTMLElement): HTMLElement => {
     wrap.style.display = 'contents';
     wrap.appendChild(img);
     return wrap;
+};
+
+const getWikiSubpath = (wikiLink: string): string => {
+    const rawLink = wikiLink.trim();
+    const hashIdx = rawLink.indexOf('#');
+    if (hashIdx < 0) return '';
+
+    const pipeIdx = rawLink.indexOf('|', hashIdx);
+    const subpath = rawLink.substring(hashIdx, pipeIdx >= 0 ? pipeIdx : rawLink.length).trim();
+    return subpath;
+};
+
+const normalizeSubpath = (subpath: string): string => {
+    try {
+        return decodeURIComponent(subpath);
+    } catch {
+        return subpath;
+    }
+};
+
+const extractSubpathMarkdown = (app: any, sourceFile: any, markdown: string, wikiLink: string): string | null => {
+    const subpath = getWikiSubpath(wikiLink);
+    if (!subpath || subpath.startsWith('#^')) return null;
+
+    const cache = app.metadataCache.getFileCache(sourceFile);
+    if (!cache) return null;
+
+    const resolved = resolveSubpath(cache, subpath) || resolveSubpath(cache, normalizeSubpath(subpath));
+    if (!resolved || resolved.type !== 'heading') return null;
+
+    const currentHeading = resolved.current;
+    const headings = cache.headings || [];
+    const currentOffset = currentHeading.position.start.offset;
+    const nextHeading = headings.find((heading: any) =>
+        heading.position.start.offset > currentOffset && heading.level <= currentHeading.level
+    );
+    const startOffset = currentHeading.position.start.offset;
+    const endOffset = nextHeading?.position.start.offset ?? markdown.length;
+    return markdown.slice(startOffset, endOffset).trim();
 };
 
 export function renderEmbedNodePreviews(this: any): void {
@@ -85,16 +124,24 @@ export function renderEmbedNodePreviews(this: any): void {
             if (!originalNode?.file) return;
             const sourceFile = originalNode.file;
             const isExcalidrawFile = sourceFile.path.includes('.excalidraw');
-            const nodeId = node.id();
-            const persistedSize = embedNodeSizes[originalNode.ID] || embedNodeSizes[originalNode.IDStr];
-            if (persistedSize && persistedSize.width > 0 && persistedSize.height > 0) {
-                cardSizeMap.set(nodeId, {
-                    widthModel: persistedSize.width,
-                    heightModel: persistedSize.height
-                });
-            }
-            const theme = getPreviewCardTheme(data, this.currentOptions);
-            const resolvedCardBorder = 'none';
+			const nodeId = node.id();
+			const persistedSize = embedNodeSizes[originalNode.ID] || embedNodeSizes[originalNode.IDStr];
+			if (persistedSize && persistedSize.width > 0 && persistedSize.height > 0) {
+				cardSizeMap.set(nodeId, {
+					widthModel: persistedSize.width,
+					heightModel: persistedSize.height
+				});
+			}
+			node.style({
+				'background-opacity': 0,
+				'border-opacity': 0,
+				'border-width': 0,
+				'label': '',
+				'overlay-opacity': 0,
+				'padding': 0
+			});
+			const theme = getPreviewCardTheme(data, this.currentOptions);
+            const resolvedCardBorder = isExcalidrawFile && !!data.isFreeNode ? 'none' : theme.cardBorder;
             const resolvedCardBackground = isExcalidrawFile ? 'transparent' : theme.cardBackground;
             const resolvedCardShadow = isExcalidrawFile && !!data.isFreeNode ? 'none' : theme.cardShadow;
 
@@ -707,8 +754,10 @@ export function renderEmbedNodePreviews(this: any): void {
                 app.vault.cachedRead(sourceFile).then(async (markdown: string) => {
                     if (!contentEl.isConnected) return;
 
+                    const rawLink = String(originalNode?.wikiLink || '').trim();
+                    const markdownToRender = extractSubpathMarkdown(app, sourceFile, markdown, rawLink) || markdown;
                     // 控制渲染量，避免超长笔记影响图形交互
-                    const snippet = markdown.length > 3000 ? `${markdown.slice(0, 3000)}\n\n...` : markdown;
+                    const snippet = markdownToRender.length > 3000 ? `${markdownToRender.slice(0, 3000)}\n\n...` : markdownToRender;
                     contentEl.empty?.();
                     contentEl.textContent = '';
                     await MarkdownRenderer.render(app, snippet, contentEl, sourceFile.path, rendererComponent);
@@ -1300,5 +1349,3 @@ export function renderImageNodePreviews(this: any): void {
             previewContainer.remove();
         };
     }
-
-
