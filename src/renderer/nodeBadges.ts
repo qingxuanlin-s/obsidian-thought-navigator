@@ -152,8 +152,8 @@ export function renderNodeBadges(this: any): void {
                 glassEl.style.width = `${bb.w}px`;
                 glassEl.style.height = `${bb.h}px`;
 
-                // 分组退出警告：节点拖出边界时高亮边框
-                if (groupNode.hasClass('group-exit-warning')) {
+                // 分组拖拽反馈：拖出原分组或拖入目标分组时高亮边框
+                if (groupNode.hasClass('group-exit-warning') || groupNode.hasClass('group-join-warning')) {
                     glassEl.style.border = '1.5px dashed rgba(245, 158, 11, 0.85)';
                     glassEl.style.boxShadow = '0 0 0 2px rgba(245, 158, 11, 0.12), 0 1px 10px rgba(0,0,0,0.16)';
                 } else {
@@ -1550,5 +1550,4 @@ function addCollapseToggleHandle(this: any): void {
             handleContainer.remove();
         };
     }
-
 

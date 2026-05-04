@@ -431,7 +431,9 @@ export function bindEvents(this: any): void {
         let draggedNodeOriginalGroup: any = null;
         let draggedNodeOriginalGroupModelBounds: { x1: number; y1: number; x2: number; y2: number } | null = null;
         let pendingGroupLeave: { nodeId: string; groupId: string } | null = null;
+        let pendingGroupJoin: { nodeId: string; groupId: string } | null = null;
         let groupDragNodeActuallyMoved = false; // 区分拖动和点击，避免 free/dragfree 顺序问题
+        let groupJoinPreviewNode: any = null;
 
         // 拖拽期静态候选快照：grab 时构建一次，drag 期间复用，避免每帧 N 次 renderedPosition
         type DragCandidate = {
@@ -820,6 +822,38 @@ export function bindEvents(this: any): void {
             nearbyNodeId = targetId;
         };
 
+        const findContainingGroup = (node: any, excludedGroupId?: string | null): any | null => {
+            if (!this.cy) return null;
+            const pos = node.position();
+            let containingGroup: any | null = null;
+            let containingGroupArea = Number.POSITIVE_INFINITY;
+
+            this.cy.nodes('[?isGroup]').forEach((groupNode: any) => {
+                if (excludedGroupId && groupNode.id() === excludedGroupId) return;
+
+                const bb = groupNode.boundingBox({ includeLabels: false, includeOverlays: false });
+                if (pos.x < bb.x1 || pos.x > bb.x2 || pos.y < bb.y1 || pos.y > bb.y2) return;
+
+                const area = Math.max(0, bb.x2 - bb.x1) * Math.max(0, bb.y2 - bb.y1);
+                if (area < containingGroupArea) {
+                    containingGroup = groupNode;
+                    containingGroupArea = area;
+                }
+            });
+
+            return containingGroup;
+        };
+
+        const setGroupJoinPreview = (groupNode: any | null) => {
+            if (groupJoinPreviewNode && (!groupNode || groupJoinPreviewNode.id() !== groupNode.id())) {
+                groupJoinPreviewNode.removeClass('group-join-warning');
+            }
+            if (groupNode && (!groupJoinPreviewNode || groupJoinPreviewNode.id() !== groupNode.id())) {
+                groupNode.addClass('group-join-warning');
+            }
+            groupJoinPreviewNode = groupNode;
+        };
+
         // 节点开始拖动事件
         this.cy.on('grab', 'node', (evt: any) => {
             const node = evt.target;
@@ -978,6 +1012,14 @@ export function bindEvents(this: any): void {
                 }
             }
 
+            // 分组加入预览：节点中心进入某个分组边界时，用同一套橘黄色虚线反馈目标分组
+            if (!data.isGroup && !data.isPlaceholder && !data.isCrossDomain) {
+                const originalGroupId = draggedNodeOriginalGroup?.id?.() || node.data('parent') || null;
+                setGroupJoinPreview(findContainingGroup(node, originalGroupId));
+            } else {
+                setGroupJoinPreview(null);
+            }
+
             if (!smartEnabled) {
                 hideTempConnectionLine();
                 setSmartHoverTarget(null);
@@ -1059,20 +1101,23 @@ export function bindEvents(this: any): void {
 
             // 分组退出：根据放置位置决定是否移出分组
             pendingGroupLeave = null;
+            pendingGroupJoin = null;
+            let originalGroupId: string | null = null;
             if (draggedNodeOriginalGroup && draggedNodeOriginalGroupModelBounds && !isMultiNodeDrag && !data.isGroup && !data.isPlaceholder) {
                 const pos = node.position();
                 const bb = draggedNodeOriginalGroupModelBounds;
                 const isOutside = pos.x < bb.x1 || pos.x > bb.x2 || pos.y < bb.y1 || pos.y > bb.y2;
 
                 draggedNodeOriginalGroup.removeClass('group-exit-warning');
+                const sourceGroupId = draggedNodeOriginalGroup.id();
+                originalGroupId = sourceGroupId;
 
                 if (isOutside) {
-                    const groupId = draggedNodeOriginalGroup.id();
                     const nodeId = data.originalNode?.ID || data.originalSource || data.id;
                     const currentIds: string[] = draggedNodeOriginalGroup.data('nodeIds') || [];
                     draggedNodeOriginalGroup.data('nodeIds', currentIds.filter((id: string) => id !== nodeId));
                     // 记录脱组信息，合并到 node-position-changed 里原子保存，避免并发写竞态
-                    pendingGroupLeave = { nodeId, groupId };
+                    pendingGroupLeave = { nodeId, groupId: sourceGroupId };
                 } else {
                     try { node.move({ parent: draggedNodeOriginalGroup.id() }); } catch (e) {}
                 }
@@ -1081,6 +1126,7 @@ export function bindEvents(this: any): void {
                 draggedNodeOriginalGroupModelBounds = null;
                 groupDragNodeActuallyMoved = false;
             }
+            setGroupJoinPreview(null);
 
             // 如果是分组节点，不触发位置保存
             if (data.isGroup) return;
@@ -1165,9 +1211,29 @@ export function bindEvents(this: any): void {
                 return;
             }
 
+            // 分组加入：非组内节点拖入任意分组范围后，自动成为该分组的子节点。
+            if (!isMultiNodeDrag && !data.isGroup && !data.isPlaceholder && !data.isCrossDomain) {
+                const nodeId = data.originalNode?.ID || data.originalSource || data.id;
+                const targetGroup = findContainingGroup(node, originalGroupId);
+                if (targetGroup && targetGroup.length > 0) {
+                    const targetGroupId = targetGroup.id();
+                    const currentParent = node.data('parent');
+                    if (currentParent !== targetGroupId) {
+                        const currentIds: string[] = targetGroup.data('nodeIds') || [];
+                        if (!currentIds.includes(nodeId)) {
+                            targetGroup.data('nodeIds', [...currentIds, nodeId]);
+                        }
+                        try { node.move({ parent: targetGroupId }); } catch (e) {}
+                        pendingGroupJoin = { nodeId, groupId: targetGroupId };
+                    }
+                }
+            }
+
             // 普通节点：触发位置变化事件（含脱组信息，合并到同一次写入）
             const groupLeaveInfo = pendingGroupLeave;
+            const groupJoinInfo = pendingGroupJoin;
             pendingGroupLeave = null;
+            pendingGroupJoin = null;
             this.container?.dispatchEvent(new CustomEvent('node-position-changed', {
                 detail: {
                     node: data.originalNode,
@@ -1176,7 +1242,8 @@ export function bindEvents(this: any): void {
                         x: position.x,
                         y: position.y
                     },
-                    leftGroup: groupLeaveInfo
+                    leftGroup: groupLeaveInfo,
+                    joinedGroup: groupJoinInfo
                 }
             }));
         });
@@ -1193,6 +1260,7 @@ export function bindEvents(this: any): void {
             if (draggedNodeOriginalGroup && !groupDragNodeActuallyMoved) {
                 try { node.move({ parent: draggedNodeOriginalGroup.id() }); } catch (e) {}
                 draggedNodeOriginalGroup.removeClass('group-exit-warning');
+                setGroupJoinPreview(null);
                 draggedNodeOriginalGroup = null;
                 draggedNodeOriginalGroupModelBounds = null;
                 pendingGroupLeave = null;
@@ -1200,6 +1268,8 @@ export function bindEvents(this: any): void {
             } else if (draggedNodeOriginalGroup && groupDragNodeActuallyMoved) {
                 // 有拖动但 free 比 dragfree 先触发（Cytoscape 顺序不保证）：先不处理，等 dragfree
                 // dragfree 结束后会清空 draggedNodeOriginalGroup，若此后 free 再次触发则跳过
+            } else {
+                setGroupJoinPreview(null);
             }
 
             // 只对自由节点进行清理
