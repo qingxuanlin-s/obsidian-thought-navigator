@@ -6911,8 +6911,19 @@ cy.fit(null, 40);
         });
 
         const realMocRootIds = new Set<string>(mocData.nodes.map((node) => node.nodeID));
+        let relayoutRootId = parentNodeId;
+        const visitedRelayoutRoots = new Set<string>();
+        while (!realMocRootIds.has(relayoutRootId)) {
+            const parentId = parentById[relayoutRootId];
+            if (!parentId || !nodes[parentId] || visitedRelayoutRoots.has(parentId)) {
+                break;
+            }
+            visitedRelayoutRoots.add(relayoutRootId);
+            relayoutRootId = parentId;
+        }
+
         const nodePositions = computeAutoLayout({
-            relayoutRootId: parentNodeId,
+            relayoutRootId,
             nodes,
             parentById,
             childrenById,
@@ -7091,6 +7102,7 @@ cy.fit(null, 40);
                         (mocData as any).nodeStyleColors[newNode.nodeID] = this.pickNextBranchStyleColor((mocData as any).nodeStyleColors);
                     }
                 }
+                this.mocHandler.ensureFirstLevelNodeLayoutDefaults(mocData, newNode.nodeID);
 
                 // 自由节点即使选择了“连接到节点”，也只保留虚线关系，不建立父子关系
                 if (isFreeNode && result.connectToNodeID && !result.reverseRelation) {
