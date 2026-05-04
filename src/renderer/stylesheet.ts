@@ -274,7 +274,8 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     if (ele.data('isTextOnly')) {
                         return Math.max(measured, 90);
                     }
-                    return measured;
+                    // 基础节点经 compensateFreeLikeNodeFrameSize 最低 80px，1 级节点不低于此值
+                    return Math.max(measured, 80);
                 }
             } as any
         },
