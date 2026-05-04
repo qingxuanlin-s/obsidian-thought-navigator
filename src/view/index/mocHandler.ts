@@ -73,6 +73,24 @@ export class MOCHandler {
         return palette[Math.floor(Math.random() * palette.length)];
     }
 
+    ensureFirstLevelNodeLayoutDefaults(mocData: MOCParseResult, nodeId: string): void {
+        if (!this.isFirstLevelChild(mocData, nodeId)) {
+            return;
+        }
+
+        if (mocData.nodeLayoutStyle !== 'free' && mocData.nodeLayoutStyle !== 'auto') {
+            mocData.nodeLayoutStyle = this.plugin.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free';
+        }
+
+        const settingsPreset = normalizeLayoutPreset(this.plugin.settings.autoLayoutDefaultGrowthDirection);
+        if (!mocData.layoutPreset) {
+            mocData.layoutPreset = settingsPreset;
+        }
+        if (mocData.nodeLayoutPresets && !mocData.nodeLayoutPresets[nodeId]) {
+            mocData.nodeLayoutPresets[nodeId] = settingsPreset;
+        }
+    }
+
     /**
      * 通用 MOC 数据修改方法
      * 用于 Mermaid 格式的 MOC 文件，确保所有 metadata 被正确保留
@@ -823,6 +841,7 @@ export class MOCHandler {
                     (mocData as any).nodeStyleColors[newChildID] = this.pickNextBranchStyleColor((mocData as any).nodeStyleColors);
                 }
             }
+            this.ensureFirstLevelNodeLayoutDefaults(mocData, newChildID);
 
             // 5. 更新边弧度（需要更新包含该节点的所有边 key）
             if (mocData.edgeCurvatures) {
