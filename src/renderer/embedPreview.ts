@@ -51,6 +51,42 @@ const extractSubpathMarkdown = (app: any, sourceFile: any, markdown: string, wik
     return markdown.slice(startOffset, endOffset).trim();
 };
 
+const openPreviewHeaderFile = (app: any, sourceFile: any, wikiLink: string, event: MouseEvent): void => {
+    // 与文件节点点击保持一致：默认新标签页，Cmd/Ctrl 点击复用当前/已有标签。
+    const openInNewLeaf = !(event.metaKey || event.ctrlKey);
+    const rawLink = String(wikiLink || '').trim();
+    const hashIdx = rawLink.indexOf('#');
+    const subpath = hashIdx >= 0 ? rawLink.substring(hashIdx) : '';
+
+    if (subpath) {
+        const existingLeaf = !openInNewLeaf ? app.workspace.getLeavesOfType('markdown')
+            .concat(app.workspace.getLeavesOfType('excalidraw' as any))
+            .find((leaf: any) => leaf.view?.file?.path === sourceFile.path) : null;
+
+        if (existingLeaf) {
+            app.workspace.setActiveLeaf(existingLeaf, { focus: true });
+            (existingLeaf.view as any).setEphemeralState?.({ subpath });
+        } else {
+            app.workspace.getLeaf(openInNewLeaf).openFile(sourceFile, {
+                eState: { subpath },
+                active: true,
+            } as any);
+        }
+        return;
+    }
+
+    if (!openInNewLeaf) {
+        const existingLeaf = app.workspace.getLeavesOfType('markdown')
+            .find((leaf: any) => leaf.view?.file?.path === sourceFile.path);
+        if (existingLeaf) {
+            app.workspace.setActiveLeaf(existingLeaf, { focus: true });
+            return;
+        }
+    }
+
+    app.workspace.getLeaf(openInNewLeaf).openFile(sourceFile);
+};
+
 export function renderEmbedNodePreviews(this: any): void {
         if (!this.cy || !this.container) return;
 
@@ -204,37 +240,7 @@ export function renderEmbedNodePreviews(this: any): void {
                     return;
                 }
 
-                // 带 subpath（如 Excalidraw 的 #^group=xxx）：透传给 ExcalidrawView 做元素级定位
-                const rawLink = String(originalNode?.wikiLink || '').trim();
-                const hashIdx = rawLink.indexOf('#');
-                const subpath = hashIdx >= 0 ? rawLink.substring(hashIdx) : '';
-                const newLeaf = e.ctrlKey || e.metaKey;
-
-                if (subpath) {
-                    const existingLeaf = !newLeaf ? app.workspace.getLeavesOfType('markdown')
-                        .concat(app.workspace.getLeavesOfType('excalidraw' as any))
-                        .find((leaf: any) => leaf.view?.file?.path === sourceFile.path) : null;
-
-                    if (existingLeaf) {
-                        app.workspace.setActiveLeaf(existingLeaf, { focus: true });
-                        (existingLeaf.view as any).setEphemeralState?.({ subpath });
-                    } else {
-                        app.workspace.getLeaf(newLeaf).openFile(sourceFile, {
-                            eState: { subpath },
-                            active: true,
-                        } as any);
-                    }
-                    return;
-                }
-
-                // 查找已打开的 tab，有则激活，无则新开
-                const existingLeaf = app.workspace.getLeavesOfType('markdown')
-                    .find((leaf: any) => leaf.view?.file?.path === sourceFile.path);
-                if (existingLeaf) {
-                    app.workspace.setActiveLeaf(existingLeaf, { focus: true });
-                } else {
-                    app.workspace.openLinkText(sourceFile.path, '', newLeaf);
-                }
+                openPreviewHeaderFile(app, sourceFile, originalNode?.wikiLink || '', e);
             });
             headerEl.appendChild(headerLink);
 
@@ -1027,13 +1033,7 @@ export function renderImageNodePreviews(this: any): void {
             headerLink.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                const existingLeaf = app.workspace.getLeavesOfType('markdown')
-                    .find((leaf: any) => leaf.view?.file?.path === filePath);
-                if (existingLeaf) {
-                    app.workspace.setActiveLeaf(existingLeaf, { focus: true });
-                } else {
-                    app.workspace.openLinkText(filePath, '', e.ctrlKey || e.metaKey);
-                }
+                openPreviewHeaderFile(app, file, '', e);
             });
             headerEl.appendChild(headerLink);
             card.appendChild(headerEl);
