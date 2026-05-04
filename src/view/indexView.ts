@@ -2448,11 +2448,11 @@ cy.fit(null, 40);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { node, content } = event.detail;
+            const { node, content, position, nodeSize } = event.detail;
             if (!node) {
                 return;
             }
-            await this.saveNodeContent(node, content);
+            await this.saveNodeContent(node, content, nodeSize, position);
         });
 
         this.addTrackedListener(branchGraphDiv, 'node-remark-edit', async (event: any) => {
@@ -4716,34 +4716,49 @@ cy.fit(null, 40);
         await this.saveNodeContent(node, newContent);
     }
 
-    private async saveNodeContent(node: ZKNode, newContent: string) {
+    private async saveNodeContent(
+        node: ZKNode,
+        newContent: string,
+        nodeSize?: { widthModel: number; heightModel: number },
+        position?: { x: number; y: number }
+    ) {
         const currentContent = node.isTextOnly
             ? this.decodeMultilineText(node.title || '')
             : this.buildFileNodeRawWikiText(node);
-        if (!newContent || newContent === currentContent) {
+        if (!newContent) {
             return;
         }
 
         try {
             const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
             if (mocFile) {
-                if (node.isTextOnly) {
-                    const contentForSave = this.encodeMultilineText(newContent);
-                    await this.mocHandler.updateNodeContentInMOC(mocFile, node.IDStr, contentForSave);
-                } else {
-                    const parsed = this.parseRawWikiLinkInput(newContent);
-                    if (!parsed) {
-                        new Notice('文件节点请使用 [[链接]] 或 [[链接|显示文本]] 格式');
-                        return;
-                    }
+                if (newContent !== currentContent) {
+                    if (node.isTextOnly) {
+                        const contentForSave = this.encodeMultilineText(newContent);
+                        await this.mocHandler.updateNodeContentInMOC(mocFile, node.IDStr, contentForSave);
+                    } else {
+                        const parsed = this.parseRawWikiLinkInput(newContent);
+                        if (!parsed) {
+                            new Notice('文件节点请使用 [[链接]] 或 [[链接|显示文本]] 格式');
+                            return;
+                        }
 
-                    await this.mocHandler.updateNodeContentInMOC(
-                        mocFile,
-                        node.IDStr,
-                        parsed.displayText,
-                        parsed.wikiLink,
-                        parsed.isEmbed
-                    );
+                        await this.mocHandler.updateNodeContentInMOC(
+                            mocFile,
+                            node.IDStr,
+                            parsed.displayText,
+                            parsed.wikiLink,
+                            parsed.isEmbed
+                        );
+                    }
+                }
+
+                if (nodeSize && nodeSize.widthModel > 0 && nodeSize.heightModel > 0) {
+                    await this.saveEmbedNodeSizeToMOC(mocFile, node.IDStr, nodeSize);
+                }
+
+                if (position && Number.isFinite(position.x) && Number.isFinite(position.y)) {
+                    await this.saveNodePositionToMOC(mocFile, node.IDStr, position);
                 }
 
                 // 刷新视图

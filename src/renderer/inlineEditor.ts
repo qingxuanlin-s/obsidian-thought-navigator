@@ -6,7 +6,7 @@ import {
     DEFAULT_SELECTION_TEXT_COLOR,
     createSelectionColorPanel,
 } from './colorUtils';
-import { buildWikiLinkForFile } from './renderPipeline';
+import { buildWikiLinkForFile, compensateFreeLikeNodeFrameSize, measureNodeLabel } from './renderPipeline';
 
 export function attachInlineTextSelectionToolbar(this: any, inputEl: HTMLInputElement | HTMLTextAreaElement): {
         destroy: () => void;
@@ -1479,6 +1479,76 @@ export function startInPlaceTextEdit(this: any, node: any,
             this.container?.focus();
         };
 
+        const resizeLiveEditNodeHeight = (
+            valueOverride?: string,
+            allowShrink: boolean = false,
+            applyToCurrentNode: boolean = true
+        ): number | null => {
+            if (!this.cy || node.removed() || !mdEditor) return null;
+            const minHeight = node.data('isRoot') ? 90 : 60;
+            const rawValue = (valueOverride ?? mdEditor.getValue() ?? '').replace(/\r\n/g, '\n');
+            const baseFontSize = node.data('isRoot')
+                ? this.ROOT_NODE_FONT_SIZE
+                : (node.data('isFirstLevelNode') && !node.data('isRoot') && !node.data('isFreeNode')
+                    ? this.FIRST_LEVEL_NODE_FONT_SIZE
+                    : 20);
+            const paddingX = node.data('isRoot') ? baseFontSize * 1.846 : baseFontSize * 2.4;
+            const paddingY = node.data('isRoot') ? baseFontSize * 0.4 : baseFontSize * 1.8;
+            const contentWidth = Math.max(baseFontSize * 4, Number(node.width() || entry.width || 240) - paddingX);
+            const estimateCharWidth = (ch: string): number => {
+                const code = ch.codePointAt(0) || 0;
+                const isCjk = (code >= 0x4E00 && code <= 0x9FFF) ||
+                    (code >= 0x3000 && code <= 0x303F) ||
+                    (code >= 0xFF00 && code <= 0xFFEF) ||
+                    (code >= 0x3400 && code <= 0x4DBF) ||
+                    (code >= 0x20000 && code <= 0x2A6DF);
+                return isCjk ? baseFontSize * 1.1 : baseFontSize * 0.55;
+            };
+            const textForMeasure = rawValue
+                .replace(/<br\s*\/?>/gi, '\n')
+                .replace(/<\/(?:p|div|li|h[1-6])>/gi, '\n')
+                .replace(/<[^>]*>/g, '');
+            let visualLineCount = 0;
+            textForMeasure.split('\n').forEach((line) => {
+                let lineWidth = 0;
+                let wrapped = 1;
+                for (const ch of (line || ' ')) {
+                    const chWidth = estimateCharWidth(ch);
+                    if (lineWidth + chWidth > contentWidth && lineWidth > 0) {
+                        wrapped += 1;
+                        lineWidth = chWidth;
+                    } else {
+                        lineWidth += chWidth;
+                    }
+                }
+                visualLineCount += wrapped;
+            });
+            const estimatedTextHeight = Math.ceil(Math.max(1, visualLineCount) * baseFontSize * 1.35 + paddingY);
+            const overflow = Math.max(mdEditor.getVerticalOverflow(), 0);
+            const overflowHeight = overflow >= 1 ? Number(node.height() || estimatedTextHeight) + overflow + 2 : estimatedTextHeight;
+            const targetHeight = Math.min(720, Math.max(
+                minHeight,
+                estimatedTextHeight,
+                overflowHeight
+            ));
+            const currentHeight = Number(node.height() || 0);
+            if (!allowShrink && targetHeight < currentHeight) return currentHeight;
+            if (Math.abs(targetHeight - currentHeight) < 1) return targetHeight;
+            if (!applyToCurrentNode) return targetHeight;
+            entry.height = targetHeight;
+            node.data('manualHeightModel', targetHeight);
+            node.style({ height: targetHeight });
+            this.overlayScheduler?.immediate?.();
+            return targetHeight;
+        };
+
+        const scheduleLiveEditResize = () => {
+            requestAnimationFrame(() => {
+                resizeLiveEditNodeHeight();
+                requestAnimationFrame(() => resizeLiveEditNodeHeight());
+            });
+        };
+
         const saveEdit = () => {
             if (isSaved) return;
             const rawValue = (mdEditor?.getValue() ?? '').replace(/\r\n/g, '\n');
@@ -1492,26 +1562,31 @@ export function startInPlaceTextEdit(this: any, node: any,
                 cancelEdit();
                 return;
             }
+            const rawCurrentWidth = Number(node.width());
+            const rawCurrentHeight = Number(node.height());
+            const currentWidth = Number.isFinite(rawCurrentWidth) && rawCurrentWidth > 0 ? rawCurrentWidth : entry.width;
+            const currentHeight = Number.isFinite(rawCurrentHeight) && rawCurrentHeight > 0 ? rawCurrentHeight : entry.height;
+            const finalHeight = resizeLiveEditNodeHeight(rawValue, true, false);
+            const finalWidth = currentWidth;
+            const finalHeightModel = Number(finalHeight ?? currentHeight);
             isSaved = true;
             clearLiveEdit();
             restoreNodeInteractivity();
             overlayEl.style.pointerEvents = prevPointerEvents || 'none';
 
             const nodePosition = node.position();
+            const anchoredPosition = {
+                x: nodePosition.x + (finalWidth - currentWidth) / 2,
+                y: nodePosition.y + (finalHeightModel - currentHeight) / 2
+            };
             this.container?.dispatchEvent(new CustomEvent('node-inline-edit-save', {
                 detail: {
                     node: originalNode,
                     content: rawValue,
-                    position: { x: nodePosition.x, y: nodePosition.y }
-                }
-            }));
-            this.container?.dispatchEvent(new CustomEvent('embed-node-size-changed', {
-                detail: {
-                    node: originalNode,
-                    nodeId: node.data('originalNodeId') || originalNode.IDStr || originalNode.ID || '',
-                    size: {
-                        widthModel: Number(node.width()),
-                        heightModel: Number(node.height())
+                    position: anchoredPosition,
+                    nodeSize: {
+                        widthModel: finalWidth,
+                        heightModel: finalHeightModel
                     }
                 }
             }));
@@ -1534,6 +1609,7 @@ export function startInPlaceTextEdit(this: any, node: any,
                 containerEl: editorHost,
                 initialValue: rawSource,
                 sourcePath,
+                onChange: () => scheduleLiveEditResize(),
                 onEnter: (_value, evt) => {
                     console.log('[ZK][TextNodeLiveEdit] onEnter', {
                         metaKey: evt.metaKey,
@@ -1671,15 +1747,39 @@ export function startPlaceholderInPlaceEdit(this: any, node: any): void {
             this.cy?.userZoomingEnabled(prevZoomingEnabled);
         };
 
+        const measurePlaceholderTextNodeSize = (value: string): { width: number; height: number } => {
+            const label = value.trim();
+            if (!label) return { width: defaultW, height: defaultH };
+            const measured = measureNodeLabel(label, {
+                baseWidth: 90,
+                minHeight: 42,
+                maxWidth: 280,
+                charWidth: 11,
+                lineHeight: 18,
+                paddingX: 40,
+                paddingY: 20
+            });
+            return compensateFreeLikeNodeFrameSize(label, measured, {
+                isFreeNode: true,
+                isStandaloneText: true,
+                maxWidth: 280,
+                charWidth: 11
+            });
+        };
+
         const autoGrow = () => {
             if (!this.cy || node.removed()) return;
+            const value = mdEditor?.getValue() ?? '';
+            const measured = measurePlaceholderTextNodeSize(value);
             const overflow = Math.max(mdEditor?.getVerticalOverflow() ?? 0, 0);
-            if (overflow < 1) return;
+            const curW = Number(node.width() || defaultW);
             const curH = Number(node.height() || defaultH);
-            const newH = Math.min(curH + overflow + 2, 720);
-            if (newH <= curH) return;
+            const newW = Math.max(defaultW, measured.width);
+            const overflowHeight = overflow >= 1 ? curH + overflow + 2 : measured.height;
+            const newH = Math.min(Math.max(defaultH, measured.height, overflowHeight), 720);
+            if (Math.abs(newW - curW) < 0.5 && Math.abs(newH - curH) < 0.5) return;
             this.cy.batch(() => {
-                node.style({ height: newH });
+                node.style({ width: newW, height: newH });
             });
             syncOverlayPos();
         };
@@ -2063,14 +2163,8 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
                 detail: {
                     node: originalNode,
                     content: newValue,
-                    position: { x: nodePosition.x, y: nodePosition.y }
-                }
-            }));
-            this.container?.dispatchEvent(new CustomEvent('embed-node-size-changed', {
-                detail: {
-                    node: originalNode,
-                    nodeId: node.data('originalNodeId') || originalNode.IDStr || originalNode.ID || '',
-                    size: {
+                    position: { x: nodePosition.x, y: nodePosition.y },
+                    nodeSize: {
                         widthModel: Number(node.width()),
                         heightModel: Number(node.height())
                     }
