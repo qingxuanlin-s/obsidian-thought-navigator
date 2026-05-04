@@ -2307,7 +2307,8 @@ cy.fit(null, 40);
             }
 
             const isMouseEvent = triggerEvent instanceof MouseEvent;
-            const openInNewLeaf = isMouseEvent && (triggerEvent.metaKey || triggerEvent.ctrlKey || triggerEvent.button === 1);
+            // default: new tab; Cmd/Ctrl+click opens in current tab
+            const openInNewLeaf = !isMouseEvent || !(triggerEvent.metaKey || triggerEvent.ctrlKey);
 
             // 带 #heading / #^blockRef 的链接（如 Excalidraw 的 #^group=xxx）：
             // 用 leaf.openFile + eState.subpath 让 ExcalidrawView.setEphemeralState 解析 subpath 并自动 zoomToElementId
