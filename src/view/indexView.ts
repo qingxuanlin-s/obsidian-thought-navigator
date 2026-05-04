@@ -6918,6 +6918,9 @@ cy.fit(null, 40);
             if (!parentId || !nodes[parentId] || visitedRelayoutRoots.has(parentId)) {
                 break;
             }
+            if (realMocRootIds.has(parentId)) {
+                break;
+            }
             visitedRelayoutRoots.add(relayoutRootId);
             relayoutRootId = parentId;
         }

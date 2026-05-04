@@ -149,13 +149,48 @@ export class MOCHandler {
         }
     }
 
+    private cleanupDeletedNodeMetadata(mocData: MOCParseResult, nodeID: string): void {
+        if (mocData.nodePositions && mocData.nodePositions[nodeID]) {
+            delete mocData.nodePositions[nodeID];
+        }
+        if (mocData.nodeColors && mocData.nodeColors[nodeID]) {
+            delete mocData.nodeColors[nodeID];
+        }
+        if ((mocData as any).nodeStyleColors && (mocData as any).nodeStyleColors[nodeID]) {
+            delete (mocData as any).nodeStyleColors[nodeID];
+        }
+        if ((mocData as any).embedNodeSizes && (mocData as any).embedNodeSizes[nodeID]) {
+            delete (mocData as any).embedNodeSizes[nodeID];
+        }
+        if ((mocData as any).nodeRemarks && (mocData as any).nodeRemarks[nodeID]) {
+            delete (mocData as any).nodeRemarks[nodeID];
+        }
+        if (mocData.nodeLayoutOverrides && mocData.nodeLayoutOverrides[nodeID]) {
+            delete mocData.nodeLayoutOverrides[nodeID];
+        }
+        if (mocData.nodeLayoutPresets && mocData.nodeLayoutPresets[nodeID]) {
+            delete mocData.nodeLayoutPresets[nodeID];
+        }
+    }
+
     private deleteNodeFromData(mocData: MOCParseResult, nodeID: string): void {
         let deleted = false;
+        const deletedNodeIds = new Set<string>();
+
+        const collectNodeIds = (node: any): void => {
+            if (node?.nodeID) {
+                deletedNodeIds.add(node.nodeID);
+            }
+            if (node?.children) {
+                node.children.forEach((child: any) => collectNodeIds(child));
+            }
+        };
 
         const deleteNodeFromTree = (nodes: any[], targetID: string): boolean => {
             for (let i = 0; i < nodes.length; i++) {
                 const node = nodes[i];
                 if (node.nodeID === targetID) {
+                    collectNodeIds(node);
                     nodes.splice(i, 1);
                     return true;
                 }
@@ -204,29 +239,13 @@ export class MOCHandler {
             throw new Error(`未找到节点: ${nodeID}`);
         }
 
-        if (mocData.nodePositions && mocData.nodePositions[nodeID]) {
-            delete mocData.nodePositions[nodeID];
-        }
-        if (mocData.nodeColors && mocData.nodeColors[nodeID]) {
-            delete mocData.nodeColors[nodeID];
-        }
-        if ((mocData as any).nodeStyleColors && (mocData as any).nodeStyleColors[nodeID]) {
-            delete (mocData as any).nodeStyleColors[nodeID];
-        }
-        if ((mocData as any).embedNodeSizes && (mocData as any).embedNodeSizes[nodeID]) {
-            delete (mocData as any).embedNodeSizes[nodeID];
-        }
-        if ((mocData as any).nodeRemarks && (mocData as any).nodeRemarks[nodeID]) {
-            delete (mocData as any).nodeRemarks[nodeID];
-        }
-        if (mocData.nodeLayoutPresets && mocData.nodeLayoutPresets[nodeID]) {
-            delete mocData.nodeLayoutPresets[nodeID];
-        }
+        deletedNodeIds.add(nodeID);
+        deletedNodeIds.forEach((deletedNodeId) => this.cleanupDeletedNodeMetadata(mocData, deletedNodeId));
 
         if (mocData.edgeCurvatures) {
             Object.keys(mocData.edgeCurvatures).forEach((key) => {
                 const parts = key.split('-');
-                if (parts.includes(nodeID)) {
+                if (parts.some((part) => deletedNodeIds.has(part))) {
                     delete mocData.edgeCurvatures[key];
                 }
             });
@@ -234,7 +253,7 @@ export class MOCHandler {
 
         const newReverseRelations = new Map();
         for (const [key, relation] of mocData.reverseRelations) {
-            if (relation.sourceID !== nodeID && relation.targetID !== nodeID) {
+            if (!deletedNodeIds.has(relation.sourceID) && !deletedNodeIds.has(relation.targetID)) {
                 newReverseRelations.set(key, relation);
             }
         }
@@ -243,7 +262,7 @@ export class MOCHandler {
         if (mocData.groups) {
             mocData.groups.forEach((group: any) => {
                 if (Array.isArray(group.nodeIds)) {
-                    group.nodeIds = group.nodeIds.filter((id: string) => id !== nodeID);
+                    group.nodeIds = group.nodeIds.filter((id: string) => !deletedNodeIds.has(id));
                 }
             });
             mocData.groups = mocData.groups.filter((group: any) => group.nodeIds && group.nodeIds.length > 0);
@@ -274,24 +293,7 @@ export class MOCHandler {
                 delete mocData.crossDomainLinks[sourceNodeId];
             }
 
-            if (mocData.nodePositions && mocData.nodePositions[nodeID]) {
-                delete mocData.nodePositions[nodeID];
-            }
-            if (mocData.nodeColors && mocData.nodeColors[nodeID]) {
-                delete mocData.nodeColors[nodeID];
-            }
-            if ((mocData as any).nodeStyleColors && (mocData as any).nodeStyleColors[nodeID]) {
-                delete (mocData as any).nodeStyleColors[nodeID];
-            }
-            if ((mocData as any).embedNodeSizes && (mocData as any).embedNodeSizes[nodeID]) {
-                delete (mocData as any).embedNodeSizes[nodeID];
-            }
-            if ((mocData as any).nodeRemarks && (mocData as any).nodeRemarks[nodeID]) {
-                delete (mocData as any).nodeRemarks[nodeID];
-            }
-            if (mocData.nodeLayoutPresets && mocData.nodeLayoutPresets[nodeID]) {
-                delete mocData.nodeLayoutPresets[nodeID];
-            }
+            this.cleanupDeletedNodeMetadata(mocData, nodeID);
 
             if (mocData.edgeCurvatures) {
                 Object.keys(mocData.edgeCurvatures).forEach(key => {
