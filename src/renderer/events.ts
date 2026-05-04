@@ -3,6 +3,53 @@ import { t } from 'src/lang/helper';
 import { GraphChanges } from './types';
 import * as layoutAdapter from './layoutAdapter';
 
+function getClipboardTextForNode(node: any): string {
+    const data = node.data();
+    const originalNode = data.originalNode || {};
+    return String(
+        originalNode.displayText ||
+        originalNode.title ||
+        data.displayText ||
+        data.title ||
+        data.label ||
+        originalNode.wikiLink ||
+        originalNode.IDStr ||
+        originalNode.ID ||
+        ''
+    ).trim();
+}
+
+async function writeTextToSystemClipboard(text: string): Promise<boolean> {
+    if (!text) return false;
+
+    try {
+        if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+    } catch (error) {
+        console.warn('[ZK] navigator.clipboard.writeText failed, falling back to execCommand:', error);
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    textarea.style.top = '0';
+    textarea.setAttribute('readonly', 'true');
+    document.body.appendChild(textarea);
+    textarea.select();
+    let copied = false;
+    try {
+        copied = document.execCommand('copy');
+    } catch (error) {
+        console.warn('[ZK] document.execCommand copy failed:', error);
+    } finally {
+        textarea.remove();
+    }
+    return copied;
+}
+
 export function bindEvents(this: any): void {
         if (!this.cy || !this.container) return;
 
@@ -1433,6 +1480,15 @@ export function bindKeyboardEvents(this: any): void {
                     position: { ...node.position() }
                 })).filter((item: any) => item.originalNode);
                 if (this.clipboardNodes.length > 0) {
+                    const clipboardText = selected
+                        .map((node: any) => getClipboardTextForNode(node))
+                        .filter((text: string) => text.length > 0)
+                        .join('\n');
+                    void writeTextToSystemClipboard(clipboardText).then((systemClipboardWritten) => {
+                        if (!systemClipboardWritten) {
+                            new Notice('系统剪贴板写入失败');
+                        }
+                    });
                     this.container?.dispatchEvent(new CustomEvent('node-copy', {
                         detail: { count: this.clipboardNodes.length }
                     }));
