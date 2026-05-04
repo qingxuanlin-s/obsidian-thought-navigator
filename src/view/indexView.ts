@@ -2043,11 +2043,12 @@ cy.fit(null, 40);
         // 监听节点位置变化事件（拖动后保存到 MOC 文件）
         // 多节点拖动时 dragfree 会对每个节点触发，先累积到 pendingPositionChanges，防抖后批量保存
         let pendingMOCPath: string | null = null; // 事件发生时的 MOC 路径
+        let pendingGroupLeaves: Array<{ nodeId: string; groupId: string }> = [];
         this.addTrackedListener(branchGraphDiv, 'node-position-changed', async (event: any) => {
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { node, position } = event.detail;
+            const { node, position, leftGroup } = event.detail;
             const nodeKey = node?.ID || node?.IDStr;
 
             // 检查节点是否有效
@@ -2062,6 +2063,11 @@ cy.fit(null, 40);
             // 累积待保存的位置变化
             this.pendingPositionChanges.set(nodeKey, { node, position });
 
+            // 若节点同时脱离了分组，累积脱组信息（与位置合并到同一次写入）
+            if (leftGroup) {
+                pendingGroupLeaves.push(leftGroup);
+            }
+
             // 使用防抖，等所有 dragfree 事件到达后一次性保存
             if (this.nodePositionSaveTimeout) {
                 clearTimeout(this.nodePositionSaveTimeout);
@@ -2070,6 +2076,7 @@ cy.fit(null, 40);
             this.nodePositionSaveTimeout = setTimeout(async () => {
                 const changes = new Map(this.pendingPositionChanges);
                 this.pendingPositionChanges.clear();
+                const groupLeaves = pendingGroupLeaves.splice(0);
 
                 try {
                     // 使用事件发生时捕获的 MOC 路径，防止切换后写入错误文件
@@ -2090,8 +2097,8 @@ cy.fit(null, 40);
                         }
                     }
 
-                    // 批量保存普通节点位置（一次 parse-modify-save）
-                    if (normalChanges.size > 0) {
+                    // 批量保存普通节点位置 + 脱组信息（一次 parse-modify-save，避免竞态）
+                    if (normalChanges.size > 0 || groupLeaves.length > 0) {
                         const headingTitle = this.plugin.settings.mocHeadingTitle;
                         const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
                         const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
@@ -2104,6 +2111,12 @@ cy.fit(null, 40);
                                 x: Math.round(pos.x * 100) / 100,
                                 y: Math.round(pos.y * 100) / 100
                             };
+                        }
+                        for (const { nodeId, groupId } of groupLeaves) {
+                            const group = mocData.groups?.find((g: any) => g.id === groupId);
+                            if (group) {
+                                group.nodeIds = (group.nodeIds || []).filter((id: string) => id !== nodeId);
+                            }
                         }
                         await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
                     }

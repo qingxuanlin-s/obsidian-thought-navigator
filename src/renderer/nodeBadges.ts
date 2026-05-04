@@ -152,6 +152,19 @@ export function renderNodeBadges(this: any): void {
                 glassEl.style.width = `${bb.w}px`;
                 glassEl.style.height = `${bb.h}px`;
 
+                // 分组退出警告：节点拖出边界时高亮边框
+                if (groupNode.hasClass('group-exit-warning')) {
+                    glassEl.style.border = '1.5px dashed rgba(245, 158, 11, 0.85)';
+                    glassEl.style.boxShadow = '0 0 0 2px rgba(245, 158, 11, 0.12), 0 1px 10px rgba(0,0,0,0.16)';
+                } else {
+                    glassEl.style.border = isLightTheme
+                        ? '1px solid rgba(180, 195, 220, 0.34)'
+                        : '1px solid rgba(255, 255, 255, 0.075)';
+                    glassEl.style.boxShadow = isLightTheme
+                        ? '0 1px 8px rgba(0,0,0,0.035)'
+                        : '0 1px 10px rgba(0,0,0,0.16)';
+                }
+
                 // 边界标签化：标签压在容器上边框，内部空间不占用
                 const zoom = this.cy.zoom();
                 labelEl.style.left = `${Math.max(10, 14 * zoom)}px`;
