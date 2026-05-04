@@ -2044,11 +2044,12 @@ cy.fit(null, 40);
         // 多节点拖动时 dragfree 会对每个节点触发，先累积到 pendingPositionChanges，防抖后批量保存
         let pendingMOCPath: string | null = null; // 事件发生时的 MOC 路径
         let pendingGroupLeaves: Array<{ nodeId: string; groupId: string }> = [];
+        let pendingGroupJoins: Array<{ nodeId: string; groupId: string }> = [];
         this.addTrackedListener(branchGraphDiv, 'node-position-changed', async (event: any) => {
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { node, position, leftGroup } = event.detail;
+            const { node, position, leftGroup, joinedGroup } = event.detail;
             const nodeKey = node?.ID || node?.IDStr;
 
             // 检查节点是否有效
@@ -2067,6 +2068,9 @@ cy.fit(null, 40);
             if (leftGroup) {
                 pendingGroupLeaves.push(leftGroup);
             }
+            if (joinedGroup) {
+                pendingGroupJoins.push(joinedGroup);
+            }
 
             // 使用防抖，等所有 dragfree 事件到达后一次性保存
             if (this.nodePositionSaveTimeout) {
@@ -2077,6 +2081,7 @@ cy.fit(null, 40);
                 const changes = new Map(this.pendingPositionChanges);
                 this.pendingPositionChanges.clear();
                 const groupLeaves = pendingGroupLeaves.splice(0);
+                const groupJoins = pendingGroupJoins.splice(0);
 
                 try {
                     // 使用事件发生时捕获的 MOC 路径，防止切换后写入错误文件
@@ -2098,7 +2103,7 @@ cy.fit(null, 40);
                     }
 
                     // 批量保存普通节点位置 + 脱组信息（一次 parse-modify-save，避免竞态）
-                    if (normalChanges.size > 0 || groupLeaves.length > 0) {
+                    if (normalChanges.size > 0 || groupLeaves.length > 0 || groupJoins.length > 0) {
                         const headingTitle = this.plugin.settings.mocHeadingTitle;
                         const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
                         const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
@@ -2116,6 +2121,23 @@ cy.fit(null, 40);
                             const group = mocData.groups?.find((g: any) => g.id === groupId);
                             if (group) {
                                 group.nodeIds = (group.nodeIds || []).filter((id: string) => id !== nodeId);
+                            }
+                        }
+                        for (const { nodeId, groupId } of groupJoins) {
+                            if (!mocData.groups) {
+                                mocData.groups = [];
+                            }
+                            mocData.groups.forEach((group: any) => {
+                                if (group.id !== groupId) {
+                                    group.nodeIds = (group.nodeIds || []).filter((id: string) => id !== nodeId);
+                                }
+                            });
+                            const group = mocData.groups.find((g: any) => g.id === groupId);
+                            if (group) {
+                                const ids = group.nodeIds || (group.nodeIds = []);
+                                if (!ids.includes(nodeId)) {
+                                    ids.push(nodeId);
+                                }
                             }
                         }
                         await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
