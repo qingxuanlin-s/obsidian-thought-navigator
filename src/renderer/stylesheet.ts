@@ -171,12 +171,15 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
         // 嵌入节点：由 HTML 预览卡片承载内容，隐藏 Cytoscape 默认卡片外观
         {
             selector: 'node[?isEmbed]',
-            style: {
-                'label': '',
-                'background-opacity': 0,
-                'border-width': 0
-            } as any
-        },
+			style: {
+				'label': '',
+				'background-opacity': 0,
+				'border-opacity': 0,
+				'border-width': 0,
+				'overlay-opacity': 0,
+				'padding': '0px'
+			} as any
+		},
         // 纯文本节点：文字换行宽度跟随节点宽度（支持手动拉伸后自适应）
         {
             selector: 'node[?isTextOnly]',

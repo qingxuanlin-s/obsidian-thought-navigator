@@ -168,11 +168,11 @@ export function getPreviewCardTheme(data: any, options: RenderOptions | null | u
 		: 'rgba(90, 111, 127, 0.45)';
 
 	const cardBorder = isModern && branchBorderColor
-		? `2.5px solid ${branchBorderColor}`
-		: `2px solid rgba(90, 111, 127, 0.4)`;
+		? `1px solid ${hexToRgba(branchBorderColor, options?.themeMode === 'light' ? 0.45 : 0.38)}`
+		: `1px solid rgba(90, 111, 127, 0.28)`;
 	const cardShadow = isModern && branchBorderColor
-		? `0 0 10px ${hexToRgba(branchBorderColor, 0.35)}, 0 4px 12px rgba(0, 0, 0, 0.25)`
-		: '0 4px 12px rgba(0, 0, 0, 0.25)';
+		? `0 0 10px ${hexToRgba(branchBorderColor, 0.35)}`
+		: 'none';
 	const headerBackground = isModern ? 'transparent' : vividHeaderBackground;
 	const headerDivider = isModern && branchBorderColor
 		? hexToRgba(branchBorderColor, 0.25)
