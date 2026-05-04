@@ -381,7 +381,7 @@ export class FolderDrawer {
             if (!name && !tmpl) { restore(); return; }
             try {
                 if (tmpl) {
-                    await this.service.applyTemplate(tmpl, name || tmpl.name);
+                    await this.service.applyTemplate(tmpl, name || tmpl.name.replace(/\s*[\\/:*?"<>|]\s*/g, ' ').trim());
                 } else {
                     await this.service.createSpace(name);
                 }
@@ -470,7 +470,7 @@ export class FolderDrawer {
         const inputRow = this.bodyEl.createDiv("zk-folder-drawer-input-row");
         const label = inputRow.createSpan("zk-folder-drawer-input-label");
         label.setText(`用 ${tmpl.name} 模板创建 Space:`);
-        const input = inputRow.createEl("input", { type: "text", value: tmpl.name });
+        const input = inputRow.createEl("input", { type: "text", value: tmpl.name.replace(/\s*[\\/:*?"<>|]\s*/g, ' ').trim() });
         input.addClass("zk-folder-drawer-input");
         this.bindInputSubmit(input, async (name) => {
             try {
