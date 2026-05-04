@@ -258,7 +258,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     if (manualHeightModel > 0 && ele.data('isTextOnly')) {
                         return manualHeightModel;
                     }
-                    return deps.measureNodeLabel(ele.data('label') || '', {
+                    const measured = deps.measureNodeLabel(ele.data('label') || '', {
                         baseWidth: 118,
                         minHeight: 54,
                         maxWidth: 340,
@@ -267,6 +267,11 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                         paddingX: 44,
                         paddingY: 22
                     }).height;
+                    // 1 级文本节点字体大（24px），保证最低 90 给字符留呼吸空间
+                    if (ele.data('isTextOnly')) {
+                        return Math.max(measured, 90);
+                    }
+                    return measured;
                 }
             } as any
         },

@@ -1717,8 +1717,9 @@ export function startPlaceholderInPlaceEdit(this: any, node: any): void {
                 cancelEdit();
                 return;
             }
-            // 捕获占位符当前的模型尺寸（含 autoGrow 后的高度），
-            // 以便提交后保留编辑时所见的视觉尺寸，避免回落到默认估算导致缩水/换行
+            // 捕获占位符当前的模型尺寸（含 autoGrow 后的高度）。
+            // 该尺寸只适合文件/嵌入节点；普通文本节点应走文字测量自适应，
+            // 否则会把占位符默认 240×80 持久化为手动尺寸。
             const editWidthModel = Number(node.width()) || defaultW;
             const editHeightModel = Number(node.height()) || defaultH;
             const nodeSize = { width: editWidthModel, height: editHeightModel };
@@ -1760,7 +1761,7 @@ export function startPlaceholderInPlaceEdit(this: any, node: any): void {
                     label: newValue,
                     position,
                     suggestedNodeId: data.suggestedNodeId,
-                    nodeSize
+                    nodeSize: undefined
                 }
             }));
             this.container?.focus();
@@ -2519,4 +2520,3 @@ export function showLinkSuggester(this: any, textarea: HTMLTextAreaElement,
     /**
      * 绑定事件
      */
-
