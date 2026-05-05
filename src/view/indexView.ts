@@ -6385,13 +6385,10 @@ cy.fit(null, 40);
             );
         }
 
-        // 保留占位符编辑时的可视尺寸（写入 embed_node_sizes，文本节点会作为 manualWidth/HeightModel 使用）
-        if (mocFile && nodeSize && nodeSize.width > 0 && nodeSize.height > 0) {
-            MermaidParser.clearCacheForFile(this.plugin.settings.mocCurrentFile);
-            await this.saveEmbedNodeSizeToMOC(mocFile, suggestedID, {
-                widthModel: nodeSize.width,
-                heightModel: nodeSize.height
-            });
+        // 文本节点必须保持自动尺寸。占位符编辑尺寸只用于文件/嵌入节点，
+        // 这里主动清掉同 ID 可能残留的尺寸，避免首次创建后被 manual 宽度锁住。
+        if (mocFile) {
+            await this.clearEmbedNodeSizeFromMOC(mocFile, suggestedID);
         }
 
         // 从占位符追踪中移除
@@ -7800,23 +7797,30 @@ cy.fit(null, 40);
         }
     }
 
+    private async clearEmbedNodeSizeFromMOC(mocFile: TFile, nodeID: string): Promise<void> {
+        try {
+            const headingTitle = this.plugin.settings.mocHeadingTitle;
+            const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
+            const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+            this.ensureMOCNodeLayoutStyle(mocData);
+            if (!(mocData as any).embedNodeSizes?.[nodeID]) return;
+
+            delete (mocData as any).embedNodeSizes[nodeID];
+            await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
+            MermaidParser.clearCacheForFile(this.plugin.settings.mocCurrentFile);
+        } catch (error) {
+            console.error('Failed to clear embed node size from MOC:', error);
+            new Notice(`清理节点尺寸失败: ${error.message}`);
+        }
+    }
+
     private async resetTextNodeAutoSize(node: ZKNode): Promise<void> {
         const nodeID = node.IDStr || node.ID;
         const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
         if (!mocFile || !nodeID) return;
 
         try {
-            const headingTitle = this.plugin.settings.mocHeadingTitle;
-            const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
-            const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
-            this.ensureMOCNodeLayoutStyle(mocData);
-
-            if ((mocData as any).embedNodeSizes?.[nodeID]) {
-                delete (mocData as any).embedNodeSizes[nodeID];
-            }
-
-            await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
-            MermaidParser.clearCacheForFile(this.plugin.settings.mocCurrentFile);
+            await this.clearEmbedNodeSizeFromMOC(mocFile, nodeID);
 
             const cyNode = this.branchRenderer?.getCytoscapeInstance()?.$id(nodeID);
             if (cyNode?.length) {

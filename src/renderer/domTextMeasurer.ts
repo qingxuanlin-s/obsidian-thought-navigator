@@ -44,14 +44,25 @@ export class DomTextMeasurer {
 		this.host.style.fontSize = `${opts.fontSize}px`;
 		this.host.style.fontWeight = fontWeight;
 		this.host.style.lineHeight = `${lineHeight}px`;
-		this.host.style.maxWidth = `${opts.maxWidth}px`;
-		this.host.style.width = 'max-content';
 		this.host.style.fontFamily = 'var(--font-text)';
 		this.host.textContent = text || ' ';
 
+		this.host.style.whiteSpace = 'pre';
+		this.host.style.wordBreak = 'normal';
+		this.host.style.overflowWrap = 'normal';
+		this.host.style.maxWidth = 'none';
+		this.host.style.width = 'max-content';
+		const naturalWidth = Math.ceil(this.host.getBoundingClientRect().width);
+		const measuredWidth = Math.min(opts.maxWidth, naturalWidth);
+
+		this.host.style.whiteSpace = 'pre-wrap';
+		this.host.style.wordBreak = 'break-word';
+		this.host.style.overflowWrap = 'anywhere';
+		this.host.style.maxWidth = `${measuredWidth}px`;
+		this.host.style.width = `${measuredWidth}px`;
 		const rect = this.host.getBoundingClientRect();
 		const result = {
-			width: rect.width,
+			width: measuredWidth,
 			height: rect.height,
 			lineCount: Math.max(1, Math.round(rect.height / lineHeight))
 		};

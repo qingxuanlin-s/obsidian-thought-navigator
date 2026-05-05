@@ -1468,6 +1468,8 @@ export function startInPlaceTextEdit(this: any, node: any,
             const currentHeight = Number.isFinite(rawCurrentHeight) && rawCurrentHeight > 0 ? rawCurrentHeight : entry.height;
             const finalWidth = currentWidth;
             const finalHeightModel = currentHeight;
+            const shouldPersistManualSize = Number(node.data('manualWidthModel') || 0) > 0
+                || Number(node.data('manualHeightModel') || 0) > 0;
             isSaved = true;
             clearLiveEdit();
             restoreNodeInteractivity();
@@ -1483,10 +1485,10 @@ export function startInPlaceTextEdit(this: any, node: any,
                     node: originalNode,
                     content: rawValue,
                     position: anchoredPosition,
-                    nodeSize: {
+                    nodeSize: shouldPersistManualSize ? {
                         widthModel: finalWidth,
                         heightModel: finalHeightModel
-                    }
+                    } : undefined
                 }
             }));
 
