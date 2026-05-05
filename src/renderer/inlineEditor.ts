@@ -1562,6 +1562,10 @@ export function startInPlaceTextEdit(this: any, node: any,
                 cancelEdit();
                 return;
             }
+            if (rawValue === rawSource) {
+                cancelEdit();
+                return;
+            }
             const rawCurrentWidth = Number(node.width());
             const rawCurrentHeight = Number(node.height());
             const currentWidth = Number.isFinite(rawCurrentWidth) && rawCurrentWidth > 0 ? rawCurrentWidth : entry.width;
@@ -2140,6 +2144,18 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
             const newValue = textarea.value.trim();
             if (!newValue) {
                 // 空内容视为取消
+                isSaved = true;
+                restoreOverlay();
+                this.container?.focus();
+                return;
+            }
+            const originalValue = String(
+                originalNode.title
+                || originalNode.displayText
+                || node.data('label')
+                || ''
+            ).replace(/\\n/g, '\n').trim();
+            if (newValue === originalValue) {
                 isSaved = true;
                 restoreOverlay();
                 this.container?.focus();

@@ -330,7 +330,7 @@ export function renderNodeBadges(this: any): void {
 
             const updateUnderlinePosition = () => {
                 if (!this.cy) return;
-                if (this.overlayScheduler.isInteracting) {
+                if (this.overlayScheduler.isInteracting || this.container?.dataset.zkTextNodeResizing === '1') {
                     underlineGroupEl.style.display = 'none';
                     return;
                 }
@@ -855,8 +855,10 @@ export function renderNodeBadges(this: any): void {
                 const onUp = () => {
                     if (!resizing || !this.cy) return;
                     resizing = false;
+                    if (this.container) delete this.container.dataset.zkTextNodeResizing;
                     document.removeEventListener('mousemove', onMove);
                     document.removeEventListener('mouseup', onUp);
+                    this.overlayScheduler.immediate();
                     const widthModel = Number(node.width());
                     const heightModel = Number(node.height());
                     this.container?.dispatchEvent(new CustomEvent('embed-node-size-changed', {
@@ -873,6 +875,7 @@ export function renderNodeBadges(this: any): void {
                     e.preventDefault();
                     e.stopPropagation();
                     resizing = true;
+                    if (this.container) this.container.dataset.zkTextNodeResizing = '1';
                     startX = e.clientX;
                     startY = e.clientY;
                     startWModel = Number(node.width() || 0);
@@ -1550,4 +1553,3 @@ function addCollapseToggleHandle(this: any): void {
             handleContainer.remove();
         };
     }
-
