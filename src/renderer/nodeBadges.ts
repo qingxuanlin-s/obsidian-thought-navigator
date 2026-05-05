@@ -1366,7 +1366,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                 el.style.fontSize = `${base}px`;
                 el.style.width = `${width}px`;
                 el.style.height = 'auto';
-                const measured = Math.ceil(Math.max(el.scrollHeight, el.getBoundingClientRect().height)) + 4;
+                const measured = Math.ceil(Math.max(el.scrollHeight, el.getBoundingClientRect().height)) + 12;
                 return Math.max(32, Math.min(640, measured));
             } catch {
                 return fallbackHeight;

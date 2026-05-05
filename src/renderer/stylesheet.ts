@@ -11,6 +11,7 @@ export interface StylesheetDeps {
         baseWidth?: number;
         minHeight?: number;
         maxWidth?: number;
+        fontSize?: number;
         charWidth?: number;
         lineHeight?: number;
         paddingX?: number;
@@ -30,6 +31,13 @@ export interface StylesheetDeps {
     hexToRgba: (hex: string, alpha: number) => string;
     lightenColor: (hex: string, amount: number) => string;
     darkenColor: (hex: string, amount: number) => string;
+    measureTextWidthCanvas: (text: string, fontSize: number, fontWeight?: string) => number;
+    domMeasure: (text: string, opts: {
+        fontSize: number;
+        fontWeight?: string;
+        maxWidth: number;
+        lineHeight?: number;
+    }) => { width: number; height: number; lineCount: number };
 }
 
 export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): any[] {
@@ -73,6 +81,66 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
         badgeText: '#ffffff'
     };
 
+    const autoMeasureCache = new Map<string, { width: number; height: number; wrapWidth: number }>();
+    const firstLevelMeasureCache = new Map<string, { nodeWidth: number; wrapWidth: number; nodeHeight: number }>();
+
+    const computeAutoTextMetrics = (label: string, opts?: {
+        fontSize?: number;
+        fontWeight?: string;
+        maxContentWidth?: number;
+        baseWidth?: number;
+        minHeight?: number;
+        paddingX?: number;
+        paddingY?: number;
+    }): { width: number; height: number; wrapWidth: number } => {
+        const fontSize = opts?.fontSize ?? 20;
+        const fontWeight = opts?.fontWeight ?? '500';
+        const maxContentWidth = opts?.maxContentWidth ?? 280;
+        const baseWidth = opts?.baseWidth ?? 90;
+        const minHeight = opts?.minHeight ?? 42;
+        const paddingX = opts?.paddingX ?? 40;
+        const paddingY = opts?.paddingY ?? 32;
+        const lineHeight = Math.ceil(fontSize * 1.4);
+        const key = `${label}|${fontSize}|${fontWeight}|${maxContentWidth}|${baseWidth}|${minHeight}|${paddingX}|${paddingY}`;
+        const cached = autoMeasureCache.get(key);
+        if (cached) return cached;
+
+        const m = deps.domMeasure(label || ' ', { fontSize, fontWeight, maxWidth: maxContentWidth, lineHeight });
+        const width = Math.max(baseWidth, Math.min(maxContentWidth + paddingX, Math.ceil(m.width) + paddingX));
+        const height = Math.max(minHeight, Math.ceil(m.height) + paddingY);
+        const result = { width, height, wrapWidth: Math.max(120, width - paddingX) };
+        if (autoMeasureCache.size > 200) autoMeasureCache.clear();
+        autoMeasureCache.set(key, result);
+        return result;
+    };
+
+    const computeFirstLevelMetrics = (label: string): { nodeWidth: number; wrapWidth: number; nodeHeight: number } => {
+        const fontSize = deps.FIRST_LEVEL_NODE_FONT_SIZE;
+        const paddingX = 44;
+        const paddingY = 22;
+        const lineHeight = Math.ceil(fontSize * 1.4);
+        const maxWidth = 340;
+        const baseWidth = 118;
+        const safetyPx = 4;
+        const key = `${label}|${fontSize}`;
+        const cached = firstLevelMeasureCache.get(key);
+        if (cached) return cached;
+
+        const lines = String(label || '').split('\n');
+        const lineWidths = lines.map((l: string) => deps.measureTextWidthCanvas(l || ' ', fontSize, 'bold'));
+        const longestW = Math.max(...lineWidths, fontSize);
+        const nodeWidth = Math.max(baseWidth, Math.min(maxWidth, Math.ceil(longestW) + safetyPx + paddingX));
+        const wrapWidth = Math.max(1, nodeWidth - paddingX);
+        const wrappedLines = lineWidths.reduce((sum: number, lw: number) => (
+            sum + Math.max(1, Math.ceil(lw / wrapWidth))
+        ), 0);
+        const nodeHeight = Math.max(54, wrappedLines * lineHeight + paddingY);
+        const result = { nodeWidth, wrapWidth, nodeHeight };
+        if (firstLevelMeasureCache.size > 200) firstLevelMeasureCache.clear();
+        firstLevelMeasureCache.set(key, result);
+        return result;
+    };
+
     return [
         // 节点样式 - 使用函数动态计算大小
         {
@@ -106,45 +174,33 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                         return manualWidthModel;
                     }
                     const label = ele.data('label') || '';
-                    const measured = deps.measureNodeLabel(label, {
+                    if (ele.data('isTextOnly')) {
+                        return computeAutoTextMetrics(label).width;
+                    }
+                    return deps.measureNodeLabel(label, {
                         baseWidth: 90,
                         minHeight: 42,
                         maxWidth: 280,
                         charWidth: 11,
-                        lineHeight: 18,
                         paddingX: 40,
                         paddingY: 20
-                    });
-                    const compensated = deps.compensateFreeLikeNodeFrameSize(label, measured, {
-                        isFreeNode: true,
-                        isStandaloneText: !!ele.data('isStandaloneText'),
-                        maxWidth: 280,
-                        charWidth: 11
-                    });
-                    return compensated.width;
+                    }).width;
                 },
                 'height': (ele: any) => {
                     const manualHeightModel = Number(ele.data('manualHeightModel') || 0);
-                    if (manualHeightModel > 0 && ele.data('isTextOnly')) {
-                        return manualHeightModel;
-                    }
                     const label = ele.data('label') || '';
-                    const measured = deps.measureNodeLabel(label, {
+                    if (ele.data('isTextOnly')) {
+                        const auto = computeAutoTextMetrics(label).height;
+                        return manualHeightModel > 0 ? Math.max(manualHeightModel, auto) : auto;
+                    }
+                    return deps.measureNodeLabel(label, {
                         baseWidth: 90,
                         minHeight: 42,
                         maxWidth: 280,
                         charWidth: 11,
-                        lineHeight: 18,
                         paddingX: 40,
                         paddingY: 20
-                    });
-                    const compensated = deps.compensateFreeLikeNodeFrameSize(label, measured, {
-                        isFreeNode: true,
-                        isStandaloneText: !!ele.data('isStandaloneText'),
-                        maxWidth: 280,
-                        charWidth: 11
-                    });
-                    return compensated.height;
+                    }).height;
                 },
                 'padding': '20px',
                 'shape': 'round-rectangle',
@@ -187,8 +243,9 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'text-max-width': (ele: any) => {
                     const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
                     const w = Number(ele.width() || 0);
-                    const widthModel = manualWidthModel > 0 ? manualWidthModel : (w > 0 ? w : 200);
-                    return Math.max(120, widthModel - 48);
+                    if (manualWidthModel > 0) return Math.max(120, manualWidthModel - 48);
+                    if (w > 0) return Math.max(120, w - 48);
+                    return computeAutoTextMetrics(ele.data('label') || '').wrapWidth;
                 }
             } as any
         },
@@ -239,43 +296,44 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                         const widthModel = manualWidthModel > 0 ? manualWidthModel : Number(ele.width() || 340);
                         return Math.max(160, widthModel - 52);
                     }
-                    return 340;
+                    return computeFirstLevelMetrics(ele.data('label') || '').wrapWidth;
                 },
                 'width': (ele: any) => {
                     const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
                     if (manualWidthModel > 0 && ele.data('isTextOnly')) {
                         return manualWidthModel;
                     }
-                    return deps.measureNodeLabel(ele.data('label') || '', {
-                        baseWidth: 118,
-                        minHeight: 54,
-                        maxWidth: 340,
-                        charWidth: 12,
-                        lineHeight: 28,
-                        paddingX: 44,
-                        paddingY: 22
-                    }).width;
+                    const label = ele.data('label') || '';
+                    if (ele.data('isTextOnly')) {
+                        return computeAutoTextMetrics(label, {
+                            fontSize: deps.FIRST_LEVEL_NODE_FONT_SIZE,
+                            fontWeight: 'bold',
+                            maxContentWidth: 296,
+                            baseWidth: 118,
+                            minHeight: 90,
+                            paddingX: 44,
+                            paddingY: 34
+                        }).width;
+                    }
+                    return computeFirstLevelMetrics(label).nodeWidth;
                 },
                 'height': (ele: any) => {
                     const manualHeightModel = Number(ele.data('manualHeightModel') || 0);
-                    if (manualHeightModel > 0 && ele.data('isTextOnly')) {
-                        return manualHeightModel;
-                    }
-                    const measured = deps.measureNodeLabel(ele.data('label') || '', {
-                        baseWidth: 118,
-                        minHeight: 54,
-                        maxWidth: 340,
-                        charWidth: 12,
-                        lineHeight: 28,
-                        paddingX: 44,
-                        paddingY: 22
-                    }).height;
-                    // 1 级文本节点字体大（24px），保证最低 90 给字符留呼吸空间
+                    const label = ele.data('label') || '';
                     if (ele.data('isTextOnly')) {
-                        return Math.max(measured, 90);
+                        const auto = computeAutoTextMetrics(label, {
+                            fontSize: deps.FIRST_LEVEL_NODE_FONT_SIZE,
+                            fontWeight: 'bold',
+                            maxContentWidth: 296,
+                            baseWidth: 118,
+                            minHeight: 90,
+                            paddingX: 44,
+                            paddingY: 34
+                        }).height;
+                        return manualHeightModel > 0 ? Math.max(manualHeightModel, auto) : auto;
                     }
-                    // 基础节点经 compensateFreeLikeNodeFrameSize 最低 80px，1 级节点不低于此值
-                    return Math.max(measured, 80);
+                    const auto = Math.max(computeFirstLevelMetrics(label).nodeHeight, 80);
+                    return manualHeightModel > 0 ? Math.max(manualHeightModel, auto) : auto;
                 }
             } as any
         },
@@ -386,6 +444,8 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
         {
             selector: 'node[?isPlaceholder]',
             style: {
+                'width': (ele: any) => Math.max(240, computeAutoTextMetrics(ele.data('label') || '').width),
+                'height': (ele: any) => Math.max(80, computeAutoTextMetrics(ele.data('label') || '').height),
                 'opacity': 0.7,
                 'border-style': 'dashed',
                 'border-width': '2px',

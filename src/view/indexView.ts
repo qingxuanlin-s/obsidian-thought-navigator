@@ -4032,6 +4032,7 @@ cy.fit(null, 40);
         menu.style.zIndex = '10000';
 
         const isAnchor = !!(this.nodeAnchors[node.IDStr] || this.nodeAnchors[node.ID]);
+        const nodeId = node.IDStr || node.ID;
 
         const closeMenu = (e: MouseEvent) => {
             if (!menu.contains(e.target as Node)) {
@@ -4050,6 +4051,20 @@ cy.fit(null, 40);
         // 关联跨领域节点（全宽）
         this.addContextMenuItem(menu, menu, closeMenu, 'share-2', t('ctx link cross domain'), () => this.linkCrossDomainNode(node));
 
+        const cyNode = this.branchRenderer?.getCytoscapeInstance()?.$id(nodeId);
+        const hasManualTextSize = !!node.isTextOnly && !!cyNode?.length && (
+            Number(cyNode.data('manualWidthModel') || 0) > 0 ||
+            Number(cyNode.data('manualHeightModel') || 0) > 0
+        );
+        if (hasManualTextSize) {
+            this.addContextMenuItem(
+                menu, menu, closeMenu,
+                'scan',
+                '恢复自动尺寸',
+                () => this.resetTextNodeAutoSize(node)
+            );
+        }
+
         // 分隔线
         menu.createDiv('zk-node-ctx-sep');
 
@@ -4060,7 +4075,6 @@ cy.fit(null, 40);
 
         // 节点布局风格
         menu.createDiv('zk-node-ctx-sep');
-        const nodeId = node.IDStr || node.ID;
         const effectiveLayout = this.getEffectiveNodeLayoutStyle(nodeId);
         const layoutLabel = menu.createDiv('zk-node-ctx-label');
         layoutLabel.textContent = t('ctx node layout');
@@ -7783,6 +7797,39 @@ cy.fit(null, 40);
         } catch (error) {
             console.error('Failed to save embed node size to MOC:', error);
             new Notice(`保存预览节点尺寸失败: ${error.message}`);
+        }
+    }
+
+    private async resetTextNodeAutoSize(node: ZKNode): Promise<void> {
+        const nodeID = node.IDStr || node.ID;
+        const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+        if (!mocFile || !nodeID) return;
+
+        try {
+            const headingTitle = this.plugin.settings.mocHeadingTitle;
+            const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
+            const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+            this.ensureMOCNodeLayoutStyle(mocData);
+
+            if ((mocData as any).embedNodeSizes?.[nodeID]) {
+                delete (mocData as any).embedNodeSizes[nodeID];
+            }
+
+            await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
+            MermaidParser.clearCacheForFile(this.plugin.settings.mocCurrentFile);
+
+            const cyNode = this.branchRenderer?.getCytoscapeInstance()?.$id(nodeID);
+            if (cyNode?.length) {
+                cyNode.removeData('manualWidthModel manualHeightModel');
+                if (typeof cyNode.removeStyle === 'function') {
+                    cyNode.removeStyle('width height');
+                }
+            }
+
+            await this.refreshBranchMermaid();
+        } catch (error) {
+            console.error('Failed to reset text node auto size:', error);
+            new Notice(`恢复自动尺寸失败: ${error.message}`);
         }
     }
 

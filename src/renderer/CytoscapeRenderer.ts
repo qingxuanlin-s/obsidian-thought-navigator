@@ -25,9 +25,11 @@ import {
     escapeId,
     getNodeLabel,
     measureNodeLabel,
+    measureTextWidthCanvas,
 } from './renderPipeline';
 import { renderEmbedNodePreviews, renderImageNodePreviews } from './embedPreview';
 import { renderNodeBadges } from './nodeBadges';
+import { DomTextMeasurer } from './domTextMeasurer';
 import {
     bindEvents as event_bindEvents,
     bindKeyboardEvents as event_bindKeyboardEvents,
@@ -160,6 +162,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private boxSelectionElement: HTMLElement | null = null;
     private liveEditCleanupHandlers: Set<() => void> = new Set();
     private collapseHandleCleanup: (() => void) | null = null;
+    private domTextMeasurer: DomTextMeasurer | null = null;
     private collapsedNodeIds: Set<string> = new Set();
     private activeTextSelectionToolbarCleanup: (() => void) | null = null;
     // 记住用户上一次在文本选区工具条里选择的颜色，跨选区保持
@@ -260,6 +263,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
         this.container = container;
         this.currentData = data;
         this.currentOptions = options;
+        if (!this.domTextMeasurer || containerChanged) {
+            this.domTextMeasurer?.destroy();
+            this.domTextMeasurer = new DomTextMeasurer(container);
+        } else {
+            this.domTextMeasurer.invalidate();
+        }
 
         // 出入链预设网格位置（必须在转换元素之前，确保 savedPosition 生效）
         this.presetInOutLinksPositions(data);
@@ -721,6 +730,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
             this.cy.destroy();
             this.cy = null;
         }
+        this.domTextMeasurer?.destroy();
+        this.domTextMeasurer = null;
         this.container = null;
         this.currentData = null;
     }
@@ -923,6 +934,23 @@ export class CytoscapeRenderer implements IGraphRenderer {
             SECONDARY_PARENT_EDGE_OPACITY: this.SECONDARY_PARENT_EDGE_OPACITY,
             measureNodeLabel,
             compensateFreeLikeNodeFrameSize,
+            measureTextWidthCanvas,
+            domMeasure: (text, opts) => {
+                if (!this.domTextMeasurer && this.container) {
+                    this.domTextMeasurer = new DomTextMeasurer(this.container);
+                }
+                if (this.domTextMeasurer) return this.domTextMeasurer.measure(text, opts);
+                const fallback = measureNodeLabel(text, {
+                    fontSize: opts.fontSize,
+                    maxWidth: opts.maxWidth,
+                    lineHeight: opts.lineHeight,
+                });
+                return {
+                    width: Math.min(opts.maxWidth, fallback.width),
+                    height: fallback.height,
+                    lineCount: Math.max(1, Math.round(fallback.height / (opts.lineHeight ?? Math.ceil(opts.fontSize * 1.4))))
+                };
+            },
             normalizeHexColor,
             hexToRgba,
             lightenColor,
