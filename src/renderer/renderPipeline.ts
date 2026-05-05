@@ -106,9 +106,9 @@ export function convertNodesToElements(
 		const hasParentChildLink = parentLinkedNodeIds.has(node.ID) || parentLinkedNodeIds.has(node.IDStr);
 		const isFirstLevelNode = isDirectChildOfRootNode(node, resolvedContext.nodeById);
 		const firstLevelBranchNode = getFirstLevelBranchNode(node, resolvedContext.nodeById);
-		const persistedSize = embedNodeSizes[node.ID] || embedNodeSizes[node.IDStr];
 		const isTextNode = !!node.isTextOnly;
-		const manualSize = (isTextNode && persistedSize && persistedSize.width > 0 && persistedSize.height > 0)
+		const persistedSize = !isTextNode ? (embedNodeSizes[node.ID] || embedNodeSizes[node.IDStr]) : null;
+		const manualSize = persistedSize && persistedSize.width > 0 && persistedSize.height > 0
 			? persistedSize
 			: null;
 		const rawCustomColor = nodeColors[node.IDStr] || nodeColors[node.ID] || null;
@@ -234,6 +234,10 @@ export function convertEdgesToElements(
 }
 
 export function getNodeLabel(node: ZKNode, options: RenderOptions | null): string {
+	if (node.isTextOnly) {
+		return String(node.title || node.displayText || '').replace(/\\n/g, '\n');
+	}
+
 	const nodeText = options?.nodeText || 'both';
 	const isFreeNode = (node.ID || node.IDStr || '').startsWith('free.');
 	const isLocalLinkNode = (node.ID || '').startsWith('inlink-') || (node.ID || '').startsWith('outlink-');

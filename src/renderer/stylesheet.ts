@@ -98,8 +98,8 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
         const maxContentWidth = opts?.maxContentWidth ?? 280;
         const baseWidth = opts?.baseWidth ?? 90;
         const minHeight = opts?.minHeight ?? 42;
-        const paddingX = opts?.paddingX ?? 40;
-        const paddingY = opts?.paddingY ?? 32;
+        const paddingX = opts?.paddingX ?? 72;
+        const paddingY = opts?.paddingY ?? 44;
         const lineHeight = Math.ceil(fontSize * 1.4);
         const key = `${label}|${fontSize}|${fontWeight}|${maxContentWidth}|${baseWidth}|${minHeight}|${paddingX}|${paddingY}`;
         const cached = autoMeasureCache.get(key);
@@ -311,7 +311,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                             maxContentWidth: 296,
                             baseWidth: 118,
                             minHeight: 90,
-                            paddingX: 44,
+                            paddingX: 72,
                             paddingY: 34
                         }).width;
                     }
@@ -327,7 +327,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                             maxContentWidth: 296,
                             baseWidth: 118,
                             minHeight: 90,
-                            paddingX: 44,
+                            paddingX: 72,
                             paddingY: 34
                         }).height;
                         return manualHeightModel > 0 ? Math.max(manualHeightModel, auto) : auto;
