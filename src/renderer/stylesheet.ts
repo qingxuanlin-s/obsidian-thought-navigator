@@ -83,6 +83,8 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
 
     const autoMeasureCache = new Map<string, { width: number; height: number; wrapWidth: number }>();
     const firstLevelMeasureCache = new Map<string, { nodeWidth: number; wrapWidth: number; nodeHeight: number }>();
+    const FILE_NODE_PADDING_Y = 57;
+    const FIRST_LEVEL_FILE_NODE_PADDING_Y = 61;
 
     const computeAutoTextMetrics = (label: string, opts?: {
         fontSize?: number;
@@ -117,7 +119,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
     const computeFirstLevelMetrics = (label: string): { nodeWidth: number; wrapWidth: number; nodeHeight: number } => {
         const fontSize = deps.FIRST_LEVEL_NODE_FONT_SIZE;
         const paddingX = 44;
-        const paddingY = 22;
+        const paddingY = FIRST_LEVEL_FILE_NODE_PADDING_Y;
         const lineHeight = Math.ceil(fontSize * 1.4);
         const maxWidth = 340;
         const baseWidth = 118;
@@ -183,7 +185,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                         maxWidth: 280,
                         charWidth: 11,
                         paddingX: 40,
-                        paddingY: 20
+                        paddingY: FILE_NODE_PADDING_Y
                     }).width;
                 },
                 'height': (ele: any) => {
@@ -199,7 +201,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                         maxWidth: 280,
                         charWidth: 11,
                         paddingX: 40,
-                        paddingY: 20
+                        paddingY: FILE_NODE_PADDING_Y
                     }).height;
                 },
                 'padding': '20px',
@@ -224,6 +226,13 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'border-width': '2.5px',
             } as any
         }] : []),
+        // 带 ID 徽标的文件节点：主标题略上移，为右下角徽标预留空间
+        {
+            selector: 'node[badge][!isTextOnly][!isEmbed][!isGroup]',
+            style: {
+                'text-margin-y': -8
+            } as any
+        },
         // 嵌入节点：由 HTML 预览卡片承载内容，隐藏 Cytoscape 默认卡片外观
         {
             selector: 'node[?isEmbed]',

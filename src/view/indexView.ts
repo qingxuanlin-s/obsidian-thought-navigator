@@ -109,6 +109,7 @@ export class ZKIndexView extends FileView {
     resizeTimeout: NodeJS.Timeout | null = null;
     edgeCurvatureSaveTimeout: NodeJS.Timeout | null = null;
     nodePositionSaveTimeout: NodeJS.Timeout | null = null;
+    private pendingNodePositionSavePromise: Promise<void> | null = null;
     pendingPositionChanges: Map<string, { node: any; position: { x: number; y: number } }> = new Map();
     crossDomainPositionSaveTimeout: NodeJS.Timeout | null = null;
     embedNodeSizeSaveTimeout: NodeJS.Timeout | null = null;
@@ -2077,90 +2078,97 @@ cy.fit(null, 40);
                 clearTimeout(this.nodePositionSaveTimeout);
             }
 
-            this.nodePositionSaveTimeout = setTimeout(async () => {
-                const changes = new Map(this.pendingPositionChanges);
-                this.pendingPositionChanges.clear();
-                const groupLeaves = pendingGroupLeaves.splice(0);
-                const groupJoins = pendingGroupJoins.splice(0);
+            this.nodePositionSaveTimeout = setTimeout(() => {
+                this.nodePositionSaveTimeout = null;
+                const savePromise = (async () => {
+                    const changes = new Map(this.pendingPositionChanges);
+                    this.pendingPositionChanges.clear();
+                    const groupLeaves = pendingGroupLeaves.splice(0);
+                    const groupJoins = pendingGroupJoins.splice(0);
 
-                try {
-                    // 使用事件发生时捕获的 MOC 路径，防止切换后写入错误文件
-                    const targetMOCPath = pendingMOCPath || this.plugin.settings.mocCurrentFile;
-                    pendingMOCPath = null;
-                    const mocFile = this.app.vault.getFileByPath(targetMOCPath);
-                    if (!mocFile) return;
+                    try {
+                        // 使用事件发生时捕获的 MOC 路径，防止切换后写入错误文件
+                        const targetMOCPath = pendingMOCPath || this.plugin.settings.mocCurrentFile;
+                        pendingMOCPath = null;
+                        const mocFile = this.app.vault.getFileByPath(targetMOCPath);
+                        if (!mocFile) return;
 
-                    // 分离跨领域节点和普通节点
-                    const crossDomainChanges: Array<{ node: any; position: { x: number; y: number } }> = [];
-                    const normalChanges: Map<string, { x: number; y: number }> = new Map();
+                        // 分离跨领域节点和普通节点
+                        const crossDomainChanges: Array<{ node: any; position: { x: number; y: number } }> = [];
+                        const normalChanges: Map<string, { x: number; y: number }> = new Map();
 
-                    for (const [nodeID, { node: n, position: pos }] of changes) {
-                        if (n.isCrossDomain && n.crossDomainSourceNodeId && n.crossDomainOriginalNodeId) {
-                            crossDomainChanges.push({ node: n, position: pos });
-                        } else {
-                            normalChanges.set(nodeID, pos);
-                        }
-                    }
-
-                    // 批量保存普通节点位置 + 脱组信息（一次 parse-modify-save，避免竞态）
-                    if (normalChanges.size > 0 || groupLeaves.length > 0 || groupJoins.length > 0) {
-                        const headingTitle = this.plugin.settings.mocHeadingTitle;
-                        const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
-                        const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
-                        this.ensureMOCNodeLayoutStyle(mocData);
-                        if (!mocData.nodePositions) {
-                            mocData.nodePositions = {};
-                        }
-                        for (const [nodeID, pos] of normalChanges) {
-                            mocData.nodePositions[nodeID] = {
-                                x: Math.round(pos.x * 100) / 100,
-                                y: Math.round(pos.y * 100) / 100
-                            };
-                        }
-                        for (const { nodeId, groupId } of groupLeaves) {
-                            const group = mocData.groups?.find((g: any) => g.id === groupId);
-                            if (group) {
-                                group.nodeIds = (group.nodeIds || []).filter((id: string) => id !== nodeId);
+                        for (const [nodeID, { node: n, position: pos }] of changes) {
+                            if (n.isCrossDomain && n.crossDomainSourceNodeId && n.crossDomainOriginalNodeId) {
+                                crossDomainChanges.push({ node: n, position: pos });
+                            } else {
+                                normalChanges.set(nodeID, pos);
                             }
                         }
-                        for (const { nodeId, groupId } of groupJoins) {
-                            if (!mocData.groups) {
-                                mocData.groups = [];
-                            }
-                            mocData.groups.forEach((group: any) => {
-                                if (group.id !== groupId) {
-                                    group.nodeIds = (group.nodeIds || []).filter((id: string) => id !== nodeId);
+
+                        // 批量保存普通节点位置 + 脱组信息（一次 parse-modify-save，避免竞态）
+                        if (normalChanges.size > 0 || groupLeaves.length > 0 || groupJoins.length > 0) {
+                            await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
+                                this.ensureMOCNodeLayoutStyle(mocData);
+                                if (!mocData.nodePositions) {
+                                    mocData.nodePositions = {};
+                                }
+                                for (const [nodeID, pos] of normalChanges) {
+                                    mocData.nodePositions[nodeID] = {
+                                        x: Math.round(pos.x * 100) / 100,
+                                        y: Math.round(pos.y * 100) / 100
+                                    };
+                                }
+                                for (const { nodeId, groupId } of groupLeaves) {
+                                    const group = mocData.groups?.find((g: any) => g.id === groupId);
+                                    if (group) {
+                                        group.nodeIds = (group.nodeIds || []).filter((id: string) => id !== nodeId);
+                                    }
+                                }
+                                for (const { nodeId, groupId } of groupJoins) {
+                                    if (!mocData.groups) {
+                                        mocData.groups = [];
+                                    }
+                                    mocData.groups.forEach((group: any) => {
+                                        if (group.id !== groupId) {
+                                            group.nodeIds = (group.nodeIds || []).filter((id: string) => id !== nodeId);
+                                        }
+                                    });
+                                    const group = mocData.groups.find((g: any) => g.id === groupId);
+                                    if (group) {
+                                        const ids = group.nodeIds || (group.nodeIds = []);
+                                        if (!ids.includes(nodeId)) {
+                                            ids.push(nodeId);
+                                        }
+                                    }
                                 }
                             });
-                            const group = mocData.groups.find((g: any) => g.id === groupId);
-                            if (group) {
-                                const ids = group.nodeIds || (group.nodeIds = []);
-                                if (!ids.includes(nodeId)) {
-                                    ids.push(nodeId);
-                                }
-                            }
                         }
-                        await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
-                    }
 
-                    // 跨领域节点逐个保存（数量通常很少）
-                    for (const { node: n, position: pos } of crossDomainChanges) {
-                        const crossDomainLink = {
-                            nodeId: n.crossDomainOriginalNodeId,
-                            mocPath: n.filePath,
-                            displayText: n.displayText,
-                            filePath: n.filePath
-                        };
-                        await this.saveCrossDomainNodePosition(
-                            mocFile,
-                            n.crossDomainSourceNodeId,
-                            crossDomainLink,
-                            pos
-                        );
+                        // 跨领域节点逐个保存（数量通常很少）
+                        for (const { node: n, position: pos } of crossDomainChanges) {
+                            const crossDomainLink = {
+                                nodeId: n.crossDomainOriginalNodeId,
+                                mocPath: n.filePath,
+                                displayText: n.displayText,
+                                filePath: n.filePath
+                            };
+                            await this.saveCrossDomainNodePosition(
+                                mocFile,
+                                n.crossDomainSourceNodeId,
+                                crossDomainLink,
+                                pos
+                            );
+                        }
+                    } catch (error) {
+                        console.error('Failed to save node positions:', error);
                     }
-                } catch (error) {
-                    console.error('Failed to save node positions:', error);
-                }
+                })();
+                this.pendingNodePositionSavePromise = savePromise;
+                savePromise.finally(() => {
+                    if (this.pendingNodePositionSavePromise === savePromise) {
+                        this.pendingNodePositionSavePromise = null;
+                    }
+                });
             }, DEBOUNCE_DELAY.POSITION_SAVE);
         });
 
@@ -2650,8 +2658,8 @@ cy.fit(null, 40);
                 }
             }
 
-            // 在刷新前保存所有节点的当前位置
-            await this.saveAllNodePositionsBeforeRefresh();
+            // 在刷新前保存所有节点的当前位置，并取消尚未落盘的拖拽位置保存
+            await this.flushAndSaveCurrentPositions();
 
             // 删除节点
             try {
@@ -3229,6 +3237,7 @@ cy.fit(null, 40);
                         nodeId,
                         nodeData: nodes[index]
                     }));
+                    await this.flushAndSaveCurrentPositions();
                     await this.mocHandler.deleteNodesFromMOC(mocFile, batchNodes);
 
                     // 删除嵌入图片节点对应的图片文件
@@ -7628,6 +7637,9 @@ cy.fit(null, 40);
             this.nodePositionSaveTimeout = null;
         }
         this.pendingPositionChanges.clear();
+        if (this.pendingNodePositionSavePromise) {
+            await this.pendingNodePositionSavePromise;
+        }
 
         // 用 lastRenderedMOCPath 保存位置（这是当前 cy 实例真正对应的 MOC 文件）
         await this.saveAllNodePositionsBeforeRefresh(this.lastRenderedMOCPath || undefined);

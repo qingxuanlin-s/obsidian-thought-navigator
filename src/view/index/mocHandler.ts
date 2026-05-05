@@ -53,6 +53,8 @@ function deepCopyMOCResult(original: MOCParseResult): MOCParseResult {
  * 负责处理所有与 MOC 文件相关的操作
  */
 export class MOCHandler {
+    private modifyQueues = new Map<string, Promise<void>>();
+
     constructor(
         private plugin: ZKNavigationPlugin,
         private app: any,
@@ -60,6 +62,21 @@ export class MOCHandler {
             onBeforeModify?: (payload: { filePath: string; content: string }) => void | Promise<void>;
         }
     ) {}
+
+    private async enqueueModify<T>(filePath: string, task: () => Promise<T>): Promise<T> {
+        const previous = this.modifyQueues.get(filePath) || Promise.resolve();
+        const run = previous.catch(() => undefined).then(task);
+        const current = run.then(() => undefined, () => undefined);
+        this.modifyQueues.set(filePath, current);
+
+        try {
+            return await run;
+        } finally {
+            if (this.modifyQueues.get(filePath) === current) {
+                this.modifyQueues.delete(filePath);
+            }
+        }
+    }
 
     private getBranchStylePalette(): string[] {
         return ['#ff5a5f', '#ff8a3d', '#f7c948', '#56d364', '#38d9a9', '#4dabf7', '#9775fa', '#f06595'];
@@ -101,29 +118,31 @@ export class MOCHandler {
         mocFile: TFile,
         modifyCallback: (data: MOCParseResult) => void | Promise<void>
     ): Promise<void> {
-        const headingTitle = this.plugin.settings.mocHeadingTitle;
-        const originalContent = await this.app.vault.read(mocFile);
-        if (this.hooks?.onBeforeModify) {
-            await this.hooks.onBeforeModify({ filePath: mocFile.path, content: originalContent });
-        }
+        await this.enqueueModify(mocFile.path, async () => {
+            const headingTitle = this.plugin.settings.mocHeadingTitle;
+            const originalContent = await this.app.vault.read(mocFile);
+            if (this.hooks?.onBeforeModify) {
+                await this.hooks.onBeforeModify({ filePath: mocFile.path, content: originalContent });
+            }
 
-        // 使用 Mermaid 格式：通过 parse/modify/save 流程来保留所有 metadata
-        const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
-        const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+            // 使用 Mermaid 格式：通过 parse/modify/save 流程来保留所有 metadata
+            const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
+            const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
 
-        // 深拷贝数据，避免修改缓存中的数据
-        const mocDataCopy = deepCopyMOCResult(mocData);
+            // 深拷贝数据，避免修改缓存中的数据
+            const mocDataCopy = deepCopyMOCResult(mocData);
 
-        // 锁定文件级布局风格：若该 MOC 尚未持久化 nodeLayoutStyle，则在首次写入时补齐
-        if (mocDataCopy.nodeLayoutStyle !== 'free' && mocDataCopy.nodeLayoutStyle !== 'auto') {
-            mocDataCopy.nodeLayoutStyle = this.plugin.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free';
-        }
+            // 锁定文件级布局风格：若该 MOC 尚未持久化 nodeLayoutStyle，则在首次写入时补齐
+            if (mocDataCopy.nodeLayoutStyle !== 'free' && mocDataCopy.nodeLayoutStyle !== 'auto') {
+                mocDataCopy.nodeLayoutStyle = this.plugin.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free';
+            }
 
-        // 调用修改回调（操作的是拷贝，不影响缓存）
-        await modifyCallback(mocDataCopy);
+            // 调用修改回调（操作的是拷贝，不影响缓存）
+            await modifyCallback(mocDataCopy);
 
-        // 保存更新后的数据（这会保留 crossDomainLinks 等所有 metadata）
-        await saveMOCStructure(this.app, mocFile.path, headingTitle, mocDataCopy);
+            // 保存更新后的数据（这会保留 crossDomainLinks 等所有 metadata）
+            await saveMOCStructure(this.app, mocFile.path, headingTitle, mocDataCopy);
+        });
     }
 
     async modifyMOCDataBatch(
