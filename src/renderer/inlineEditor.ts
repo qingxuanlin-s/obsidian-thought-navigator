@@ -819,13 +819,6 @@ export function showInlineNodeEditor(this: any, node: any): void {
         const originalNode = data.originalNode;
         const isPlaceholder = !!data.isPlaceholder;
         const isExistingNode = !!originalNode && !data.isGroup;
-        console.log('[ZK][InlineEdit] showInlineNodeEditor', {
-            isPlaceholder,
-            isExistingNode,
-            isTextOnly: !!originalNode?.isTextOnly,
-            nodeId: node.id?.(),
-            originalNodeId: data.originalNodeId || originalNode?.IDStr || originalNode?.ID || null,
-        });
         if (!isPlaceholder && !isExistingNode) return;
 
         this.ensureNodeVisibleInViewport(node);
@@ -861,19 +854,10 @@ export function showInlineNodeEditor(this: any, node: any): void {
             const cacheKey = `${sourcePath}||${nodeCacheId}||${rawSource}`;
             const cachedEntry = this.textMdOverlayCache.get(cacheKey);
             if (cachedEntry) {
-                console.log('[ZK][InlineEdit] route=startInPlaceTextEdit', {
-                    cacheKey,
-                    hasCachedEntry: true,
-                });
                 this.startInPlaceTextEdit(node, originalNode, cachedEntry);
                 return;
             }
         }
-
-        console.log('[ZK][InlineEdit] route=showInlineNodeEditor:textarea-fallback', {
-            isPlaceholder,
-            isTextOnly: !!originalNode?.isTextOnly,
-        });
 
         const renderedPosition = node.renderedPosition();
         const bb = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
@@ -1053,12 +1037,6 @@ export function showInlineNodeEditor(this: any, node: any): void {
         // 保存函数
         const saveNode = async () => {
             const newLabel = textarea.value.trim();
-            console.log('[ZK][InlineEditTextarea] saveNode', {
-                rawValue: textarea.value,
-                rawLength: textarea.value.length,
-                trimmedLength: newLabel.length,
-                endsWithNewline: textarea.value.endsWith('\n'),
-            });
 
             if (!newLabel) {
                 if (isPlaceholder) {
@@ -1165,15 +1143,6 @@ export function showInlineNodeEditor(this: any, node: any): void {
         textarea.addEventListener('keydown', (e: KeyboardEvent) => {
             // 阻止事件冒泡到 Cytoscape，避免被其他事件处理器拦截
             e.stopPropagation();
-            if (e.key === 'Enter') {
-                console.log('[ZK][InlineEditTextarea] Enter keydown', {
-                    metaKey: e.metaKey,
-                    ctrlKey: e.ctrlKey,
-                    shiftKey: e.shiftKey,
-                    altKey: e.altKey,
-                    valueLength: textarea.value.length,
-                });
-            }
 
             // 如果 suggester 正在显示，ESC 键关闭 suggester，其他键让 suggester 的键盘处理器处理
             if (suggesterPopoverRef.value && suggesterPopoverRef.value.parentNode) {
@@ -1310,10 +1279,6 @@ export function startInPlaceTextEdit(this: any, node: any,
             usedInCycle: boolean;
         }): void {
         if (!this.cy || !this.container) return;
-        console.log('[ZK][TextNodeLiveEdit] startInPlaceTextEdit', {
-            nodeId: node.id?.(),
-            originalNodeId: originalNode.IDStr || originalNode.ID || null,
-        });
 
         // 先卸载只读展示用的 editor，避免与可编辑 editor 冲突
         if (entry.mdEditor) {
@@ -1353,42 +1318,11 @@ export function startInPlaceTextEdit(this: any, node: any,
             z-index: 2;
         `;
         overlayEl.appendChild(editorHost);
-        editorHost.addEventListener('focusin', (e: FocusEvent) => {
-            console.log('[ZK][TextNodeLiveEdit] editorHost focusin', {
-                targetClass: (e.target as HTMLElement | null)?.className ?? null,
-                activeElementClass: (document.activeElement as HTMLElement | null)?.className ?? null,
-            });
-        }, true);
-        editorHost.addEventListener('keydown', (e: KeyboardEvent) => {
-            if (e.key === 'Enter') {
-                console.log('[ZK][TextNodeLiveEdit] editorHost keydown Enter', {
-                    metaKey: e.metaKey,
-                    ctrlKey: e.ctrlKey,
-                    shiftKey: e.shiftKey,
-                    altKey: e.altKey,
-                    targetClass: (e.target as HTMLElement | null)?.className ?? null,
-                });
-            }
-        }, true);
         const logGlobalEnter = (scope: 'window' | 'document') => (e: KeyboardEvent) => {
             if (e.key !== 'Enter') return;
             const activeEl = document.activeElement as HTMLElement | null;
             const isInThisEditor = !!activeEl && editorHost.contains(activeEl);
-            console.log(`[ZK][TextNodeLiveEdit] ${scope} keydown Enter`, {
-                metaKey: e.metaKey,
-                ctrlKey: e.ctrlKey,
-                shiftKey: e.shiftKey,
-                altKey: e.altKey,
-                isInThisEditor,
-                activeElementClass: activeEl?.className ?? null,
-                targetClass: (e.target as HTMLElement | null)?.className ?? null,
-            });
             if (scope === 'window' && isInThisEditor && (e.shiftKey || e.metaKey || e.ctrlKey) && mdEditor) {
-                console.log('[ZK][TextNodeLiveEdit] intercept Shift/Cmd/Ctrl+Enter at window', {
-                    shiftKey: e.shiftKey,
-                    metaKey: e.metaKey,
-                    ctrlKey: e.ctrlKey,
-                });
                 e.preventDefault();
                 e.stopPropagation();
                 mdEditor.insertLineBreak();
@@ -1552,12 +1486,6 @@ export function startInPlaceTextEdit(this: any, node: any,
         const saveEdit = () => {
             if (isSaved) return;
             const rawValue = (mdEditor?.getValue() ?? '').replace(/\r\n/g, '\n');
-            console.log('[ZK][TextNodeLiveEdit] saveEdit', {
-                rawValue,
-                rawLength: rawValue.length,
-                trimmedLength: rawValue.trim().length,
-                endsWithNewline: rawValue.endsWith('\n'),
-            });
             if (!rawValue.trim()) {
                 cancelEdit();
                 return;
@@ -1615,13 +1543,6 @@ export function startInPlaceTextEdit(this: any, node: any,
                 sourcePath,
                 onChange: () => scheduleLiveEditResize(),
                 onEnter: (_value, evt) => {
-                    console.log('[ZK][TextNodeLiveEdit] onEnter', {
-                        metaKey: evt.metaKey,
-                        ctrlKey: evt.ctrlKey,
-                        shiftKey: evt.shiftKey,
-                        valueLength: _value.length,
-                        endsWithNewline: _value.endsWith('\n'),
-                    });
                     if (evt.shiftKey || evt.metaKey || evt.ctrlKey) return false; // Shift/Cmd/Ctrl+Enter = 换行
                     saveEdit();
                     return true; // Enter = 保存
@@ -1633,9 +1554,6 @@ export function startInPlaceTextEdit(this: any, node: any,
             });
             (editorHost as any)._mdEditor = mdEditor;
             mdEditor.focus();
-            console.log('[ZK][TextNodeLiveEdit] after mdEditor.focus', {
-                activeElementClass: (document.activeElement as HTMLElement | null)?.className ?? null,
-            });
             const editorDom = mdEditor.getDom();
             if (editorDom) {
                 selectionToolbar = this.attachContentSelectionToolbar(editorHost, (formatter: (selectedText: string) => string) => {

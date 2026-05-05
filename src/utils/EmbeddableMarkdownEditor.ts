@@ -140,13 +140,6 @@ export class EmbeddableMarkdownEditor extends Component {
 		this.setValue(this.opts.initialValue ?? '');
 
 		this.cm = this.editView?.editor?.cm ?? this.editView?.cm ?? null;
-		console.log('[ZK][EmbeddableMarkdownEditor] mount', {
-			hasEditView: !!this.editView,
-			hasCm: !!this.cm,
-			hasDom: !!this.cm?.dom,
-			hasContentDOM: !!this.cm?.contentDOM,
-			hasScrollDOM: !!this.cm?.scrollDOM,
-		});
 
 		if (this.opts.readOnly) {
 			// 只读模式：禁用编辑，隐藏光标
@@ -247,28 +240,6 @@ export class EmbeddableMarkdownEditor extends Component {
 			captureSelection();
 			this.opts.onChange?.(this.getValue());
 		});
-		cm.dom.addEventListener('focusin', (e: FocusEvent) => {
-			console.log('[ZK][EmbeddableMarkdownEditor] cm.dom focusin', {
-				targetClass: (e.target as HTMLElement | null)?.className ?? null,
-				activeElementClass: (document.activeElement as HTMLElement | null)?.className ?? null,
-			});
-		}, true);
-		cm.contentDOM?.addEventListener('focusin', (e: FocusEvent) => {
-			console.log('[ZK][EmbeddableMarkdownEditor] contentDOM focusin', {
-				targetClass: (e.target as HTMLElement | null)?.className ?? null,
-				activeElementClass: (document.activeElement as HTMLElement | null)?.className ?? null,
-			});
-		}, true);
-		cm.contentDOM?.addEventListener('keydown', (e: KeyboardEvent) => {
-			if (e.key === 'Enter') {
-				console.log('[ZK][EmbeddableMarkdownEditor] contentDOM keydown Enter', {
-					metaKey: e.metaKey,
-					ctrlKey: e.ctrlKey,
-					shiftKey: e.shiftKey,
-					altKey: e.altKey,
-				});
-			}
-		}, true);
 		cm.dom.addEventListener('mouseup', captureSelection, true);
 		cm.dom.addEventListener('keyup', captureSelection, true);
 
@@ -284,13 +255,6 @@ export class EmbeddableMarkdownEditor extends Component {
 			e.stopPropagation();
 
 			if (e.key === 'Enter' && this.opts.onEnter) {
-				console.log('[ZK][EmbeddableMarkdownEditor] Enter keydown', {
-					metaKey: e.metaKey,
-					ctrlKey: e.ctrlKey,
-					shiftKey: e.shiftKey,
-					altKey: e.altKey,
-					valueLength: this.getValue().length,
-				});
 				e.preventDefault();
 				if (!this.opts.onEnter(this.getValue(), e)) {
 					// onEnter 返回 false 表示"允许换行"；这里统一显式插入，
@@ -354,9 +318,6 @@ export class EmbeddableMarkdownEditor extends Component {
 	focus(): void {
 		try {
 			this.cm?.focus?.();
-			console.log('[ZK][EmbeddableMarkdownEditor] focus()', {
-				activeElementClass: (document.activeElement as HTMLElement | null)?.className ?? null,
-			});
 		} catch {
 			/* ignore */
 		}

@@ -6290,7 +6290,6 @@ cy.fit(null, 40);
         }
 
         // 自动选中新创建的节点
-        console.log('[indexView] 文件节点创建完成，准备选中节点', suggestedID);
         if (branchGraphDiv) {
             branchGraphDiv.dispatchEvent(new CustomEvent('select-node-by-id', {
                 detail: {
@@ -6403,7 +6402,6 @@ cy.fit(null, 40);
         }
 
         // 自动选中新创建的节点
-        console.log('[indexView] 文件节点创建完成，准备选中节点', suggestedID);
         if (branchGraphDiv) {
             branchGraphDiv.dispatchEvent(new CustomEvent('select-node-by-id', {
                 detail: {
