@@ -322,6 +322,8 @@ export function bindEvents(this: any): void {
                         id: nodeId,
                         label: '',  // 不显示预生成的 ID，保持空白
                         isPlaceholder: true,
+                        isTextOnly: true,
+                        hasMarkdownOverlay: true,
                         originalNode: null,
                         suggestedNodeId: suggestedNodeId,  // 存储预生成的节点 ID
                         parentNodeId: parentNodeId  // 存储父节点 ID

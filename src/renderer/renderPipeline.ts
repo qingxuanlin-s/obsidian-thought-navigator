@@ -481,10 +481,36 @@ export function buildVividNodeStyleMap(
 	return styleMap;
 }
 
+let _canvasMeasureCtx: CanvasRenderingContext2D | null = null;
+
+function getCanvasCtx(): CanvasRenderingContext2D | null {
+	if (_canvasMeasureCtx) return _canvasMeasureCtx;
+	try {
+		const canvas = document.createElement('canvas');
+		_canvasMeasureCtx = canvas.getContext('2d');
+	} catch { /* ignore */ }
+	return _canvasMeasureCtx;
+}
+
+export function measureTextWidthCanvas(text: string, fontSize: number, fontWeight = '500'): number {
+	const ctx = getCanvasCtx();
+	if (ctx) {
+		ctx.font = `${fontWeight} ${fontSize}px system-ui, -apple-system, sans-serif`;
+		return ctx.measureText(text).width;
+	}
+	// fallback: rough estimate
+	let w = 0;
+	for (const ch of text) {
+		w += isCJKChar(ch) ? fontSize * 1.1 : fontSize * 0.6;
+	}
+	return w;
+}
+
 export function measureNodeLabel(label: string, options?: {
 	baseWidth?: number;
 	minHeight?: number;
 	maxWidth?: number;
+	fontSize?: number;
 	charWidth?: number;
 	lineHeight?: number;
 	paddingX?: number;
@@ -495,9 +521,9 @@ export function measureNodeLabel(label: string, options?: {
 		minHeight = 34,
 		maxWidth = 220,
 		charWidth = 8,
-		lineHeight = 12,
+		lineHeight = Math.ceil((options?.fontSize ?? 20) * 1.4),
 		paddingX = 32,
-		paddingY = 16
+		paddingY = 24
 	} = options || {};
 
 	const estimateTextWidth = (text: string): number => {

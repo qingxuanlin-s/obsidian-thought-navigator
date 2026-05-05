@@ -6,7 +6,7 @@ import {
     DEFAULT_SELECTION_TEXT_COLOR,
     createSelectionColorPanel,
 } from './colorUtils';
-import { buildWikiLinkForFile, compensateFreeLikeNodeFrameSize, measureNodeLabel } from './renderPipeline';
+import { buildWikiLinkForFile } from './renderPipeline';
 
 export function attachInlineTextSelectionToolbar(this: any, inputEl: HTMLInputElement | HTMLTextAreaElement): {
         destroy: () => void;
@@ -1371,8 +1371,10 @@ export function startInPlaceTextEdit(this: any, node: any,
             this.cy?.userZoomingEnabled(prevZoomingEnabled);
         };
 
+        let cleanupOverlaySync = () => {};
         const clearLiveEdit = () => {
             this.liveEditCleanupHandlers.delete(clearLiveEdit);
+            cleanupOverlaySync();
             selectionToolbar?.destroy();
             selectionToolbar = null;
             if (mdEditor) {
@@ -1405,6 +1407,7 @@ export function startInPlaceTextEdit(this: any, node: any,
                 entry.width = savedWidth;
                 entry.height = savedHeight;
                 this.cy.batch(() => {
+                    node.data('label', rawSource);
                     node.data('manualWidthModel', savedWidth);
                     node.data('manualHeightModel', savedHeight);
                     node.style({ width: savedWidth, height: savedHeight });
@@ -1413,74 +1416,36 @@ export function startInPlaceTextEdit(this: any, node: any,
             this.container?.focus();
         };
 
-        const resizeLiveEditNodeHeight = (
-            valueOverride?: string,
-            allowShrink: boolean = false,
-            applyToCurrentNode: boolean = true
-        ): number | null => {
+        let editRenderRaf: number | null = null;
+        const syncOverlayPos = () => {
             if (!this.cy || node.removed() || !mdEditor) return null;
-            const minHeight = node.data('isRoot') ? 90 : 60;
-            const rawValue = (valueOverride ?? mdEditor.getValue() ?? '').replace(/\r\n/g, '\n');
-            const baseFontSize = node.data('isRoot')
-                ? this.ROOT_NODE_FONT_SIZE
-                : (node.data('isFirstLevelNode') && !node.data('isRoot') && !node.data('isFreeNode')
-                    ? this.FIRST_LEVEL_NODE_FONT_SIZE
-                    : 20);
-            const paddingX = node.data('isRoot') ? baseFontSize * 1.846 : baseFontSize * 2.4;
-            const paddingY = node.data('isRoot') ? baseFontSize * 0.4 : baseFontSize * 1.8;
-            const contentWidth = Math.max(baseFontSize * 4, Number(node.width() || entry.width || 240) - paddingX);
-            const estimateCharWidth = (ch: string): number => {
-                const code = ch.codePointAt(0) || 0;
-                const isCjk = (code >= 0x4E00 && code <= 0x9FFF) ||
-                    (code >= 0x3000 && code <= 0x303F) ||
-                    (code >= 0xFF00 && code <= 0xFFEF) ||
-                    (code >= 0x3400 && code <= 0x4DBF) ||
-                    (code >= 0x20000 && code <= 0x2A6DF);
-                return isCjk ? baseFontSize * 1.1 : baseFontSize * 0.55;
-            };
-            const textForMeasure = rawValue
-                .replace(/<br\s*\/?>/gi, '\n')
-                .replace(/<\/(?:p|div|li|h[1-6])>/gi, '\n')
-                .replace(/<[^>]*>/g, '');
-            let visualLineCount = 0;
-            textForMeasure.split('\n').forEach((line) => {
-                let lineWidth = 0;
-                let wrapped = 1;
-                for (const ch of (line || ' ')) {
-                    const chWidth = estimateCharWidth(ch);
-                    if (lineWidth + chWidth > contentWidth && lineWidth > 0) {
-                        wrapped += 1;
-                        lineWidth = chWidth;
-                    } else {
-                        lineWidth += chWidth;
-                    }
-                }
-                visualLineCount += wrapped;
-            });
-            const estimatedTextHeight = Math.ceil(Math.max(1, visualLineCount) * baseFontSize * 1.35 + paddingY);
-            const overflow = Math.max(mdEditor.getVerticalOverflow(), 0);
-            const overflowHeight = overflow >= 1 ? Number(node.height() || estimatedTextHeight) + overflow + 2 : estimatedTextHeight;
-            const targetHeight = Math.min(720, Math.max(
-                minHeight,
-                estimatedTextHeight,
-                overflowHeight
-            ));
-            const currentHeight = Number(node.height() || 0);
-            if (!allowShrink && targetHeight < currentHeight) return currentHeight;
-            if (Math.abs(targetHeight - currentHeight) < 1) return targetHeight;
-            if (!applyToCurrentNode) return targetHeight;
-            entry.height = targetHeight;
-            node.data('manualHeightModel', targetHeight);
-            node.style({ height: targetHeight });
-            this.overlayScheduler?.immediate?.();
-            return targetHeight;
+            const bb = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
+            if (!bb || bb.w <= 0 || bb.h <= 0) return null;
+            const zoom = this.cy.zoom() || 1;
+            overlayEl.style.left = `${bb.x1}px`;
+            overlayEl.style.top = `${bb.y1}px`;
+            overlayEl.style.width = `${bb.w}px`;
+            overlayEl.style.height = `${bb.h}px`;
+            overlayEl.style.fontSize = `${20 * zoom}px`;
+            entry.width = Number(node.width() || entry.width);
+            entry.height = Number(node.height() || entry.height);
+            return entry.height;
         };
 
-        const scheduleLiveEditResize = () => {
-            requestAnimationFrame(() => {
-                resizeLiveEditNodeHeight();
-                requestAnimationFrame(() => resizeLiveEditNodeHeight());
+        const scheduleOverlaySync = () => {
+            if (editRenderRaf !== null) return;
+            editRenderRaf = requestAnimationFrame(() => {
+                editRenderRaf = null;
+                syncOverlayPos();
             });
+        };
+
+        const updateLiveEditLabel = () => {
+            if (!this.cy || node.removed() || !mdEditor) return;
+            node.data('label', mdEditor.getValue() ?? '');
+            this.cy.style().update();
+            this.overlayScheduler?.immediate?.();
+            scheduleOverlaySync();
         };
 
         const saveEdit = () => {
@@ -1494,13 +1459,15 @@ export function startInPlaceTextEdit(this: any, node: any,
                 cancelEdit();
                 return;
             }
+            node.data('label', rawValue);
+            this.cy?.style().update();
+            syncOverlayPos();
             const rawCurrentWidth = Number(node.width());
             const rawCurrentHeight = Number(node.height());
             const currentWidth = Number.isFinite(rawCurrentWidth) && rawCurrentWidth > 0 ? rawCurrentWidth : entry.width;
             const currentHeight = Number.isFinite(rawCurrentHeight) && rawCurrentHeight > 0 ? rawCurrentHeight : entry.height;
-            const finalHeight = resizeLiveEditNodeHeight(rawValue, true, false);
             const finalWidth = currentWidth;
-            const finalHeightModel = Number(finalHeight ?? currentHeight);
+            const finalHeightModel = currentHeight;
             isSaved = true;
             clearLiveEdit();
             restoreNodeInteractivity();
@@ -1535,13 +1502,23 @@ export function startInPlaceTextEdit(this: any, node: any,
             this.container?.focus();
         };
 
+        const onRender = () => scheduleOverlaySync();
+        this.cy.on('render zoom pan', onRender);
+        cleanupOverlaySync = () => {
+            if (editRenderRaf !== null) {
+                cancelAnimationFrame(editRenderRaf);
+                editRenderRaf = null;
+            }
+            this.cy?.off('render zoom pan', onRender);
+        };
+
         try {
             mdEditor = new EmbeddableMarkdownEditor({
                 app: (window as any).app,
                 containerEl: editorHost,
                 initialValue: rawSource,
                 sourcePath,
-                onChange: () => scheduleLiveEditResize(),
+                onChange: () => updateLiveEditLabel(),
                 onEnter: (_value, evt) => {
                     if (evt.shiftKey || evt.metaKey || evt.ctrlKey) return false; // Shift/Cmd/Ctrl+Enter = 换行
                     saveEdit();
@@ -1669,41 +1646,22 @@ export function startPlaceholderInPlaceEdit(this: any, node: any): void {
             this.cy?.userZoomingEnabled(prevZoomingEnabled);
         };
 
-        const measurePlaceholderTextNodeSize = (value: string): { width: number; height: number } => {
-            const label = value.trim();
-            if (!label) return { width: defaultW, height: defaultH };
-            const measured = measureNodeLabel(label, {
-                baseWidth: 90,
-                minHeight: 42,
-                maxWidth: 280,
-                charWidth: 11,
-                lineHeight: 18,
-                paddingX: 40,
-                paddingY: 20
-            });
-            return compensateFreeLikeNodeFrameSize(label, measured, {
-                isFreeNode: true,
-                isStandaloneText: true,
-                maxWidth: 280,
-                charWidth: 11
-            });
-        };
-
+        let syncRaf: number | null = null;
         const autoGrow = () => {
             if (!this.cy || node.removed()) return;
             const value = mdEditor?.getValue() ?? '';
-            const measured = measurePlaceholderTextNodeSize(value);
-            const overflow = Math.max(mdEditor?.getVerticalOverflow() ?? 0, 0);
-            const curW = Number(node.width() || defaultW);
-            const curH = Number(node.height() || defaultH);
-            const newW = Math.max(defaultW, measured.width);
-            const overflowHeight = overflow >= 1 ? curH + overflow + 2 : measured.height;
-            const newH = Math.min(Math.max(defaultH, measured.height, overflowHeight), 720);
-            if (Math.abs(newW - curW) < 0.5 && Math.abs(newH - curH) < 0.5) return;
+            node.data('label', value);
             this.cy.batch(() => {
-                node.style({ width: newW, height: newH });
+                if (value.trim() && typeof node.removeStyle === 'function') {
+                    node.removeStyle('width height');
+                }
             });
-            syncOverlayPos();
+            this.cy.style().update();
+            if (syncRaf !== null) return;
+            syncRaf = requestAnimationFrame(() => {
+                syncRaf = null;
+                syncOverlayPos();
+            });
         };
 
         const cleanup = () => {
@@ -1719,7 +1677,11 @@ export function startPlaceholderInPlaceEdit(this: any, node: any): void {
             editorHost.removeEventListener('wheel', stopWheelPropagation, true);
             restoreNodeInteractivity();
             if (overlayEl.parentNode) overlayEl.remove();
-            this.cy?.off('zoom pan', syncOverlayPos);
+            if (syncRaf !== null) {
+                cancelAnimationFrame(syncRaf);
+                syncRaf = null;
+            }
+            this.cy?.off('render zoom pan', onRender);
         };
 
         const cancelEdit = () => {
@@ -1739,7 +1701,13 @@ export function startPlaceholderInPlaceEdit(this: any, node: any): void {
                 cancelEdit();
                 return;
             }
-            // 捕获占位符当前的模型尺寸（含 autoGrow 后的高度）。
+            node.data('label', newValue);
+            if (typeof node.removeStyle === 'function') {
+                node.removeStyle('width height');
+            }
+            this.cy?.style().update();
+            syncOverlayPos();
+            // 捕获占位符当前的模型尺寸。
             // 该尺寸只适合文件/嵌入节点；普通文本节点应走文字测量自适应，
             // 否则会把占位符默认 240×80 持久化为手动尺寸。
             const editWidthModel = Number(node.width()) || defaultW;
@@ -1789,8 +1757,16 @@ export function startPlaceholderInPlaceEdit(this: any, node: any): void {
             this.container?.focus();
         };
 
-        // 监听缩放/平移同步 overlay 位置
-        this.cy.on('zoom pan', syncOverlayPos);
+        const onRender = () => {
+            if (syncRaf !== null) return;
+            syncRaf = requestAnimationFrame(() => {
+                syncRaf = null;
+                syncOverlayPos();
+            });
+        };
+
+        // 监听真实渲染与视口变化同步 overlay 位置
+        this.cy.on('render zoom pan', onRender);
 
         const sourcePath = this.currentData?.metadata?.currentFile || '';
 
