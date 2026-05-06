@@ -5,6 +5,38 @@ import { darkenColor, hexToRgba, isModernThemeStyle, normalizeHexColor } from '.
 import { estimateWrappedLines } from './renderPipeline';
 import { renderExcalidrawPreview, wrapForImageToolkit } from './embedPreview';
 
+function middleEllipsizeToWidth(text: string, maxWidth: number, ctx: CanvasRenderingContext2D | null, font: string): string {
+	const fullText = String(text || '');
+	if (!fullText || maxWidth <= 0 || !ctx) return fullText;
+
+	ctx.font = font;
+	if (ctx.measureText(fullText).width <= maxWidth) return fullText;
+
+	const chars = Array.from(fullText);
+	const ellipsis = '...';
+	if (ctx.measureText(ellipsis).width > maxWidth) return '';
+
+	let low = 0;
+	let high = chars.length;
+	let best = ellipsis;
+
+	while (low <= high) {
+		const keep = Math.floor((low + high) / 2);
+		const leftCount = Math.ceil(keep / 2);
+		const rightCount = Math.floor(keep / 2);
+		const candidate = `${chars.slice(0, leftCount).join('')}${ellipsis}${rightCount > 0 ? chars.slice(-rightCount).join('') : ''}`;
+
+		if (ctx.measureText(candidate).width <= maxWidth) {
+			best = candidate;
+			low = keep + 1;
+		} else {
+			high = keep - 1;
+		}
+	}
+
+	return best;
+}
+
 export function renderNodeBadges(this: any): void {
         if (!this.cy || !this.container) return;
 
@@ -68,6 +100,8 @@ export function renderNodeBadges(this: any): void {
         const readOnly = this.isReadOnlyMode();
         const underlineMeasure = document.createElement('canvas');
         const underlineMeasureCtx = underlineMeasure.getContext('2d');
+        const badgeMeasure = document.createElement('canvas');
+        const badgeMeasureCtx = badgeMeasure.getContext('2d');
 
         // 分组 glass overlay
         this.cy.nodes('.group-node').forEach((groupNode: any) => {
@@ -702,7 +736,7 @@ export function renderNodeBadges(this: any): void {
 
         // 为每个有 badge 的节点创建徽章元素（跳过 embed 节点，由预览卡片展示）
         this.cy.nodes('[badge]').forEach((node: any) => {
-            const badge = node.data('badge');
+            const badge = String(node.data('badge') || '');
             if (!badge || node.data('isEmbed')) return;
             const isModern = isModernThemeStyle(this.currentOptions);
             const branchBorderColor = typeof node.data('branchNodeBorder') === 'string'
@@ -723,6 +757,8 @@ export function renderNodeBadges(this: any): void {
 			badgeEl.className = 'zk-node-badge';
 			badgeEl.dataset.nodeId = node.id();
 			badgeEl.textContent = badge;
+            badgeEl.title = badge;
+            badgeEl.setAttribute('aria-label', badge);
             badgeEl.style.cssText = `
                 position: absolute;
                 background-color: ${badgeBackgroundColor};
@@ -766,13 +802,20 @@ export function renderNodeBadges(this: any): void {
                 if (Platform.isMobile) {
                     // 移动端使用 transform scale，规避 WebView 文本最小字号干预导致的“ID 不缩放”
                     const safeScale = Math.max(0.28, zoom);
+                    const maxVisualWidth = Math.max(0, boundingBox.w - 16 * zoom);
+                    const maxTextWidth = Math.max(0, maxVisualWidth / safeScale - 16 - 2);
+                    badgeEl.textContent = middleEllipsizeToWidth(badge, maxTextWidth, badgeMeasureCtx, '600 9px ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace');
                     badgeEl.style.transform = `translate(${x}px, ${y}px) translate(-100%, -100%) scale(${safeScale})`;
                     badgeEl.style.fontSize = '9px';
                     badgeEl.style.padding = '3px 8px';
                     badgeEl.style.borderRadius = '20px';
                 } else {
+                    const fontSize = 9 * zoom;
+                    const paddingX = 8 * zoom;
+                    const maxTextWidth = Math.max(0, boundingBox.w - 16 * zoom - paddingX * 2 - 2);
+                    badgeEl.textContent = middleEllipsizeToWidth(badge, maxTextWidth, badgeMeasureCtx, `600 ${fontSize}px ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace`);
                     badgeEl.style.transform = `translate(${x}px, ${y}px) translate(-100%, -100%)`;
-                    badgeEl.style.fontSize = `${9 * zoom}px`;
+                    badgeEl.style.fontSize = `${fontSize}px`;
                     badgeEl.style.padding = `${3 * zoom}px ${8 * zoom}px`;
                     badgeEl.style.borderRadius = `${20 * zoom}px`;
                 }
