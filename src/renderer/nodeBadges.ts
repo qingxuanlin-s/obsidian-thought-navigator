@@ -1177,6 +1177,22 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                 const overlayEl = document.createElement('div');
                 overlayEl.className = 'zk-text-md-overlay markdown-rendered';
                 applyTextOverlayBaseStyle(overlayEl);
+                overlayEl.addEventListener('click', (e: MouseEvent) => {
+                    if (overlayEl.dataset.editing === '1') return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const nodeId = overlayEl.dataset.nodeId || '';
+                    const latestNode = nodeId && this.cy ? this.cy.$id(nodeId) : null;
+                    const originalNode = latestNode?.length
+                        ? latestNode.data('originalNode')
+                        : node.data('originalNode');
+                    this.container?.dispatchEvent(new CustomEvent('node-select', {
+                        detail: {
+                            node: originalNode,
+                            event: e
+                        }
+                    }));
+                });
                 badgeContainer.appendChild(overlayEl);
 
                 const component = new Component();

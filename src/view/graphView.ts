@@ -794,7 +794,7 @@ export class ZKGraphView extends ItemView {
         return label
             .replace(/\\n/g, ' ')
             .replace(/^\s*[a-zA-Z0-9]+(?:[._-][a-zA-Z0-9]+)+(?:[:：]?\s+|$)/, '')
-            .replace(/^\s*\d{8}(?:\d{6})?(?:[-_]\d{4,6})?\s+/, '')
+            .replace(/^\s*\d{8,14}(?:[-_]\d{4,6})?(?:[\s:：-]+|$)/, '')
             .trim() || label;
     }
 
@@ -862,7 +862,7 @@ export class ZKGraphView extends ItemView {
     ): void {
         const header = parent.createDiv('zk-local-mode-header');
         const titleWrap = header.createDiv('zk-local-mode-title-wrap');
-        titleWrap.createDiv('zk-local-mode-title').setText(currentFile.basename);
+        titleWrap.createDiv('zk-local-mode-title').setText(this.getLocalFileLabel(currentFile));
         titleWrap.createDiv('zk-local-mode-subtitle').setText(mocFile.basename);
 
         const switcher = header.createDiv('zk-local-mode-switch');
@@ -972,6 +972,32 @@ export class ZKGraphView extends ItemView {
         this.app.workspace.openLinkText('', file.path);
     }
 
+    private resolveLocalGraphNode(allNodes: ZKNode[], rawNode: ZKNode | null | undefined): ZKNode | null {
+        if (!rawNode) return null;
+        return allNodes.find((node) =>
+            node.IDStr === rawNode.IDStr ||
+            node.ID === rawNode.ID ||
+            node.IDStr === rawNode.ID ||
+            node.ID === rawNode.IDStr
+        ) || rawNode;
+    }
+
+    private async focusLocalMocNode(
+        graphMermaidDiv: HTMLElement,
+        currentFile: TFile,
+        allNodes: ZKNode[],
+        mocFile: TFile,
+        node: ZKNode
+    ): Promise<void> {
+        await this.refreshLocalGraphMOCNode(
+            graphMermaidDiv,
+            node.file || currentFile,
+            allNodes,
+            node,
+            mocFile
+        );
+    }
+
     // 渲染 MOC 节点的相关思维树
     async refreshLocalGraphMOCNode(graphMermaidDiv: HTMLElement, currentFile: TFile, allNodes: ZKNode[], currentNode: ZKNode, mocFile: TFile) {
         graphMermaidDiv.empty();
@@ -1058,14 +1084,22 @@ export class ZKGraphView extends ItemView {
                 }
                 this.familyGraphRenderer.fitAndCenter();
 
-                mocNodeTreeDiv.addEventListener('node-click', async (event: any) => {
-                    const { node, ctrlKey, metaKey, shiftKey, altKey } = event.detail;
-                    if (!node) return;
+                const handleLocalNodeClick = async (event: any, textNodeOnly: boolean = false) => {
+                    const detail = event.detail || {};
+                    const triggerEvent = detail.event as MouseEvent | undefined;
+                    const ctrlKey = detail.ctrlKey || triggerEvent?.ctrlKey;
+                    const metaKey = detail.metaKey || triggerEvent?.metaKey;
+                    const shiftKey = detail.shiftKey || triggerEvent?.shiftKey;
+                    const altKey = detail.altKey || triggerEvent?.altKey;
+                    const clicked = this.resolveLocalGraphNode(allNodes, detail.node);
+                    if (!clicked) return;
 
-                    const clicked = allNodes.find((n) =>
-                        n.IDStr === node.IDStr || n.ID === node.ID || n.IDStr === node.ID || n.ID === node.IDStr
-                    ) || node;
-                    if (!clicked?.file) return;
+                    if (!clicked?.file) {
+                        await this.focusLocalMocNode(graphMermaidDiv, currentFile, allNodes, mocFile, clicked);
+                        return;
+                    }
+
+                    if (textNodeOnly) return;
 
                     if (ctrlKey || metaKey) {
                         this.app.workspace.openLinkText("", clicked.file.path, 'tab');
@@ -1090,6 +1124,14 @@ export class ZKGraphView extends ItemView {
                     } else {
                         this.app.workspace.openLinkText("", clicked.file.path);
                     }
+                };
+
+                mocNodeTreeDiv.addEventListener('node-click', (event: any) => {
+                    void handleLocalNodeClick(event);
+                });
+
+                mocNodeTreeDiv.addEventListener('node-select', (event: any) => {
+                    void handleLocalNodeClick(event, true);
                 });
 
                 mocNodeTreeDiv.addEventListener('node-hover', (event: any) => {
@@ -1586,9 +1628,18 @@ export class ZKGraphView extends ItemView {
         }
 
         // 监听节点点击事件
-        mocTreeDiv.addEventListener('node-click', (event: any) => {
-            const { node, ctrlKey, shiftKey, altKey } = event.detail;
-                    if (!node.file) return;
+        mocTreeDiv.addEventListener('node-click', async (event: any) => {
+            const detail = event.detail || {};
+            const triggerEvent = detail.event as MouseEvent | undefined;
+            const node = this.resolveLocalGraphNode(mocNodes, detail.node);
+            const ctrlKey = detail.ctrlKey || triggerEvent?.ctrlKey;
+            const shiftKey = detail.shiftKey || triggerEvent?.shiftKey;
+            const altKey = detail.altKey || triggerEvent?.altKey;
+            if (!node) return;
+            if (!node.file) {
+                await this.focusLocalMocNode(container, mocFile, mocNodes, mocFile, node);
+                return;
+            }
 
             if (ctrlKey) {
                 // Ctrl + 点击：在新标签页打开
