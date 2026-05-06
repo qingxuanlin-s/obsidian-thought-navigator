@@ -4,12 +4,109 @@ import { isMocPath } from 'src/utils/utils';
 import { applyPreviewHeaderLinkStyle, getPreviewCardTheme } from './colorUtils';
 import { getMocPreviewPngCandidates } from './renderPipeline';
 
-const wrapForImageToolkit = (img: HTMLElement): HTMLElement => {
+export const wrapForImageToolkit = (img: HTMLElement): HTMLElement => {
     const wrap = document.createElement('div');
     wrap.className = 'modal-content';
     wrap.style.display = 'contents';
     wrap.appendChild(img);
     return wrap;
+};
+
+export const renderExcalidrawPreview = async (
+    app: any,
+    contentEl: HTMLElement,
+    sourceFile: any,
+    wikiLink: string = ''
+): Promise<boolean> => {
+    let rendered = false;
+
+    // 方式 1：Excalidraw 插件 API — 直接生成 SVG
+    if (!rendered) {
+        try {
+            const excalidrawPlugin = (app as any).plugins?.plugins?.['obsidian-excalidraw-plugin'];
+            if (excalidrawPlugin) {
+                let svg: any = null;
+                // 带 block ref 的链接（如 "file.excalidraw.md#^groupId"）优先传给 Excalidraw，
+                // 让插件自己按 block ref 过滤只渲染对应 group
+                const rawLink = wikiLink.trim();
+                const hasBlockRef = /#\^[^|\]]+$/.test(rawLink) || /#[^|\]]+$/.test(rawLink);
+                const preferredPath = hasBlockRef ? rawLink : sourceFile.path;
+                const ea = excalidrawPlugin.ea;
+                if (ea && typeof ea.createSVG === 'function') {
+                    try {
+                        svg = await ea.createSVG(preferredPath);
+                    } catch { /* 带 block ref 的路径可能不被支持，回退 */ }
+                    if (!svg && hasBlockRef) {
+                        svg = await ea.createSVG(sourceFile.path);
+                    }
+                }
+                if (!svg && typeof excalidrawPlugin.createSVG === 'function') {
+                    try {
+                        svg = await excalidrawPlugin.createSVG(preferredPath);
+                    } catch { /* 同上 */ }
+                    if (!svg && hasBlockRef) {
+                        svg = await excalidrawPlugin.createSVG(sourceFile.path);
+                    }
+                }
+                if (typeof svg === 'string') {
+                    const wrapped = document.createElement('div');
+                    wrapped.innerHTML = svg;
+                    svg = wrapped.querySelector('svg');
+                }
+                if (svg instanceof SVGElement || svg instanceof HTMLElement) {
+                    svg.removeAttribute('width');
+                    svg.removeAttribute('height');
+                    const svgString = new XMLSerializer().serializeToString(svg);
+                    const encoded = encodeURIComponent(svgString)
+                        .replace(/'/g, '%27')
+                        .replace(/"/g, '%22');
+                    const img = document.createElement('img');
+                    img.src = `data:image/svg+xml;charset=utf-8,${encoded}`;
+                    img.draggable = false;
+                    img.style.cssText = 'position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; background: transparent;';
+                    contentEl.style.position = 'relative';
+                    contentEl.style.overflow = 'hidden';
+                    contentEl.textContent = '';
+                    contentEl.appendChild(wrapForImageToolkit(img));
+                    rendered = true;
+                }
+            }
+        } catch { /* Excalidraw API 不可用 */ }
+    }
+
+    // 方式 2：查找自动导出的 SVG/PNG
+    if (!rendered) {
+        const baseName = sourceFile.path.replace(/\.excalidraw(\.md)?$/i, '');
+        const dir = sourceFile.path.includes('/') ? sourceFile.path.substring(0, sourceFile.path.lastIndexOf('/')) + '/' : '';
+        const stemOnly = baseName.includes('/') ? baseName.substring(baseName.lastIndexOf('/') + 1) : baseName;
+        const candidates = [
+            `${baseName}.svg`, `${baseName}.png`,
+            `${dir}${stemOnly}.svg`, `${dir}${stemOnly}.png`,
+            sourceFile.path.replace(/\.md$/i, '.svg'),
+            sourceFile.path.replace(/\.md$/i, '.png'),
+        ];
+        const seen = new Set<string>();
+        let exportedFile: any = null;
+        for (const p of candidates) {
+            if (seen.has(p)) continue;
+            seen.add(p);
+            const f = app.vault.getAbstractFileByPath(p);
+            if (f) { exportedFile = f; break; }
+        }
+        if (exportedFile) {
+            const img = document.createElement('img');
+            img.src = app.vault.getResourcePath(exportedFile);
+            img.draggable = false;
+            img.style.cssText = 'position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; background: transparent;';
+            contentEl.style.position = 'relative';
+            contentEl.style.overflow = 'hidden';
+            contentEl.textContent = '';
+            contentEl.appendChild(wrapForImageToolkit(img));
+            rendered = true;
+        }
+    }
+
+    return rendered;
 };
 
 const getWikiSubpath = (wikiLink: string): string => {
@@ -657,95 +754,12 @@ export function renderEmbedNodePreviews(this: any): void {
             } else if (isExcalidraw && !hasExcalidrawCache) {
                 contentEl.textContent = '';
                 (async () => {
-                    let rendered = false;
-
-                    // 方式 1：Excalidraw 插件 API — 直接生成 SVG
-                    if (!rendered) {
-                        try {
-                            const excalidrawPlugin = (app as any).plugins?.plugins?.['obsidian-excalidraw-plugin'];
-                            if (excalidrawPlugin) {
-                                let svg: any = null;
-                                // 带 block ref 的链接（如 "file.excalidraw.md#^groupId"）优先传给 Excalidraw，
-                                // 让插件自己按 block ref 过滤只渲染对应 group
-                                const rawLink = (originalNode?.wikiLink || '').trim();
-                                const hasBlockRef = /#\^[^|\]]+$/.test(rawLink) || /#[^|\]]+$/.test(rawLink);
-                                const preferredPath = hasBlockRef ? rawLink : sourceFile.path;
-                                // 尝试 ExcalidrawAutomate API
-                                const ea = excalidrawPlugin.ea;
-                                if (ea && typeof ea.createSVG === 'function') {
-                                    try {
-                                        svg = await ea.createSVG(preferredPath);
-                                    } catch { /* 带 block ref 的路径可能不被支持，回退 */ }
-                                    if (!svg && hasBlockRef) {
-                                        svg = await ea.createSVG(sourceFile.path);
-                                    }
-                                }
-                                // 回退：尝试 plugin 级别的 createSVG
-                                if (!svg && typeof excalidrawPlugin.createSVG === 'function') {
-                                    try {
-                                        svg = await excalidrawPlugin.createSVG(preferredPath);
-                                    } catch { /* 同上 */ }
-                                    if (!svg && hasBlockRef) {
-                                        svg = await excalidrawPlugin.createSVG(sourceFile.path);
-                                    }
-                                }
-                                if (typeof svg === 'string') {
-                                    const wrapped = document.createElement('div');
-                                    wrapped.innerHTML = svg;
-                                    svg = wrapped.querySelector('svg');
-                                }
-                                if (svg instanceof SVGElement || svg instanceof HTMLElement) {
-                                    svg.removeAttribute('width');
-                                    svg.removeAttribute('height');
-                                    // 序列化成 data URI 通过 <img> 装载，让 Image Toolkit 能识别并支持放大
-                                    const svgString = new XMLSerializer().serializeToString(svg);
-                                    const encoded = encodeURIComponent(svgString)
-                                        .replace(/'/g, '%27')
-                                        .replace(/"/g, '%22');
-                                    const img = document.createElement('img');
-                                    img.src = `data:image/svg+xml;charset=utf-8,${encoded}`;
-                                    img.draggable = false;
-                                    img.style.cssText = 'position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; background: transparent;';
-                                    contentEl.style.position = 'relative';
-                                    contentEl.style.overflow = 'hidden';
-                                    contentEl.appendChild(wrapForImageToolkit(img));
-                                    rendered = true;
-                                }
-                            }
-                        } catch { /* Excalidraw API 不可用 */ }
-                    }
-
-                    // 方式 2：查找自动导出的 SVG/PNG
-                    if (!rendered) {
-                        const baseName = sourceFile.path.replace(/\.excalidraw(\.md)?$/i, '');
-                        const dir = sourceFile.path.includes('/') ? sourceFile.path.substring(0, sourceFile.path.lastIndexOf('/')) + '/' : '';
-                        const stemOnly = baseName.includes('/') ? baseName.substring(baseName.lastIndexOf('/') + 1) : baseName;
-                        const candidates = [
-                            `${baseName}.svg`, `${baseName}.png`,
-                            `${dir}${stemOnly}.svg`, `${dir}${stemOnly}.png`,
-                            sourceFile.path.replace(/\.md$/i, '.svg'),
-                            sourceFile.path.replace(/\.md$/i, '.png'),
-                        ];
-                        const seen = new Set<string>();
-                        let exportedFile: any = null;
-                        for (const p of candidates) {
-                            if (seen.has(p)) continue;
-                            seen.add(p);
-                            const f = app.vault.getAbstractFileByPath(p);
-                            if (f) { exportedFile = f; break; }
-                        }
-                        if (exportedFile) {
-                            const img = document.createElement('img');
-                            img.src = app.vault.getResourcePath(exportedFile);
-                            img.draggable = false;
-                            img.style.cssText = 'position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; background: transparent;';
-                            contentEl.style.position = 'relative';
-                            contentEl.style.overflow = 'hidden';
-                            contentEl.textContent = '';
-                            contentEl.appendChild(wrapForImageToolkit(img));
-                            rendered = true;
-                        }
-                    }
+                    const rendered = await renderExcalidrawPreview(
+                        app,
+                        contentEl,
+                        sourceFile,
+                        String(originalNode?.wikiLink || '').trim()
+                    );
 
                     // 方式 3 跳过：MarkdownRenderer 对 excalidraw 只会渲染原始警告文本，无意义
 
