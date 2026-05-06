@@ -106,8 +106,7 @@ export function convertNodesToElements(
 		const hasParentChildLink = parentLinkedNodeIds.has(node.ID) || parentLinkedNodeIds.has(node.IDStr);
 		const isFirstLevelNode = isDirectChildOfRootNode(node, resolvedContext.nodeById);
 		const firstLevelBranchNode = getFirstLevelBranchNode(node, resolvedContext.nodeById);
-		const isTextNode = !!node.isTextOnly;
-		const persistedSize = !isTextNode ? (embedNodeSizes[node.ID] || embedNodeSizes[node.IDStr]) : null;
+		const persistedSize = embedNodeSizes[node.ID] || embedNodeSizes[node.IDStr];
 		const manualSize = persistedSize && persistedSize.width > 0 && persistedSize.height > 0
 			? persistedSize
 			: null;
