@@ -4192,6 +4192,22 @@ align-items: center;
   cursor: zoom-in;
 }
 
+.zk-text-md-overlay .zk-text-md-excalidraw-embed {
+  display: block;
+  position: relative;
+  width: 100%;
+  height: min(16em, 100%);
+  min-height: 6em;
+  overflow: hidden;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.7em;
+  text-align: center;
+  pointer-events: auto;
+  cursor: default;
+}
+
 /* 编辑期容器 */
 .zk-text-md-overlay[data-editing="1"] {
   pointer-events: auto;

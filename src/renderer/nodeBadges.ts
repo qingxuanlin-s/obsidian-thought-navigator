@@ -3,6 +3,7 @@ import { ZKNode } from 'src/view/indexView';
 import { EmbeddableMarkdownEditor } from 'src/utils/EmbeddableMarkdownEditor';
 import { darkenColor, hexToRgba, isModernThemeStyle, normalizeHexColor } from './colorUtils';
 import { estimateWrappedLines } from './renderPipeline';
+import { renderExcalidrawPreview, wrapForImageToolkit } from './embedPreview';
 
 export function renderNodeBadges(this: any): void {
         if (!this.cy || !this.container) return;
@@ -1199,11 +1200,30 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                         const pathWithoutSubpath = linkText.split('#')[0].trim();
                         const ext = pathWithoutSubpath.split('.').pop()?.toLowerCase() || '';
                         const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext);
-                        if (!isImage) return createInternalLink(rawTarget);
+                        const isExcalidraw = /\.excalidraw(\.md)?$/i.test(pathWithoutSubpath);
+                        if (!isImage && !isExcalidraw) return createInternalLink(rawTarget);
 
                         const file = app?.metadataCache?.getFirstLinkpathDest?.(linkText, sourcePath)
                             || app?.vault?.getAbstractFileByPath?.(pathWithoutSubpath);
                         if (!file) return createInternalLink(rawTarget);
+
+                        if (isExcalidraw) {
+                            const preview = document.createElement('div');
+                            preview.className = 'zk-text-md-excalidraw-embed';
+                            preview.textContent = file.basename || linkText;
+                            preview.addEventListener('click', (e: MouseEvent) => {
+                                if (!(e.ctrlKey || e.metaKey)) return;
+                                e.preventDefault();
+                                e.stopPropagation();
+                                app?.workspace?.openLinkText?.(linkText, sourcePath, true);
+                            });
+                            void renderExcalidrawPreview(app, preview, file, linkText).then((rendered) => {
+                                if (!rendered && preview.isConnected) {
+                                    preview.textContent = `Excalidraw 预览不可用：${file.basename || linkText}`;
+                                }
+                            });
+                            return preview;
+                        }
 
                         const img = document.createElement('img');
                         img.className = 'zk-text-md-embed-image';
@@ -1211,11 +1231,12 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                         img.alt = linkText;
                         img.draggable = false;
                         img.addEventListener('click', (e: MouseEvent) => {
+                            if (!(e.ctrlKey || e.metaKey)) return;
                             e.preventDefault();
                             e.stopPropagation();
-                            app?.workspace?.openLinkText?.(linkText, sourcePath, e.ctrlKey || e.metaKey);
+                            app?.workspace?.openLinkText?.(linkText, sourcePath, true);
                         });
-                        return img;
+                        return wrapForImageToolkit(img);
                     };
                     // 按内联标记拆分并逐段追加 DOM 节点
                     const tokenRe = /!\[\[([^\]\n]+)\]\]|\[\[([^\]\n]+)\]\]|\*\*(.+?)\*\*|~~(.+?)~~|__(.+?)__|\[([^\]]+)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)|<span\s+style=["']([^"']+)["']>(.*?)<\/span>|((?:https?:\/\/|www\.)[^\s<>()\]]+)/g;
