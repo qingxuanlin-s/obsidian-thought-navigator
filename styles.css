@@ -1483,6 +1483,14 @@ align-items: center;
   overflow: hidden;
 }
 
+.zk-focus-radial-stage {
+  --zk-focus-scale: 1;
+  position: absolute;
+  inset: 0;
+  transform: scale(var(--zk-focus-scale));
+  transform-origin: 50% 50%;
+}
+
 .zk-focus-edge-layer {
   position: absolute;
   inset: 0;
