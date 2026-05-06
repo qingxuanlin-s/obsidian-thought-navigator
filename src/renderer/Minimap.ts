@@ -219,16 +219,17 @@ export class Minimap {
 
             const isAnchor = !!node.data('isAnchor');
             const isRoot = !!node.data('isRoot');
+            const isLight = document.body.classList.contains('zk-theme-light');
 
             if (isAnchor) {
-                ctx.fillStyle = '#f5dc68';
-                ctx.shadowColor = 'rgba(245, 220, 104, 0.55)';
+                ctx.fillStyle = isLight ? '#d4a017' : '#f5dc68';
+                ctx.shadowColor = isLight ? 'rgba(212, 160, 23, 0.45)' : 'rgba(245, 220, 104, 0.55)';
                 ctx.shadowBlur = 4;
             } else if (isRoot) {
-                ctx.fillStyle = '#8cc2ff';
+                ctx.fillStyle = isLight ? '#3b6db5' : '#8cc2ff';
                 ctx.shadowBlur = 0;
             } else {
-                ctx.fillStyle = 'rgba(170, 180, 210, 0.55)';
+                ctx.fillStyle = isLight ? 'rgba(90, 100, 130, 0.55)' : 'rgba(170, 180, 210, 0.55)';
                 ctx.shadowBlur = 0;
             }
             const dotW = Math.max(1.5, Math.min(w, 18));
