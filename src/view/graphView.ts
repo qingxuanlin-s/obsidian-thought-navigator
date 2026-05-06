@@ -213,6 +213,7 @@ export class ZKGraphView extends ItemView {
 
         let { containerEl } = this;
         containerEl.empty();
+        containerEl.addClass("zk-view-content");
 
         this.countGraphs();
         // 安全检查：避免除以 0 或 NaN

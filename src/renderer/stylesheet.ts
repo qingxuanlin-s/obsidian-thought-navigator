@@ -47,20 +47,27 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
 
     const colors = isLight ? {
         // 浅色主题颜色
-        nodeBackground: '#f0f0f0',
-        nodeBackgroundHover: '#e0e0e0',
-        nodeBackgroundSelected: '#d0d0d0',
-        nodeBorder: '#b0b0b0',
-        nodeBorderSelected: '#0066cc',
-        nodeText: '#333333',
-        nodeTextMuted: '#666666',
-        edgeNormal: '#7d8597',
-        edgeForward: '#60a5fa',
+        nodeBackground: '#f7f8fa',
+        nodeBackgroundHover: '#eef0f4',
+        nodeBackgroundSelected: '#dde4ef',
+        nodeBorder: '#c4cad4',
+        nodeBorderSelected: '#3b6db5',
+        nodeText: '#1f2937',
+        nodeTextStrong: '#111827',
+        nodeTextOnAccent: '#1f2937',
+        nodeTextMuted: '#475569',
+        textOutline: 'rgba(255, 255, 255, 0.65)',
+        rootBackground: '#dbeafe',
+        rootBackgroundSelected: '#bfdbfe',
+        rootBorder: '#3b6db5',
+        firstLevelFallbackBg: '#e6eef9',
+        edgeNormal: '#94a3b8',
+        edgeForward: '#3b82f6',
         edgeReverse: '#dc2626',
         edgeSelected: '#7c3aed',
         textBackground: '#ffffff',
-        overlayColor: '#60a5fa',
-        badgeBackground: '#60a5fa',
+        overlayColor: '#3b82f6',
+        badgeBackground: '#3b82f6',
         badgeText: '#ffffff'
     } : {
         // 深色主题颜色
@@ -70,7 +77,14 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
         nodeBorder: '#3d5a80',
         nodeBorderSelected: '#5b8fd9',
         nodeText: '#ffffff',
+        nodeTextStrong: '#ffffff',
+        nodeTextOnAccent: '#ffffff',
         nodeTextMuted: '#94a3b8',
+        textOutline: 'rgba(8, 16, 28, 0.42)',
+        rootBackground: '#082746',
+        rootBackgroundSelected: '#0b3158',
+        rootBorder: '#9ed0ff',
+        firstLevelFallbackBg: '#173b5f',
         edgeNormal: '#7c8aa3',
         edgeForward: '#5b8fd9',
         edgeReverse: '#ef4444',
@@ -288,11 +302,12 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
             style: {
                 'background-color': (ele: any) => {
                     const branchColor = deps.normalizeHexColor(ele.data('branchNodeBorder') || '');
-                    return branchColor
-                        ? deps.hexToRgba(deps.darkenColor(branchColor, 0.62), 0.72)
-                        : '#132033';
+                    if (!branchColor) return colors.firstLevelFallbackBg;
+                    return isLight
+                        ? deps.hexToRgba(deps.lightenColor(branchColor, 0.55), 0.85)
+                        : deps.hexToRgba(deps.darkenColor(branchColor, 0.62), 0.72);
                 },
-                'background-opacity': 0.78,
+                'background-opacity': isLight ? 0.92 : 0.78,
                 'border-color': (ele: any) => ele.data('branchNodeBorder') || '#5da6ff',
                 'border-width': '2.6px',
                 'border-opacity': 0.92,
@@ -350,16 +365,23 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
         {
             selector: 'node.zk-active-first-level-branch[?isFirstLevelNode][!isRoot][!isFreeNode][!isEmbed][!isStandaloneText]',
             style: {
-                'background-color': (ele: any) => ele.data('branchNodeBackground') || '#173b5f',
+                'background-color': (ele: any) => {
+                    const saved = ele.data('branchNodeBackground');
+                    if (saved) {
+                        return isLight ? deps.lightenColor(saved, 0.40) : saved;
+                    }
+                    return colors.firstLevelFallbackBg;
+                },
                 'background-opacity': 0.98,
                 'border-color': (ele: any) => {
                     const branchColor = deps.normalizeHexColor(ele.data('branchNodeBorder') || '');
-                    return branchColor ? deps.lightenColor(branchColor, 0.30) : '#9ed0ff';
+                    if (!branchColor) return colors.rootBorder;
+                    return isLight ? deps.darkenColor(branchColor, 0.10) : deps.lightenColor(branchColor, 0.30);
                 },
                 'border-width': '3.7px',
                 'border-opacity': 0.98,
-                'color': '#ffffff',
-                'text-outline-color': 'rgba(8, 16, 28, 0.42)',
+                'color': colors.nodeTextOnAccent,
+                'text-outline-color': colors.textOutline,
                 'text-outline-width': 1.1,
                 'z-index': 1001
             } as any
@@ -378,8 +400,11 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
         {
             selector: 'node[?isRoot][!isFreeNode]',
             style: {
-                'background-color': '#082746',
-                'border-color': '#9ed0ff',
+                'background-color': colors.rootBackground,
+                'border-color': colors.rootBorder,
+                'color': colors.nodeTextOnAccent,
+                'text-outline-color': colors.textOutline,
+                'text-outline-width': 1.1,
                 'background-opacity': 0.98,
                 'border-opacity': 0.98,
                 'z-index': 1002,
@@ -431,10 +456,10 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
         {
             selector: 'node[?isRoot][!isFreeNode]:selected',
             style: {
-                'background-color': '#0b3158',
-                'border-color': '#8cc2ff',
+                'background-color': colors.rootBackgroundSelected,
+                'border-color': colors.nodeBorderSelected,
                 'border-width': '5px',
-                'color': '#ffffff'
+                'color': colors.nodeTextOnAccent
             } as any
         },
         // 分组节点样式 - 完全透明（由 CSS glass overlay 层实现视觉效果）
@@ -698,19 +723,19 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'border-color': colors.nodeBorderSelected,
                 'border-width': '2.5px',
                 'border-opacity': 0.90,
-                'color': '#ffffff'
+                'color': colors.nodeText
             } as any
         },
         // 根节点选中态需要压过通用 node:selected
         {
             selector: 'node[?isRoot][!isFreeNode]:selected',
             style: {
-                'background-color': '#0b3158',
-                'border-color': '#8cc2ff',
+                'background-color': colors.rootBackgroundSelected,
+                'border-color': colors.nodeBorderSelected,
                 'border-width': '5px',
                 'border-opacity': 1,
                 'z-index': 1003,
-                'color': '#ffffff'
+                'color': colors.nodeTextOnAccent
             } as any
         },
         // 自由节点：微底色晕染
@@ -734,7 +759,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'background-color': colors.nodeBackgroundSelected,
                 'border-color': colors.nodeBorderSelected,
                 'border-width': '3px',
-                'color': '#ffffff'
+                'color': colors.nodeText
             } as any
         },
         // 兼容旧语义：仅有 legacy customColor 的节点保留文字左侧色点留白
@@ -779,8 +804,9 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
         {
             selector: 'node[?isCurrentFile]',
             style: {
-                'background-color': '#253b58',
-                'border-color': '#5da6ff',
+                'background-color': isLight ? '#cfe1f5' : '#253b58',
+                'border-color': isLight ? '#3b6db5' : '#5da6ff',
+                'color': colors.nodeTextOnAccent,
                 'border-width': '2.5px',
                 'font-weight': '600'
             } as any
