@@ -1231,8 +1231,21 @@ export class ZKGraphView extends ItemView {
         const rightSiblings = activePeerIndex >= 0 ? orderedPeers.slice(activePeerIndex + 1) : siblingNodes.slice(Math.ceil(siblingNodes.length / 2));
 
         const canvas = section.body.createDiv('zk-focus-radial-canvas');
-        const edgeLayer = canvas.createEl('div', { cls: 'zk-focus-edge-layer', attr: { 'aria-hidden': 'true' } });
-        const centerZone = canvas.createDiv('zk-focus-center-zone zk-focus-radial-center-zone');
+        const canvasWidth = section.body.clientWidth || this.containerEl.clientWidth || 720;
+        const canvasHeight = section.body.clientHeight || this.containerEl.clientHeight || 520;
+        const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, max));
+        const radialScale = clamp(Math.min(canvasWidth / 1120, canvasHeight / 760), 0.72, 1);
+        const stage = canvas.createDiv('zk-focus-radial-stage');
+        stage.style.setProperty('--zk-focus-scale', String(radialScale));
+        const edgeLayer = stage.createEl('div', { cls: 'zk-focus-edge-layer', attr: { 'aria-hidden': 'true' } });
+        const centerZone = stage.createDiv('zk-focus-center-zone zk-focus-radial-center-zone');
+        const sideRadius = clamp(canvasWidth / 2 - 150, 150, 260);
+        const parentRadius = clamp(canvasHeight * 0.3, 170, 235);
+        const childRadius = clamp(canvasHeight * 0.25, 150, 190);
+        const childCount = Math.min(childNodes.length, 8);
+        const childGap = childCount > 1
+            ? clamp((canvasWidth - 280) / Math.max(1, childCount - 1), 120, 210)
+            : 0;
 
         const openFile = (file: TFile, event?: MouseEvent | KeyboardEvent) => {
             if (event && ('ctrlKey' in event) && (event.ctrlKey || event.metaKey)) {
@@ -1255,7 +1268,7 @@ export class ZKGraphView extends ItemView {
             file?: TFile | null,
             options: { index?: number; total?: number; x?: number; y?: number; parent?: HTMLElement; drawEdge?: boolean } = {}
         ) => {
-            const host = options.parent || canvas;
+            const host = options.parent || stage;
             const card = host.createEl('button', {
                 type: 'button',
                 cls: `zk-focus-card zk-focus-card-${variant} ${posClass}`,
@@ -1361,7 +1374,7 @@ export class ZKGraphView extends ItemView {
         if (parentNode) {
             appendNode(this.getLocalNodeLabel(parentNode), 'parent', 'zk-focus-pos-parent', parentNode, null, {
                 x: 0,
-                y: -235
+                y: -parentRadius
             });
         }
         leftSiblings.slice(-4).forEach((node, index, arr) => {
@@ -1369,7 +1382,7 @@ export class ZKGraphView extends ItemView {
             appendNode(this.getLocalNodeLabel(node), 'sibling', 'zk-focus-pos-left', node, null, {
                 index,
                 total: arr.length,
-                x: -260,
+                x: -sideRadius,
                 y
             });
         });
@@ -1378,17 +1391,17 @@ export class ZKGraphView extends ItemView {
             appendNode(this.getLocalNodeLabel(node), 'sibling', 'zk-focus-pos-right', node, null, {
                 index,
                 total: arr.length,
-                x: 260,
+                x: sideRadius,
                 y
             });
         });
         childNodes.slice(0, 8).forEach((node, index, arr) => {
-            const x = (index - (arr.length - 1) / 2) * 210;
+            const x = (index - (arr.length - 1) / 2) * childGap;
             appendNode(this.getLocalNodeLabel(node), 'child', 'zk-focus-pos-child', node, null, {
                 index,
                 total: arr.length,
                 x,
-                y: 190
+                y: childRadius
             });
         });
         const overflow = Math.max(0, childNodes.length - 8);
