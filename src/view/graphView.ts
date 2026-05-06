@@ -1031,7 +1031,8 @@ export class ZKGraphView extends ItemView {
                     themeMode: this.plugin.settings.themeMode,
                     themeStyle: this.plugin.settings.themeStyle || 'modern',
                     edgeStyle: this.plugin.settings.edgeStyle || 'bezier',
-                    readOnly: true
+                    readOnly: true,
+                    showMinimap: false
                 };
 
                 const expandBtn = new ExtraButtonComponent(section.actions);
@@ -1557,7 +1558,8 @@ export class ZKGraphView extends ItemView {
             themeMode: this.plugin.settings.themeMode,
             themeStyle: this.plugin.settings.themeStyle || 'modern',
             edgeStyle: this.plugin.settings.edgeStyle || 'bezier',
-            readOnly: true
+            readOnly: true,
+            showMinimap: false
         };
         expandBtn.onClick(() => {
             try {
