@@ -201,6 +201,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
         return this.currentOptions?.readOnly === true || Platform.isMobile;
     }
 
+    private shouldShowMinimap(options: RenderOptions): boolean {
+        return options.exportMode !== true && options.showMinimap !== false;
+    }
+
     private clearActiveTextSelectionToolbar(): void {
         if (!this.activeTextSelectionToolbarCleanup) return;
         this.activeTextSelectionToolbarCleanup();
@@ -352,7 +356,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     this.hideBatchToolbar();
                 }
                 // Minimap —— 浮在画布右下角的缩略导航(exportMode 下不创建)
-                if (this.cy && this.container) {
+                if (this.cy && this.container && this.shouldShowMinimap(options)) {
                     this.minimap = new Minimap(this.container, this.cy);
                 }
             }
@@ -382,6 +386,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         } as any
                     }
                 ]);
+            }
+
+            if (this.shouldShowMinimap(options)) {
+                if (!this.minimap && this.container && this.cy) {
+                    this.minimap = new Minimap(this.container, this.cy);
+                }
+            } else if (this.minimap) {
+                this.minimap.destroy();
+                this.minimap = null;
             }
 
             // 增量更新：复用现有 Cytoscape 实例
@@ -522,7 +535,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
             this.addNodeBadges();
             this.addEmbedNodePreviews();
             this.addImageNodePreviews();
-            this.minimap?.refresh();
+            if (this.shouldShowMinimap(options)) {
+                this.minimap?.refresh();
+            }
         }
 
         // 运行布局
