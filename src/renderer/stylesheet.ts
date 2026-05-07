@@ -890,6 +890,15 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'z-index': 1000
             } as any
         },
+        // 弱化无关分支的边需要放在所有边样式之后，避免被 root->1级主干/高亮边 opacity 覆盖。
+        {
+            selector: 'edge.zk-level-dimmed',
+            style: {
+                'opacity': 0.08,
+                'overlay-opacity': 0,
+                'z-index': 1
+            } as any
+        },
         // 搜索高亮
         {
             selector: 'node.zk-search-highlight',
