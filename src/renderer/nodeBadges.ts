@@ -400,10 +400,11 @@ export function renderNodeBadges(this: any): void {
                 const fontPx = isRoot
                     ? this.ROOT_NODE_FONT_SIZE
                     : (isFirstLevel ? this.FIRST_LEVEL_NODE_FONT_SIZE : 20);
-                const lineHeightModel = isRoot ? 42 : (isFirstLevel ? 28 : 18);
+                const lineHeightModel = isRoot ? 42 : Math.ceil(fontPx * 1.4);
                 const lineHeight = lineHeightModel * zoom;
+                const textMarginYModel = Number.parseFloat(String(node.style('text-margin-y') || '0')) || 0;
                 const centerX = box.x1 + box.w / 2;
-                const centerY = box.y1 + box.h / 2;
+                const centerY = box.y1 + box.h / 2 + textMarginYModel * zoom;
                 const textBlockHeight = cachedWrappedLines.length * lineHeight;
                 const firstLineCenterY = centerY - textBlockHeight / 2 + lineHeight / 2;
 
