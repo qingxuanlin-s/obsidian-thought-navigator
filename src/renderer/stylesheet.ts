@@ -1,4 +1,5 @@
 import { RenderOptions } from './types';
+import { getGraphTheme } from './theme';
 
 export interface StylesheetDeps {
     FIRST_LEVEL_NODE_FONT_SIZE: number;
@@ -41,58 +42,24 @@ export interface StylesheetDeps {
 }
 
 export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): any[] {
-    const isLight = options.themeMode === 'light';
+    const theme = getGraphTheme(options);
+    const isLight = theme.isLight;
     const isModern = (options.themeStyle || 'modern') === 'modern';
     const edgeStyle = options.edgeStyle || 'bezier';
-
-    const colors = isLight ? {
-        // 浅色主题颜色
-        nodeBackground: '#f7f8fa',
-        nodeBackgroundHover: '#eef0f4',
-        nodeBackgroundSelected: '#dde4ef',
-        nodeBorder: '#c4cad4',
-        nodeBorderSelected: '#3b6db5',
-        nodeText: '#1f2937',
-        nodeTextStrong: '#111827',
-        nodeTextOnAccent: '#1f2937',
-        nodeTextMuted: '#475569',
-        textOutline: 'rgba(255, 255, 255, 0.65)',
-        rootBackground: '#dbeafe',
-        rootBackgroundSelected: '#bfdbfe',
-        rootBorder: '#3b6db5',
-        firstLevelFallbackBg: '#e6eef9',
-        edgeNormal: '#94a3b8',
-        edgeForward: '#3b82f6',
-        edgeReverse: '#dc2626',
-        edgeSelected: '#7c3aed',
-        textBackground: '#ffffff',
-        overlayColor: '#3b82f6',
-        badgeBackground: '#3b82f6',
-        badgeText: '#ffffff'
-    } : {
-        // 深色主题颜色
-        nodeBackground: '#1a2332',
-        nodeBackgroundHover: '#243447',
-        nodeBackgroundSelected: '#2d4a6b',
-        nodeBorder: '#3d5a80',
-        nodeBorderSelected: '#5b8fd9',
-        nodeText: '#ffffff',
-        nodeTextStrong: '#ffffff',
-        nodeTextOnAccent: '#ffffff',
-        nodeTextMuted: '#94a3b8',
-        textOutline: 'rgba(8, 16, 28, 0.42)',
-        rootBackground: '#082746',
-        rootBackgroundSelected: '#0b3158',
-        rootBorder: '#9ed0ff',
-        firstLevelFallbackBg: '#173b5f',
-        edgeNormal: '#7c8aa3',
-        edgeForward: '#5b8fd9',
-        edgeReverse: '#ef4444',
-        edgeSelected: '#7c3aed',
-        textBackground: '#0f172a',
-        overlayColor: '#5b8fd9',
-        badgeBackground: '#5b8fd9',
-        badgeText: '#ffffff'
+    const colors = {
+        nodeBackground: theme.node.background,
+        nodeBackgroundHover: theme.node.backgroundHover,
+        nodeBackgroundSelected: theme.node.backgroundSelected,
+        nodeBorder: theme.node.border,
+        nodeBorderSelected: theme.node.borderSelected,
+        nodeText: theme.node.text,
+        nodeTextMuted: theme.node.textMuted,
+        edgeNormal: theme.edge.normal,
+        edgeForward: theme.edge.forward,
+        edgeReverse: theme.edge.reverse,
+        edgeSelected: theme.edge.selected,
+        badgeBackground: theme.badge.background,
+        badgeText: theme.badge.text
     };
 
     const autoMeasureCache = new Map<string, { width: number; height: number; wrapWidth: number }>();
@@ -302,16 +269,22 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
             style: {
                 'background-color': (ele: any) => {
                     const branchColor = deps.normalizeHexColor(ele.data('branchNodeBorder') || '');
-                    if (!branchColor) return colors.firstLevelFallbackBg;
-                    return isLight
-                        ? deps.hexToRgba(deps.lightenColor(branchColor, 0.55), 0.85)
-                        : deps.hexToRgba(deps.darkenColor(branchColor, 0.62), 0.72);
+                    if (theme.isLight) {
+                        return branchColor
+                            ? deps.hexToRgba(deps.lightenColor(branchColor, 0.72), 0.86)
+                            : theme.node.firstLevelFallback;
+                    }
+                    return branchColor
+                        ? deps.hexToRgba(deps.darkenColor(branchColor, 0.62), 0.72)
+                        : theme.node.firstLevelFallback;
                 },
-                'background-opacity': isLight ? 0.92 : 0.78,
+                'background-opacity': theme.effects.firstLevelBackgroundOpacity,
                 'border-color': (ele: any) => ele.data('branchNodeBorder') || '#5da6ff',
                 'border-width': '2.6px',
                 'border-opacity': 0.92,
                 'z-index': 1000,
+                'color': theme.node.firstLevelText,
+                'text-outline-width': 0,
                 'font-size': `${deps.FIRST_LEVEL_NODE_FONT_SIZE}px`,
                 'font-weight': 'bold',
                 'text-max-width': (ele: any) => {
@@ -366,23 +339,25 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
             selector: 'node.zk-active-first-level-branch[?isFirstLevelNode][!isRoot][!isFreeNode][!isEmbed][!isStandaloneText]',
             style: {
                 'background-color': (ele: any) => {
-                    const saved = ele.data('branchNodeBackground');
-                    if (saved) {
-                        return isLight ? deps.lightenColor(saved, 0.40) : saved;
+                    const branchColor = deps.normalizeHexColor(ele.data('branchNodeBorder') || '');
+                    if (theme.isLight) {
+                        return branchColor
+                            ? deps.hexToRgba(deps.lightenColor(branchColor, 0.74), 0.92)
+                            : theme.node.activeFirstLevelFallback;
                     }
-                    return colors.firstLevelFallbackBg;
+                    return ele.data('branchNodeBackground') || theme.node.activeFirstLevelFallback;
                 },
-                'background-opacity': 0.98,
+                'background-opacity': theme.effects.activeFirstLevelBackgroundOpacity,
                 'border-color': (ele: any) => {
                     const branchColor = deps.normalizeHexColor(ele.data('branchNodeBorder') || '');
-                    if (!branchColor) return colors.rootBorder;
-                    return isLight ? deps.darkenColor(branchColor, 0.10) : deps.lightenColor(branchColor, 0.30);
+                    if (theme.isLight) return branchColor || theme.node.borderSelected;
+                    return branchColor ? deps.lightenColor(branchColor, 0.30) : '#9ed0ff';
                 },
                 'border-width': '3.7px',
                 'border-opacity': 0.98,
-                'color': colors.nodeTextOnAccent,
-                'text-outline-color': colors.textOutline,
-                'text-outline-width': 1.1,
+                'color': theme.node.activeFirstLevelText,
+                'text-outline-color': theme.node.activeFirstLevelOutline,
+                'text-outline-width': theme.effects.activeFirstLevelOutlineWidth,
                 'z-index': 1001
             } as any
         },
@@ -393,21 +368,19 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'background-opacity': 0.56,
                 'border-width': '1.4px',
                 'border-opacity': 0.58,
-                'color': isLight ? '#475569' : '#c5ceda'
+                'color': theme.node.textMuted
             } as any
         },
         // 根节点样式：当前图谱焦点
         {
             selector: 'node[?isRoot][!isFreeNode]',
             style: {
-                'background-color': colors.rootBackground,
-                'border-color': colors.rootBorder,
-                'color': colors.nodeTextOnAccent,
-                'text-outline-color': colors.textOutline,
-                'text-outline-width': 1.1,
-                'background-opacity': 0.98,
+                'background-color': theme.node.rootBackground,
+                'border-color': theme.node.rootBorder,
+                'background-opacity': theme.effects.rootBackgroundOpacity,
                 'border-opacity': 0.98,
                 'z-index': 1002,
+                'color': theme.node.textSelected,
                 'font-size': `${deps.ROOT_NODE_FONT_SIZE}px`,
                 'font-weight': 'bold',
                 'text-max-width': (ele: any) => {
@@ -456,10 +429,10 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
         {
             selector: 'node[?isRoot][!isFreeNode]:selected',
             style: {
-                'background-color': colors.rootBackgroundSelected,
-                'border-color': colors.nodeBorderSelected,
+                'background-color': theme.node.rootSelectedBackground,
+                'border-color': theme.node.rootSelectedBorder,
                 'border-width': '5px',
-                'color': colors.nodeTextOnAccent
+                'color': theme.node.textSelected
             } as any
         },
         // 分组节点样式 - 完全透明（由 CSS glass overlay 层实现视觉效果）
@@ -517,15 +490,15 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
         {
             selector: 'node.zk-level-dimmed',
             style: {
-                'opacity': 0.18,
-                'text-opacity': 0.24,
+                'opacity': theme.effects.dimmedNodeOpacity,
+                'text-opacity': theme.effects.dimmedTextOpacity,
                 'z-index': 1
             } as any
         },
         {
             selector: 'edge.zk-level-dimmed',
             style: {
-                'opacity': 0.08,
+                'opacity': theme.effects.dimmedEdgeOpacity,
                 'z-index': 1
             } as any
         },
@@ -610,8 +583,8 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'control-point-weights': 0.5,
                 'line-style': 'dashed',
                 'line-dash-pattern': [7, 8],
-                'line-color': isLight ? '#d97706' : '#e8b86d',
-                'target-arrow-color': isLight ? '#d97706' : '#e8b86d',
+                'line-color': theme.edge.inlink,
+                'target-arrow-color': theme.edge.inlink,
                 'width': 1.6,
                 'arrow-scale': 0.95,
                 'opacity': 0.42,
@@ -626,8 +599,8 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'control-point-weights': 0.5,
                 'line-style': 'dashed',
                 'line-dash-pattern': [7, 8],
-                'line-color': isLight ? '#0f766e' : '#5cced6',
-                'target-arrow-color': isLight ? '#0f766e' : '#5cced6',
+                'line-color': theme.edge.outlink,
+                'target-arrow-color': theme.edge.outlink,
                 'width': 1.6,
                 'arrow-scale': 0.95,
                 'opacity': 0.42,
@@ -640,14 +613,14 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
             style: {
                 'line-style': 'dashed',
                 'line-dash-pattern': [14, 8],
-                'line-color': '#a08be8',
-                'target-arrow-color': '#a08be8',
+                'line-color': theme.edge.crossDomain,
+                'target-arrow-color': theme.edge.crossDomain,
                 'width': 1.8,
                 'arrow-scale': 1.2,
                 'opacity': 0.58,
                 'label': 'data(label)',
                 'font-size': '18px',
-                'color': '#a08be8',
+                'color': theme.edge.crossDomain,
                 'text-background-opacity': 0,
                 'text-border-opacity': 0,
                 'z-index': 998
@@ -659,8 +632,8 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
             style: {
                 'width': deps.ROOT_TO_FIRST_LEVEL_EDGE_WIDTH,
                 'opacity': deps.ROOT_TO_FIRST_LEVEL_EDGE_OPACITY,
-                'line-color': isLight ? '#94a4c8' : '#9aa5c8',
-                'target-arrow-color': isLight ? '#94a4c8' : '#9aa5c8',
+                'line-color': theme.edge.rootToFirstLevel,
+                'target-arrow-color': theme.edge.rootToFirstLevel,
                 'arrow-scale': 1.45,
                 'z-index': 1001
             } as any
@@ -671,13 +644,11 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
             style: {
                 'opacity': deps.ACTIVE_ROOT_TO_FIRST_LEVEL_EDGE_OPACITY,
                 'line-fill': 'linear-gradient',
-                'line-gradient-stop-colors': isLight
-                    ? '#7c6cdf #b696ff'
-                    : '#8a78e8 #c8a8ff',
+                'line-gradient-stop-colors': theme.edge.activeRootGradient,
                 'line-gradient-stop-positions': '0 100',
-                'target-arrow-color': isLight ? '#b696ff' : '#c8a8ff',
+                'target-arrow-color': theme.edge.activeRootArrow,
                 'arrow-scale': 1.55,
-                'overlay-color': isLight ? '#b696ff' : '#c8a8ff',
+                'overlay-color': theme.edge.activeRootArrow,
                 'overlay-opacity': 0.10,
                 'overlay-padding': 4,
                 'z-index': 1002
@@ -723,27 +694,27 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'border-color': colors.nodeBorderSelected,
                 'border-width': '2.5px',
                 'border-opacity': 0.90,
-                'color': colors.nodeText
+                'color': theme.node.textSelected
             } as any
         },
         // 根节点选中态需要压过通用 node:selected
         {
             selector: 'node[?isRoot][!isFreeNode]:selected',
             style: {
-                'background-color': colors.rootBackgroundSelected,
-                'border-color': colors.nodeBorderSelected,
+                'background-color': theme.node.rootSelectedBackground,
+                'border-color': theme.node.rootSelectedBorder,
                 'border-width': '5px',
                 'border-opacity': 1,
                 'z-index': 1003,
-                'color': colors.nodeTextOnAccent
+                'color': theme.node.textSelected
             } as any
         },
         // 自由节点：微底色晕染
         {
             selector: 'node[?isFreeNode]:unselected',
             style: {
-                'background-color': isLight ? '#94a3b8' : '#7b9cc4',
-                'background-opacity': isLight ? 0.05 : 0.04,
+                'background-color': theme.node.freeBackground,
+                'background-opacity': theme.effects.freeBackgroundOpacity,
                 'font-size': '20px',
                 'border-width': isModern ? '2.5px' : '2px',
                 'border-opacity': 0,
@@ -759,7 +730,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'background-color': colors.nodeBackgroundSelected,
                 'border-color': colors.nodeBorderSelected,
                 'border-width': '3px',
-                'color': colors.nodeText
+                'color': theme.node.textSelected
             } as any
         },
         // 兼容旧语义：仅有 legacy customColor 的节点保留文字左侧色点留白
@@ -804,10 +775,11 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
         {
             selector: 'node[?isCurrentFile]',
             style: {
-                'background-color': isLight ? '#cfe1f5' : '#253b58',
-                'border-color': isLight ? '#3b6db5' : '#5da6ff',
-                'color': colors.nodeTextOnAccent,
+                'background-color': theme.node.currentBackground,
+                'border-color': theme.node.currentBorder,
                 'border-width': '2.5px',
+                'background-opacity': theme.effects.currentBackgroundOpacity,
+                'color': theme.node.textSelected,
                 'font-weight': '600'
             } as any
         },
@@ -815,11 +787,11 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
         {
             selector: 'node[?isOutlink]',
             style: {
-                'background-color': isLight ? '#ccfbf1' : '#173b42',
-                'background-opacity': isLight ? 0.78 : 0.68,
-                'border-color': isLight ? '#2dd4bf' : '#5cced6',
+                'background-color': theme.node.outlinkBackground,
+                'background-opacity': theme.effects.inoutBackgroundOpacity,
+                'border-color': theme.node.outlinkBorder,
                 'border-width': '1.5px',
-                'color': isLight ? '#134e4a' : '#d9fbff',
+                'color': theme.node.outlinkText,
                 'font-size': '15px',
                 'font-weight': '500',
                 'text-max-width': '190px',
@@ -847,11 +819,11 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
         {
             selector: 'node[?isInlink]',
             style: {
-                'background-color': isLight ? '#fef3c7' : '#4a3425',
-                'background-opacity': isLight ? 0.78 : 0.68,
-                'border-color': isLight ? '#f59e0b' : '#e8b86d',
+                'background-color': theme.node.inlinkBackground,
+                'background-opacity': theme.effects.inoutBackgroundOpacity,
+                'border-color': theme.node.inlinkBorder,
                 'border-width': '1.5px',
-                'color': isLight ? '#78350f' : '#fff3dc',
+                'color': theme.node.inlinkText,
                 'font-size': '15px',
                 'font-weight': '500',
                 'text-max-width': '190px',
@@ -916,6 +888,40 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'z-index': 1000
             } as any
         },
+        // 弱化无关分支的边需要放在所有边样式之后，避免被 root->1级主干/高亮边 opacity 覆盖。
+        {
+            selector: 'edge.zk-level-dimmed',
+            style: {
+                'opacity': theme.effects.lateDimmedEdgeOpacity,
+                'overlay-opacity': 0,
+                'z-index': 1
+            } as any
+        },
+        ...(isLight ? [
+            // 浅色主题最终文字兜底：放在所有节点状态之后，避免 root/current/selected/dimmed 叠加后标题发白。
+            {
+                selector: 'node[!isEmbed][!isImageNode][!hasMarkdownOverlay]',
+                style: {
+                    'color': (ele: any) => {
+                        const fillColor = ele.data('customFillColor');
+                        const fillTextColor = ele.data('customFillTextColor');
+                        return fillColor && fillTextColor ? fillTextColor : theme.node.text;
+                    },
+                    'text-opacity': 1,
+                    'text-outline-width': 0,
+                    'text-background-opacity': 0,
+                    'text-border-opacity': 0
+                } as any
+            },
+            {
+                selector: 'node.zk-level-dimmed[!isEmbed][!isImageNode][!hasMarkdownOverlay]',
+                style: {
+                    'color': theme.node.text,
+                    'opacity': 0.9,
+                    'text-opacity': 1
+                } as any
+            }
+        ] : []),
         // 搜索高亮
         {
             selector: 'node.zk-search-highlight',

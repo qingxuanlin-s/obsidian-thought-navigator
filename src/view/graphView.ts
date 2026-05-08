@@ -76,6 +76,12 @@ export class ZKGraphView extends ItemView {
         this.refreshLocalGraph();
     }
 
+    private applyLocalGraphTheme(containerEl: HTMLElement): void {
+        containerEl.addClass('zk-view-content');
+        containerEl.toggleClass('zk-theme-light', this.plugin.settings.themeMode === 'light');
+        containerEl.toggleClass('zk-theme-dark', this.plugin.settings.themeMode !== 'light');
+    }
+
     onload() {
 
         // 增加防抖时间，避免编辑时频繁刷新
@@ -213,7 +219,7 @@ export class ZKGraphView extends ItemView {
 
         let { containerEl } = this;
         containerEl.empty();
-        containerEl.addClass("zk-view-content");
+        this.applyLocalGraphTheme(containerEl);
 
         this.countGraphs();
         // 安全检查：避免除以 0 或 NaN
@@ -223,6 +229,10 @@ export class ZKGraphView extends ItemView {
 
         const graphWrapper = containerEl.createDiv("zk-graph-mermaid-wrapper");
         const graphMermaidDiv = graphWrapper.createDiv("zk-graph-mermaid-container");
+        graphWrapper.toggleClass('zk-local-light-surface', this.plugin.settings.themeMode === 'light');
+        graphWrapper.toggleClass('zk-local-dark-surface', this.plugin.settings.themeMode !== 'light');
+        graphMermaidDiv.toggleClass('zk-local-light-surface', this.plugin.settings.themeMode === 'light');
+        graphMermaidDiv.toggleClass('zk-local-dark-surface', this.plugin.settings.themeMode !== 'light');
 
         const activeFile = this.app.workspace.getActiveFile();
         if (activeFile) {
