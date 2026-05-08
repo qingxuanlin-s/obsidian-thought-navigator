@@ -382,42 +382,40 @@ export default class ZKNavigationPlugin extends Plugin {
         // 注册自定义 View:打开 .moc.md / .moc 文件时显示 PNG 预览(参考 SimpleMindMap)
         this.registerView(MOC_PREVIEW_VIEW_TYPE, (leaf) => new MOCPreviewView(leaf, this));
 
-        // Monkey-patch WorkspaceLeaf.setViewState:拦截 .moc.md / .moc 的 markdown 打开,
-        // 替换为 MOC_PREVIEW_VIEW_TYPE。带 isSwitchToMarkdownViewFromMocView 标志的跳过(允许显式切回 markdown)
-        const originalSetViewState = WorkspaceLeaf.prototype.setViewState;
-        WorkspaceLeaf.prototype.setViewState = function (state: any, ...rest: any[]) {
-            if (
-                state?.type === 'markdown' &&
-                state?.state?.file &&
-                isMocPath(state.state.file) &&
-                !state.state.isSwitchToMarkdownViewFromMocView
-            ) {
-                const newState = { ...state, type: MOC_PREVIEW_VIEW_TYPE };
-                return originalSetViewState.apply(this, [newState, ...rest]);
-            }
-            return originalSetViewState.apply(this, [state, ...rest]);
+        // 把"以 markdown 视图显示的 .moc 文件"转成 MOC 预览视图。
+        // 用 layout-change / onLayoutReady 监听器,而不是 monkey-patch WorkspaceLeaf.prototype.setViewState ——
+        // 后者会破坏 Excalidraw / Canvas 等同样靠 setViewState 钩子改写视图的插件链。
+        const convertMarkdownLeafIfMoc = (leaf: WorkspaceLeaf) => {
+            const view = leaf.view;
+            if (!(view instanceof MarkdownView)) return;
+            if (!view.file || !isMocFile(view.file)) return;
+            const currentState = leaf.getViewState();
+            if ((currentState?.state as any)?.isSwitchToMarkdownViewFromMocView) return;
+            void leaf.setViewState({
+                type: MOC_PREVIEW_VIEW_TYPE,
+                state: { file: view.file.path },
+            });
         };
+
+        this.registerEvent(
+            this.app.workspace.on('layout-change', () => {
+                this.app.workspace.getLeavesOfType('markdown').forEach(convertMarkdownLeafIfMoc);
+            })
+        );
+
+        // 启动后:把已经打开的 markdown leaf 中的 .moc.md / .moc 文件转成预览 view
+        this.app.workspace.onLayoutReady(() => {
+            this.app.workspace.getLeavesOfType('markdown').forEach(convertMarkdownLeafIfMoc);
+        });
+
+        // 卸载时把所有 moc-preview 视图切回 markdown,避免插件停用后用户看到空白
         this.register(() => {
-            WorkspaceLeaf.prototype.setViewState = originalSetViewState;
             this.app.workspace.getLeavesOfType(MOC_PREVIEW_VIEW_TYPE).forEach((leaf) => {
                 const file = (leaf.view as any)?.file as TFile | undefined;
                 if (file) {
                     void leaf.setViewState({
                         type: 'markdown',
                         state: { file: file.path },
-                    });
-                }
-            });
-        });
-
-        // 启动后:把已经打开的 markdown leaf 中的 .moc.md / .moc 文件转成预览 view
-        this.app.workspace.onLayoutReady(() => {
-            this.app.workspace.getLeavesOfType('markdown').forEach((leaf) => {
-                const view = leaf.view;
-                if (view instanceof MarkdownView && view.file && isMocFile(view.file)) {
-                    void leaf.setViewState({
-                        type: MOC_PREVIEW_VIEW_TYPE,
-                        state: { file: view.file.path },
                     });
                 }
             });
