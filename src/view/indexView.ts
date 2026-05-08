@@ -1829,7 +1829,7 @@ cy.fit(null, 40);
             branchGraphDiv.style.boxShadow = '';
             branchGraphDiv.style.outline = '';
         }
-        branchGraphDiv.style.backgroundColor = resolveThemeMode(this.plugin.settings.themeMode) === 'light' ? '#f5f5f5' : '#2a2a2a';
+        branchGraphDiv.style.backgroundColor = resolveThemeMode(this.plugin.settings.themeMode) === 'light' ? '#f2f5fa' : '#2a2a2a';
         this.ensureBranchFullscreenBackButton(branchGraphDiv);
 
         // 注意：不再清空 branchGraphDiv，让 CytoscapeRenderer 内部的增量更新逻辑处理
