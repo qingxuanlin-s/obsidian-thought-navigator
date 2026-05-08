@@ -37,6 +37,20 @@ function middleEllipsizeToWidth(text: string, maxWidth: number, ctx: CanvasRende
 	return best;
 }
 
+function parseRenderedNumber(value: unknown, fallback = 0): number {
+	if (typeof value === 'number' && Number.isFinite(value)) return value;
+	const parsed = parseFloat(String(value ?? ''));
+	return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function measureVisibleTextWidth(ctx: CanvasRenderingContext2D, text: string, fallbackWidth: number): number {
+	const metrics = ctx.measureText(text || ' ');
+	const visibleWidth = metrics.actualBoundingBoxLeft + metrics.actualBoundingBoxRight;
+	return Number.isFinite(visibleWidth) && visibleWidth > 0
+		? Math.min(fallbackWidth, visibleWidth)
+		: fallbackWidth;
+}
+
 export function renderNodeBadges(this: any): void {
         if (!this.cy || !this.container) return;
 
@@ -253,7 +267,10 @@ export function renderNodeBadges(this: any): void {
                 const fontWeight = isRoot
                     ? `${this.ROOT_NODE_FONT_WEIGHT}`
                     : (isFirstLevel ? `${this.FIRST_LEVEL_NODE_FONT_WEIGHT}` : '500');
-                const textMaxWidth = isRoot ? 560 : (isFirstLevel ? 340 : 280);
+                const renderedTextMaxWidth = parseRenderedNumber(node.style('text-max-width'), 0);
+                const textMaxWidth = renderedTextMaxWidth > 0
+                    ? renderedTextMaxWidth
+                    : (isRoot ? 560 : (isFirstLevel ? 340 : 280));
 
                 if (underlineMeasureCtx) {
                     underlineMeasureCtx.font = `${fontWeight} ${fontPx}px sans-serif`;
@@ -277,9 +294,14 @@ export function renderNodeBadges(this: any): void {
                         if (currentLine) cachedWrappedLines.push(currentLine);
                     }
                     if (cachedWrappedLines.length === 0) cachedWrappedLines = [' '];
-                    // 预计算模型坐标系下每行宽度
+                    // 预计算模型坐标系下每行可见字形宽度。换行用 advance width,
+                    // 下划线用 visible width,避免线头伸到首字之前。
                     cachedModelLineWidths = cachedWrappedLines.map(line =>
-                        underlineMeasureCtx!.measureText(line || ' ').width
+                        measureVisibleTextWidth(
+                            underlineMeasureCtx!,
+                            line || ' ',
+                            underlineMeasureCtx!.measureText(line || ' ').width
+                        )
                     );
                 } else {
                     cachedWrappedLines = estimateWrappedLines(
@@ -400,10 +422,11 @@ export function renderNodeBadges(this: any): void {
                 const fontPx = isRoot
                     ? this.ROOT_NODE_FONT_SIZE
                     : (isFirstLevel ? this.FIRST_LEVEL_NODE_FONT_SIZE : 20);
-                const lineHeightModel = isRoot ? 42 : (isFirstLevel ? 28 : 18);
+                const lineHeightModel = isRoot ? 42 : Math.ceil(fontPx * 1.4);
                 const lineHeight = lineHeightModel * zoom;
+                const textMarginY = parseRenderedNumber(node.style('text-margin-y'), 0) * zoom;
                 const centerX = box.x1 + box.w / 2;
-                const centerY = box.y1 + box.h / 2;
+                const centerY = box.y1 + box.h / 2 + textMarginY;
                 const textBlockHeight = cachedWrappedLines.length * lineHeight;
                 const firstLineCenterY = centerY - textBlockHeight / 2 + lineHeight / 2;
 
