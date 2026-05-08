@@ -32,11 +32,12 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
         new Setting(generalSection)
             .setName(t("Theme mode"))
             .addDropdown(options => options
+                .addOption("auto", t("Follow Obsidian theme"))
                 .addOption("dark", t("Dark theme"))
                 .addOption("light", t("Light theme"))
                 .setValue(this.plugin.settings.themeMode)
                 .onChange((value) => {
-                    this.plugin.settings.themeMode = value as 'dark' | 'light';
+                    this.plugin.settings.themeMode = value as 'dark' | 'light' | 'auto';
                     this.plugin.applyTheme();
                     this.plugin.RefreshIndexViewFlag = true;
                 })

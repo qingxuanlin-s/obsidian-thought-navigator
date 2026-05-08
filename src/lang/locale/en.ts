@@ -225,6 +225,7 @@ export default {
     "Theme mode": "Theme mode",
     "Dark theme": "Dark theme",
     "Light theme": "Light theme",
+    "Follow Obsidian theme": "Follow Obsidian theme",
     "Theme style": "Theme style",
     "Default style": "Default style",
     "Vivid style": "Vivid style",

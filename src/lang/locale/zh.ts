@@ -223,6 +223,7 @@ export default {
     "Theme mode": "主题模式",
     "Dark theme": "深色主题",
     "Light theme": "浅色主题",
+    "Follow Obsidian theme": "跟随 Obsidian",
     "Theme style": "主题风格",
     "Default style": "默认风格",
     "Vivid style": "绚丽风格",

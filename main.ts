@@ -16,6 +16,7 @@ import { ZKIndexView, ZKNode, ZK_INDEX_TYPE, ZK_NAVIGATION } from "src/view/inde
 import { ZK_RECENT_TYPE, ZKRecentView } from "src/view/recentView";
 import { MOCPreviewView, MOC_PREVIEW_VIEW_TYPE } from "src/view/mocPreviewView";
 import { LayoutPreset, normalizeLayoutPreset } from "src/utils/growthDirection";
+import { resolveThemeMode } from "src/utils/themeMode";
 
 interface Point {
     x: number;
@@ -122,7 +123,7 @@ interface ZKNavigationSettings {
     mocCurrentFile: string;            // 当前选中的 MOC 文件路径
     mocNodePositions: Record<string, Record<string, { x: number; y: number }>>; // MOC 节点位置存储 {mocFilePath: {nodeId: {x, y}}}
     smartConnection: boolean;          // 智能连线开关
-    themeMode: 'dark' | 'light';       // 主题模式
+    themeMode: 'dark' | 'light' | 'auto';       // 主题模式(auto = 跟随 Obsidian)
     themeStyle: 'default' | 'modern';   // 主题风格（默认/现代）
     edgeStyle: 'straight' | 'bezier' | 'polyline'; // 连线风格
     nodeLayoutStyle: 'free' | 'auto';  // 节点布局风格（自由/自动）
@@ -202,7 +203,7 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     mocCurrentFile: '',
     mocNodePositions: {}, // MOC 节点位置存储
     smartConnection: false, // 智能连线默认关闭
-    themeMode: 'dark', // 默认深色主题
+    themeMode: 'auto', // 默认跟随 Obsidian
     themeStyle: 'modern', // 默认风格
     edgeStyle: 'bezier', // 默认贝塞尔曲线
     nodeLayoutStyle: 'free', // 默认自由节点布局
@@ -259,8 +260,8 @@ export default class ZKNavigationPlugin extends Plugin {
         document.body.removeClass('zk-theme-dark');
         document.body.removeClass('zk-theme-light');
 
-        // 根据设置添加对应的主题类
-        if (this.settings.themeMode === 'light') {
+        // 根据设置(auto 时跟随 Obsidian)添加对应的主题类
+        if (resolveThemeMode(this.settings.themeMode) === 'light') {
             document.body.addClass('zk-theme-light');
         } else {
             document.body.addClass('zk-theme-dark');
@@ -425,6 +426,15 @@ export default class ZKNavigationPlugin extends Plugin {
 
         // 应用主题
         this.applyTheme();
+
+        // auto 模式下,Obsidian 主题切换时同步刷新插件视图
+        this.registerEvent(this.app.workspace.on('css-change', () => {
+            if (this.settings.themeMode !== 'auto') return;
+            this.applyTheme();
+            this.RefreshIndexViewFlag = true;
+            this.app.workspace.trigger('zk-navigation:refresh-index-graph');
+            this.app.workspace.trigger('zk-navigation:refresh-local-graph');
+        }));
 
         // 添加全局错误处理来忽略ResizeObserver错误
         this.originalWindowOnError = window.onerror;
