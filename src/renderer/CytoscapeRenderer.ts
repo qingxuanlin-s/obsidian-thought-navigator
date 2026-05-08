@@ -761,6 +761,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
     applyFocusOverlayState(visibleCyIds: Set<string> | null, visibilityMode: 'hide' | 'dim' = 'hide'): void {
         if (!this.container) return;
         const clearing = visibleCyIds === null;
+        const isLightTheme = this.currentOptions?.themeMode === 'light';
         const restorePreviewWeight = (card: HTMLElement) => {
             const nodeId = card.dataset.nodeId || '';
             const isSelected = !!nodeId && !!this.cy?.$id(nodeId)?.selected?.();
@@ -828,8 +829,13 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         delete el.dataset.levelDimmed;
                     } else {
                         el.dataset.levelDimmed = '1';
-                        el.style.opacity = '0.16';
-                        el.style.filter = 'brightness(0.62) saturate(0.58)';
+                        if (isLightTheme && el.classList.contains('zk-text-md-overlay')) {
+                            el.style.opacity = '0.92';
+                            el.style.filter = 'none';
+                        } else {
+                            el.style.opacity = '0.16';
+                            el.style.filter = 'brightness(0.62) saturate(0.58)';
+                        }
                         el.style.pointerEvents = 'none';
                     }
                 } else {
