@@ -51,6 +51,14 @@ function measureVisibleTextWidth(ctx: CanvasRenderingContext2D, text: string, fa
 		: fallbackWidth;
 }
 
+function getRscratchValue(rscratch: any, propName: string): unknown {
+	return rscratch ? rscratch[propName] : undefined;
+}
+
+function modelToRendered(value: number, zoom: number, panValue: number): number {
+	return value * zoom + panValue;
+}
+
 export function renderNodeBadges(this: any): void {
         if (!this.cy || !this.container) return;
 
@@ -320,6 +328,99 @@ export function renderNodeBadges(this: any): void {
                 }
             };
 
+            const getCytoscapeLabelLayout = (): Array<{ centerX: number; baselineY: number; width: number; lineHeight: number }> | null => {
+                if (!this.cy || !underlineMeasureCtx) return null;
+
+                const rscratch = node?.[0]?._private?.rscratch;
+                if (!rscratch) return null;
+
+                const rawLines = getRscratchValue(rscratch, 'labelWrapCachedLines');
+                const labelXModel = parseRenderedNumber(getRscratchValue(rscratch, 'labelX'), NaN);
+                const labelYModel = parseRenderedNumber(getRscratchValue(rscratch, 'labelY'), NaN);
+                const labelWidthModel = parseRenderedNumber(getRscratchValue(rscratch, 'labelWidth'), NaN);
+                const labelHeightModel = parseRenderedNumber(getRscratchValue(rscratch, 'labelHeight'), NaN);
+                const lineHeightModel = parseRenderedNumber(getRscratchValue(rscratch, 'labelLineHeight'), NaN);
+                if (
+                    !Array.isArray(rawLines) ||
+                    rawLines.length === 0 ||
+                    !Number.isFinite(labelXModel) ||
+                    !Number.isFinite(labelYModel) ||
+                    !Number.isFinite(labelWidthModel) ||
+                    !Number.isFinite(labelHeightModel) ||
+                    !Number.isFinite(lineHeightModel)
+                ) {
+                    return null;
+                }
+
+                const lines = rawLines.map((line: unknown) => String(line || ' '));
+                const zoom = this.cy.zoom();
+                const pan = this.cy.pan();
+                const marginXModel = parseRenderedNumber(node.style('text-margin-x'), 0);
+                const marginYModel = parseRenderedNumber(node.style('text-margin-y'), 0);
+                const halign = String(node.style('text-halign') || 'center');
+                const valign = String(node.style('text-valign') || 'center');
+                const justificationStyle = String(node.style('text-justification') || 'auto');
+                const justification = justificationStyle === 'auto'
+                    ? (halign === 'left' ? 'right' : (halign === 'right' ? 'left' : 'center'))
+                    : justificationStyle;
+
+                let textXModel = labelXModel + marginXModel;
+                let textYModel = labelYModel + marginYModel;
+
+                if (valign === 'center') {
+                    textYModel += labelHeightModel / 2;
+                } else if (valign === 'bottom') {
+                    textYModel += labelHeightModel;
+                }
+
+                const halfTextW = labelWidthModel / 2;
+                if (halign === 'left') {
+                    if (justification === 'left') {
+                        textXModel -= labelWidthModel;
+                    } else if (justification === 'center') {
+                        textXModel -= halfTextW;
+                    }
+                } else if (halign === 'center') {
+                    if (justification === 'left') {
+                        textXModel -= halfTextW;
+                    } else if (justification === 'right') {
+                        textXModel += halfTextW;
+                    }
+                } else if (halign === 'right') {
+                    if (justification === 'center') {
+                        textXModel += halfTextW;
+                    } else if (justification === 'right') {
+                        textXModel += labelWidthModel;
+                    }
+                }
+
+                textYModel -= (lines.length - 1) * lineHeightModel;
+
+                const fontPx = parseRenderedNumber(node.style('font-size'), 20);
+                const fontWeight = String(node.style('font-weight') || '500');
+                const fontFamily = String(node.style('font-family') || 'sans-serif');
+                underlineMeasureCtx.font = `${fontWeight} ${fontPx}px ${fontFamily}`;
+                const underlineOffset = Math.max(2, fontPx * 0.08) * zoom;
+                const hitHeight = Math.max(16 * zoom, lineHeightModel * zoom);
+
+                return lines.map((line: string, index: number) => {
+                    const advanceWidth = underlineMeasureCtx.measureText(line || ' ').width;
+                    const visibleWidth = measureVisibleTextWidth(underlineMeasureCtx, line || ' ', advanceWidth);
+                    const lineWidth = Math.max(24 * zoom, visibleWidth * zoom);
+                    const anchorX = modelToRendered(textXModel, zoom, pan.x);
+                    const baselineY = modelToRendered(textYModel + index * lineHeightModel, zoom, pan.y);
+                    const centerX = justification === 'left'
+                        ? anchorX + lineWidth / 2
+                        : (justification === 'right' ? anchorX - lineWidth / 2 : anchorX);
+                    return {
+                        centerX,
+                        baselineY: baselineY + underlineOffset,
+                        width: lineWidth,
+                        lineHeight: hitHeight
+                    };
+                });
+            };
+
             const ensureLineElements = (count: number) => {
                 // 移除多余元素
                 while (lineElements.length > count) {
@@ -411,14 +512,37 @@ export function renderNodeBadges(this: any): void {
 
                 const isRoot = !!node.data('isRoot');
                 const isFirstLevel = !!node.data('isFirstLevelNode');
+                const cytoscapeLayout = getCytoscapeLabelLayout();
 
                 // 仅在 label 或 isRoot 变化时重新计算换行（zoom/pan 期间跳过）
-                if (label !== cachedLabel || isRoot !== cachedIsRoot || isFirstLevel !== cachedIsFirstLevel) {
+                if (!cytoscapeLayout && (label !== cachedLabel || isRoot !== cachedIsRoot || isFirstLevel !== cachedIsFirstLevel)) {
                     rebuildWrappedLinesCache(label, isRoot, isFirstLevel);
                 }
 
                 const zoom = this.cy.zoom();
                 const box = node.renderedBoundingBox();
+
+                underlineGroupEl.style.display = 'block';
+
+                if (cytoscapeLayout) {
+                    ensureLineElements(cytoscapeLayout.length);
+                    for (let i = 0; i < cytoscapeLayout.length; i++) {
+                        const { hitEl, underlineEl } = lineElements[i];
+                        const layout = cytoscapeLayout[i];
+                        const underlineWidth = Math.min(box.w - 24 * zoom, layout.width);
+                        hitEl.style.width = `${underlineWidth}px`;
+                        hitEl.style.height = `${layout.lineHeight}px`;
+                        hitEl.style.left = `${layout.centerX - underlineWidth / 2}px`;
+                        hitEl.style.top = `${layout.baselineY - layout.lineHeight}px`;
+
+                        underlineEl.style.width = `${underlineWidth}px`;
+                        underlineEl.style.height = `${Math.max(1, 2 * zoom)}px`;
+                        underlineEl.style.left = `${layout.centerX - underlineWidth / 2}px`;
+                        underlineEl.style.top = `${layout.baselineY}px`;
+                    }
+                    return;
+                }
+
                 const fontPx = isRoot
                     ? this.ROOT_NODE_FONT_SIZE
                     : (isFirstLevel ? this.FIRST_LEVEL_NODE_FONT_SIZE : 20);
@@ -430,9 +554,6 @@ export function renderNodeBadges(this: any): void {
                 const textBlockHeight = cachedWrappedLines.length * lineHeight;
                 const firstLineCenterY = centerY - textBlockHeight / 2 + lineHeight / 2;
 
-                underlineGroupEl.style.display = 'block';
-
-                // 确保 DOM 元素数量匹配行数
                 ensureLineElements(cachedWrappedLines.length);
 
                 for (let i = 0; i < cachedWrappedLines.length; i++) {
