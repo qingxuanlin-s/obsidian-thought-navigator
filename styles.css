@@ -2612,6 +2612,23 @@ align-items: center;
     border-color: var(--interactive-accent) !important;
 }
 
+/* 主题感知:非 overlay 版的 inline 编辑器跟随插件主题 */
+.zk-theme-dark .node-label-editor:not(.zk-text-md-inline-editor),
+.zk-view-content.zk-theme-dark .node-label-editor:not(.zk-text-md-inline-editor) {
+    background: rgba(15, 23, 42, 0.96);
+    color: var(--text-normal);
+    border: 2px solid rgba(91, 143, 217, 0.95);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+}
+
+.zk-theme-light .node-label-editor:not(.zk-text-md-inline-editor),
+.zk-view-content.zk-theme-light .node-label-editor:not(.zk-text-md-inline-editor) {
+    background: #ffffff;
+    color: #1f2937;
+    border: 2px solid rgba(59, 109, 181, 0.55);
+    box-shadow: 0 6px 18px -8px rgba(15, 23, 42, 0.18);
+}
+
 /* Inline text selection toolbar */
 .zk-text-selection-toolbar {
     position: absolute;
@@ -4577,6 +4594,35 @@ align-items: center;
 .zk-text-md-live-edit-host,
 .zk-text-md-live-edit-host .markdown-source-view {
   font-size: inherit !important;
+}
+
+/* 主题感知:覆盖 Obsidian 主题变量,让插件 themeMode 能控制 CodeMirror 配色 */
+.zk-theme-light .zk-text-md-live-edit-host,
+.zk-view-content.zk-theme-light .zk-text-md-live-edit-host {
+  --background-primary: #ffffff;
+  --background-primary-alt: #f6f7fb;
+  --background-secondary: #f8fafc;
+  --background-secondary-alt: #eef2f7;
+  --background-modifier-border: rgba(15, 23, 42, 0.10);
+  --background-modifier-form-field: #f8fafc;
+  --text-normal: #1f2937;
+  --text-muted: #64748b;
+  --text-faint: #94a3b8;
+  background: #ffffff !important;
+  box-shadow: inset 0 0 0 2px rgba(59, 109, 181, 0.55) !important;
+  color: #1f2937 !important;
+}
+
+.zk-theme-dark .zk-text-md-live-edit-host,
+.zk-view-content.zk-theme-dark .zk-text-md-live-edit-host {
+  --background-primary: rgba(15, 23, 42, 0.96);
+  --background-primary-alt: #1f2a3a;
+  --background-secondary: #1a2434;
+  --text-normal: #e6edf3;
+  --text-muted: #93a4bb;
+  background: rgba(15, 23, 42, 0.96) !important;
+  box-shadow: inset 0 0 0 2px rgba(91, 143, 217, 0.95) !important;
+  color: #e6edf3 !important;
 }
 
 .zk-text-md-live-edit-host .cm-editor {
