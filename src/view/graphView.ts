@@ -1249,18 +1249,116 @@ export class ZKGraphView extends ItemView {
         const canvasWidth = section.body.clientWidth || this.containerEl.clientWidth || 720;
         const canvasHeight = section.body.clientHeight || this.containerEl.clientHeight || 520;
         const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, max));
-        const radialScale = clamp(Math.min(canvasWidth / 1120, canvasHeight / 760), 0.72, 1);
-        const stage = canvas.createDiv('zk-focus-radial-stage');
-        stage.style.setProperty('--zk-focus-scale', String(radialScale));
-        const edgeLayer = stage.createEl('div', { cls: 'zk-focus-edge-layer', attr: { 'aria-hidden': 'true' } });
-        const centerZone = stage.createDiv('zk-focus-center-zone zk-focus-radial-center-zone');
-        const sideRadius = clamp(canvasWidth / 2 - 150, 150, 260);
+
+        // ─── 默认全宽常量 & 估算 ───────────────────────────────
+        const FULL_SIDE_W = 190;
+        const FULL_CENTER_MAX_W = 320;
+        const FULL_CENTER_MIN_W = 220;
+        const SIBLING_CARD_H = 32;
+        const CENTER_CARD_H = 80;
+        const SIBLING_SPACING = 58;
+        // sibling 半高 + 中心卡半高 + 间隔 → 死区半高(避让中心卡的纵向最小距离)
+        const DEAD_ZONE_HALF = CENTER_CARD_H / 2 + SIBLING_CARD_H / 2 + 8;
+
         const parentRadius = clamp(canvasHeight * 0.3, 170, 235);
         const childRadius = clamp(canvasHeight * 0.25, 150, 190);
+
+        // 默认 sideRadius(全宽假设)
+        const defaultSideRadius = clamp(canvasWidth / 2 - 150, 150, 260);
+        // 默认假设下,sibling 与中心卡是否会水平撞击
+        const horizontalOverlap = defaultSideRadius - FULL_SIDE_W / 2 < FULL_CENTER_MAX_W / 2 + 8;
+
+        // 评估「纵向避让」是否塞得下:
+        // 同侧 sibling 数 N → 上方 ⌈N/2⌉ 槽,下方 N - ⌈N/2⌉ 槽,
+        // 上方占用从中心向上 deadZone + (above-1)*spacing + sibling/2,
+        // 还要给 parent 在更上方留位置;下方同理给 child 留位置。
+        const visibleLeft = Math.min(leftSiblings.length, 4);
+        const visibleRight = Math.min(rightSiblings.length, 4);
+        const maxSidePerSide = Math.max(visibleLeft, visibleRight);
+        const aboveSlots = Math.ceil(maxSidePerSide / 2);
+        const belowSlots = maxSidePerSide - aboveSlots;
+        const verticalUp = aboveSlots > 0
+            ? DEAD_ZONE_HALF + (aboveSlots - 1) * SIBLING_SPACING + SIBLING_CARD_H / 2
+            : 0;
+        const verticalDown = belowSlots > 0
+            ? DEAD_ZONE_HALF + (belowSlots - 1) * SIBLING_SPACING + SIBLING_CARD_H / 2
+            : 0;
+        // 还要保证 parent / child 不被挤
+        const verticalNeededUp = Math.max(verticalUp, parentRadius + 16);
+        const verticalNeededDown = Math.max(verticalDown, childRadius + 16);
+        const verticalBudget = canvasHeight / 2 - 8;
+        const verticallyFits = verticalNeededUp <= verticalBudget && verticalNeededDown <= verticalBudget;
+
+        // 两段式决策:
+        //   - 宽屏正常:全宽 + 对称 y(useVerticalAvoidance=false, horizontalOverlap=false)
+        //   - 窄宽 & 纵向塞得下:保留全宽,sibling 改纵向避让(useVerticalAvoidance=true)
+        //   - 窄宽 & 纵向塞不下:阶段 2,缩宽 + 联动 sideRadius + scale 兜底
+        const useVerticalAvoidance = horizontalOverlap && verticallyFits;
+
+        let sideCardMaxW: number;
+        let centerCardMaxW: number;
+        let centerCardMinW: number;
+        let sideRadius: number;
+
+        if (horizontalOverlap && !useVerticalAvoidance) {
+            // 阶段 2:缩宽 + 联动
+            sideCardMaxW = Math.round(clamp(canvasWidth * 0.28, 92, FULL_SIDE_W));
+            centerCardMaxW = Math.round(clamp(canvasWidth * 0.42, 150, FULL_CENTER_MAX_W));
+            centerCardMinW = Math.round(clamp(canvasWidth * 0.32, 130, FULL_CENTER_MIN_W));
+            const minSideRadius = centerCardMaxW / 2 + sideCardMaxW / 2 + 8;
+            sideRadius = clamp(
+                Math.max(canvasWidth / 2 - sideCardMaxW * 0.6, minSideRadius),
+                110,
+                280
+            );
+        } else {
+            // 宽屏 or 纵向避让:都用全宽
+            sideCardMaxW = FULL_SIDE_W;
+            centerCardMaxW = FULL_CENTER_MAX_W;
+            centerCardMinW = FULL_CENTER_MIN_W;
+            sideRadius = defaultSideRadius;
+        }
+
         const childCount = Math.min(childNodes.length, 8);
         const childGap = childCount > 1
-            ? clamp((canvasWidth - 280) / Math.max(1, childCount - 1), 120, 210)
+            ? clamp((canvasWidth - 280) / Math.max(1, childCount - 1), 100, 210)
             : 0;
+
+        // intrinsic 宽度:辐射结构在不缩放时实际占据的水平像素
+        const intrinsicWidth = 2 * sideRadius + sideCardMaxW + 24;
+        const intrinsicHeight = parentRadius + childRadius + 180;
+        const radialScale = clamp(
+            Math.min(canvasWidth / intrinsicWidth, canvasHeight / intrinsicHeight, 1),
+            0.55,
+            1
+        );
+
+        // sibling y 计算:纵向避让模式下,跳过中心死区,先填上方再填下方
+        const computeSiblingYs = (count: number): number[] => {
+            if (count === 0) return [];
+            if (!useVerticalAvoidance) {
+                return Array.from({ length: count }, (_, i) =>
+                    (i - (count - 1) / 2) * SIBLING_SPACING
+                );
+            }
+            const above = Math.ceil(count / 2);
+            const ys: number[] = [];
+            for (let i = 0; i < above; i++) {
+                ys.push(-DEAD_ZONE_HALF - (above - 1 - i) * SIBLING_SPACING);
+            }
+            for (let i = 0; i < count - above; i++) {
+                ys.push(DEAD_ZONE_HALF + i * SIBLING_SPACING);
+            }
+            return ys;
+        };
+
+        const stage = canvas.createDiv('zk-focus-radial-stage');
+        stage.style.setProperty('--zk-focus-scale', String(radialScale));
+        stage.style.setProperty('--zk-focus-card-max-w', `${sideCardMaxW}px`);
+        stage.style.setProperty('--zk-focus-center-min-w', `${centerCardMinW}px`);
+        stage.style.setProperty('--zk-focus-center-max-w', `${centerCardMaxW}px`);
+        const edgeLayer = stage.createEl('div', { cls: 'zk-focus-edge-layer', attr: { 'aria-hidden': 'true' } });
+        const centerZone = stage.createDiv('zk-focus-center-zone zk-focus-radial-center-zone');
 
         const openFile = (file: TFile, event?: MouseEvent | KeyboardEvent) => {
             if (event && ('ctrlKey' in event) && (event.ctrlKey || event.metaKey)) {
@@ -1392,22 +1490,24 @@ export class ZKGraphView extends ItemView {
                 y: -parentRadius
             });
         }
-        leftSiblings.slice(-4).forEach((node, index, arr) => {
-            const y = (index - (arr.length - 1) / 2) * 58;
+        const leftSiblingArr = leftSiblings.slice(-4);
+        const leftYs = computeSiblingYs(leftSiblingArr.length);
+        leftSiblingArr.forEach((node, index, arr) => {
             appendNode(this.getLocalNodeLabel(node), 'sibling', 'zk-focus-pos-left', node, null, {
                 index,
                 total: arr.length,
                 x: -sideRadius,
-                y
+                y: leftYs[index]
             });
         });
-        rightSiblings.slice(0, 4).forEach((node, index, arr) => {
-            const y = (index - (arr.length - 1) / 2) * 58;
+        const rightSiblingArr = rightSiblings.slice(0, 4);
+        const rightYs = computeSiblingYs(rightSiblingArr.length);
+        rightSiblingArr.forEach((node, index, arr) => {
             appendNode(this.getLocalNodeLabel(node), 'sibling', 'zk-focus-pos-right', node, null, {
                 index,
                 total: arr.length,
                 x: sideRadius,
-                y
+                y: rightYs[index]
             });
         });
         childNodes.slice(0, 8).forEach((node, index, arr) => {

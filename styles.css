@@ -1859,7 +1859,7 @@ align-items: center;
   left: 50%;
   top: 50%;
   z-index: 2;
-  max-width: 190px;
+  max-width: var(--zk-focus-card-max-w, 190px);
   padding: 7px 10px;
   font-size: 12px;
   font-weight: 600;
@@ -1939,8 +1939,8 @@ align-items: center;
 
 .zk-focus-current-card {
   width: max-content;
-  min-width: 220px;
-  max-width: 320px;
+  min-width: var(--zk-focus-center-min-w, 220px);
+  max-width: var(--zk-focus-center-max-w, 320px);
   min-height: 76px;
   padding: 14px 20px;
   display: flex;
