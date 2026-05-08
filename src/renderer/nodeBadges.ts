@@ -66,7 +66,7 @@ export function renderNodeBadges(this: any): void {
         }
 
         // 创建分组 glass 层（插到最前，位于 canvas 下方）
-        const isLightTheme = document.body.classList.contains('theme-light');
+        const isLightTheme = this.currentOptions?.themeMode === 'light' || document.body.classList.contains('theme-light');
         const glassLayer = document.createElement('div');
         glassLayer.className = 'zk-group-glass-layer';
         glassLayer.style.cssText = `
@@ -625,25 +625,34 @@ export function renderNodeBadges(this: any): void {
 			starEl.className = 'zk-node-anchor-badge';
 			starEl.dataset.nodeId = node.id();
 			starEl.textContent = '★';
+            const anchorBadgeBackground = isLightTheme
+                ? 'linear-gradient(145deg, rgba(255, 251, 235, 0.96) 0%, rgba(254, 243, 199, 0.96) 100%)'
+                : 'radial-gradient(circle at 30% 30%, #0f172a 0%, #0b1220 65%, #090f1a 100%)';
+            const anchorBadgeShadow = isLightTheme
+                ? `0 0 0 1px rgba(146, 112, 25, 0.12),
+                    0 6px 14px rgba(88, 65, 18, 0.18),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.78)`
+                : `0 0 0 1px rgba(255, 234, 154, 0.18),
+                    0 6px 14px rgba(0, 0, 0, 0.4),
+                    inset 0 1px 0 rgba(255, 236, 168, 0.24)`;
+            const anchorBadgeTextShadow = isLightTheme
+                ? '0 1px 0 rgba(255, 255, 255, 0.82)'
+                : `0 0 6px rgba(245, 220, 104, 0.65),
+                    0 0 14px rgba(245, 220, 104, 0.30)`;
             starEl.style.cssText = `
                 position: absolute;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                color: #f5dc68;
+                color: ${isLightTheme ? '#9a6a00' : '#f5dc68'};
                 font-size: 18px;
                 line-height: 1;
                 pointer-events: none;
-                background: radial-gradient(circle at 30% 30%, #0f172a 0%, #0b1220 65%, #090f1a 100%);
-                border: 2px solid rgba(216, 197, 119, 0.95);
+                background: ${anchorBadgeBackground};
+                border: 2px solid ${isLightTheme ? 'rgba(204, 155, 22, 0.72)' : 'rgba(216, 197, 119, 0.95)'};
                 border-radius: 999px;
-                box-shadow:
-                    0 0 0 1px rgba(255, 234, 154, 0.18),
-                    0 6px 14px rgba(0, 0, 0, 0.4),
-                    inset 0 1px 0 rgba(255, 236, 168, 0.24);
-                text-shadow:
-                    0 0 6px rgba(245, 220, 104, 0.65),
-                    0 0 14px rgba(245, 220, 104, 0.30);
+                box-shadow: ${anchorBadgeShadow};
+                text-shadow: ${anchorBadgeTextShadow};
                 z-index: 8;
                 transform: translate(-50%, -50%);
             `;

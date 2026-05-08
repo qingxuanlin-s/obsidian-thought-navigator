@@ -22,6 +22,28 @@
   position: relative;
 }
 
+.zk-view-content.zk-theme-light {
+  --zk-canvas-bg: #f2f5fa;
+  --zk-surface: rgba(255, 255, 255, 0.86);
+  --zk-surface-solid: #f7f9fc;
+  --zk-surface-raised: #ffffff;
+  --zk-border-subtle: rgba(105, 122, 148, 0.24);
+  --zk-border-strong: rgba(74, 111, 190, 0.34);
+  --zk-text: #202838;
+  --zk-text-muted: #5b6678;
+  --zk-text-faint: #8791a1;
+  --zk-accent: #6d57c4;
+  --zk-accent-soft: rgba(74, 118, 212, 0.15);
+  --zk-focus: #256fd1;
+  --zk-control-bg: rgba(255, 255, 255, 0.72);
+  --zk-control-bg-hover: rgba(232, 239, 250, 0.92);
+  --zk-control-border: rgba(107, 123, 150, 0.28);
+  --zk-control-text: #253044;
+  --zk-panel-bg: #f7f9fc;
+  --zk-panel-muted-bg: #eef2f7;
+  --zk-shadow-soft: 0 12px 30px rgba(42, 57, 82, 0.12);
+}
+
 /* 文件夹抽屉 (FolderDrawer) */
 .zk-folder-drawer {
   position: absolute;
@@ -248,9 +270,9 @@
 
 /* 浅色主题适配 */
 .zk-theme-light .zk-folder-drawer {
-  background: #f5f5f7;
-  border-left-color: #d8d8de;
-  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+  background: var(--zk-surface-solid, #f7f9fc);
+  border-left-color: var(--zk-border-subtle, #ccd5e2);
+  box-shadow: -8px 0 24px rgba(42, 57, 82, 0.12);
 }
 
 .zk-theme-light .zk-folder-drawer-header {
@@ -339,7 +361,8 @@
   color: #6f57c4;
 }
 .zk-theme-light .zk-folder-drawer-row-moc.is-current {
-  background: rgba(107, 163, 255, 0.18);
+  background: var(--zk-accent-soft, rgba(74, 118, 212, 0.15));
+  box-shadow: inset 0 0 0 1px rgba(74, 118, 212, 0.26);
 }
 .zk-theme-light .zk-folder-drawer-row-moc.is-current .zk-folder-drawer-name {
   color: #2a2a33;
@@ -596,6 +619,16 @@ align-items: center;
   min-width: 0;
 }
 
+.zk-theme-light .zk-breadcrumb-nav {
+  --zk-chip-border: 1px solid rgba(107, 123, 150, 0.26);
+  --zk-chip-bg: rgba(255, 255, 255, 0.74);
+  --zk-chip-color: rgba(37, 48, 68, 0.82);
+  --zk-chip-bg-hover: rgba(232, 239, 250, 0.96);
+  --zk-chip-border-hover: rgba(74, 118, 212, 0.42);
+  --zk-chip-color-hover: #172033;
+  --zk-chip-accent: 109, 87, 196;
+}
+
 /* 分隔符 chevron —— 比之前更细更轻,与 chip 同行 baseline 对齐 */
 .zk-breadcrumb-sep {
   color: rgba(168, 172, 200, 0.32);
@@ -605,6 +638,10 @@ align-items: center;
   line-height: 1;
   margin: 0 1px;
   transform: translateY(-0.5px);
+}
+
+.zk-theme-light .zk-breadcrumb-sep {
+  color: rgba(90, 104, 126, 0.38);
 }
 
 /* 芯片基础样式 —— 所有变体共享 */
@@ -642,6 +679,18 @@ align-items: center;
   border-color: rgba(var(--zk-chip-accent), 0.42);
   color: #ece6ff;
   box-shadow: inset 0 0 0 1px rgba(var(--zk-chip-accent), 0.06);
+}
+
+.zk-theme-light .zk-chip-filled {
+  background: rgba(109, 87, 196, 0.16);
+  border-color: rgba(109, 87, 196, 0.36);
+  color: #2e2468;
+}
+
+.zk-theme-light .zk-chip-filled:hover {
+  background: rgba(109, 87, 196, 0.22);
+  border-color: rgba(109, 87, 196, 0.48);
+  color: #211654;
 }
 
 .zk-chip-filled:hover {
@@ -794,6 +843,18 @@ align-items: center;
   color: #f0f0ff;
 }
 
+.zk-theme-light .zk-toolbar-right-buttons > .clickable-icon {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(107, 123, 150, 0.26);
+  color: rgba(37, 48, 68, 0.72);
+}
+
+.zk-theme-light .zk-toolbar-right-buttons > .clickable-icon:hover {
+  border-color: rgba(74, 118, 212, 0.42);
+  background: rgba(232, 239, 250, 0.96);
+  color: #172033;
+}
+
 .zk-toolbar-separator {
   width: 1px;
   height: 18px;
@@ -801,6 +862,11 @@ align-items: center;
   margin: 0 2px;
   align-self: center;
   opacity: 0.5;
+}
+
+.zk-theme-light .zk-toolbar-separator {
+  background-color: rgba(107, 123, 150, 0.24);
+  opacity: 0.7;
 }
 
 .zk-extra-buttons{
@@ -3364,28 +3430,29 @@ align-items: center;
 }
 
 .zk-theme-light .zk-node-ctx-menu {
-  background: #f0f0f0;
-  border-color: #d0d0d0;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+  background: #f8fafc;
+  border-color: rgba(101, 116, 139, 0.28);
+  box-shadow: 0 14px 34px rgba(42, 57, 82, 0.18);
 }
 
 .zk-theme-light .zk-node-ctx-item {
-  border-color: #b0b0c8;
-  color: #333355;
+  border-color: rgba(118, 127, 153, 0.44);
+  background: rgba(255, 255, 255, 0.72);
+  color: #243044;
 }
 
 .zk-theme-light .zk-node-ctx-item:hover {
-  border-color: #6666aa;
-  background: rgba(100, 100, 180, 0.1);
-  color: #222244;
+  border-color: rgba(74, 118, 212, 0.54);
+  background: rgba(232, 239, 250, 0.98);
+  color: #142033;
 }
 
 .zk-theme-light .zk-node-ctx-sep {
-  background: #d0d0d0;
+  background: rgba(101, 116, 139, 0.22);
 }
 
 .zk-theme-light .zk-node-ctx-row .zk-node-ctx-item {
-  border-color: #b0b0c8;
+  border-color: rgba(118, 127, 153, 0.44);
 }
 
 .zk-theme-light .zk-text-selection-toolbar,
@@ -4916,6 +4983,58 @@ align-items: center;
 
 .zk-theme-light .zk-index-toolbar-block b {
   color: var(--zk-text);
+}
+
+.zk-theme-light .zk-node-ctx-menu.zk-node-context-menu {
+  background: #f8fafc;
+  border-color: rgba(101, 116, 139, 0.32);
+  box-shadow: 0 18px 42px rgba(42, 57, 82, 0.2);
+  color: #202838;
+}
+
+.zk-theme-light .zk-node-ctx-menu .zk-node-ctx-item {
+  background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(118, 127, 153, 0.5);
+  color: #243044;
+  opacity: 1;
+}
+
+.zk-theme-light .zk-node-ctx-menu .zk-node-ctx-item svg {
+  color: #64748b;
+  opacity: 0.92;
+}
+
+.zk-theme-light .zk-node-ctx-menu .zk-node-ctx-item:hover {
+  background: rgba(232, 239, 250, 0.98);
+  border-color: rgba(74, 118, 212, 0.6);
+  color: #142033;
+}
+
+.zk-theme-light .zk-node-ctx-menu .zk-node-ctx-item:hover svg {
+  color: #256fd1;
+}
+
+.zk-theme-light .zk-node-ctx-menu .zk-node-ctx-disabled,
+.zk-theme-light .zk-node-ctx-menu .zk-node-ctx-disabled:hover {
+  background: rgba(248, 250, 252, 0.62);
+  border-color: rgba(148, 163, 184, 0.32);
+  color: #94a3b8;
+  opacity: 1;
+}
+
+.zk-theme-light .zk-node-ctx-menu .zk-node-ctx-disabled svg,
+.zk-theme-light .zk-node-ctx-menu .zk-node-ctx-disabled:hover svg {
+  color: #b6c0ce;
+}
+
+.zk-theme-light .zk-node-ctx-menu .zk-node-ctx-label {
+  color: #64748b;
+  opacity: 1;
+  font-weight: 600;
+}
+
+.zk-theme-light .zk-node-ctx-menu .zk-node-ctx-sep {
+  background: rgba(101, 116, 139, 0.22);
 }
 
 .zk-theme-light .zk-graph-mermaid-wrapper,
