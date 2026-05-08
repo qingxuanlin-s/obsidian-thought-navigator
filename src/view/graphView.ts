@@ -8,6 +8,7 @@ import { CytoscapeExpandModal } from "src/modal/cytoscapeExpandModal";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
 import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
 import { RenderOptions } from "src/renderer/types";
+import { resolveThemeMode } from "src/utils/themeMode";
 
 export const ZK_GRAPH_TYPE: string = "zk-graph-type"
 export const ZK_GRAPH_VIEW: string = t("zk-local-graph")
@@ -78,8 +79,8 @@ export class ZKGraphView extends ItemView {
 
     private applyLocalGraphTheme(containerEl: HTMLElement): void {
         containerEl.addClass('zk-view-content');
-        containerEl.toggleClass('zk-theme-light', this.plugin.settings.themeMode === 'light');
-        containerEl.toggleClass('zk-theme-dark', this.plugin.settings.themeMode !== 'light');
+        containerEl.toggleClass('zk-theme-light', resolveThemeMode(this.plugin.settings.themeMode) === 'light');
+        containerEl.toggleClass('zk-theme-dark', resolveThemeMode(this.plugin.settings.themeMode) !== 'light');
     }
 
     onload() {
@@ -229,10 +230,10 @@ export class ZKGraphView extends ItemView {
 
         const graphWrapper = containerEl.createDiv("zk-graph-mermaid-wrapper");
         const graphMermaidDiv = graphWrapper.createDiv("zk-graph-mermaid-container");
-        graphWrapper.toggleClass('zk-local-light-surface', this.plugin.settings.themeMode === 'light');
-        graphWrapper.toggleClass('zk-local-dark-surface', this.plugin.settings.themeMode !== 'light');
-        graphMermaidDiv.toggleClass('zk-local-light-surface', this.plugin.settings.themeMode === 'light');
-        graphMermaidDiv.toggleClass('zk-local-dark-surface', this.plugin.settings.themeMode !== 'light');
+        graphWrapper.toggleClass('zk-local-light-surface', resolveThemeMode(this.plugin.settings.themeMode) === 'light');
+        graphWrapper.toggleClass('zk-local-dark-surface', resolveThemeMode(this.plugin.settings.themeMode) !== 'light');
+        graphMermaidDiv.toggleClass('zk-local-light-surface', resolveThemeMode(this.plugin.settings.themeMode) === 'light');
+        graphMermaidDiv.toggleClass('zk-local-dark-surface', resolveThemeMode(this.plugin.settings.themeMode) !== 'light');
 
         const activeFile = this.app.workspace.getActiveFile();
         if (activeFile) {
@@ -1069,7 +1070,7 @@ export class ZKGraphView extends ItemView {
                     animate: true,
                     animationDuration: 500,
                     nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
-                    themeMode: this.plugin.settings.themeMode,
+                    themeMode: resolveThemeMode(this.plugin.settings.themeMode),
                     themeStyle: this.plugin.settings.themeStyle || 'modern',
                     edgeStyle: this.plugin.settings.edgeStyle || 'bezier',
                     readOnly: true,
@@ -1713,7 +1714,7 @@ export class ZKGraphView extends ItemView {
         mocTreeDiv.id = "zk-moc-tree-cytoscape";
         mocTreeDiv.style.height = `${graphHeight}px`;
         mocTreeDiv.style.width = "100%";
-        mocTreeDiv.style.backgroundColor = this.plugin.settings.themeMode === 'light' ? '#f5f5f5' : '#2a2a2a';
+        mocTreeDiv.style.backgroundColor = resolveThemeMode(this.plugin.settings.themeMode) === 'light' ? '#f5f5f5' : '#2a2a2a';
 
         // 构建图形数据（使用 MOC 树专用方法）
         const graphData = GraphDataBuilder.fromMOCTree(mocNodes, reverseRelations, null);
@@ -1726,7 +1727,7 @@ export class ZKGraphView extends ItemView {
             animate: true,
             animationDuration: 500,
             nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
-            themeMode: this.plugin.settings.themeMode,
+            themeMode: resolveThemeMode(this.plugin.settings.themeMode),
             themeStyle: this.plugin.settings.themeStyle || 'modern',
             edgeStyle: this.plugin.settings.edgeStyle || 'bezier',
             readOnly: true,
@@ -1936,7 +1937,7 @@ export class ZKGraphView extends ItemView {
                     animate: true,
                     animationDuration: 500,
                     nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
-                    themeMode: this.plugin.settings.themeMode,
+                    themeMode: resolveThemeMode(this.plugin.settings.themeMode),
                     themeStyle: this.plugin.settings.themeStyle || 'modern',
                     edgeStyle: this.plugin.settings.edgeStyle || 'bezier'
                 };

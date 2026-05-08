@@ -17,6 +17,7 @@ import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
 import { RenderOptions } from "src/renderer/types";
 import { MOCHandler } from "src/view/index/mocHandler";
 import { computeAutoLayout, AutoLayoutNodeInput } from "src/utils/autoLayoutEngine";
+import { resolveThemeMode } from "src/utils/themeMode";
 import { DEFAULT_LAYOUT_PRESET, DIR_VECTORS, GrowthDirection, LayoutPreset, PRESET_POOL, normalizeLayoutPreset, quantizeToPool, stackAxisOf } from "src/utils/growthDirection";
 import {
     DEBOUNCE_DELAY,
@@ -239,8 +240,8 @@ export class ZKIndexView extends FileView {
             backBtn.addEventListener('touchend', exitHandler, { passive: false });
         }
 
-        backBtn.classList.toggle('zk-branch-fullscreen-back-btn-light', this.plugin.settings.themeMode === 'light');
-        backBtn.classList.toggle('zk-branch-fullscreen-back-btn-dark', this.plugin.settings.themeMode !== 'light');
+        backBtn.classList.toggle('zk-branch-fullscreen-back-btn-light', resolveThemeMode(this.plugin.settings.themeMode) === 'light');
+        backBtn.classList.toggle('zk-branch-fullscreen-back-btn-dark', resolveThemeMode(this.plugin.settings.themeMode) !== 'light');
         backBtn.setAttribute('aria-label', t("exit fullscreen"));
         setTooltip(backBtn, t("exit fullscreen"));
         this.syncBranchFullscreenBackButtonVisibility();
@@ -568,7 +569,7 @@ export class ZKIndexView extends FileView {
         let { containerEl } = this;
 
         // 主题类(每次都要重设,否则切主题不生效)
-        const isLight = this.plugin.settings.themeMode === 'light';
+        const isLight = resolveThemeMode(this.plugin.settings.themeMode) === 'light';
         containerEl.toggleClass('zk-theme-light', isLight);
         containerEl.toggleClass('zk-theme-dark', !isLight);
 
@@ -1571,8 +1572,8 @@ cy.fit(null, 40);
         return [
             filePath,
             mtime,
-            // 主题 / 视觉
-            s.themeMode,
+            // 主题 / 视觉(用解析后值,auto 时跟随 Obsidian 实时主题)
+            resolveThemeMode(s.themeMode),
             s.themeStyle || 'modern',
             s.edgeStyle || 'bezier',
             s.nodeColor || '',
@@ -1828,7 +1829,7 @@ cy.fit(null, 40);
             branchGraphDiv.style.boxShadow = '';
             branchGraphDiv.style.outline = '';
         }
-        branchGraphDiv.style.backgroundColor = this.plugin.settings.themeMode === 'light' ? '#f5f5f5' : '#2a2a2a';
+        branchGraphDiv.style.backgroundColor = resolveThemeMode(this.plugin.settings.themeMode) === 'light' ? '#f5f5f5' : '#2a2a2a';
         this.ensureBranchFullscreenBackButton(branchGraphDiv);
 
         // 注意：不再清空 branchGraphDiv，让 CytoscapeRenderer 内部的增量更新逻辑处理
@@ -1865,7 +1866,7 @@ cy.fit(null, 40);
             animate: true,
             animationDuration: 500,
             nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
-            themeMode: this.plugin.settings.themeMode,
+            themeMode: resolveThemeMode(this.plugin.settings.themeMode),
             themeStyle: this.plugin.settings.themeStyle || 'modern',
             edgeStyle: this.plugin.settings.edgeStyle || 'bezier',
             nodeLayoutStyle: this.currentNodeLayoutStyle,
