@@ -985,6 +985,66 @@ align-items: center;
   color: #e0e0f0;
 }
 
+.zk-family-graph-container {
+  position: relative;
+  min-height: 0;
+  border: 1px solid rgba(150, 150, 190, 0.16);
+  border-radius: 8px;
+  background: var(--zk-canvas-bg, #252525);
+  overflow: hidden;
+}
+
+.zk-family-graph-container > .zk-graph-icon {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0;
+  z-index: 20;
+}
+
+.zk-family-graph-container > .zk-graph-icon > .clickable-icon {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+}
+
+.zk-family-graph-container.zk-graph-fullscreen {
+  position: fixed;
+  inset: 12px;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  background: var(--zk-canvas-bg, #252525);
+  border: 1px solid rgba(150, 150, 190, 0.24);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+}
+
+.zk-family-graph-container.zk-graph-fullscreen .zk-graph-cytoscape {
+  flex: 1 1 auto;
+  height: auto !important;
+  min-height: 0;
+}
+
+.zk-family-graph-container .zk-fullscreen-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.zk-family-graph-container.zk-graph-fullscreen > .zk-graph-icon {
+  z-index: 30;
+}
+
 .zk-graph-icon-bottom {
   display: flex;
   justify-content: center;
