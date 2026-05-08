@@ -567,6 +567,11 @@ export class ZKIndexView extends FileView {
     async IndexViewInterfaceInit() {
         let { containerEl } = this;
 
+        // 主题类(每次都要重设,否则切主题不生效)
+        const isLight = this.plugin.settings.themeMode === 'light';
+        containerEl.toggleClass('zk-theme-light', isLight);
+        containerEl.toggleClass('zk-theme-dark', !isLight);
+
         // 性能优化：分离静态 UI 层和动态图形层
         // 只在首次创建时初始化静态 UI
         if (!this.staticUICreated) {

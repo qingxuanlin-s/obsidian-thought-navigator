@@ -937,10 +937,7 @@ export function showInlineNodeEditor(this: any, node: any): void {
             height: ${initialBoxHeight}px;
             transform: translate(0, 0);
             padding: ${editorPadding};
-            border: 2px solid rgba(91, 143, 217, 0.95);
             border-radius: 16px;
-            background: rgba(15, 23, 42, 0.96);
-            color: var(--text-normal);
             font-size: ${nodeFontSize};
             font-family: ${nodeFontFamily};
             font-weight: ${nodeFontWeight};
@@ -952,7 +949,6 @@ export function showInlineNodeEditor(this: any, node: any): void {
             text-align: ${textAlign};
             line-height: ${nodeLineHeight};
             cursor: text;
-            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
         `;
 
         this.container.appendChild(textarea);
@@ -1826,10 +1822,7 @@ export function startPlaceholderTextareaFallback(this: any, node: any): void {
             top: ${renderedPosition.y - boxH / 2}px;
             width: ${boxW}px;
             height: ${boxH}px;
-            border: 2px solid rgba(91, 143, 217, 0.95);
             border-radius: 12px;
-            background: var(--background-primary);
-            color: var(--text-normal);
             font-size: 20px;
             font-family: var(--font-text);
             font-weight: 500;
