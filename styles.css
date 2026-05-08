@@ -1045,6 +1045,97 @@ align-items: center;
   z-index: 30;
 }
 
+.zk-family-graph-container > .zk-graph-text {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  margin: 0;
+  max-width: calc(100% - 116px);
+  z-index: 20;
+}
+
+.zk-moc-file-local-view {
+  container-type: inline-size;
+  gap: 12px;
+}
+
+.zk-moc-file-local-view .zk-family-graph-container,
+.zk-moc-file-local-view .zk-local-section-panel {
+  flex: 0 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.zk-moc-file-local-view .zk-graph-cytoscape {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.zk-moc-file-local-view .zk-inoutlinks-container {
+  min-height: 420px;
+  padding: 30px 18px 34px;
+}
+
+.zk-moc-file-local-view .zk-iol-grid {
+  max-width: min(100%, 680px);
+}
+
+.zk-moc-file-local-view .zk-iol-center {
+  width: min(100%, 760px);
+  max-width: calc(100% - 112px);
+  min-height: 112px;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.zk-moc-file-local-view .zk-iol-center-title {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+@container (max-width: 720px) {
+  .zk-moc-file-local-view {
+    gap: 10px;
+  }
+
+  .zk-moc-file-local-view .zk-family-graph-container > .zk-graph-text {
+    max-width: calc(100% - 96px);
+    padding: 7px 10px;
+  }
+
+  .zk-moc-file-local-view .zk-family-graph-container > .zk-graph-icon {
+    top: 8px;
+    right: 8px;
+    gap: 6px;
+  }
+
+  .zk-moc-file-local-view .zk-family-graph-container > .zk-graph-icon > .clickable-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
+  }
+
+  .zk-moc-file-local-view .zk-inoutlinks-container {
+    min-height: 360px;
+    padding: 24px 12px 28px;
+  }
+
+  .zk-moc-file-local-view .zk-iol-center {
+    max-width: calc(100% - 28px);
+    min-height: 96px;
+    padding: 14px 16px;
+  }
+
+  .zk-moc-file-local-view .zk-iol-grid {
+    max-width: 100%;
+  }
+
+  .zk-moc-file-local-view .zk-iol-card {
+    max-width: 100%;
+  }
+}
+
 .zk-graph-icon-bottom {
   display: flex;
   justify-content: center;

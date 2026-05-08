@@ -326,6 +326,7 @@ export class ZKGraphView extends ItemView {
     // MOC 模式下的局部关系视图渲染
     async refreshLocalGraphMOC(graphMermaidDiv: HTMLElement, mocFile: TFile) {
         graphMermaidDiv.empty();
+        graphMermaidDiv.addClass('zk-moc-file-local-view');
 
         // 计算要显示的图数量
         let graphCount = 0;
@@ -335,7 +336,10 @@ export class ZKGraphView extends ItemView {
         // 安全检查：避免除以 0 或 NaN
         const safeCount = Math.max(graphCount, 1);
         const containerHeight = this.containerEl.offsetHeight || 400; // 默认高度 400px
-        const graphHeight = Math.max(Math.floor(containerHeight / safeCount - 10), 200); // 最小高度 200px
+        const containerWidth = this.containerEl.clientWidth || 720;
+        const isNarrow = containerWidth < 760;
+        const targetGraphHeight = safeCount > 1 ? containerHeight * 0.52 : containerHeight - 16;
+        const graphHeight = Math.round(Math.max(isNarrow ? 320 : 420, Math.min(targetGraphHeight, isNarrow ? 540 : 680)));
 
         const headingTitle = this.plugin.settings.mocHeadingTitle;
         const mermaid = await loadMermaid();
@@ -1582,6 +1586,7 @@ export class ZKGraphView extends ItemView {
     ): Promise<void> {
         // 创建 MOC 树图容器
         const mocGraphContainer = container.createDiv("zk-family-graph-container");
+        mocGraphContainer.addClass('zk-moc-tree-section');
         const mocGraphTextDiv = mocGraphContainer.createDiv("zk-graph-text");
         mocGraphTextDiv.empty();
         mocGraphTextDiv.createEl('span', { text: `${headingTitle}` });
@@ -1725,6 +1730,9 @@ export class ZKGraphView extends ItemView {
             `入链 ${inlinkArr.length} · 出链 ${outlinkArr.length}`
         );
         section.container.addClass('zk-inoutlinks-graph-container');
+        if (this.isMOCFile(currentFile)) {
+            section.container.addClass('zk-moc-inoutlinks-section');
+        }
         const expandBtn = new ExtraButtonComponent(section.actions);
         expandBtn.setIcon("expand").setTooltip(t("expand graph"));
 
