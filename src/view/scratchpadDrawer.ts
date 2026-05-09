@@ -1,4 +1,4 @@
-import { App, Menu, Notice, setIcon, setTooltip } from "obsidian";
+import { App, FuzzySuggestModal, Menu, Notice, setIcon, setTooltip, TFile } from "obsidian";
 import { Scratchpad, ScratchpadEntry, ScratchpadManager, ScratchpadSplitRule } from "src/scratch/scratchpadManager";
 import { resolveDroppedVaultFiles, hasVaultFileDragTypes } from "src/utils/dropFileResolver";
 import { t } from "src/lang/helper";
@@ -7,6 +7,28 @@ const IDLE_FADE_MS = 3000;
 const NEAR_HANDLE_PX = 60; // 鼠标距离句柄多近算"靠近"
 
 export type CurrentMOCInfo = { path: string; name: string };
+
+class ScratchpadFileSuggestModal extends FuzzySuggestModal<TFile> {
+    private onChoose: (file: TFile) => void;
+
+    constructor(app: App, onChoose: (file: TFile) => void) {
+        super(app);
+        this.onChoose = onChoose;
+        this.setPlaceholder(t("scratch file picker placeholder"));
+    }
+
+    getItems(): TFile[] {
+        return this.app.vault.getFiles();
+    }
+
+    getItemText(file: TFile): string {
+        return file.path;
+    }
+
+    onChooseItem(file: TFile): void {
+        this.onChoose(file);
+    }
+}
 
 /**
  * 临时工作区抽屉(Scratchpad Drawer)
@@ -30,6 +52,8 @@ export class ScratchpadDrawer {
     private bodyEl: HTMLElement;
     private countBadge: HTMLElement;
     private isOpen: boolean = false;
+    private isTextComposerOpen: boolean = false;
+    private textComposerValue: string = "";
     private unsubscribe: (() => void) | null = null;
     private idleTimer: number | null = null;
     private mouseMoveHandler: ((e: MouseEvent) => void) | null = null;
@@ -56,6 +80,14 @@ export class ScratchpadDrawer {
         setIcon(titleIcon, "package");
         titleWrap.createSpan("zk-scratch-drawer-title").setText(t("scratch drawer title"));
         this.countBadge = titleWrap.createSpan("zk-scratch-drawer-count");
+
+        const addBtn = header.createDiv("zk-scratch-drawer-action");
+        setIcon(addBtn, "plus");
+        setTooltip(addBtn, t("scratch add item"));
+        addBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            this.showAddMenu(e);
+        });
 
         const clearBtn = header.createDiv("zk-scratch-drawer-action");
         setIcon(clearBtn, "trash-2");
@@ -391,8 +423,11 @@ export class ScratchpadDrawer {
     private render(): void {
         this.bodyEl.empty();
         const items = this.manager.list();
+        if (this.isTextComposerOpen) {
+            this.renderTextComposer(this.bodyEl);
+        }
         if (items.length === 0) {
-            this.renderEmpty();
+            if (!this.isTextComposerOpen) this.renderEmpty();
             return;
         }
         const list = this.bodyEl.createDiv("zk-scratch-list");
@@ -407,6 +442,134 @@ export class ScratchpadDrawer {
         setIcon(icon, "inbox");
         empty.createDiv("zk-scratch-empty-title").setText(t("scratch empty title"));
         empty.createDiv("zk-scratch-empty-hint").setText(t("scratch empty hint"));
+    }
+
+    private showAddMenu(e: MouseEvent): void {
+        const menu = new Menu();
+        menu.addItem((item) =>
+            item.setTitle(t("scratch add text"))
+                .setIcon("type")
+                .onClick(() => this.startTextComposer())
+        );
+        menu.addItem((item) =>
+            item.setTitle(t("scratch add file"))
+                .setIcon("file-plus")
+                .onClick(() => this.openFilePicker())
+        );
+        menu.showAtMouseEvent(e);
+    }
+
+    private startTextComposer(): void {
+        this.isTextComposerOpen = true;
+        this.render();
+        requestAnimationFrame(() => {
+            const textarea = this.bodyEl.querySelector(".zk-scratch-composer-textarea") as HTMLTextAreaElement | null;
+            textarea?.focus();
+        });
+    }
+
+    private renderTextComposer(parent: HTMLElement): void {
+        const composer = parent.createDiv("zk-scratch-composer");
+        const textarea = composer.createEl("textarea", { cls: "zk-scratch-composer-textarea" });
+        textarea.placeholder = t("scratch text placeholder");
+        textarea.rows = 5;
+        textarea.value = this.textComposerValue;
+
+        const footer = composer.createDiv("zk-scratch-composer-footer");
+        const hint = footer.createSpan("zk-scratch-composer-hint");
+        hint.setText(t("scratch text hint"));
+
+        const actions = footer.createDiv("zk-scratch-composer-actions");
+        const splitHeadingBtn = actions.createDiv("zk-scratch-composer-btn");
+        setIcon(splitHeadingBtn, "heading");
+        setTooltip(splitHeadingBtn, t("scratch save by heading"));
+
+        const splitLineBtn = actions.createDiv("zk-scratch-composer-btn");
+        setIcon(splitLineBtn, "list");
+        setTooltip(splitLineBtn, t("scratch save by line"));
+
+        const cancelBtn = actions.createDiv("zk-scratch-composer-btn");
+        setIcon(cancelBtn, "x");
+        setTooltip(cancelBtn, t("scratch cancel"));
+
+        const saveBtn = actions.createDiv("zk-scratch-composer-btn is-primary");
+        setIcon(saveBtn, "check");
+        setTooltip(saveBtn, t("scratch save text"));
+
+        const save = async (splitRule?: ScratchpadSplitRule) => {
+            const moc = this.getCurrentMOC();
+            const entries = this.manager.buildEntriesFromText(textarea.value, moc.path || "", moc.name || "", splitRule);
+            if (entries.length === 0) {
+                new Notice(t("scratch text empty"));
+                return;
+            }
+            await this.manager.addMany(entries);
+            this.textComposerValue = "";
+            this.render();
+            requestAnimationFrame(() => {
+                const nextTextarea = this.bodyEl.querySelector(".zk-scratch-composer-textarea") as HTMLTextAreaElement | null;
+                nextTextarea?.focus();
+            });
+        };
+
+        const cancel = () => {
+            this.isTextComposerOpen = false;
+            this.textComposerValue = "";
+            this.render();
+        };
+
+        splitHeadingBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            void save("heading");
+        });
+        splitLineBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            void save("line");
+        });
+        saveBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            void save();
+        });
+        cancelBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            cancel();
+        });
+        textarea.addEventListener("keydown", (e) => {
+            if (e.shiftKey && e.key === "Enter") {
+                e.preventDefault();
+                const start = textarea.selectionStart ?? textarea.value.length;
+                const end = textarea.selectionEnd ?? start;
+                textarea.setRangeText("\n", start, end, "end");
+                this.textComposerValue = textarea.value;
+                textarea.dispatchEvent(new Event("input", { bubbles: true }));
+            } else if (e.key === "Enter") {
+                e.preventDefault();
+                void save();
+            } else if (e.key === "Escape") {
+                e.preventDefault();
+                cancel();
+            }
+        });
+        textarea.addEventListener("input", () => {
+            this.textComposerValue = textarea.value;
+            this.autosizeTextarea(textarea);
+        });
+        requestAnimationFrame(() => this.autosizeTextarea(textarea));
+    }
+
+    private autosizeTextarea(textarea: HTMLTextAreaElement): void {
+        textarea.style.height = "auto";
+        textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 108), 260)}px`;
+    }
+
+    private openFilePicker(): void {
+        const modal = new ScratchpadFileSuggestModal(this.app, async (file) => {
+            const moc = this.getCurrentMOC();
+            const entry = this.manager.buildEntryFromFile(file, moc.path || "", moc.name || "");
+            await this.manager.add(entry);
+            new Notice(t("scratch added file count").replace("{n}", "1"));
+        });
+        modal.open();
     }
 
     private renderCard(parent: HTMLElement, entry: ScratchpadEntry): void {
@@ -428,8 +591,9 @@ export class ScratchpadDrawer {
 
         const meta = body.createDiv("zk-scratch-card-meta");
         const idChip = meta.createSpan("zk-scratch-card-id");
-        idChip.setText(entry.origin.nodeId);
-        setTooltip(idChip, t("scratch original id tooltip") + entry.origin.nodeId);
+        const originNodeId = entry.origin.nodeId === "draft" ? t("scratch draft source") : entry.origin.nodeId;
+        idChip.setText(originNodeId);
+        setTooltip(idChip, t("scratch original id tooltip") + originNodeId);
         const sep = meta.createSpan("zk-scratch-card-meta-sep");
         sep.setText("·");
         const fromIcon = meta.createSpan("zk-scratch-card-from-icon");

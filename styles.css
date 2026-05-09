@@ -5218,6 +5218,94 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
   padding: 8px 8px 16px;
 }
 
+.zk-scratch-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 9px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(120, 140, 255, 0.26);
+  border-radius: 8px;
+}
+
+.zk-scratch-composer-textarea {
+  width: 100%;
+  min-height: 108px;
+  max-height: 260px;
+  resize: none;
+  overflow-y: auto;
+  padding: 8px 9px;
+  border: 1px solid var(--zk-border-subtle, #2f2f2f);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--zk-text, #e6e7ea);
+  font-size: 12.5px;
+  line-height: 1.45;
+  outline: none;
+}
+
+.zk-scratch-composer-textarea:focus {
+  border-color: rgba(120, 140, 255, 0.55);
+  box-shadow: 0 0 0 2px rgba(120, 140, 255, 0.13);
+}
+
+.zk-scratch-composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.zk-scratch-composer-hint {
+  flex: 1 1 132px;
+  min-width: 0;
+  color: var(--zk-text-muted, #8a8e98);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.zk-scratch-composer-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.zk-scratch-composer-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--zk-text-muted, #8a8e98);
+  transition: background 0.12s, color 0.12s;
+}
+
+.zk-scratch-composer-btn:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #e6e7ea;
+}
+
+.zk-scratch-composer-btn.is-primary {
+  background: rgba(120, 170, 255, 0.16);
+  color: #a8c3ff;
+}
+
+.zk-scratch-composer-btn.is-primary:hover {
+  background: rgba(120, 170, 255, 0.24);
+  color: #d7e4ff;
+}
+
+.zk-scratch-composer-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
 .zk-scratch-empty {
   display: flex;
   flex-direction: column;
@@ -5424,6 +5512,23 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 }
 .theme-light .zk-scratch-empty-title { color: #2c3140; }
 .theme-light .zk-scratch-empty { color: #5a6072; }
+.theme-light .zk-scratch-composer {
+  background: rgba(80, 110, 180, 0.045);
+  border-color: rgba(80, 110, 220, 0.24);
+}
+.theme-light .zk-scratch-composer-textarea {
+  background: rgba(255, 255, 255, 0.78);
+  color: #1f2330;
+  border-color: rgba(0, 0, 0, 0.10);
+}
+.theme-light .zk-scratch-composer-textarea:focus {
+  border-color: rgba(80, 110, 220, 0.48);
+  box-shadow: 0 0 0 2px rgba(80, 110, 220, 0.10);
+}
+.theme-light .zk-scratch-composer-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #1f2330;
+}
 
 /* ==================== Light theme consolidation ==================== */
 .zk-theme-light .zk-view-content,

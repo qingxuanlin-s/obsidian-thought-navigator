@@ -308,6 +308,43 @@ export class ScratchpadManager {
         };
     }
 
+    /**
+     * 从抽屉内手动输入的文本构造暂存条目。
+     * 只进入 scratchpad,不修改当前 MOC;真正拖放/粘贴时再生成节点 ID。
+     */
+    buildEntryFromText(
+        text: string,
+        mocPath: string,
+        mocName: string,
+    ): ScratchpadEntry | null {
+        return this.buildEntriesFromText(text, mocPath, mocName)[0] ?? null;
+    }
+
+    buildEntriesFromText(
+        text: string,
+        mocPath: string,
+        mocName: string,
+        splitRule?: ScratchpadSplitRule,
+    ): ScratchpadEntry[] {
+        const parts = splitRule
+            ? splitText(text, splitRule)
+            : [normalizeSplitPart(text)].filter(Boolean);
+
+        return parts.map((part, idx): ScratchpadEntry => ({
+            tempId: genTempId(),
+            kind: "text",
+            target: part,
+            displayText: part,
+            origin: {
+                nodeId: "draft",
+                mocPath,
+                mocName,
+                operation: "copy",
+            },
+            addedAt: Date.now() + idx,
+        }));
+    }
+
     /** 默认加入 active pad 顶部 */
     async add(entry: ScratchpadEntry, padId?: string): Promise<void> {
         const target = padId
@@ -315,6 +352,17 @@ export class ScratchpadManager {
             : this.activePad();
         if (!target) return;
         target.items.unshift(entry);
+        this.scheduleSave();
+        this.notify();
+    }
+
+    async addMany(entries: ScratchpadEntry[], padId?: string): Promise<void> {
+        if (entries.length === 0) return;
+        const target = padId
+            ? this.listPads().find((p) => p.id === padId)
+            : this.activePad();
+        if (!target) return;
+        target.items.unshift(...entries);
         this.scheduleSave();
         this.notify();
     }
