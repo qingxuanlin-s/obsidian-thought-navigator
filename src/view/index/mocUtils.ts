@@ -19,6 +19,7 @@ export interface MOCExtData {
     node_style_colors?: Record<string, string>;
     embed_node_sizes?: Record<string, { width: number; height: number }>;
     nodeRemarks?: Record<string, string>;
+    collapsed_node_ids?: string[];
     groups?: Array<{ id: string; label: string; nodeIds: string[]; color?: string }>;
     edge_curvatures?: Record<string, { distance: number; weight: number }>;
     node_layout_style?: 'free' | 'auto';
@@ -93,6 +94,7 @@ export class MOCFileUtils {
                     extData.node_style_colors = parsed.node_style_colors || {};
                     extData.embed_node_sizes = parsed.embed_node_sizes || {};
                     extData.nodeRemarks = parsed.nodeRemarks || {};
+                    extData.collapsed_node_ids = Array.isArray(parsed.collapsed_node_ids) ? parsed.collapsed_node_ids : [];
                     extData.groups = parsed.groups || [];
                     extData.edge_curvatures = parsed.edge_curvatures || {};
                     extData.node_layout_style = parsed.node_layout_style || undefined;
@@ -140,6 +142,9 @@ export class MOCFileUtils {
         }
         if (Object.keys(extData.nodeRemarks || {}).length > 0) {
             cleanData.nodeRemarks = extData.nodeRemarks;
+        }
+        if ((extData.collapsed_node_ids || []).length > 0) {
+            cleanData.collapsed_node_ids = extData.collapsed_node_ids;
         }
         if (extData.groups && extData.groups.length > 0) {
             cleanData.groups = extData.groups;

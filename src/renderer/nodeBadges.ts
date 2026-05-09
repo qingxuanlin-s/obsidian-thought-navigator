@@ -1770,6 +1770,13 @@ function addCollapseToggleHandle(this: any): void {
                 }
                 this.applyCollapsedState();
                 handleUpdaters.forEach((fn) => fn());
+                this.container?.dispatchEvent(new CustomEvent('node-collapse-state-changed', {
+                    detail: {
+                        nodeId: originalId,
+                        collapsed: this.collapsedNodeIds.has(originalId),
+                        collapsedNodeIds: Array.from(this.collapsedNodeIds)
+                    }
+                }));
             };
             handle.addEventListener('click', toggleCollapse);
             handle.addEventListener('touchend', toggleCollapse, { passive: false });

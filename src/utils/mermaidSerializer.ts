@@ -90,7 +90,8 @@ export class MermaidSerializer {
             cross_domain_links: data.crossDomainLinks || {},  // 始终包含 cross_domain_links，即使为空
             embed_node_sizes: (data as any).embedNodeSizes || {},
             nodeRemarks: (data as any).nodeRemarks || {},
-            nodeAnchors: (data as any).nodeAnchors || {}
+            nodeAnchors: (data as any).nodeAnchors || {},
+            collapsed_node_ids: (data as any).collapsedNodeIds || []
         };
 
         // 持久化节点布局风格（新建时锁定，后续不受全局设置影响）
