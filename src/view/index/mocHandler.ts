@@ -39,6 +39,7 @@ function deepCopyMOCResult(original: MOCParseResult): MOCParseResult {
         embedNodeSizes: { ...(original as any).embedNodeSizes || {} },
         nodeRemarks: { ...(original as any).nodeRemarks || {} },
         nodeAnchors: { ...(original as any).nodeAnchors || {} },
+        collapsedNodeIds: [...((original as any).collapsedNodeIds || [])],
         nodeLayoutStyle: original.nodeLayoutStyle,
         nodeLayoutOverrides: original.nodeLayoutOverrides ? { ...original.nodeLayoutOverrides } : undefined,
         layoutPreset: original.layoutPreset,
@@ -53,6 +54,8 @@ function deepCopyMOCResult(original: MOCParseResult): MOCParseResult {
  * 负责处理所有与 MOC 文件相关的操作
  */
 export class MOCHandler {
+    private modifyQueues = new Map<string, Promise<void>>();
+
     constructor(
         private plugin: ZKNavigationPlugin,
         private app: any,
@@ -60,6 +63,21 @@ export class MOCHandler {
             onBeforeModify?: (payload: { filePath: string; content: string }) => void | Promise<void>;
         }
     ) {}
+
+    private async enqueueModify<T>(filePath: string, task: () => Promise<T>): Promise<T> {
+        const previous = this.modifyQueues.get(filePath) || Promise.resolve();
+        const run = previous.catch(() => undefined).then(task);
+        const current = run.then(() => undefined, () => undefined);
+        this.modifyQueues.set(filePath, current);
+
+        try {
+            return await run;
+        } finally {
+            if (this.modifyQueues.get(filePath) === current) {
+                this.modifyQueues.delete(filePath);
+            }
+        }
+    }
 
     private getBranchStylePalette(): string[] {
         return ['#ff5a5f', '#ff8a3d', '#f7c948', '#56d364', '#38d9a9', '#4dabf7', '#9775fa', '#f06595'];
@@ -73,6 +91,24 @@ export class MOCHandler {
         return palette[Math.floor(Math.random() * palette.length)];
     }
 
+    ensureFirstLevelNodeLayoutDefaults(mocData: MOCParseResult, nodeId: string): void {
+        if (!this.isFirstLevelChild(mocData, nodeId)) {
+            return;
+        }
+
+        if (mocData.nodeLayoutStyle !== 'free' && mocData.nodeLayoutStyle !== 'auto') {
+            mocData.nodeLayoutStyle = this.plugin.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free';
+        }
+
+        const settingsPreset = normalizeLayoutPreset(this.plugin.settings.autoLayoutDefaultGrowthDirection);
+        if (!mocData.layoutPreset) {
+            mocData.layoutPreset = settingsPreset;
+        }
+        if (mocData.nodeLayoutPresets && !mocData.nodeLayoutPresets[nodeId]) {
+            mocData.nodeLayoutPresets[nodeId] = settingsPreset;
+        }
+    }
+
     /**
      * 通用 MOC 数据修改方法
      * 用于 Mermaid 格式的 MOC 文件，确保所有 metadata 被正确保留
@@ -83,29 +119,31 @@ export class MOCHandler {
         mocFile: TFile,
         modifyCallback: (data: MOCParseResult) => void | Promise<void>
     ): Promise<void> {
-        const headingTitle = this.plugin.settings.mocHeadingTitle;
-        const originalContent = await this.app.vault.read(mocFile);
-        if (this.hooks?.onBeforeModify) {
-            await this.hooks.onBeforeModify({ filePath: mocFile.path, content: originalContent });
-        }
+        await this.enqueueModify(mocFile.path, async () => {
+            const headingTitle = this.plugin.settings.mocHeadingTitle;
+            const originalContent = await this.app.vault.read(mocFile);
+            if (this.hooks?.onBeforeModify) {
+                await this.hooks.onBeforeModify({ filePath: mocFile.path, content: originalContent });
+            }
 
-        // 使用 Mermaid 格式：通过 parse/modify/save 流程来保留所有 metadata
-        const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
-        const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+            // 使用 Mermaid 格式：通过 parse/modify/save 流程来保留所有 metadata
+            const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
+            const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
 
-        // 深拷贝数据，避免修改缓存中的数据
-        const mocDataCopy = deepCopyMOCResult(mocData);
+            // 深拷贝数据，避免修改缓存中的数据
+            const mocDataCopy = deepCopyMOCResult(mocData);
 
-        // 锁定文件级布局风格：若该 MOC 尚未持久化 nodeLayoutStyle，则在首次写入时补齐
-        if (mocDataCopy.nodeLayoutStyle !== 'free' && mocDataCopy.nodeLayoutStyle !== 'auto') {
-            mocDataCopy.nodeLayoutStyle = this.plugin.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free';
-        }
+            // 锁定文件级布局风格：若该 MOC 尚未持久化 nodeLayoutStyle，则在首次写入时补齐
+            if (mocDataCopy.nodeLayoutStyle !== 'free' && mocDataCopy.nodeLayoutStyle !== 'auto') {
+                mocDataCopy.nodeLayoutStyle = this.plugin.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free';
+            }
 
-        // 调用修改回调（操作的是拷贝，不影响缓存）
-        await modifyCallback(mocDataCopy);
+            // 调用修改回调（操作的是拷贝，不影响缓存）
+            await modifyCallback(mocDataCopy);
 
-        // 保存更新后的数据（这会保留 crossDomainLinks 等所有 metadata）
-        await saveMOCStructure(this.app, mocFile.path, headingTitle, mocDataCopy);
+            // 保存更新后的数据（这会保留 crossDomainLinks 等所有 metadata）
+            await saveMOCStructure(this.app, mocFile.path, headingTitle, mocDataCopy);
+        });
     }
 
     async modifyMOCDataBatch(
@@ -131,13 +169,52 @@ export class MOCHandler {
         }
     }
 
+    private cleanupDeletedNodeMetadata(mocData: MOCParseResult, nodeID: string): void {
+        if (mocData.nodePositions && mocData.nodePositions[nodeID]) {
+            delete mocData.nodePositions[nodeID];
+        }
+        if (mocData.nodeColors && mocData.nodeColors[nodeID]) {
+            delete mocData.nodeColors[nodeID];
+        }
+        if ((mocData as any).nodeStyleColors && (mocData as any).nodeStyleColors[nodeID]) {
+            delete (mocData as any).nodeStyleColors[nodeID];
+        }
+        if ((mocData as any).embedNodeSizes && (mocData as any).embedNodeSizes[nodeID]) {
+            delete (mocData as any).embedNodeSizes[nodeID];
+        }
+        if ((mocData as any).nodeRemarks && (mocData as any).nodeRemarks[nodeID]) {
+            delete (mocData as any).nodeRemarks[nodeID];
+        }
+        if ((mocData as any).collapsedNodeIds) {
+            (mocData as any).collapsedNodeIds = (mocData as any).collapsedNodeIds
+                .filter((id: string) => id !== nodeID && !id.startsWith(`${nodeID}.`));
+        }
+        if (mocData.nodeLayoutOverrides && mocData.nodeLayoutOverrides[nodeID]) {
+            delete mocData.nodeLayoutOverrides[nodeID];
+        }
+        if (mocData.nodeLayoutPresets && mocData.nodeLayoutPresets[nodeID]) {
+            delete mocData.nodeLayoutPresets[nodeID];
+        }
+    }
+
     private deleteNodeFromData(mocData: MOCParseResult, nodeID: string): void {
         let deleted = false;
+        const deletedNodeIds = new Set<string>();
+
+        const collectNodeIds = (node: any): void => {
+            if (node?.nodeID) {
+                deletedNodeIds.add(node.nodeID);
+            }
+            if (node?.children) {
+                node.children.forEach((child: any) => collectNodeIds(child));
+            }
+        };
 
         const deleteNodeFromTree = (nodes: any[], targetID: string): boolean => {
             for (let i = 0; i < nodes.length; i++) {
                 const node = nodes[i];
                 if (node.nodeID === targetID) {
+                    collectNodeIds(node);
                     nodes.splice(i, 1);
                     return true;
                 }
@@ -186,29 +263,13 @@ export class MOCHandler {
             throw new Error(`未找到节点: ${nodeID}`);
         }
 
-        if (mocData.nodePositions && mocData.nodePositions[nodeID]) {
-            delete mocData.nodePositions[nodeID];
-        }
-        if (mocData.nodeColors && mocData.nodeColors[nodeID]) {
-            delete mocData.nodeColors[nodeID];
-        }
-        if ((mocData as any).nodeStyleColors && (mocData as any).nodeStyleColors[nodeID]) {
-            delete (mocData as any).nodeStyleColors[nodeID];
-        }
-        if ((mocData as any).embedNodeSizes && (mocData as any).embedNodeSizes[nodeID]) {
-            delete (mocData as any).embedNodeSizes[nodeID];
-        }
-        if ((mocData as any).nodeRemarks && (mocData as any).nodeRemarks[nodeID]) {
-            delete (mocData as any).nodeRemarks[nodeID];
-        }
-        if (mocData.nodeLayoutPresets && mocData.nodeLayoutPresets[nodeID]) {
-            delete mocData.nodeLayoutPresets[nodeID];
-        }
+        deletedNodeIds.add(nodeID);
+        deletedNodeIds.forEach((deletedNodeId) => this.cleanupDeletedNodeMetadata(mocData, deletedNodeId));
 
         if (mocData.edgeCurvatures) {
             Object.keys(mocData.edgeCurvatures).forEach((key) => {
                 const parts = key.split('-');
-                if (parts.includes(nodeID)) {
+                if (parts.some((part) => deletedNodeIds.has(part))) {
                     delete mocData.edgeCurvatures[key];
                 }
             });
@@ -216,7 +277,7 @@ export class MOCHandler {
 
         const newReverseRelations = new Map();
         for (const [key, relation] of mocData.reverseRelations) {
-            if (relation.sourceID !== nodeID && relation.targetID !== nodeID) {
+            if (!deletedNodeIds.has(relation.sourceID) && !deletedNodeIds.has(relation.targetID)) {
                 newReverseRelations.set(key, relation);
             }
         }
@@ -225,7 +286,7 @@ export class MOCHandler {
         if (mocData.groups) {
             mocData.groups.forEach((group: any) => {
                 if (Array.isArray(group.nodeIds)) {
-                    group.nodeIds = group.nodeIds.filter((id: string) => id !== nodeID);
+                    group.nodeIds = group.nodeIds.filter((id: string) => !deletedNodeIds.has(id));
                 }
             });
             mocData.groups = mocData.groups.filter((group: any) => group.nodeIds && group.nodeIds.length > 0);
@@ -256,24 +317,7 @@ export class MOCHandler {
                 delete mocData.crossDomainLinks[sourceNodeId];
             }
 
-            if (mocData.nodePositions && mocData.nodePositions[nodeID]) {
-                delete mocData.nodePositions[nodeID];
-            }
-            if (mocData.nodeColors && mocData.nodeColors[nodeID]) {
-                delete mocData.nodeColors[nodeID];
-            }
-            if ((mocData as any).nodeStyleColors && (mocData as any).nodeStyleColors[nodeID]) {
-                delete (mocData as any).nodeStyleColors[nodeID];
-            }
-            if ((mocData as any).embedNodeSizes && (mocData as any).embedNodeSizes[nodeID]) {
-                delete (mocData as any).embedNodeSizes[nodeID];
-            }
-            if ((mocData as any).nodeRemarks && (mocData as any).nodeRemarks[nodeID]) {
-                delete (mocData as any).nodeRemarks[nodeID];
-            }
-            if (mocData.nodeLayoutPresets && mocData.nodeLayoutPresets[nodeID]) {
-                delete mocData.nodeLayoutPresets[nodeID];
-            }
+            this.cleanupDeletedNodeMetadata(mocData, nodeID);
 
             if (mocData.edgeCurvatures) {
                 Object.keys(mocData.edgeCurvatures).forEach(key => {
@@ -533,6 +577,12 @@ export class MOCHandler {
                     delete mocData.crossDomainLinks[mapping.old];
                 }
             }
+            if ((mocData as any).collapsedNodeIds) {
+                for (const mapping of idMappings) {
+                    (mocData as any).collapsedNodeIds = (mocData as any).collapsedNodeIds
+                        .map((id: string) => id === mapping.old ? mapping.new : id);
+                }
+            }
         });
 
         return updateCount;
@@ -636,6 +686,9 @@ export class MOCHandler {
                     const nb: Record<string, any> = {};
                     for (const [k, v] of Object.entries(obj)) nb[applyMap(k)] = v;
                     (mocData as any)[field] = nb;
+                }
+                if ((mocData as any).collapsedNodeIds) {
+                    (mocData as any).collapsedNodeIds = (mocData as any).collapsedNodeIds.map((id: string) => applyMap(id));
                 }
             };
 
@@ -812,6 +865,10 @@ export class MOCHandler {
                     mocData.crossDomainLinks[mapping.new] = mocData.crossDomainLinks[mapping.old];
                     delete mocData.crossDomainLinks[mapping.old];
                 }
+                if ((mocData as any).collapsedNodeIds) {
+                    (mocData as any).collapsedNodeIds = (mocData as any).collapsedNodeIds
+                        .map((id: string) => id === mapping.old ? mapping.new : id);
+                }
             });
 
             // 为新建一级节点自动分配分支主题色
@@ -823,6 +880,7 @@ export class MOCHandler {
                     (mocData as any).nodeStyleColors[newChildID] = this.pickNextBranchStyleColor((mocData as any).nodeStyleColors);
                 }
             }
+            this.ensureFirstLevelNodeLayoutDefaults(mocData, newChildID);
 
             // 5. 更新边弧度（需要更新包含该节点的所有边 key）
             if (mocData.edgeCurvatures) {
@@ -1003,6 +1061,10 @@ export class MOCHandler {
                 if (mocData.crossDomainLinks && mocData.crossDomainLinks[mapping.old]) {
                     mocData.crossDomainLinks[mapping.new] = mocData.crossDomainLinks[mapping.old];
                     delete mocData.crossDomainLinks[mapping.old];
+                }
+                if ((mocData as any).collapsedNodeIds) {
+                    (mocData as any).collapsedNodeIds = (mocData as any).collapsedNodeIds
+                        .map((id: string) => id === mapping.old ? mapping.new : id);
                 }
             });
 

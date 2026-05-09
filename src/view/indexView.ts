@@ -14,10 +14,12 @@ import { ScratchpadEntry } from "src/scratch/scratchpadManager";
 import { createEmptyMOCJson } from "src/utils/mocJsonCodec";
 import { MermaidParser } from "src/utils/mermaidParser";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
+import { createSelectionColorPanel } from "src/renderer/colorUtils";
 import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
 import { RenderOptions } from "src/renderer/types";
 import { MOCHandler } from "src/view/index/mocHandler";
 import { computeAutoLayout, AutoLayoutNodeInput } from "src/utils/autoLayoutEngine";
+import { resolveThemeMode } from "src/utils/themeMode";
 import { DEFAULT_LAYOUT_PRESET, DIR_VECTORS, GrowthDirection, LayoutPreset, PRESET_POOL, normalizeLayoutPreset, quantizeToPool, stackAxisOf } from "src/utils/growthDirection";
 import {
     DEBOUNCE_DELAY,
@@ -101,6 +103,7 @@ export class ZKIndexView extends FileView {
     mocReverseRelations: Map<string, ReverseRelation> = new Map(); // MOC 反向关系
     private nodeRemarks: Record<string, string> = {};
     private nodeAnchors: Record<string, boolean> = {};
+    private collapsedNodeIds: string[] = [];
     private currentNodeLayoutStyle: 'free' | 'auto' = 'free'; // 当前 MOC 文件的节点布局风格（从 ext 读取，新建时锁定）
     private currentNodeLayoutOverrides: Record<string, 'auto' | 'free'> = {}; // 节点级布局风格覆盖
     private currentLayoutPreset: LayoutPreset = DEFAULT_LAYOUT_PRESET;
@@ -110,6 +113,7 @@ export class ZKIndexView extends FileView {
     resizeTimeout: NodeJS.Timeout | null = null;
     edgeCurvatureSaveTimeout: NodeJS.Timeout | null = null;
     nodePositionSaveTimeout: NodeJS.Timeout | null = null;
+    private pendingNodePositionSavePromise: Promise<void> | null = null;
     pendingPositionChanges: Map<string, { node: any; position: { x: number; y: number } }> = new Map();
     crossDomainPositionSaveTimeout: NodeJS.Timeout | null = null;
     embedNodeSizeSaveTimeout: NodeJS.Timeout | null = null;
@@ -240,8 +244,8 @@ export class ZKIndexView extends FileView {
             backBtn.addEventListener('touchend', exitHandler, { passive: false });
         }
 
-        backBtn.classList.toggle('zk-branch-fullscreen-back-btn-light', this.plugin.settings.themeMode === 'light');
-        backBtn.classList.toggle('zk-branch-fullscreen-back-btn-dark', this.plugin.settings.themeMode !== 'light');
+        backBtn.classList.toggle('zk-branch-fullscreen-back-btn-light', resolveThemeMode(this.plugin.settings.themeMode) === 'light');
+        backBtn.classList.toggle('zk-branch-fullscreen-back-btn-dark', resolveThemeMode(this.plugin.settings.themeMode) !== 'light');
         backBtn.setAttribute('aria-label', t("exit fullscreen"));
         setTooltip(backBtn, t("exit fullscreen"));
         this.syncBranchFullscreenBackButtonVisibility();
@@ -597,6 +601,11 @@ export class ZKIndexView extends FileView {
 
     async IndexViewInterfaceInit() {
         let { containerEl } = this;
+
+        // 主题类(每次都要重设,否则切主题不生效)
+        const isLight = resolveThemeMode(this.plugin.settings.themeMode) === 'light';
+        containerEl.toggleClass('zk-theme-light', isLight);
+        containerEl.toggleClass('zk-theme-dark', !isLight);
 
         // 性能优化：分离静态 UI 层和动态图形层
         // 只在首次创建时初始化静态 UI
@@ -1612,8 +1621,8 @@ cy.fit(null, 40);
         return [
             filePath,
             mtime,
-            // 主题 / 视觉
-            s.themeMode,
+            // 主题 / 视觉(用解析后值,auto 时跟随 Obsidian 实时主题)
+            resolveThemeMode(s.themeMode),
             s.themeStyle || 'modern',
             s.edgeStyle || 'bezier',
             s.nodeColor || '',
@@ -1869,7 +1878,7 @@ cy.fit(null, 40);
             branchGraphDiv.style.boxShadow = '';
             branchGraphDiv.style.outline = '';
         }
-        branchGraphDiv.style.backgroundColor = this.plugin.settings.themeMode === 'light' ? '#f5f5f5' : '#2a2a2a';
+        branchGraphDiv.style.backgroundColor = resolveThemeMode(this.plugin.settings.themeMode) === 'light' ? '#f2f5fa' : '#2a2a2a';
         this.ensureBranchFullscreenBackButton(branchGraphDiv);
 
         // 注意：不再清空 branchGraphDiv，让 CytoscapeRenderer 内部的增量更新逻辑处理
@@ -1884,6 +1893,7 @@ cy.fit(null, 40);
         const embedNodeSizes = (mocParseResult as any).embedNodeSizes || {};
         this.nodeRemarks = (mocParseResult as any).nodeRemarks || {};
         this.nodeAnchors = (mocParseResult as any).nodeAnchors || {};
+        this.collapsedNodeIds = (mocParseResult as any).collapsedNodeIds || [];
         const graphData = GraphDataBuilder.fromMOCTree(
             this.mocNodes,
             this.mocReverseRelations,
@@ -1896,7 +1906,8 @@ cy.fit(null, 40);
             nodePositions,
             embedNodeSizes,
             this.nodeRemarks,
-            this.nodeAnchors
+            this.nodeAnchors,
+            this.collapsedNodeIds
         );
 
         // 配置渲染选项
@@ -1906,7 +1917,7 @@ cy.fit(null, 40);
             animate: true,
             animationDuration: 500,
             nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
-            themeMode: this.plugin.settings.themeMode,
+            themeMode: resolveThemeMode(this.plugin.settings.themeMode),
             themeStyle: this.plugin.settings.themeStyle || 'modern',
             edgeStyle: this.plugin.settings.edgeStyle || 'bezier',
             nodeLayoutStyle: this.currentNodeLayoutStyle,
@@ -1914,6 +1925,7 @@ cy.fit(null, 40);
             showNoteId: this.plugin.settings.showNoteIdInBranchView,
             smartConnection: this.plugin.settings.smartConnection === true,
             readOnly: this.isMobileReadOnly(),
+            initialCollapsedNodeIds: this.collapsedNodeIds,
         };
 
         // 性能优化：复用或创建渲染器，避免每次都销毁重建
@@ -2107,11 +2119,13 @@ cy.fit(null, 40);
         // 监听节点位置变化事件（拖动后保存到 MOC 文件）
         // 多节点拖动时 dragfree 会对每个节点触发，先累积到 pendingPositionChanges，防抖后批量保存
         let pendingMOCPath: string | null = null; // 事件发生时的 MOC 路径
+        let pendingGroupLeaves: Array<{ nodeId: string; groupId: string }> = [];
+        let pendingGroupJoins: Array<{ nodeId: string; groupId: string }> = [];
         this.addTrackedListener(branchGraphDiv, 'node-position-changed', async (event: any) => {
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { node, position } = event.detail;
+            const { node, position, leftGroup, joinedGroup } = event.detail;
             const nodeKey = node?.ID || node?.IDStr;
 
             // 检查节点是否有效
@@ -2126,70 +2140,110 @@ cy.fit(null, 40);
             // 累积待保存的位置变化
             this.pendingPositionChanges.set(nodeKey, { node, position });
 
+            // 若节点同时脱离了分组，累积脱组信息（与位置合并到同一次写入）
+            if (leftGroup) {
+                pendingGroupLeaves.push(leftGroup);
+            }
+            if (joinedGroup) {
+                pendingGroupJoins.push(joinedGroup);
+            }
+
             // 使用防抖，等所有 dragfree 事件到达后一次性保存
             if (this.nodePositionSaveTimeout) {
                 clearTimeout(this.nodePositionSaveTimeout);
             }
 
-            this.nodePositionSaveTimeout = setTimeout(async () => {
-                const changes = new Map(this.pendingPositionChanges);
-                this.pendingPositionChanges.clear();
+            this.nodePositionSaveTimeout = setTimeout(() => {
+                this.nodePositionSaveTimeout = null;
+                const savePromise = (async () => {
+                    const changes = new Map(this.pendingPositionChanges);
+                    this.pendingPositionChanges.clear();
+                    const groupLeaves = pendingGroupLeaves.splice(0);
+                    const groupJoins = pendingGroupJoins.splice(0);
 
-                try {
-                    // 使用事件发生时捕获的 MOC 路径，防止切换后写入错误文件
-                    const targetMOCPath = pendingMOCPath || this.plugin.settings.mocCurrentFile;
-                    pendingMOCPath = null;
-                    const mocFile = this.app.vault.getFileByPath(targetMOCPath);
-                    if (!mocFile) return;
+                    try {
+                        // 使用事件发生时捕获的 MOC 路径，防止切换后写入错误文件
+                        const targetMOCPath = pendingMOCPath || this.plugin.settings.mocCurrentFile;
+                        pendingMOCPath = null;
+                        const mocFile = this.app.vault.getFileByPath(targetMOCPath);
+                        if (!mocFile) return;
 
-                    // 分离跨领域节点和普通节点
-                    const crossDomainChanges: Array<{ node: any; position: { x: number; y: number } }> = [];
-                    const normalChanges: Map<string, { x: number; y: number }> = new Map();
+                        // 分离跨领域节点和普通节点
+                        const crossDomainChanges: Array<{ node: any; position: { x: number; y: number } }> = [];
+                        const normalChanges: Map<string, { x: number; y: number }> = new Map();
 
-                    for (const [nodeID, { node: n, position: pos }] of changes) {
-                        if (n.isCrossDomain && n.crossDomainSourceNodeId && n.crossDomainOriginalNodeId) {
-                            crossDomainChanges.push({ node: n, position: pos });
-                        } else {
-                            normalChanges.set(nodeID, pos);
+                        for (const [nodeID, { node: n, position: pos }] of changes) {
+                            if (n.isCrossDomain && n.crossDomainSourceNodeId && n.crossDomainOriginalNodeId) {
+                                crossDomainChanges.push({ node: n, position: pos });
+                            } else {
+                                normalChanges.set(nodeID, pos);
+                            }
                         }
-                    }
 
-                    // 批量保存普通节点位置（一次 parse-modify-save）
-                    if (normalChanges.size > 0) {
-                        const headingTitle = this.plugin.settings.mocHeadingTitle;
-                        const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
-                        const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
-                        this.ensureMOCNodeLayoutStyle(mocData);
-                        if (!mocData.nodePositions) {
-                            mocData.nodePositions = {};
+                        // 批量保存普通节点位置 + 脱组信息（一次 parse-modify-save，避免竞态）
+                        if (normalChanges.size > 0 || groupLeaves.length > 0 || groupJoins.length > 0) {
+                            await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
+                                this.ensureMOCNodeLayoutStyle(mocData);
+                                if (!mocData.nodePositions) {
+                                    mocData.nodePositions = {};
+                                }
+                                for (const [nodeID, pos] of normalChanges) {
+                                    mocData.nodePositions[nodeID] = {
+                                        x: Math.round(pos.x * 100) / 100,
+                                        y: Math.round(pos.y * 100) / 100
+                                    };
+                                }
+                                for (const { nodeId, groupId } of groupLeaves) {
+                                    const group = mocData.groups?.find((g: any) => g.id === groupId);
+                                    if (group) {
+                                        group.nodeIds = (group.nodeIds || []).filter((id: string) => id !== nodeId);
+                                    }
+                                }
+                                for (const { nodeId, groupId } of groupJoins) {
+                                    if (!mocData.groups) {
+                                        mocData.groups = [];
+                                    }
+                                    mocData.groups.forEach((group: any) => {
+                                        if (group.id !== groupId) {
+                                            group.nodeIds = (group.nodeIds || []).filter((id: string) => id !== nodeId);
+                                        }
+                                    });
+                                    const group = mocData.groups.find((g: any) => g.id === groupId);
+                                    if (group) {
+                                        const ids = group.nodeIds || (group.nodeIds = []);
+                                        if (!ids.includes(nodeId)) {
+                                            ids.push(nodeId);
+                                        }
+                                    }
+                                }
+                            });
                         }
-                        for (const [nodeID, pos] of normalChanges) {
-                            mocData.nodePositions[nodeID] = {
-                                x: Math.round(pos.x * 100) / 100,
-                                y: Math.round(pos.y * 100) / 100
+
+                        // 跨领域节点逐个保存（数量通常很少）
+                        for (const { node: n, position: pos } of crossDomainChanges) {
+                            const crossDomainLink = {
+                                nodeId: n.crossDomainOriginalNodeId,
+                                mocPath: n.filePath,
+                                displayText: n.displayText,
+                                filePath: n.filePath
                             };
+                            await this.saveCrossDomainNodePosition(
+                                mocFile,
+                                n.crossDomainSourceNodeId,
+                                crossDomainLink,
+                                pos
+                            );
                         }
-                        await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
+                    } catch (error) {
+                        console.error('Failed to save node positions:', error);
                     }
-
-                    // 跨领域节点逐个保存（数量通常很少）
-                    for (const { node: n, position: pos } of crossDomainChanges) {
-                        const crossDomainLink = {
-                            nodeId: n.crossDomainOriginalNodeId,
-                            mocPath: n.filePath,
-                            displayText: n.displayText,
-                            filePath: n.filePath
-                        };
-                        await this.saveCrossDomainNodePosition(
-                            mocFile,
-                            n.crossDomainSourceNodeId,
-                            crossDomainLink,
-                            pos
-                        );
+                })();
+                this.pendingNodePositionSavePromise = savePromise;
+                savePromise.finally(() => {
+                    if (this.pendingNodePositionSavePromise === savePromise) {
+                        this.pendingNodePositionSavePromise = null;
                     }
-                } catch (error) {
-                    console.error('Failed to save node positions:', error);
-                }
+                });
             }, DEBOUNCE_DELAY.POSITION_SAVE);
         });
 
@@ -2223,6 +2277,26 @@ cy.fit(null, 40);
                     console.error('Failed to save cross-domain node position:', error);
                 }
             }, DEBOUNCE_DELAY.POSITION_SAVE);
+        });
+
+        this.addTrackedListener(branchGraphDiv, 'node-collapse-state-changed', async (event: any) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
+            const nodeId = String(event.detail?.nodeId || '').trim();
+            const collapsedNodeIds = Array.isArray(event.detail?.collapsedNodeIds)
+                ? event.detail.collapsedNodeIds.map((id: unknown) => String(id)).filter(Boolean)
+                : [];
+            if (!nodeId) return;
+
+            try {
+                const mocFile = getLatestMOCFile();
+                if (!mocFile) return;
+                this.collapsedNodeIds = collapsedNodeIds;
+                await this.persistCollapseStateAndRelayout(mocFile, nodeId, collapsedNodeIds);
+            } catch (error) {
+                console.error('Failed to save collapse state:', error);
+            }
         });
 
         // 监听边弧度变化事件（拖动控制点后保存到 MOC 文件）
@@ -2371,7 +2445,8 @@ cy.fit(null, 40);
             }
 
             const isMouseEvent = triggerEvent instanceof MouseEvent;
-            const openInNewLeaf = isMouseEvent && (triggerEvent.metaKey || triggerEvent.ctrlKey || triggerEvent.button === 1);
+            // default: new tab; Cmd/Ctrl+click opens in current tab
+            const openInNewLeaf = !isMouseEvent || !(triggerEvent.metaKey || triggerEvent.ctrlKey);
 
             // 带 #heading / #^blockRef 的链接（如 Excalidraw 的 #^group=xxx）：
             // 用 leaf.openFile + eState.subpath 让 ExcalidrawView.setEphemeralState 解析 subpath 并自动 zoomToElementId
@@ -2476,11 +2551,11 @@ cy.fit(null, 40);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { node, content } = event.detail;
+            const { node, content, position, nodeSize } = event.detail;
             if (!node) {
                 return;
             }
-            await this.saveNodeContent(node, content);
+            await this.saveNodeContent(node, content, nodeSize, position);
         });
 
         this.addTrackedListener(branchGraphDiv, 'node-remark-edit', async (event: any) => {
@@ -2678,8 +2753,8 @@ cy.fit(null, 40);
                 }
             }
 
-            // 在刷新前保存所有节点的当前位置
-            await this.saveAllNodePositionsBeforeRefresh();
+            // 在刷新前保存所有节点的当前位置，并取消尚未落盘的拖拽位置保存
+            await this.flushAndSaveCurrentPositions();
 
             // 删除节点
             try {
@@ -3257,6 +3332,7 @@ cy.fit(null, 40);
                         nodeId,
                         nodeData: nodes[index]
                     }));
+                    await this.flushAndSaveCurrentPositions();
                     await this.mocHandler.deleteNodesFromMOC(mocFile, batchNodes);
 
                     // 删除嵌入图片节点对应的图片文件
@@ -4060,6 +4136,7 @@ cy.fit(null, 40);
         menu.style.zIndex = '10000';
 
         const isAnchor = !!(this.nodeAnchors[node.IDStr] || this.nodeAnchors[node.ID]);
+        const nodeId = node.IDStr || node.ID;
 
         const closeMenu = (e: MouseEvent) => {
             if (!menu.contains(e.target as Node)) {
@@ -4077,6 +4154,20 @@ cy.fit(null, 40);
         );
         // 关联跨领域节点（全宽）
         this.addContextMenuItem(menu, menu, closeMenu, 'share-2', t('ctx link cross domain'), () => this.linkCrossDomainNode(node));
+
+        const cyNode = this.branchRenderer?.getCytoscapeInstance()?.$id(nodeId);
+        const hasManualTextSize = !!node.isTextOnly && !!cyNode?.length && (
+            Number(cyNode.data('manualWidthModel') || 0) > 0 ||
+            Number(cyNode.data('manualHeightModel') || 0) > 0
+        );
+        if (hasManualTextSize) {
+            this.addContextMenuItem(
+                menu, menu, closeMenu,
+                'scan',
+                '恢复自动尺寸',
+                () => this.resetTextNodeAutoSize(node)
+            );
+        }
 
         // 分隔线
         menu.createDiv('zk-node-ctx-sep');
@@ -4100,7 +4191,6 @@ cy.fit(null, 40);
 
         // 节点布局风格
         menu.createDiv('zk-node-ctx-sep');
-        const nodeId = node.IDStr || node.ID;
         const effectiveLayout = this.getEffectiveNodeLayoutStyle(nodeId);
         const layoutLabel = menu.createDiv('zk-node-ctx-label');
         layoutLabel.textContent = t('ctx node layout');
@@ -4639,11 +4729,11 @@ cy.fit(null, 40);
             };
             updateSelectedPreview(initialColor);
 
-            const panel = (this.branchRenderer || new CytoscapeRenderer()).createSelectionColorPanel(
+            const panel = createSelectionColorPanel(
                 initialColor,
                 this.lastPickedNodeFillColor,
                 '自定义底色',
-                (hexColor) => {
+                (hexColor: string) => {
                     selectedColor = hexColor;
                     this.lastPickedNodeFillColor = hexColor;
                     updateSelectedPreview(hexColor);
@@ -4756,34 +4846,49 @@ cy.fit(null, 40);
         await this.saveNodeContent(node, newContent);
     }
 
-    private async saveNodeContent(node: ZKNode, newContent: string) {
+    private async saveNodeContent(
+        node: ZKNode,
+        newContent: string,
+        nodeSize?: { widthModel: number; heightModel: number },
+        position?: { x: number; y: number }
+    ) {
         const currentContent = node.isTextOnly
             ? this.decodeMultilineText(node.title || '')
             : this.buildFileNodeRawWikiText(node);
-        if (!newContent || newContent === currentContent) {
+        if (!newContent) {
             return;
         }
 
         try {
             const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
             if (mocFile) {
-                if (node.isTextOnly) {
-                    const contentForSave = this.encodeMultilineText(newContent);
-                    await this.mocHandler.updateNodeContentInMOC(mocFile, node.IDStr, contentForSave);
-                } else {
-                    const parsed = this.parseRawWikiLinkInput(newContent);
-                    if (!parsed) {
-                        new Notice('文件节点请使用 [[链接]] 或 [[链接|显示文本]] 格式');
-                        return;
-                    }
+                if (newContent !== currentContent) {
+                    if (node.isTextOnly) {
+                        const contentForSave = this.encodeMultilineText(newContent);
+                        await this.mocHandler.updateNodeContentInMOC(mocFile, node.IDStr, contentForSave);
+                    } else {
+                        const parsed = this.parseRawWikiLinkInput(newContent);
+                        if (!parsed) {
+                            new Notice('文件节点请使用 [[链接]] 或 [[链接|显示文本]] 格式');
+                            return;
+                        }
 
-                    await this.mocHandler.updateNodeContentInMOC(
-                        mocFile,
-                        node.IDStr,
-                        parsed.displayText,
-                        parsed.wikiLink,
-                        parsed.isEmbed
-                    );
+                        await this.mocHandler.updateNodeContentInMOC(
+                            mocFile,
+                            node.IDStr,
+                            parsed.displayText,
+                            parsed.wikiLink,
+                            parsed.isEmbed
+                        );
+                    }
+                }
+
+                if (nodeSize && nodeSize.widthModel > 0 && nodeSize.heightModel > 0) {
+                    await this.saveEmbedNodeSizeToMOC(mocFile, node.IDStr, nodeSize);
+                }
+
+                if (position && Number.isFinite(position.x) && Number.isFinite(position.y)) {
+                    await this.saveNodePositionToMOC(mocFile, node.IDStr, position);
                 }
 
                 // 刷新视图
@@ -6315,7 +6420,6 @@ cy.fit(null, 40);
         }
 
         // 自动选中新创建的节点
-        console.log('[indexView] 文件节点创建完成，准备选中节点', suggestedID);
         if (branchGraphDiv) {
             branchGraphDiv.dispatchEvent(new CustomEvent('select-node-by-id', {
                 detail: {
@@ -6397,13 +6501,10 @@ cy.fit(null, 40);
             );
         }
 
-        // 保留占位符编辑时的可视尺寸（写入 embed_node_sizes，文本节点会作为 manualWidth/HeightModel 使用）
-        if (mocFile && nodeSize && nodeSize.width > 0 && nodeSize.height > 0) {
-            MermaidParser.clearCacheForFile(this.plugin.settings.mocCurrentFile);
-            await this.saveEmbedNodeSizeToMOC(mocFile, suggestedID, {
-                widthModel: nodeSize.width,
-                heightModel: nodeSize.height
-            });
+        // 文本节点必须保持自动尺寸。占位符编辑尺寸只用于文件/嵌入节点，
+        // 这里主动清掉同 ID 可能残留的尺寸，避免首次创建后被 manual 宽度锁住。
+        if (mocFile) {
+            await this.clearEmbedNodeSizeFromMOC(mocFile, suggestedID);
         }
 
         // 从占位符追踪中移除
@@ -6428,7 +6529,6 @@ cy.fit(null, 40);
         }
 
         // 自动选中新创建的节点
-        console.log('[indexView] 文件节点创建完成，准备选中节点', suggestedID);
         if (branchGraphDiv) {
             branchGraphDiv.dispatchEvent(new CustomEvent('select-node-by-id', {
                 detail: {
@@ -6919,7 +7019,33 @@ cy.fit(null, 40);
         mocData.nodeLayoutStyle = this.normalizeNodeLayoutStyle(undefined, this.currentNodeLayoutStyle);
     }
 
-    private async relayoutAutoLayoutSiblings(parentNodeId: string): Promise<void> {
+    private async persistCollapseStateAndRelayout(
+        mocFile: TFile,
+        nodeId: string,
+        collapsedNodeIds: string[]
+    ): Promise<void> {
+        const normalizedCollapsedIds = Array.from(new Set(collapsedNodeIds));
+        await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
+            (mocData as any).collapsedNodeIds = normalizedCollapsedIds;
+        });
+
+        if (!this.isNodeAutoLayout(nodeId)) {
+            return;
+        }
+
+        await this.relayoutAutoLayoutSiblings(nodeId, {
+            collapsedNodeIds: normalizedCollapsedIds,
+            compactVisibleNodes: true,
+        });
+    }
+
+    private async relayoutAutoLayoutSiblings(
+        parentNodeId: string,
+        relayoutOptions: {
+            collapsedNodeIds?: string[];
+            compactVisibleNodes?: boolean;
+        } = {}
+    ): Promise<void> {
         if (!this.isNodeAutoLayout(parentNodeId) || !this.branchRenderer) {
             return;
         }
@@ -6958,11 +7084,21 @@ cy.fit(null, 40);
         const nodes: Record<string, AutoLayoutNodeInput> = {};
         const parentById: Record<string, string | undefined> = {};
         const childrenById: Record<string, string[]> = {};
+        const collapsedIds = new Set(relayoutOptions.collapsedNodeIds || []);
+        const isHiddenByCollapse = (nodeId: string): boolean => {
+            for (const collapsedId of collapsedIds) {
+                if (nodeId !== collapsedId && nodeId.startsWith(`${collapsedId}.`)) {
+                    return true;
+                }
+            }
+            return false;
+        };
         cy.$('node').forEach((node: any) => {
             const data = node.data();
             const originalNode = data.originalNode;
             const nodeId = originalNode?.IDStr || originalNode?.ID;
             if (!nodeId || data.isGroup || data.isPlaceholder) return;
+            if (relayoutOptions.compactVisibleNodes && isHiddenByCollapse(nodeId)) return;
             nodes[nodeId] = {
                 id: nodeId,
                 size: getNodeSize(node),
@@ -6987,13 +7123,50 @@ cy.fit(null, 40);
         });
 
         const realMocRootIds = new Set<string>(mocData.nodes.map((node) => node.nodeID));
+        let relayoutRootId = parentNodeId;
+        if (relayoutOptions.compactVisibleNodes) {
+            const visitedRelayoutRoots = new Set<string>();
+            while (!realMocRootIds.has(relayoutRootId)) {
+                const parentId = parentById[relayoutRootId];
+                if (!parentId || !nodes[parentId] || visitedRelayoutRoots.has(parentId)) {
+                    break;
+                }
+                visitedRelayoutRoots.add(relayoutRootId);
+                relayoutRootId = parentId;
+            }
+        } else {
+            const visitedRelayoutRoots = new Set<string>();
+            while (!realMocRootIds.has(relayoutRootId)) {
+                const parentId = parentById[relayoutRootId];
+                if (!parentId || !nodes[parentId] || visitedRelayoutRoots.has(parentId)) {
+                    break;
+                }
+                // 当前节点有保存位置(已拖动过)时,以它为锚点,不再向上
+                if (mocData.nodePositions?.[relayoutRootId]) {
+                    break;
+                }
+                visitedRelayoutRoots.add(relayoutRootId);
+                relayoutRootId = parentId;
+            }
+        }
+
         const nodePositions = computeAutoLayout({
-            relayoutRootId: parentNodeId,
+            relayoutRootId,
             nodes,
             parentById,
             childrenById,
             realMocRootIds,
             nodePositions: mocData.nodePositions || {},
+            ignoreSavedPositionsForIds: relayoutOptions.compactVisibleNodes
+                ? new Set(Object.keys(nodes).filter((nodeId) => {
+                    if (nodeId === relayoutRootId) return false;
+                    if (!this.isNodeAutoLayout(nodeId)) return false;
+                    if (relayoutOptions.collapsedNodeIds?.includes(nodeId)) return false;
+                    const parentId = parentById[nodeId];
+                    if (parentId && realMocRootIds.has(parentId)) return false;
+                    return true;
+                }))
+                : undefined,
             layoutPreset: normalizeLayoutPreset(this.plugin.settings.autoLayoutDefaultGrowthDirection),
             nodeLayoutPresets: mocData.nodeLayoutPresets,
         });
@@ -7013,6 +7186,9 @@ cy.fit(null, 40);
         await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
             if (!mocData.nodePositions) {
                 mocData.nodePositions = {};
+            }
+            if (relayoutOptions.collapsedNodeIds) {
+                (mocData as any).collapsedNodeIds = relayoutOptions.collapsedNodeIds;
             }
             Object.entries(nodePositions).forEach(([nodeId, pos]) => {
                 mocData.nodePositions[nodeId] = pos;
@@ -7167,6 +7343,7 @@ cy.fit(null, 40);
                         (mocData as any).nodeStyleColors[newNode.nodeID] = this.pickNextBranchStyleColor((mocData as any).nodeStyleColors);
                     }
                 }
+                this.mocHandler.ensureFirstLevelNodeLayoutDefaults(mocData, newNode.nodeID);
 
                 // 自由节点即使选择了“连接到节点”，也只保留虚线关系，不建立父子关系
                 if (isFreeNode && result.connectToNodeID && !result.reverseRelation) {
@@ -7630,6 +7807,9 @@ cy.fit(null, 40);
             this.nodePositionSaveTimeout = null;
         }
         this.pendingPositionChanges.clear();
+        if (this.pendingNodePositionSavePromise) {
+            await this.pendingNodePositionSavePromise;
+        }
 
         // 用 lastRenderedMOCPath 保存位置（这是当前 cy 实例真正对应的 MOC 文件）
         await this.saveAllNodePositionsBeforeRefresh(this.lastRenderedMOCPath || undefined);
@@ -7796,6 +7976,46 @@ cy.fit(null, 40);
         } catch (error) {
             console.error('Failed to save embed node size to MOC:', error);
             new Notice(`保存预览节点尺寸失败: ${error.message}`);
+        }
+    }
+
+    private async clearEmbedNodeSizeFromMOC(mocFile: TFile, nodeID: string): Promise<void> {
+        try {
+            const headingTitle = this.plugin.settings.mocHeadingTitle;
+            const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
+            const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+            this.ensureMOCNodeLayoutStyle(mocData);
+            if (!(mocData as any).embedNodeSizes?.[nodeID]) return;
+
+            delete (mocData as any).embedNodeSizes[nodeID];
+            await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
+            MermaidParser.clearCacheForFile(this.plugin.settings.mocCurrentFile);
+        } catch (error) {
+            console.error('Failed to clear embed node size from MOC:', error);
+            new Notice(`清理节点尺寸失败: ${error.message}`);
+        }
+    }
+
+    private async resetTextNodeAutoSize(node: ZKNode): Promise<void> {
+        const nodeID = node.IDStr || node.ID;
+        const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+        if (!mocFile || !nodeID) return;
+
+        try {
+            await this.clearEmbedNodeSizeFromMOC(mocFile, nodeID);
+
+            const cyNode = this.branchRenderer?.getCytoscapeInstance()?.$id(nodeID);
+            if (cyNode?.length) {
+                cyNode.removeData('manualWidthModel manualHeightModel');
+                if (typeof cyNode.removeStyle === 'function') {
+                    cyNode.removeStyle('width height');
+                }
+            }
+
+            await this.refreshBranchMermaid();
+        } catch (error) {
+            console.error('Failed to reset text node auto size:', error);
+            new Notice(`恢复自动尺寸失败: ${error.message}`);
         }
     }
 

@@ -80,6 +80,7 @@ interface MOCJsonSchema {
     embedNodeSizes: Record<string, { width: number; height: number }>;
     nodeRemarks: Record<string, string>;
     nodeAnchors: Record<string, boolean>;
+    collapsedNodeIds: string[];
     nodeLayoutStyle?: 'free' | 'auto';
     nodeLayoutOverrides?: Record<string, 'auto' | 'free'>;
     layoutPreset?: LayoutPreset;
@@ -168,7 +169,7 @@ export function parseMOCJson(content: string, filePath: string, app: App): MOCPa
             version: 1, nodes: [], reverseRelations: [],
             nodePositions: {}, groups: [], edgeCurvatures: {},
             nodeColors: {}, nodeStyleColors: {}, crossDomainLinks: {},
-            embedNodeSizes: {}, nodeRemarks: {}, nodeAnchors: {},
+            embedNodeSizes: {}, nodeRemarks: {}, nodeAnchors: {}, collapsedNodeIds: [],
         };
     }
 
@@ -200,6 +201,7 @@ export function parseMOCJson(content: string, filePath: string, app: App): MOCPa
         embedNodeSizes: json.embedNodeSizes || {},
         nodeRemarks: json.nodeRemarks || {},
         nodeAnchors: json.nodeAnchors || {},
+        collapsedNodeIds: Array.isArray(json.collapsedNodeIds) ? json.collapsedNodeIds : [],
         nodeLayoutStyle: json.nodeLayoutStyle,
         nodeLayoutOverrides: json.nodeLayoutOverrides,
         layoutPreset: json.layoutPreset ? normalizeLayoutPreset(json.layoutPreset) : undefined,
@@ -237,6 +239,7 @@ export function serializeMOCJson(data: MOCParseResult): string {
         embedNodeSizes: (data as any).embedNodeSizes || {},
         nodeRemarks: (data as any).nodeRemarks || {},
         nodeAnchors: (data as any).nodeAnchors || {},
+        collapsedNodeIds: (data as any).collapsedNodeIds || [],
     };
     if (data.nodeLayoutStyle) {
         json.nodeLayoutStyle = data.nodeLayoutStyle;
@@ -273,6 +276,7 @@ export function createEmptyMOCJson(nodeLayoutStyle: 'free' | 'auto' = 'free'): s
         embedNodeSizes: {},
         nodeRemarks: {},
         nodeAnchors: {},
+        collapsedNodeIds: [],
         nodeLayoutStyle,
     };
     return JSON.stringify(json, null, 2);

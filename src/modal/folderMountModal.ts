@@ -1,4 +1,4 @@
-import { App, SuggestModal, TFile, Notice } from "obsidian";
+import { App, SuggestModal, TFile, Notice, setIcon } from "obsidian";
 import { FolderNode } from "src/types/folder";
 import { VaultIndex } from "src/index/VaultIndex";
 import { SpaceService } from "src/services/SpaceService";
@@ -59,8 +59,12 @@ export class FolderMountModal extends SuggestModal<PickItem> {
         el.style.gap = '8px';
 
         const icon = el.createSpan();
-        icon.style.cssText = 'flex-shrink: 0; font-size: 14px; width: 16px; text-align: center;';
-        icon.setText(item.node.icon || '📁');
+        icon.style.cssText = 'flex-shrink: 0; width: 16px; text-align: center;';
+        if (item.node.icon) {
+            setIcon(icon, item.node.icon);
+        } else {
+            icon.setText('📁');
+        }
 
         const path = el.createSpan();
         path.style.cssText = 'flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';

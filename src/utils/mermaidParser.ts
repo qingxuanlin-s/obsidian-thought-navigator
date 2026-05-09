@@ -283,6 +283,7 @@ export class MermaidParser {
         embedNodeSizes: Record<string, { width: number; height: number }>;
         nodeRemarks: Record<string, string>;
         nodeAnchors: Record<string, boolean>;
+        collapsedNodeIds: string[];
         nodeLayoutStyle?: 'free' | 'auto';
         nodeLayoutOverrides?: Record<string, 'auto' | 'free'>;
         layoutPreset?: LayoutPreset;
@@ -298,6 +299,7 @@ export class MermaidParser {
             embedNodeSizes: {} as Record<string, { width: number; height: number }>,
             nodeRemarks: {} as Record<string, string>,
             nodeAnchors: {} as Record<string, boolean>,
+            collapsedNodeIds: [] as string[],
             nodeLayoutStyle: undefined as ('free' | 'auto' | undefined),
             nodeLayoutOverrides: undefined as (Record<string, 'auto' | 'free'> | undefined),
             layoutPreset: undefined as (LayoutPreset | undefined),
@@ -328,6 +330,7 @@ export class MermaidParser {
                 embedNodeSizes: metadata.embed_node_sizes || {},
                 nodeRemarks: metadata.nodeRemarks || {},
                 nodeAnchors: metadata.nodeAnchors || {},
+                collapsedNodeIds: Array.isArray(metadata.collapsed_node_ids) ? metadata.collapsed_node_ids : [],
                 nodeLayoutStyle: metadata.node_layout_style || undefined,
                 nodeLayoutOverrides: metadata.node_layout_overrides || undefined,
                 layoutPreset: metadata.layout_preset ? normalizeLayoutPreset(metadata.layout_preset) : undefined,
@@ -379,6 +382,7 @@ export class MermaidParser {
                     embedNodeSizes: { ...(cached as any).embedNodeSizes || {} },
                     nodeRemarks: { ...(cached as any).nodeRemarks || {} },
                     nodeAnchors: { ...(cached as any).nodeAnchors || {} },
+                    collapsedNodeIds: [...((cached as any).collapsedNodeIds || [])],
                     layoutPreset: cached.layoutPreset,
                     nodeLayoutPresets: cached.nodeLayoutPresets ? { ...cached.nodeLayoutPresets } : undefined,
                     metadata: { ...cached.metadata }
@@ -540,6 +544,7 @@ export class MermaidParser {
             embedNodeSizes: metadata.embedNodeSizes,
             nodeRemarks: metadata.nodeRemarks,
             nodeAnchors: metadata.nodeAnchors,
+            collapsedNodeIds: metadata.collapsedNodeIds,
             nodeLayoutStyle: metadata.nodeLayoutStyle,
             nodeLayoutOverrides: metadata.nodeLayoutOverrides,
             layoutPreset: metadata.layoutPreset,
@@ -700,6 +705,7 @@ export class MermaidParser {
             embedNodeSizes: {},
             nodeRemarks: {},
             nodeAnchors: {},
+            collapsedNodeIds: [],
             layoutPreset: undefined,
             nodeLayoutPresets: undefined,
             metadata: {
