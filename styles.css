@@ -5317,11 +5317,14 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
   flex: 1;
   min-width: 0;
   font-size: 13px;
+  line-height: 1.35;
   font-weight: 500;
   color: var(--zk-text, #e6e7ea);
-  white-space: nowrap;
+  white-space: pre-line;
   overflow: hidden;
-  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
 }
 
 .zk-scratch-card-meta {
