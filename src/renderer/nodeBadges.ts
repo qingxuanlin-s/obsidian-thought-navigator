@@ -1702,9 +1702,9 @@ function addCollapseToggleHandle(this: any): void {
             const handle = document.createElement('div');
             handle.style.cssText = `
                 position: absolute;
-                width: 33px;
-                height: 33px;
-                border-radius: 16.5px;
+                width: 42px;
+                height: 42px;
+                border-radius: 21px;
                 background-color: rgba(17, 24, 39, 0.85);
                 border: 1px solid rgba(148, 163, 184, 0.45);
                 color: #e2e8f0;
@@ -1717,6 +1717,8 @@ function addCollapseToggleHandle(this: any): void {
                 cursor: pointer;
                 pointer-events: auto;
                 user-select: none;
+                touch-action: manipulation;
+                z-index: 10;
             `;
             handleContainer.appendChild(handle);
 
@@ -1730,10 +1732,13 @@ function addCollapseToggleHandle(this: any): void {
                 }
 
                 const bb = node.renderedBoundingBox();
-                const zoom = this.cy.zoom();
-                const size = 33 * zoom;
-                const left = bb.x1 - size - (8 * zoom);
-                const top = bb.y1 + (bb.h - size) / 2;
+                const size = 42;
+                const gap = 8;
+                const rawLeft = bb.x1 - size - gap;
+                const left = rawLeft < 4 ? bb.x1 + 4 : rawLeft;
+                const rawTop = bb.y1 + (bb.h - size) / 2;
+                const maxTop = Math.max(4, this.container.clientHeight - size - 4);
+                const top = Math.min(Math.max(rawTop, 4), maxTop);
                 const isCollapsed = this.collapsedNodeIds.has(originalId);
                 const shouldShow = isCollapsed || node.selected();
 
@@ -1748,7 +1753,7 @@ function addCollapseToggleHandle(this: any): void {
                 handle.style.height = `${size}px`;
                 handle.style.borderRadius = `${size / 2}px`;
                 handle.style.transform = `translate(${left}px, ${top}px)`;
-                handle.style.fontSize = `${18 * zoom}px`;
+                handle.style.fontSize = '18px';
                 handle.style.display = 'flex';
             };
 
