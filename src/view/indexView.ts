@@ -2189,6 +2189,7 @@ cy.fit(null, 40);
             const collapsedNodeIds = Array.isArray(event.detail?.collapsedNodeIds)
                 ? event.detail.collapsedNodeIds.map((id: unknown) => String(id)).filter(Boolean)
                 : [];
+            const collapsed = event.detail?.collapsed === true;
             if (!nodeId) return;
 
             try {
@@ -2196,6 +2197,15 @@ cy.fit(null, 40);
                 if (!mocFile) return;
                 this.collapsedNodeIds = collapsedNodeIds;
                 await this.persistCollapseState(mocFile, collapsedNodeIds);
+                if (collapsed || collapsedNodeIds.length > 0) {
+                    await this.relayoutAutoLayoutSiblings(nodeId, {
+                        collapsedNodeIds,
+                        compactVisibleNodes: true,
+                        persistPositions: false,
+                    });
+                } else {
+                    await this.restoreSavedNodePositions(mocFile);
+                }
             } catch (error) {
                 console.error('Failed to save collapse state:', error);
             }
@@ -6931,7 +6941,14 @@ cy.fit(null, 40);
         });
     }
 
-    private async relayoutAutoLayoutSiblings(parentNodeId: string): Promise<void> {
+    private async relayoutAutoLayoutSiblings(
+        parentNodeId: string,
+        relayoutOptions: {
+            collapsedNodeIds?: string[];
+            compactVisibleNodes?: boolean;
+            persistPositions?: boolean;
+        } = {}
+    ): Promise<void> {
         if (!this.isNodeAutoLayout(parentNodeId) || !this.branchRenderer) {
             return;
         }
@@ -6970,11 +6987,21 @@ cy.fit(null, 40);
         const nodes: Record<string, AutoLayoutNodeInput> = {};
         const parentById: Record<string, string | undefined> = {};
         const childrenById: Record<string, string[]> = {};
+        const collapsedIds = new Set(relayoutOptions.collapsedNodeIds || []);
+        const isHiddenByCollapse = (nodeId: string): boolean => {
+            for (const collapsedId of collapsedIds) {
+                if (nodeId !== collapsedId && nodeId.startsWith(`${collapsedId}.`)) {
+                    return true;
+                }
+            }
+            return false;
+        };
         cy.$('node').forEach((node: any) => {
             const data = node.data();
             const originalNode = data.originalNode;
             const nodeId = originalNode?.IDStr || originalNode?.ID;
             if (!nodeId || data.isGroup || data.isPlaceholder) return;
+            if (relayoutOptions.compactVisibleNodes && isHiddenByCollapse(nodeId)) return;
             nodes[nodeId] = {
                 id: nodeId,
                 size: getNodeSize(node),
@@ -7000,18 +7027,30 @@ cy.fit(null, 40);
 
         const realMocRootIds = new Set<string>(mocData.nodes.map((node) => node.nodeID));
         let relayoutRootId = parentNodeId;
-        const visitedRelayoutRoots = new Set<string>();
-        while (!realMocRootIds.has(relayoutRootId)) {
-            const parentId = parentById[relayoutRootId];
-            if (!parentId || !nodes[parentId] || visitedRelayoutRoots.has(parentId)) {
-                break;
+        if (relayoutOptions.compactVisibleNodes) {
+            const visitedRelayoutRoots = new Set<string>();
+            while (!realMocRootIds.has(relayoutRootId)) {
+                const parentId = parentById[relayoutRootId];
+                if (!parentId || !nodes[parentId] || visitedRelayoutRoots.has(parentId)) {
+                    break;
+                }
+                visitedRelayoutRoots.add(relayoutRootId);
+                relayoutRootId = parentId;
             }
-            // 当前节点有保存位置(已拖动过)时,以它为锚点,不再向上
-            if (mocData.nodePositions?.[relayoutRootId]) {
-                break;
+        } else {
+            const visitedRelayoutRoots = new Set<string>();
+            while (!realMocRootIds.has(relayoutRootId)) {
+                const parentId = parentById[relayoutRootId];
+                if (!parentId || !nodes[parentId] || visitedRelayoutRoots.has(parentId)) {
+                    break;
+                }
+                // 当前节点有保存位置(已拖动过)时,以它为锚点,不再向上
+                if (mocData.nodePositions?.[relayoutRootId]) {
+                    break;
+                }
+                visitedRelayoutRoots.add(relayoutRootId);
+                relayoutRootId = parentId;
             }
-            visitedRelayoutRoots.add(relayoutRootId);
-            relayoutRootId = parentId;
         }
 
         const nodePositions = computeAutoLayout({
@@ -7021,6 +7060,16 @@ cy.fit(null, 40);
             childrenById,
             realMocRootIds,
             nodePositions: mocData.nodePositions || {},
+            ignoreSavedPositionsForIds: relayoutOptions.compactVisibleNodes
+                ? new Set(Object.keys(nodes).filter((nodeId) => {
+                    if (nodeId === relayoutRootId) return false;
+                    if (!this.isNodeAutoLayout(nodeId)) return false;
+                    if (relayoutOptions.collapsedNodeIds?.includes(nodeId)) return false;
+                    const parentId = parentById[nodeId];
+                    if (parentId && realMocRootIds.has(parentId)) return false;
+                    return true;
+                }))
+                : undefined,
             layoutPreset: normalizeLayoutPreset(this.plugin.settings.autoLayoutDefaultGrowthDirection),
             nodeLayoutPresets: mocData.nodeLayoutPresets,
         });
@@ -7037,12 +7086,40 @@ cy.fit(null, 40);
             });
         });
 
+        if (relayoutOptions.persistPositions === false) {
+            return;
+        }
+
         await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
             if (!mocData.nodePositions) {
                 mocData.nodePositions = {};
             }
             Object.entries(nodePositions).forEach(([nodeId, pos]) => {
                 mocData.nodePositions[nodeId] = pos;
+            });
+        });
+    }
+
+    private async restoreSavedNodePositions(mocFile: TFile): Promise<void> {
+        if (!this.branchRenderer) {
+            return;
+        }
+        const cy = this.branchRenderer.getCytoscapeInstance();
+        if (!cy) {
+            return;
+        }
+
+        const mocData = await parseMOCStructure(this.app, mocFile.path, this.plugin.settings.mocHeadingTitle);
+        const savedPositions = mocData.nodePositions || {};
+        cy.batch(() => {
+            Object.entries(savedPositions).forEach(([nodeId, position]) => {
+                const cyNode: any = cy.$('node').filter((node: any) => {
+                    const originalNode = node.data('originalNode');
+                    return originalNode && (originalNode.IDStr === nodeId || originalNode.ID === nodeId);
+                }).first();
+                if (cyNode && cyNode.length > 0) {
+                    cyNode.position(position);
+                }
             });
         });
     }
