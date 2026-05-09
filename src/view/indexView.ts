@@ -2228,7 +2228,7 @@ cy.fit(null, 40);
                 const mocFile = getLatestMOCFile();
                 if (!mocFile) return;
                 this.collapsedNodeIds = collapsedNodeIds;
-                await this.persistCollapseStateAndRelayout(mocFile, nodeId, collapsedNodeIds);
+                await this.persistCollapseState(mocFile, collapsedNodeIds);
             } catch (error) {
                 console.error('Failed to save collapse state:', error);
             }
@@ -6942,33 +6942,17 @@ cy.fit(null, 40);
         mocData.nodeLayoutStyle = this.normalizeNodeLayoutStyle(undefined, this.currentNodeLayoutStyle);
     }
 
-    private async persistCollapseStateAndRelayout(
+    private async persistCollapseState(
         mocFile: TFile,
-        nodeId: string,
         collapsedNodeIds: string[]
     ): Promise<void> {
         const normalizedCollapsedIds = Array.from(new Set(collapsedNodeIds));
         await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
             (mocData as any).collapsedNodeIds = normalizedCollapsedIds;
         });
-
-        if (!this.isNodeAutoLayout(nodeId)) {
-            return;
-        }
-
-        await this.relayoutAutoLayoutSiblings(nodeId, {
-            collapsedNodeIds: normalizedCollapsedIds,
-            compactVisibleNodes: true,
-        });
     }
 
-    private async relayoutAutoLayoutSiblings(
-        parentNodeId: string,
-        relayoutOptions: {
-            collapsedNodeIds?: string[];
-            compactVisibleNodes?: boolean;
-        } = {}
-    ): Promise<void> {
+    private async relayoutAutoLayoutSiblings(parentNodeId: string): Promise<void> {
         if (!this.isNodeAutoLayout(parentNodeId) || !this.branchRenderer) {
             return;
         }
@@ -7007,21 +6991,11 @@ cy.fit(null, 40);
         const nodes: Record<string, AutoLayoutNodeInput> = {};
         const parentById: Record<string, string | undefined> = {};
         const childrenById: Record<string, string[]> = {};
-        const collapsedIds = new Set(relayoutOptions.collapsedNodeIds || []);
-        const isHiddenByCollapse = (nodeId: string): boolean => {
-            for (const collapsedId of collapsedIds) {
-                if (nodeId !== collapsedId && nodeId.startsWith(`${collapsedId}.`)) {
-                    return true;
-                }
-            }
-            return false;
-        };
         cy.$('node').forEach((node: any) => {
             const data = node.data();
             const originalNode = data.originalNode;
             const nodeId = originalNode?.IDStr || originalNode?.ID;
             if (!nodeId || data.isGroup || data.isPlaceholder) return;
-            if (relayoutOptions.compactVisibleNodes && isHiddenByCollapse(nodeId)) return;
             nodes[nodeId] = {
                 id: nodeId,
                 size: getNodeSize(node),
@@ -7047,30 +7021,18 @@ cy.fit(null, 40);
 
         const realMocRootIds = new Set<string>(mocData.nodes.map((node) => node.nodeID));
         let relayoutRootId = parentNodeId;
-        if (relayoutOptions.compactVisibleNodes) {
-            const visitedRelayoutRoots = new Set<string>();
-            while (!realMocRootIds.has(relayoutRootId)) {
-                const parentId = parentById[relayoutRootId];
-                if (!parentId || !nodes[parentId] || visitedRelayoutRoots.has(parentId)) {
-                    break;
-                }
-                visitedRelayoutRoots.add(relayoutRootId);
-                relayoutRootId = parentId;
+        const visitedRelayoutRoots = new Set<string>();
+        while (!realMocRootIds.has(relayoutRootId)) {
+            const parentId = parentById[relayoutRootId];
+            if (!parentId || !nodes[parentId] || visitedRelayoutRoots.has(parentId)) {
+                break;
             }
-        } else {
-            const visitedRelayoutRoots = new Set<string>();
-            while (!realMocRootIds.has(relayoutRootId)) {
-                const parentId = parentById[relayoutRootId];
-                if (!parentId || !nodes[parentId] || visitedRelayoutRoots.has(parentId)) {
-                    break;
-                }
-                // 当前节点有保存位置(已拖动过)时,以它为锚点,不再向上
-                if (mocData.nodePositions?.[relayoutRootId]) {
-                    break;
-                }
-                visitedRelayoutRoots.add(relayoutRootId);
-                relayoutRootId = parentId;
+            // 当前节点有保存位置(已拖动过)时,以它为锚点,不再向上
+            if (mocData.nodePositions?.[relayoutRootId]) {
+                break;
             }
+            visitedRelayoutRoots.add(relayoutRootId);
+            relayoutRootId = parentId;
         }
 
         const nodePositions = computeAutoLayout({
@@ -7080,16 +7042,6 @@ cy.fit(null, 40);
             childrenById,
             realMocRootIds,
             nodePositions: mocData.nodePositions || {},
-            ignoreSavedPositionsForIds: relayoutOptions.compactVisibleNodes
-                ? new Set(Object.keys(nodes).filter((nodeId) => {
-                    if (nodeId === relayoutRootId) return false;
-                    if (!this.isNodeAutoLayout(nodeId)) return false;
-                    if (relayoutOptions.collapsedNodeIds?.includes(nodeId)) return false;
-                    const parentId = parentById[nodeId];
-                    if (parentId && realMocRootIds.has(parentId)) return false;
-                    return true;
-                }))
-                : undefined,
             layoutPreset: normalizeLayoutPreset(this.plugin.settings.autoLayoutDefaultGrowthDirection),
             nodeLayoutPresets: mocData.nodeLayoutPresets,
         });
@@ -7109,9 +7061,6 @@ cy.fit(null, 40);
         await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
             if (!mocData.nodePositions) {
                 mocData.nodePositions = {};
-            }
-            if (relayoutOptions.collapsedNodeIds) {
-                (mocData as any).collapsedNodeIds = relayoutOptions.collapsedNodeIds;
             }
             Object.entries(nodePositions).forEach(([nodeId, pos]) => {
                 mocData.nodePositions[nodeId] = pos;
