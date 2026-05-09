@@ -33,6 +33,7 @@ export interface GraphMetadata {
     embedNodeSizes?: Record<string, { width: number; height: number }>; // 预览节点尺寸（模型坐标系）
     nodeRemarks?: Record<string, string>; // 节点备注
     nodeAnchors?: Record<string, boolean>; // 锚点节点
+    collapsedNodeIds?: string[]; // 折叠的节点 ID
 }
 
 /**
@@ -63,8 +64,10 @@ export interface RenderOptions {
     showNoteId?: boolean;
     smartConnection?: boolean;
     readOnly?: boolean;
+    showMinimap?: boolean;
     exportMode?: boolean;  // 纯导出模式：跳过所有 DOM 事件绑定和预览渲染，防止触发 MutationObserver 副作用
     mocPreviewExporter?: (mocFile: TFile) => Promise<TFile | null>;
+    initialCollapsedNodeIds?: string[];
 }
 
 /**

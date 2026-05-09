@@ -6,6 +6,7 @@ import { convertMOCToZKNodes } from "src/utils/utils";
 import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
 import { RenderOptions } from "src/renderer/types";
+import { resolveThemeMode } from "src/utils/themeMode";
 
 const PNG_SUFFIX = '.png';
 
@@ -143,7 +144,7 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
 			layoutType: 'dagre',
 			animate: false,
 			nodeText: (plugin.settings.NodeText || 'both') as any,
-			themeMode: plugin.settings.themeMode,
+			themeMode: resolveThemeMode(plugin.settings.themeMode),
 			themeStyle: plugin.settings.themeStyle || 'modern',
 			edgeStyle: plugin.settings.edgeStyle || 'bezier',
 			nodeLayoutStyle: mocData.nodeLayoutStyle || 'free',
@@ -188,7 +189,7 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
 		await waitForImages(hiddenDiv);
 
 		const canvasBg = getComputedStyle(document.body).getPropertyValue('--background-primary').trim()
-			|| (plugin.settings.themeMode === 'light' ? '#ffffff' : '#0f172a');
+			|| (resolveThemeMode(plugin.settings.themeMode) === 'light' ? '#ffffff' : '#0f172a');
 
 		// 一次截图同时拿到 cytoscape canvas 和 HTML overlay（含 markdown 富文本）
 		// 关键：用 style 覆盖克隆根的定位，否则 position:fixed/left:-99999px 会被一并克隆到

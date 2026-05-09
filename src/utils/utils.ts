@@ -100,6 +100,7 @@ export interface MOCParseResult {
     embedNodeSizes?: Record<string, { width: number; height: number }>; // 预览节点尺寸（模型坐标系）
     nodeRemarks?: Record<string, string>; // 节点备注
     nodeAnchors?: Record<string, boolean>; // 锚点节点
+    collapsedNodeIds?: string[]; // 折叠的节点 ID
     nodeLayoutStyle?: 'free' | 'auto'; // 节点布局风格（新建文件时锁定，后期修改设置不受影响）
     nodeLayoutOverrides?: Record<string, 'auto' | 'free'>; // 节点级布局风格覆盖（优先于文件级 nodeLayoutStyle）
     layoutPreset?: LayoutPreset; // 自动布局 preset（bidirectional/top-down/radial）
@@ -153,6 +154,8 @@ export async function parseMOCStructure(
             crossDomainLinks: {},
             embedNodeSizes: {},
             nodeRemarks: {},
+            nodeAnchors: {},
+            collapsedNodeIds: [],
             metadata: {
                 totalNodes: 0,
                 maxDepth: 0,

@@ -13,20 +13,6 @@ const PARA: SpaceTemplate = {
     ],
 };
 
-const GTD: SpaceTemplate = {
-    id: 'gtd',
-    name: 'GTD',
-    description: 'Getting Things Done 工作流的标准列表',
-    icon: 'check-square',
-    roots: [
-        { name: 'Inbox', icon: 'inbox', color: '#ffb454' },
-        { name: 'Next Actions', icon: 'zap', color: '#6ba3ff' },
-        { name: 'Waiting For', icon: 'clock', color: '#cf94e5' },
-        { name: 'Someday / Maybe', icon: 'cloud', color: '#8a8e98' },
-        { name: 'Reference', icon: 'book-open', color: '#7fd49a' },
-    ],
-};
-
 const BLANK: SpaceTemplate = {
     id: 'blank',
     name: '空白',
@@ -49,7 +35,7 @@ const ZK_THREE_LAYER: SpaceTemplate = {
     ],
 };
 
-export const BUILTIN_TEMPLATES: SpaceTemplate[] = [PARA, GTD, ZK_THREE_LAYER, BLANK];
+export const BUILTIN_TEMPLATES: SpaceTemplate[] = [PARA, ZK_THREE_LAYER, BLANK];
 
 export function findTemplate(id: string): SpaceTemplate | undefined {
     return BUILTIN_TEMPLATES.find(t => t.id === id);

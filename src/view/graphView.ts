@@ -8,6 +8,7 @@ import { CytoscapeExpandModal } from "src/modal/cytoscapeExpandModal";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
 import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
 import { RenderOptions } from "src/renderer/types";
+import { resolveThemeMode } from "src/utils/themeMode";
 
 export const ZK_GRAPH_TYPE: string = "zk-graph-type"
 export const ZK_GRAPH_VIEW: string = t("zk-local-graph")
@@ -74,6 +75,12 @@ export class ZKGraphView extends ItemView {
 
     async onOpen() {
         this.refreshLocalGraph();
+    }
+
+    private applyLocalGraphTheme(containerEl: HTMLElement): void {
+        containerEl.addClass('zk-view-content');
+        containerEl.toggleClass('zk-theme-light', resolveThemeMode(this.plugin.settings.themeMode) === 'light');
+        containerEl.toggleClass('zk-theme-dark', resolveThemeMode(this.plugin.settings.themeMode) !== 'light');
     }
 
     onload() {
@@ -213,6 +220,7 @@ export class ZKGraphView extends ItemView {
 
         let { containerEl } = this;
         containerEl.empty();
+        this.applyLocalGraphTheme(containerEl);
 
         this.countGraphs();
         // 安全检查：避免除以 0 或 NaN
@@ -222,6 +230,10 @@ export class ZKGraphView extends ItemView {
 
         const graphWrapper = containerEl.createDiv("zk-graph-mermaid-wrapper");
         const graphMermaidDiv = graphWrapper.createDiv("zk-graph-mermaid-container");
+        graphWrapper.toggleClass('zk-local-light-surface', resolveThemeMode(this.plugin.settings.themeMode) === 'light');
+        graphWrapper.toggleClass('zk-local-dark-surface', resolveThemeMode(this.plugin.settings.themeMode) !== 'light');
+        graphMermaidDiv.toggleClass('zk-local-light-surface', resolveThemeMode(this.plugin.settings.themeMode) === 'light');
+        graphMermaidDiv.toggleClass('zk-local-dark-surface', resolveThemeMode(this.plugin.settings.themeMode) !== 'light');
 
         const activeFile = this.app.workspace.getActiveFile();
         if (activeFile) {
@@ -315,6 +327,7 @@ export class ZKGraphView extends ItemView {
     // MOC 模式下的局部关系视图渲染
     async refreshLocalGraphMOC(graphMermaidDiv: HTMLElement, mocFile: TFile) {
         graphMermaidDiv.empty();
+        graphMermaidDiv.addClass('zk-moc-file-local-view');
 
         // 计算要显示的图数量
         let graphCount = 0;
@@ -324,7 +337,10 @@ export class ZKGraphView extends ItemView {
         // 安全检查：避免除以 0 或 NaN
         const safeCount = Math.max(graphCount, 1);
         const containerHeight = this.containerEl.offsetHeight || 400; // 默认高度 400px
-        const graphHeight = Math.max(Math.floor(containerHeight / safeCount - 10), 200); // 最小高度 200px
+        const containerWidth = this.containerEl.clientWidth || 720;
+        const isNarrow = containerWidth < 760;
+        const targetGraphHeight = safeCount > 1 ? containerHeight * 0.52 : containerHeight - 16;
+        const graphHeight = Math.round(Math.max(isNarrow ? 320 : 420, Math.min(targetGraphHeight, isNarrow ? 540 : 680)));
 
         const headingTitle = this.plugin.settings.mocHeadingTitle;
         const mermaid = await loadMermaid();
@@ -794,7 +810,7 @@ export class ZKGraphView extends ItemView {
         return label
             .replace(/\\n/g, ' ')
             .replace(/^\s*[a-zA-Z0-9]+(?:[._-][a-zA-Z0-9]+)+(?:[:：]?\s+|$)/, '')
-            .replace(/^\s*\d{8}(?:\d{6})?(?:[-_]\d{4,6})?\s+/, '')
+            .replace(/^\s*\d{8,14}(?:[-_]\d{4,6})?(?:[\s:：-]+|$)/, '')
             .trim() || label;
     }
 
@@ -862,7 +878,7 @@ export class ZKGraphView extends ItemView {
     ): void {
         const header = parent.createDiv('zk-local-mode-header');
         const titleWrap = header.createDiv('zk-local-mode-title-wrap');
-        titleWrap.createDiv('zk-local-mode-title').setText(currentFile.basename);
+        titleWrap.createDiv('zk-local-mode-title').setText(this.getLocalFileLabel(currentFile));
         titleWrap.createDiv('zk-local-mode-subtitle').setText(mocFile.basename);
 
         const switcher = header.createDiv('zk-local-mode-switch');
@@ -972,6 +988,32 @@ export class ZKGraphView extends ItemView {
         this.app.workspace.openLinkText('', file.path);
     }
 
+    private resolveLocalGraphNode(allNodes: ZKNode[], rawNode: ZKNode | null | undefined): ZKNode | null {
+        if (!rawNode) return null;
+        return allNodes.find((node) =>
+            node.IDStr === rawNode.IDStr ||
+            node.ID === rawNode.ID ||
+            node.IDStr === rawNode.ID ||
+            node.ID === rawNode.IDStr
+        ) || rawNode;
+    }
+
+    private async focusLocalMocNode(
+        graphMermaidDiv: HTMLElement,
+        currentFile: TFile,
+        allNodes: ZKNode[],
+        mocFile: TFile,
+        node: ZKNode
+    ): Promise<void> {
+        await this.refreshLocalGraphMOCNode(
+            graphMermaidDiv,
+            node.file || currentFile,
+            allNodes,
+            node,
+            mocFile
+        );
+    }
+
     // 渲染 MOC 节点的相关思维树
     async refreshLocalGraphMOCNode(graphMermaidDiv: HTMLElement, currentFile: TFile, allNodes: ZKNode[], currentNode: ZKNode, mocFile: TFile) {
         graphMermaidDiv.empty();
@@ -1028,10 +1070,11 @@ export class ZKGraphView extends ItemView {
                     animate: true,
                     animationDuration: 500,
                     nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
-                    themeMode: this.plugin.settings.themeMode,
+                    themeMode: resolveThemeMode(this.plugin.settings.themeMode),
                     themeStyle: this.plugin.settings.themeStyle || 'modern',
                     edgeStyle: this.plugin.settings.edgeStyle || 'bezier',
-                    readOnly: true
+                    readOnly: true,
+                    showMinimap: false
                 };
 
                 const expandBtn = new ExtraButtonComponent(section.actions);
@@ -1057,14 +1100,22 @@ export class ZKGraphView extends ItemView {
                 }
                 this.familyGraphRenderer.fitAndCenter();
 
-                mocNodeTreeDiv.addEventListener('node-click', async (event: any) => {
-                    const { node, ctrlKey, metaKey, shiftKey, altKey } = event.detail;
-                    if (!node) return;
+                const handleLocalNodeClick = async (event: any, textNodeOnly: boolean = false) => {
+                    const detail = event.detail || {};
+                    const triggerEvent = detail.event as MouseEvent | undefined;
+                    const ctrlKey = detail.ctrlKey || triggerEvent?.ctrlKey;
+                    const metaKey = detail.metaKey || triggerEvent?.metaKey;
+                    const shiftKey = detail.shiftKey || triggerEvent?.shiftKey;
+                    const altKey = detail.altKey || triggerEvent?.altKey;
+                    const clicked = this.resolveLocalGraphNode(allNodes, detail.node);
+                    if (!clicked) return;
 
-                    const clicked = allNodes.find((n) =>
-                        n.IDStr === node.IDStr || n.ID === node.ID || n.IDStr === node.ID || n.ID === node.IDStr
-                    ) || node;
-                    if (!clicked?.file) return;
+                    if (!clicked?.file) {
+                        await this.focusLocalMocNode(graphMermaidDiv, currentFile, allNodes, mocFile, clicked);
+                        return;
+                    }
+
+                    if (textNodeOnly) return;
 
                     if (ctrlKey || metaKey) {
                         this.app.workspace.openLinkText("", clicked.file.path, 'tab');
@@ -1089,6 +1140,14 @@ export class ZKGraphView extends ItemView {
                     } else {
                         this.app.workspace.openLinkText("", clicked.file.path);
                     }
+                };
+
+                mocNodeTreeDiv.addEventListener('node-click', (event: any) => {
+                    void handleLocalNodeClick(event);
+                });
+
+                mocNodeTreeDiv.addEventListener('node-select', (event: any) => {
+                    void handleLocalNodeClick(event, true);
                 });
 
                 mocNodeTreeDiv.addEventListener('node-hover', (event: any) => {
@@ -1188,8 +1247,119 @@ export class ZKGraphView extends ItemView {
         const rightSiblings = activePeerIndex >= 0 ? orderedPeers.slice(activePeerIndex + 1) : siblingNodes.slice(Math.ceil(siblingNodes.length / 2));
 
         const canvas = section.body.createDiv('zk-focus-radial-canvas');
-        const edgeLayer = canvas.createEl('div', { cls: 'zk-focus-edge-layer', attr: { 'aria-hidden': 'true' } });
-        const centerZone = canvas.createDiv('zk-focus-center-zone zk-focus-radial-center-zone');
+        const canvasWidth = section.body.clientWidth || this.containerEl.clientWidth || 720;
+        const canvasHeight = section.body.clientHeight || this.containerEl.clientHeight || 520;
+        const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, max));
+
+        // ─── 默认全宽常量 & 估算 ───────────────────────────────
+        const FULL_SIDE_W = 190;
+        const FULL_CENTER_MAX_W = 320;
+        const FULL_CENTER_MIN_W = 220;
+        const SIBLING_CARD_H = 32;
+        const CENTER_CARD_H = 80;
+        const SIBLING_SPACING = 58;
+        // sibling 半高 + 中心卡半高 + 间隔 → 死区半高(避让中心卡的纵向最小距离)
+        const DEAD_ZONE_HALF = CENTER_CARD_H / 2 + SIBLING_CARD_H / 2 + 8;
+
+        const parentRadius = clamp(canvasHeight * 0.3, 170, 235);
+        const childRadius = clamp(canvasHeight * 0.25, 150, 190);
+
+        // 默认 sideRadius(全宽假设)
+        const defaultSideRadius = clamp(canvasWidth / 2 - 150, 150, 260);
+        // 默认假设下,sibling 与中心卡是否会水平撞击
+        const horizontalOverlap = defaultSideRadius - FULL_SIDE_W / 2 < FULL_CENTER_MAX_W / 2 + 8;
+
+        // 评估「纵向避让」是否塞得下:
+        // 同侧 sibling 数 N → 上方 ⌈N/2⌉ 槽,下方 N - ⌈N/2⌉ 槽,
+        // 上方占用从中心向上 deadZone + (above-1)*spacing + sibling/2,
+        // 还要给 parent 在更上方留位置;下方同理给 child 留位置。
+        const visibleLeft = Math.min(leftSiblings.length, 4);
+        const visibleRight = Math.min(rightSiblings.length, 4);
+        const maxSidePerSide = Math.max(visibleLeft, visibleRight);
+        const aboveSlots = Math.ceil(maxSidePerSide / 2);
+        const belowSlots = maxSidePerSide - aboveSlots;
+        const verticalUp = aboveSlots > 0
+            ? DEAD_ZONE_HALF + (aboveSlots - 1) * SIBLING_SPACING + SIBLING_CARD_H / 2
+            : 0;
+        const verticalDown = belowSlots > 0
+            ? DEAD_ZONE_HALF + (belowSlots - 1) * SIBLING_SPACING + SIBLING_CARD_H / 2
+            : 0;
+        // 还要保证 parent / child 不被挤
+        const verticalNeededUp = Math.max(verticalUp, parentRadius + 16);
+        const verticalNeededDown = Math.max(verticalDown, childRadius + 16);
+        const verticalBudget = canvasHeight / 2 - 8;
+        const verticallyFits = verticalNeededUp <= verticalBudget && verticalNeededDown <= verticalBudget;
+
+        // 两段式决策:
+        //   - 宽屏正常:全宽 + 对称 y(useVerticalAvoidance=false, horizontalOverlap=false)
+        //   - 窄宽 & 纵向塞得下:保留全宽,sibling 改纵向避让(useVerticalAvoidance=true)
+        //   - 窄宽 & 纵向塞不下:阶段 2,缩宽 + 联动 sideRadius + scale 兜底
+        const useVerticalAvoidance = horizontalOverlap && verticallyFits;
+
+        let sideCardMaxW: number;
+        let centerCardMaxW: number;
+        let centerCardMinW: number;
+        let sideRadius: number;
+
+        if (horizontalOverlap && !useVerticalAvoidance) {
+            // 阶段 2:缩宽 + 联动
+            sideCardMaxW = Math.round(clamp(canvasWidth * 0.28, 92, FULL_SIDE_W));
+            centerCardMaxW = Math.round(clamp(canvasWidth * 0.42, 150, FULL_CENTER_MAX_W));
+            centerCardMinW = Math.round(clamp(canvasWidth * 0.32, 130, FULL_CENTER_MIN_W));
+            const minSideRadius = centerCardMaxW / 2 + sideCardMaxW / 2 + 8;
+            sideRadius = clamp(
+                Math.max(canvasWidth / 2 - sideCardMaxW * 0.6, minSideRadius),
+                110,
+                280
+            );
+        } else {
+            // 宽屏 or 纵向避让:都用全宽
+            sideCardMaxW = FULL_SIDE_W;
+            centerCardMaxW = FULL_CENTER_MAX_W;
+            centerCardMinW = FULL_CENTER_MIN_W;
+            sideRadius = defaultSideRadius;
+        }
+
+        const childCount = Math.min(childNodes.length, 8);
+        const childGap = childCount > 1
+            ? clamp((canvasWidth - 280) / Math.max(1, childCount - 1), 100, 210)
+            : 0;
+
+        // intrinsic 宽度:辐射结构在不缩放时实际占据的水平像素
+        const intrinsicWidth = 2 * sideRadius + sideCardMaxW + 24;
+        const intrinsicHeight = parentRadius + childRadius + 180;
+        const radialScale = clamp(
+            Math.min(canvasWidth / intrinsicWidth, canvasHeight / intrinsicHeight, 1),
+            0.55,
+            1
+        );
+
+        // sibling y 计算:纵向避让模式下,跳过中心死区,先填上方再填下方
+        const computeSiblingYs = (count: number): number[] => {
+            if (count === 0) return [];
+            if (!useVerticalAvoidance) {
+                return Array.from({ length: count }, (_, i) =>
+                    (i - (count - 1) / 2) * SIBLING_SPACING
+                );
+            }
+            const above = Math.ceil(count / 2);
+            const ys: number[] = [];
+            for (let i = 0; i < above; i++) {
+                ys.push(-DEAD_ZONE_HALF - (above - 1 - i) * SIBLING_SPACING);
+            }
+            for (let i = 0; i < count - above; i++) {
+                ys.push(DEAD_ZONE_HALF + i * SIBLING_SPACING);
+            }
+            return ys;
+        };
+
+        const stage = canvas.createDiv('zk-focus-radial-stage');
+        stage.style.setProperty('--zk-focus-scale', String(radialScale));
+        stage.style.setProperty('--zk-focus-card-max-w', `${sideCardMaxW}px`);
+        stage.style.setProperty('--zk-focus-center-min-w', `${centerCardMinW}px`);
+        stage.style.setProperty('--zk-focus-center-max-w', `${centerCardMaxW}px`);
+        const edgeLayer = stage.createEl('div', { cls: 'zk-focus-edge-layer', attr: { 'aria-hidden': 'true' } });
+        const centerZone = stage.createDiv('zk-focus-center-zone zk-focus-radial-center-zone');
 
         const openFile = (file: TFile, event?: MouseEvent | KeyboardEvent) => {
             if (event && ('ctrlKey' in event) && (event.ctrlKey || event.metaKey)) {
@@ -1212,7 +1382,7 @@ export class ZKGraphView extends ItemView {
             file?: TFile | null,
             options: { index?: number; total?: number; x?: number; y?: number; parent?: HTMLElement; drawEdge?: boolean } = {}
         ) => {
-            const host = options.parent || canvas;
+            const host = options.parent || stage;
             const card = host.createEl('button', {
                 type: 'button',
                 cls: `zk-focus-card zk-focus-card-${variant} ${posClass}`,
@@ -1318,34 +1488,36 @@ export class ZKGraphView extends ItemView {
         if (parentNode) {
             appendNode(this.getLocalNodeLabel(parentNode), 'parent', 'zk-focus-pos-parent', parentNode, null, {
                 x: 0,
-                y: -235
+                y: -parentRadius
             });
         }
-        leftSiblings.slice(-4).forEach((node, index, arr) => {
-            const y = (index - (arr.length - 1) / 2) * 58;
+        const leftSiblingArr = leftSiblings.slice(-4);
+        const leftYs = computeSiblingYs(leftSiblingArr.length);
+        leftSiblingArr.forEach((node, index, arr) => {
             appendNode(this.getLocalNodeLabel(node), 'sibling', 'zk-focus-pos-left', node, null, {
                 index,
                 total: arr.length,
-                x: -260,
-                y
+                x: -sideRadius,
+                y: leftYs[index]
             });
         });
-        rightSiblings.slice(0, 4).forEach((node, index, arr) => {
-            const y = (index - (arr.length - 1) / 2) * 58;
+        const rightSiblingArr = rightSiblings.slice(0, 4);
+        const rightYs = computeSiblingYs(rightSiblingArr.length);
+        rightSiblingArr.forEach((node, index, arr) => {
             appendNode(this.getLocalNodeLabel(node), 'sibling', 'zk-focus-pos-right', node, null, {
                 index,
                 total: arr.length,
-                x: 260,
-                y
+                x: sideRadius,
+                y: rightYs[index]
             });
         });
         childNodes.slice(0, 8).forEach((node, index, arr) => {
-            const x = (index - (arr.length - 1) / 2) * 210;
+            const x = (index - (arr.length - 1) / 2) * childGap;
             appendNode(this.getLocalNodeLabel(node), 'child', 'zk-focus-pos-child', node, null, {
                 index,
                 total: arr.length,
                 x,
-                y: 190
+                y: childRadius
             });
         });
         const overflow = Math.max(0, childNodes.length - 8);
@@ -1515,6 +1687,7 @@ export class ZKGraphView extends ItemView {
     ): Promise<void> {
         // 创建 MOC 树图容器
         const mocGraphContainer = container.createDiv("zk-family-graph-container");
+        mocGraphContainer.addClass('zk-moc-tree-section');
         const mocGraphTextDiv = mocGraphContainer.createDiv("zk-graph-text");
         mocGraphTextDiv.empty();
         mocGraphTextDiv.createEl('span', { text: `${headingTitle}` });
@@ -1541,7 +1714,7 @@ export class ZKGraphView extends ItemView {
         mocTreeDiv.id = "zk-moc-tree-cytoscape";
         mocTreeDiv.style.height = `${graphHeight}px`;
         mocTreeDiv.style.width = "100%";
-        mocTreeDiv.style.backgroundColor = this.plugin.settings.themeMode === 'light' ? '#f5f5f5' : '#2a2a2a';
+        mocTreeDiv.style.backgroundColor = resolveThemeMode(this.plugin.settings.themeMode) === 'light' ? '#f5f5f5' : '#2a2a2a';
 
         // 构建图形数据（使用 MOC 树专用方法）
         const graphData = GraphDataBuilder.fromMOCTree(mocNodes, reverseRelations, null);
@@ -1554,10 +1727,11 @@ export class ZKGraphView extends ItemView {
             animate: true,
             animationDuration: 500,
             nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
-            themeMode: this.plugin.settings.themeMode,
+            themeMode: resolveThemeMode(this.plugin.settings.themeMode),
             themeStyle: this.plugin.settings.themeStyle || 'modern',
             edgeStyle: this.plugin.settings.edgeStyle || 'bezier',
-            readOnly: true
+            readOnly: true,
+            showMinimap: false
         };
         expandBtn.onClick(() => {
             try {
@@ -1584,9 +1758,18 @@ export class ZKGraphView extends ItemView {
         }
 
         // 监听节点点击事件
-        mocTreeDiv.addEventListener('node-click', (event: any) => {
-            const { node, ctrlKey, shiftKey, altKey } = event.detail;
-                    if (!node.file) return;
+        mocTreeDiv.addEventListener('node-click', async (event: any) => {
+            const detail = event.detail || {};
+            const triggerEvent = detail.event as MouseEvent | undefined;
+            const node = this.resolveLocalGraphNode(mocNodes, detail.node);
+            const ctrlKey = detail.ctrlKey || triggerEvent?.ctrlKey;
+            const shiftKey = detail.shiftKey || triggerEvent?.shiftKey;
+            const altKey = detail.altKey || triggerEvent?.altKey;
+            if (!node) return;
+            if (!node.file) {
+                await this.focusLocalMocNode(container, mocFile, mocNodes, mocFile, node);
+                return;
+            }
 
             if (ctrlKey) {
                 // Ctrl + 点击：在新标签页打开
@@ -1648,6 +1831,9 @@ export class ZKGraphView extends ItemView {
             `入链 ${inlinkArr.length} · 出链 ${outlinkArr.length}`
         );
         section.container.addClass('zk-inoutlinks-graph-container');
+        if (this.isMOCFile(currentFile)) {
+            section.container.addClass('zk-moc-inoutlinks-section');
+        }
         const expandBtn = new ExtraButtonComponent(section.actions);
         expandBtn.setIcon("expand").setTooltip(t("expand graph"));
 
@@ -1751,7 +1937,7 @@ export class ZKGraphView extends ItemView {
                     animate: true,
                     animationDuration: 500,
                     nodeText: (this.plugin.settings.NodeText || 'both') as 'id' | 'title' | 'both' | 'id-title',
-                    themeMode: this.plugin.settings.themeMode,
+                    themeMode: resolveThemeMode(this.plugin.settings.themeMode),
                     themeStyle: this.plugin.settings.themeStyle || 'modern',
                     edgeStyle: this.plugin.settings.edgeStyle || 'bezier'
                 };

@@ -11,7 +11,7 @@ import { FolderMountModal } from "src/modal/folderMountModal";
  * 文件夹抽屉(Layer 1)
  *
  * - 渲染来自 VaultIndex 的自建 Space 树(单文件持久化在插件数据目录的 spaces.json)
- * - 空树时展示模板卡片(PARA / GTD / 空白)
+ * - 空树时展示模板卡片(PARA / 空白)
  * - 顶部「+ 新建 Space」原位输入
  * - 单击行 = 折叠/展开;子节点行末尾按钮 = 新建子文件夹;垃圾桶 = 删除
  */
@@ -381,7 +381,7 @@ export class FolderDrawer {
             if (!name && !tmpl) { restore(); return; }
             try {
                 if (tmpl) {
-                    await this.service.applyTemplate(tmpl, name || tmpl.name);
+                    await this.service.applyTemplate(tmpl, name || tmpl.name.replace(/\s*[\\/:*?"<>|]\s*/g, ' ').trim());
                 } else {
                     await this.service.createSpace(name);
                 }
@@ -470,7 +470,7 @@ export class FolderDrawer {
         const inputRow = this.bodyEl.createDiv("zk-folder-drawer-input-row");
         const label = inputRow.createSpan("zk-folder-drawer-input-label");
         label.setText(`用 ${tmpl.name} 模板创建 Space:`);
-        const input = inputRow.createEl("input", { type: "text", value: tmpl.name });
+        const input = inputRow.createEl("input", { type: "text", value: tmpl.name.replace(/\s*[\\/:*?"<>|]\s*/g, ' ').trim() });
         input.addClass("zk-folder-drawer-input");
         this.bindInputSubmit(input, async (name) => {
             try {
