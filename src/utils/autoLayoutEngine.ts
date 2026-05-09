@@ -25,7 +25,6 @@ export interface ComputeAutoLayoutInput {
 	childrenById: Record<string, string[]>;
 	realMocRootIds: Set<string>;
 	nodePositions: Record<string, Vec2>;
-	ignoreSavedPositionsForIds?: Set<string>;
 	layoutPreset?: LayoutPreset;
 	nodeLayoutPresets?: Record<string, LayoutPreset>;
 	forwardGap?: number;
@@ -237,9 +236,7 @@ export function computeAutoLayout(input: ComputeAutoLayoutInput): Record<string,
 	};
 
 	const placeLayout = (layout: LayoutNode, cx: number, cy: number) => {
-		const saved = layout.id !== input.relayoutRootId && !input.ignoreSavedPositionsForIds?.has(layout.id)
-			? input.nodePositions[layout.id]
-			: undefined;
+		const saved = layout.id !== input.relayoutRootId ? input.nodePositions[layout.id] : undefined;
 		const ax = saved ? saved.x : cx;
 		const ay = saved ? saved.y : cy;
 		positions[layout.id] = {
@@ -416,9 +413,7 @@ export function computeBidirectionalAutoLayout(input: ComputeAutoLayoutInput): R
 	};
 
 	const placeLayout = (layout: LayoutNode, cx: number, cy: number) => {
-		const saved = layout.id !== input.relayoutRootId && !input.ignoreSavedPositionsForIds?.has(layout.id)
-			? input.nodePositions[layout.id]
-			: undefined;
+		const saved = layout.id !== input.relayoutRootId ? input.nodePositions[layout.id] : undefined;
 		const ax = saved ? saved.x : cx;
 		const ay = saved ? saved.y : cy;
 		positions[layout.id] = {
@@ -592,9 +587,7 @@ export function computeTopDownAutoLayout(input: ComputeAutoLayoutInput): Record<
 	};
 
 	const placeLayout = (layout: LayoutNode, cx: number, cy: number) => {
-		const saved = layout.id !== input.relayoutRootId && !input.ignoreSavedPositionsForIds?.has(layout.id)
-			? input.nodePositions[layout.id]
-			: undefined;
+		const saved = layout.id !== input.relayoutRootId ? input.nodePositions[layout.id] : undefined;
 		const ax = saved ? saved.x : cx;
 		const ay = saved ? saved.y : cy;
 		positions[layout.id] = {
@@ -787,9 +780,7 @@ export function computeRadialAutoLayout(input: ComputeAutoLayoutInput): Record<s
 	};
 
 	const placeLayout = (layout: LayoutNode, cx: number, cy: number) => {
-		const saved = layout.id !== input.relayoutRootId && !input.ignoreSavedPositionsForIds?.has(layout.id)
-			? input.nodePositions[layout.id]
-			: undefined;
+		const saved = layout.id !== input.relayoutRootId ? input.nodePositions[layout.id] : undefined;
 		const ax = saved ? saved.x : cx;
 		const ay = saved ? saved.y : cy;
 		positions[layout.id] = {
