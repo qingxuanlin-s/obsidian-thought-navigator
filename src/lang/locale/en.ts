@@ -24,6 +24,10 @@ export default {
     "scratch confirm delete pad": "Delete scratchpad \"{name}\"? Items inside will be lost.",
     "scratch pad name placeholder": "Scratchpad name",
     "scratch added file count": "Added {n} file(s) to scratchpad",
+    "scratch split by heading": "Split into text nodes: by heading",
+    "scratch split by line": "Split into text nodes: by line break",
+    "scratch split success": "Split into {n} text nodes",
+    "scratch split no parts": "No splittable content",
 
     // settings.ts
     "Zettelkasten Navigation": "Zettelkasten Navigation",

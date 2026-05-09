@@ -24,6 +24,10 @@ export default {
     "scratch confirm delete pad": "确定删除工作区「{name}」?里面的条目会一并丢失。",
     "scratch pad name placeholder": "工作区名称",
     "scratch added file count": "已添加 {n} 个文件到工作区",
+    "scratch split by heading": "拆分为多文本节点: 按标题",
+    "scratch split by line": "拆分为多文本节点: 按换行",
+    "scratch split success": "已拆分为 {n} 个文本节点",
+    "scratch split no parts": "没有可拆分的内容",
 
     // settings.ts
     "Zettelkasten Navigation": "卡片盒导航",

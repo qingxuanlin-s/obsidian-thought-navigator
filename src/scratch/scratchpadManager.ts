@@ -4,6 +4,7 @@ import { ZKNode } from "src/view/indexView";
 
 export type ScratchpadOperation = "cut" | "copy";
 export type ScratchpadKind = "file" | "text" | "embed";
+export type ScratchpadSplitRule = "heading" | "line";
 
 export interface ScratchpadEntry {
     tempId: string;
@@ -76,6 +77,43 @@ function deriveKind(node: ZKNode): ScratchpadKind {
     if (node.isTextOnly) return "text";
     if (node.isEmbed) return "embed";
     return "file";
+}
+
+function normalizeSplitPart(text: string): string {
+    return (text || "").trim();
+}
+
+function splitTextByLine(text: string): string[] {
+    return text
+        .split(/\r?\n+/)
+        .map(normalizeSplitPart)
+        .filter(Boolean);
+}
+
+function splitTextByHeading(text: string): string[] {
+    const lines = text.replace(/\r\n/g, "\n").split("\n");
+    const parts: string[] = [];
+    let current: string[] = [];
+
+    const flush = () => {
+        const part = normalizeSplitPart(current.join("\n"));
+        if (part) parts.push(part);
+        current = [];
+    };
+
+    for (const line of lines) {
+        if (/^#{1,6}\s+\S/.test(line) && current.length > 0) {
+            flush();
+        }
+        current.push(line);
+    }
+
+    flush();
+    return parts;
+}
+
+function splitText(text: string, rule: ScratchpadSplitRule): string[] {
+    return rule === "heading" ? splitTextByHeading(text) : splitTextByLine(text);
 }
 
 export class ScratchpadManager {
@@ -291,6 +329,35 @@ export class ScratchpadManager {
                 return;
             }
         }
+    }
+
+    splitTextEntry(tempId: string, rule: ScratchpadSplitRule): number {
+        for (const pad of this.listPads()) {
+            const idx = pad.items.findIndex((e) => e.tempId === tempId);
+            if (idx < 0) continue;
+
+            const entry = pad.items[idx];
+            if (entry.kind !== "text") return 0;
+
+            const sourceText = normalizeSplitPart(entry.target || entry.displayText || "");
+            const parts = splitText(sourceText, rule);
+            if (parts.length <= 1) return 0;
+
+            const entries = parts.map((part, partIdx): ScratchpadEntry => ({
+                ...entry,
+                tempId: genTempId(),
+                target: part,
+                displayText: part,
+                addedAt: Date.now() + partIdx,
+            }));
+
+            pad.items.splice(idx, 1, ...entries);
+            this.scheduleSave();
+            this.notify();
+            return entries.length;
+        }
+
+        return 0;
     }
 
     /** 清空指定 pad(不传则清 active) */
