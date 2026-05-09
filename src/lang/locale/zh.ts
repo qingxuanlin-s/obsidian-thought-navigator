@@ -23,6 +23,7 @@ export default {
     "scratch default pad name": "未命名",
     "scratch confirm delete pad": "确定删除工作区「{name}」?里面的条目会一并丢失。",
     "scratch pad name placeholder": "工作区名称",
+    "scratch added file count": "已添加 {n} 个文件到工作区",
 
     // settings.ts
     "Zettelkasten Navigation": "卡片盒导航",

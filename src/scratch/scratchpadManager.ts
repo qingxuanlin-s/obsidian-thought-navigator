@@ -1,3 +1,4 @@
+import { TFile } from "obsidian";
 import ZKNavigationPlugin from "main";
 import { ZKNode } from "src/view/indexView";
 
@@ -38,9 +39,20 @@ function genPadId(): string {
 }
 
 function deriveDisplayText(node: ZKNode): string {
-    if (node.displayText && node.displayText.trim()) return node.displayText;
+    // 卡片下方已经有独立的 ID 徽章,这里只取干净的标题部分,避免出现 "ID: 标题" 的重复
     if (node.title && node.title.trim()) return node.title;
     if (node.file?.basename) return node.file.basename;
+    if (node.displayText && node.displayText.trim()) {
+        // 兜底:displayText 形如 "ID: 标题" 时,剥掉前缀的 ID
+        const id = node.IDStr || node.ID;
+        if (id) {
+            const stripped = node.displayText
+                .replace(new RegExp(`^${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[:：\\-_\\s]\\s*`), '')
+                .trim();
+            if (stripped) return stripped;
+        }
+        return node.displayText;
+    }
     return node.IDStr || node.ID || "(untitled)";
 }
 
@@ -220,6 +232,30 @@ export class ScratchpadManager {
                 mocPath,
                 mocName,
                 operation,
+            },
+            addedAt: Date.now(),
+        };
+    }
+
+    /**
+     * 从 vault 中拖入的文件构造一条暂存条目(operation 总是 copy,不改原文件)。
+     * 没有节点 ID 概念,用 file.basename 占位。
+     */
+    buildEntryFromFile(
+        file: TFile,
+        mocPath: string,
+        mocName: string,
+    ): ScratchpadEntry {
+        return {
+            tempId: genTempId(),
+            kind: "file",
+            target: file.basename,
+            displayText: file.basename,
+            origin: {
+                nodeId: file.basename,
+                mocPath,
+                mocName,
+                operation: "copy",
             },
             addedAt: Date.now(),
         };

@@ -23,6 +23,7 @@ export default {
     "scratch default pad name": "Untitled",
     "scratch confirm delete pad": "Delete scratchpad \"{name}\"? Items inside will be lost.",
     "scratch pad name placeholder": "Scratchpad name",
+    "scratch added file count": "Added {n} file(s) to scratchpad",
 
     // settings.ts
     "Zettelkasten Navigation": "Zettelkasten Navigation",
