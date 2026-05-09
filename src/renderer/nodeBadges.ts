@@ -1702,16 +1702,16 @@ function addCollapseToggleHandle(this: any): void {
             const handle = document.createElement('div');
             handle.style.cssText = `
                 position: absolute;
-                width: 42px;
-                height: 42px;
-                border-radius: 21px;
+                width: 24px;
+                height: 24px;
+                border-radius: 12px;
                 background-color: rgba(17, 24, 39, 0.85);
                 border: 1px solid rgba(148, 163, 184, 0.45);
                 color: #e2e8f0;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                font-size: 18px;
+                font-size: 14px;
                 font-weight: 700;
                 line-height: 1;
                 cursor: pointer;
@@ -1732,8 +1732,8 @@ function addCollapseToggleHandle(this: any): void {
                 }
 
                 const bb = node.renderedBoundingBox();
-                const size = 42;
-                const gap = 8;
+                const size = 24;
+                const gap = 6;
                 const rawLeft = bb.x1 - size - gap;
                 const left = rawLeft < 4 ? bb.x1 + 4 : rawLeft;
                 const rawTop = bb.y1 + (bb.h - size) / 2;
@@ -1753,7 +1753,7 @@ function addCollapseToggleHandle(this: any): void {
                 handle.style.height = `${size}px`;
                 handle.style.borderRadius = `${size / 2}px`;
                 handle.style.transform = `translate(${left}px, ${top}px)`;
-                handle.style.fontSize = '18px';
+                handle.style.fontSize = '14px';
                 handle.style.display = 'flex';
             };
 
