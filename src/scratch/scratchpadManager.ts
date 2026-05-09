@@ -38,26 +38,35 @@ function genPadId(): string {
     return `${PAD_ID_PREFIX}${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
+function stripLeadingNodeId(text: string, nodeId?: string): string {
+    const trimmed = (text || "").trim();
+    if (!trimmed) return "";
+
+    if (nodeId) {
+        const escaped = nodeId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const stripped = trimmed
+            .replace(new RegExp(`^${escaped}\\s*[:：\\-_\\s]\\s*`), '')
+            .trim();
+        if (stripped) return stripped;
+    }
+
+    return trimmed.replace(/^[a-zA-Z0-9._]+\s*[:：]\s*/, '').trim() || trimmed;
+}
+
 function deriveDisplayText(node: ZKNode): string {
     // 卡片下方已经有独立的 ID 徽章,这里只取干净的标题部分,避免出现 "ID: 标题" 的重复
-    if (node.title && node.title.trim()) return node.title;
+    const id = node.IDStr || node.ID;
+    if (node.title && node.title.trim()) return stripLeadingNodeId(node.title, id);
     if (node.file?.basename) return node.file.basename;
     if (node.displayText && node.displayText.trim()) {
         // 兜底:displayText 形如 "ID: 标题" 时,剥掉前缀的 ID
-        const id = node.IDStr || node.ID;
-        if (id) {
-            const stripped = node.displayText
-                .replace(new RegExp(`^${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[:：\\-_\\s]\\s*`), '')
-                .trim();
-            if (stripped) return stripped;
-        }
-        return node.displayText;
+        return stripLeadingNodeId(node.displayText, id);
     }
     return node.IDStr || node.ID || "(untitled)";
 }
 
 function deriveTarget(node: ZKNode): string {
-    if (node.isTextOnly) return node.displayText || node.title || "";
+    if (node.isTextOnly) return deriveDisplayText(node);
     if (node.wikiLink) return node.wikiLink;
     if (node.file) return node.file.basename;
     return node.displayText || "";

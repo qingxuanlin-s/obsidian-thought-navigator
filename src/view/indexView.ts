@@ -8196,6 +8196,16 @@ cy.fit(null, 40);
         };
     }
 
+    private getScratchpadTextContent(entry: ScratchpadEntry): string {
+        const raw = (entry.target || entry.displayText || '').trim();
+        const id = entry.origin?.nodeId || '';
+        if (!raw) return '';
+        if (!id) return raw.replace(/^[a-zA-Z0-9._]+\s*[:：]\s*/, '').trim() || raw;
+
+        const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return raw.replace(new RegExp(`^${escaped}\\s*[:：\\-_\\s]\\s*`), '').trim() || raw;
+    }
+
     /**
      * 把暂存条目落到画布(给定模型坐标)。落地后从暂存区移除该条目。
      */
@@ -8220,7 +8230,7 @@ cy.fit(null, 40);
         try {
             if (entry.kind === 'text') {
                 await this.saveFreeNodeToMOC({
-                    text: entry.target,
+                    text: this.getScratchpadTextContent(entry),
                     nodeID: newID,
                     relationText: '',
                     file: null,
