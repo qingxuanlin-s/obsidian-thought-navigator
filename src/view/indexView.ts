@@ -11,6 +11,7 @@ import { convertMOCToZKNodes, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FIL
 import { FolderDrawer } from "src/view/folderDrawer";
 import { ScratchpadDrawer } from "src/view/scratchpadDrawer";
 import { ScratchpadEntry } from "src/scratch/scratchpadManager";
+import { resolveDroppedVaultFiles } from "src/utils/dropFileResolver";
 import { createEmptyMOCJson } from "src/utils/mocJsonCodec";
 import { MermaidParser } from "src/utils/mermaidParser";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
@@ -632,7 +633,13 @@ export class ZKIndexView extends FileView {
             // 临时工作区抽屉(左侧),跨 MOC 共享的节点暂存
             if (this.plugin.scratchpad) {
                 this.scratchDrawer = new ScratchpadDrawer(
-                    containerEl, this.plugin.scratchpad
+                    containerEl,
+                    this.plugin.scratchpad,
+                    this.app,
+                    () => ({
+                        path: this.plugin.settings.mocCurrentFile,
+                        name: this.getCurrentMOCDisplayName(),
+                    }),
                 );
                 this.registerScratchpadDocumentListeners();
             }
@@ -1361,112 +1368,7 @@ cy.fit(null, 40);
     }
 
     private resolveDroppedVaultFiles(event: DragEvent): TFile[] {
-        const dt = event.dataTransfer;
-        if (!dt) return [];
-
-        const candidateValues = new Set<string>();
-        const addCandidate = (value?: string | null) => {
-            if (!value) return;
-            const trimmed = value.trim();
-            if (!trimmed) return;
-            candidateValues.add(trimmed);
-        };
-
-        addCandidate(dt.getData('text/plain'));
-        addCandidate(dt.getData('text/uri-list'));
-        addCandidate(dt.getData('text/x-obsidian-uri'));
-        addCandidate(dt.getData('application/x-obsidian-uri'));
-        addCandidate(dt.getData('application/x-obsidian-file'));
-
-        for (const type of Array.from(dt.types || [])) {
-            try {
-                addCandidate(dt.getData(type));
-            } catch (_) {
-                // 某些类型不可读，忽略即可
-            }
-        }
-
-        const vaultFiles = this.app.vault.getFiles();
-        const tryResolvePath = (raw: string): TFile | null => {
-            let normalized = decodeURIComponent(raw).trim();
-
-            // 兼容 Obsidian URI：obsidian://open?vault=...&file=...
-            if (normalized.startsWith('obsidian://')) {
-                try {
-                    const parsed = new URL(normalized);
-                    const fileParam = parsed.searchParams.get('file');
-                    if (fileParam) {
-                        normalized = decodeURIComponent(fileParam);
-                    } else {
-                        normalized = normalized
-                            .replace(/^obsidian:\/\/open\?file=/, '')
-                            .replace(/^obsidian:\/\/advanced-uri\?.*?file=/, '');
-                    }
-                } catch (_) {
-                    normalized = normalized
-                        .replace(/^obsidian:\/\/open\?file=/, '')
-                        .replace(/^obsidian:\/\/advanced-uri\?.*?file=/, '');
-                }
-            }
-
-            normalized = normalized
-                .replace(/^file:\/\//, '')
-                .replace(/^\//, '');
-
-            if (!normalized) return null;
-
-            const exact = this.app.vault.getFileByPath(normalized);
-            if (exact instanceof TFile) return exact;
-
-            const withoutVaultPrefix = normalized.replace(/^.*?\/(?=[^/]+\/[^/]+$)/, '');
-            const maybeExact = this.app.vault.getFileByPath(withoutVaultPrefix);
-            if (maybeExact instanceof TFile) return maybeExact;
-
-            const basename = normalized
-                .replace(/\[\[|\]\]/g, '')
-                .split('|')[0]
-                .split('#')[0]
-                .split('/')
-                .pop();
-            if (!basename) return null;
-
-            return vaultFiles.find(f =>
-                f.path === basename ||
-                f.basename === basename ||
-                f.path.endsWith(`/${basename}`)
-            ) || null;
-        };
-
-        const resolvedFiles: TFile[] = [];
-        const seenPaths = new Set<string>();
-        const pushResolved = (file: TFile | null) => {
-            if (!file) return;
-            if (seenPaths.has(file.path)) return;
-            seenPaths.add(file.path);
-            resolvedFiles.push(file);
-        };
-
-        for (const value of candidateValues) {
-            const resolved = tryResolvePath(value);
-            if (resolved) {
-                pushResolved(resolved);
-                continue;
-            }
-
-            try {
-                const parsed = JSON.parse(value);
-                if (typeof parsed === 'string') {
-                    pushResolved(tryResolvePath(parsed));
-                } else if (parsed && typeof parsed === 'object') {
-                    const pathLike = parsed.path || parsed.file || parsed.filePath || parsed.sourcePath;
-                    pushResolved(tryResolvePath(pathLike));
-                }
-            } catch (_) {
-                // 非 JSON，忽略
-            }
-        }
-
-        return resolvedFiles;
+        return resolveDroppedVaultFiles(this.app, event);
     }
 
     private async createDroppedFileNode(file: TFile, position: { x: number; y: number }): Promise<void> {

@@ -1,9 +1,12 @@
-import { Menu, Notice, setIcon, setTooltip } from "obsidian";
+import { App, Menu, Notice, setIcon, setTooltip } from "obsidian";
 import { Scratchpad, ScratchpadEntry, ScratchpadManager } from "src/scratch/scratchpadManager";
+import { resolveDroppedVaultFiles, hasVaultFileDragTypes } from "src/utils/dropFileResolver";
 import { t } from "src/lang/helper";
 
 const IDLE_FADE_MS = 3000;
 const NEAR_HANDLE_PX = 60; // 鼠标距离句柄多近算"靠近"
+
+export type CurrentMOCInfo = { path: string; name: string };
 
 /**
  * 临时工作区抽屉(Scratchpad Drawer)
@@ -16,6 +19,8 @@ const NEAR_HANDLE_PX = 60; // 鼠标距离句柄多近算"靠近"
  */
 export class ScratchpadDrawer {
     private manager: ScratchpadManager;
+    private app: App;
+    private getCurrentMOC: () => CurrentMOCInfo;
     private root: HTMLElement;
     private panel: HTMLElement;
     private handle: HTMLElement;
@@ -29,8 +34,15 @@ export class ScratchpadDrawer {
     private idleTimer: number | null = null;
     private mouseMoveHandler: ((e: MouseEvent) => void) | null = null;
 
-    constructor(parent: HTMLElement, manager: ScratchpadManager) {
+    constructor(
+        parent: HTMLElement,
+        manager: ScratchpadManager,
+        app: App,
+        getCurrentMOC: () => CurrentMOCInfo,
+    ) {
         this.manager = manager;
+        this.app = app;
+        this.getCurrentMOC = getCurrentMOC;
 
         this.root = parent.createDiv("zk-scratch-drawer");
         this.root.setAttribute("aria-hidden", "true");
@@ -57,6 +69,8 @@ export class ScratchpadDrawer {
 
         this.tabsEl = this.panel.createDiv("zk-scratch-tabs");
         this.bodyEl = this.panel.createDiv("zk-scratch-drawer-body");
+
+        this.registerVaultFileDrop();
 
         // ---- handle (triangle on the right edge) ----
         this.handle = this.root.createDiv("zk-scratch-drawer-handle");
@@ -126,6 +140,52 @@ export class ScratchpadDrawer {
             this.idleTimer = null;
         }
         this.root.remove();
+    }
+
+    // ---------- vault file drop ----------
+
+    private registerVaultFileDrop(): void {
+        const isScratchCardDrag = (e: DragEvent): boolean =>
+            !!e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("application/x-zk-scratch");
+
+        this.panel.addEventListener("dragenter", (e: DragEvent) => {
+            if (isScratchCardDrag(e)) return;
+            if (!hasVaultFileDragTypes(e)) return;
+            e.preventDefault();
+            this.panel.addClass("is-drop-target");
+        });
+
+        this.panel.addEventListener("dragover", (e: DragEvent) => {
+            if (isScratchCardDrag(e)) return;
+            if (!hasVaultFileDragTypes(e)) return;
+            e.preventDefault();
+            if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+            this.panel.addClass("is-drop-target");
+        });
+
+        this.panel.addEventListener("dragleave", (e: DragEvent) => {
+            const related = e.relatedTarget as Node | null;
+            if (related && this.panel.contains(related)) return;
+            this.panel.removeClass("is-drop-target");
+        });
+
+        this.panel.addEventListener("drop", async (e: DragEvent) => {
+            this.panel.removeClass("is-drop-target");
+            if (isScratchCardDrag(e)) return;
+
+            const files = resolveDroppedVaultFiles(this.app, e);
+            if (files.length === 0) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            const moc = this.getCurrentMOC();
+            for (const file of files) {
+                const entry = this.manager.buildEntryFromFile(file, moc.path || "", moc.name || "");
+                await this.manager.add(entry);
+            }
+            new Notice(t("scratch added file count").replace("{n}", String(files.length)));
+        });
     }
 
     // ---------- handle / idle ----------
