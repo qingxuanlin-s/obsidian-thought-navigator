@@ -1,5 +1,5 @@
 import { App, Menu, Notice, setIcon, setTooltip } from "obsidian";
-import { Scratchpad, ScratchpadEntry, ScratchpadManager } from "src/scratch/scratchpadManager";
+import { Scratchpad, ScratchpadEntry, ScratchpadManager, ScratchpadSplitRule } from "src/scratch/scratchpadManager";
 import { resolveDroppedVaultFiles, hasVaultFileDragTypes } from "src/utils/dropFileResolver";
 import { t } from "src/lang/helper";
 
@@ -131,6 +131,7 @@ export class ScratchpadDrawer {
     destroy(): void {
         this.unsubscribe?.();
         this.unsubscribe = null;
+        document.querySelector(".zk-scratch-context-menu")?.remove();
         if (this.mouseMoveHandler) {
             document.removeEventListener("mousemove", this.mouseMoveHandler);
             this.mouseMoveHandler = null;
@@ -461,6 +462,92 @@ export class ScratchpadDrawer {
             });
             document.dispatchEvent(evt);
         });
+
+        card.addEventListener("contextmenu", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.showCardMenu(e, entry);
+        });
+    }
+
+    private showCardMenu(e: MouseEvent, entry: ScratchpadEntry): void {
+        document.querySelector(".zk-scratch-context-menu")?.remove();
+
+        const menu = document.body.createDiv("zk-node-ctx-menu zk-scratch-context-menu");
+        menu.style.position = "fixed";
+        menu.style.zIndex = "10000";
+
+        const closeMenu = (evt: MouseEvent) => {
+            if (!menu.contains(evt.target as Node)) {
+                menu.remove();
+                document.removeEventListener("click", closeMenu);
+            }
+        };
+
+        if (entry.kind === "text") {
+            this.addCardMenuItem(menu, menu, closeMenu, "heading", t("scratch split by heading"), () => {
+                this.splitTextEntry(entry, "heading");
+            });
+            this.addCardMenuItem(menu, menu, closeMenu, "list", t("scratch split by line"), () => {
+                this.splitTextEntry(entry, "line");
+            });
+            menu.createDiv("zk-node-ctx-sep");
+        }
+
+        this.addCardMenuItem(menu, menu, closeMenu, "trash-2", t("scratch remove"), () => {
+            void this.manager.remove(entry.tempId);
+        });
+
+        this.positionCardMenu(menu, e);
+        setTimeout(() => document.addEventListener("click", closeMenu), 0);
+    }
+
+    private addCardMenuItem(
+        parent: HTMLElement,
+        menu: HTMLElement,
+        closeMenu: (e: MouseEvent) => void,
+        icon: string,
+        label: string,
+        action: () => void,
+    ): void {
+        const item = parent.createDiv("zk-node-ctx-item");
+        const iconEl = item.createSpan();
+        setIcon(iconEl, icon);
+        item.createSpan({ text: label });
+        item.addEventListener("click", (e) => {
+            e.stopPropagation();
+            menu.remove();
+            document.removeEventListener("click", closeMenu);
+            action();
+        });
+    }
+
+    private positionCardMenu(menu: HTMLElement, mouseEvent: MouseEvent): void {
+        menu.style.visibility = "hidden";
+        menu.style.left = "0";
+        menu.style.top = "0";
+        requestAnimationFrame(() => {
+            const mw = menu.offsetWidth;
+            const mh = menu.offsetHeight;
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            let x = mouseEvent.clientX;
+            let y = mouseEvent.clientY;
+            if (x + mw > vw) x = vw - mw - 4;
+            if (y + mh > vh) y = vh - mh - 4;
+            menu.style.left = `${Math.max(4, x)}px`;
+            menu.style.top = `${Math.max(4, y)}px`;
+            menu.style.visibility = "visible";
+        });
+    }
+
+    private splitTextEntry(entry: ScratchpadEntry, rule: ScratchpadSplitRule): void {
+        const count = this.manager.splitTextEntry(entry.tempId, rule);
+        if (count > 0) {
+            new Notice(t("scratch split success").replace("{n}", String(count)));
+        } else {
+            new Notice(t("scratch split no parts"));
+        }
     }
 
     private truncate(s: string, max: number): string {

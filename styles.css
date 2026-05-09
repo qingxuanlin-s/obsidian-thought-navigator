@@ -2637,6 +2637,15 @@ align-items: center;
     user-select: none;
 }
 
+.zk-scratch-context-menu {
+    min-width: 260px;
+}
+
+.zk-scratch-context-menu .zk-node-ctx-item {
+    width: 100%;
+    justify-content: flex-start;
+}
+
 /* MOC 选择器样式 */
 .zk-moc-selector-block {
     display: flex;
