@@ -9,6 +9,8 @@ import { MOCSelectorModal } from "src/modal/mocSelectorModal";
 import { NoteSearchModal } from "src/modal/noteSearchModal";
 import { convertMOCToZKNodes, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX, MOCParseResult, MOCTreeNode, parseMOCStructure, stripMocSuffix } from "src/utils/utils";
 import { FolderDrawer } from "src/view/folderDrawer";
+import { ScratchpadDrawer } from "src/view/scratchpadDrawer";
+import { ScratchpadEntry } from "src/scratch/scratchpadManager";
 import { createEmptyMOCJson } from "src/utils/mocJsonCodec";
 import { MermaidParser } from "src/utils/mermaidParser";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
@@ -162,6 +164,7 @@ export class ZKIndexView extends FileView {
     private staticUICreated: boolean = false;
     private staticToolbarDiv: HTMLElement | null = null;
     private folderDrawer: FolderDrawer | null = null;
+    private scratchDrawer: ScratchpadDrawer | null = null;
     private vaultIndexUnsubscribe: (() => void) | null = null;
 
     // 性能优化：追踪事件监听器初始化状态，避免重复添加
@@ -268,6 +271,36 @@ export class ZKIndexView extends FileView {
             onBeforeModify: ({ filePath, content }) => {
                 if (this.isApplyingUndo) return;
                 this.pushUndoSnapshot(filePath, content);
+            }
+        });
+
+        // 临时工作区:Cmd+C/X/V
+        const isInputFocused = (): boolean => {
+            const ae = document.activeElement as HTMLElement | null;
+            return !!(ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable));
+        };
+        this.scope.register(['Mod'], 'c', (event: KeyboardEvent) => {
+            if (isInputFocused()) return;
+            if (this.copySelectionToScratchpad('copy')) {
+                event.preventDefault();
+                event.stopPropagation();
+                return false;
+            }
+        });
+        this.scope.register(['Mod'], 'x', (event: KeyboardEvent) => {
+            if (isInputFocused()) return;
+            if (this.copySelectionToScratchpad('cut')) {
+                event.preventDefault();
+                event.stopPropagation();
+                return false;
+            }
+        });
+        this.scope.register(['Mod'], 'v', (event: KeyboardEvent) => {
+            if (isInputFocused()) return;
+            if (this.pasteTopFromScratchpad()) {
+                event.preventDefault();
+                event.stopPropagation();
+                return false;
             }
         });
     }
@@ -585,6 +618,14 @@ export class ZKIndexView extends FileView {
                     containerEl, this.app, this.plugin,
                     this.plugin.vaultIndex, this.plugin.spaceService
                 );
+            }
+
+            // 临时工作区抽屉(左侧),跨 MOC 共享的节点暂存
+            if (this.plugin.scratchpad) {
+                this.scratchDrawer = new ScratchpadDrawer(
+                    containerEl, this.plugin.scratchpad
+                );
+                this.registerScratchpadDocumentListeners();
             }
 
             // 订阅 VaultIndex 变化,实时刷新项目徽章
@@ -1299,8 +1340,15 @@ cy.fit(null, 40);
             t === 'text/x-obsidian-uri' ||
             t === 'application/x-obsidian-uri' ||
             t === 'application/x-obsidian-file' ||
+            t === 'application/x-zk-scratch' ||
             t === 'Files'
         );
+    }
+
+    private isScratchpadDrag(event: DragEvent): boolean {
+        const dt = event.dataTransfer;
+        if (!dt) return false;
+        return Array.from(dt.types || []).includes('application/x-zk-scratch');
     }
 
     private resolveDroppedVaultFiles(event: DragEvent): TFile[] {
@@ -1947,7 +1995,7 @@ cy.fit(null, 40);
                 if (!this.hasDroppableTypes(event)) return;
                 event.preventDefault();
                 if (event.dataTransfer) {
-                    event.dataTransfer.dropEffect = 'copy';
+                    event.dataTransfer.dropEffect = this.isScratchpadDrag(event) ? 'move' : 'copy';
                 }
                 setDropHover(true);
             });
@@ -1963,6 +2011,23 @@ cy.fit(null, 40);
             this.addTrackedListener(branchGraphDiv, 'drop', async (event: DragEvent) => {
                 if (this.isMobileReadOnly()) return;
                 setDropHover(false);
+
+                // 优先处理暂存区卡片落入
+                if (this.isScratchpadDrag(event)) {
+                    const tempId = event.dataTransfer?.getData('application/x-zk-scratch');
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (!tempId) return;
+                    const found = this.plugin.scratchpad?.get(tempId);
+                    if (!found) return;
+                    const pos = this.getGraphModelPositionFromClientPoint(
+                        event.clientX,
+                        event.clientY,
+                        branchGraphDiv
+                    );
+                    await this.materializeScratchpadEntryAt(found.entry, pos);
+                    return;
+                }
 
                 const droppedFiles = this.resolveDroppedVaultFiles(event);
                 if (droppedFiles.length === 0) return;
@@ -4015,6 +4080,18 @@ cy.fit(null, 40);
 
         // 分隔线
         menu.createDiv('zk-node-ctx-sep');
+
+        // 暂存区:复制 / 剪切到工作区(跨领域虚拟节点不可用)
+        if (!node.isCrossDomain && !node.isPlaceholder) {
+            const scratchRow = menu.createDiv('zk-node-ctx-row');
+            this.addContextMenuItem(scratchRow, menu, closeMenu, 'copy', t('ctx copy to scratch'), async () => {
+                this.copySelectionToScratchpad('copy', node);
+            });
+            this.addContextMenuItem(scratchRow, menu, closeMenu, 'scissors', t('ctx cut to scratch'), async () => {
+                this.copySelectionToScratchpad('cut', node);
+            });
+            menu.createDiv('zk-node-ctx-sep');
+        }
 
         // 底部两列：修改节点 ID + 修改节点颜色
         const row = menu.createDiv('zk-node-ctx-row');
@@ -7141,6 +7218,8 @@ cy.fit(null, 40);
             this.vaultIndexUnsubscribe = null;
         }
 
+        this.scratchDrawer = null;
+
         // 清理所有防抖定时器
         this.cleanupTimers();
 
@@ -7866,5 +7945,187 @@ cy.fit(null, 40);
             document.body.appendChild(btn);
             this.mocFullscreenExitBtn = btn;
         }
+    }
+
+    // ============================================================
+    // 临时工作区(Scratchpad)集成
+    // ============================================================
+
+    /**
+     * 当前 MOC 文件名(用于来源标记)
+     */
+    private getCurrentMOCDisplayName(): string {
+        const path = this.plugin.settings.mocCurrentFile;
+        if (!path) return '';
+        const file = this.app.vault.getFileByPath(path);
+        return file ? stripMocSuffix(file.basename) : path;
+    }
+
+    /**
+     * 复制/剪切节点到暂存区。
+     * - 不传 explicitNode:用 cytoscape 当前选中的节点(快捷键路径)
+     * - 传 explicitNode:用指定节点(右键菜单路径)
+     * 返回 true 表示拦截了快捷键。
+     */
+    private copySelectionToScratchpad(operation: 'cut' | 'copy', explicitNode?: ZKNode): boolean {
+        const scratchpad = this.plugin.scratchpad;
+        if (!scratchpad) return false;
+
+        const nodes: ZKNode[] = [];
+        if (explicitNode) {
+            if (!explicitNode.isCrossDomain && !explicitNode.isPlaceholder) {
+                nodes.push(explicitNode);
+            }
+        } else {
+            const cy = this.branchRenderer?.getCytoscapeInstance();
+            if (!cy) return false;
+            const selectedRaw = cy.$(':selected').filter('node[!isGroup]');
+            selectedRaw.forEach((cyNode: any) => {
+                const data = cyNode.data();
+                const original = data?.originalNode as ZKNode | undefined;
+                if (!original) return;
+                if (data?.isPlaceholder) return;
+                if (original.isCrossDomain || original.isPlaceholder) return;
+                nodes.push(original);
+            });
+        }
+        if (nodes.length === 0) return false;
+
+        const mocPath = this.plugin.settings.mocCurrentFile;
+        const mocName = this.getCurrentMOCDisplayName();
+        const mocFile = mocPath ? this.app.vault.getFileByPath(mocPath) : null;
+
+        // copy 立即入暂存(无副作用);cut 先入暂存再删原节点
+        void (async () => {
+            for (const node of nodes) {
+                const entry = scratchpad.buildEntry(node, mocPath, mocName, operation);
+                await scratchpad.add(entry);
+            }
+            if (operation === 'cut' && mocFile) {
+                try {
+                    await this.saveAllNodePositionsBeforeRefresh();
+                    for (const node of nodes) {
+                        if (node.isCrossDomain) continue;
+                        await this.mocHandler.deleteNodeFromMOC(mocFile, node.IDStr);
+                    }
+                    await new Promise(r => setTimeout(r, 20));
+                    await this.refreshBranchMermaid();
+                    new Notice(t("scratch cut notice").replace('{n}', String(nodes.length)));
+                } catch (e) {
+                    console.error("[scratchpad] cut 失败", e);
+                    new Notice(t("scratch cut failed"));
+                }
+            } else {
+                new Notice(t("scratch copy notice").replace('{n}', String(nodes.length)));
+            }
+        })();
+
+        return true;
+    }
+
+    /**
+     * 粘贴暂存区顶部(最新)的一个节点到视口中心。返回 true 表示拦截。
+     */
+    private pasteTopFromScratchpad(): boolean {
+        const scratchpad = this.plugin.scratchpad;
+        if (!scratchpad) return false;
+        const top = scratchpad.list()[0];
+        if (!top) return false;
+
+        const position = this.getViewportCenterModelPosition();
+        void this.materializeScratchpadEntryAt(top, position);
+        return true;
+    }
+
+    private getViewportCenterModelPosition(): { x: number; y: number } {
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        if (!cy) return { x: 0, y: 0 };
+        const pan = cy.pan();
+        const zoom = cy.zoom();
+        return {
+            x: (cy.width() / 2 - pan.x) / zoom,
+            y: (cy.height() / 2 - pan.y) / zoom,
+        };
+    }
+
+    /**
+     * 把暂存条目落到画布(给定模型坐标)。落地后从暂存区移除该条目。
+     */
+    private async materializeScratchpadEntryAt(
+        entry: ScratchpadEntry,
+        position: { x: number; y: number }
+    ): Promise<void> {
+        const mocPath = this.plugin.settings.mocCurrentFile;
+        if (!mocPath) {
+            new Notice(t("scratch no current moc"));
+            return;
+        }
+        const mocFile = this.app.vault.getFileByPath(mocPath);
+        if (!mocFile) {
+            new Notice(t("scratch no current moc"));
+            return;
+        }
+
+        // 落点处按新 MOC 的层级重新生成 ID
+        const newID = this.generateNextFreeNodeID();
+
+        try {
+            if (entry.kind === 'text') {
+                await this.saveFreeNodeToMOC({
+                    text: entry.target,
+                    nodeID: newID,
+                    relationText: '',
+                    file: null,
+                    isTextOnly: true,
+                });
+            } else {
+                // file / embed:解析 wikiLink 找文件
+                const hashIdx = entry.target.indexOf('#');
+                const wikiPathOnly = hashIdx >= 0 ? entry.target.substring(0, hashIdx) : entry.target;
+                const file = this.app.metadataCache.getFirstLinkpathDest(wikiPathOnly, '');
+                await this.saveFreeNodeToMOC({
+                    wikiLink: entry.target,
+                    alias: entry.alias,
+                    nodeID: newID,
+                    relationText: '',
+                    file: file,
+                    isTextOnly: false,
+                    isEmbed: entry.kind === 'embed',
+                });
+            }
+
+            // 保存落点位置
+            await this.saveNodePositionToMOC(mocFile, newID, position);
+
+            // 从暂存区移除(粘贴 = 消费)
+            await this.plugin.scratchpad?.remove(entry.tempId);
+
+            await new Promise(r => setTimeout(r, 20));
+            await this.refreshBranchMermaid();
+
+            // 选中新节点
+            const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+            branchGraphDiv?.dispatchEvent(new CustomEvent('select-node-by-id', {
+                detail: { nodeId: newID }
+            }));
+        } catch (e) {
+            console.error("[scratchpad] 粘贴失败", e);
+            new Notice(t("scratch paste failed"));
+        }
+    }
+
+    /**
+     * 双击暂存卡片 → 落到画布视口中心(替代鼠标拖拽的备用路径)
+     */
+    private registerScratchpadDocumentListeners(): void {
+        const onPasteCenter = (e: any) => {
+            const tempId = e?.detail?.tempId;
+            if (!tempId) return;
+            const found = this.plugin.scratchpad?.get(tempId);
+            if (!found) return;
+            const pos = this.getViewportCenterModelPosition();
+            void this.materializeScratchpadEntryAt(found.entry, pos);
+        };
+        this.addTrackedListener(document, 'scratchpad-paste-center', onPasteCenter as any);
     }
 }

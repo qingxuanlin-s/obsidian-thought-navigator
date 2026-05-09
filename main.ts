@@ -16,6 +16,7 @@ import { ZKIndexView, ZKNode, ZK_INDEX_TYPE, ZK_NAVIGATION } from "src/view/inde
 import { ZK_RECENT_TYPE, ZKRecentView } from "src/view/recentView";
 import { MOCPreviewView, MOC_PREVIEW_VIEW_TYPE } from "src/view/mocPreviewView";
 import { LayoutPreset, normalizeLayoutPreset } from "src/utils/growthDirection";
+import { Scratchpad, ScratchpadEntry, ScratchpadManager } from "src/scratch/scratchpadManager";
 
 interface Point {
     x: number;
@@ -128,6 +129,8 @@ interface ZKNavigationSettings {
     nodeLayoutStyle: 'free' | 'auto';  // 节点布局风格（自由/自动）
     autoLayoutDefaultGrowthDirection: LayoutPreset; // 自动布局默认生长方向
     showNoteIdInBranchView: boolean;   // 分支视图是否显示笔记编号
+    scratchpads: Scratchpad[];          // 临时工作区:跨 MOC 共享的节点暂存(支持多 pad)
+    activeScratchpadId: string;         // 当前激活的暂存区 id
 }
 
 //Default value for setting field
@@ -208,6 +211,8 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     nodeLayoutStyle: 'free', // 默认自由节点布局
     autoLayoutDefaultGrowthDirection: 'bidirectional',
     showNoteIdInBranchView: true,
+    scratchpads: [],
+    activeScratchpadId: '',
 }
 
 export default class ZKNavigationPlugin extends Plugin {
@@ -232,6 +237,8 @@ export default class ZKNavigationPlugin extends Plugin {
     // 自建 Space 树索引(spaces.json,只虚拟存在,不创建真实文件夹)
     vaultIndex: VaultIndex | null = null;
     spaceService: SpaceService | null = null;
+    // 临时工作区(跨 MOC 共享的节点暂存)
+    scratchpad: ScratchpadManager | null = null;
     private originalWindowOnError: OnErrorEventHandler | null = null;
     // notebook-navigator 文件夹右键菜单注销函数
     private nnFolderMenuDispose: (() => void) | null = null;
@@ -252,6 +259,33 @@ export default class ZKNavigationPlugin extends Plugin {
         this.settings.autoLayoutDefaultGrowthDirection = normalizeLayoutPreset(
             this.settings.autoLayoutDefaultGrowthDirection
         );
+        if (!Array.isArray(this.settings.scratchpads)) {
+            this.settings.scratchpads = [];
+        }
+        // 旧版 scratchpadItems(单一暂存区)迁移为单 pad
+        const legacyItems = (this.settings as any).scratchpadItems;
+        if (Array.isArray(legacyItems) && legacyItems.length > 0 && this.settings.scratchpads.length === 0) {
+            this.settings.scratchpads.push({
+                id: `pad-legacy-${Date.now().toString(36)}`,
+                name: '默认',
+                items: legacyItems as ScratchpadEntry[],
+                createdAt: Date.now(),
+            });
+        }
+        delete (this.settings as any).scratchpadItems;
+        // 至少保证有一个 pad
+        if (this.settings.scratchpads.length === 0) {
+            this.settings.scratchpads.push({
+                id: `pad-default-${Date.now().toString(36)}`,
+                name: '默认',
+                items: [],
+                createdAt: Date.now(),
+            });
+        }
+        // active id 必须指向已有 pad
+        if (!this.settings.scratchpads.some((p) => p.id === this.settings.activeScratchpadId)) {
+            this.settings.activeScratchpadId = this.settings.scratchpads[0].id;
+        }
     }
 
     applyTheme() {
@@ -677,6 +711,8 @@ export default class ZKNavigationPlugin extends Plugin {
         this.vaultIndex = new VaultIndex(this.app, storePath);
         this.addChild(this.vaultIndex);
         this.spaceService = new SpaceService(this.app, this.vaultIndex);
+        // 临时工作区管理器(跨 MOC 暂存,持久化到 plugin data)
+        this.scratchpad = new ScratchpadManager(this);
         // 等 layout-ready 后再构建索引，确保 metadataCache 已初始化
         this.app.workspace.onLayoutReady(async () => {
             await this.mocReverseIndex?.initialize(
