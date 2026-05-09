@@ -1120,6 +1120,7 @@ export function bindEvents(this: any): void {
             const node = evt.target;
             const data = node.data();
             const smartEnabled = this.isSmartConnectionEnabled();
+            const smartTargetNodeId = nearbyNodeId;
             hideAlignmentGuides();
 
             // 自动布局：为同步平移的后代派发位置变化事件（以便批量持久化）
@@ -1185,9 +1186,9 @@ export function bindEvents(this: any): void {
             // 处理占位符节点的智能连线
             if (data.isPlaceholder) {
                 // 检查是否启用了智能连线并且有附近的节点
-                if (smartEnabled && nearbyNodeId) {
-                    const parentData = this.cy!.$id(nearbyNodeId).data();
-                    const parentId = parentData.originalNode?.ID || parentData.originalSource || nearbyNodeId;
+                if (smartEnabled && smartTargetNodeId) {
+                    const parentData = this.cy!.$id(smartTargetNodeId).data();
+                    const parentId = parentData.originalNode?.ID || parentData.originalSource || smartTargetNodeId;
                     const placeholderId = data.id;
 
                     // 触发占位符节点自动连接事件
@@ -1208,12 +1209,12 @@ export function bindEvents(this: any): void {
             }
 
             // 检查是否有自动连接（自由节点）
-            if (smartEnabled && nearbyNodeId) {
-                const parentData = this.cy!.$id(nearbyNodeId).data();
+            if (smartEnabled && smartTargetNodeId) {
+                const parentData = this.cy!.$id(smartTargetNodeId).data();
 
                 // 使用 originalNode.ID（带点的格式）而不是转义后的 ID
                 const childId = data.originalNode?.ID || data.originalSource || data.id;
-                const parentId = parentData.originalNode?.ID || parentData.originalSource || nearbyNodeId;
+                const parentId = parentData.originalNode?.ID || parentData.originalSource || smartTargetNodeId;
 
                 // 触发自动连接事件
                 this.container?.dispatchEvent(new CustomEvent('auto-connect-node', {
