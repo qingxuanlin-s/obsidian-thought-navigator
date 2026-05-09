@@ -39,6 +39,7 @@ function deepCopyMOCResult(original: MOCParseResult): MOCParseResult {
         embedNodeSizes: { ...(original as any).embedNodeSizes || {} },
         nodeRemarks: { ...(original as any).nodeRemarks || {} },
         nodeAnchors: { ...(original as any).nodeAnchors || {} },
+        collapsedNodeIds: [...((original as any).collapsedNodeIds || [])],
         nodeLayoutStyle: original.nodeLayoutStyle,
         nodeLayoutOverrides: original.nodeLayoutOverrides ? { ...original.nodeLayoutOverrides } : undefined,
         layoutPreset: original.layoutPreset,
@@ -183,6 +184,10 @@ export class MOCHandler {
         }
         if ((mocData as any).nodeRemarks && (mocData as any).nodeRemarks[nodeID]) {
             delete (mocData as any).nodeRemarks[nodeID];
+        }
+        if ((mocData as any).collapsedNodeIds) {
+            (mocData as any).collapsedNodeIds = (mocData as any).collapsedNodeIds
+                .filter((id: string) => id !== nodeID && !id.startsWith(`${nodeID}.`));
         }
         if (mocData.nodeLayoutOverrides && mocData.nodeLayoutOverrides[nodeID]) {
             delete mocData.nodeLayoutOverrides[nodeID];
@@ -572,6 +577,12 @@ export class MOCHandler {
                     delete mocData.crossDomainLinks[mapping.old];
                 }
             }
+            if ((mocData as any).collapsedNodeIds) {
+                for (const mapping of idMappings) {
+                    (mocData as any).collapsedNodeIds = (mocData as any).collapsedNodeIds
+                        .map((id: string) => id === mapping.old ? mapping.new : id);
+                }
+            }
         });
 
         return updateCount;
@@ -675,6 +686,9 @@ export class MOCHandler {
                     const nb: Record<string, any> = {};
                     for (const [k, v] of Object.entries(obj)) nb[applyMap(k)] = v;
                     (mocData as any)[field] = nb;
+                }
+                if ((mocData as any).collapsedNodeIds) {
+                    (mocData as any).collapsedNodeIds = (mocData as any).collapsedNodeIds.map((id: string) => applyMap(id));
                 }
             };
 
@@ -850,6 +864,10 @@ export class MOCHandler {
                 if (mocData.crossDomainLinks && mocData.crossDomainLinks[mapping.old]) {
                     mocData.crossDomainLinks[mapping.new] = mocData.crossDomainLinks[mapping.old];
                     delete mocData.crossDomainLinks[mapping.old];
+                }
+                if ((mocData as any).collapsedNodeIds) {
+                    (mocData as any).collapsedNodeIds = (mocData as any).collapsedNodeIds
+                        .map((id: string) => id === mapping.old ? mapping.new : id);
                 }
             });
 
@@ -1043,6 +1061,10 @@ export class MOCHandler {
                 if (mocData.crossDomainLinks && mocData.crossDomainLinks[mapping.old]) {
                     mocData.crossDomainLinks[mapping.new] = mocData.crossDomainLinks[mapping.old];
                     delete mocData.crossDomainLinks[mapping.old];
+                }
+                if ((mocData as any).collapsedNodeIds) {
+                    (mocData as any).collapsedNodeIds = (mocData as any).collapsedNodeIds
+                        .map((id: string) => id === mapping.old ? mapping.new : id);
                 }
             });
 

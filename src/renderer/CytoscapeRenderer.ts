@@ -267,6 +267,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
         this.container = container;
         this.currentData = data;
         this.currentOptions = options;
+        this.collapsedNodeIds = new Set(
+            options.initialCollapsedNodeIds
+            || data.metadata.collapsedNodeIds
+            || []
+        );
         if (!this.domTextMeasurer || containerChanged) {
             this.domTextMeasurer?.destroy();
             this.domTextMeasurer = new DomTextMeasurer(container);
