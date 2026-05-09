@@ -1166,7 +1166,9 @@ export default class ZKNavigationPlugin extends Plugin {
         }
     }
 
-    onunload() {
+    async onunload() {
+        await this.detachPluginViews();
+
         // 清理 MOC 文件监听器
         if (this.mocFileMonitor) {
             this.mocFileMonitor.cleanup();
@@ -1181,5 +1183,21 @@ export default class ZKNavigationPlugin extends Plugin {
         this.originalWindowOnError = null;
 
         this.saveData(this.settings);
+    }
+
+    private async detachPluginViews(): Promise<void> {
+        const viewTypes = [
+            ZK_GRAPH_TYPE,
+            ZK_INDEX_TYPE,
+            ZK_RECENT_TYPE,
+        ];
+
+        for (const viewType of viewTypes) {
+            try {
+                await this.app.workspace.detachLeavesOfType(viewType);
+            } catch (e) {
+                console.error(`[zk-navigation] failed to detach ${viewType} on unload`, e);
+            }
+        }
     }
 }
