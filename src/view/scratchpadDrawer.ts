@@ -54,6 +54,8 @@ export class ScratchpadDrawer {
     private isOpen: boolean = false;
     private isTextComposerOpen: boolean = false;
     private textComposerValue: string = "";
+    private textComposerSourceTempIds: Set<string> = new Set();
+    private draggingScratchTempId: string | null = null;
     private unsubscribe: (() => void) | null = null;
     private idleTimer: number | null = null;
     private mouseMoveHandler: ((e: MouseEvent) => void) | null = null;
@@ -468,6 +470,24 @@ export class ScratchpadDrawer {
         });
     }
 
+    private editEntryInComposer(entry: ScratchpadEntry): void {
+        const text = this.manager.toEditableText(entry);
+        if (!text) return;
+
+        this.isTextComposerOpen = true;
+        this.textComposerValue = text;
+        this.textComposerSourceTempIds.clear();
+        this.textComposerSourceTempIds.add(entry.tempId);
+        this.render();
+        requestAnimationFrame(() => {
+            const textarea = this.bodyEl.querySelector(".zk-scratch-composer-textarea") as HTMLTextAreaElement | null;
+            if (!textarea) return;
+            textarea.focus();
+            textarea.setSelectionRange(0, textarea.value.length);
+            this.autosizeTextarea(textarea);
+        });
+    }
+
     private renderTextComposer(parent: HTMLElement): void {
         const composer = parent.createDiv("zk-scratch-composer");
         const textarea = composer.createEl("textarea", { cls: "zk-scratch-composer-textarea" });
@@ -504,6 +524,10 @@ export class ScratchpadDrawer {
                 return;
             }
             await this.manager.addMany(entries);
+            for (const tempId of this.textComposerSourceTempIds) {
+                await this.manager.remove(tempId);
+            }
+            this.textComposerSourceTempIds.clear();
             this.textComposerValue = "";
             this.render();
             requestAnimationFrame(() => {
@@ -515,6 +539,7 @@ export class ScratchpadDrawer {
         const cancel = () => {
             this.isTextComposerOpen = false;
             this.textComposerValue = "";
+            this.textComposerSourceTempIds.clear();
             this.render();
         };
 
@@ -554,6 +579,52 @@ export class ScratchpadDrawer {
             this.textComposerValue = textarea.value;
             this.autosizeTextarea(textarea);
         });
+        const onDragOver = (e: DragEvent) => {
+            if (!e.dataTransfer?.types.includes("application/x-zk-scratch")) return;
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = "move";
+            composer.addClass("is-drop-target");
+        };
+        const onDragLeave = (e: DragEvent) => {
+            const related = e.relatedTarget as Node | null;
+            if (related && composer.contains(related)) return;
+            composer.removeClass("is-drop-target");
+        };
+        const onDrop = (e: DragEvent) => {
+            composer.removeClass("is-drop-target");
+            const tempId = e.dataTransfer?.getData("application/x-zk-scratch");
+            if (!tempId) return;
+
+            const found = this.manager.get(tempId);
+            if (!found) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            const text = this.manager.toEditableText(found.entry);
+            if (!text) return;
+
+            const current = textarea.value;
+            const start = textarea.selectionStart ?? current.length;
+            const end = textarea.selectionEnd ?? start;
+            const before = current.slice(0, start);
+            const after = current.slice(end);
+            const prefix = before && !before.endsWith("\n") ? "\n" : "";
+            const suffix = after && !text.endsWith("\n") ? "\n" : "";
+            const nextText = `${before}${prefix}${text}${suffix}${after}`;
+            const cursor = before.length + prefix.length + text.length;
+
+            textarea.value = nextText;
+            textarea.setSelectionRange(cursor, cursor);
+            this.textComposerValue = nextText;
+            this.textComposerSourceTempIds.add(tempId);
+            this.autosizeTextarea(textarea);
+            textarea.focus();
+        };
+        composer.addEventListener("dragover", onDragOver);
+        composer.addEventListener("dragleave", onDragLeave);
+        composer.addEventListener("drop", onDrop);
         requestAnimationFrame(() => this.autosizeTextarea(textarea));
     }
 
@@ -614,17 +685,44 @@ export class ScratchpadDrawer {
             if (!e.dataTransfer) return;
             e.dataTransfer.setData("application/x-zk-scratch", entry.tempId);
             e.dataTransfer.effectAllowed = "copyMove";
+            this.draggingScratchTempId = entry.tempId;
             card.addClass("is-dragging");
         });
         card.addEventListener("dragend", () => {
+            this.draggingScratchTempId = null;
             card.removeClass("is-dragging");
         });
 
-        card.addEventListener("dblclick", () => {
-            const evt = new CustomEvent("scratchpad-paste-center", {
-                detail: { tempId: entry.tempId },
-            });
-            document.dispatchEvent(evt);
+        card.addEventListener("dragover", (e) => {
+            if (!e.dataTransfer?.types.includes("application/x-zk-scratch")) return;
+            if (this.draggingScratchTempId === entry.tempId) return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+            card.addClass("is-merge-target");
+        });
+
+        card.addEventListener("dragleave", (e) => {
+            const related = e.relatedTarget as Node | null;
+            if (related && card.contains(related)) return;
+            card.removeClass("is-merge-target");
+        });
+
+        card.addEventListener("drop", (e) => {
+            card.removeClass("is-merge-target");
+            const tempId = e.dataTransfer?.getData("application/x-zk-scratch");
+            if (!tempId || tempId === entry.tempId) return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (this.manager.mergeEntries(tempId, entry.tempId)) {
+                new Notice(t("scratch merge success"));
+            }
+        });
+
+        card.addEventListener("dblclick", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.editEntryInComposer(entry);
         });
 
         card.addEventListener("contextmenu", (e) => {

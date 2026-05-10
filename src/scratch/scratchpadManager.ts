@@ -116,6 +116,19 @@ function splitText(text: string, rule: ScratchpadSplitRule): string[] {
     return rule === "heading" ? splitTextByHeading(text) : splitTextByLine(text);
 }
 
+function entryToMergedText(entry: ScratchpadEntry): string {
+    if (entry.kind === "text") {
+        return normalizeSplitPart(entry.target || entry.displayText);
+    }
+
+    const target = normalizeSplitPart(entry.target || entry.displayText);
+    if (!target) return normalizeSplitPart(entry.displayText);
+
+    const alias = normalizeSplitPart(entry.alias || "");
+    const link = alias && alias !== target ? `${target}|${alias}` : target;
+    return entry.kind === "embed" ? `![[${link}]]` : `[[${link}]]`;
+}
+
 export class ScratchpadManager {
     private plugin: ZKNavigationPlugin;
     private listeners: Set<() => void> = new Set();
@@ -377,6 +390,65 @@ export class ScratchpadManager {
                 return;
             }
         }
+    }
+
+    toEditableText(entry: ScratchpadEntry): string {
+        return entryToMergedText(entry);
+    }
+
+    mergeEntries(sourceTempId: string, targetTempId: string): boolean {
+        if (!sourceTempId || !targetTempId || sourceTempId === targetTempId) return false;
+
+        let sourcePad: Scratchpad | null = null;
+        let targetPad: Scratchpad | null = null;
+        let sourceIdx = -1;
+        let targetIdx = -1;
+
+        for (const pad of this.listPads()) {
+            if (sourceIdx < 0) {
+                const idx = pad.items.findIndex((e) => e.tempId === sourceTempId);
+                if (idx >= 0) {
+                    sourcePad = pad;
+                    sourceIdx = idx;
+                }
+            }
+            if (targetIdx < 0) {
+                const idx = pad.items.findIndex((e) => e.tempId === targetTempId);
+                if (idx >= 0) {
+                    targetPad = pad;
+                    targetIdx = idx;
+                }
+            }
+        }
+
+        if (!sourcePad || !targetPad || sourceIdx < 0 || targetIdx < 0) return false;
+
+        const source = sourcePad.items[sourceIdx];
+        const target = targetPad.items[targetIdx];
+        const mergedText = [entryToMergedText(target), entryToMergedText(source)]
+            .map(normalizeSplitPart)
+            .filter(Boolean)
+            .join("\n");
+        if (!mergedText) return false;
+
+        const merged: ScratchpadEntry = {
+            ...target,
+            kind: "text",
+            target: mergedText,
+            alias: undefined,
+            displayText: mergedText,
+            origin: {
+                ...target.origin,
+                operation: target.origin.operation === source.origin.operation ? target.origin.operation : "copy",
+            },
+            addedAt: Date.now(),
+        };
+
+        targetPad.items[targetIdx] = merged;
+        sourcePad.items.splice(sourceIdx, 1);
+        this.scheduleSave();
+        this.notify();
+        return true;
     }
 
     splitTextEntry(tempId: string, rule: ScratchpadSplitRule): number {

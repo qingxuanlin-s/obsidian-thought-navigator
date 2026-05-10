@@ -40,6 +40,7 @@ export default {
     "scratch split by line": "拆分为多文本节点: 按换行",
     "scratch split success": "已拆分为 {n} 个文本节点",
     "scratch split no parts": "没有可拆分的内容",
+    "scratch merge success": "已合并为一个文本节点",
 
     // settings.ts
     "Zettelkasten Navigation": "卡片盒导航",
