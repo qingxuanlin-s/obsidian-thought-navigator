@@ -284,8 +284,10 @@ export class ZKIndexView extends FileView {
             const ae = document.activeElement as HTMLElement | null;
             return !!(ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable));
         };
+        const isScratchpadOpen = (): boolean => !!this.scratchDrawer?.isVisible();
         this.scope.register(['Mod'], 'c', (event: KeyboardEvent) => {
             if (isInputFocused()) return;
+            if (!isScratchpadOpen()) return;
             if (this.copySelectionToScratchpad('copy')) {
                 event.preventDefault();
                 event.stopPropagation();
@@ -294,6 +296,7 @@ export class ZKIndexView extends FileView {
         });
         this.scope.register(['Mod'], 'x', (event: KeyboardEvent) => {
             if (isInputFocused()) return;
+            if (!isScratchpadOpen()) return;
             if (this.copySelectionToScratchpad('cut')) {
                 event.preventDefault();
                 event.stopPropagation();
