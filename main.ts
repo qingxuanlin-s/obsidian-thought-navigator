@@ -125,7 +125,7 @@ interface ZKNavigationSettings {
     mocNodePositions: Record<string, Record<string, { x: number; y: number }>>; // MOC 节点位置存储 {mocFilePath: {nodeId: {x, y}}}
     smartConnection: boolean;          // 智能连线开关
     themeMode: 'dark' | 'light' | 'auto';       // 主题模式(auto = 跟随 Obsidian)
-    themeStyle: 'default' | 'modern';   // 主题风格（默认/现代）
+    themeStyle: 'default' | 'modern';   // 主题风格（淡雅/现代）
     edgeStyle: 'straight' | 'bezier' | 'polyline'; // 连线风格
     nodeLayoutStyle: 'free' | 'auto';  // 节点布局风格（自由/自动）
     autoLayoutDefaultGrowthDirection: LayoutPreset; // 自动布局默认生长方向
@@ -207,7 +207,7 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     mocNodePositions: {}, // MOC 节点位置存储
     smartConnection: false, // 智能连线默认关闭
     themeMode: 'auto', // 默认跟随 Obsidian
-    themeStyle: 'modern', // 默认风格
+    themeStyle: 'modern', // 默认现代风格
     edgeStyle: 'bezier', // 默认贝塞尔曲线
     nodeLayoutStyle: 'free', // 默认自由节点布局
     autoLayoutDefaultGrowthDirection: 'bidirectional',
