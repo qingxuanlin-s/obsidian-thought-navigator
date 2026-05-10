@@ -71,6 +71,17 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
         // ========== 分支视图 (Index Graph) ==========
         containerEl.createEl("h3", { text: t("zk-index-graph-view") });
         const branchSection = containerEl.createDiv("zk-setting-card");
+        let structureSettingDiv: HTMLDivElement;
+        let roadmapSettingDiv: HTMLDivElement;
+        const updateBranchSettingsVisibility = () => {
+            if (this.plugin.settings.graphType === "roadmap") {
+                structureSettingDiv.addClass("zk-hidden");
+                roadmapSettingDiv.removeClass("zk-hidden");
+            } else {
+                roadmapSettingDiv.addClass("zk-hidden");
+                structureSettingDiv.removeClass("zk-hidden");
+            }
+        };
 
         new Setting(branchSection)
             .setName(t("Index graph styles"))
@@ -81,22 +92,11 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                 .onChange((value) => {
                     this.plugin.settings.graphType = value;
                     this.plugin.RefreshIndexViewFlag = true;
-                    structureSettingDiv.addClass("zk-hidden");
-                    roadmapSettingDiv.addClass("zk-hidden");
+                    updateBranchSettingsVisibility();
                 })
-            )
-            .addExtraButton((cb)=>{
-                cb.setIcon("settings")
-                .onClick(()=>{
-                    if(this.plugin.settings.graphType === "structure"){
-                        this.hideDiv(structureSettingDiv);
-                    }else if(this.plugin.settings.graphType === "roadmap"){
-                        this.hideDiv(roadmapSettingDiv);
-                    }
-                })
-            })
+            );
 
-        const roadmapSettingDiv = branchSection.createDiv("zk-local-section zk-hidden")
+        roadmapSettingDiv = branchSection.createDiv("zk-local-section zk-hidden")
 
         new Setting(roadmapSettingDiv)
             .setName(t("Shorten the distance between adjacent nodes"))
@@ -117,9 +117,10 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
             })
         );
 
-        const structureSettingDiv = branchSection.createDiv("zk-local-section zk-hidden")
+        structureSettingDiv = branchSection.createDiv("zk-local-section zk-hidden")
 
         await this.updateSructureSettings(structureSettingDiv);
+        updateBranchSettingsVisibility();
 
         // ========== 局部视图 (Local Graph) ==========
         containerEl.createEl("h3", { text: t("zk-local-graph-view") });

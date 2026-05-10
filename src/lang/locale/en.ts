@@ -228,7 +228,7 @@ export default {
     "Light theme": "Light theme",
     "Follow Obsidian theme": "Follow Obsidian theme",
     "Theme style": "Theme style",
-    "Default style": "Default style",
+    "Default style": "Elegant style",
     "Vivid style": "Vivid style",
     "Modern style": "Modern style",
     "Edge style": "Edge style",
