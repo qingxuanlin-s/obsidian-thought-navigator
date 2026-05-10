@@ -273,7 +273,8 @@ export class ScratchpadDrawer {
 
     private renderTabs(): void {
         this.tabsEl.empty();
-        const pads = this.manager.listPads();
+        const moc = this.getCurrentMOC();
+        const pads = this.manager.listPadsForMOC(moc.path || "");
         const activeId = this.manager.activePad()?.id ?? "";
 
         for (const pad of pads) {
@@ -292,6 +293,14 @@ export class ScratchpadDrawer {
     private renderTab(pad: Scratchpad, active: boolean): void {
         const tab = this.tabsEl.createDiv(active ? "zk-scratch-tab is-active" : "zk-scratch-tab");
         tab.dataset.padId = pad.id;
+        const moc = this.getCurrentMOC();
+        const boundToCurrentMOC = this.manager.isPadBoundToMOC(pad, moc.path || "");
+
+        if (boundToCurrentMOC) {
+            const boundIcon = tab.createSpan("zk-scratch-tab-bound");
+            setIcon(boundIcon, "link");
+            setTooltip(boundIcon, t("scratch bound current moc"));
+        }
 
         const label = tab.createSpan("zk-scratch-tab-label");
         label.setText(pad.name);
@@ -313,6 +322,27 @@ export class ScratchpadDrawer {
             e.preventDefault();
             e.stopPropagation();
             const menu = new Menu();
+            if (moc.path) {
+                menu.addItem((item) => {
+                    if (boundToCurrentMOC) {
+                        item.setTitle(t("scratch unbind current moc"))
+                            .setIcon("unlink")
+                            .onClick(() => {
+                                if (this.manager.unbindPadFromMOC(pad.id, moc.path)) {
+                                    new Notice(t("scratch unbind current moc success"));
+                                }
+                            });
+                    } else {
+                        item.setTitle(t("scratch bind current moc"))
+                            .setIcon("link")
+                            .onClick(() => {
+                                if (this.manager.bindPadToMOC(pad.id, moc.path)) {
+                                    new Notice(t("scratch bind current moc success"));
+                                }
+                            });
+                    }
+                });
+            }
             menu.addItem((item) =>
                 item.setTitle(t("scratch rename pad"))
                     .setIcon("pencil")

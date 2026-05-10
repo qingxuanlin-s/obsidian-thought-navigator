@@ -26,6 +26,7 @@ export interface Scratchpad {
     name: string;
     items: ScratchpadEntry[];
     createdAt: number;
+    boundMocPath?: string;
 }
 
 const TEMP_ID_PREFIX = "scratch-";
@@ -144,6 +145,25 @@ export class ScratchpadManager {
         return this.plugin.settings.scratchpads ?? [];
     }
 
+    listPadsForMOC(mocPath: string): Scratchpad[] {
+        const normalized = this.normalizeMocPath(mocPath);
+        const pads = [...this.listPads()];
+        if (!normalized) return pads;
+
+        return pads.sort((a, b) => {
+            const aBound = this.normalizeMocPath(a.boundMocPath) === normalized;
+            const bBound = this.normalizeMocPath(b.boundMocPath) === normalized;
+            if (aBound === bBound) return 0;
+            return aBound ? -1 : 1;
+        });
+    }
+
+    getBoundPadForMOC(mocPath: string): Scratchpad | null {
+        const normalized = this.normalizeMocPath(mocPath);
+        if (!normalized) return null;
+        return this.listPads().find((p) => this.normalizeMocPath(p.boundMocPath) === normalized) ?? null;
+    }
+
     activePadId(): string {
         return this.plugin.settings.activeScratchpadId || "";
     }
@@ -185,6 +205,43 @@ export class ScratchpadManager {
         pad.name = trimmed;
         this.scheduleSave();
         this.notify();
+    }
+
+    bindPadToMOC(padId: string, mocPath: string): boolean {
+        const normalized = this.normalizeMocPath(mocPath);
+        if (!normalized) return false;
+
+        const pad = this.listPads().find((p) => p.id === padId);
+        if (!pad) return false;
+
+        for (const item of this.listPads()) {
+            if (this.normalizeMocPath(item.boundMocPath) === normalized) {
+                delete item.boundMocPath;
+            }
+        }
+
+        pad.boundMocPath = normalized;
+        this.scheduleSave();
+        this.notify();
+        return true;
+    }
+
+    unbindPadFromMOC(padId: string, mocPath?: string): boolean {
+        const pad = this.listPads().find((p) => p.id === padId);
+        if (!pad?.boundMocPath) return false;
+
+        const normalized = this.normalizeMocPath(mocPath);
+        if (normalized && this.normalizeMocPath(pad.boundMocPath) !== normalized) return false;
+
+        delete pad.boundMocPath;
+        this.scheduleSave();
+        this.notify();
+        return true;
+    }
+
+    isPadBoundToMOC(pad: Scratchpad, mocPath: string): boolean {
+        const normalized = this.normalizeMocPath(mocPath);
+        return !!normalized && this.normalizeMocPath(pad.boundMocPath) === normalized;
     }
 
     /**
@@ -268,6 +325,10 @@ export class ScratchpadManager {
                 console.error("[scratchpad] save failed", e);
             }
         }, 80);
+    }
+
+    private normalizeMocPath(path?: string): string {
+        return (path || "").trim();
     }
 
     /**
