@@ -5228,6 +5228,11 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
   border: 1px solid rgba(120, 140, 255, 0.26);
   border-radius: 8px;
 }
+.zk-scratch-composer.is-drop-target {
+  border-color: rgba(120, 200, 140, 0.62);
+  background: rgba(120, 200, 140, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(120, 200, 140, 0.26);
+}
 
 .zk-scratch-composer-textarea {
   width: 100%;
@@ -5363,6 +5368,11 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 .zk-scratch-card.is-dragging {
   opacity: 0.55;
   transform: scale(0.98);
+}
+.zk-scratch-card.is-merge-target {
+  border-color: rgba(120, 200, 140, 0.65);
+  background: rgba(120, 200, 140, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(120, 200, 140, 0.32);
 }
 
 .zk-scratch-op {

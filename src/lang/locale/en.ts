@@ -40,6 +40,7 @@ export default {
     "scratch split by line": "Split into text nodes: by line break",
     "scratch split success": "Split into {n} text nodes",
     "scratch split no parts": "No splittable content",
+    "scratch merge success": "Merged into one text node",
 
     // settings.ts
     "Zettelkasten Navigation": "Zettelkasten Navigation",
