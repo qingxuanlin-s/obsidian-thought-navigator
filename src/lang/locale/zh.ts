@@ -41,6 +41,11 @@ export default {
     "scratch split success": "已拆分为 {n} 个文本节点",
     "scratch split no parts": "没有可拆分的内容",
     "scratch merge success": "已合并为一个文本节点",
+    "scratch bind current moc": "绑定当前 MOC",
+    "scratch unbind current moc": "取消绑定当前 MOC",
+    "scratch bound current moc": "已绑定当前 MOC",
+    "scratch bind current moc success": "已绑定当前 MOC",
+    "scratch unbind current moc success": "已取消当前 MOC 绑定",
 
     // settings.ts
     "Zettelkasten Navigation": "卡片盒导航",

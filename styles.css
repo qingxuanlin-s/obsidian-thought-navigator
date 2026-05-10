@@ -5129,6 +5129,15 @@ body.zk-theme-light .zk-scratch-drawer-handle:hover {
   border-color: rgba(120, 200, 140, 0.5);
   color: #e6e7ea;
 }
+.zk-scratch-tab-bound {
+  display: inline-flex;
+  color: rgba(120, 200, 140, 0.92);
+  flex: 0 0 auto;
+}
+.zk-scratch-tab-bound svg {
+  width: 12px;
+  height: 12px;
+}
 .zk-scratch-tab-label {
   overflow: hidden;
   text-overflow: ellipsis;

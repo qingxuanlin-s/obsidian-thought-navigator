@@ -41,6 +41,11 @@ export default {
     "scratch split success": "Split into {n} text nodes",
     "scratch split no parts": "No splittable content",
     "scratch merge success": "Merged into one text node",
+    "scratch bind current moc": "Bind current MOC",
+    "scratch unbind current moc": "Unbind current MOC",
+    "scratch bound current moc": "Bound to current MOC",
+    "scratch bind current moc success": "Bound to current MOC",
+    "scratch unbind current moc success": "Current MOC binding removed",
 
     // settings.ts
     "Zettelkasten Navigation": "Zettelkasten Navigation",
