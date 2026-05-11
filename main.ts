@@ -417,34 +417,6 @@ export default class ZKNavigationPlugin extends Plugin {
         // 注册自定义 View:打开 .moc.md / .moc 文件时显示 PNG 预览(参考 SimpleMindMap)
         this.registerView(MOC_PREVIEW_VIEW_TYPE, (leaf) => new MOCPreviewView(leaf, this));
 
-        // Monkey-patch WorkspaceLeaf.setViewState:拦截 .moc.md / .moc 的 markdown 打开,
-        // 替换为 MOC_PREVIEW_VIEW_TYPE。带 isSwitchToMarkdownViewFromMocView 标志的跳过(允许显式切回 markdown)
-        const originalSetViewState = WorkspaceLeaf.prototype.setViewState;
-        WorkspaceLeaf.prototype.setViewState = function (state: any, ...rest: any[]) {
-            if (
-                state?.type === 'markdown' &&
-                state?.state?.file &&
-                isMocPath(state.state.file) &&
-                !state.state.isSwitchToMarkdownViewFromMocView
-            ) {
-                const newState = { ...state, type: MOC_PREVIEW_VIEW_TYPE };
-                return originalSetViewState.apply(this, [newState, ...rest]);
-            }
-            return originalSetViewState.apply(this, [state, ...rest]);
-        };
-        this.register(() => {
-            WorkspaceLeaf.prototype.setViewState = originalSetViewState;
-            this.app.workspace.getLeavesOfType(MOC_PREVIEW_VIEW_TYPE).forEach((leaf) => {
-                const file = (leaf.view as any)?.file as TFile | undefined;
-                if (file) {
-                    void leaf.setViewState({
-                        type: 'markdown',
-                        state: { file: file.path },
-                    });
-                }
-            });
-        });
-
         // 启动后:把已经打开的 markdown leaf 中的 .moc.md / .moc 文件转成预览 view
         this.app.workspace.onLayoutReady(() => {
             this.app.workspace.getLeavesOfType('markdown').forEach((leaf) => {
@@ -609,6 +581,34 @@ export default class ZKNavigationPlugin extends Plugin {
         this.registerView(ZK_GRAPH_TYPE, (leaf) => new ZKGraphView(leaf, this));
 
         this.registerView(ZK_RECENT_TYPE, (leaf) => new ZKRecentView(leaf, this));
+
+        // 只前置拦截 .moc / .moc.md 的打开，避免 Obsidian 先渲染成 markdown 再由 file-open 切换造成闪屏。
+        const originalOpenFile = WorkspaceLeaf.prototype.openFile;
+        const plugin = this;
+        const openMocFile = async function (this: WorkspaceLeaf, file: TFile, ...rest: any[]) {
+            if (file instanceof TFile && isMocFile(file)) {
+                const openState = rest[0] ?? {};
+                plugin.settings.mocCurrentFile = file.path;
+                await plugin.saveData(plugin.settings);
+                await this.setViewState({
+                    type: ZK_INDEX_TYPE,
+                    state: { file: file.path },
+                    active: openState.active ?? true,
+                });
+                if (openState.active !== false) {
+                    plugin.app.workspace.revealLeaf(this);
+                }
+                plugin.app.workspace.trigger('zk-navigation:refresh-index-graph');
+                return;
+            }
+            return originalOpenFile.apply(this, [file, ...rest]);
+        };
+        WorkspaceLeaf.prototype.openFile = openMocFile as typeof WorkspaceLeaf.prototype.openFile;
+        this.register(() => {
+            if (WorkspaceLeaf.prototype.openFile === openMocFile) {
+                WorkspaceLeaf.prototype.openFile = originalOpenFile;
+            }
+        });
               
         this.addRibbonIcon("tree-pine", t("open zk-index-graph"), async () => {
             
@@ -741,6 +741,14 @@ export default class ZKNavigationPlugin extends Plugin {
                 const activeLeaf = this.app.workspace.activeLeaf;
                 this.settings.mocCurrentFile = file.path;
                 await this.saveData(this.settings);
+
+                if (
+                    activeLeaf?.view?.getViewType() === ZK_INDEX_TYPE &&
+                    (activeLeaf.view as any)?.file?.path === file.path
+                ) {
+                    this.app.workspace.trigger('zk-navigation:refresh-index-graph');
+                    return;
+                }
 
                 // 优先复用已存在的思维树视图，避免重复打开
                 const existingLeaves = this.app.workspace.getLeavesOfType(ZK_INDEX_TYPE);

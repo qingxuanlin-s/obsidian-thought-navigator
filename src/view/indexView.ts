@@ -1718,6 +1718,7 @@ cy.fit(null, 40);
             return;
         }
         const currentMOCPath = currentMOCFile.path;
+        this.scratchDrawer?.refreshContext();
         await this.syncCurrentMOCToLeafState(currentMOCFile);
 
         // 性能优化：如果文件 mtime 和影响渲染的设置都没变，且 cy 实例仍对应同一文件，
