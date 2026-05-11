@@ -287,6 +287,18 @@ export class ScratchpadManager {
         return this.listPads().reduce((sum, p) => sum + p.items.length, 0);
     }
 
+    /** 当前 MOC 可见的条目数:未绑定 pad + 绑定当前 MOC 的 pad */
+    visibleSizeForMOC(mocPath: string): number {
+        const normalized = this.normalizeMocPath(mocPath);
+        return this.listPads().reduce((sum, pad) => {
+            const boundPath = this.normalizeMocPath(pad.boundMocPath);
+            if (!boundPath || (normalized && boundPath === normalized)) {
+                return sum + pad.items.length;
+            }
+            return sum;
+        }, 0);
+    }
+
     isEmpty(): boolean {
         return this.size() === 0;
     }

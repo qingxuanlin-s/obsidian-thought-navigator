@@ -162,6 +162,15 @@ export class ScratchpadDrawer {
 
     isVisible(): boolean { return this.isOpen; }
 
+    refreshContext(): void {
+        this.refreshHandleBadge();
+        this.refreshHeaderCount();
+        if (this.isOpen) {
+            this.renderTabs();
+            this.render();
+        }
+    }
+
     destroy(): void {
         this.unsubscribe?.();
         this.unsubscribe = null;
@@ -226,7 +235,8 @@ export class ScratchpadDrawer {
     // ---------- handle / idle ----------
 
     private refreshHandleBadge(): void {
-        const n = this.manager.totalSize();
+        const moc = this.getCurrentMOC();
+        const n = this.manager.visibleSizeForMOC(moc.path || "");
         this.handleBadge.setText(n > 0 ? String(n) : "");
         this.handleBadge.toggleClass("is-empty", n === 0);
     }
