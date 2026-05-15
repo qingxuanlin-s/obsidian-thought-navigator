@@ -412,6 +412,40 @@ export class CytoscapeRenderer implements IGraphRenderer {
             }
 
             // 增量更新：复用现有 Cytoscape 实例
+
+            // 获取当前所有节点和边的 ID（batch 外计算，避免在 batch 内读取被修改的集合）
+            const currentIds = new Set(cy.elements().map((ele: any) => ele.id()));
+            const newIds = new Set(elements.map(ele => ele.data.id || ''));
+
+            // 找出需要删除的元素
+            const toRemove: string[] = [];
+            currentIds.forEach(id => {
+                if (!newIds.has(id)) {
+                    toRemove.push(id);
+                }
+            });
+
+            // 找出需要添加的元素
+            const toAdd = elements.filter(ele => {
+                const id = ele.data.id;
+                return id && !currentIds.has(id);
+            });
+
+            // 分组节点的子节点释放必须在 batch 外执行：
+            // 若 move({ parent: null }) 和 cy.remove(groupNode) 在同一 batch 内，
+            // Cytoscape endBatch 通知队列会遍历到已 remove 的节点（_private 为 null）导致 crash。
+            if (toRemove.length > 0) {
+                toRemove.forEach(id => {
+                    const ele = cy.$id(id);
+                    if (ele.length > 0 && ele.data('isGroup')) {
+                        const childNodes = cy.nodes(`[parent="${id}"]`);
+                        childNodes.forEach((child: any) => {
+                            child.move({ parent: null });
+                        });
+                    }
+                });
+            }
+
             cy.batch(() => {
                 // 先删除所有占位符节点（因为它们不在传入的数据中）
                 const placeholderNodes = cy.nodes().filter((node: any) => node.data('isPlaceholder'));
@@ -445,42 +479,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     suggester.remove();
                 }
 
-                // 获取当前所有节点和边的 ID
-                const currentIds = new Set(cy.elements().map(ele => ele.id()));
-                const newIds = new Set(elements.map(ele => ele.data.id || ''));
-
-                // 找出需要删除的元素
-                const toRemove: string[] = [];
-                currentIds.forEach(id => {
-                    if (!newIds.has(id)) {
-                        toRemove.push(id);
-                    }
-                });
-
-                // 找出需要添加的元素
-                const toAdd = elements.filter(ele => {
-                    const id = ele.data.id;
-                    return id && !currentIds.has(id);
-                });
-
                 // 删除旧元素
                 // 性能优化：原实现 cy.elements().filter(ele => toRemove.includes(...))
                 // 对全图元素做 O(E × |toRemove|) 扫描。改为直接用 $id 做 O(1) 哈希查找，
                 // 把移除复杂度降到 O(|toRemove|)。
                 if (toRemove.length > 0) {
-                    // 检查是否删除了分组节点，如果是，先释放子节点
-                    toRemove.forEach(id => {
-                        const ele = cy.$id(id);
-                        if (ele.length > 0 && ele.data('isGroup')) {
-                            // 这是一个分组节点，需要先释放其子节点
-                            const childNodes = cy.nodes(`[parent="${id}"]`);
-                            // 将子节点的 parent 设为 null，使其成为独立节点
-                            childNodes.forEach((child: any) => {
-                                child.move({ parent: null });
-                            });
-                        }
-                    });
-
                     toRemove.forEach(id => {
                         const ele = cy.$id(id);
                         if (ele.length > 0) {
