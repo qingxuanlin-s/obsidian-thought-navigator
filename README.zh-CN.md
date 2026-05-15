@@ -110,6 +110,18 @@ Project Spaces 是插件内部维护的虚拟文件夹系统。它可以用来�
 | Show note ID in branch view | 开启 |
 | Text display mode | `id-title` |
 
+## 隐私与数据访问
+
+Thought Navigator 在 Obsidian 本地运行。
+
+- 不收集遥测数据。
+- 不会把你的笔记或图谱数据发送到远程服务器。
+- 不需要账号。
+- 不展示广告。
+- 会读取仓库中的笔记、链接、元数据和 `.moc` 文件，用于生成图视图。
+- 在你使用相关功能时，会写入 `.moc` 文件、插件设置、Project Space 数据，以及生成的预览图或附件文件。
+- 当你明确使用新建 MOC、编辑图节点、粘贴图片、从图中删除嵌入文件等功能时，插件可能会创建、修改或移除仓库内文件。
+
 ## 安装
 
 ### 从 Obsidian 社区插件市场安装
@@ -176,4 +188,6 @@ release 必须包含：
 
 ## 许可证
 
-MIT。见 [LICENSE.txt](LICENSE.txt)。
+PolyForm Noncommercial License 1.0.0。见 [LICENSE](LICENSE)。
+
+未经版权持有人另行授权，不允许商业使用。
