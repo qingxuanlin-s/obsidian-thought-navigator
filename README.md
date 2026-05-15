@@ -23,13 +23,9 @@ Thought Navigator is an Obsidian plugin for building visual, navigable thought t
 
 ## Demo
 
-![Views](attachments/Views.png)
-
-![Demo](attachments/Demo.gif)
-
 Operation walkthrough:
 
-<video src="attachments/20260515-230209.mp4" controls width="100%"></video>
+[Watch the operation walkthrough video](attachments/20260515-230209.mp4)
 
 ## Core Concepts
 
