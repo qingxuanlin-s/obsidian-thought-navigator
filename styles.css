@@ -4623,6 +4623,12 @@ align-items: center;
   border-radius: 4px;
   pointer-events: auto;
   cursor: zoom-in;
+  transition: box-shadow 0.15s ease, outline 0.15s ease;
+}
+
+.zk-text-md-overlay .zk-text-md-embed-image:hover {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
 }
 
 .zk-text-md-overlay .zk-text-md-excalidraw-embed {
@@ -4638,7 +4644,13 @@ align-items: center;
   font-size: 0.7em;
   text-align: center;
   pointer-events: auto;
-  cursor: default;
+  cursor: zoom-in;
+  transition: box-shadow 0.15s ease, outline 0.15s ease;
+}
+
+.zk-text-md-overlay .zk-text-md-excalidraw-embed:hover {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
 }
 
 /* 编辑期容器 */

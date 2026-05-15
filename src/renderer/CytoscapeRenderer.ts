@@ -205,6 +205,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
         return options.exportMode !== true && options.showMinimap !== false;
     }
 
+    private isCyUsable(cy: cytoscape.Core | null = this.cy): cy is cytoscape.Core {
+        return !!cy && !!(cy as any)._private;
+    }
+
     private clearActiveTextSelectionToolbar(): void {
         if (!this.activeTextSelectionToolbarCleanup) return;
         this.activeTextSelectionToolbarCleanup();
@@ -291,8 +295,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
             rootToFirstLevelEdgeWidth: this.ROOT_TO_FIRST_LEVEL_EDGE_WIDTH,
         });
 
-        // 如果没有 Cytoscape 实例或容器变化，需要完全重建
-        if (!this.cy || containerChanged) {
+        // 如果没有 Cytoscape 实例、实例已销毁或容器变化，需要完全重建
+        if (!this.isCyUsable() || containerChanged) {
             // 销毁旧实例（如果存在）
             if (this.cy) {
                 this.overlayScheduler.cleanupManagedDomListeners();
@@ -307,7 +311,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     this.minimap.destroy();
                     this.minimap = null;
                 }
-                this.cy.destroy();
+                if (this.isCyUsable()) {
+                    this.cy.destroy();
+                }
                 this.cy = null;
             }
 
@@ -367,8 +373,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
             }
 
         } else {
-            if (typeof (this.cy as any).autoungrabify === 'function') {
-                (this.cy as any).autoungrabify(options.readOnly === true);
+            const cy = this.cy;
+            if (!this.isCyUsable(cy)) return;
+
+            if (typeof (cy as any).autoungrabify === 'function') {
+                (cy as any).autoungrabify(options.readOnly === true);
             }
             if (this.isReadOnlyMode()) {
                 this.hideBatchToolbar();
@@ -381,7 +390,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 previousOptions.themeStyle !== options.themeStyle ||
                 previousOptions.edgeStyle !== options.edgeStyle;
             if (shouldRefreshStyle) {
-                this.cy.style([
+                cy.style([
                     ...this.getStylesheet(options),
                     {
                         selector: 'core',
@@ -394,8 +403,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
             }
 
             if (this.shouldShowMinimap(options)) {
-                if (!this.minimap && this.container && this.cy) {
-                    this.minimap = new Minimap(this.container, this.cy);
+                if (!this.minimap && this.container && cy) {
+                    this.minimap = new Minimap(this.container, cy);
                 }
             } else if (this.minimap) {
                 this.minimap.destroy();
@@ -403,11 +412,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
             }
 
             // 增量更新：复用现有 Cytoscape 实例
-            this.cy.batch(() => {
+            cy.batch(() => {
                 // 先删除所有占位符节点（因为它们不在传入的数据中）
-                const placeholderNodes = this.cy!.nodes().filter((node: any) => node.data('isPlaceholder'));
+                const placeholderNodes = cy.nodes().filter((node: any) => node.data('isPlaceholder'));
                 if (placeholderNodes.length > 0) {
-                    this.cy!.remove(placeholderNodes);
+                    cy.remove(placeholderNodes);
                 }
 
                 // 清理所有占位符连接线
@@ -437,7 +446,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 }
 
                 // 获取当前所有节点和边的 ID
-                const currentIds = new Set(this.cy!.elements().map(ele => ele.id()));
+                const currentIds = new Set(cy.elements().map(ele => ele.id()));
                 const newIds = new Set(elements.map(ele => ele.data.id || ''));
 
                 // 找出需要删除的元素
@@ -461,10 +470,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 if (toRemove.length > 0) {
                     // 检查是否删除了分组节点，如果是，先释放子节点
                     toRemove.forEach(id => {
-                        const ele = this.cy!.$id(id);
+                        const ele = cy.$id(id);
                         if (ele.length > 0 && ele.data('isGroup')) {
                             // 这是一个分组节点，需要先释放其子节点
-                            const childNodes = this.cy!.nodes(`[parent="${id}"]`);
+                            const childNodes = cy.nodes(`[parent="${id}"]`);
                             // 将子节点的 parent 设为 null，使其成为独立节点
                             childNodes.forEach((child: any) => {
                                 child.move({ parent: null });
@@ -473,23 +482,23 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     });
 
                     toRemove.forEach(id => {
-                        const ele = this.cy!.$id(id);
+                        const ele = cy.$id(id);
                         if (ele.length > 0) {
-                            this.cy!.remove(ele);
+                            cy.remove(ele);
                         }
                     });
                 }
 
                 // 添加新元素
                 if (toAdd.length > 0) {
-                    this.cy!.add(toAdd);
+                    cy.add(toAdd);
                 }
 
                 // 更新现有元素的数据（包括 parent 属性）
                 elements.forEach(ele => {
                     const id = ele.data.id;
                     if (id) {
-                        const existing = this.cy!.$id(id);
+                        const existing = cy.$id(id);
                         if (existing.length > 0) {
                             const wasEmbed = !!existing.data('isEmbed');
                             const nextIsEmbed = !!ele.data.isEmbed;
@@ -546,9 +555,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
         }
 
         // 运行布局
-        if (this.cy) {
+        if (this.isCyUsable()) {
+            const cy = this.cy;
+            if (!cy) return;
             // 容器尺寸变化后显式通知 Cytoscape 重算 viewport/canvas 尺寸
-            this.cy.resize();
+            cy.resize();
             // exportMode 下禁用 fit：cy.fit() 会通过 setTimeout 延迟触发 viewport 回调，
             // 而 renderer.destroy() 在 finally 里立即销毁 cy，导致回调执行时 cy 已 null。
             // cy.png({ full:true }) 自己会处理 fit，layout 不需要再 fit。
@@ -616,20 +627,22 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 增量更新图形
      */
     async update(changes: GraphChanges): Promise<void> {
-        if (!this.cy) return;
+        if (!this.isCyUsable()) return;
 
         // 批量更新以提高性能
-        this.cy.batch(() => {
+        const cy = this.cy;
+        if (!cy) return;
+        cy.batch(() => {
             // 删除节点（会自动删除相关的边）
             if (changes.removedNodes.length > 0) {
                 // 检查是否删除了分组节点，如果是，先释放子节点
                 changes.removedNodes.forEach(node => {
                     const nodeId = escapeId(node.ID);
-                    const ele = this.cy!.$id(nodeId);
+                    const ele = cy.$id(nodeId);
 
                     if (ele.length > 0 && ele.data('isGroup')) {
                         // 这是一个分组节点，需要先释放其子节点
-                        const childNodes = this.cy!.nodes(`[parent="${nodeId}"]`);
+                        const childNodes = cy.nodes(`[parent="${nodeId}"]`);
 
                         // 将子节点的 parent 设为 null，使其成为独立节点
                         childNodes.forEach((child: any) => {
@@ -640,25 +653,25 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
                 // 现在可以安全地删除节点
                 const ids = changes.removedNodes.map(n => `#${escapeId(n.ID)}`).join(',');
-                this.cy!.remove(ids);
+                cy.remove(ids);
             }
 
             // 删除边
             if (changes.removedEdges.length > 0) {
                 const ids = changes.removedEdges.map(e => `#${escapeId(e.id)}`).join(',');
-                this.cy!.remove(ids);
+                cy.remove(ids);
             }
 
             // 添加新节点
             if (changes.addedNodes.length > 0) {
                 const context = buildElementConversionContext(this.currentData, this.currentOptions);
-                this.cy!.add(convertNodesToElements(changes.addedNodes, this.currentData, this.currentOptions, context));
+                cy.add(convertNodesToElements(changes.addedNodes, this.currentData, this.currentOptions, context));
             }
 
             // 添加新边
             if (changes.addedEdges.length > 0) {
                 const context = buildElementConversionContext(this.currentData, this.currentOptions);
-                this.cy!.add(convertEdgesToElements(
+                cy.add(convertEdgesToElements(
                     changes.addedEdges,
                     context,
                     this.edgeControlPoints,
@@ -668,7 +681,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
             // 更新节点
             changes.updatedNodes.forEach(node => {
-                const ele = this.cy!.$id(escapeId(node.ID));
+                const ele = cy.$id(escapeId(node.ID));
                 if (ele.length > 0) {
                     ele.data('label', getNodeLabel(node, this.currentOptions));
                     ele.data('title', node.title);
@@ -677,7 +690,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
             // 更新边
             changes.updatedEdges.forEach(edge => {
-                const ele = this.cy!.$id(escapeId(edge.id));
+                const ele = cy.$id(escapeId(edge.id));
                 if (ele.length > 0) {
                     ele.data('label', edge.label || '');
                 }
@@ -686,7 +699,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
         // 根据变化程度决定是否重新布局
         if (this.shouldRelayout(changes)) {
-            const layout = this.cy.layout({ name: 'preset' });
+            const layout = cy.layout({ name: 'preset' });
             layout.run();
         }
     }
@@ -747,7 +760,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
         this.textMdOverlayCache.clear();
         if (this.cy) {
-            this.cy.destroy();
+            if (this.isCyUsable()) {
+                this.cy.destroy();
+            }
             this.cy = null;
         }
         this.domTextMeasurer?.destroy();

@@ -27,6 +27,9 @@ export class Minimap {
     // 节点更新节流
     private nodeUpdateScheduled = false;
     private viewportUpdateScheduled = false;
+    private nodeUpdateFrame: number | null = null;
+    private viewportUpdateFrame: number | null = null;
+    private destroyed = false;
 
     // 事件清理
     private cyHandlers: Array<{ ev: string; fn: (...args: any[]) => void }> = [];
@@ -93,6 +96,7 @@ export class Minimap {
         this.root.addEventListener('wheel', (e) => e.stopPropagation(), { signal });
 
         this.root.addEventListener('mousedown', (e) => {
+            if (this.destroyed || !this.isCyUsable()) return;
             if (e.button !== 0) return;
             e.stopPropagation();
             e.preventDefault();
@@ -116,7 +120,7 @@ export class Minimap {
         }, { signal });
 
         window.addEventListener('mousemove', (e) => {
-            if (!this.dragging) return;
+            if (!this.dragging || this.destroyed || !this.isCyUsable()) return;
             const dx = e.clientX - this.dragStartClient.x;
             const dy = e.clientY - this.dragStartClient.y;
             if (Math.abs(dx) > 1 || Math.abs(dy) > 1) this.didDrag = true;
@@ -160,25 +164,36 @@ export class Minimap {
     }
 
     private scheduleNodeUpdate(): void {
+        if (this.destroyed) return;
         if (this.nodeUpdateScheduled) return;
         this.nodeUpdateScheduled = true;
-        requestAnimationFrame(() => {
+        this.nodeUpdateFrame = requestAnimationFrame(() => {
+            this.nodeUpdateFrame = null;
             this.nodeUpdateScheduled = false;
+            if (this.destroyed || !this.isCyUsable()) return;
             this.drawNodes();
             this.updateViewport();
         });
     }
 
     private scheduleViewportUpdate(): void {
+        if (this.destroyed) return;
         if (this.viewportUpdateScheduled) return;
         this.viewportUpdateScheduled = true;
-        requestAnimationFrame(() => {
+        this.viewportUpdateFrame = requestAnimationFrame(() => {
+            this.viewportUpdateFrame = null;
             this.viewportUpdateScheduled = false;
+            if (this.destroyed || !this.isCyUsable()) return;
             this.updateViewport();
         });
     }
 
+    private isCyUsable(): boolean {
+        return !!this.cy && !!(this.cy as any)._private;
+    }
+
     private recomputeTransform(): void {
+        if (!this.isCyUsable()) return;
         const nodes = this.cy.nodes(':visible');
         if (nodes.length === 0) {
             this.bb = { x1: 0, y1: 0, x2: 1, y2: 1, w: 1, h: 1 };
@@ -202,7 +217,7 @@ export class Minimap {
     }
 
     private drawNodes(): void {
-        if (!this.ctx) return;
+        if (!this.ctx || this.destroyed || !this.isCyUsable()) return;
         const ctx = this.ctx;
         this.recomputeTransform();
         ctx.clearRect(0, 0, Minimap.W, Minimap.H);
@@ -240,6 +255,7 @@ export class Minimap {
     }
 
     private updateViewport(): void {
+        if (this.destroyed || !this.isCyUsable()) return;
         // cy.extent() 返回当前视口在模型坐标系的范围
         const ext = this.cy.extent();
         const x = (ext.x1 - this.bb.x1) * this.scale + this.offsetX;
@@ -263,10 +279,22 @@ export class Minimap {
 
     /** 外部触发刷新(渲染器复用 cy 实例后) */
     refresh(): void {
+        if (this.destroyed) return;
         this.scheduleNodeUpdate();
     }
 
     destroy(): void {
+        this.destroyed = true;
+        this.nodeUpdateScheduled = false;
+        this.viewportUpdateScheduled = false;
+        if (this.nodeUpdateFrame !== null) {
+            cancelAnimationFrame(this.nodeUpdateFrame);
+            this.nodeUpdateFrame = null;
+        }
+        if (this.viewportUpdateFrame !== null) {
+            cancelAnimationFrame(this.viewportUpdateFrame);
+            this.viewportUpdateFrame = null;
+        }
         for (const { ev, fn } of this.cyHandlers) {
             try { this.cy.off(ev, fn); } catch { /* ignore */ }
         }

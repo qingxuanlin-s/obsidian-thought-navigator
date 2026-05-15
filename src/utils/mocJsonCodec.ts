@@ -281,3 +281,42 @@ export function createEmptyMOCJson(nodeLayoutStyle: 'free' | 'auto' = 'free'): s
     };
     return JSON.stringify(json, null, 2);
 }
+
+function createRandomTwoLetterNodeId(): string {
+    const letters = 'abcdefghijklmnopqrstuvwxyz';
+    const pick = () => letters[Math.floor(Math.random() * letters.length)];
+    return `${pick()}${pick()}`;
+}
+
+/**
+ * 创建带默认首节点的 .moc 文件内容
+ */
+export function createMOCJsonWithInitialNode(nodeLayoutStyle: 'free' | 'auto' = 'free'): string {
+    const initialNodeId = createRandomTwoLetterNodeId();
+    const json: MOCJsonSchema = {
+        version: 1,
+        nodes: [
+            {
+                nodeID: initialNodeId,
+                nodeType: 'text',
+                target: '新节点',
+                depth: 0,
+                children: [],
+                relationText: '',
+            },
+        ],
+        reverseRelations: [],
+        nodePositions: {},
+        groups: [],
+        edgeCurvatures: {},
+        nodeColors: {},
+        nodeStyleColors: {},
+        crossDomainLinks: {},
+        embedNodeSizes: {},
+        nodeRemarks: {},
+        nodeAnchors: {},
+        collapsedNodeIds: [],
+        nodeLayoutStyle,
+    };
+    return JSON.stringify(json, null, 2);
+}
