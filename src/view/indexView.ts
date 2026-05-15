@@ -6326,7 +6326,9 @@ cy.fit(null, 40);
         } else if (placeholderInfo?.parentNodeId) {
             const parentPreset = this.getPresetForChildren(placeholderInfo.parentNodeId);
             if (parentPreset !== 'top-down') {
-                await this.relayoutAutoLayoutSiblings(placeholderInfo.parentNodeId);
+                await this.relayoutAutoLayoutSiblings(placeholderInfo.parentNodeId, {
+                    ignoreSavedPositionsForIds: this.collectAutoLayoutSubtreeIds(placeholderInfo.parentNodeId, suggestedID)
+                });
             }
         }
 
@@ -6435,7 +6437,9 @@ cy.fit(null, 40);
         } else if (placeholderInfo?.parentNodeId) {
             const parentPreset = this.getPresetForChildren(placeholderInfo.parentNodeId);
             if (parentPreset !== 'top-down') {
-                await this.relayoutAutoLayoutSiblings(placeholderInfo.parentNodeId);
+                await this.relayoutAutoLayoutSiblings(placeholderInfo.parentNodeId, {
+                    ignoreSavedPositionsForIds: this.collectAutoLayoutSubtreeIds(placeholderInfo.parentNodeId, suggestedID)
+                });
             }
         }
 
@@ -6649,6 +6653,20 @@ cy.fit(null, 40);
         return this.mocNodes
             .filter((node) => this.getParentNodeId(node) === parentNodeId)
             .map((node) => node.IDStr || node.ID);
+    }
+
+    private collectAutoLayoutSubtreeIds(parentNodeId: string, includeId?: string): string[] {
+        const result = new Set<string>();
+        const stack = [...this.getChildNodeIds(parentNodeId)];
+        while (stack.length > 0) {
+            const id = stack.pop()!;
+            if (result.has(id)) continue;
+            if (!this.isNodeAutoLayout(id)) continue;
+            result.add(id);
+            for (const childId of this.getChildNodeIds(id)) stack.push(childId);
+        }
+        if (includeId) result.add(includeId);
+        return Array.from(result);
     }
 
     private isMocRootNodeId(nodeId: string): boolean {
@@ -6960,6 +6978,7 @@ cy.fit(null, 40);
             collapsedNodeIds?: string[];
             compactVisibleNodes?: boolean;
             persistPositions?: boolean;
+            ignoreSavedPositionsForIds?: string[];
         } = {}
     ): Promise<void> {
         if (!this.isNodeAutoLayout(parentNodeId) || !this.branchRenderer) {
@@ -6987,8 +7006,8 @@ cy.fit(null, 40);
 
         const mocData = await parseMOCStructure(this.app, mocFile.path, this.plugin.settings.mocHeadingTitle);
         const getNodeSize = (node: any) => ({
-            width: Math.max(Number(node.width?.() || 0), 80),
-            height: Math.max(Number(node.height?.() || 0), 44)
+            width: Math.max(Number(node.outerWidth?.() ?? node.width?.() ?? 0), 80),
+            height: Math.max(Number(node.outerHeight?.() ?? node.height?.() ?? 0), 44)
         });
 
         const getColorKey = (node: any): string => {
@@ -7073,16 +7092,22 @@ cy.fit(null, 40);
             childrenById,
             realMocRootIds,
             nodePositions: mocData.nodePositions || {},
-            ignoreSavedPositionsForIds: relayoutOptions.compactVisibleNodes
-                ? new Set(Object.keys(nodes).filter((nodeId) => {
-                    if (nodeId === relayoutRootId) return false;
-                    if (!this.isNodeAutoLayout(nodeId)) return false;
-                    if (relayoutOptions.collapsedNodeIds?.includes(nodeId)) return false;
-                    const parentId = parentById[nodeId];
-                    if (parentId && realMocRootIds.has(parentId)) return false;
-                    return true;
-                }))
-                : undefined,
+            ignoreSavedPositionsForIds: (() => {
+                const explicit = relayoutOptions.ignoreSavedPositionsForIds?.filter((id) => id !== relayoutRootId);
+                if (relayoutOptions.compactVisibleNodes) {
+                    const set = new Set(Object.keys(nodes).filter((nodeId) => {
+                        if (nodeId === relayoutRootId) return false;
+                        if (!this.isNodeAutoLayout(nodeId)) return false;
+                        if (relayoutOptions.collapsedNodeIds?.includes(nodeId)) return false;
+                        const parentId = parentById[nodeId];
+                        if (parentId && realMocRootIds.has(parentId)) return false;
+                        return true;
+                    }));
+                    explicit?.forEach((id) => set.add(id));
+                    return set;
+                }
+                return explicit && explicit.length > 0 ? new Set(explicit) : undefined;
+            })(),
             layoutPreset: normalizeLayoutPreset(this.plugin.settings.autoLayoutDefaultGrowthDirection),
             nodeLayoutPresets: mocData.nodeLayoutPresets,
         });
