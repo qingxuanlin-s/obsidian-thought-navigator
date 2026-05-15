@@ -112,6 +112,18 @@ Recommended starting settings:
 | Show note ID in branch view | enabled |
 | Text display mode | `id-title` |
 
+## Privacy and Data Access
+
+Thought Navigator runs locally inside Obsidian.
+
+- It does not collect telemetry.
+- It does not send your notes or graph data to a remote server.
+- It does not require an account.
+- It does not display ads.
+- It reads notes, links, metadata, and `.moc` files from your vault to build graph views.
+- It writes `.moc` files, plugin settings, Project Space data, and generated preview or attachment files when you use the related features.
+- It may create, modify, or remove vault files when you explicitly use commands such as creating MOC files, editing graph nodes, pasting images, or deleting embedded files from the graph.
+
 ## Installation
 
 ### From Obsidian Community Plugins
@@ -178,4 +190,6 @@ Current plugin metadata:
 
 ## License
 
-MIT. See [LICENSE.txt](LICENSE.txt).
+PolyForm Noncommercial License 1.0.0. See [LICENSE](LICENSE).
+
+Commercial use is not permitted without a separate commercial license from the copyright holder.
