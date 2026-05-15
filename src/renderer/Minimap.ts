@@ -202,7 +202,15 @@ export class Minimap {
             this.offsetY = 0;
             return;
         }
-        const bb = nodes.boundingBox({ includeLabels: false } as any);
+        // isCyUsable 通过后 cy 仍可能在 boundingBox 内部被 destroy（_private 置 null），
+        // 此处再做一次防御性校验并捕获异常。
+        if (!this.isCyUsable()) return;
+        let bb: any;
+        try {
+            bb = nodes.boundingBox({ includeLabels: false } as any);
+        } catch {
+            return;
+        }
         const w = Math.max(1, bb.x2 - bb.x1);
         const h = Math.max(1, bb.y2 - bb.y1);
         this.bb = { x1: bb.x1, y1: bb.y1, x2: bb.x2, y2: bb.y2, w, h };
