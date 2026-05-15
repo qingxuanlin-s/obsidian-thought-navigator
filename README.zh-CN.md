@@ -25,6 +25,10 @@ Thought Navigator 是一个用于 Obsidian 的可视化思维树插件，适合�
 
 ![Demo](attachments/Demo.gif)
 
+操作案例：
+
+<video src="attachments/20260515-230209.mp4" controls width="100%"></video>
+
 ## 核心概念
 
 Thought Navigator 推荐使用 MOC 模式。MOC 文件是一个 `.moc` 文件，用来保存一棵可视化思维树，包括节点、关系、分组、布局状态和显示元数据。
