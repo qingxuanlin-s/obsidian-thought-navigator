@@ -6,6 +6,7 @@ import { SpaceService } from "src/services/SpaceService";
 import { BUILTIN_TEMPLATES } from "src/templates";
 import { isMocFile, stripMocSuffix } from "src/utils/utils";
 import { FolderMountModal } from "src/modal/folderMountModal";
+import { t } from "src/lang/helper";
 
 /**
  * 文件夹抽屉(Layer 1)
@@ -41,17 +42,17 @@ export class FolderDrawer {
         this.root.setAttribute("aria-hidden", "true");
 
         const header = this.root.createDiv("zk-folder-drawer-header");
-        header.createSpan("zk-folder-drawer-title").setText("Space");
+        header.createSpan("zk-folder-drawer-title").setText(t("Spaces"));
         const addBtn = header.createDiv("zk-folder-drawer-action");
         setIcon(addBtn, "plus");
-        setTooltip(addBtn, "新建 Space");
+        setTooltip(addBtn, t("New Space"));
         addBtn.addEventListener("click", (e) => {
             e.stopPropagation();
             this.showNewSpaceInput();
         });
         const closeBtn = header.createDiv("zk-folder-drawer-close");
         setIcon(closeBtn, "x");
-        setTooltip(closeBtn, "关闭");
+        setTooltip(closeBtn, t("Close"));
         closeBtn.addEventListener("click", (e) => {
             e.stopPropagation();
             this.close();
@@ -181,10 +182,10 @@ export class FolderDrawer {
         setIcon(icon, "git-branch");
         const text = banner.createDiv("zk-folder-drawer-unmounted-text");
         text.createDiv("zk-folder-drawer-unmounted-name").setText(stripMocSuffix(file.basename));
-        text.createDiv("zk-folder-drawer-unmounted-hint").setText("当前 MOC 未挂载到任何文件夹");
+        text.createDiv("zk-folder-drawer-unmounted-hint").setText(t("Current MOC is not mounted to any folder"));
         const mountBtn = banner.createDiv("zk-folder-drawer-unmounted-action");
         setIcon(mountBtn, "folder-plus");
-        setTooltip(mountBtn, "挂载到文件夹");
+        setTooltip(mountBtn, t("Mount to folder"));
         mountBtn.addEventListener("click", (e) => {
             e.stopPropagation();
             new FolderMountModal(this.app, this.index, this.service, file).open();
@@ -193,12 +194,12 @@ export class FolderDrawer {
 
     private renderEmptyState(): void {
         const empty = this.bodyEl.createDiv("zk-folder-drawer-empty");
-        empty.createDiv("zk-folder-drawer-empty-title").setText("还没有 Space");
-        empty.createDiv("zk-folder-drawer-empty-desc").setText("从下面挑一个模板,或自己新建一个空 Space。");
+        empty.createDiv("zk-folder-drawer-empty-title").setText(t("No Spaces yet"));
+        empty.createDiv("zk-folder-drawer-empty-desc").setText(t("Choose a template below or create an empty Space."));
 
         const newSpaceBtn = empty.createDiv("zk-folder-drawer-new-space-btn zk-folder-drawer-new-space-btn-primary");
         setIcon(newSpaceBtn.createSpan(), "plus");
-        newSpaceBtn.createSpan().setText("新建空 Space");
+        newSpaceBtn.createSpan().setText(t("New empty Space"));
         newSpaceBtn.addEventListener("click", () => this.showNewSpaceInput());
 
         const cards = empty.createDiv("zk-folder-drawer-templates");
@@ -206,8 +207,9 @@ export class FolderDrawer {
             const card = cards.createDiv("zk-folder-drawer-template-card");
             const icon = card.createDiv("zk-folder-drawer-template-icon");
             this.setTemplateIcon(icon, tmpl.icon || "folder");
-            card.createDiv("zk-folder-drawer-template-name").setText(tmpl.name);
-            card.createDiv("zk-folder-drawer-template-desc").setText(tmpl.description);
+            const localizedTemplate = this.localizeTemplate(tmpl);
+            card.createDiv("zk-folder-drawer-template-name").setText(localizedTemplate.name);
+            card.createDiv("zk-folder-drawer-template-desc").setText(localizedTemplate.description);
             card.addEventListener("click", () => this.applyTemplate(tmpl.id));
         }
     }
@@ -238,14 +240,14 @@ export class FolderDrawer {
         const actions = row.createDiv("zk-folder-drawer-row-actions");
         const addBtn = actions.createDiv("zk-folder-drawer-row-action");
         setIcon(addBtn, "plus");
-        setTooltip(addBtn, "新建子文件夹");
+        setTooltip(addBtn, t("New child folder"));
         addBtn.addEventListener("click", (e) => {
             e.stopPropagation();
             this.showNewChildInput(node, parent, row);
         });
         const delBtn = actions.createDiv("zk-folder-drawer-row-action zk-folder-drawer-row-action-danger");
         setIcon(delBtn, "trash-2");
-        setTooltip(delBtn, "删除");
+        setTooltip(delBtn, t("Delete"));
         delBtn.addEventListener("click", (e) => {
             e.stopPropagation();
             this.confirmDelete(node);
@@ -276,7 +278,7 @@ export class FolderDrawer {
             try {
                 await this.service.moveMoc(payload.fromFolderId, node.id, payload.mocPath);
             } catch (err: any) {
-                new Notice(`移动失败: ${err?.message || err}`);
+                new Notice(t("Move failed").replace("{message}", String(err?.message || err)));
             } finally {
                 this.dragMocPayload = null;
             }
@@ -330,14 +332,14 @@ export class FolderDrawer {
         const actions = row.createDiv("zk-folder-drawer-row-actions");
         const unmount = actions.createDiv("zk-folder-drawer-row-action zk-folder-drawer-row-action-danger");
         setIcon(unmount, "x");
-        setTooltip(unmount, "从该文件夹取消挂载");
+        setTooltip(unmount, t("Unmount from this folder"));
         unmount.addEventListener("click", async (e) => {
             e.stopPropagation();
             try {
                 await this.service.unmountMoc(ownerFolder.id, mocPath);
-                new Notice(`已从「${ownerFolder.name}」取消挂载`);
+                new Notice(t("Unmounted from folder").replace("{name}", ownerFolder.name));
             } catch (err: any) {
-                new Notice(`取消挂载失败: ${err?.message || err}`);
+                new Notice(t("Unmount failed").replace("{message}", String(err?.message || err)));
             }
         });
 
@@ -367,7 +369,7 @@ export class FolderDrawer {
         // 在 body 顶部插入临时输入行
         this.bodyEl.empty();
         const inputRow = this.bodyEl.createDiv("zk-folder-drawer-input-row");
-        const input = inputRow.createEl("input", { type: "text", placeholder: "Space 名称(回车 = 空白)" });
+        const input = inputRow.createEl("input", { type: "text", placeholder: t("Space name placeholder") });
         input.addClass("zk-folder-drawer-input");
 
         let submitted = false;
@@ -381,12 +383,13 @@ export class FolderDrawer {
             if (!name && !tmpl) { restore(); return; }
             try {
                 if (tmpl) {
-                    await this.service.applyTemplate(tmpl, name || tmpl.name.replace(/\s*[\\/:*?"<>|]\s*/g, ' ').trim());
+                    const localizedTemplate = this.localizeTemplate(tmpl);
+                    await this.service.applyTemplate(localizedTemplate, name || localizedTemplate.name.replace(/\s*[\\/:*?"<>|]\s*/g, ' ').trim());
                 } else {
                     await this.service.createSpace(name);
                 }
             } catch (e: any) {
-                new Notice(`创建失败: ${e?.message || e}`);
+                new Notice(t("Create failed").replace("{message}", String(e?.message || e)));
                 restore();
             }
         };
@@ -400,12 +403,13 @@ export class FolderDrawer {
 
         // 模板 chip 行:点击 = 用该模板提交(名字空则用模板名作默认)
         const chipsRow = this.bodyEl.createDiv("zk-folder-drawer-chips-row");
-        chipsRow.createSpan("zk-folder-drawer-chips-label").setText("模板:");
+        chipsRow.createSpan("zk-folder-drawer-chips-label").setText(t("Templates label"));
         for (const tmpl of BUILTIN_TEMPLATES) {
+            const localizedTemplate = this.localizeTemplate(tmpl);
             const chip = chipsRow.createDiv("zk-folder-drawer-chip");
             this.setTemplateIcon(chip.createSpan("zk-folder-drawer-chip-icon"), tmpl.icon || "folder");
-            chip.createSpan("zk-folder-drawer-chip-name").setText(tmpl.name);
-            setTooltip(chip, tmpl.description);
+            chip.createSpan("zk-folder-drawer-chip-name").setText(localizedTemplate.name);
+            setTooltip(chip, localizedTemplate.description);
             // mousedown + preventDefault:抢在 input.blur 之前,且不让输入框失焦
             chip.addEventListener("mousedown", (e) => {
                 e.preventDefault();
@@ -436,7 +440,7 @@ export class FolderDrawer {
         const inputRow = parentEl.createDiv("zk-folder-drawer-input-row");
         inputRow.style.paddingLeft = `${10 + (parentNode.depth + 1) * 14}px`;
         anchorRow.after(inputRow);
-        const input = inputRow.createEl("input", { type: "text", placeholder: "新文件夹名称" });
+        const input = inputRow.createEl("input", { type: "text", placeholder: t("New folder name") });
         input.addClass("zk-folder-drawer-input");
         this.bindInputSubmit(input, async (name) => {
             try {
@@ -446,37 +450,38 @@ export class FolderDrawer {
                 }
                 await this.service.createFolder(parentNode.id, name);
             } catch (e: any) {
-                new Notice(`创建失败: ${e?.message || e}`);
+                new Notice(t("Create failed").replace("{message}", String(e?.message || e)));
             }
         }, () => inputRow.remove());
         setTimeout(() => input.focus(), 0);
     }
 
     private async confirmDelete(node: FolderNode): Promise<void> {
-        const ok = window.confirm(`确认删除「${node.name}」及其下所有子文件夹?(只删除虚拟分类,不会动到 MOC 文件本身)`);
+        const ok = window.confirm(t("Confirm delete Space folder").replace("{name}", node.name));
         if (!ok) return;
         try {
             await this.service.delete(node.id);
         } catch (e: any) {
-            new Notice(`删除失败: ${e?.message || e}`);
+            new Notice(t("Delete failed").replace("{message}", String(e?.message || e)));
         }
     }
 
     private async applyTemplate(templateId: string): Promise<void> {
         const tmpl = BUILTIN_TEMPLATES.find(t => t.id === templateId);
         if (!tmpl) return;
+        const localizedTemplate = this.localizeTemplate(tmpl);
         // 让用户输入 Space 名(用模板名作为默认)
         this.bodyEl.empty();
         const inputRow = this.bodyEl.createDiv("zk-folder-drawer-input-row");
         const label = inputRow.createSpan("zk-folder-drawer-input-label");
-        label.setText(`用 ${tmpl.name} 模板创建 Space:`);
-        const input = inputRow.createEl("input", { type: "text", value: tmpl.name.replace(/\s*[\\/:*?"<>|]\s*/g, ' ').trim() });
+        label.setText(t("Create Space from template").replace("{name}", localizedTemplate.name));
+        const input = inputRow.createEl("input", { type: "text", value: localizedTemplate.name.replace(/\s*[\\/:*?"<>|]\s*/g, ' ').trim() });
         input.addClass("zk-folder-drawer-input");
         this.bindInputSubmit(input, async (name) => {
             try {
-                await this.service.applyTemplate(tmpl, name);
+                await this.service.applyTemplate(localizedTemplate, name);
             } catch (e: any) {
-                new Notice(`创建失败: ${e?.message || e}`);
+                new Notice(t("Create failed").replace("{message}", String(e?.message || e)));
                 this.render();
             }
         }, () => this.render());
@@ -509,5 +514,35 @@ export class FolderDrawer {
         const onBlur = () => trigger('submit');
         input.addEventListener("keydown", onKeydown);
         input.addEventListener("blur", onBlur);
+    }
+
+    private localizeTemplate(tmpl: SpaceTemplate): SpaceTemplate {
+        if (tmpl.id === 'blank') {
+            return {
+                ...tmpl,
+                name: t("Blank Space template name"),
+                description: t("Blank Space template description"),
+                roots: [{ ...tmpl.roots[0], name: t("My Space template root") }],
+            };
+        }
+        if (tmpl.id === 'zk-three-layer') {
+            return {
+                ...tmpl,
+                name: t("ZK three layer template name"),
+                description: t("ZK three layer template description"),
+                roots: [
+                    { ...tmpl.roots[0], name: t("Overview template root") },
+                    { ...tmpl.roots[1], name: t("Topics template root") },
+                    { ...tmpl.roots[2], name: t("Local knowledge template root") },
+                ],
+            };
+        }
+        if (tmpl.id === 'para') {
+            return {
+                ...tmpl,
+                description: t("PARA template description"),
+            };
+        }
+        return tmpl;
     }
 }

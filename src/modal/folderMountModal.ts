@@ -2,6 +2,7 @@ import { App, SuggestModal, TFile, Notice, setIcon } from "obsidian";
 import { FolderNode } from "src/types/folder";
 import { VaultIndex } from "src/index/VaultIndex";
 import { SpaceService } from "src/services/SpaceService";
+import { t } from "src/lang/helper";
 
 interface PickItem {
     node: FolderNode;
@@ -23,7 +24,7 @@ export class FolderMountModal extends SuggestModal<PickItem> {
         this.index = index;
         this.service = service;
         this.mocFile = mocFile;
-        this.setPlaceholder("选择要挂载到的文件夹(再次选中已挂载项可取消)...");
+        this.setPlaceholder(t("Choose folder to mount placeholder"));
     }
 
     getSuggestions(query: string): PickItem[] {
@@ -81,14 +82,14 @@ export class FolderMountModal extends SuggestModal<PickItem> {
         try {
             if (item.mounted) {
                 await this.service.unmountMoc(item.node.id, this.mocFile.path);
-                new Notice(`已从「${item.node.name}」取消挂载`);
+                new Notice(t("Unmounted from folder").replace("{name}", item.node.name));
             } else {
                 await this.service.mountMoc(item.node.id, this.mocFile.path);
-                new Notice(`已挂载到「${item.node.name}」`);
+                new Notice(t("Mounted to folder").replace("{name}", item.node.name));
             }
             this.app.workspace.trigger("zk-navigation:refresh-index-graph");
         } catch (e: any) {
-            new Notice(`操作失败: ${e?.message || e}`);
+            new Notice(t("Operation failed").replace("{message}", String(e?.message || e)));
         }
     }
 

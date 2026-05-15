@@ -1,6 +1,7 @@
 import { TFile } from "obsidian";
 import ZKNavigationPlugin from "main";
 import { ZKNode } from "src/view/indexView";
+import { t } from "src/lang/helper";
 
 export type ScratchpadOperation = "cut" | "copy";
 export type ScratchpadKind = "file" | "text" | "embed";
@@ -255,7 +256,7 @@ export class ScratchpadManager {
         if (pads.length === 0) {
             const fresh: Scratchpad = {
                 id: genPadId(),
-                name: "默认",
+                name: t("scratch default pad name"),
                 items: [],
                 createdAt: Date.now(),
             };
