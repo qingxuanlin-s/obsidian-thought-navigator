@@ -7,12 +7,12 @@ import { AddFreeNodeModal } from "src/modal/addFreeNodeModal";
 import { expandGraphModal } from "src/modal/expandGraphModal";
 import { MOCSelectorModal } from "src/modal/mocSelectorModal";
 import { NoteSearchModal } from "src/modal/noteSearchModal";
-import { convertMOCToZKNodes, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX, MOCParseResult, MOCTreeNode, parseMOCStructure, stripMocSuffix } from "src/utils/utils";
+import { convertMOCToZKNodes, createMOCTreeNode, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX, MOCParseResult, MOCTreeNode, parseMOCStructure, saveMOCStructure, stripMocSuffix } from "src/utils/utils";
 import { FolderDrawer } from "src/view/folderDrawer";
 import { ScratchpadDrawer } from "src/view/scratchpadDrawer";
 import { ScratchpadEntry } from "src/scratch/scratchpadManager";
 import { resolveDroppedVaultFiles } from "src/utils/dropFileResolver";
-import { createEmptyMOCJson } from "src/utils/mocJsonCodec";
+import { createMOCJsonWithInitialNode } from "src/utils/mocJsonCodec";
 import { MermaidParser } from "src/utils/mermaidParser";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
 import { createSelectionColorPanel } from "src/renderer/colorUtils";
@@ -565,10 +565,8 @@ export class ZKIndexView extends FileView {
      */
     private showLoadingIndicator(container: HTMLElement): HTMLElement {
         const indicator = container.createDiv("zk-loading-indicator");
-        indicator.innerHTML = `
-            <div class="zk-spinner"></div>
-            <span>${t("Updating...")}</span>
-        `;
+        indicator.createDiv("zk-spinner");
+        indicator.createEl("span", { text: t("Updating...") });
         indicator.style.cssText = `
             position: absolute;
             top: 50%;
@@ -724,12 +722,12 @@ export class ZKIndexView extends FileView {
         // 项目徽章(默认隐藏,加载 MOC 后根据 isProject 决定显示)
         const projectBadge = mocChip.createSpan("zk-chip-project-badge");
         setIcon(projectBadge, "ruler");
-        setTooltip(projectBadge, "项目");
+        setTooltip(projectBadge, t("Project"));
 
         // 获取当前MOC名称
         const currentMOCPath = this.plugin.settings.mocCurrentFile;
         const currentMOCFile = currentMOCPath ? this.app.vault.getAbstractFileByPath(currentMOCPath) : null;
-        let currentMOCName = currentMOCFile instanceof TFile ? currentMOCFile.basename : "未命名";
+        let currentMOCName = currentMOCFile instanceof TFile ? currentMOCFile.basename : t("Untitled");
         const maxLength = 12;
         if (currentMOCName.length > maxLength) {
             currentMOCName = currentMOCName.substring(0, maxLength) + "...";
@@ -759,7 +757,7 @@ export class ZKIndexView extends FileView {
         graphTypeSelect.addEventListener("change", () => {
             let val = graphTypeSelect.value;
             if (val === "roadmap") {
-                new Notice("路线图功能即将推出");
+                new Notice(t("Roadmap feature coming soon"));
                 val = "structure";
                 graphTypeSelect.value = "structure";
             }
@@ -785,7 +783,7 @@ export class ZKIndexView extends FileView {
         const rightBtns = toolbarDiv.createDiv("zk-toolbar-right-buttons");
 
         const folderBtn = new ExtraButtonComponent(rightBtns);
-        folderBtn.setIcon("folder-tree").setTooltip("文件夹");
+        folderBtn.setIcon("folder-tree").setTooltip(t("Folders"));
         folderBtn.onClick(() => {
             this.folderDrawer?.toggle();
         });
@@ -849,8 +847,8 @@ export class ZKIndexView extends FileView {
             const mountOption = menu.createDiv('zk-menu-option');
             setIcon(mountOption.createSpan('zk-menu-option-icon'), 'folder-plus');
             const labelText = mountedCount > 0
-                ? `管理项目文件夹挂载 (已挂 ${mountedCount})`
-                : '添加到项目文件夹...';
+                ? t("Manage project folder mounts").replace("{count}", String(mountedCount))
+                : t("Add to project folder...");
             mountOption.createSpan().setText(labelText);
             mountOption.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -1572,17 +1570,17 @@ cy.fit(null, 40);
                 resolve(file);
             };
 
-            modal.titleEl.setText('未检测到 .moc 文件');
+            modal.titleEl.setText(t("No MOC file detected"));
             const { contentEl } = modal;
             contentEl.empty();
-            contentEl.createEl('p', { text: '当前还没有思维树文件，是否现在创建一个？' });
+            contentEl.createEl('p', { text: t("No mind tree file exists yet. Create one now?") });
 
-            const defaultBaseName = `思维树-${moment().format('YYYYMMDDHHmmss')}`;
+            const defaultBaseName = `${t("default MOC file prefix")}-${moment().format('YYYYMMDDHHmmss')}`;
             let draftBaseName = defaultBaseName;
 
             new Setting(contentEl)
-                .setName('文件名')
-                .setDesc(`会自动添加 ${MOC_FILE_SUFFIX} 后缀`)
+                .setName(t("File name"))
+                .setDesc(t("MOC suffix will be added automatically"))
                 .addText((text) => {
                     text.setPlaceholder(defaultBaseName);
                     text.setValue(defaultBaseName);
@@ -1597,18 +1595,18 @@ cy.fit(null, 40);
             buttonRow.style.gap = '8px';
             buttonRow.style.marginTop = '16px';
 
-            const cancelBtn = buttonRow.createEl('button', { text: '取消' });
+            const cancelBtn = buttonRow.createEl('button', { text: t("Cancel") });
             cancelBtn.onclick = () => {
                 modal.close();
                 finish(null);
             };
 
-            const createBtn = buttonRow.createEl('button', { text: '创建' });
+            const createBtn = buttonRow.createEl('button', { text: t("Create") });
             createBtn.addClass('mod-cta');
             createBtn.onclick = async () => {
                 const normalizedBaseName = stripMocSuffix(draftBaseName || defaultBaseName).trim();
                 if (!normalizedBaseName) {
-                    new Notice('文件名不能为空');
+                    new Notice(t("File name cannot be empty"));
                     return;
                 }
 
@@ -1620,7 +1618,10 @@ cy.fit(null, 40);
                 }
 
                 try {
-                    const content = createEmptyMOCJson(this.plugin.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free');
+                    const content = createMOCJsonWithInitialNode(
+                        this.plugin.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free',
+                        t("Default node title")
+                    );
                     const newFile = await this.app.vault.create(filePath, content);
                     this.plugin.settings.mocCurrentFile = newFile.path;
                     await this.plugin.saveData(this.plugin.settings);
@@ -1657,6 +1658,32 @@ cy.fit(null, 40);
         }
 
         return await this.promptCreateInitialMOCFile(mocFolder);
+    }
+
+    private async ensureInitialRootNode(
+        mocFile: TFile,
+        mocParseResult: MOCParseResult,
+        headingTitle: string
+    ): Promise<MOCParseResult> {
+        if (mocParseResult.nodes.length > 0) {
+            return mocParseResult;
+        }
+
+        mocParseResult.nodes = [
+            createMOCTreeNode({
+                nodeID: '1',
+                nodeType: 'text',
+                target: t("Default node title"),
+                depth: 0,
+                children: [],
+                relationText: '',
+            }),
+        ];
+        if (mocParseResult.nodeLayoutStyle !== 'free' && mocParseResult.nodeLayoutStyle !== 'auto') {
+            mocParseResult.nodeLayoutStyle = this.plugin.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free';
+        }
+        await saveMOCStructure(this.app, mocFile.path, headingTitle, mocParseResult);
+        return await parseMOCStructure(this.app, mocFile.path, headingTitle);
     }
 
     // 依赖 onLoadFile/onUnloadFile 不做重渲染:setViewState 切换 file 会回调这两个钩子,
@@ -1738,7 +1765,8 @@ cy.fit(null, 40);
             }
         }
 
-        const mocParseResult = await parseMOCStructure(this.app, currentMOCPath, headingTitle);
+        let mocParseResult = await parseMOCStructure(this.app, currentMOCPath, headingTitle);
+        mocParseResult = await this.ensureInitialRootNode(currentMOCFile, mocParseResult, headingTitle);
 
         // 项目徽章:当前 MOC 是否被挂载到任意 FolderNode 下
         this.refreshProjectBadge(currentMOCPath);
@@ -1819,6 +1847,7 @@ cy.fit(null, 40);
 
         // 配置渲染选项
         const options: RenderOptions = {
+            app: this.app,
             direction: (this.plugin.settings.DirectionOfBranchGraph || 'LR') as 'TB' | 'BT' | 'LR' | 'RL',
             layoutType: 'dagre',
             animate: true,
@@ -3588,7 +3617,10 @@ cy.fit(null, 40);
             seg.setText(label);
             seg.setAttribute(
                 "title",
-                `层级 ${segmentDepth}: ${idStr}（点击聚焦,无关分支${this.focusVisibilityMode === 'hide' ? '隐藏' : '弱化'}）`
+                t("Level breadcrumb segment tooltip")
+                    .replace("{level}", String(segmentDepth))
+                    .replace("{id}", idStr)
+                    .replace("{visibility}", this.focusVisibilityMode === 'hide' ? t("hidden") : t("dimmed"))
             );
 
             if (this.currentDimLevel === segmentDepth) seg.addClass("zk-level-seg-active");
@@ -3607,7 +3639,7 @@ cy.fit(null, 40);
                 // 兄弟切换图标用 chevrons-up-down (↕),与工具栏 chevron-down (▾) 视图切换语义区分
                 const chevron = segWrap.createSpan("zk-level-chevron zk-level-sib");
                 setIcon(chevron, "chevrons-up-down");
-                chevron.setAttribute("title", `切换其他兄弟节点（共 ${siblings.length} 个）`);
+                chevron.setAttribute("title", t("Switch sibling nodes").replace("{count}", String(siblings.length)));
                 chevron.addEventListener("click", (e) => {
                     e.stopPropagation();
                     this.showSiblingDropdown(segWrap, siblings, i, false);
@@ -3626,7 +3658,7 @@ cy.fit(null, 40);
             this.levelBreadcrumbContainer.createSpan("zk-level-sep").setText("\u203A");
             const drillBtn = this.levelBreadcrumbContainer.createSpan("zk-level-drill");
             drillBtn.setText("+");
-            drillBtn.setAttribute("title", `下钻到下一层（${childrenOfDeepest.length} 个子节点）`);
+            drillBtn.setAttribute("title", t("Drill down to next level").replace("{count}", String(childrenOfDeepest.length)));
             drillBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
                 this.showSiblingDropdown(drillBtn, childrenOfDeepest, this.levelPath.length, true);
@@ -3635,7 +3667,7 @@ cy.fit(null, 40);
             // 一键钻到最深
             const drillAllBtn = this.levelBreadcrumbContainer.createSpan("zk-level-drill-all");
             drillAllBtn.setText("\u00BB");
-            drillAllBtn.setAttribute("title", "一键展开到当前分支最深层");
+            drillAllBtn.setAttribute("title", t("Expand to deepest level in current branch"));
             drillAllBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
                 this.extendLevelPathToDeepest();
@@ -3649,8 +3681,8 @@ cy.fit(null, 40);
         setIcon(modeIconWrap, this.dimMode === 'subtree' ? 'git-branch' : 'layers');
         modeBtn.setAttribute("title",
             this.dimMode === 'subtree'
-                ? '当前模式: 子树聚焦（点击切到同层切片）'
-                : '当前模式: 同层切片（点击切到子树聚焦）'
+                ? t("Current mode subtree focus")
+                : t("Current mode level slice")
         );
         modeBtn.addEventListener("click", (e) => {
             e.stopPropagation();
@@ -3668,8 +3700,8 @@ cy.fit(null, 40);
         visibilityBtn.setAttribute(
             "title",
             this.focusVisibilityMode === 'hide'
-                ? '当前:隐藏无关分支（点击切到弱化）'
-                : '当前:弱化无关分支（点击切到隐藏）'
+                ? t("Current visibility hide")
+                : t("Current visibility dim")
         );
         visibilityBtn.addEventListener("click", (e) => {
             e.stopPropagation();
@@ -3683,7 +3715,7 @@ cy.fit(null, 40);
         if (this.currentDimLevel !== null) {
             const resetBtn = this.levelBreadcrumbContainer.createSpan("zk-level-reset");
             resetBtn.setText("\u2715");
-            resetBtn.setAttribute("title", "清除层级筛选");
+            resetBtn.setAttribute("title", t("Clear level filter"));
             resetBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
                 this.clearLevelDim();
@@ -4149,7 +4181,7 @@ cy.fit(null, 40);
         if (this.isFirstLevelMocChildNode(nodeId) && this.isNodeAutoLayout(nodeId)) {
             menu.createDiv('zk-node-ctx-sep');
             const presetLabel = menu.createDiv('zk-node-ctx-label');
-            presetLabel.textContent = '本分支布局';
+            presetLabel.textContent = t("Branch layout");
             const presetRow = menu.createDiv('zk-node-ctx-row');
             const effectivePreset = this.currentNodeLayoutPresets[nodeId] || this.currentLayoutPreset;
             const addPresetItem = (preset: LayoutPreset, icon: string, label: string) => {
@@ -4165,9 +4197,9 @@ cy.fit(null, 40);
                     await this.setBranchLayoutPreset(nodeId, preset);
                 });
             };
-            addPresetItem('bidirectional', 'columns-2', '双向');
-            addPresetItem('top-down', 'rows-2', '上下');
-            addPresetItem('radial', 'sparkles', '斜角');
+            addPresetItem('bidirectional', 'columns-2', t("Bidirectional"));
+            addPresetItem('top-down', 'rows-2', t("Top down"));
+            addPresetItem('radial', 'sparkles', t("Radial"));
         }
 
         // 定位：先在屏幕外渲染以获取尺寸
@@ -5010,7 +5042,9 @@ cy.fit(null, 40);
             infoDiv.style.backgroundColor = 'var(--background-secondary)';
             infoDiv.style.borderRadius = '4px';
             infoDiv.style.color = 'var(--text-muted)';
-            infoDiv.innerHTML = `<div>当前分组 ID: <strong>${currentID}</strong></div>`;
+            const currentIdLine = infoDiv.createDiv();
+            currentIdLine.appendText('当前分组 ID: ');
+            currentIdLine.createEl('strong', { text: currentID });
 
             const inputContainer = contentEl.createDiv();
             inputContainer.style.marginBottom = '15px';
@@ -5242,10 +5276,12 @@ cy.fit(null, 40);
                             gap: 2px;
                         `;
 
-                        item.innerHTML = `
-                            <span style="font-weight: 500; color: var(--text-normal);">${file.basename}</span>
-                            <span style="font-size: 11px; color: var(--text-muted);">${file.path}</span>
-                        `;
+                        const basenameEl = item.createEl('span', { text: file.basename });
+                        basenameEl.style.fontWeight = '500';
+                        basenameEl.style.color = 'var(--text-normal)';
+                        const pathEl = item.createEl('span', { text: file.path });
+                        pathEl.style.fontSize = '11px';
+                        pathEl.style.color = 'var(--text-muted)';
 
                         item.addEventListener('mouseenter', () => {
                             suggesterState.selectedIndex = index;
@@ -5475,17 +5511,28 @@ cy.fit(null, 40);
             warningIcon.style.marginBottom = '10px';
             
             const warningText = warningDiv.createEl('div');
-            warningText.innerHTML = `
-                <div style="font-weight: 600; margin-bottom: 8px;">即将删除节点：${node.ID}</div>
-                <div style="color: var(--text-muted);">该节点有 <strong>${relationCount}</strong> 个关系连接</div>
-                <div style="color: var(--text-muted); margin-top: 8px;">删除后将同时删除：</div>
-                <ul style="margin: 8px 0; padding-left: 20px; color: var(--text-muted);">
-                    <li>节点在 MOC 文件中的条目</li>
-                    <li>所有与该节点相关的箭头关系</li>
-                    <li>节点的位置信息</li>
-                </ul>
-                <div style="color: var(--text-error); font-weight: 600; margin-top: 8px;">此操作不可撤销！</div>
-            `;
+            const nodeLine = warningText.createDiv({ text: `即将删除节点：${node.ID}` });
+            nodeLine.style.fontWeight = '600';
+            nodeLine.style.marginBottom = '8px';
+            const relationLine = warningText.createDiv();
+            relationLine.style.color = 'var(--text-muted)';
+            relationLine.appendText('该节点有 ');
+            relationLine.createEl('strong', { text: String(relationCount) });
+            relationLine.appendText(' 个关系连接');
+            const deleteLine = warningText.createDiv({ text: '删除后将同时删除：' });
+            deleteLine.style.color = 'var(--text-muted)';
+            deleteLine.style.marginTop = '8px';
+            const list = warningText.createEl('ul');
+            list.style.margin = '8px 0';
+            list.style.paddingLeft = '20px';
+            list.style.color = 'var(--text-muted)';
+            list.createEl('li', { text: '节点在 MOC 文件中的条目' });
+            list.createEl('li', { text: '所有与该节点相关的箭头关系' });
+            list.createEl('li', { text: '节点的位置信息' });
+            const irreversibleLine = warningText.createDiv({ text: '此操作不可撤销！' });
+            irreversibleLine.style.color = 'var(--text-error)';
+            irreversibleLine.style.fontWeight = '600';
+            irreversibleLine.style.marginTop = '8px';
             
             const buttonContainer = contentEl.createDiv();
             buttonContainer.style.display = 'flex';
@@ -6473,7 +6520,12 @@ cy.fit(null, 40);
         try {
             const file = this.app.vault.getAbstractFileByPath(node.file.path);
             if (file) {
-                await this.app.vault.delete(file);
+                const fileManager = this.app.fileManager as any;
+                if (typeof fileManager.trashFile === 'function') {
+                    await fileManager.trashFile(file);
+                } else {
+                    await (this.app.vault as any).trash(file, true);
+                }
             }
         } catch (error) {
             console.error('Failed to delete image file:', error);
@@ -8094,7 +8146,7 @@ cy.fit(null, 40);
             // 直接挂到 document.body，彻底脱离 Obsidian 视图层级
             const btn = document.createElement('button');
             btn.className = 'zk-moc-fullscreen-exit';
-            btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>`;
+            setIcon(btn, 'arrow-left');
             btn.style.cssText = `
                 position: fixed;
                 top: 20px;

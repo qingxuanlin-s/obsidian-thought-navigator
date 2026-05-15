@@ -3188,13 +3188,5 @@ export function isSmartConnectionEnabled(this: any): boolean {
         if (this.currentOptions && typeof this.currentOptions.smartConnection === 'boolean') {
             return this.currentOptions.smartConnection;
         }
-
-        // 从全局设置中获取智能连线开关状态
-        const app = (window as any).app;
-        if (!app || !app.plugins) return false;
-
-        const plugin = app.plugins.plugins['thought-navigator'];
-        if (!plugin || !plugin.settings) return false;
-
-        return plugin.settings.smartConnection === true;
+        return false;
     }

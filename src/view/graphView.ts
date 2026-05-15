@@ -344,8 +344,8 @@ export class ZKGraphView extends ItemView {
 
         const headingTitle = this.plugin.settings.mocHeadingTitle;
         const mermaid = await loadMermaid();
-        const svgPanZoom = require("svg-pan-zoom");
-
+        const svgPanZoomModule = await import("svg-pan-zoom");
+        const svgPanZoom = (svgPanZoomModule as any).default ?? svgPanZoomModule;
         // ========== 1. MOC 树结构（类似邻近图）==========
         if (this.plugin.settings.FamilyGraphToggle) {
             // 解析 MOC 结构
@@ -382,12 +382,10 @@ export class ZKGraphView extends ItemView {
                     debugInfo.style.padding = "20px";
                     debugInfo.style.color = "var(--text-muted)";
                     debugInfo.style.fontSize = "12px";
-                    debugInfo.innerHTML = `
-                        <p>解析耗时: ${mocParseResult.metadata.parseTime}ms</p>
-                        <p>文件路径: ${mocParseResult.metadata.filePath}</p>
-                        <p>查找标题: ${mocParseResult.metadata.headingTitle}</p>
-                        <p>提示: 请确保 MOC 文件中存在一级标题 "# ${headingTitle}"</p>
-                    `;
+                    debugInfo.createEl('p', { text: `解析耗时: ${mocParseResult.metadata.parseTime}ms` });
+                    debugInfo.createEl('p', { text: `文件路径: ${mocParseResult.metadata.filePath}` });
+                    debugInfo.createEl('p', { text: `查找标题: ${mocParseResult.metadata.headingTitle}` });
+                    debugInfo.createEl('p', { text: `提示: 请确保 MOC 文件中存在一级标题 "# ${headingTitle}"` });
                 }
             }
         }
@@ -1065,6 +1063,7 @@ export class ZKGraphView extends ItemView {
 
                 const graphData = GraphDataBuilder.fromFamilyNodes(relatedNodes, currentFile);
                 const options: RenderOptions = {
+                    app: this.app,
                     direction: (this.plugin.settings.DirectionOfBranchGraph || 'LR') as 'TB' | 'BT' | 'LR' | 'RL',
                     layoutType: 'dagre',
                     animate: true,
@@ -1722,6 +1721,7 @@ export class ZKGraphView extends ItemView {
 
         // 配置渲染选项
         const options: RenderOptions = {
+            app: this.app,
             direction: (this.plugin.settings.DirectionOfBranchGraph || 'LR') as 'TB' | 'BT' | 'LR' | 'RL',
             layoutType: 'dagre',  // 使用 dagre 布局，适合层级结构
             animate: true,
@@ -1932,6 +1932,7 @@ export class ZKGraphView extends ItemView {
             try {
                 const graphData = GraphDataBuilder.fromInOutLinks(currentFile, inlinkArr, outlinkArr);
                 const options: RenderOptions = {
+                    app: this.app,
                     direction: 'TB' as 'TB' | 'BT' | 'LR' | 'RL',
                     layoutType: 'preset',
                     animate: true,

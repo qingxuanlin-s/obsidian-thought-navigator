@@ -1249,7 +1249,8 @@ export function renderNodeBadges(this: any): void {
      */
 function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badgeUpdaters: Array<() => void>): void {
         if (!this.cy) return;
-        const app = (window as any).app;
+        const app = this.currentOptions?.app;
+        if (!app) return;
         const sourcePath = this.currentData?.metadata?.currentFile || '';
 
         const measureAndSizePending: Array<{ node: any; entry: { el: HTMLElement; width: number; height: number } }> = [];
@@ -1363,7 +1364,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                 this.textMdOverlayCache.set(cacheKey, entry);
 
                 const normalizedSource = rawSource.replace(/\r\n?/g, '\n');
-                // 粗糙渲染：用 DOM API 构建，避免 innerHTML 大量字符串拼接
+                // 粗糙渲染：用 DOM API 构建，避免大量字符串拼接
                 const applyRoughInlineMarkdown = (container: HTMLElement, input: string): void => {
                     const createExternalLink = (rawUrl: string, text?: string): HTMLAnchorElement => {
                         const a = document.createElement('a');

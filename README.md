@@ -4,7 +4,7 @@
 
 Thought Navigator is an Obsidian plugin for building visual, navigable thought trees from your notes. It is designed for Zettelkasten-style writing, MOC (Map of Content) workflows, and long-term knowledge navigation.
 
-![Views](attachments/Views.png)
+![Thought Navigator screenshot](docs/screenshot-20260515-221835.png)
 
 ## Features
 
@@ -23,6 +23,8 @@ Thought Navigator is an Obsidian plugin for building visual, navigable thought t
 
 ## Demo
 
+![Views](attachments/Views.png)
+
 ![Demo](attachments/Demo.gif)
 
 ## Core Concepts
@@ -40,15 +42,15 @@ The plugin has two main views:
 2. Run the command `New MOC file`, or right-click a folder and choose `New MOC file`.
 3. Open the generated `.moc` file.
 4. Use the Thought Tree View to add nodes, connect notes, drag nodes, create groups, and organize your knowledge map.
-5. Use `open thought-local-graph` when you want to inspect the current note's local context.
+5. Use `Open local graph` when you want to inspect the current note's local context.
 
 ## Commands
 
 | Command | Description |
 | --- | --- |
-| `open thought-tree-graph` | Open the main thought tree view. |
-| `open thought-local-graph` | Open the local graph view. |
-| `reveal current file in thought-tree-graph` | Locate the active file in the thought tree. |
+| `Open tree graph` | Open the main thought tree view. |
+| `Open local graph` | Open the local graph view. |
+| `Reveal current file in tree graph` | Locate the active file in the thought tree. |
 | `New MOC file` | Create a new `.moc` thought tree file. |
 | `添加当前 MOC 到项目文件夹` | Mount the current MOC into a Project Space folder. |
 
@@ -193,3 +195,4 @@ Current plugin metadata:
 PolyForm Noncommercial License 1.0.0. See [LICENSE](LICENSE).
 
 Commercial use is not permitted without a separate commercial license from the copyright holder.
+For commercial licensing, contact: gutsfire@outlook.com.

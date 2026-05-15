@@ -1,4 +1,4 @@
-import { TFile } from "obsidian";
+import { App, TFile } from "obsidian";
 import { ZKNode } from "src/view/indexView";
 
 /**
@@ -51,6 +51,7 @@ export interface ViewState {
  * 渲染选项
  */
 export interface RenderOptions {
+    app?: App;
     direction?: 'TB' | 'BT' | 'LR' | 'RL';
     layoutType?: 'breadthfirst' | 'dagre' | 'cose' | 'cose-bilkent' | 'grid' | 'preset';
     animate?: boolean;

@@ -1285,7 +1285,10 @@ export function startInPlaceTextEdit(this: any, node: any,
         this.ensureNodeVisibleInViewport(node);
 
         const overlayEl = entry.el;
-        const savedHtml = overlayEl.innerHTML;
+        const savedNodes = Array.from(overlayEl.childNodes).map((child) => child.cloneNode(true));
+        const restoreSavedOverlay = () => {
+            overlayEl.replaceChildren(...savedNodes.map((child) => child.cloneNode(true)));
+        };
         const savedWidth = entry.width;
         const savedHeight = entry.height;
         const rawSource = String(
@@ -1390,7 +1393,7 @@ export function startInPlaceTextEdit(this: any, node: any,
         const restoreOverlay = () => {
             clearLiveEdit();
             restoreNodeInteractivity();
-            overlayEl.innerHTML = savedHtml;
+            restoreSavedOverlay();
             delete overlayEl.dataset.editing;
             overlayEl.style.pointerEvents = prevPointerEvents || 'none';
         };
@@ -1490,7 +1493,7 @@ export function startInPlaceTextEdit(this: any, node: any,
 
             setTimeout(() => {
                 if (overlayEl.isConnected && overlayEl.dataset.editing === '1') {
-                    overlayEl.innerHTML = savedHtml;
+                    restoreSavedOverlay();
                     delete overlayEl.dataset.editing;
                     overlayEl.style.pointerEvents = prevPointerEvents || 'none';
                     restoreNodeInteractivity();
@@ -1512,7 +1515,7 @@ export function startInPlaceTextEdit(this: any, node: any,
 
         try {
             mdEditor = new EmbeddableMarkdownEditor({
-                app: (window as any).app,
+                app: this.currentOptions?.app,
                 containerEl: editorHost,
                 initialValue: rawSource,
                 sourcePath,
@@ -1770,7 +1773,7 @@ export function startPlaceholderInPlaceEdit(this: any, node: any): void {
 
         try {
             mdEditor = new EmbeddableMarkdownEditor({
-                app: (window as any).app,
+                app: this.currentOptions?.app,
                 containerEl: editorHost,
                 initialValue: '',
                 sourcePath,
@@ -1929,7 +1932,10 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
         this.ensureNodeVisibleInViewport(node);
 
         const overlayEl = entry.el;
-        const savedHtml = overlayEl.innerHTML;
+        const savedNodes = Array.from(overlayEl.childNodes).map((child) => child.cloneNode(true));
+        const restoreSavedOverlay = () => {
+            overlayEl.replaceChildren(...savedNodes.map((child) => child.cloneNode(true)));
+        };
         const savedWidth = entry.width;
         const savedHeight = entry.height;
 
@@ -2006,7 +2012,7 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
             // 清除编辑态，并恢复原 HTML（取消路径用）
             if (textarea.parentNode) textarea.remove();
             selectionToolbar.destroy();
-            overlayEl.innerHTML = savedHtml;
+            restoreSavedOverlay();
             delete overlayEl.dataset.editing;
             overlayEl.style.pointerEvents = prevPointerEvents || 'none';
             if (suggesterPopoverRef.value && suggesterPopoverRef.value.parentNode) {
@@ -2080,7 +2086,7 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
             // 延迟一帧检查：若 overlayEl 仍存在且仍在 DOM 中且没有被新渲染填充，则恢复
             setTimeout(() => {
                 if (overlayEl.isConnected && overlayEl.dataset.editing === '1') {
-                    overlayEl.innerHTML = savedHtml;
+                    restoreSavedOverlay();
                     delete overlayEl.dataset.editing;
                 }
             }, 50);
@@ -2260,7 +2266,8 @@ export function showLinkSuggester(this: any, textarea: HTMLTextAreaElement,
         onSelectFile?: (file: any, isEmbed: boolean) => void
     ): void {
         // 获取所有 markdown + moc 文件
-        const app = (window as any).app;
+        const app = this.currentOptions?.app;
+        if (!app) return;
         const files = app.vault.getAllLoadedFiles().filter((f: any) =>
             f.path.endsWith('.md') || f.path.endsWith('.moc')
         );
@@ -2340,10 +2347,12 @@ export function showLinkSuggester(this: any, textarea: HTMLTextAreaElement,
                     gap: 2px;
                 `;
 
-                item.innerHTML = `
-                    <span style="font-weight: 500; color: var(--text-normal);">${file.basename}</span>
-                    <span style="font-size: 11px; color: var(--text-muted);">${file.path}</span>
-                `;
+                const basenameEl = item.createEl('span', { text: file.basename });
+                basenameEl.style.fontWeight = '500';
+                basenameEl.style.color = 'var(--text-normal)';
+                const pathEl = item.createEl('span', { text: file.path });
+                pathEl.style.fontSize = '11px';
+                pathEl.style.color = 'var(--text-muted)';
 
                 // 高亮选中的项目
                 if (index === selectedIndex) {
