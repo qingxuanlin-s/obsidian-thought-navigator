@@ -27,6 +27,10 @@ Thought Navigator is an Obsidian plugin for building visual, navigable thought t
 
 ![Demo](attachments/Demo.gif)
 
+Operation walkthrough:
+
+<video src="attachments/20260515-230209.mp4" controls width="100%"></video>
+
 ## Core Concepts
 
 Thought Navigator works best with MOC files. A MOC file is a `.moc` file that stores a visual thought tree: nodes, relations, groups, layout state, and display metadata.
