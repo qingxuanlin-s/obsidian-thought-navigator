@@ -69,7 +69,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
             );
 
         // ========== 分支视图 (Index Graph) ==========
-        containerEl.createEl("h3", { text: t("zk-index-graph-view") });
+        containerEl.createEl("h3", { text: t("thought-tree-graph-view") });
         const branchSection = containerEl.createDiv("zk-setting-card");
         let structureSettingDiv: HTMLDivElement;
         let roadmapSettingDiv: HTMLDivElement;
@@ -123,7 +123,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
         updateBranchSettingsVisibility();
 
         // ========== 局部视图 (Local Graph) ==========
-        containerEl.createEl("h3", { text: t("zk-local-graph-view") });
+        containerEl.createEl("h3", { text: t("thought-local-graph-view") });
         const localSection = containerEl.createDiv("zk-setting-card");
 
         new Setting(localSection)

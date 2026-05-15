@@ -22,7 +22,7 @@ export class indexModal extends SuggestModal<ZKIndex> {
     this.onSubmit = onSubmit;
     this.plugin = plugin;
     this.MainNotes = MainNotes;
-    this.setPlaceholder(t("select an index"));
+    this.setPlaceholder(t("Find index note"));
     this.limit = plugin.settings.maxLenIndexModel;
   }
 
@@ -107,7 +107,7 @@ export class indexFuzzyModal extends FuzzySuggestModal<ZKIndex> {
     this.onSubmit = onSubmit;
     this.plugin = plugin;
     this.MainNotes = MainNotes;
-    this.setPlaceholder(t("select an index"));
+    this.setPlaceholder(t("Find index note"));
     this.limit = plugin.settings.maxLenIndexModel;
   }
 
