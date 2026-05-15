@@ -2,6 +2,7 @@ import { App, Notice } from "obsidian";
 import { FolderNode, SpaceTemplate, TemplateNode } from "src/types/folder";
 import { genFolderId } from "src/services/folderJson";
 import { VaultIndex } from "src/index/VaultIndex";
+import { t } from "src/lang/helper";
 
 /**
  * 业务层:UI 不直接读写文件/索引,通过 SpaceService 触发原子操作。
@@ -44,7 +45,7 @@ export class SpaceService {
     /** 在指定父节点下创建子文件夹 */
     async createFolder(parentId: string, name: string, opts?: { icon?: string; color?: string }): Promise<FolderNode> {
         const parent = this.index.getNode(parentId);
-        if (!parent) throw new Error('父文件夹不存在');
+        if (!parent) throw new Error(t('Parent folder does not exist'));
         const trimmed = name.trim();
         assertValidName(trimmed);
         this.assertNoSiblingConflict(parent.id, trimmed);
@@ -71,7 +72,7 @@ export class SpaceService {
     /** 把一个 MOC 文件挂载到指定文件夹下(添加 mocRefs 记录) */
     async mountMoc(folderId: string, mocPath: string): Promise<boolean> {
         const node = this.index.getNode(folderId);
-        if (!node) throw new Error('文件夹不存在');
+        if (!node) throw new Error(t('Folder does not exist'));
         if ((node.mocRefs ?? []).includes(mocPath)) return false;
         await this.index.commit(() => {
             const refs = node.mocRefs ?? (node.mocRefs = []);
@@ -101,7 +102,7 @@ export class SpaceService {
         if (fromFolderId === toFolderId) return false;
         const fromNode = this.index.getNode(fromFolderId);
         const toNode = this.index.getNode(toFolderId);
-        if (!fromNode || !toNode) throw new Error('源或目标文件夹不存在');
+        if (!fromNode || !toNode) throw new Error(t('Source or target folder does not exist'));
         if (!(fromNode.mocRefs ?? []).includes(mocPath)) return false;
 
         await this.index.commit(() => {
@@ -209,16 +210,16 @@ export class SpaceService {
     private assertNoSiblingConflict(parentId: string | null, name: string): void {
         const siblings = parentId == null ? this.index.getRoots() : this.index.getChildren(parentId);
         if (siblings.some(s => s.name === name)) {
-            new Notice(`已存在同名文件夹: ${name}`);
+            new Notice(t('Folder with same name exists').replace('{name}', name));
             throw new Error(`Sibling conflict: ${name}`);
         }
     }
 }
 
 function assertValidName(name: string): void {
-    if (!name) throw new Error('名称不能为空');
+    if (!name) throw new Error(t('Name cannot be empty'));
     // 禁止常见非法字符(Windows + 路径分隔)
     if (/[\\/:*?"<>|]/.test(name)) {
-        throw new Error('名称包含非法字符 \\ / : * ? " < > |');
+        throw new Error(t('Name contains invalid characters'));
     }
 }

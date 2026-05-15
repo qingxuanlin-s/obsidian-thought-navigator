@@ -254,12 +254,17 @@ export default class ZKNavigationPlugin extends Plugin {
         if (localizedDefaultMOCHeading !== '思维树' && this.settings.mocHeadingTitle === '思维树') {
             this.settings.mocHeadingTitle = localizedDefaultMOCHeading;
         }
+        const localizedDefaultScratchpadName = t('scratch default pad name');
+        const shouldLocalizeLegacyScratchpadName = localizedDefaultScratchpadName !== '未命名';
         if ((this.settings as any).themeStyle === 'vivid') {
             this.settings.themeStyle = 'modern';
         }
         const legacyFileIcon = String.fromCodePoint(0x1F4C4);
         if (this.settings.MainNoteButtonText.startsWith(legacyFileIcon)) {
             this.settings.MainNoteButtonText = this.settings.MainNoteButtonText.slice(legacyFileIcon.length);
+        }
+        if (t("Main notes") !== "主笔记" && this.settings.MainNoteButtonText === "主笔记") {
+            this.settings.MainNoteButtonText = t("Main notes");
         }
         this.settings.autoLayoutDefaultGrowthDirection = normalizeLayoutPreset(
             this.settings.autoLayoutDefaultGrowthDirection
@@ -272,17 +277,24 @@ export default class ZKNavigationPlugin extends Plugin {
         if (Array.isArray(legacyItems) && legacyItems.length > 0 && this.settings.scratchpads.length === 0) {
             this.settings.scratchpads.push({
                 id: `pad-legacy-${Date.now().toString(36)}`,
-                name: '默认',
+                name: localizedDefaultScratchpadName,
                 items: legacyItems as ScratchpadEntry[],
                 createdAt: Date.now(),
             });
         }
         delete (this.settings as any).scratchpadItems;
+        if (shouldLocalizeLegacyScratchpadName) {
+            this.settings.scratchpads.forEach((pad) => {
+                if (pad.name === '默认') {
+                    pad.name = localizedDefaultScratchpadName;
+                }
+            });
+        }
         // 至少保证有一个 pad
         if (this.settings.scratchpads.length === 0) {
             this.settings.scratchpads.push({
                 id: `pad-default-${Date.now().toString(36)}`,
-                name: '默认',
+                name: localizedDefaultScratchpadName,
                 items: [],
                 createdAt: Date.now(),
             });
@@ -1000,11 +1012,11 @@ export default class ZKNavigationPlugin extends Plugin {
             return;
         }
         if (!this.vaultIndex || !this.spaceService) {
-            new Notice("Space 索引尚未就绪,请稍候再试");
+            new Notice(t("Space index is not ready"));
             return;
         }
         if (this.vaultIndex.isEmpty()) {
-            new Notice("还没有任何 Space,先在右侧抽屉创建一个吧");
+            new Notice(t("No Spaces yet. Create one in the right drawer first."));
             return;
         }
         new FolderMountModal(this.app, this.vaultIndex, this.spaceService, file).open();
