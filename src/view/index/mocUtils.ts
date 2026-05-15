@@ -249,12 +249,12 @@ export class ModalUtils {
         }
 
         const titleDiv = warningDiv.createEl('div');
-        titleDiv.innerHTML = `<strong>${title}</strong>`;
+        titleDiv.createEl('strong', { text: title });
         titleDiv.style.fontWeight = '600';
         titleDiv.style.marginBottom = '8px';
 
         const messageDiv = warningDiv.createEl('div');
-        messageDiv.innerHTML = message;
+        messageDiv.setText(message);
         messageDiv.style.color = 'var(--text-muted)';
 
         return warningDiv;
@@ -276,7 +276,7 @@ export class ModalUtils {
 
         content.forEach(line => {
             const lineDiv = infoDiv.createEl('div');
-            lineDiv.innerHTML = line;
+            lineDiv.setText(line);
             lineDiv.style.marginBottom = line === content[content.length - 1] ? '0' : '5px';
         });
 

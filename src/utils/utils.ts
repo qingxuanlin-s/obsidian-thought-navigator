@@ -615,7 +615,8 @@ export async function addSvgPanZoom(
     const mermaid = await loadMermaid();
     let { svg } = await mermaid.render(`${zkGraph.id}-svg`, mermaidStr);
 
-    zkGraph.insertAdjacentHTML('beforeend', svg);
+    const parsedSvg = new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement;
+    zkGraph.appendChild(document.importNode(parsedSvg, true));
 
     if (plugin.settings.graphType === "roadmap") {
         zkGraph.children[0].removeAttribute('style');
@@ -627,8 +628,8 @@ export async function addSvgPanZoom(
 
     indexMermaidDiv.appendChild(zkGraph);
 
-    const svgPanZoom = require("svg-pan-zoom");
-
+    const svgPanZoomModule = await import("svg-pan-zoom");
+    const svgPanZoom = (svgPanZoomModule as any).default ?? svgPanZoomModule;
     let panZoomTiger = await svgPanZoom(`#${zkGraph.id}-svg`, {
         zoomEnabled: true,
         controlIconsEnabled: false,

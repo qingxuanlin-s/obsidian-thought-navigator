@@ -331,8 +331,8 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
             );
 
         new Setting(structureSettingDiv)
-            .setName("文本显示模式")
-            .setDesc("控制分支视图节点显示 ID、标题或组合文本")
+            .setName(t("Node text display mode"))
+            .setDesc(t("Control whether branch nodes show ID, title, or combined text"))
             .addDropdown(options => options
                 .addOption("id", t("id"))
                 .addOption("title", t("title"))
@@ -346,11 +346,11 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
             );
 
         new Setting(structureSettingDiv)
-            .setName("节点布局风格")
-            .setDesc("自由节点保留当前自由放置逻辑；自动节点按固定思维导图布局创建新节点")
+            .setName(t("Node layout style"))
+            .setDesc(t("Free nodes keep manual placement; auto nodes create new nodes in a fixed mind-map layout"))
             .addDropdown(options => options
-                .addOption("free", "自由节点")
-                .addOption("auto", "自动节点")
+                .addOption("free", t("Free nodes"))
+                .addOption("auto", t("Auto nodes"))
                 .setValue(this.plugin.settings.nodeLayoutStyle || "free")
                 .onChange((value) => {
                     this.plugin.settings.nodeLayoutStyle = value as 'free' | 'auto';
@@ -359,12 +359,12 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
             );
 
         new Setting(structureSettingDiv)
-            .setName("自动风格默认生长方向")
-            .setDesc("自动节点未单独设置分支布局时使用的默认生长方向")
+            .setName(t("Default growth direction for auto layout"))
+            .setDesc(t("Used when an auto-layout branch has no separate growth direction"))
             .addDropdown(options => options
-                .addOption("bidirectional", "双向")
-                .addOption("top-down", "上下")
-                .addOption("radial", "斜角")
+                .addOption("bidirectional", t("Bidirectional"))
+                .addOption("top-down", t("Top down"))
+                .addOption("radial", t("Radial"))
                 .setValue(this.plugin.settings.autoLayoutDefaultGrowthDirection || "bidirectional")
                 .onChange((value) => {
                     this.plugin.settings.autoLayoutDefaultGrowthDirection = value as 'bidirectional' | 'top-down' | 'radial';
@@ -377,14 +377,14 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
         quickActionDetails.addClass('zk-details');
 
         const quickActionSummary = quickActionDetails.createEl('summary');
-        quickActionSummary.setText('快捷操作');
+        quickActionSummary.setText(t("Quick actions"));
         quickActionSummary.addClass('zk-details-summary');
 
         const quickActionContent = quickActionDetails.createDiv('zk-details-content');
 
         new Setting(quickActionContent)
-            .setName("智能连线")
-            .setDesc("开启后，拖拽占位符节点时如果在某节点200px范围内，会自动成为该节点的子节点")
+            .setName(t("Smart connection"))
+            .setDesc(t("When enabled, dragging a placeholder node within 200px of another node automatically attaches it as a child"))
             .addToggle(toggle => toggle.setValue(this.plugin.settings.smartConnection)
                 .onChange((value) => {
                     this.plugin.settings.smartConnection = value;
@@ -438,7 +438,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
             .setDesc(t("The heading title to parse (e.g. '思维树' for '# 思维树')"))
             .addText((cb) =>
                 cb.setValue(this.plugin.settings.mocHeadingTitle)
-                    .setPlaceholder("思维树")
+                    .setPlaceholder(t("default MOC heading title"))
                     .onChange((value) => {
                         this.plugin.settings.mocHeadingTitle = value;
                         this.plugin.RefreshIndexViewFlag = true;

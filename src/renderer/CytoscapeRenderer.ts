@@ -1097,10 +1097,13 @@ export class CytoscapeRenderer implements IGraphRenderer {
             cursor: pointer;
             transition: all 0.2s;
         `;
-        newGroupOption.innerHTML = `
-            <div style="font-weight: 600; color: var(--text-normal); margin-bottom: 4px;">创建新分组</div>
-            <div style="font-size: 12px; color: var(--text-muted);">将选中的节点创建为新的分组</div>
-        `;
+        const newGroupTitle = newGroupOption.createDiv({ text: '创建新分组' });
+        newGroupTitle.style.fontWeight = '600';
+        newGroupTitle.style.color = 'var(--text-normal)';
+        newGroupTitle.style.marginBottom = '4px';
+        const newGroupDesc = newGroupOption.createDiv({ text: '将选中的节点创建为新的分组' });
+        newGroupDesc.style.fontSize = '12px';
+        newGroupDesc.style.color = 'var(--text-muted)';
         newGroupOption.addEventListener('mouseenter', () => {
             newGroupOption.style.borderColor = '#5b8fd9';
             newGroupOption.style.backgroundColor = 'rgba(91, 143, 217, 0.1)';
@@ -1127,10 +1130,13 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 cursor: pointer;
                 transition: all 0.2s;
             `;
-            groupOption.innerHTML = `
-                <div style="font-weight: 600; color: var(--text-normal); margin-bottom: 4px;">添加到「${group.label}」</div>
-                <div style="font-size: 12px; color: var(--text-muted);">将新选中的节点添加到此分组（当前 ${group.nodeIds.length} 个节点）</div>
-            `;
+            const groupTitle = groupOption.createDiv({ text: `添加到「${group.label}」` });
+            groupTitle.style.fontWeight = '600';
+            groupTitle.style.color = 'var(--text-normal)';
+            groupTitle.style.marginBottom = '4px';
+            const groupDesc = groupOption.createDiv({ text: `将新选中的节点添加到此分组（当前 ${group.nodeIds.length} 个节点）` });
+            groupDesc.style.fontSize = '12px';
+            groupDesc.style.color = 'var(--text-muted)';
             groupOption.addEventListener('mouseenter', () => {
                 groupOption.style.borderColor = '#5b8fd9';
                 groupOption.style.backgroundColor = 'rgba(91, 143, 217, 0.1)';

@@ -291,7 +291,10 @@ function createRandomTwoLetterNodeId(): string {
 /**
  * 创建带默认首节点的 .moc 文件内容
  */
-export function createMOCJsonWithInitialNode(nodeLayoutStyle: 'free' | 'auto' = 'free'): string {
+export function createMOCJsonWithInitialNode(
+    nodeLayoutStyle: 'free' | 'auto' = 'free',
+    initialNodeTitle: string = '新节点'
+): string {
     const initialNodeId = createRandomTwoLetterNodeId();
     const json: MOCJsonSchema = {
         version: 1,
@@ -299,7 +302,7 @@ export function createMOCJsonWithInitialNode(nodeLayoutStyle: 'free' | 'auto' = 
             {
                 nodeID: initialNodeId,
                 nodeType: 'text',
-                target: '新节点',
+                target: initialNodeTitle,
                 depth: 0,
                 children: [],
                 relationText: '',

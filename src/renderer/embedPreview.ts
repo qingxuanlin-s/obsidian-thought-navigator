@@ -49,9 +49,8 @@ export const renderExcalidrawPreview = async (
                     }
                 }
                 if (typeof svg === 'string') {
-                    const wrapped = document.createElement('div');
-                    wrapped.innerHTML = svg;
-                    svg = wrapped.querySelector('svg');
+                    const parsed = new DOMParser().parseFromString(svg, 'image/svg+xml');
+                    svg = parsed.querySelector('svg');
                 }
                 if (svg instanceof SVGElement || svg instanceof HTMLElement) {
                     svg.removeAttribute('width');
@@ -210,7 +209,7 @@ export function renderEmbedNodePreviews(this: any): void {
         });
         if (embedNodes.length === 0) { this.embedCardCache.clear(); return; }
 
-        const app = (window as any).app;
+        const app = this.currentOptions?.app;
         if (!app) return;
 
         const previewContainer = document.createElement('div');
@@ -744,11 +743,11 @@ export function renderEmbedNodePreviews(this: any): void {
 
                     if (!contentEl.isConnected) return;
                     contentEl.style.cssText += 'display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px;';
-                    contentEl.innerHTML = `
-                        <div style="font-size: 12px; color: var(--text-muted); text-align: center;">
-                            未找到 MOC 预览 PNG（attachments/${sourceFile.name}.png）
-                        </div>
-                    `;
+                    contentEl.textContent = '';
+                    const missingPreview = contentEl.createDiv({ text: `未找到 MOC 预览 PNG（attachments/${sourceFile.name}.png）` });
+                    missingPreview.style.fontSize = '12px';
+                    missingPreview.style.color = 'var(--text-muted)';
+                    missingPreview.style.textAlign = 'center';
                 })();
 
             } else if (isExcalidraw && !hasExcalidrawCache) {
@@ -911,7 +910,7 @@ export function renderImageNodePreviews(this: any): void {
         if (!this.cy || !this.container) return;
 
         const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
-        const app = (window as any).app;
+        const app = this.currentOptions?.app;
         if (!app) return;
 
         if (this.imagePreviewCleanup) {

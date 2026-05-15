@@ -2,7 +2,7 @@
 
 Thought Navigator 是一个用于 Obsidian 的可视化思维树插件，适合卡片盒笔记法、MOC（Map of Content）工作流、主题研究和长期知识导航。
 
-![Views](attachments/Views.png)
+![Thought Navigator 截图](docs/screenshot-20260515-221835.png)
 
 ## 功能特性
 
@@ -21,6 +21,8 @@ Thought Navigator 是一个用于 Obsidian 的可视化思维树插件，适合�
 
 ## 演示
 
+![Views](attachments/Views.png)
+
 ![Demo](attachments/Demo.gif)
 
 ## 核心概念
@@ -38,15 +40,15 @@ Thought Navigator 推荐使用 MOC 模式。MOC 文件是一个 `.moc` 文件，
 2. 执行命令 `New MOC file`，或在文件夹右键菜单中选择 `New MOC file`。
 3. 打开生成的 `.moc` 文件。
 4. 在思维树视图中添加节点、连接笔记、拖拽布局、创建分组和整理知识结构。
-5. 需要查看当前笔记上下文时，执行 `open thought-local-graph` 打开局部关系视图。
+5. 需要查看当前笔记上下文时，执行 `Open local graph` 打开局部关系视图。
 
 ## 命令
 
 | 命令 | 说明 |
 | --- | --- |
-| `open thought-tree-graph` | 打开主思维树视图。 |
-| `open thought-local-graph` | 打开局部关系视图。 |
-| `reveal current file in thought-tree-graph` | 在思维树中定位当前文件。 |
+| `Open tree graph` | 打开主思维树视图。 |
+| `Open local graph` | 打开局部关系视图。 |
+| `Reveal current file in tree graph` | 在思维树中定位当前文件。 |
 | `New MOC file` | 创建新的 `.moc` 思维树文件。 |
 | `添加当前 MOC 到项目文件夹` | 将当前 MOC 挂载到 Project Space 文件夹。 |
 
@@ -191,3 +193,4 @@ release 必须包含：
 PolyForm Noncommercial License 1.0.0。见 [LICENSE](LICENSE)。
 
 未经版权持有人另行授权，不允许商业使用。
+如需商业授权，请联系：gutsfire@outlook.com。

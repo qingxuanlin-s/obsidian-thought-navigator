@@ -29,14 +29,16 @@ export class expandGraphModal extends Modal {
     svgGraph.id = "zk-expand-graph";
 
     let { svg } = await mermaid.render(`zk-expand-graph-svg`, `${this.mermaidStr}`);
-    svgGraph.insertAdjacentHTML('beforeend', svg);
+    const parsedSvg = new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement;
+    svgGraph.appendChild(document.importNode(parsedSvg, true));
     svgGraph.children[0].removeAttribute('style');
     svgGraph.children[0].addClass("zk-full-width");
     svgGraph.children[0].setAttribute('height', `${this.modalEl.offsetHeight - 50}px`); 
 
     this.contentEl.appendChild(svgGraph);
 
-    const svgPanZoom = require("svg-pan-zoom");
+    const svgPanZoomModule = await import("svg-pan-zoom");
+    const svgPanZoom = (svgPanZoomModule as any).default ?? svgPanZoomModule;
     let panZoomTiger = svgPanZoom(`#zk-expand-graph-svg`, {
         zoomEnabled: true,
         controlIconsEnabled: false,

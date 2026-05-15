@@ -202,7 +202,7 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     // MOC 模式默认值
     mocModeEnabled: true,
     mocFolderPath: '/',
-    mocHeadingTitle: '思维树',
+    mocHeadingTitle: t('default MOC heading title'),
     mocCurrentFile: '',
     mocNodePositions: {}, // MOC 节点位置存储
     smartConnection: false, // 智能连线默认关闭
@@ -250,6 +250,10 @@ export default class ZKNavigationPlugin extends Plugin {
             DEFAULT_SETTINGS,
             await this.loadData()
         )
+        const localizedDefaultMOCHeading = t('default MOC heading title');
+        if (localizedDefaultMOCHeading !== '思维树' && this.settings.mocHeadingTitle === '思维树') {
+            this.settings.mocHeadingTitle = localizedDefaultMOCHeading;
+        }
         if ((this.settings as any).themeStyle === 'vivid') {
             this.settings.themeStyle = 'modern';
         }
@@ -302,12 +306,25 @@ export default class ZKNavigationPlugin extends Plugin {
         }
     }
 
+    private registerMocExtension(): void {
+        try {
+            // 注册 .moc 扩展名，使 Obsidian 在文件浏览器中显示并正确索引这些文件
+            this.registerExtensions(['moc'], 'markdown');
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (message.includes('Attempting to register an existing file extension "moc"')) {
+                console.warn('[thought-navigator] .moc extension is already registered, skipping registration.');
+                return;
+            }
+            throw error;
+        }
+    }
+
     async onload() {
 
         await this.loadSettings();
 
-        // 注册 .moc 扩展名，使 Obsidian 在文件浏览器中显示并正确索引这些文件
-        this.registerExtensions(['moc'], 'markdown');
+        this.registerMocExtension();
 
         const updateMOCPreviewImageSize = (img: HTMLImageElement, containerEl: HTMLElement): void => {
             if (containerEl.parentElement?.classList.contains('popover')) {
@@ -543,10 +560,11 @@ export default class ZKNavigationPlugin extends Plugin {
                             .onClick(async () => {
                                 try {
                                     const folder = file as TFolder;
-                                    const baseName = '思维树-' + moment().format('YYYYMMDDHHmmss');
+                                    const baseName = t('default MOC file prefix') + '-' + moment().format('YYYYMMDDHHmmss');
                                     const filePath = folder.path ? `${folder.path}/${baseName}${MOC_FILE_SUFFIX}` : `${baseName}${MOC_FILE_SUFFIX}`;
                                     const content = createMOCJsonWithInitialNode(
-                                        this.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free'
+                                        this.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free',
+                                        t('Default node title')
                                     );
                                     await this.app.vault.create(filePath, content);
                                 } catch (e) {
@@ -610,7 +628,7 @@ export default class ZKNavigationPlugin extends Plugin {
             }
         });
               
-        this.addRibbonIcon("tree-pine", t("open thought-tree-graph"), async () => {
+        this.addRibbonIcon("tree-pine", t("Open tree graph"), async () => {
             
             this.openIndexView();
             
@@ -618,7 +636,7 @@ export default class ZKNavigationPlugin extends Plugin {
 
         this.addCommand({
             id: "thought-tree-graph",
-            name: t("open thought-tree-graph"),
+            name: t("Open tree graph"),
             callback:async ()=>{
                 
                 this.openIndexView();
@@ -627,7 +645,7 @@ export default class ZKNavigationPlugin extends Plugin {
 
         this.addCommand({
             id: "thought-local-graph",
-            name: t("open thought-local-graph"),
+            name: t("Open local graph"),
             callback: async ()=>{
                 
                 this.openGraphView();
@@ -636,7 +654,7 @@ export default class ZKNavigationPlugin extends Plugin {
 
         this.addCommand({
             id: "thought-tree-graph-by-file",
-            name: t("reveal current file in thought-tree-graph"),
+            name: t("Reveal current file in tree graph"),
             callback: async ()=>{
                 await this.revealFileInIndexView();
             }
@@ -650,9 +668,12 @@ export default class ZKNavigationPlugin extends Plugin {
                 if (!activeFile) return;
                 try {
                     const folder = activeFile.parent;
-                    const baseName = '思维树-' + moment().format('YYYYMMDDHHmmss');
+                    const baseName = t('default MOC file prefix') + '-' + moment().format('YYYYMMDDHHmmss');
                     const filePath = folder?.path ? folder.path + '/' + baseName + MOC_FILE_SUFFIX : baseName + MOC_FILE_SUFFIX;
-                    const mocContent = createMOCJsonWithInitialNode(this.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free');
+                    const mocContent = createMOCJsonWithInitialNode(
+                        this.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free',
+                        t('Default node title')
+                    );
                     const newFile = await this.app.vault.create(filePath, mocContent);
                     editor.replaceSelection('![[' + newFile.name + ']]');
                     this.settings.mocCurrentFile = newFile.path;
@@ -667,16 +688,16 @@ export default class ZKNavigationPlugin extends Plugin {
         // 添加当前 MOC 到项目文件夹(挂载/取消挂载)
         this.addCommand({
             id: "zk-mount-moc-to-folder",
-            name: "添加当前 MOC 到项目文件夹",
+            name: t("Mount current MOC to project folder"),
             callback: async () => {
                 const currentPath = this.settings.mocCurrentFile;
                 if (!currentPath) {
-                    new Notice("当前未选中 MOC 文件");
+                    new Notice(t("No current MOC file selected"));
                     return;
                 }
                 const file = this.app.vault.getFileByPath(currentPath);
                 if (!file) {
-                    new Notice("当前 MOC 文件不存在");
+                    new Notice(t("Current MOC file does not exist"));
                     return;
                 }
                 this.openFolderMountModal(file);
@@ -697,7 +718,7 @@ export default class ZKNavigationPlugin extends Plugin {
         // 初始化 MOC 反向索引（后台构建）
         this.mocReverseIndex = new MOCReverseIndex(this.app);
         // 初始化自建 Space 树索引(单文件存储,纯虚拟分类)
-        const storePath = `${this.manifest.dir ?? `.obsidian/plugins/${this.manifest.id}`}/spaces.json`;
+        const storePath = `${this.app.vault.configDir}/plugins/${this.manifest.id}/spaces.json`;
         this.vaultIndex = new VaultIndex(this.app, storePath);
         this.addChild(this.vaultIndex);
         this.spaceService = new SpaceService(this.app, this.vaultIndex);
@@ -1117,12 +1138,13 @@ export default class ZKNavigationPlugin extends Plugin {
 
     private async createMOCInFolder(folder: TFolder): Promise<TFile | null> {
         try {
-            const baseName = '思维树-' + moment().format('YYYYMMDDHHmmss');
+            const baseName = t('default MOC file prefix') + '-' + moment().format('YYYYMMDDHHmmss');
             const filePath = folder.path
                 ? `${folder.path}/${baseName}${MOC_FILE_SUFFIX}`
                 : `${baseName}${MOC_FILE_SUFFIX}`;
             const content = createMOCJsonWithInitialNode(
-                this.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free'
+                this.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free',
+                t('Default node title')
             );
             return await this.app.vault.create(filePath, content);
         } catch (e) {
