@@ -4,7 +4,7 @@ import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
 import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
 import { ZKNavigationSettngTab } from "src/settings/settings";
 import { mainNoteInit, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX } from "src/utils/utils";
-import { createEmptyMOCJson } from "src/utils/mocJsonCodec";
+import { createMOCJsonWithInitialNode } from "src/utils/mocJsonCodec";
 import { MOCFileMonitor } from "src/utils/mocMonitor";
 import { ensureMOCPreviewPNG } from "src/embed/mocEmbedExporter";
 import { MOCReverseIndex } from "src/utils/mocReverseIndex";
@@ -545,7 +545,7 @@ export default class ZKNavigationPlugin extends Plugin {
                                     const folder = file as TFolder;
                                     const baseName = '思维树-' + moment().format('YYYYMMDDHHmmss');
                                     const filePath = folder.path ? `${folder.path}/${baseName}${MOC_FILE_SUFFIX}` : `${baseName}${MOC_FILE_SUFFIX}`;
-                                    const content = createEmptyMOCJson(
+                                    const content = createMOCJsonWithInitialNode(
                                         this.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free'
                                     );
                                     await this.app.vault.create(filePath, content);
@@ -672,7 +672,7 @@ export default class ZKNavigationPlugin extends Plugin {
                     const folder = activeFile.parent;
                     const baseName = '思维树-' + moment().format('YYYYMMDDHHmmss');
                     const filePath = folder?.path ? folder.path + '/' + baseName + MOC_FILE_SUFFIX : baseName + MOC_FILE_SUFFIX;
-                    const mocContent = createEmptyMOCJson(this.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free');
+                    const mocContent = createMOCJsonWithInitialNode(this.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free');
                     const newFile = await this.app.vault.create(filePath, mocContent);
                     editor.replaceSelection('![[' + newFile.name + ']]');
                     this.settings.mocCurrentFile = newFile.path;
@@ -1141,7 +1141,7 @@ export default class ZKNavigationPlugin extends Plugin {
             const filePath = folder.path
                 ? `${folder.path}/${baseName}${MOC_FILE_SUFFIX}`
                 : `${baseName}${MOC_FILE_SUFFIX}`;
-            const content = createEmptyMOCJson(
+            const content = createMOCJsonWithInitialNode(
                 this.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free'
             );
             return await this.app.vault.create(filePath, content);

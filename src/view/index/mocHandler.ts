@@ -97,7 +97,7 @@ export class MOCHandler {
         }
 
         if (mocData.nodeLayoutStyle !== 'free' && mocData.nodeLayoutStyle !== 'auto') {
-            mocData.nodeLayoutStyle = this.plugin.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free';
+            mocData.nodeLayoutStyle = 'free';
         }
 
         const settingsPreset = normalizeLayoutPreset(this.plugin.settings.autoLayoutDefaultGrowthDirection);
@@ -133,9 +133,10 @@ export class MOCHandler {
             // 深拷贝数据，避免修改缓存中的数据
             const mocDataCopy = deepCopyMOCResult(mocData);
 
-            // 锁定文件级布局风格：若该 MOC 尚未持久化 nodeLayoutStyle，则在首次写入时补齐
+            // 锁定文件级布局风格：新建 MOC 已在创建时写入 nodeLayoutStyle。
+            // 老 MOC 没有该字段，必须按历史默认 free 补齐，避免全局默认切到 auto 后污染旧文件。
             if (mocDataCopy.nodeLayoutStyle !== 'free' && mocDataCopy.nodeLayoutStyle !== 'auto') {
-                mocDataCopy.nodeLayoutStyle = this.plugin.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free';
+                mocDataCopy.nodeLayoutStyle = 'free';
             }
 
             // 调用修改回调（操作的是拷贝，不影响缓存）

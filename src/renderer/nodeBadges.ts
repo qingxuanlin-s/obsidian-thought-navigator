@@ -1423,12 +1423,15 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                             const preview = document.createElement('div');
                             preview.className = 'zk-text-md-excalidraw-embed';
                             preview.textContent = file.basename || linkText;
-                            preview.addEventListener('click', (e: MouseEvent) => {
+                            preview.title = `${file.basename || linkText}\n按住 Cmd/Ctrl 点击打开`;
+                            const openExcalidraw = (e: MouseEvent) => {
                                 if (!(e.ctrlKey || e.metaKey)) return;
                                 e.preventDefault();
                                 e.stopPropagation();
                                 app?.workspace?.openLinkText?.(linkText, sourcePath, true);
-                            });
+                            };
+                            preview.addEventListener('mousedown', openExcalidraw);
+                            preview.addEventListener('click', openExcalidraw);
                             void renderExcalidrawPreview(app, preview, file, linkText).then((rendered) => {
                                 if (!rendered && preview.isConnected) {
                                     preview.textContent = `Excalidraw 预览不可用：${file.basename || linkText}`;
@@ -1442,12 +1445,15 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                         img.src = app.vault.getResourcePath(file);
                         img.alt = linkText;
                         img.draggable = false;
-                        img.addEventListener('click', (e: MouseEvent) => {
+                        img.title = `${file.basename || linkText}\n按住 Cmd/Ctrl 点击打开`;
+                        const openImage = (e: MouseEvent) => {
                             if (!(e.ctrlKey || e.metaKey)) return;
                             e.preventDefault();
                             e.stopPropagation();
                             app?.workspace?.openLinkText?.(linkText, sourcePath, true);
-                        });
+                        };
+                        img.addEventListener('mousedown', openImage);
+                        img.addEventListener('click', openImage);
                         return wrapForImageToolkit(img);
                     };
                     // 按内联标记拆分并逐段追加 DOM 节点

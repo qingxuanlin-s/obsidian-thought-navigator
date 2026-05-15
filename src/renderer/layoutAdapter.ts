@@ -368,8 +368,21 @@ export function nextOffsetByProjection(
 }
 
 export function estimateCollisionBox(referenceNode: any): { width: number; height: number } {
-    const width = Math.max(Number(referenceNode.width?.() || 0), 120);
-    const height = Math.max(Number(referenceNode.height?.() || 0), 64);
+    const bb = typeof referenceNode.boundingBox === 'function'
+        ? referenceNode.boundingBox({ includeLabels: false } as any)
+        : null;
+    const width = Math.max(
+        Number(referenceNode.outerWidth?.() || 0),
+        Number(referenceNode.width?.() || 0),
+        Number(bb?.w || 0),
+        120
+    );
+    const height = Math.max(
+        Number(referenceNode.outerHeight?.() || 0),
+        Number(referenceNode.height?.() || 0),
+        Number(bb?.h || 0),
+        64
+    );
     return {
         width: width + 36,
         height: height + 30
@@ -603,7 +616,11 @@ export function getFreeChildShortcutPosition(cy: cytoscape.Core, activeNode: any
     const children = activeNode.outgoers('edge').targets();
     const dir = getBranchDirection(activeNode);
     const normal = getPerpendicular(dir);
-    const directionalDistance = getDirectionalDistance(activeNode, dir);
+    const directionalDistance = getDirectionalDistance(
+        activeNode,
+        dir,
+        activeNode.data?.('isRoot') ? 120 : 64
+    );
     const anchor = {
         x: nodePos.x + dir.x * directionalDistance,
         y: nodePos.y + dir.y * directionalDistance
@@ -647,9 +664,14 @@ export function getAutoChildShortcutPosition(activeNode: any): { x: number; y: n
         };
     }
 
+    const directionalDistance = getDirectionalDistance(
+        activeNode,
+        dir,
+        activeNode.data?.('isRoot') ? 120 : 72
+    );
     const anchor = {
-        x: nodePos.x + dir.x * HORIZONTAL_GAP,
-        y: nodePos.y + dir.y * HORIZONTAL_GAP
+        x: nodePos.x + dir.x * directionalDistance,
+        y: nodePos.y + dir.y * directionalDistance
     };
     const offset = nextOffsetByProjection(children, anchor, normal, VERTICAL_GAP);
     return {

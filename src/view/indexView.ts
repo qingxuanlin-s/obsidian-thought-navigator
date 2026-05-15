@@ -1743,10 +1743,11 @@ cy.fit(null, 40);
         // 项目徽章:当前 MOC 是否被挂载到任意 FolderNode 下
         this.refreshProjectBadge(currentMOCPath);
 
-        // 读取 MOC 文件中持久化的节点布局风格；若未记录则使用全局设置
+        // 读取 MOC 文件中持久化的节点布局风格；老 .moc 未记录时按历史默认 free 处理。
+        // 新建 .moc 会在创建时写入 nodeLayoutStyle，后续不再受全局设置切换影响。
         this.currentNodeLayoutStyle = this.normalizeNodeLayoutStyle(
             mocParseResult.nodeLayoutStyle,
-            this.plugin.settings.nodeLayoutStyle
+            'free'
         );
         this.currentNodeLayoutOverrides = mocParseResult.nodeLayoutOverrides || {};
         this.currentLayoutPreset = normalizeLayoutPreset(this.plugin.settings.autoLayoutDefaultGrowthDirection);
@@ -6690,6 +6691,16 @@ cy.fit(null, 40);
         return stackAxisOf(dir);
     }
 
+    private getAutoChildDirectionalDistance(parentNodeId: string, dir: GrowthDirection): number {
+        const parentSize = this.getNodeSizeForLayout(parentNodeId);
+        const dirVec = DIR_VECTORS[dir];
+        const isHorizontal = Math.abs(dirVec.x) >= Math.abs(dirVec.y);
+        const parentSpan = isHorizontal ? parentSize.width : parentSize.height;
+        const placeholderSpan = isHorizontal ? 240 : 90;
+        const gap = this.isMocRootNodeId(parentNodeId) ? 120 : 72;
+        return Math.max(220, parentSpan / 2 + placeholderSpan / 2 + gap);
+    }
+
     private getAutoPlaceholderPosition(
         parentNodeId: string,
         fallbackPosition: { x: number; y: number },
@@ -6742,9 +6753,10 @@ cy.fit(null, 40);
         }
 
         const dirVec = DIR_VECTORS[direction];
+        const directionalDistance = this.getAutoChildDirectionalDistance(parentNodeId, direction);
         return {
-            x: parentPos.x + dirVec.x * 220,
-            y: parentPos.y + dirVec.y * 220
+            x: parentPos.x + dirVec.x * directionalDistance,
+            y: parentPos.y + dirVec.y * directionalDistance
         };
     }
 
@@ -6847,10 +6859,7 @@ cy.fit(null, 40);
 
         await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
             if (!mocData.nodeLayoutOverrides) mocData.nodeLayoutOverrides = {};
-            const fileDefault = this.normalizeNodeLayoutStyle(
-                mocData.nodeLayoutStyle,
-                this.plugin.settings.nodeLayoutStyle
-            );
+            const fileDefault = this.normalizeNodeLayoutStyle(mocData.nodeLayoutStyle, 'free');
             // 与父链继承值相同则清除覆盖（避免冗余数据）
             const inherited = getInherited(mocData.nodeLayoutOverrides, fileDefault);
             if (style === inherited) {
