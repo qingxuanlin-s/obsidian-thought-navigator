@@ -21,13 +21,9 @@ Thought Navigator 是一个用于 Obsidian 的可视化思维树插件，适合�
 
 ## 演示
 
-![Views](attachments/Views.png)
-
-![Demo](attachments/Demo.gif)
-
 操作案例：
 
-<video src="attachments/20260515-230209.mp4" controls width="100%"></video>
+[观看操作案例视频](attachments/20260515-230209.mp4)
 
 ## 核心概念
 
