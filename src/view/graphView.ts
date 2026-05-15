@@ -11,7 +11,7 @@ import { RenderOptions } from "src/renderer/types";
 import { resolveThemeMode } from "src/utils/themeMode";
 
 export const ZK_GRAPH_TYPE: string = "zk-graph-type"
-export const ZK_GRAPH_VIEW: string = t("zk-local-graph")
+export const ZK_GRAPH_VIEW: string = t("thought-local-graph")
 
 type LocalGraphMode = 'overview' | 'navigation';
 type LocalRelationCanvasMode = 'overview' | 'navigation';

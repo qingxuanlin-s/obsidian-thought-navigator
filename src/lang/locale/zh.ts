@@ -48,7 +48,7 @@ export default {
     "scratch unbind current moc success": "已取消当前 MOC 绑定",
 
     // settings.ts
-    "Zettelkasten Navigation": "卡片盒导航",
+    "Zettelkasten Navigation": "Thought Navigator",
     "Example: folder1/folder2": "比如: 文件夹/子文件夹",
     "Specify a frontmatter field for note's title": "⚠指定一个属性名称作为文字标题",
     "Specify a frontmatter field for note's ID": "⚠指定一个属性名称作为ID",
@@ -58,8 +58,8 @@ export default {
     '"_"(underscore)': '"_"(下划线)',
     'other':'其它字符',
     "enter your separator":"输入其它分隔符",
-    "zk-index-graph-view": "分支视图",
-    "zk-local-graph-view": "局部关系视图",
+    "thought-tree-graph-view": "思维树视图",
+    "thought-local-graph-view": "局部关系视图",
     "Open close-relative graph": "打开邻近图",
     "Mermaid graph to display parent, siblings and sons": "显示当前笔记的父节点，手足节点和子节点",
     "Open inlinks graph": "打开入链图",
@@ -163,8 +163,8 @@ export default {
     "export as html": "导出为交互式 HTML",
     "export success": "已保存到下载目录",
     "export fail": "导出失败，请重试",
-    "select a main note": "选择一个主笔记",
-    "select an index": "选择一个关键词",
+    "Find main note": "查找主笔记",
+    "Find index note": "查找索引笔记",
     "all trees": "所有树",
     "structure": "结构图",
     "roadmap": "路线图",
@@ -187,15 +187,15 @@ export default {
     "Mermaid graph to display inlinks and outlinks": "显示当前笔记的入链和出链",
 
     //main.ts
-    "open zk-index-graph": "打开思维树",
-    "open zk-local-graph": "打开局部关系视图",
-    "zk-index-graph": "思维树视图",
-    "zk-local-graph": "局部关系视图",
+    "open thought-tree-graph": "打开思维树",
+    "open thought-local-graph": "打开局部关系视图",
+    "thought-tree-graph": "思维树视图",
+    "thought-local-graph": "局部关系视图",
     "Main notes": "主笔记",
     '📖index': '📖关键词',
     "Copy zk-navigation URI":"复制 zk-navigation 链接",
     "New MOC file": "新建思维树",
-    "reveal current file in zk-index-graph": "在分支视图显示当前文件",
+    "reveal current file in thought-tree-graph": "在思维树中显示当前文件",
 
     //indexModal.ts
     "Index folder not set!": "❌设置错误: 关键词文件夹没有设置!",

@@ -31,7 +31,7 @@ import {
 } from "src/view/index/constants";
 
 export const ZK_INDEX_TYPE: string = "zk-index-type";
-export const ZK_INDEX_VIEW: string = t("zk-index-graph");
+export const ZK_INDEX_VIEW: string = t("thought-tree-graph");
 export const ZK_NAVIGATION: string = "zk-navigation";
 
 export interface ReverseRelation {
@@ -3555,6 +3555,7 @@ cy.fit(null, 40);
         }
         this.refreshLevelBreadcrumb();
     }
+
 
     /**
      * 基于当前 levelPath 重新渲染面包屑 DOM

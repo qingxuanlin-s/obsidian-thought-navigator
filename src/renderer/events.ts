@@ -3193,7 +3193,7 @@ export function isSmartConnectionEnabled(this: any): boolean {
         const app = (window as any).app;
         if (!app || !app.plugins) return false;
 
-        const plugin = app.plugins.plugins['thought-tree-navigator'];
+        const plugin = app.plugins.plugins['thought-navigator'];
         if (!plugin || !plugin.settings) return false;
 
         return plugin.settings.smartConnection === true;

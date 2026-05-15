@@ -48,7 +48,7 @@ export default {
     "scratch unbind current moc success": "Current MOC binding removed",
 
     // settings.ts
-    "Zettelkasten Navigation": "Zettelkasten Navigation",
+    "Zettelkasten Navigation": "Thought Navigator",
     "Example: folder1/folder2": "Example: folder1/folder2",
     "Specify a frontmatter field for note's title": "⚠Specify a file property for note's title",
     "Specify a frontmatter field for note's ID": "⚠Specify a file property for note's ID",
@@ -58,8 +58,8 @@ export default {
     '"_"(underscore)': '"_"(underscore)',
     'other':'other separator',
     "enter your separator": "type your separator",
-    "zk-index-graph-view": "zk-index-graph-view",
-    "zk-local-graph-view": "zk-local-graph-view",
+    "thought-tree-graph-view": "thought-tree-graph-view",
+    "thought-local-graph-view": "thought-local-graph-view",
     "Open close-relative graph": "Open close-relative graph",
     "Mermaid graph to display parent, siblings and sons": "Mermaid graph to display parent, siblings and children",
     "Open inlinks graph": "Open inlinks graph",
@@ -163,8 +163,8 @@ export default {
     "export as html": "Export as interactive HTML",
     "export success": "Saved to downloads",
     "export fail": "Export failed, please retry",
-    "select a main note": "select a main note",
-    "select an index": "select a keyword",
+    "Find main note": "Find main note",
+    "Find index note": "Find index note",
     "all trees": "all trees",
     "structure": "structure",
     "roadmap": "roadmap",
@@ -188,15 +188,15 @@ export default {
     "Mermaid graph to display inlinks and outlinks": "Mermaid graph to display inlinks and outlinks",
 
     //main.ts
-    "open zk-index-graph": "open zk-index-graph",
-    "open zk-local-graph": "open zk-local-graph",
-    "zk-local-graph": "zk-local-graph",
-    "zk-index-graph": "zk-index-graph",
+    "open thought-tree-graph": "open thought-tree-graph",
+    "open thought-local-graph": "open thought-local-graph",
+    "thought-local-graph": "thought-local-graph",
+    "thought-tree-graph": "thought-tree-graph",
     "Main notes": "Main notes",
     '📖index': '📖keywords',
     "Copy zk-navigation URI":"Copy zk-navigation URI",
     "New MOC file": "New MOC file",
-    "reveal current file in zk-index-graph": "reveal current file in zk-index-graph",
+    "reveal current file in thought-tree-graph": "reveal current file in thought-tree-graph",
 
     //indexModal.ts
     "Index folder not set!": "❌Setting error: Index folder not set!",

@@ -15,7 +15,7 @@ export class mainNoteModal extends SuggestModal<ZKNode>{
       this.onSubmit = onSubmit;
       this.plugin = plugin;
       this.MainNotes = MainNotes;
-      this.setPlaceholder(t("select a main note"));
+      this.setPlaceholder(t("Find main note"));
       this.limit = plugin.settings.maxLenMainModel;
     }
 
@@ -62,7 +62,7 @@ export class mainNoteFuzzyModal extends FuzzySuggestModal<ZKNode> {
       this.onSubmit = onSubmit;
       this.plugin = plugin;
       this.MainNotes = MainNotes;
-      this.setPlaceholder(t("select a main note"));
+      this.setPlaceholder(t("Find main note"));
       this.limit = plugin.settings.maxLenMainModel;
     }
   

@@ -610,15 +610,15 @@ export default class ZKNavigationPlugin extends Plugin {
             }
         });
               
-        this.addRibbonIcon("tree-pine", t("open zk-index-graph"), async () => {
+        this.addRibbonIcon("tree-pine", t("open thought-tree-graph"), async () => {
             
             this.openIndexView();
             
         })
 
         this.addCommand({
-            id: "zk-index-graph",
-            name: t("open zk-index-graph"),
+            id: "thought-tree-graph",
+            name: t("open thought-tree-graph"),
             callback:async ()=>{
                 
                 this.openIndexView();
@@ -626,8 +626,8 @@ export default class ZKNavigationPlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "zk-local-graph",
-            name: t("open zk-local-graph"),
+            id: "thought-local-graph",
+            name: t("open thought-local-graph"),
             callback: async ()=>{
                 
                 this.openGraphView();
@@ -635,30 +635,10 @@ export default class ZKNavigationPlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "zk-index-graph-by-file",
-            name: t("reveal current file in zk-index-graph"),
+            id: "thought-tree-graph-by-file",
+            name: t("reveal current file in thought-tree-graph"),
             callback: async ()=>{
                 await this.revealFileInIndexView();
-            }
-        })
-
-
-        this.addCommand({
-            id: "zk-mainnote-modal",
-            name: t("select a main note"),
-            callback: async ()=>{
-                this.mainNoteModal = true;
-                await this.openIndexView();
-            }
-        })
-
-
-        this.addCommand({
-            id: "zk-index-modal",
-            name: t("select an index"),
-            callback: async ()=>{
-                this.indexModal = true;
-                await this.openIndexView();
             }
         })
 
