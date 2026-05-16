@@ -305,7 +305,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
             .addDropdown(options => options
                 .addOption("free", t("Free nodes"))
                 .addOption("auto", t("Auto nodes"))
-                .setValue(this.plugin.settings.nodeLayoutStyle || "free")
+                .setValue(this.plugin.settings.nodeLayoutStyle || "auto")
                 .onChange((value) => {
                     this.plugin.settings.nodeLayoutStyle = value as 'free' | 'auto';
                     this.plugin.RefreshIndexViewFlag = true;

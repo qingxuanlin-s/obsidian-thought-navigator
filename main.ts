@@ -209,7 +209,7 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     themeMode: 'auto', // 默认跟随 Obsidian
     themeStyle: 'modern', // 默认现代风格
     edgeStyle: 'bezier', // 默认贝塞尔曲线
-    nodeLayoutStyle: 'free', // 默认自由节点布局
+    nodeLayoutStyle: 'auto', // 默认自动节点布局
     autoLayoutDefaultGrowthDirection: 'bidirectional',
     showNoteIdInBranchView: true,
     scratchpads: [],
