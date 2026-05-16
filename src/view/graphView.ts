@@ -382,10 +382,10 @@ export class ZKGraphView extends ItemView {
                     debugInfo.style.padding = "20px";
                     debugInfo.style.color = "var(--text-muted)";
                     debugInfo.style.fontSize = "12px";
-                    debugInfo.createEl('p', { text: `解析耗时: ${mocParseResult.metadata.parseTime}ms` });
-                    debugInfo.createEl('p', { text: `文件路径: ${mocParseResult.metadata.filePath}` });
-                    debugInfo.createEl('p', { text: `查找标题: ${mocParseResult.metadata.headingTitle}` });
-                    debugInfo.createEl('p', { text: `提示: 请确保 MOC 文件中存在一级标题 "# ${headingTitle}"` });
+                    debugInfo.createEl('p', { text: `${t("parse time")}: ${mocParseResult.metadata.parseTime}ms` });
+                    debugInfo.createEl('p', { text: `${t("file path")}: ${mocParseResult.metadata.filePath}` });
+                    debugInfo.createEl('p', { text: `${t("heading title")}: ${mocParseResult.metadata.headingTitle}` });
+                    debugInfo.createEl('p', { text: `${t("moc heading missing hint")} "# ${headingTitle}"` });
                 }
             }
         }
@@ -881,8 +881,8 @@ export class ZKGraphView extends ItemView {
 
         const switcher = header.createDiv('zk-local-mode-switch');
         const modes: Array<{ mode: LocalGraphMode; label: string }> = [
-            { mode: 'overview', label: '概览' },
-            { mode: 'navigation', label: '导航' }
+            { mode: 'overview', label: t("overview") },
+            { mode: 'navigation', label: t("navigation") }
         ];
 
         for (const item of modes) {
@@ -1046,13 +1046,13 @@ export class ZKGraphView extends ItemView {
             const railReserve = showRail ? 110 : 0;
             const graphHeight = Math.max(containerHeight - 110 - railReserve, 220);
 
-            const section = this.createLocalSection(graphMermaidDiv, '概览');
+            const section = this.createLocalSection(graphMermaidDiv, t("overview"));
             section.container.addClass('zk-family-graph-container');
             section.container.addClass('zk-overview-graph-container');
             this.renderMocContextControl(section.actions, graphMermaidDiv, currentFile, allNodes, currentNode, mocFile, availableMOCs);
 
             if (relatedNodes.length === 0 && inlinkArr.length === 0 && outlinkArr.length === 0) {
-                section.body.createDiv('zk-local-empty').setText('暂无局部关系');
+                section.body.createDiv('zk-local-empty').setText(t("no local relations"));
             } else {
                 const mocNodeTreeDiv = section.body.createEl("div", {
                     cls: "zk-graph-cytoscape zk-local-cytoscape"
@@ -1080,10 +1080,10 @@ export class ZKGraphView extends ItemView {
                 expandBtn.setIcon("expand").setTooltip(t("expand graph"));
                 expandBtn.onClick(() => {
                     try {
-                        new CytoscapeExpandModal(this.app, '局部关系', graphData, options).open();
+                        new CytoscapeExpandModal(this.app, t("local relations"), graphData, options).open();
                     } catch (error) {
                         console.error('[GraphView] expand mind tree failed', error);
-                        new Notice('放大失败：局部关系');
+                        new Notice(t("expand local relations failed"));
                     }
                 });
 
@@ -1571,8 +1571,8 @@ export class ZKGraphView extends ItemView {
             });
         };
 
-        appendRow('入链', inlinkArr, 'inlink');
-        appendRow('出链', outlinkArr, 'outlink');
+        appendRow(t("inlinks"), inlinkArr, 'inlink');
+        appendRow(t("outlinks"), outlinkArr, 'outlink');
     }
 
     private async renderFocusNavigation(
@@ -1587,7 +1587,7 @@ export class ZKGraphView extends ItemView {
         const inlinkArr = await this.getInlinks(linkFile);
         const outlinkArr = await this.getOutlinks(linkFile);
 
-        const section = this.createLocalSection(graphMermaidDiv, '导航');
+        const section = this.createLocalSection(graphMermaidDiv, t("navigation"));
         section.container.addClass('zk-focus-nav-section');
         this.renderMocContextControl(section.actions, graphMermaidDiv, currentFile, allNodes, currentNode, mocFile, availableMOCs);
         await this.renderLocalRelationCanvas(
@@ -1738,7 +1738,7 @@ export class ZKGraphView extends ItemView {
                 new CytoscapeExpandModal(this.app, headingTitle, graphData, options).open();
             } catch (error) {
                 console.error('[GraphView] expand moc tree failed', error);
-                new Notice('放大失败：思维树');
+                new Notice(t("expand mind tree failed"));
             }
         });
 
@@ -1827,8 +1827,8 @@ export class ZKGraphView extends ItemView {
     ): Promise<void> {
         const section = this.createLocalSection(
             container,
-            '出入链',
-            `入链 ${inlinkArr.length} · 出链 ${outlinkArr.length}`
+            t("inoutlinks"),
+            `${t("inlinks")} ${inlinkArr.length} · ${t("outlinks")} ${outlinkArr.length}`
         );
         section.container.addClass('zk-inoutlinks-graph-container');
         if (this.isMOCFile(currentFile)) {
@@ -1898,7 +1898,7 @@ export class ZKGraphView extends ItemView {
         if (inlinkArr.length > 0) {
             inlinkArr.forEach((file) => inGrid.appendChild(createNodeCard(file, 'inlink')));
         } else {
-            inGrid.createDiv('zk-iol-empty').setText('暂无入链');
+            inGrid.createDiv('zk-iol-empty').setText(t("no inlinks"));
         }
 
         // 连接线（始终保留，保持上下分区对称）
@@ -1920,7 +1920,7 @@ export class ZKGraphView extends ItemView {
         if (outlinkArr.length > 0) {
             outlinkArr.forEach((file) => outGrid.appendChild(createNodeCard(file, 'outlink')));
         } else {
-            outGrid.createDiv('zk-iol-empty').setText('暂无出链');
+            outGrid.createDiv('zk-iol-empty').setText(t("no outlinks"));
         }
 
         // 出链标题（始终放在底部）
@@ -1945,7 +1945,7 @@ export class ZKGraphView extends ItemView {
                 new CytoscapeExpandModal(this.app, t("inoutlinks"), graphData, options).open();
             } catch (error) {
                 console.error('[GraphView] expand inoutlinks failed', error);
-                new Notice('放大失败：出入链');
+                new Notice(t("expand inoutlinks failed"));
             }
         });
     }
