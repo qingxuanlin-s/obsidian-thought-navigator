@@ -60,6 +60,20 @@ export function bindEvents(this: any): void {
             this.updateActiveFirstLevelBranch();
         });
 
+        // 祖先链高亮:点击节点 → 它到 root 的整条路径恢复亮色(覆盖 2 级+ muted)+ 沿途边加粗。
+        // unselect 后,如果还有别的节点是选中态,以 ID 字典序最小者为锚(确定性即可,不重要);
+        // 全部 unselect 时清除高亮。
+        const refreshAncestorHighlight = () => {
+            if (!this.cy) return;
+            const selected = this.cy.$('node:selected').filter((n: any) => !n.data('isGroup') && !n.data('isPlaceholder'));
+            if (selected.length === 0) {
+                this.applyAncestorHighlight(null);
+                return;
+            }
+            this.applyAncestorHighlight(selected[0].id());
+        };
+        this.cy.on('select unselect', 'node', refreshAncestorHighlight);
+
         // 节点点击事件（单击选中；Command/Ctrl + 单击打开文件节点）
         this.cy.on('tap', 'node', (evt: any) => {
             const node = evt.target;

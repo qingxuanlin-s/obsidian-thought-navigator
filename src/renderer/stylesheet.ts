@@ -901,6 +901,47 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'z-index': 1000
             } as any
         },
+        // 祖先链高亮:点击/选中节点时,其到 root 的路径恢复亮色;沿途的边稍微加粗加亮。
+        // 放在 level-2+ muted 规则之后,在 level-dimmed 之前 —— 这样 muted 被覆盖,但若有
+        // 显式 levelDim 屏蔽,后续的 dimmed 规则仍能胜出。
+        {
+            selector: 'node.zk-ancestor-active',
+            style: {
+                'color': theme.node.text,
+                'background-opacity': 1,
+                'border-opacity': 0.92,
+                'z-index': 1005
+            } as any
+        },
+        {
+            selector: 'edge.zk-ancestor-active',
+            style: {
+                'width': 3.2,
+                'opacity': 0.95,
+                'z-index': 1004
+            } as any
+        },
+        // 弱化无关分支的节点需要放在所有节点状态之后，避免被选中/当前文件/自定义状态覆盖。
+        {
+            selector: 'node.zk-level-dimmed',
+            style: {
+                'opacity': theme.effects.dimmedNodeOpacity,
+                'text-opacity': theme.effects.dimmedTextOpacity,
+                'background-opacity': theme.isLight ? 0.38 : 0.12,
+                'border-opacity': theme.isLight ? 0.34 : 0.18,
+                'overlay-opacity': 0,
+                'underlay-opacity': 0,
+                'z-index': 1
+            } as any
+        },
+        {
+            selector: 'node.zk-level-dimmed[!isRoot][!isFirstLevelNode][!isFreeNode][!isEmbed][!isStandaloneText][!isCurrentFile]',
+            style: {
+                'background-opacity': theme.isLight ? 0.38 : 0.12,
+                'border-opacity': theme.isLight ? 0.34 : 0.18,
+                'color': theme.node.textMuted
+            } as any
+        },
         // 弱化无关分支的边需要放在所有边样式之后，避免被 root->1级主干/高亮边 opacity 覆盖。
         {
             selector: 'edge.zk-level-dimmed',
