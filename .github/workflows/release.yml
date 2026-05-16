@@ -9,6 +9,7 @@ permissions:
   contents: write
   id-token: write
   attestations: write
+  models: read
 
 jobs:
   release:
@@ -17,6 +18,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Use Node.js
         uses: actions/setup-node@v4
@@ -47,13 +50,85 @@ jobs:
             manifest.json
             styles.css
 
+      - name: Collect commits since last tag
+        id: commits
+        run: |
+          PREV_TAG="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          if [ -n "$PREV_TAG" ]; then
+            RANGE="${PREV_TAG}..${GITHUB_REF_NAME}"
+          else
+            RANGE="${GITHUB_REF_NAME}"
+          fi
+          RAW="$(git log "$RANGE" --no-merges --pretty=format:'- %s')"
+          {
+            echo "raw<<EOF_RAW"
+            echo "$RAW"
+            echo "EOF_RAW"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Summarize commits with GitHub Models
+        id: ai
+        if: steps.commits.outputs.raw != ''
+        continue-on-error: true
+        uses: actions/ai-inference@v1
+        with:
+          model: openai/gpt-4o-mini
+          max-tokens: 1200
+          system-prompt: |
+            你是发布日志助手。根据 git 提交信息,产出简洁、面向用户的双语 release notes(中文 + 英文)。
+
+            处理规则:
+            - 按 "新增 / 修复 / 优化 / 其他" 分类(某类为空则省略该小节)
+            - 去掉版本号变更、合并提交、纯过程性或无意义提交(如 "提交一下说明")
+            - 合并同义条目,只保留对用户可感知的结果
+            - 中英文条目应一一对应,顺序一致
+
+            输出格式(严格遵守,不要包裹代码块,不要前后多余说明):
+
+            ## 中文
+
+            ### 新增
+            - ...
+            ### 修复
+            - ...
+            ### 优化
+            - ...
+            ### 其他
+            - ...
+
+            ---
+
+            ## English
+
+            ### Added
+            - ...
+            ### Fixed
+            - ...
+            ### Improved
+            - ...
+            ### Other
+            - ...
+          prompt: |
+            本次发布版本: ${{ github.ref_name }}
+            原始提交列表:
+            ${{ steps.commits.outputs.raw }}
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          AI_NOTES: ${{ steps.ai.outputs.response }}
+          RAW_NOTES: ${{ steps.commits.outputs.raw }}
         run: |
+          NOTES="$AI_NOTES"
+          if [ -z "$NOTES" ]; then
+            NOTES="## 更新内容"$'\n\n'"$RAW_NOTES"
+          fi
+          if [ -z "$RAW_NOTES" ]; then
+            NOTES="Release ${GITHUB_REF_NAME}"
+          fi
           gh release create "${GITHUB_REF_NAME}" \
             --title "${GITHUB_REF_NAME}" \
-            --notes "Release ${GITHUB_REF_NAME}" \
+            --notes "$NOTES" \
             main.js \
             manifest.json \
             styles.css
