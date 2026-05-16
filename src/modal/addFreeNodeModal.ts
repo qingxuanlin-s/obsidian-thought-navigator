@@ -241,7 +241,7 @@ export class AddFreeNodeModal extends Modal {
         const { contentEl } = this;
         contentEl.empty();
 
-        contentEl.createEl("h2", { text: this.isReverseConnection ? "添加反向连接节点" : "添加自由节点" });
+        contentEl.createEl("h2", { text: this.isReverseConnection ? t("Add reverse connection node") : t("Add free node") });
 
         // 连接到节点（可选，只在有节点时显示）
         if (this.availableNodes.length > 0) {
@@ -251,11 +251,11 @@ export class AddFreeNodeModal extends Modal {
             });
 
             new Setting(contentEl)
-                .setName(this.isReverseConnection ? "连接到节点 (目标) *" : "连接到节点")
-                .setDesc(this.isReverseConnection ? "新节点将指向此目标节点" : "可选，选择要连接的父节点，将自动生成子节点 ID")
+                .setName(this.isReverseConnection ? t("Connect to node target") : t("Connect to node"))
+                .setDesc(this.isReverseConnection ? t("New node will point to this target node") : t("Optionally choose a parent node to auto-generate child node ID"))
                 .addDropdown((dropdown) => {
                     // 添加空选项作为提示
-                    dropdown.addOption("", this.isReverseConnection ? "-- 目标节点已选定 --" : "-- 不连接到任何节点 --");
+                    dropdown.addOption("", this.isReverseConnection ? t("Target node selected option") : t("No node connection option"));
                     
                     Object.keys(nodeOptions).forEach((key) => {
                         dropdown.addOption(key, nodeOptions[key]);
@@ -282,18 +282,18 @@ export class AddFreeNodeModal extends Modal {
         } else {
             // 如果没有可用节点，显示提示（但允许继续创建初始节点）
             contentEl.createDiv({
-                text: "当前 MOC 中没有节点，将创建第一个初始节点。",
+                text: t("No nodes in current MOC first node will be created"),
                 cls: "mod-info"
             }).style.cssText = "padding: 10px; margin-bottom: 15px; background: var(--background-secondary); border-radius: 5px; color: var(--text-muted);";
         }
 
         // Wiki 链接输入（支持搜索）
         new Setting(contentEl)
-            .setName("Wiki 链接 *")
-            .setDesc("搜索现有文件或输入新文件名")
+            .setName(t("Wiki link required"))
+            .setDesc(t("Search existing file or enter new file name"))
             .addText((text) => {
                 text
-                    .setPlaceholder("搜索文件或输入新文件名")
+                    .setPlaceholder(t("Search file or enter new file name"))
                     .setValue(this.wikiLink)
                     .onChange((value) => {
                         this.wikiLink = value;
@@ -304,7 +304,7 @@ export class AddFreeNodeModal extends Modal {
                             if (existingNode) {
                                 // 如果节点已存在，使用现有节点的 ID
                                 this.updateNodeIDInput(existingNode.IDStr);
-                                new Notice(`检测到现有节点：${existingNode.IDStr}`);
+                                new Notice(t("Existing node detected").replace("{id}", existingNode.IDStr));
                             } else {
                                 // 如果节点不存在，恢复建议的 ID
                                 const suggestedID = this.generateChildNodeID(this.connectToNodeID);
@@ -324,7 +324,7 @@ export class AddFreeNodeModal extends Modal {
                             const existingNode = this.findNodeByFileName(this.wikiLink.trim());
                             if (existingNode) {
                                 this.updateNodeIDInput(existingNode.IDStr);
-                                new Notice(`检测到现有节点：${existingNode.IDStr}`);
+                                new Notice(t("Existing node detected").replace("{id}", existingNode.IDStr));
                             }
                         }
                     }, 100);
@@ -333,16 +333,16 @@ export class AddFreeNodeModal extends Modal {
 
         // 节点 ID 输入（自动生成或手动输入）
         this.nodeIDSetting = new Setting(contentEl)
-            .setName("节点 ID *")
+            .setName(t("Node ID required"))
             .setDesc(this.availableNodes.length > 0 
-                ? (this.isReverseConnection ? "自动生成或从现有节点获取" : "自动生成，基于父节点 ID，或手动输入")
-                : "手动输入初始节点 ID（如：1, a, 1a 等）")
+                ? (this.isReverseConnection ? t("Auto generated or taken from existing node") : t("Auto generated from parent node ID or entered manually"))
+                : t("Enter initial node ID manually"))
             .addText((text) => {
                 this.nodeIDInputEl = text.inputEl;
                 text
                     .setPlaceholder(this.nodeID || (this.availableNodes.length > 0 
-                        ? (this.isReverseConnection ? "选择 Wiki 链接后自动填充" : "请先选择父节点")
-                        : "输入初始节点 ID"))
+                        ? (this.isReverseConnection ? t("Auto filled after selecting Wiki link") : t("Please select parent node first"))
+                        : t("Enter initial node ID")))
                     .setValue(this.nodeID)
                     .setDisabled(this.availableNodes.length > 0 && !this.isReverseConnection) // 只在有节点且非反向连接时禁用
                     .onChange((value) => {
@@ -353,11 +353,11 @@ export class AddFreeNodeModal extends Modal {
         // 连接关系描述（只在有节点时显示）
         if (this.availableNodes.length > 0) {
             new Setting(contentEl)
-                .setName("连接关系")
-                .setDesc(this.isReverseConnection ? "描述新节点指向目标节点的关系" : "可选，描述与父节点的关系")
+                .setName(t("Connection relation"))
+                .setDesc(this.isReverseConnection ? t("Describe relation from new node to target node") : t("Optionally describe relation with parent node"))
                 .addText((text) =>
                     text
-                        .setPlaceholder(this.isReverseConnection ? "如：反驳、质疑、补充" : "如：补充、扩展、澄清")
+                        .setPlaceholder(this.isReverseConnection ? t("Relation examples reverse") : t("Relation examples forward"))
                         .setValue(this.connectionRelation)
                         .onChange((value) => {
                             this.connectionRelation = value;
@@ -369,14 +369,14 @@ export class AddFreeNodeModal extends Modal {
         const createButton = new Setting(contentEl)
             .addButton((btn) =>
                 btn
-                    .setButtonText("创建")
+                    .setButtonText(t("Create"))
                     .setCta()
                     .onClick(() => {
                         this.handleSubmit();
                     })
             )
             .addButton((btn) =>
-                btn.setButtonText("取消").onClick(() => {
+                btn.setButtonText(t("Cancel")).onClick(() => {
                     this.close();
                 })
             );
@@ -401,34 +401,34 @@ export class AddFreeNodeModal extends Modal {
         if (this.availableNodes.length > 0 && this.connectToNodeID && !this.isReverseConnection) {
             // 有节点且选择了父节点的情况
             if (!this.wikiLink.trim()) {
-                new Notice("Wiki 链接不能为空");
+                new Notice(t("Wiki link cannot be empty"));
                 return;
             }
 
             if (!this.nodeID.trim()) {
-                new Notice("节点 ID 生成失败，请重新选择父节点");
+                new Notice(t("Node ID generation failed reselect parent"));
                 return;
             }
         } else if (this.availableNodes.length === 0) {
             // 没有节点的情况（创建初始节点）
             if (!this.wikiLink.trim()) {
-                new Notice("Wiki 链接不能为空");
+                new Notice(t("Wiki link cannot be empty"));
                 return;
             }
 
             if (!this.nodeID.trim()) {
-                new Notice("请输入节点 ID");
+                new Notice(t("Please enter node ID"));
                 return;
             }
         } else {
             // 有节点但未选择父节点的情况
             if (!this.wikiLink.trim()) {
-                new Notice("Wiki 链接不能为空");
+                new Notice(t("Wiki link cannot be empty"));
                 return;
             }
 
             if (!this.nodeID.trim()) {
-                new Notice("请输入节点 ID");
+                new Notice(t("Please enter node ID"));
                 return;
             }
         }
