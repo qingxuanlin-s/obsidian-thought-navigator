@@ -2578,7 +2578,9 @@ cy.fit(null, 40);
                     undefined,
                     newIsEmbed
                 );
-                await this.refreshBranchMermaid();
+                MermaidParser.clearCacheForFile(mocFile.path);
+                this.lastRenderSignature = null;
+                await this.refreshBranchMermaid(true);
             } catch (error) {
                 console.error('[indexView] toggle-embed-node failed:', { nodeId, node, error });
                 new Notice(`切换失败: ${error?.message || error}`);
