@@ -1601,7 +1601,7 @@ cy.fit(null, 40);
                     modal.close();
                     finish(newFile);
                 } catch (error: any) {
-                    new Notice(`新建失败: ${error?.message || error}`);
+                    new Notice(t("Create failed").replace("{message}", String(error?.message || error)));
                 }
             };
 
@@ -2039,7 +2039,7 @@ cy.fit(null, 40);
             try {
                 const mocFile = getLatestMOCFile();
                 if (!mocFile) {
-                    new Notice("未找到当前 MOC 文件");
+                    new Notice(t("No current MOC file selected"));
                     return;
                 }
 
@@ -2061,10 +2061,12 @@ cy.fit(null, 40);
                 // 刷新视图
                 await this.refreshBranchMermaid(true);
 
-                new Notice(`已创建父子关系: ${parentNode.displayText} → ${childNode.displayText}`);
+                new Notice(t("Parent-child relation created")
+                    .replace("{parent}", String(parentNode.displayText))
+                    .replace("{child}", String(childNode.displayText)));
             } catch (error) {
                 console.error('[auto-connect-node] 连接失败:', error);
-                new Notice(`连接失败: ${error.message}`);
+                new Notice(t("Connection failed").replace("{message}", String(error.message)));
             }
         });
 
@@ -2624,7 +2626,7 @@ cy.fit(null, 40);
         // 监听节点复制事件（Cmd+C）
         this.addTrackedListener(branchGraphDiv, 'node-copy', (event: any) => {
             const { count } = event.detail;
-            new Notice(`已复制 ${count} 个节点`);
+            new Notice(t("Copied nodes").replace("{count}", String(count)));
         });
 
         // 监听节点粘贴事件（Cmd+V）
@@ -2694,7 +2696,7 @@ cy.fit(null, 40);
             });
 
             await this.refreshBranchMermaid();
-            new Notice(`已粘贴 ${nodes.length} 个节点`);
+            new Notice(t("Pasted nodes").replace("{count}", String(nodes.length)));
         });
 
         // 监听节点删除键事件
@@ -2750,11 +2752,11 @@ cy.fit(null, 40);
                     // 刷新视图
                     await this.refreshBranchMermaid();
 
-                    new Notice(`已删除节点: ${node.ID}`);
+                    new Notice(t("Node deleted").replace("{id}", String(node.ID)));
                 }
             } catch (error) {
                 console.error('Failed to delete node:', error);
-                new Notice(`删除节点失败: ${error.message}`);
+                new Notice(t("Delete node failed").replace("{message}", String(error.message)));
             }
         });
 
@@ -3307,11 +3309,11 @@ cy.fit(null, 40);
                     }
 
                     await this.refreshBranchMermaid();
-                    new Notice(`已删除 ${nodeIds.length} 个节点`);
+                    new Notice(t("Deleted nodes").replace("{count}", String(nodeIds.length)));
                 }
             } catch (error) {
                 console.error('Failed to batch delete nodes:', error);
-                new Notice(`批量删除失败: ${error.message}`);
+                new Notice(t("Batch delete failed").replace("{message}", String(error.message)));
             }
         });
 
@@ -5499,7 +5501,7 @@ cy.fit(null, 40);
     private showDeleteConfirmDialog(node: ZKNode, relationCount: number): Promise<boolean> {
         return new Promise((resolve) => {
             const modal = new Modal(this.app);
-            modal.titleEl.setText('确认删除节点');
+            modal.titleEl.setText(t("Confirm delete node"));
             
             const { contentEl } = modal;
             contentEl.empty();
@@ -5517,25 +5519,25 @@ cy.fit(null, 40);
             warningIcon.style.marginBottom = '10px';
             
             const warningText = warningDiv.createEl('div');
-            const nodeLine = warningText.createDiv({ text: `即将删除节点：${node.ID}` });
+            const nodeLine = warningText.createDiv({ text: t("Deleting node").replace("{id}", String(node.ID)) });
             nodeLine.style.fontWeight = '600';
             nodeLine.style.marginBottom = '8px';
             const relationLine = warningText.createDiv();
             relationLine.style.color = 'var(--text-muted)';
-            relationLine.appendText('该节点有 ');
+            relationLine.appendText(t("This node has"));
             relationLine.createEl('strong', { text: String(relationCount) });
-            relationLine.appendText(' 个关系连接');
-            const deleteLine = warningText.createDiv({ text: '删除后将同时删除：' });
+            relationLine.appendText(t("relation connections suffix"));
+            const deleteLine = warningText.createDiv({ text: t("Deleting will also remove") });
             deleteLine.style.color = 'var(--text-muted)';
             deleteLine.style.marginTop = '8px';
             const list = warningText.createEl('ul');
             list.style.margin = '8px 0';
             list.style.paddingLeft = '20px';
             list.style.color = 'var(--text-muted)';
-            list.createEl('li', { text: '节点在 MOC 文件中的条目' });
-            list.createEl('li', { text: '所有与该节点相关的箭头关系' });
-            list.createEl('li', { text: '节点的位置信息' });
-            const irreversibleLine = warningText.createDiv({ text: '此操作不可撤销！' });
+            list.createEl('li', { text: t("Node entry in MOC file") });
+            list.createEl('li', { text: t("All arrow relations related to node") });
+            list.createEl('li', { text: t("Node position information") });
+            const irreversibleLine = warningText.createDiv({ text: t("This operation cannot be undone") });
             irreversibleLine.style.color = 'var(--text-error)';
             irreversibleLine.style.fontWeight = '600';
             irreversibleLine.style.marginTop = '8px';
@@ -5546,7 +5548,7 @@ cy.fit(null, 40);
             buttonContainer.style.gap = '10px';
             buttonContainer.style.marginTop = '20px';
             
-            const cancelButton = buttonContainer.createEl('button', { text: '取消' });
+            const cancelButton = buttonContainer.createEl('button', { text: t("Cancel") });
             cancelButton.style.padding = '6px 16px';
             cancelButton.style.border = '1px solid var(--background-modifier-border)';
             cancelButton.style.borderRadius = '4px';
@@ -5558,7 +5560,7 @@ cy.fit(null, 40);
                 resolve(false);
             });
             
-            const confirmButton = buttonContainer.createEl('button', { text: '确认删除' });
+            const confirmButton = buttonContainer.createEl('button', { text: t("Confirm delete") });
             confirmButton.style.padding = '6px 16px';
             confirmButton.style.border = 'none';
             confirmButton.style.borderRadius = '4px';
@@ -5716,7 +5718,7 @@ cy.fit(null, 40);
         // 确认选择函数
         const confirmSelection = async () => {
             if (!selectedNode) {
-                new Notice('请选择一个节点');
+                new Notice(t("Please select a node first"));
                 return;
             }
             
@@ -5741,11 +5743,13 @@ cy.fit(null, 40);
                     // 刷新视图
                     await this.refreshBranchMermaid();
                     
-                    new Notice(`已添加反向关系: ${targetNode.ID} → ${selectedNode.ID}`);
+                    new Notice(t("Reverse relation added")
+                        .replace("{source}", String(targetNode.ID))
+                        .replace("{target}", String(selectedNode.ID)));
                 }
             } catch (error) {
                 console.error('Failed to add arrow relation:', error);
-                new Notice(`添加反向关系失败: ${error.message}`);
+                new Notice(t("Add reverse relation failed").replace("{message}", String(error.message)));
             }
         };
         
@@ -6063,7 +6067,7 @@ cy.fit(null, 40);
         // 查找活动节点
         const activeNode = this.mocNodes.find(n => n.IDStr === activeNodeId || n.ID === activeNodeId);
         if (!activeNode) {
-            new Notice('未找到活动节点');
+            new Notice(t("Active node not found"));
             return;
         }
 
@@ -6084,7 +6088,7 @@ cy.fit(null, 40);
         const activeNode = this.mocNodes.find(n => n.IDStr === activeNodeId || n.ID === activeNodeId);
         if (!activeNode) {
             console.error('[indexView] 未找到活动节点', activeNodeId);
-            new Notice('未找到活动节点');
+            new Notice(t("Active node not found"));
             return;
         }
 
@@ -6092,7 +6096,7 @@ cy.fit(null, 40);
         const parentId = this.getParentNodeId(activeNode);
         if (!parentId) {
             console.error('[indexView] 无法找到父节点', activeNodeId);
-            new Notice('无法找到父节点，无法创建兄弟节点');
+            new Notice(t("Parent node not found cannot create sibling"));
             return;
         }
 
@@ -6143,7 +6147,7 @@ cy.fit(null, 40);
         // 查找活动节点
         const activeNode = this.mocNodes.find(n => n.IDStr === activeNodeId || n.ID === activeNodeId);
         if (!activeNode) {
-            new Notice('未找到活动节点');
+            new Notice(t("Active node not found"));
             return;
         }
 
@@ -7276,13 +7280,13 @@ cy.fit(null, 40);
     }, position?: { x: number; y: number }) {
         const mocFilePath = this.plugin.settings.mocCurrentFile;
         if (!mocFilePath) {
-            new Notice("未找到当前 MOC 文件");
+            new Notice(t("No current MOC file selected"));
             return;
         }
 
         const mocFile = this.app.vault.getFileByPath(mocFilePath);
         if (!mocFile) {
-            new Notice("MOC 文件不存在");
+            new Notice(t("Current MOC file does not exist"));
             return;
         }
 
@@ -7376,10 +7380,10 @@ cy.fit(null, 40);
                 }
             });
 
-            new Notice(`已添加自由节点: ${result.nodeID}`);
+            new Notice(t("Free node added").replace("{id}", String(result.nodeID)));
         } catch (error) {
             console.error("保存自由节点失败:", error);
-            new Notice(`保存失败: ${error.message}`);
+            new Notice(t("Save failed").replace("{message}", String(error.message)));
         }
     }
 
