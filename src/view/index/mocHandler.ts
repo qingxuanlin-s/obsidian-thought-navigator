@@ -366,6 +366,19 @@ export class MOCHandler {
                 for (const node of nodes) {
                     if (node.nodeID === nodeID) {
                         if (node.nodeType === 'text') {
+                            if (typeof newWikiLink === 'string' || typeof newIsEmbed === 'boolean') {
+                                node.nodeType = newIsEmbed ? 'embed' : 'file';
+                                node.target = typeof newWikiLink === 'string' ? newWikiLink : newContent;
+                                if (!newIsEmbed && (mocData as any).embedNodeSizes) {
+                                    delete (mocData as any).embedNodeSizes[nodeID];
+                                }
+                                if (newContent && newContent !== node.target) {
+                                    node.alias = newContent;
+                                } else {
+                                    delete node.alias;
+                                }
+                                return true;
+                            }
                             node.target = newContent;
                             delete node.alias;
                             return true;
