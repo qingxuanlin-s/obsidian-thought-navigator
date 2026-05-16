@@ -2,6 +2,8 @@
 
 Thought Navigator 是一个用于 Obsidian 的可视化思维树插件，适合卡片盒笔记法、MOC（Map of Content）工作流、主题研究和长期知识导航。
 
+注：该插件是基于 [Zettelkasten-navigation](https://pkmer.cn/Pkmer-Docs/10-obsidian/obsidian%E7%A4%BE%E5%8C%BA%E6%8F%92%E4%BB%B6/zettelkasten-navigation/) 的部分理念及源码基础上完全重构开发所得，感兴趣可以看看，感谢原作者项目的无私奉献。
+
 ![Thought Navigator 截图](docs/screenshot-20260515-221835.png)
 
 ## 功能特性
