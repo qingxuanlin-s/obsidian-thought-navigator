@@ -162,44 +162,6 @@ After the plugin is accepted into the community plugin marketplace:
 3. Put the downloaded files into that folder.
 4. Restart Obsidian and enable Thought Navigator.
 
-## Development
-
-Install dependencies:
-
-```bash
-npm install
-```
-
-Start the development build:
-
-```bash
-npm run dev
-```
-
-Create a production build:
-
-```bash
-npm run build
-```
-
-There is no dedicated automated test script in this repository. Before publishing, run `npm run build` and manually verify the main views, MOC creation, node editing, graph navigation, settings, and embed preview behavior in Obsidian.
-
-## Release Notes
-
-For an Obsidian community plugin release, the GitHub release tag must match the version in `manifest.json`.
-
-Required release assets:
-
-- `main.js`
-- `manifest.json`
-- `styles.css`
-
-Current plugin metadata:
-
-- Plugin ID: `thought-navigator`
-- Display name: `Thought Navigator`
-- Minimum Obsidian version: `1.8.5`
-
 ## License
 
 PolyForm Noncommercial License 1.0.0. See [LICENSE](LICENSE).
