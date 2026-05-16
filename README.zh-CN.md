@@ -160,44 +160,6 @@ Thought Navigator 在 Obsidian 本地运行。
 3. 将下载的文件放入该目录。
 4. 重启 Obsidian，并启用 Thought Navigator。
 
-## 开发
-
-安装依赖：
-
-```bash
-npm install
-```
-
-启动开发构建：
-
-```bash
-npm run dev
-```
-
-生成生产构建：
-
-```bash
-npm run build
-```
-
-当前仓库没有单独的自动化测试脚本。发布前请运行 `npm run build`，并在 Obsidian 中手动验证主要视图、MOC 创建、节点编辑、图导航、设置项和嵌入预览。
-
-## 发布说明
-
-发布 Obsidian 社区插件时，GitHub release tag 必须和 `manifest.json` 中的版本号一致。
-
-release 必须包含：
-
-- `main.js`
-- `manifest.json`
-- `styles.css`
-
-当前插件元数据：
-
-- 插件 ID：`thought-navigator`
-- 显示名称：`Thought Navigator`
-- 最低 Obsidian 版本：`1.8.5`
-
 ## 许可证
 
 PolyForm Noncommercial License 1.0.0。见 [LICENSE](LICENSE)。
