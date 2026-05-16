@@ -1663,6 +1663,44 @@ cy.fit(null, 40);
         return await parseMOCStructure(this.app, mocFile.path, headingTitle);
     }
 
+    private async ensureNodePositions(
+        mocFile: TFile,
+        mocParseResult: MOCParseResult,
+        headingTitle: string
+    ): Promise<MOCParseResult> {
+        if (mocParseResult.nodes.length === 0) {
+            return mocParseResult;
+        }
+
+        if (!mocParseResult.nodePositions) {
+            mocParseResult.nodePositions = {};
+        }
+
+        let changed = false;
+        let fallbackIndex = 0;
+        const visit = (nodes: MOCTreeNode[], depth: number) => {
+            for (const node of nodes) {
+                if (node.nodeID && !mocParseResult.nodePositions[node.nodeID]) {
+                    mocParseResult.nodePositions[node.nodeID] = {
+                        x: Math.round(depth * 260),
+                        y: Math.round(fallbackIndex * 150),
+                    };
+                    changed = true;
+                }
+                fallbackIndex++;
+                visit(node.children || [], depth + 1);
+            }
+        };
+
+        visit(mocParseResult.nodes, 0);
+        if (!changed) {
+            return mocParseResult;
+        }
+
+        await saveMOCStructure(this.app, mocFile.path, headingTitle, mocParseResult);
+        return await parseMOCStructure(this.app, mocFile.path, headingTitle);
+    }
+
     // 依赖 onLoadFile/onUnloadFile 不做重渲染:setViewState 切换 file 会回调这两个钩子,
     // 当前实现只更新 settings 与 flag,否则会在 render 中途销毁 cytoscape 实例。
     private async syncCurrentMOCToLeafState(mocFile: TFile): Promise<void> {
@@ -1744,6 +1782,7 @@ cy.fit(null, 40);
 
         let mocParseResult = await parseMOCStructure(this.app, currentMOCPath, headingTitle);
         mocParseResult = await this.ensureInitialRootNode(currentMOCFile, mocParseResult, headingTitle);
+        mocParseResult = await this.ensureNodePositions(currentMOCFile, mocParseResult, headingTitle);
 
         // 项目徽章:当前 MOC 是否被挂载到任意 FolderNode 下
         this.refreshProjectBadge(currentMOCPath);
