@@ -1489,7 +1489,7 @@ export function bindKeyboardEvents(this: any): void {
                         .join('\n');
                     void writeTextToSystemClipboard(clipboardText).then((systemClipboardWritten) => {
                         if (!systemClipboardWritten) {
-                            new Notice('系统剪贴板写入失败');
+                            new Notice(t("System clipboard write failed"));
                         }
                     });
                     this.container?.dispatchEvent(new CustomEvent('node-copy', {
@@ -2740,7 +2740,7 @@ export function getActiveNode(this: any): any | null {
         const selectedNodes = this.cy.$('node:selected');
 
         if (selectedNodes.length === 0) {
-            new Notice('请先选择一个节点');
+            new Notice(t("Please select a node first"));
             return null;
         }
 
@@ -3114,12 +3114,12 @@ export function batchDeleteNodes(this: any): void {
         `;
 
         const title = document.createElement('h3');
-        title.textContent = '确认删除';
+        title.textContent = t("Confirm delete");
         title.style.margin = '0';
         dialog.appendChild(title);
 
         const message = document.createElement('p');
-        message.textContent = `确认删除 ${nodeIdsSnapshot.length} 个节点？`;
+        message.textContent = t("Confirm delete nodes").replace("{count}", String(nodeIdsSnapshot.length));
         message.style.margin = '0';
         dialog.appendChild(message);
 
@@ -3129,7 +3129,7 @@ export function batchDeleteNodes(this: any): void {
         buttonContainer.style.justifyContent = 'flex-end';
 
         const confirmBtn = document.createElement('button');
-        confirmBtn.textContent = '确认';
+        confirmBtn.textContent = t("Confirm");
         confirmBtn.onclick = () => {
             // 触发批量删除事件
             this.container?.dispatchEvent(new CustomEvent('batch-delete-nodes', {
@@ -3150,7 +3150,7 @@ export function batchDeleteNodes(this: any): void {
         };
 
         const cancelBtn = document.createElement('button');
-        cancelBtn.textContent = '取消';
+        cancelBtn.textContent = t("Cancel");
         cancelBtn.onclick = () => {
             overlay.remove();
             // 用户取消，重新显示工具栏
