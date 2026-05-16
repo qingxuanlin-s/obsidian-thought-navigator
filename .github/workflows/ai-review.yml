@@ -1,0 +1,144 @@
+name: AI Code Review
+
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+  models: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Collect diff and commits
+        id: diff
+        run: |
+          BEFORE="${{ github.event.before }}"
+          AFTER="${{ github.sha }}"
+          ZERO="0000000000000000000000000000000000000000"
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "$ZERO" ]; then
+            BEFORE="$(git rev-parse "${AFTER}^" 2>/dev/null || true)"
+          fi
+
+          if [ -z "$BEFORE" ]; then
+            DIFF="$(git show --no-color --pretty='' "$AFTER" | head -n 1500)"
+            COMMITS="$(git log -1 --pretty=format:'- %h %s' "$AFTER")"
+            FILES="$(git show --name-only --pretty='' "$AFTER")"
+          else
+            DIFF="$(git diff --no-color "$BEFORE" "$AFTER" | head -n 1500)"
+            COMMITS="$(git log --no-merges --pretty=format:'- %h %s' "${BEFORE}..${AFTER}")"
+            FILES="$(git diff --name-only "$BEFORE" "$AFTER")"
+          fi
+
+          if [ -z "$DIFF" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "No diff to review, skipping."
+            exit 0
+          fi
+
+          {
+            echo "diff<<EOF_DIFF"
+            echo "$DIFF"
+            echo "EOF_DIFF"
+            echo "commits<<EOF_COMMITS"
+            echo "$COMMITS"
+            echo "EOF_COMMITS"
+            echo "files<<EOF_FILES"
+            echo "$FILES"
+            echo "EOF_FILES"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: AI code review
+        id: ai
+        if: steps.diff.outputs.skip != 'true'
+        continue-on-error: true
+        uses: actions/ai-inference@v1
+        with:
+          model: openai/gpt-5
+          max-tokens: 4000
+          system-prompt: |
+            你是一位资深前端 / TypeScript / Obsidian 插件方向的代码审查专家。
+            根据提供的 git diff,对本次推送做一次**全面、严谨、可执行**的中文代码审查。
+
+            重点关注:
+            1. **正确性**:潜在 bug、空指针、边界条件、异步竞态、未处理的 Promise rejection
+            2. **安全**:注入风险、未校验的用户输入、敏感数据写入文件、eval / new Function 滥用
+            3. **性能**:DOM 操作开销、Cytoscape 大图渲染、不必要的重渲染或重新解析、闭包持引用导致泄漏
+            4. **可读性 / 设计**:命名、抽象层次、重复代码、巨型函数、过度封装
+            5. **领域问题**:MOC Mermaid 解析的 round-trip 一致性、ext metadata 兼容性、MOCHandler.modifyMOCData 流程、Obsidian 事件 / view 生命周期、i18n 缺失
+            6. **错误处理**:静默吞掉异常、缺少回退、没有用户提示
+
+            输出格式(严格遵守,无问题的小节直接省略):
+
+            ## 总体评价
+            <2-3 句结论:整体质量、风险等级、是否建议合入>
+
+            ## 🚨 必须修复 (Blocker)
+            - **path/to/file.ts:行号** — 问题描述
+              **建议**:具体修复方案
+
+            ## ⚠️ 建议修改 (Major)
+            - **path/to/file.ts:行号** — ...
+
+            ## 💡 可选优化 (Minor / Nit)
+            - **path/to/file.ts:行号** — ...
+
+            ## ✅ 亮点
+            - ...
+
+            直接输出 markdown,不要包裹代码块,不要前后多余说明。
+          prompt: |
+            仓库: ${{ github.repository }}
+            分支: ${{ github.ref_name }}
+            Commit: ${{ github.sha }}
+
+            本次包含的提交:
+            ${{ steps.diff.outputs.commits }}
+
+            涉及文件:
+            ${{ steps.diff.outputs.files }}
+
+            完整 diff(已截断到 1500 行以内):
+            ```diff
+            ${{ steps.diff.outputs.diff }}
+            ```
+
+      - name: Write review to step summary
+        if: steps.ai.outputs.response != ''
+        env:
+          REVIEW: ${{ steps.ai.outputs.response }}
+        run: |
+          {
+            echo "# 🤖 AI Code Review"
+            echo ""
+            echo "**Commit**: \`${GITHUB_SHA}\`"
+            echo "**Model**: openai/gpt-5"
+            echo ""
+            echo "$REVIEW"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post review as commit comment
+        if: steps.ai.outputs.response != ''
+        uses: actions/github-script@v7
+        env:
+          REVIEW: ${{ steps.ai.outputs.response }}
+        with:
+          script: |
+            const review = process.env.REVIEW || '';
+            if (!review.trim()) return;
+            await github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: `## 🤖 AI Code Review (openai/gpt-5)\n\n${review}\n\n<sub>由 \`.github/workflows/ai-review.yml\` 自动生成</sub>`
+            });
