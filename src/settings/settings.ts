@@ -71,56 +71,10 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
         // ========== 分支视图 (Index Graph) ==========
         containerEl.createEl("h3", { text: t("thought-tree-graph-view") });
         const branchSection = containerEl.createDiv("zk-setting-card");
-        let structureSettingDiv: HTMLDivElement;
-        let roadmapSettingDiv: HTMLDivElement;
-        const updateBranchSettingsVisibility = () => {
-            if (this.plugin.settings.graphType === "roadmap") {
-                structureSettingDiv.addClass("zk-hidden");
-                roadmapSettingDiv.removeClass("zk-hidden");
-            } else {
-                roadmapSettingDiv.addClass("zk-hidden");
-                structureSettingDiv.removeClass("zk-hidden");
-            }
-        };
-
-        new Setting(branchSection)
-            .setName(t("Index graph styles"))
-            .addDropdown(options => options
-                .addOption("structure", t("structure"))
-                .addOption("roadmap",t("roadmap"))
-                .setValue(this.plugin.settings.graphType)
-                .onChange((value) => {
-                    this.plugin.settings.graphType = value;
-                    this.plugin.RefreshIndexViewFlag = true;
-                    updateBranchSettingsVisibility();
-                })
-            );
-
-        roadmapSettingDiv = branchSection.createDiv("zk-local-section zk-hidden")
-
-        new Setting(roadmapSettingDiv)
-            .setName(t("Shorten the distance between adjacent nodes"))
-            .setDesc(t("⚠Required restart to take effect"))
-            .addToggle(toggle => toggle.setValue(this.plugin.settings.nodeClose)
-            .onChange((value) => {
-                this.plugin.settings.nodeClose = value;
-                this.plugin.RefreshIndexViewFlag = true;
-            })
-        );
-
-        new Setting(roadmapSettingDiv)
-            .setName(t("Branches uncrossing"))
-            .addToggle(toggle => toggle.setValue(this.plugin.settings.gitUncrossing)
-            .onChange((value) => {
-                this.plugin.settings.gitUncrossing = value;
-                this.plugin.RefreshIndexViewFlag = true;
-            })
-        );
-
-        structureSettingDiv = branchSection.createDiv("zk-local-section zk-hidden")
+        this.plugin.settings.graphType = "structure";
+        const structureSettingDiv = branchSection.createDiv("zk-local-section")
 
         await this.updateSructureSettings(structureSettingDiv);
-        updateBranchSettingsVisibility();
 
         // ========== 局部视图 (Local Graph) ==========
         containerEl.createEl("h3", { text: t("thought-local-graph-view") });

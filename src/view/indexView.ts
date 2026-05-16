@@ -741,33 +741,6 @@ export class ZKIndexView extends FileView {
             this.openMOCSelectorModal();
         });
 
-        breadcrumbNav.createSpan("zk-breadcrumb-sep").setText("\u203A");
-
-        // 风格选择（药丸下拉）
-        const graphTypeChip = breadcrumbNav.createDiv("zk-chip zk-chip-outlined zk-chip-dropdown");
-        const graphTypeLabel = graphTypeChip.createSpan("zk-chip-label");
-        graphTypeLabel.setText(t("structure"));
-        setIcon(graphTypeChip.createSpan("zk-chip-chevron"), "chevron-down");
-
-        const graphTypeSelect = graphTypeChip.createEl("select", { cls: "zk-chip-select" });
-        graphTypeSelect.createEl("option", { value: "structure", text: t("structure") });
-        graphTypeSelect.createEl("option", { value: "roadmap", text: t("roadmap") + " (Future)" });
-        graphTypeSelect.value = this.plugin.settings.graphType || "structure";
-        graphTypeLabel.setText(graphTypeSelect.options[graphTypeSelect.selectedIndex].text);
-        graphTypeSelect.addEventListener("change", () => {
-            let val = graphTypeSelect.value;
-            if (val === "roadmap") {
-                new Notice(t("Roadmap feature coming soon"));
-                val = "structure";
-                graphTypeSelect.value = "structure";
-            }
-            this.plugin.settings.graphType = val;
-            graphTypeLabel.setText(graphTypeSelect.options[graphTypeSelect.selectedIndex].text);
-            this.plugin.clearShowingSettings(this.plugin.settings.BranchTab);
-            this.app.workspace.trigger("zk-navigation:refresh-index-graph");
-            this.app.workspace.trigger("zk-navigation:refresh-local-graph");
-        });
-
         // 平行宇宙面包屑：选中节点 + MOC 徽章（动态区域）
         this.multiverseContainer = breadcrumbNav.createDiv("zk-multiverse-container");
         this.multiverseContainer.style.display = "none";
@@ -1679,6 +1652,10 @@ cy.fit(null, 40);
                 relationText: '',
             }),
         ];
+        mocParseResult.nodePositions = {
+            ...(mocParseResult.nodePositions || {}),
+            '1': { x: 0, y: 0 },
+        };
         if (mocParseResult.nodeLayoutStyle !== 'free' && mocParseResult.nodeLayoutStyle !== 'auto') {
             mocParseResult.nodeLayoutStyle = this.plugin.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free';
         }
@@ -2062,7 +2039,7 @@ cy.fit(null, 40);
                 return;
             }
             const { node, position, leftGroup, joinedGroup } = event.detail;
-            const nodeKey = node?.ID || node?.IDStr;
+            const nodeKey = node?.IDStr || node?.ID;
 
             // 检查节点是否有效
             if (!node || !nodeKey) {
@@ -3993,18 +3970,6 @@ cy.fit(null, 40);
             });
         }
 
-        // 添加分隔符
-        menu.addSeparator();
-
-        // 添加"路线图 (Future)"选项
-        menu.addItem((item) => {
-            item.setTitle("路线图 (Future)")
-                .setIcon("map")
-                .onClick(() => {
-                    new Notice("路线图功能即将推出！");
-                });
-        });
-
         // 在 MOC 选择器位置显示菜单
         if (targetElement) {
             const rect = targetElement.getBoundingClientRect();
@@ -5810,16 +5775,7 @@ cy.fit(null, 40);
                 await this.saveAllNodePositionsBeforeRefresh();
                 
                 // 添加到 MOC 文件
-                await this.saveFreeNodeToMOC(result);
-                
-                // 保存新节点的位置
-                if (defaultPosition && result.nodeID) {
-                    const mocFilePath = this.plugin.settings.mocCurrentFile;
-                    const mocFile = this.app.vault.getFileByPath(mocFilePath);
-                    if (mocFile) {
-                        await this.saveNodePositionToMOC(mocFile, result.nodeID, defaultPosition);
-                    }
-                }
+                await this.saveFreeNodeToMOC(result, defaultPosition || undefined);
                 
                 // 刷新视图
                 await this.refreshBranchMermaid();
@@ -7248,17 +7204,8 @@ cy.fit(null, 40);
             this.mocNodes, // 当前 MOC 的所有节点
             suggestedID,
             async (result) => {
-                // 添加到 MOC 文件
-                await this.saveFreeNodeToMOC(result);
-                
-                // 如果提供了位置信息，保存节点位置
-                if (position && result.file) {
-                    const mocFilePath = this.plugin.settings.mocCurrentFile;
-                    const mocFile = this.app.vault.getFileByPath(mocFilePath);
-                    if (mocFile && result.nodeID) {
-                        await this.saveNodePositionToMOC(mocFile, result.nodeID, position);
-                    }
-                }
+                // 添加到 MOC 文件，并在同一次写入里持久化新节点位置
+                await this.saveFreeNodeToMOC(result, position);
                 
                 // 刷新视图
                 await this.refreshBranchMermaid();
@@ -7285,7 +7232,7 @@ cy.fit(null, 40);
         };
         isTextOnly?: boolean;   // 新增：标记纯文字节点
         isEmbed?: boolean;      // 新增：标记嵌入节点 ![[...]]
-    }) {
+    }, position?: { x: number; y: number }) {
         const mocFilePath = this.plugin.settings.mocCurrentFile;
         if (!mocFilePath) {
             new Notice("未找到当前 MOC 文件");
@@ -7363,6 +7310,13 @@ cy.fit(null, 40);
                     }
                 }
                 this.mocHandler.ensureFirstLevelNodeLayoutDefaults(mocData, newNode.nodeID);
+
+                if (position && result.nodeID && !result.nodeID.startsWith('cd-')) {
+                    mocData.nodePositions[result.nodeID] = {
+                        x: Math.round(position.x * 100) / 100,
+                        y: Math.round(position.y * 100) / 100,
+                    };
+                }
 
                 // 自由节点即使选择了“连接到节点”，也只保留虚线关系，不建立父子关系
                 if (isFreeNode && result.connectToNodeID && !result.reverseRelation) {
@@ -7860,14 +7814,15 @@ cy.fit(null, 40);
         cy.nodes('[!isGroup]').forEach((node: any) => {
             const data = node.data();
             const originalNode = data.originalNode;
-            if (originalNode && originalNode.ID) {
+            const nodeId = originalNode?.IDStr || originalNode?.ID;
+            if (originalNode && nodeId) {
                 // 跳过跨领域节点（跨领域节点的位置保存在 cross_domain_links 中）
-                if (originalNode.isCrossDomain || originalNode.ID.startsWith('cd-')) {
+                if (originalNode.isCrossDomain || nodeId.startsWith('cd-')) {
                     return;
                 }
 
                 const pos = node.position();
-                positions[originalNode.ID] = {
+                positions[nodeId] = {
                     x: Math.round(pos.x * 100) / 100,
                     y: Math.round(pos.y * 100) / 100
                 };
