@@ -4,6 +4,8 @@
 
 Thought Navigator is an Obsidian plugin for building visual, navigable thought trees from your notes. It is designed for Zettelkasten-style writing, MOC (Map of Content) workflows, and long-term knowledge navigation.
 
+Note: This plugin is a complete reconstruction built on parts of the ideas and source code foundation of [Zettelkasten-navigation](https://pkmer.cn/Pkmer-Docs/10-obsidian/obsidian%E7%A4%BE%E5%8C%BA%E6%8F%92%E4%BB%B6/zettelkasten-navigation/). If you are interested, take a look at the original project. Thanks to the original author for the generous contribution.
+
 ![Thought Navigator screenshot](docs/screenshot-20260515-221835.png)
 
 ## Features
