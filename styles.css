@@ -52,7 +52,6 @@
   bottom: 0;
   width: min(300px, 32vw);
   min-width: 270px;
-  background: var(--zk-surface-solid, #1f1f1f);
   background: color-mix(in srgb, var(--zk-surface-solid, #1f1f1f) 94%, transparent);
   border-left: 1px solid var(--zk-border-subtle, #3a3a3a);
   box-shadow: -10px 0 28px rgba(0, 0, 0, 0.22);
@@ -219,12 +218,12 @@
   opacity: 0.45;
 }
 .zk-folder-drawer-row-drop-target {
-  background: rgba(107, 163, 255, 0.18) !important;
+  background: rgba(107, 163, 255, 0.18);
   box-shadow: inset 0 0 0 1px rgba(107, 163, 255, 0.55);
   border-radius: 4px;
 }
 .zk-theme-light .zk-folder-drawer-row-drop-target {
-  background: rgba(64, 120, 220, 0.12) !important;
+  background: rgba(64, 120, 220, 0.12);
   box-shadow: inset 0 0 0 1px rgba(64, 120, 220, 0.45);
 }
 
@@ -396,8 +395,7 @@
   display: grid;
   grid-template-columns: 34px 1fr;
   grid-template-rows: auto auto;
-  column-gap: 10px;
-  row-gap: 2px;
+  gap: 2px 10px;
   padding: 11px 12px;
   border: 1px solid var(--zk-border-subtle, #2f2f2f);
   border-radius: 8px;
@@ -464,7 +462,7 @@
 }
 .zk-folder-drawer-new-space-btn:hover {
   background: rgba(255, 255, 255, 0.04);
-  border-color: #555;
+  border-color: #555555;
   color: #e6e7ea;
 }
 .zk-folder-drawer-new-space-btn svg {
@@ -534,7 +532,7 @@
 .zk-folder-drawer-chip-icon { font-size: 12px; line-height: 1; }
 .zk-folder-drawer-chip-name { line-height: 1; }
 .zk-theme-light .zk-folder-drawer-chip {
-  background: #fff;
+  background: #ffffff;
   border-color: #d8d8de;
   color: #4a4a55;
 }
@@ -575,7 +573,7 @@
   border-color: #b8b8c2;
 }
 .zk-theme-light .zk-folder-drawer-input {
-  background: #fff;
+  background: #ffffff;
   border-color: #d8d8de;
   color: #2a2a33;
 }
@@ -1096,7 +1094,7 @@ align-items: center;
 
 .zk-family-graph-container.zk-graph-fullscreen .zk-graph-cytoscape {
   flex: 1 1 auto;
-  height: auto !important;
+  height: auto;
   min-height: 0;
 }
 
@@ -1238,7 +1236,7 @@ align-items: center;
 }
 
 .top-buttons-div button:hover{
-  background-color: var(--interactive-accent) !important;
+  background-color: var(--interactive-accent);
 }
 
 .zk-local-section{
@@ -1279,12 +1277,12 @@ align-items: center;
 }
 
 .zk-modal-container{
-  z-index: 10000 !important;
+  z-index: 10000;
   position: fixed;
   inset: 0;
 }
 .zk-expand-modal{
-  z-index: 10001 !important;
+  z-index: 10001;
   width: 100%;
   height: 100%;
   pointer-events: auto;
@@ -2684,7 +2682,7 @@ align-items: center;
 
 .node-label-editor:focus {
     outline: none;
-    border-color: var(--interactive-accent) !important;
+    border-color: var(--interactive-accent);
 }
 
 /* 主题感知:非 overlay 版的 inline 编辑器跟随插件主题 */
@@ -2777,7 +2775,7 @@ align-items: center;
 .zk-text-selection-color-swatch {
     width: 18px;
     height: 18px;
-    border: 1px solid color-mix(in srgb, var(--background-modifier-border) 70%, #000 30%);
+    border: 1px solid color-mix(in srgb, var(--background-modifier-border) 70%, #000000 30%);
     border-radius: 999px;
     cursor: pointer;
     padding: 0;
@@ -2872,7 +2870,7 @@ align-items: center;
     width: 12px;
     height: 12px;
     border-radius: 999px;
-    background: #fff;
+    background: #ffffff;
     border: 1px solid rgba(0, 0, 0, 0.4);
     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2);
     transform: translate(-50%, -50%);
@@ -2889,7 +2887,7 @@ align-items: center;
     width: 18px;
     height: 18px;
     border-radius: 999px;
-    border: 1px solid color-mix(in srgb, var(--background-modifier-border) 70%, #000 30%);
+    border: 1px solid color-mix(in srgb, var(--background-modifier-border) 70%, #000000 30%);
     margin-right: auto;
 }
 
@@ -3221,13 +3219,13 @@ align-items: center;
 .zk-theme-light .zk-toolbar-right-buttons > .clickable-icon {
   background: transparent;
   border: 1.5px solid #c0c0d0;
-  color: #555;
+  color: #555555;
 }
 
 .zk-theme-light .zk-toolbar-right-buttons > .clickable-icon:hover {
   border-color: #8080b0;
   background: rgba(100, 100, 160, 0.08);
-  color: #333;
+  color: #333333;
 }
 
 .zk-theme-light .zk-tool-buttons > .clickable-icon:hover {
@@ -3255,7 +3253,7 @@ align-items: center;
 .zk-branch-fullscreen-back-btn-light {
   background-color: transparent;
   border: 1.5px solid #c0c0d0;
-  color: #333;
+  color: #333333;
 }
 
 .zk-branch-fullscreen-back-btn-light:hover {
@@ -3266,7 +3264,7 @@ align-items: center;
 .zk-theme-light .zk-graph-text {
   background-color: #e8e8e8;
   border: 1px solid #d0d0d0;
-  color: #333;
+  color: #333333;
 }
 
 .zk-theme-light .zk-graph-text .zk-moc-selector {
@@ -3314,13 +3312,13 @@ align-items: center;
 .zk-theme-light .zk-graph-icon > .clickable-icon {
   background: transparent;
   border: 1.5px solid #c0c0d0;
-  color: #555;
+  color: #555555;
 }
 
 .zk-theme-light .zk-graph-icon > .clickable-icon:hover {
   border-color: #8080b0;
   background: rgba(100, 100, 160, 0.08);
-  color: #333;
+  color: #333333;
 }
 
 .zk-theme-light .zk-graph-icon-bottom > .clickable-icon {
@@ -3547,14 +3545,14 @@ align-items: center;
 
 .zk-theme-light .zk-chip-outlined:hover {
   border-color: rgba(105, 92, 160, 0.34);
-  background: #fff;
+  background: #ffffff;
   color: #24242c;
 }
 
 .zk-theme-light .zk-chip-filled {
   background: linear-gradient(180deg, #8266ca, #6d51b2);
   border-color: rgba(105, 79, 180, 0.44);
-  color: #fff;
+  color: #ffffff;
   box-shadow: 0 4px 14px rgba(90, 70, 150, 0.16);
 }
 
@@ -3877,7 +3875,7 @@ align-items: center;
 
 /* 搜索高亮节点 */
 .zk-search-highlight {
-  box-shadow: 0 0 0 3px #00a8ff, 0 0 12px rgba(0, 168, 255, 0.4) !important;
+  box-shadow: 0 0 0 3px #00a8ff, 0 0 12px rgba(0, 168, 255, 0.4);
 }
 
 /* 浅色主题 */
@@ -3890,7 +3888,7 @@ align-items: center;
 .zk-theme-light .zk-search-bar-input {
   background: rgba(0, 0, 0, 0.05);
   border-color: rgba(0, 0, 0, 0.1);
-  color: #333;
+  color: #333333;
 }
 
 .zk-theme-light .zk-search-bar-input:focus {
@@ -3905,7 +3903,7 @@ align-items: center;
 }
 
 .zk-theme-light .zk-search-suggestion-item {
-  color: #333;
+  color: #333333;
 }
 
 .zk-theme-light .zk-search-suggestion-item:hover,
@@ -3915,7 +3913,7 @@ align-items: center;
 }
 
 .zk-theme-light .zk-search-bar-btn {
-  color: #333;
+  color: #333333;
 }
 
 .zk-theme-light .zk-search-bar-btn:hover {
@@ -4011,14 +4009,14 @@ align-items: center;
 
 .zk-level-seg-active {
   background: linear-gradient(135deg, rgba(130, 110, 230, 0.45), rgba(170, 120, 230, 0.35));
-  color: #fff;
+  color: #ffffff;
   font-weight: 600;
   box-shadow: 0 0 6px rgba(150, 120, 230, 0.35);
 }
 
 .zk-level-seg-active:hover {
   background: linear-gradient(135deg, rgba(130, 110, 230, 0.55), rgba(170, 120, 230, 0.45));
-  color: #fff;
+  color: #ffffff;
 }
 
 .zk-level-sep {
@@ -4119,7 +4117,7 @@ align-items: center;
 .zk-level-drill-all:hover {
   background: linear-gradient(135deg, rgba(130, 110, 230, 0.3), rgba(170, 120, 230, 0.2));
   border-color: rgba(150, 150, 230, 0.9);
-  color: #fff;
+  color: #ffffff;
 }
 
 .zk-level-mode-toggle,
@@ -4142,7 +4140,7 @@ align-items: center;
 .zk-level-visibility-toggle:hover {
   background: linear-gradient(135deg, rgba(130, 110, 230, 0.32), rgba(170, 120, 230, 0.22));
   border-color: rgba(150, 150, 230, 0.85);
-  color: #fff;
+  color: #ffffff;
 }
 
 .zk-level-mode-toggle:hover {
@@ -4190,7 +4188,7 @@ align-items: center;
 
 .zk-level-dropdown-item-active {
   background: linear-gradient(135deg, rgba(130, 110, 230, 0.35), rgba(170, 120, 230, 0.25));
-  color: #fff;
+  color: #ffffff;
   font-weight: 600;
 }
 
@@ -4485,18 +4483,18 @@ align-items: center;
 
 .zk-text-md-overlay.markdown-rendered p,
 .zk-text-md-overlay p {
-  margin: 0 !important;
+  margin: 0;
   white-space: break-spaces;
 }
 
 .zk-text-md-overlay.markdown-rendered :is(h1, h2, h3, h4, h5, h6) + :is(p, ul, ol, blockquote, pre),
 .zk-text-md-overlay :is(h1, h2, h3, h4, h5, h6) + :is(p, ul, ol, blockquote, pre) {
-  margin-top: 0 !important;
+  margin-top: 0;
 }
 
 .zk-text-md-overlay.markdown-rendered :is(p, ul, ol, blockquote, pre) + :is(p, ul, ol, blockquote, pre),
 .zk-text-md-overlay :is(p, ul, ol, blockquote, pre) + :is(p, ul, ol, blockquote, pre) {
-  margin-top: 0 !important;
+  margin-top: 0;
 }
 
 .zk-text-md-overlay ul,
@@ -4597,12 +4595,12 @@ align-items: center;
 .zk-theme-light .zk-text-md-overlay .zk-rough-text-line,
 .zk-theme-light .zk-text-md-overlay .zk-rough-heading-line,
 .zk-theme-light .zk-text-md-overlay .zk-root-text-md-inner {
-  color: #253044 !important;
+  color: #253044;
 }
 
 .zk-theme-light .zk-text-md-overlay[data-level-dimmed="1"] {
-  opacity: 0.92 !important;
-  filter: none !important;
+  opacity: 0.92;
+  filter: none;
 }
 
 .zk-text-md-overlay .zk-rough-empty-line {
@@ -4681,7 +4679,7 @@ align-items: center;
    强制所有中间层都 inherit,让 overlay 的 base*zoom 一路传到 cm-editor。 */
 .zk-text-md-live-edit-host,
 .zk-text-md-live-edit-host .markdown-source-view {
-  font-size: inherit !important;
+  font-size: inherit;
 }
 
 /* 主题感知:覆盖 Obsidian 主题变量,让插件 themeMode 能控制 CodeMirror 配色 */
@@ -4696,9 +4694,9 @@ align-items: center;
   --text-normal: #1f2937;
   --text-muted: #64748b;
   --text-faint: #94a3b8;
-  background: #ffffff !important;
-  box-shadow: inset 0 0 0 2px rgba(59, 109, 181, 0.55) !important;
-  color: #1f2937 !important;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 2px rgba(59, 109, 181, 0.55);
+  color: #1f2937;
 }
 
 .zk-theme-dark .zk-text-md-live-edit-host,
@@ -4708,29 +4706,29 @@ align-items: center;
   --background-secondary: #1a2434;
   --text-normal: #e6edf3;
   --text-muted: #93a4bb;
-  background: rgba(15, 23, 42, 0.96) !important;
-  box-shadow: inset 0 0 0 2px rgba(91, 143, 217, 0.95) !important;
-  color: #e6edf3 !important;
+  background: rgba(15, 23, 42, 0.96);
+  box-shadow: inset 0 0 0 2px rgba(91, 143, 217, 0.95);
+  color: #e6edf3;
 }
 
 .zk-text-md-live-edit-host .cm-editor {
   height: 100%;
   background: transparent;
-  font-size: inherit !important;
-  font-weight: 500 !important;
+  font-size: inherit;
+  font-weight: 500;
 }
 
 .zk-text-md-live-edit-host .cm-scroller {
-  font-family: var(--font-text) !important;
-  font-size: inherit !important;
-  font-weight: 500 !important;
+  font-family: var(--font-text);
+  font-size: inherit;
+  font-weight: 500;
 }
 
 .zk-text-md-live-edit-host .cm-content,
 .zk-text-md-live-edit-host .cm-line,
 .zk-text-md-live-edit-host .cm-editor .cm-line {
-  font-size: inherit !important;
-  font-weight: 500 !important;
+  font-size: inherit;
+  font-weight: 500;
 }
 
 /* Obsidian 给 heading 内层 span 单独设大字号会让行高与 CM 测量发散。强制跟随父 font-size。 */
@@ -4738,28 +4736,28 @@ align-items: center;
 .zk-text-md-live-edit-host [class*="HyperMD-header-"],
 .zk-text-md-live-edit-host .cm-header,
 .zk-text-md-live-edit-host [class*="cm-header-"] {
-  font-size: inherit !important;
-  line-height: inherit !important;
-  font-weight: 600 !important;
+  font-size: inherit;
+  line-height: inherit;
+  font-weight: 600;
 }
 
 /* heading 行占位 span / fold indicator 彻底删掉(Obsidian 通过它们画 "H1" 徽章) */
 .zk-text-md-live-edit-host .HyperMD-header > span[contenteditable="false"],
 .zk-text-md-live-edit-host .HyperMD-header > .cm-fold-indicator {
-  display: none !important;
+  display: none;
 }
 
 .zk-text-md-live-edit-host .cm-editor .cm-scroller {
-  padding: 0 !important;
+  padding: 0;
 }
 
 .zk-text-md-live-edit-host .cm-editor .cm-content {
-  padding: 1.2em 1.2em 0.6em 1.2em !important;
+  padding: 1.2em 1.2em 0.6em 1.2em;
   white-space: break-spaces;
 }
 
 .zk-text-md-live-edit-host .cm-editor .cm-line {
-  padding: 0 !important;
+  padding: 0;
   white-space: break-spaces;
 }
 
@@ -4768,13 +4766,13 @@ align-items: center;
 .zk-text-md-live-edit-host .cm-gutters,
 .zk-text-md-live-edit-host .cm-lineNumbers,
 .zk-text-md-live-edit-host .cm-foldGutter {
-  display: none !important;
+  display: none;
 }
 .zk-text-md-live-edit-host .cm-panels,
 .zk-text-md-live-edit-host .cm-panels-bottom,
 .zk-text-md-live-edit-host .cm-panels-top,
 .zk-text-md-live-edit-host .cm-vimMode-panel {
-  display: none !important;
+  display: none;
 }
 /* live preview 在 heading 行前渲染的折叠/级别徽章(截图里 "H1 #" 的两块):
    1. .cm-fold-indicator → 折叠箭头
@@ -4782,16 +4780,16 @@ align-items: center;
 .zk-text-md-live-edit-host .cm-fold-indicator,
 .zk-text-md-live-edit-host .HyperMD-header > span[contenteditable="false"]:empty,
 .zk-text-md-live-edit-host .cm-widgetBuffer {
-  display: none !important;
+  display: none;
 }
 
 /* vim 浏览(NORMAL)模式下的 fat cursor:vim 扩展写的 inline font-size 会脱离父级,
    强制 inherit 让 em 正确解析(1em == overlay 的 base*zoom),再按 1.6em 补齐行高。 */
 .zk-text-md-live-edit-host .cm-fat-cursor.cm-cursor-primary,
 .zk-text-md-live-edit-host .cm-vimCursorLayer .cm-fat-cursor {
-  font-size: inherit !important;
-  height: 1.6em !important;
-  line-height: 1.6em !important;
+  font-size: inherit;
+  height: 1.6em;
+  line-height: 1.6em;
 }
 .zk-moc-embed-img {
 	display: block;
@@ -4923,7 +4921,6 @@ align-items: center;
   bottom: 0;
   width: min(320px, 34vw);
   min-width: 280px;
-  background: var(--zk-surface-solid, #1f1f1f);
   background: color-mix(in srgb, var(--zk-surface-solid, #1f1f1f) 94%, transparent);
   border-right: 1px solid var(--zk-border-subtle, #3a3a3a);
   box-shadow: 10px 0 28px rgba(0, 0, 0, 0.22);
@@ -4998,7 +4995,7 @@ align-items: center;
   font-weight: 700;
   line-height: 16px;
   text-align: center;
-  color: #fff;
+  color: #ffffff;
   background: #d35a5a;
   border-radius: 8px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
@@ -5464,7 +5461,7 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
   min-width: 0;
 }
 .zk-scratch-card-id {
-  font-family: var(--font-monospace, ui-monospace, monospace);
+  font-family: var(--font-monospace, monospace);
   background: rgba(255, 255, 255, 0.05);
   padding: 1px 6px;
   border-radius: 3px;
@@ -5740,7 +5737,7 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 .zk-view-content.zk-theme-light .zk-graph-cytoscape:fullscreen,
 .zk-view-content.zk-theme-light .zk-expand-graph,
 .zk-local-light-surface {
-  background-color: var(--zk-canvas-bg) !important;
+  background-color: var(--zk-canvas-bg);
 }
 
 .zk-theme-light .zk-local-section {
@@ -5875,7 +5872,7 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 .zk-theme-light .zk-iol-center-title,
 .zk-theme-light .zk-iol-card-name,
 .zk-theme-light .zk-focus-link-chip {
-  color: var(--zk-text) !important;
+  color: var(--zk-text);
 }
 
 .zk-theme-light .zk-local-mode-subtitle,
@@ -5885,7 +5882,7 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 .zk-theme-light .zk-local-empty,
 .zk-theme-light .zk-iol-empty,
 .zk-theme-light .zk-focus-empty {
-  color: var(--zk-text-muted) !important;
+  color: var(--zk-text-muted);
 }
 
 .zk-theme-light .zk-local-mode-header,
@@ -5916,7 +5913,7 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 
 .zk-theme-light .zk-focus-radial-canvas,
 .zk-view-content.zk-theme-light .zk-focus-radial-canvas {
-  background: var(--zk-canvas-bg) !important;
+  background: var(--zk-canvas-bg);
 }
 
 .zk-theme-light .zk-focus-edge,
@@ -5933,7 +5930,7 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 .zk-view-content.zk-theme-light .zk-focus-card {
   background: #f8fafd;
   border-color: rgba(92, 101, 128, 0.28);
-  color: #253044 !important;
+  color: #253044;
   opacity: 1;
   box-shadow: 0 8px 20px -16px rgba(20, 30, 50, 0.42);
 }
@@ -5942,20 +5939,20 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 .zk-view-content.zk-theme-light .zk-focus-card:hover {
   background: #eef4ff;
   border-color: rgba(61, 115, 196, 0.42);
-  color: #182234 !important;
+  color: #182234;
 }
 
 .zk-theme-light .zk-focus-current-card,
 .zk-view-content.zk-theme-light .zk-focus-current-card {
   background: #eaf2ff;
   border-color: rgba(61, 115, 196, 0.48);
-  color: #253044 !important;
+  color: #253044;
   box-shadow: 0 14px 30px -22px rgba(47, 94, 168, 0.62);
 }
 
 .zk-theme-light .zk-focus-current-title,
 .zk-view-content.zk-theme-light .zk-focus-current-title {
-  color: #253044 !important;
+  color: #253044;
 }
 
 .zk-theme-light .zk-focus-card-parent::before,
