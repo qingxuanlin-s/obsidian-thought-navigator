@@ -1278,6 +1278,15 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
             const cacheKey = `${sourcePath}||${nodeCacheId}||${rawSource}`;
             const isRootTextNode = !!data.isRoot && !data.isFreeNode;
             const isFirstLevelTextNode = !!data.isFirstLevelNode && !data.isRoot && !data.isFreeNode;
+            // 与 stylesheet.ts 中 'node[!isRoot][!isFirstLevelNode][!isFreeNode][!isEmbed][!isStandaloneText][!isCurrentFile]'
+            // 的判定保持一致：2 级及以下普通节点的文字走 muted 色。
+            // 此前 file 节点的 canvas label 已经吃了这条规则,但 text-only 走 DOM overlay,漏网,
+            // 造成同层级 text/file 子节点颜色不一致(text 亮、file 暗)。这里补齐。
+            const isLevelMutedTextNode = !data.isRoot
+                && !data.isFirstLevelNode
+                && !data.isFreeNode
+                && !data.isStandaloneText
+                && !data.isCurrentFile;
             const applyTextOverlayBaseStyle = (overlayEl: HTMLElement) => {
                 const overlayDisplay = isRootTextNode ? 'flex' : 'block';
                 // padding 用 em,跟随当前 font-size(== base * zoom)等比伸缩
@@ -1294,6 +1303,20 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                 // (对齐 Obsidian Canvas 的做法)。这样 CM/vim 永远在"自然像素"里工作,fat cursor
                 // 不会被 scaled parent 的亚像素误差弄歪。updateOverlayPos 会改写 font-size。
                 overlayEl.dataset.baseFontSize = String(overlayFontSize);
+                if (isLevelMutedTextNode) {
+                    overlayEl.dataset.levelMuted = '1';
+                } else {
+                    delete overlayEl.dataset.levelMuted;
+                }
+                // 重建/重用 overlay 时,从 cy 节点的 class 同步 ancestor-active 状态,
+                // 避免 select 之后任何 re-render 把高亮丢掉。
+                if (node.hasClass?.('zk-ancestor-active') === true) {
+                    overlayEl.classList.add('zk-ancestor-active');
+                } else {
+                    overlayEl.classList.remove('zk-ancestor-active');
+                }
+                // 注意:不要在 cssText 里写 color,让 CSS 选择器(基于 [data-level-muted="1"]
+                // 和 .zk-ancestor-active)处理颜色,这样祖先链高亮可以靠 class 切换来覆盖 muted。
                 overlayEl.style.cssText = `
                     position: absolute;
                     left: 0;
@@ -1307,7 +1330,6 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                     box-sizing: border-box;
                     padding: ${overlayPadding};
                     max-width: none;
-                    color: var(--text-normal);
                     font-family: var(--font-text);
                     font-size: ${overlayFontSize}px;
                     font-weight: ${overlayFontWeight};
@@ -1317,6 +1339,16 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                     user-select: none;
                     text-align: ${overlayTextAlign};
                 `;
+                const isLevelDimmed = node.hasClass?.('zk-level-dimmed') === true;
+                if (isLevelDimmed) {
+                    const isLightTheme = this.container?.classList.contains('zk-theme-light')
+                        || (!this.container?.classList.contains('zk-theme-dark') && document.body.classList.contains('theme-light'));
+                    overlayEl.dataset.levelDimmed = '1';
+                    overlayEl.style.opacity = isLightTheme ? '0.92' : '0.16';
+                    overlayEl.style.filter = isLightTheme ? 'none' : 'brightness(0.62) saturate(0.58)';
+                } else {
+                    delete overlayEl.dataset.levelDimmed;
+                }
             };
 
             let entry = this.textMdOverlayCache.get(cacheKey);

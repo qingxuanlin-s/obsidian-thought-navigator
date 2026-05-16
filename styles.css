@@ -4603,6 +4603,53 @@ align-items: center;
   filter: none;
 }
 
+.zk-theme-dark .zk-text-md-overlay[data-level-dimmed="1"],
+.zk-view-content.zk-theme-dark .zk-text-md-overlay[data-level-dimmed="1"] {
+  opacity: 0.16;
+  filter: brightness(0.62) saturate(0.58);
+}
+
+/* 2 级及以下普通 text-only 节点：跟 file 节点(走 cy canvas label)的 muted 文字色一致,
+   避免同层级 text/file 子节点颜色不一致(text 亮、file 暗)。
+   仅作用于正文行;headings 保留 var(--h*-color) 不动,保持语义层级。 */
+.zk-text-md-overlay[data-level-muted="1"],
+.zk-text-md-overlay[data-level-muted="1"] .zk-rough-text-line,
+.zk-text-md-overlay[data-level-muted="1"] .zk-rough-heading-line,
+.zk-text-md-overlay[data-level-muted="1"] p,
+.zk-text-md-overlay[data-level-muted="1"] li,
+.zk-text-md-overlay[data-level-muted="1"] blockquote {
+  color: #94a3b8;
+}
+
+.zk-theme-light .zk-text-md-overlay[data-level-muted="1"],
+.zk-theme-light .zk-text-md-overlay[data-level-muted="1"] .zk-rough-text-line,
+.zk-theme-light .zk-text-md-overlay[data-level-muted="1"] .zk-rough-heading-line,
+.zk-theme-light .zk-text-md-overlay[data-level-muted="1"] p,
+.zk-theme-light .zk-text-md-overlay[data-level-muted="1"] li,
+.zk-theme-light .zk-text-md-overlay[data-level-muted="1"] blockquote {
+  color: #475569;
+}
+
+/* 祖先链高亮:点击/选中一个节点时,其到 root 的整条路径恢复 var(--text-normal) 亮色,
+   覆盖上面的 muted 规则。靠选择器多一个 .zk-ancestor-active class 来提高特异性。 */
+.zk-text-md-overlay.zk-ancestor-active[data-level-muted="1"],
+.zk-text-md-overlay.zk-ancestor-active[data-level-muted="1"] .zk-rough-text-line,
+.zk-text-md-overlay.zk-ancestor-active[data-level-muted="1"] .zk-rough-heading-line,
+.zk-text-md-overlay.zk-ancestor-active[data-level-muted="1"] p,
+.zk-text-md-overlay.zk-ancestor-active[data-level-muted="1"] li,
+.zk-text-md-overlay.zk-ancestor-active[data-level-muted="1"] blockquote {
+  color: var(--text-normal);
+}
+
+.zk-theme-light .zk-text-md-overlay.zk-ancestor-active[data-level-muted="1"],
+.zk-theme-light .zk-text-md-overlay.zk-ancestor-active[data-level-muted="1"] .zk-rough-text-line,
+.zk-theme-light .zk-text-md-overlay.zk-ancestor-active[data-level-muted="1"] .zk-rough-heading-line,
+.zk-theme-light .zk-text-md-overlay.zk-ancestor-active[data-level-muted="1"] p,
+.zk-theme-light .zk-text-md-overlay.zk-ancestor-active[data-level-muted="1"] li,
+.zk-theme-light .zk-text-md-overlay.zk-ancestor-active[data-level-muted="1"] blockquote {
+  color: #253044;
+}
+
 .zk-text-md-overlay .zk-rough-empty-line {
   height: 0.8em;
 }

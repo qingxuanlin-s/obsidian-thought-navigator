@@ -164,6 +164,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private collapseHandleCleanup: (() => void) | null = null;
     private domTextMeasurer: DomTextMeasurer | null = null;
     private collapsedNodeIds: Set<string> = new Set();
+    private focusOverlayVisibleCyIds: Set<string> | null = null;
+    private focusOverlayVisibilityMode: 'hide' | 'dim' = 'hide';
     private activeTextSelectionToolbarCleanup: (() => void) | null = null;
     // 记住用户上一次在文本选区工具条里选择的颜色，跨选区保持
     private lastPickedTextColor: string | null = null;
@@ -559,6 +561,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             this.addNodeBadges();
             this.addEmbedNodePreviews();
             this.addImageNodePreviews();
+            this.reapplyFocusOverlayState();
             if (this.shouldShowMinimap(options)) {
                 this.minimap?.refresh();
             }
@@ -777,6 +780,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
         }
         this.domTextMeasurer?.destroy();
         this.domTextMeasurer = null;
+        this.focusOverlayVisibleCyIds = null;
+        this.focusOverlayVisibilityMode = 'hide';
         this.container = null;
         this.currentData = null;
     }
@@ -788,10 +793,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
         return this.cy;
     }
 
-    applyFocusOverlayState(visibleCyIds: Set<string> | null, visibilityMode: 'hide' | 'dim' = 'hide'): void {
+    applyFocusOverlayState(visibleCyIds: Set<string> | null, visibilityMode: 'hide' | 'dim' = 'hide', persistState: boolean = true): void {
+        if (persistState) {
+            this.focusOverlayVisibleCyIds = visibleCyIds ? new Set(visibleCyIds) : null;
+            this.focusOverlayVisibilityMode = visibilityMode;
+        }
         if (!this.container) return;
         const clearing = visibleCyIds === null;
-        const isLightTheme = this.currentOptions?.themeMode === 'light';
+        const isLightTheme = this.container.classList.contains('zk-theme-light')
+            || (!this.container.classList.contains('zk-theme-dark') && document.body.classList.contains('theme-light'));
         const restorePreviewWeight = (card: HTMLElement) => {
             const nodeId = card.dataset.nodeId || '';
             const isSelected = !!nodeId && !!this.cy?.$id(nodeId)?.selected?.();
@@ -846,11 +856,13 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 }
 
                 const nodeId = el.dataset.nodeId || '';
+                const cyNode = nodeId && this.cy ? this.cy.$id(nodeId) : null;
                 const isVisible = !!nodeId && visibleCyIds!.has(nodeId);
+                const isDimmed = !!cyNode?.length && cyNode.hasClass('zk-level-dimmed');
                 if (visibilityMode === 'dim') {
                     if (el.dataset.levelHidden === '1') el.style.display = '';
                     delete el.dataset.levelHidden;
-                    if (isVisible) {
+                    if (!isDimmed) {
                         if (el.dataset.levelDimmed === '1') {
                             el.style.opacity = '';
                             el.style.filter = '';
@@ -887,6 +899,84 @@ export class CytoscapeRenderer implements IGraphRenderer {
         this.container.querySelectorAll<HTMLElement>('.zk-group-glass-layer').forEach(layer => {
             layer.style.display = clearing || visibilityMode === 'dim' ? '' : 'none';
             layer.style.opacity = clearing ? '' : (visibilityMode === 'dim' ? '0.26' : '');
+        });
+    }
+
+    private reapplyFocusOverlayState(): void {
+        if (this.focusOverlayVisibleCyIds === null) return;
+        this.applyFocusOverlayState(this.focusOverlayVisibleCyIds, this.focusOverlayVisibilityMode, false);
+    }
+
+    /**
+     * 祖先链高亮:把指定 cy node 到 root 的整条路径(节点 + 沿途的边)打上
+     * `zk-ancestor-active` class,从而被 stylesheet/CSS 选择器恢复亮色 + 边加粗。
+     * 传 null 清除所有 ancestor 高亮。
+     *
+     * 与 levelDim 的关系:被 `zk-level-dimmed` 命中的节点跳过 ——
+     * levelDim 是显式"屏蔽其他",优先级更高,ancestor 不应该把它强亮回来。
+     */
+    applyAncestorHighlight(focusCyNodeId: string | null): void {
+        if (!this.cy || !this.container) return;
+
+        // 1. 清除旧的 ancestor-active class(节点 + 边)
+        this.cy.elements('.zk-ancestor-active').removeClass('zk-ancestor-active');
+
+        // 2. 清除 DOM overlay 上的 class
+        this.container.querySelectorAll<HTMLElement>('.zk-text-md-overlay.zk-ancestor-active')
+            .forEach(el => el.classList.remove('zk-ancestor-active'));
+
+        if (!focusCyNodeId) return;
+
+        const focusCyNode = this.cy.$id(focusCyNodeId);
+        if (!focusCyNode || focusCyNode.length === 0) return;
+
+        const focusOriginal = focusCyNode.data('originalNode') as { IDStr?: string; ID?: string } | undefined;
+        if (!focusOriginal) return;
+        const focusIdStr = (focusOriginal.IDStr || focusOriginal.ID || '').trim();
+        if (!focusIdStr || !focusIdStr.includes('.')) {
+            // root 节点本身没有祖先链,但还是把自己点亮(以便 file 节点 canvas label 走亮色规则)
+            if (!focusCyNode.hasClass('zk-level-dimmed')) {
+                focusCyNode.addClass('zk-ancestor-active');
+                this.container.querySelectorAll<HTMLElement>(`.zk-text-md-overlay[data-node-id="${CSS.escape(focusCyNodeId)}"]`)
+                    .forEach(el => el.classList.add('zk-ancestor-active'));
+            }
+            return;
+        }
+
+        // 3. 计算祖先 IDStr 集合(包含被点节点自己)
+        const ancestorIdStrs = new Set<string>();
+        const parts = focusIdStr.split('.');
+        for (let i = 1; i <= parts.length; i++) {
+            ancestorIdStrs.add(parts.slice(0, i).join('.'));
+        }
+
+        // 4. 给命中的 cy 节点加 class,同时收集它们的 cy id
+        const activeCyIds = new Set<string>();
+        this.cy.nodes().forEach((n: any) => {
+            if (n.data('isGroup')) return;
+            if (n.hasClass('zk-level-dimmed')) return;
+            const original = n.data('originalNode') as { IDStr?: string; ID?: string } | undefined;
+            const idStr = (original?.IDStr || original?.ID || '').trim();
+            if (ancestorIdStrs.has(idStr)) {
+                n.addClass('zk-ancestor-active');
+                activeCyIds.add(n.id());
+            }
+        });
+
+        // 5. 沿途的边:源和目标都在 ancestor 集合里
+        this.cy.edges().forEach((e: any) => {
+            if (e.hasClass('zk-level-dimmed')) return;
+            if (activeCyIds.has(e.source().id()) && activeCyIds.has(e.target().id())) {
+                e.addClass('zk-ancestor-active');
+            }
+        });
+
+        // 6. DOM overlay(text-only 节点)同步加 class —— CSS 选择器会把 muted 文字翻成亮色
+        this.container.querySelectorAll<HTMLElement>('.zk-text-md-overlay').forEach(el => {
+            const nodeId = el.dataset.nodeId || '';
+            if (activeCyIds.has(nodeId)) {
+                el.classList.add('zk-ancestor-active');
+            }
         });
     }
 
