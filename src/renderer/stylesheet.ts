@@ -66,6 +66,19 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
     const firstLevelMeasureCache = new Map<string, { nodeWidth: number; wrapWidth: number; nodeHeight: number }>();
     const FILE_NODE_PADDING_Y = 57;
     const FIRST_LEVEL_FILE_NODE_PADDING_Y = 61;
+    const getVisibleTextForMeasure = (label: string): string => {
+        return String(label || '')
+            .replace(/<span\s+style=["'][^"']*["']>(.*?)<\/span>/gis, '$1')
+            .replace(/!\[\[([^\]\n]+)\]\]/g, (_m, target) => String(target || '').split('|').pop()?.trim() || '')
+            .replace(/\[\[([^\]\n]+)\]\]/g, (_m, target) => String(target || '').split('|').pop()?.trim() || '')
+            .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+            .replace(/\*\*(.+?)\*\*/g, '$1')
+            .replace(/__(.+?)__/g, '$1')
+            .replace(/~~(.+?)~~/g, '$1')
+            .replace(/^\s*#{1,6}\s+/gm, '')
+            .replace(/<[^>]+>/g, '');
+    };
+    const getTextMeasureLabel = (ele: any): string => getVisibleTextForMeasure(ele.data('label') || '');
 
     const computeAutoTextMetrics = (label: string, opts?: {
         fontSize?: number;
@@ -156,10 +169,10 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     if (manualWidthModel > 0 && ele.data('isTextOnly')) {
                         return manualWidthModel;
                     }
-                    const label = ele.data('label') || '';
                     if (ele.data('isTextOnly')) {
-                        return computeAutoTextMetrics(label).width;
+                        return computeAutoTextMetrics(getTextMeasureLabel(ele)).width;
                     }
+                    const label = ele.data('label') || '';
                     return deps.measureNodeLabel(label, {
                         baseWidth: 90,
                         minHeight: 42,
@@ -171,11 +184,11 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 },
                 'height': (ele: any) => {
                     const manualHeightModel = Number(ele.data('manualHeightModel') || 0);
-                    const label = ele.data('label') || '';
                     if (ele.data('isTextOnly')) {
-                        const auto = computeAutoTextMetrics(label).height;
+                        const auto = computeAutoTextMetrics(getTextMeasureLabel(ele)).height;
                         return manualHeightModel > 0 ? Math.max(manualHeightModel, auto) : auto;
                     }
+                    const label = ele.data('label') || '';
                     return deps.measureNodeLabel(label, {
                         baseWidth: 90,
                         minHeight: 42,
@@ -235,7 +248,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     const w = Number(ele.width() || 0);
                     if (manualWidthModel > 0) return Math.max(120, manualWidthModel - 48);
                     if (w > 0) return Math.max(120, w - 48);
-                    return computeAutoTextMetrics(ele.data('label') || '').wrapWidth;
+                    return computeAutoTextMetrics(getTextMeasureLabel(ele)).wrapWidth;
                 }
             } as any
         },
@@ -300,9 +313,8 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     if (manualWidthModel > 0 && ele.data('isTextOnly')) {
                         return manualWidthModel;
                     }
-                    const label = ele.data('label') || '';
                     if (ele.data('isTextOnly')) {
-                        return computeAutoTextMetrics(label, {
+                        return computeAutoTextMetrics(getTextMeasureLabel(ele), {
                             fontSize: deps.FIRST_LEVEL_NODE_FONT_SIZE,
                             fontWeight: 'bold',
                             maxContentWidth: 296,
@@ -312,13 +324,13 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                             paddingY: 34
                         }).width;
                     }
+                    const label = ele.data('label') || '';
                     return computeFirstLevelMetrics(label).nodeWidth;
                 },
                 'height': (ele: any) => {
                     const manualHeightModel = Number(ele.data('manualHeightModel') || 0);
-                    const label = ele.data('label') || '';
                     if (ele.data('isTextOnly')) {
-                        const auto = computeAutoTextMetrics(label, {
+                        const auto = computeAutoTextMetrics(getTextMeasureLabel(ele), {
                             fontSize: deps.FIRST_LEVEL_NODE_FONT_SIZE,
                             fontWeight: 'bold',
                             maxContentWidth: 296,
@@ -329,6 +341,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                         }).height;
                         return manualHeightModel > 0 ? Math.max(manualHeightModel, auto) : auto;
                     }
+                    const label = ele.data('label') || '';
                     const auto = Math.max(computeFirstLevelMetrics(label).nodeHeight, 80);
                     return manualHeightModel > 0 ? Math.max(manualHeightModel, auto) : auto;
                 }
@@ -396,7 +409,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     if (manualWidthModel > 0 && ele.data('isTextOnly')) {
                         return manualWidthModel;
                     }
-                    const label = ele.data('label') || '';
+                    const label = ele.data('isTextOnly') ? getTextMeasureLabel(ele) : (ele.data('label') || '');
                     return deps.measureNodeLabel(label, {
                         baseWidth: 210,
                         minHeight: 78,
@@ -412,7 +425,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     if (manualHeightModel > 0 && ele.data('isTextOnly')) {
                         return manualHeightModel;
                     }
-                    const label = ele.data('label') || '';
+                    const label = ele.data('isTextOnly') ? getTextMeasureLabel(ele) : (ele.data('label') || '');
                     return deps.measureNodeLabel(label, {
                         baseWidth: 210,
                         minHeight: 78,
