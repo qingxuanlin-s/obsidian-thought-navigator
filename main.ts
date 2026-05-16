@@ -266,6 +266,9 @@ export default class ZKNavigationPlugin extends Plugin {
         if (t("Main notes") !== "主笔记" && this.settings.MainNoteButtonText === "主笔记") {
             this.settings.MainNoteButtonText = t("Main notes");
         }
+        if (this.settings.graphType !== "structure") {
+            this.settings.graphType = "structure";
+        }
         this.settings.autoLayoutDefaultGrowthDirection = normalizeLayoutPreset(
             this.settings.autoLayoutDefaultGrowthDirection
         );

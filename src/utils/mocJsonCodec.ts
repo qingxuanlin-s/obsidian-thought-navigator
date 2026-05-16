@@ -309,7 +309,9 @@ export function createMOCJsonWithInitialNode(
             },
         ],
         reverseRelations: [],
-        nodePositions: {},
+        nodePositions: {
+            [initialNodeId]: { x: 0, y: 0 },
+        },
         groups: [],
         edgeCurvatures: {},
         nodeColors: {},
