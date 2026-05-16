@@ -4820,19 +4820,8 @@ cy.fit(null, 40);
             if (mocFile) {
                 if (newContent !== currentContent) {
                     if (node.isTextOnly) {
-                        const parsed = this.parseRawWikiLinkInput(newContent);
-                        if (parsed) {
-                            await this.mocHandler.updateNodeContentInMOC(
-                                mocFile,
-                                node.IDStr,
-                                parsed.displayText,
-                                parsed.wikiLink,
-                                parsed.isEmbed
-                            );
-                        } else {
-                            const contentForSave = this.encodeMultilineText(newContent);
-                            await this.mocHandler.updateNodeContentInMOC(mocFile, node.IDStr, contentForSave);
-                        }
+                        const contentForSave = this.encodeMultilineText(newContent);
+                        await this.mocHandler.updateNodeContentInMOC(mocFile, node.IDStr, contentForSave);
                     } else {
                         const parsed = this.parseRawWikiLinkInput(newContent);
                         if (!parsed) {

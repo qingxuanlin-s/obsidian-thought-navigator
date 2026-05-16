@@ -523,8 +523,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
                                 existing.position((ele as any).position);
                             }
 
-                            // embed -> 普通文件节点：移除预览卡片写入的 width/height bypass，恢复样式表计算尺寸
+                            // embed -> 普通文件节点：移除预览卡片写入的 bypass，恢复样式表计算尺寸和边框视觉
                             if (ele.group === 'nodes' && wasEmbed && !nextIsEmbed) {
+                                existing.data('isImageNode', false);
+                                existing.removeStyle('label');
+                                existing.removeStyle('background-opacity');
+                                existing.removeStyle('border-opacity');
+                                existing.removeStyle('border-width');
+                                existing.removeStyle('overlay-opacity');
+                                existing.removeStyle('padding');
                                 existing.removeStyle('width');
                                 existing.removeStyle('height');
                             }
