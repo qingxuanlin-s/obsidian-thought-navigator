@@ -1458,7 +1458,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                         return wrapForImageToolkit(img);
                     };
                     // 按内联标记拆分并逐段追加 DOM 节点
-                    const tokenRe = /!\[\[([^\]\n]+)\]\]|\[\[([^\]\n]+)\]\]|\*\*(.+?)\*\*|~~(.+?)~~|__(.+?)__|\[([^\]]+)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)|<span\s+style=["']([^"']+)["']>(.*?)<\/span>|((?:https?:\/\/|www\.)[^\s<>()\]]+)/g;
+                    const tokenRe = /!\[\[([^\]\n]+)\]\]|\[\[([^\]\n]+)\]\]|\*\*(.+?)\*\*|~~(.+?)~~|__(.+?)__|<u>(.*?)<\/u>|\[([^\]]+)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)|<span\s+style=["']([^"']+)["']>(.*?)<\/span>|((?:https?:\/\/|www\.)[^\s<>()\]]+)/g;
                     let lastIndex = 0;
                     let m: RegExpExecArray | null;
                     while ((m = tokenRe.exec(input)) !== null) {
@@ -1482,16 +1482,20 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                             u.textContent = m[5];
                             container.appendChild(u);
                         } else if (m[6] !== undefined) {
-                            const a = createExternalLink(m[7] || '', m[6]);
-                            if (m[8]) a.title = m[8];
+                            const u = document.createElement('u');
+                            u.textContent = m[6];
+                            container.appendChild(u);
+                        } else if (m[7] !== undefined) {
+                            const a = createExternalLink(m[8] || '', m[7]);
+                            if (m[9]) a.title = m[9];
                             container.appendChild(a);
-                        } else if (m[9] !== undefined) {
+                        } else if (m[10] !== undefined) {
                             const span = document.createElement('span');
-                            span.style.cssText = m[9].trim();
-                            span.textContent = m[10];
+                            span.style.cssText = m[10].trim();
+                            span.textContent = m[11];
                             container.appendChild(span);
-                        } else if (m[11] !== undefined) {
-                            const rawUrl = m[11];
+                        } else if (m[12] !== undefined) {
+                            const rawUrl = m[12];
                             const trimmedUrl = rawUrl.replace(/[.,;:!?，。；：！？]+$/, '');
                             const trailing = rawUrl.slice(trimmedUrl.length);
                             container.appendChild(createExternalLink(trimmedUrl));
