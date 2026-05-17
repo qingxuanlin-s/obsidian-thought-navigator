@@ -3,7 +3,7 @@
 	"name": "Thought Navigator",
 	"version": "0.0.8",
 	"minAppVersion": "1.8.5",
-	"description": "A visual knowledge-processing workspace for Obsidian: connect notes, shape MOCs, build mind maps, and turn Zettelkasten-style thinking into navigable thought maps.",
+	"description": "A visual knowledge-processing workspace: connect notes, shape MOCs, build mind maps, and turn Zettelkasten-style thinking into navigable thought maps.",
 	"author": "qingxuanlin-s",
 	"authorUrl": "https://github.com/qingxuanlin-s",
 	"isDesktopOnly": false
