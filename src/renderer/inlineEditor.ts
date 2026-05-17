@@ -1447,9 +1447,14 @@ export function startInPlaceTextEdit(this: any, node: any,
         };
 
         let cleanupOverlaySync = () => {};
+        let labelUpdateRaf: number | null = null;
         const clearLiveEdit = () => {
             this.liveEditCleanupHandlers.delete(clearLiveEdit);
             cleanupOverlaySync();
+            if (labelUpdateRaf !== null) {
+                cancelAnimationFrame(labelUpdateRaf);
+                labelUpdateRaf = null;
+            }
             selectionToolbar?.destroy();
             selectionToolbar = null;
             if (mdEditor) {
@@ -1517,12 +1522,17 @@ export function startInPlaceTextEdit(this: any, node: any,
             });
         };
 
-        const updateLiveEditLabel = () => {
+        const updateLiveEditLabelNow = () => {
+            labelUpdateRaf = null;
             if (!this.cy || node.removed() || !mdEditor) return;
             node.data('label', mdEditor.getValue() ?? '');
             this.cy.style().update();
             this.overlayScheduler?.immediate?.();
             scheduleOverlaySync();
+        };
+        const updateLiveEditLabel = () => {
+            if (labelUpdateRaf !== null) return;
+            labelUpdateRaf = requestAnimationFrame(updateLiveEditLabelNow);
         };
 
         const saveEdit = () => {
@@ -1771,6 +1781,7 @@ export function startPlaceholderInPlaceEdit(this: any, node: any): void {
         };
 
         const cleanup = () => {
+            this.liveEditCleanupHandlers.delete(cleanup);
             selectionToolbar?.destroy();
             selectionToolbar = null;
             if (mdEditor) {
@@ -1791,6 +1802,7 @@ export function startPlaceholderInPlaceEdit(this: any, node: any): void {
             }
             this.cy?.off('render zoom pan', onRender);
         };
+        this.liveEditCleanupHandlers.add(cleanup);
 
         const cancelEdit = () => {
             if (isSaved) return;

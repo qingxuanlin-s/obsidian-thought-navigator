@@ -255,6 +255,13 @@ export class CytoscapeRenderer implements IGraphRenderer {
         this.liveEditCleanupHandlers.clear();
     }
 
+    private cleanupInlineEditingDom(): void {
+        this.clearActiveTextSelectionToolbar();
+        this.container?.querySelectorAll(
+            '.node-label-editor, .edge-label-editor, .node-link-suggester, .zk-placeholder-edit-overlay'
+        ).forEach((el) => el.remove());
+    }
+
     private cleanupBadgeInteractionBindings(): void {
         this.edgeControls.cleanupBindings();
     }
@@ -721,8 +728,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 销毁渲染器
      */
     destroy(): void {
-        this.clearActiveTextSelectionToolbar();
         this.cleanupLiveEditHandlers();
+        this.cleanupInlineEditingDom();
         this.overlayScheduler.cleanupManagedDomListeners();
         this.overlayScheduler.cleanupEventBindings();
         this.cleanupBadgeInteractionBindings();
