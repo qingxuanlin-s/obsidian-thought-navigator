@@ -1445,8 +1445,9 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                         const pathWithoutSubpath = linkText.split('#')[0].trim();
                         const ext = pathWithoutSubpath.split('.').pop()?.toLowerCase() || '';
                         const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext);
+                        const isAudio = ['m4a', 'mp3', 'wav', 'ogg', 'oga', 'aac', 'flac', 'webm'].includes(ext);
                         const isExcalidraw = /\.excalidraw(\.md)?$/i.test(pathWithoutSubpath);
-                        if (!isImage && !isExcalidraw) return createInternalLink(rawTarget);
+                        if (!isImage && !isAudio && !isExcalidraw) return createInternalLink(rawTarget);
 
                         const file = app?.metadataCache?.getFirstLinkpathDest?.(linkText, sourcePath)
                             || app?.vault?.getAbstractFileByPath?.(pathWithoutSubpath);
@@ -1471,6 +1472,32 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                                 }
                             });
                             return preview;
+                        }
+
+                        if (isAudio) {
+                            const audio = document.createElement('audio');
+                            audio.className = 'zk-text-md-embed-audio';
+                            audio.src = app.vault.getResourcePath(file);
+                            audio.controls = true;
+                            audio.preload = 'metadata';
+                            audio.title = `${file.basename || linkText}\n按住 Cmd/Ctrl 点击打开`;
+
+                            const stopAudioInteraction = (e: Event) => {
+                                e.stopPropagation();
+                            };
+                            audio.addEventListener('pointerdown', stopAudioInteraction);
+                            audio.addEventListener('mousedown', stopAudioInteraction);
+                            audio.addEventListener('click', stopAudioInteraction);
+                            audio.addEventListener('dblclick', stopAudioInteraction);
+                            audio.addEventListener('wheel', stopAudioInteraction);
+                            audio.addEventListener('contextmenu', stopAudioInteraction);
+
+                            audio.addEventListener('mousedown', (e: MouseEvent) => {
+                                if (!(e.ctrlKey || e.metaKey)) return;
+                                e.preventDefault();
+                                app?.workspace?.openLinkText?.(linkText, sourcePath, true);
+                            });
+                            return audio;
                         }
 
                         const img = document.createElement('img');
