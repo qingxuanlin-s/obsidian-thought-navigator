@@ -63,6 +63,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
     };
 
     const autoMeasureCache = new Map<string, { width: number; height: number; wrapWidth: number }>();
+    const fileNodeMeasureCache = new Map<string, { width: number; height: number; wrapWidth: number }>();
     const firstLevelMeasureCache = new Map<string, { nodeWidth: number; wrapWidth: number; nodeHeight: number }>();
     const FILE_NODE_PADDING_Y = 57;
     const FIRST_LEVEL_FILE_NODE_PADDING_Y = 61;
@@ -79,6 +80,32 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
             .replace(/<[^>]+>/g, '');
     };
     const getTextMeasureLabel = (ele: any): string => getVisibleTextForMeasure(ele.data('label') || '');
+
+    const measureSingleLineFileNode = (label: string, opts: {
+        fontSize: number;
+        fontWeight: string;
+        baseWidth: number;
+        minHeight: number;
+        paddingX: number;
+        paddingY: number;
+        lineHeight?: number;
+    }): { width: number; height: number; wrapWidth: number } => {
+        const lineHeight = opts.lineHeight ?? Math.ceil(opts.fontSize * 1.4);
+        const key = `${label}|${opts.fontSize}|${opts.fontWeight}|${opts.baseWidth}|${opts.minHeight}|${opts.paddingX}|${opts.paddingY}|${lineHeight}`;
+        const cached = fileNodeMeasureCache.get(key);
+        if (cached) return cached;
+
+        const lines = String(label || '').split('\n');
+        const lineWidths = lines.map((line: string) => deps.measureTextWidthCanvas(line || ' ', opts.fontSize, opts.fontWeight));
+        const longestW = Math.max(...lineWidths, opts.fontSize);
+        const safetyPx = 8;
+        const width = Math.max(opts.baseWidth, Math.ceil(longestW) + safetyPx + opts.paddingX);
+        const height = Math.max(opts.minHeight, Math.max(1, lines.length) * lineHeight + opts.paddingY);
+        const result = { width, height, wrapWidth: Math.max(1, width - opts.paddingX) };
+        if (fileNodeMeasureCache.size > 200) fileNodeMeasureCache.clear();
+        fileNodeMeasureCache.set(key, result);
+        return result;
+    };
 
     const computeAutoTextMetrics = (label: string, opts?: {
         fontSize?: number;
@@ -115,23 +142,25 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
         const paddingX = 44;
         const paddingY = FIRST_LEVEL_FILE_NODE_PADDING_Y;
         const lineHeight = Math.ceil(fontSize * 1.4);
-        const maxWidth = 340;
         const baseWidth = 118;
-        const safetyPx = 4;
         const key = `${label}|${fontSize}`;
         const cached = firstLevelMeasureCache.get(key);
         if (cached) return cached;
 
-        const lines = String(label || '').split('\n');
-        const lineWidths = lines.map((l: string) => deps.measureTextWidthCanvas(l || ' ', fontSize, 'bold'));
-        const longestW = Math.max(...lineWidths, fontSize);
-        const nodeWidth = Math.max(baseWidth, Math.min(maxWidth, Math.ceil(longestW) + safetyPx + paddingX));
-        const wrapWidth = Math.max(1, nodeWidth - paddingX);
-        const wrappedLines = lineWidths.reduce((sum: number, lw: number) => (
-            sum + Math.max(1, Math.ceil(lw / wrapWidth))
-        ), 0);
-        const nodeHeight = Math.max(54, wrappedLines * lineHeight + paddingY);
-        const result = { nodeWidth, wrapWidth, nodeHeight };
+        const measured = measureSingleLineFileNode(label, {
+            fontSize,
+            fontWeight: 'bold',
+            baseWidth,
+            minHeight: 54,
+            paddingX,
+            paddingY,
+            lineHeight
+        });
+        const result = {
+            nodeWidth: measured.width,
+            wrapWidth: measured.wrapWidth,
+            nodeHeight: measured.height
+        };
         if (firstLevelMeasureCache.size > 200) firstLevelMeasureCache.clear();
         firstLevelMeasureCache.set(key, result);
         return result;
@@ -173,11 +202,11 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                         return computeAutoTextMetrics(getTextMeasureLabel(ele)).width;
                     }
                     const label = ele.data('label') || '';
-                    return deps.measureNodeLabel(label, {
+                    return measureSingleLineFileNode(label, {
+                        fontSize: deps.FIRST_LEVEL_NODE_FONT_SIZE - 4,
+                        fontWeight: '500',
                         baseWidth: 90,
                         minHeight: 42,
-                        maxWidth: 280,
-                        charWidth: 11,
                         paddingX: 40,
                         paddingY: FILE_NODE_PADDING_Y
                     }).width;
@@ -189,11 +218,11 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                         return manualHeightModel > 0 ? Math.max(manualHeightModel, auto) : auto;
                     }
                     const label = ele.data('label') || '';
-                    return deps.measureNodeLabel(label, {
+                    return measureSingleLineFileNode(label, {
+                        fontSize: deps.FIRST_LEVEL_NODE_FONT_SIZE - 4,
+                        fontWeight: '500',
                         baseWidth: 90,
                         minHeight: 42,
-                        maxWidth: 280,
-                        charWidth: 11,
                         paddingX: 40,
                         paddingY: FILE_NODE_PADDING_Y
                     }).height;
@@ -402,7 +431,15 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                         const widthModel = manualWidthModel > 0 ? manualWidthModel : Number(ele.width() || 560);
                         return Math.max(220, widthModel - 76);
                     }
-                    return 560;
+                    return measureSingleLineFileNode(ele.data('label') || '', {
+                        fontSize: deps.ROOT_NODE_FONT_SIZE,
+                        fontWeight: 'bold',
+                        baseWidth: 210,
+                        minHeight: 78,
+                        paddingX: 88,
+                        paddingY: 38,
+                        lineHeight: 42
+                    }).wrapWidth;
                 },
                 'width': (ele: any) => {
                     const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
@@ -410,6 +447,17 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                         return manualWidthModel;
                     }
                     const label = ele.data('isTextOnly') ? getTextMeasureLabel(ele) : (ele.data('label') || '');
+                    if (!ele.data('isTextOnly')) {
+                        return measureSingleLineFileNode(label, {
+                            fontSize: deps.ROOT_NODE_FONT_SIZE,
+                            fontWeight: 'bold',
+                            baseWidth: 210,
+                            minHeight: 78,
+                            paddingX: 88,
+                            paddingY: 38,
+                            lineHeight: 42
+                        }).width;
+                    }
                     return deps.measureNodeLabel(label, {
                         baseWidth: 210,
                         minHeight: 78,
@@ -426,6 +474,17 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                         return manualHeightModel;
                     }
                     const label = ele.data('isTextOnly') ? getTextMeasureLabel(ele) : (ele.data('label') || '');
+                    if (!ele.data('isTextOnly')) {
+                        return measureSingleLineFileNode(label, {
+                            fontSize: deps.ROOT_NODE_FONT_SIZE,
+                            fontWeight: 'bold',
+                            baseWidth: 210,
+                            minHeight: 78,
+                            paddingX: 88,
+                            paddingY: 38,
+                            lineHeight: 42
+                        }).height;
+                    }
                     return deps.measureNodeLabel(label, {
                         baseWidth: 210,
                         minHeight: 78,
