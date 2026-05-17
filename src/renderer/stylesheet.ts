@@ -214,7 +214,13 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'height': (ele: any) => {
                     const manualHeightModel = Number(ele.data('manualHeightModel') || 0);
                     if (ele.data('isTextOnly')) {
-                        const auto = computeAutoTextMetrics(getTextMeasureLabel(ele)).height;
+                        const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
+                        // 锁过宽度时,按锁定宽度推算换行,避免按默认 wrap 宽度算出比实际显示偏高的值
+                        // (否则编辑保存后会出现"先变高,applySizes 之后再回落"的闪烁)
+                        const opts = manualWidthModel > 0
+                            ? { maxContentWidth: Math.max(80, manualWidthModel - 72) }
+                            : undefined;
+                        const auto = computeAutoTextMetrics(getTextMeasureLabel(ele), opts).height;
                         return manualHeightModel > 0 ? Math.max(manualHeightModel, auto) : auto;
                     }
                     const label = ele.data('label') || '';
@@ -359,10 +365,11 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'height': (ele: any) => {
                     const manualHeightModel = Number(ele.data('manualHeightModel') || 0);
                     if (ele.data('isTextOnly')) {
+                        const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
                         const auto = computeAutoTextMetrics(getTextMeasureLabel(ele), {
                             fontSize: deps.FIRST_LEVEL_NODE_FONT_SIZE,
                             fontWeight: 'bold',
-                            maxContentWidth: 296,
+                            maxContentWidth: manualWidthModel > 0 ? Math.max(80, manualWidthModel - 72) : 296,
                             baseWidth: 118,
                             minHeight: 90,
                             paddingX: 72,
