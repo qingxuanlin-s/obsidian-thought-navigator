@@ -107,7 +107,9 @@ export function convertNodesToElements(
 		const isFirstLevelNode = isDirectChildOfRootNode(node, resolvedContext.nodeById);
 		const firstLevelBranchNode = getFirstLevelBranchNode(node, resolvedContext.nodeById);
 		const persistedSize = embedNodeSizes[node.ID] || embedNodeSizes[node.IDStr];
-		const manualSize = persistedSize && persistedSize.width > 0 && persistedSize.height > 0
+		// 允许部分锁定:文本节点可能只锁宽度(高度走内容自适配),此时 height=0。
+		// 嵌入节点仍需要两个维度都有值,因此调用方根据节点类型自行决定写入哪些字段。
+		const manualSize = persistedSize && ((persistedSize.width || 0) > 0 || (persistedSize.height || 0) > 0)
 			? persistedSize
 			: null;
 		const rawCustomColor = nodeColors[node.IDStr] || nodeColors[node.ID] || null;

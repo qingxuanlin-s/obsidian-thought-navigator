@@ -5,7 +5,7 @@ import { darkenColor, hexToRgba, isModernThemeStyle, normalizeHexColor } from '.
 import { estimateWrappedLines } from './renderPipeline';
 import { renderExcalidrawPreview, wrapForImageToolkit } from './embedPreview';
 
-const TEXT_MD_OVERLAY_RENDER_VERSION = 2;
+export const TEXT_MD_OVERLAY_RENDER_VERSION = 2;
 
 function middleEllipsizeToWidth(text: string, maxWidth: number, ctx: CanvasRenderingContext2D | null, font: string): string {
 	const fullText = String(text || '');
@@ -1710,17 +1710,22 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                     if (node.removed()) return;
                     const currentWidthModel = Number(node.data('manualWidthModel') || 0);
                     const currentHeightModel = Number(node.data('manualHeightModel') || 0);
-                    // 回归原有尺寸计算：初始化阶段不由 Markdown overlay 改写节点尺寸；
-                    // 仅在已存在手动尺寸时继续沿用。
                     if (currentWidthModel <= 0 && currentHeightModel <= 0) return;
                     const targetWidth = currentWidthModel > 0 ? currentWidthModel : e.width;
+                    // 仅当用户显式锁过高度（currentHeightModel > 0）才回写 data；
+                    // 否则只在视觉层用 overlay 测量动态适配高度，避免把"为了当前内容渲染的临时高度"固化成用户手动尺寸，
+                    // 否则改短内容后旧高度会被持续保留下来。
                     const targetHeight = currentHeightModel > 0
                         ? currentHeightModel
                         : measureOverlayHeightForWidth(e.el, targetWidth, e.height);
                     e.width = targetWidth;
                     e.height = targetHeight;
-                    node.data('manualWidthModel', targetWidth);
-                    node.data('manualHeightModel', targetHeight);
+                    if (currentWidthModel > 0) {
+                        node.data('manualWidthModel', targetWidth);
+                    }
+                    if (currentHeightModel > 0) {
+                        node.data('manualHeightModel', targetHeight);
+                    }
                     node.style({ width: targetWidth, height: targetHeight });
                 });
             });
