@@ -7,6 +7,7 @@ import {
     createSelectionColorPanel,
 } from './colorUtils';
 import { buildWikiLinkForFile } from './renderPipeline';
+import { TEXT_MD_OVERLAY_RENDER_VERSION } from './nodeBadges';
 
 function isLivePreviewMediaInteraction(target: EventTarget | null): boolean {
     const el = target instanceof Element ? target : null;
@@ -900,7 +901,7 @@ export function showInlineNodeEditor(this: any, node: any): void {
                 || node.id?.()
                 || ''
             );
-            const cacheKey = `${sourcePath}||${nodeCacheId}||${rawSource}`;
+            const cacheKey = `${TEXT_MD_OVERLAY_RENDER_VERSION}||${sourcePath}||${nodeCacheId}||${rawSource}`;
             const cachedEntry = this.textMdOverlayCache.get(cacheKey);
             if (cachedEntry) {
                 this.startInPlaceTextEdit(node, originalNode, cachedEntry);
@@ -1546,6 +1547,15 @@ export function startInPlaceTextEdit(this: any, node: any,
                 cancelEdit();
                 return;
             }
+            // 内容变化时让高度回归"按新内容自动适配":
+            // 清掉旧的高度锁定（含 inline style 与 data），下一轮 applySizes 会基于新内容重新测量。
+            // 宽度保持用户已锁定的值不动。
+            const widthLockedByUser = Number(node.data('manualWidthModel') || 0) > 0;
+            const heightLockedByUser = Number(node.data('manualHeightModel') || 0) > 0;
+            try { (node as any).removeStyle?.('height'); } catch { /* ignore */ }
+            if (heightLockedByUser) {
+                node.removeData('manualHeightModel');
+            }
             node.data('label', rawValue);
             this.cy?.style().update();
             syncOverlayPos();
@@ -1555,8 +1565,8 @@ export function startInPlaceTextEdit(this: any, node: any,
             const currentHeight = Number.isFinite(rawCurrentHeight) && rawCurrentHeight > 0 ? rawCurrentHeight : entry.height;
             const finalWidth = currentWidth;
             const finalHeightModel = currentHeight;
-            const shouldPersistManualSize = Number(node.data('manualWidthModel') || 0) > 0
-                || Number(node.data('manualHeightModel') || 0) > 0;
+            // 只在用户显式锁过宽度时才回写 embed_node_sizes;高度走自动适配,不再持久化。
+            const shouldPersistManualSize = widthLockedByUser;
             isSaved = true;
             clearLiveEdit();
             restoreNodeInteractivity();
@@ -1574,7 +1584,8 @@ export function startInPlaceTextEdit(this: any, node: any,
                     position: anchoredPosition,
                     nodeSize: shouldPersistManualSize ? {
                         widthModel: finalWidth,
-                        heightModel: finalHeightModel
+                        // 高度走自动适配:用 0 表示"无锁定",由 stylesheet/overlay 测量动态决定。
+                        heightModel: 0
                     } : undefined
                 }
             }));
@@ -2189,15 +2200,23 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
             // 不清除 dataset.editing —— 留到图重建后的 mark-sweep/detach 来清理；
             // 若内容未变化 indexView 会 return，下面的 fallback 会兜底恢复
             const nodePosition = node.position();
+            // 内容变化时让高度回归"按新内容自动适配":
+            // 清掉旧的高度锁定（含 inline style 与 data），避免把旧内容的高度延续到新内容。
+            const widthLockedByUser = Number(node.data('manualWidthModel') || 0) > 0;
+            try { (node as any).removeStyle?.('height'); } catch { /* ignore */ }
+            node.removeData('manualHeightModel');
+            this.cy?.style().update();
+            const shouldPersistManualSize = widthLockedByUser;
             this.container?.dispatchEvent(new CustomEvent('node-inline-edit-save', {
                 detail: {
                     node: originalNode,
                     content: newValue,
                     position: { x: nodePosition.x, y: nodePosition.y },
-                    nodeSize: {
+                    nodeSize: shouldPersistManualSize ? {
                         widthModel: Number(node.width()),
-                        heightModel: Number(node.height())
-                    }
+                        // 高度走自动适配:用 0 表示"无锁定"。
+                        heightModel: 0
+                    } : undefined
                 }
             }));
 

@@ -4842,7 +4842,8 @@ cy.fit(null, 40);
                     }
                 }
 
-                if (nodeSize && nodeSize.widthModel > 0 && nodeSize.heightModel > 0) {
+                // 允许部分锁定:文本节点编辑后只保留宽度锁，高度走自动适配，heightModel=0 表示"无锁"。
+                if (nodeSize && (nodeSize.widthModel > 0 || nodeSize.heightModel > 0)) {
                     await this.saveEmbedNodeSizeToMOC(mocFile, node.IDStr, nodeSize);
                 }
 
