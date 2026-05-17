@@ -1440,7 +1440,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                         return a;
                     };
                     const createEmbedNode = (rawTarget: string): HTMLElement => {
-                        const [targetPart] = rawTarget.split('|');
+                        const [targetPart, sizePart] = rawTarget.split('|');
                         const linkText = (targetPart || '').trim();
                         const pathWithoutSubpath = linkText.split('#')[0].trim();
                         const ext = pathWithoutSubpath.split('.').pop()?.toLowerCase() || '';
@@ -1506,6 +1506,17 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                         img.alt = linkText;
                         img.draggable = false;
                         img.title = `${file.basename || linkText}\n按住 Cmd/Ctrl 点击打开`;
+                        const sizeMatch = (sizePart || '').trim().match(/^(\d+(?:\.\d+)?)(?:x(\d+(?:\.\d+)?))?$/i);
+                        if (sizeMatch) {
+                            const width = Math.max(1, Math.min(4096, Number(sizeMatch[1])));
+                            const height = sizeMatch[2] !== undefined
+                                ? Math.max(1, Math.min(4096, Number(sizeMatch[2])))
+                                : null;
+                            img.style.width = `${width}px`;
+                            if (height !== null) {
+                                img.style.height = `${height}px`;
+                            }
+                        }
                         const openImage = (e: MouseEvent) => {
                             if (!(e.ctrlKey || e.metaKey)) return;
                             e.preventDefault();
