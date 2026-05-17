@@ -8,6 +8,22 @@ import {
 } from './colorUtils';
 import { buildWikiLinkForFile } from './renderPipeline';
 
+function isLivePreviewMediaInteraction(target: EventTarget | null): boolean {
+    const el = target instanceof Element ? target : null;
+    if (!el) return false;
+    return !!el.closest([
+        '.internal-embed',
+        '.markdown-embed',
+        '.image-embed',
+        '.media-embed',
+        '.cm-embed-block',
+        '.cm-widgetBuffer',
+        'img',
+        'audio',
+        'video'
+    ].join(', '));
+}
+
 export function attachInlineTextSelectionToolbar(this: any, inputEl: HTMLInputElement | HTMLTextAreaElement): {
         destroy: () => void;
         containsTarget: (target: Node | null) => boolean;
@@ -1345,6 +1361,10 @@ export function startInPlaceTextEdit(this: any, node: any,
         const stopPointerPropagation = (evt: Event) => {
             evt.stopPropagation();
         };
+        const stopPointerPropagationUnlessMedia = (evt: Event) => {
+            if (isLivePreviewMediaInteraction(evt.target)) return;
+            evt.stopPropagation();
+        };
         const stopWheelPropagation = (evt: WheelEvent) => {
             evt.stopPropagation();
             // 触控板捏合/浏览器缩放手势不应继续传给白板缩放
@@ -1359,7 +1379,8 @@ export function startInPlaceTextEdit(this: any, node: any,
             'dragstart', 'click', 'dblclick'
         ];
         pointerEventsToStop.forEach((name) => {
-            editorHost.addEventListener(name, stopPointerPropagation, true);
+            editorHost.addEventListener(name, stopPointerPropagationUnlessMedia, true);
+            editorHost.addEventListener(name, stopPointerPropagation);
         });
         editorHost.addEventListener('wheel', stopWheelPropagation, { capture: true, passive: false });
 
@@ -1384,7 +1405,8 @@ export function startInPlaceTextEdit(this: any, node: any,
             window.removeEventListener('keydown', onWindowKeyDown, true);
             document.removeEventListener('keydown', onDocumentKeyDown, true);
             pointerEventsToStop.forEach((name) => {
-                editorHost.removeEventListener(name, stopPointerPropagation, true);
+                editorHost.removeEventListener(name, stopPointerPropagationUnlessMedia, true);
+                editorHost.removeEventListener(name, stopPointerPropagation);
             });
             editorHost.removeEventListener('wheel', stopWheelPropagation, true);
         };
@@ -1625,6 +1647,10 @@ export function startPlaceholderInPlaceEdit(this: any, node: any): void {
         this.cy?.userZoomingEnabled(false);
 
         const stopPointerPropagation = (evt: Event) => { evt.stopPropagation(); };
+        const stopPointerPropagationUnlessMedia = (evt: Event) => {
+            if (isLivePreviewMediaInteraction(evt.target)) return;
+            evt.stopPropagation();
+        };
         const stopWheelPropagation = (evt: WheelEvent) => {
             evt.stopPropagation();
             if (evt.ctrlKey || evt.metaKey) evt.preventDefault();
@@ -1636,7 +1662,8 @@ export function startPlaceholderInPlaceEdit(this: any, node: any): void {
             'dragstart', 'click', 'dblclick'
         ];
         pointerEventsToStop.forEach((name) => {
-            editorHost.addEventListener(name, stopPointerPropagation, true);
+            editorHost.addEventListener(name, stopPointerPropagationUnlessMedia, true);
+            editorHost.addEventListener(name, stopPointerPropagation);
         });
         editorHost.addEventListener('wheel', stopWheelPropagation, { capture: true, passive: false });
 
@@ -1673,7 +1700,8 @@ export function startPlaceholderInPlaceEdit(this: any, node: any): void {
                 mdEditor = null;
             }
             pointerEventsToStop.forEach((name) => {
-                editorHost.removeEventListener(name, stopPointerPropagation, true);
+                editorHost.removeEventListener(name, stopPointerPropagationUnlessMedia, true);
+                editorHost.removeEventListener(name, stopPointerPropagation);
             });
             editorHost.removeEventListener('wheel', stopWheelPropagation, true);
             restoreNodeInteractivity();
