@@ -80,6 +80,9 @@ export class EmbeddableMarkdownEditor extends Component {
 	private destroyed = false;
 	private lastSelection: { from: number; to: number } | null = null;
 	private readonly opts: EmbeddableMarkdownEditorOptions;
+	// 统一管理 cm.dom 上挂的 listener:onunload 一键 abort,
+	// 避免闭包链(this.opts.onChange → node → cy)被 cm.dom 引用挂住导致 GC 不掉。
+	private listenerAbort: AbortController | null = null;
 
 	constructor(opts: EmbeddableMarkdownEditorOptions) {
 		super();
@@ -230,6 +233,9 @@ export class EmbeddableMarkdownEditor extends Component {
 		const cm = this.cm;
 		if (!cm?.dom) return;
 
+		this.listenerAbort = new AbortController();
+		const signal = this.listenerAbort.signal;
+
 		const captureSelection = () => {
 			const sel = cm?.state?.selection?.main;
 			if (!sel || sel.empty) return;
@@ -239,9 +245,9 @@ export class EmbeddableMarkdownEditor extends Component {
 		cm.dom.addEventListener('input', () => {
 			captureSelection();
 			this.opts.onChange?.(this.getValue());
-		});
-		cm.dom.addEventListener('mouseup', captureSelection, true);
-		cm.dom.addEventListener('keyup', captureSelection, true);
+		}, { signal });
+		cm.dom.addEventListener('mouseup', captureSelection, { capture: true, signal });
+		cm.dom.addEventListener('keyup', captureSelection, { capture: true, signal });
 
 		cm.dom.addEventListener('keydown', (e: KeyboardEvent) => {
 			// vim INSERT 模式下 Esc 应交给 vim 切换到 NORMAL,不拦截、不取消;
@@ -266,7 +272,7 @@ export class EmbeddableMarkdownEditor extends Component {
 			if (e.key === 'Escape') {
 				this.opts.onEscape?.(e);
 			}
-		}, true);
+		}, { capture: true, signal });
 
 		cm.dom.addEventListener('focusout', () => {
 			setTimeout(() => {
@@ -274,7 +280,7 @@ export class EmbeddableMarkdownEditor extends Component {
 				if (this.opts.containerEl.contains(document.activeElement)) return;
 				this.opts.onBlur?.(this.getValue());
 			}, 50);
-		});
+		}, { signal });
 	}
 
 	getValue(): string {
@@ -377,6 +383,8 @@ export class EmbeddableMarkdownEditor extends Component {
 
 	onunload(): void {
 		this.destroyed = true;
+		try { this.listenerAbort?.abort(); } catch { /* ignore */ }
+		this.listenerAbort = null;
 		try { this.editView?.destroy?.(); } catch { /* ignore */ }
 		try { this.editView?.unload?.(); } catch { /* ignore */ }
 		this.editView = null;
