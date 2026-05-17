@@ -1202,7 +1202,7 @@ export function showInlineNodeEditor(this: any, node: any): void {
             }
 
             if (e.key === 'Enter') {
-                if (e.metaKey || e.ctrlKey) {
+                if (e.shiftKey || e.metaKey || e.ctrlKey) {
                     e.preventDefault();
                     insertTextareaNewline();
                     return;
@@ -2014,7 +2014,7 @@ export function startPlaceholderTextareaFallback(this: any, node: any): void {
         textarea.addEventListener('keydown', (e: KeyboardEvent) => {
             e.stopPropagation();
             if (e.key === 'Enter') {
-                if (e.metaKey || e.ctrlKey) {
+                if (e.shiftKey || e.metaKey || e.ctrlKey) {
                     e.preventDefault();
                     insertTextareaNewline();
                     return;
@@ -2244,7 +2244,7 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
             }
 
             if (e.key === 'Enter') {
-                if (e.metaKey || e.ctrlKey) {
+                if (e.shiftKey || e.metaKey || e.ctrlKey) {
                     e.preventDefault();
                     insertTextareaNewline();
                     return;
