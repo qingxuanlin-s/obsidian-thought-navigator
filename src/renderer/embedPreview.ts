@@ -148,8 +148,8 @@ const extractSubpathMarkdown = (app: any, sourceFile: any, markdown: string, wik
 };
 
 const openPreviewHeaderFile = (app: any, sourceFile: any, wikiLink: string, event: MouseEvent): void => {
-    // 与文件节点点击保持一致：默认新标签页，Cmd/Ctrl 点击复用当前/已有标签。
-    const openInNewLeaf = !(event.metaKey || event.ctrlKey);
+    // 与文件节点点击保持一致：默认复用当前标签，Cmd/Ctrl 点击新标签页。
+    const openInNewLeaf = event.metaKey || event.ctrlKey;
     const rawLink = String(wikiLink || '').trim();
     const hashIdx = rawLink.indexOf('#');
     const subpath = hashIdx >= 0 ? rawLink.substring(hashIdx) : '';

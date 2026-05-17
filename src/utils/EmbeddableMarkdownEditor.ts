@@ -345,6 +345,10 @@ export class EmbeddableMarkdownEditor extends Component {
 		return (this.cm?.dom as HTMLElement | undefined) ?? null;
 	}
 
+	getCM(): any {
+		return this.cm;
+	}
+
 	insertLineBreak(): void {
 		this.insertNewline();
 	}

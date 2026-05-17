@@ -24,6 +24,39 @@ function isLivePreviewMediaInteraction(target: EventTarget | null): boolean {
     ].join(', '));
 }
 
+function extractWikiLinkAtPos(doc: string, pos: number): string {
+    const pattern = /!?\[\[([^\]\n]+)\]\]/g;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(doc)) !== null) {
+        if (pos >= match.index && pos <= match.index + match[0].length) {
+            return match[1].split('|')[0].trim();
+        }
+    }
+    return '';
+}
+
+function getLivePreviewLinkText(target: EventTarget | null): string {
+    const el = target instanceof Element ? target : null;
+    if (!el) return '';
+    const linkEl = el.closest<HTMLElement>([
+        'a.internal-link',
+        'a.external-link',
+        'a[href]',
+        '.internal-embed',
+        '.markdown-embed'
+    ].join(', '));
+    if (!linkEl) return '';
+
+    const dataset = linkEl.dataset || {};
+    const raw = dataset.href
+        || dataset.src
+        || linkEl.getAttribute('data-href')
+        || linkEl.getAttribute('data-src')
+        || linkEl.getAttribute('href')
+        || '';
+    return raw.trim();
+}
+
 export function attachInlineTextSelectionToolbar(this: any, inputEl: HTMLInputElement | HTMLTextAreaElement): {
         destroy: () => void;
         containsTarget: (target: Node | null) => boolean;
@@ -1372,12 +1405,34 @@ export function startInPlaceTextEdit(this: any, node: any,
                 evt.preventDefault();
             }
         };
+        const openLivePreviewLink = (evt: MouseEvent) => {
+            if (!(evt.metaKey || evt.ctrlKey)) return;
+            let linkText = getLivePreviewLinkText(evt.target);
+            if (!linkText) {
+                const cm = mdEditor?.getCM?.();
+                if (cm) {
+                    const pos = cm.posAtCoords?.({ x: evt.clientX, y: evt.clientY }, false);
+                    if (pos != null) {
+                        linkText = extractWikiLinkAtPos(cm.state.doc.toString(), pos);
+                    }
+                }
+            }
+            if (!linkText) return;
+            evt.preventDefault();
+            evt.stopPropagation();
+            if (/^(https?:\/\/|mailto:)/i.test(linkText)) {
+                window.open(linkText, '_blank');
+                return;
+            }
+            this.currentOptions?.app?.workspace?.openLinkText?.(linkText, sourcePath, 'tab');
+        };
         const pointerEventsToStop = [
             'mousedown', 'mousemove', 'mouseup',
             'pointerdown', 'pointermove', 'pointerup',
             'touchstart', 'touchmove', 'touchend',
             'dragstart', 'click', 'dblclick'
         ];
+        editorHost.addEventListener('click', openLivePreviewLink, true);
         pointerEventsToStop.forEach((name) => {
             editorHost.addEventListener(name, stopPointerPropagationUnlessMedia, true);
             editorHost.addEventListener(name, stopPointerPropagation);
@@ -1404,6 +1459,7 @@ export function startInPlaceTextEdit(this: any, node: any,
             (editorHost as any)._mdEditor = null;
             window.removeEventListener('keydown', onWindowKeyDown, true);
             document.removeEventListener('keydown', onDocumentKeyDown, true);
+            editorHost.removeEventListener('click', openLivePreviewLink, true);
             pointerEventsToStop.forEach((name) => {
                 editorHost.removeEventListener(name, stopPointerPropagationUnlessMedia, true);
                 editorHost.removeEventListener(name, stopPointerPropagation);
@@ -1655,12 +1711,34 @@ export function startPlaceholderInPlaceEdit(this: any, node: any): void {
             evt.stopPropagation();
             if (evt.ctrlKey || evt.metaKey) evt.preventDefault();
         };
+        const openLivePreviewLink = (evt: MouseEvent) => {
+            if (!(evt.metaKey || evt.ctrlKey)) return;
+            let linkText = getLivePreviewLinkText(evt.target);
+            if (!linkText) {
+                const cm = mdEditor?.getCM?.();
+                if (cm) {
+                    const pos = cm.posAtCoords?.({ x: evt.clientX, y: evt.clientY }, false);
+                    if (pos != null) {
+                        linkText = extractWikiLinkAtPos(cm.state.doc.toString(), pos);
+                    }
+                }
+            }
+            if (!linkText) return;
+            evt.preventDefault();
+            evt.stopPropagation();
+            if (/^(https?:\/\/|mailto:)/i.test(linkText)) {
+                window.open(linkText, '_blank');
+                return;
+            }
+            this.currentOptions?.app?.workspace?.openLinkText?.(linkText, sourcePath, 'tab');
+        };
         const pointerEventsToStop = [
             'mousedown', 'mousemove', 'mouseup',
             'pointerdown', 'pointermove', 'pointerup',
             'touchstart', 'touchmove', 'touchend',
             'dragstart', 'click', 'dblclick'
         ];
+        editorHost.addEventListener('click', openLivePreviewLink, true);
         pointerEventsToStop.forEach((name) => {
             editorHost.addEventListener(name, stopPointerPropagationUnlessMedia, true);
             editorHost.addEventListener(name, stopPointerPropagation);
@@ -1703,6 +1781,7 @@ export function startPlaceholderInPlaceEdit(this: any, node: any): void {
                 editorHost.removeEventListener(name, stopPointerPropagationUnlessMedia, true);
                 editorHost.removeEventListener(name, stopPointerPropagation);
             });
+            editorHost.removeEventListener('click', openLivePreviewLink, true);
             editorHost.removeEventListener('wheel', stopWheelPropagation, true);
             restoreNodeInteractivity();
             if (overlayEl.parentNode) overlayEl.remove();
