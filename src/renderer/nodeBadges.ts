@@ -437,18 +437,13 @@ export function renderNodeBadges(this: any): void {
                     hitEl.style.pointerEvents = 'auto';
                     hitEl.style.cursor = 'pointer';
                     hitEl.addEventListener('mousedown', (e: MouseEvent) => {
-                        if (!this.cy || e.button !== 0) return;
-                        const toggleSelection = e.metaKey || e.ctrlKey;
-                        if (toggleSelection) {
-                            if (node.selected()) { node.unselect(); } else { node.select(); }
-                            e.preventDefault();
-                            e.stopPropagation();
-                        }
+                        if (e.button !== 0 || !(e.metaKey || e.ctrlKey)) return;
+                        e.preventDefault();
+                        e.stopPropagation();
                     });
                     hitEl.addEventListener('click', (e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        if ((e as MouseEvent).metaKey || (e as MouseEvent).ctrlKey) return;
                         this.container?.dispatchEvent(new CustomEvent('node-click', {
                             detail: { node: node.data('originalNode'), event: e }
                         }));
@@ -1424,7 +1419,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                             e.preventDefault();
                             e.stopPropagation();
                             if (!linkText) return;
-                            app?.workspace?.openLinkText?.(linkText, sourcePath, e.ctrlKey || e.metaKey);
+                            app?.workspace?.openLinkText?.(linkText, sourcePath, (e.ctrlKey || e.metaKey) ? 'tab' : undefined);
                         });
                         a.addEventListener('mouseover', (e: MouseEvent) => {
                             if (!linkText) return;
@@ -1462,7 +1457,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                                 if (!(e.ctrlKey || e.metaKey)) return;
                                 e.preventDefault();
                                 e.stopPropagation();
-                                app?.workspace?.openLinkText?.(linkText, sourcePath, true);
+                                app?.workspace?.openLinkText?.(linkText, sourcePath, 'tab');
                             };
                             preview.addEventListener('mousedown', openExcalidraw);
                             preview.addEventListener('click', openExcalidraw);
@@ -1495,7 +1490,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                             audio.addEventListener('mousedown', (e: MouseEvent) => {
                                 if (!(e.ctrlKey || e.metaKey)) return;
                                 e.preventDefault();
-                                app?.workspace?.openLinkText?.(linkText, sourcePath, true);
+                                app?.workspace?.openLinkText?.(linkText, sourcePath, 'tab');
                             });
                             return audio;
                         }
@@ -1521,7 +1516,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                             if (!(e.ctrlKey || e.metaKey)) return;
                             e.preventDefault();
                             e.stopPropagation();
-                            app?.workspace?.openLinkText?.(linkText, sourcePath, true);
+                            app?.workspace?.openLinkText?.(linkText, sourcePath, 'tab');
                         };
                         img.addEventListener('mousedown', openImage);
                         img.addEventListener('click', openImage);
