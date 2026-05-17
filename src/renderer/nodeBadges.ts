@@ -1355,6 +1355,13 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                 entry.usedInCycle = true;
                 applyTextOverlayBaseStyle(entry.el);
                 badgeContainer.appendChild(entry.el);
+                // 旧数据可能只有 manualWidthModel、没有 manualHeightModel。
+                // 缓存命中时也要用 overlay 真实高度同步一次节点尺寸，否则会落回
+                // stylesheet 的纯文本估算高度，导致旧宽度锁定节点被压扁。
+                if (Number(node.data('manualWidthModel') || 0) > 0
+                    || Number(node.data('manualHeightModel') || 0) > 0) {
+                    measureAndSizePending.push({ node, entry });
+                }
             } else {
                 // 缓存未命中：创建新 overlay
                 const overlayEl = document.createElement('div');
