@@ -8,6 +8,9 @@ export const wrapForImageToolkit = (img: HTMLElement): HTMLElement => {
     const wrap = document.createElement('div');
     wrap.className = 'modal-content';
     wrap.style.display = 'contents';
+    // .modal-content 在 Obsidian 里带固定 font-size,会把子元素 em 单位锁死,
+    // 导致图片 width:Xem 不跟随 overlay zoom 缩放。强制继承外层 overlay 字号。
+    wrap.style.fontSize = 'inherit';
     wrap.appendChild(img);
     return wrap;
 };

@@ -5,6 +5,8 @@ import { darkenColor, hexToRgba, isModernThemeStyle, normalizeHexColor } from '.
 import { estimateWrappedLines } from './renderPipeline';
 import { renderExcalidrawPreview, wrapForImageToolkit } from './embedPreview';
 
+const TEXT_MD_OVERLAY_RENDER_VERSION = 2;
+
 function middleEllipsizeToWidth(text: string, maxWidth: number, ctx: CanvasRenderingContext2D | null, font: string): string {
 	const fullText = String(text || '');
 	if (!fullText || maxWidth <= 0 || !ctx) return fullText;
@@ -1270,7 +1272,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                 || node.id?.()
                 || ''
             );
-            const cacheKey = `${sourcePath}||${nodeCacheId}||${rawSource}`;
+            const cacheKey = `${TEXT_MD_OVERLAY_RENDER_VERSION}||${sourcePath}||${nodeCacheId}||${rawSource}`;
             const isRootTextNode = !!data.isRoot && !data.isFreeNode;
             const isFirstLevelTextNode = !!data.isFirstLevelNode && !data.isRoot && !data.isFreeNode;
             // 与 stylesheet.ts 中 'node[!isRoot][!isFirstLevelNode][!isFreeNode][!isEmbed][!isStandaloneText][!isCurrentFile]'
@@ -1282,13 +1284,13 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                 && !data.isFreeNode
                 && !data.isStandaloneText
                 && !data.isCurrentFile;
+            const overlayFontSize = isRootTextNode
+                ? this.ROOT_NODE_FONT_SIZE
+                : (isFirstLevelTextNode ? this.FIRST_LEVEL_NODE_FONT_SIZE : 20);
             const applyTextOverlayBaseStyle = (overlayEl: HTMLElement) => {
                 const overlayDisplay = isRootTextNode ? 'flex' : 'block';
                 // padding 用 em,跟随当前 font-size(== base * zoom)等比伸缩
                 const overlayPadding = isRootTextNode ? '0 0.923em' : '1.2em 1.2em 0.6em 1.2em';
-                const overlayFontSize = isRootTextNode
-                    ? this.ROOT_NODE_FONT_SIZE
-                    : (isFirstLevelTextNode ? this.FIRST_LEVEL_NODE_FONT_SIZE : 20);
                 const overlayFontWeight = isRootTextNode
                     ? `${this.ROOT_NODE_FONT_WEIGHT}`
                     : (isFirstLevelTextNode ? `${this.FIRST_LEVEL_NODE_FONT_WEIGHT}` : '500');
@@ -1393,6 +1395,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                 const normalizedSource = rawSource.replace(/\r\n?/g, '\n');
                 // 粗糙渲染：用 DOM API 构建，避免大量字符串拼接
                 const applyRoughInlineMarkdown = (container: HTMLElement, input: string): void => {
+                    const toOverlayEm = (px: number): string => `${Number((px / overlayFontSize).toFixed(4))}em`;
                     const createExternalLink = (rawUrl: string, text?: string): HTMLAnchorElement => {
                         const a = document.createElement('a');
                         const href = rawUrl.startsWith('www.') ? `https://${rawUrl}` : rawUrl;
@@ -1507,9 +1510,23 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                             const height = sizeMatch[2] !== undefined
                                 ? Math.max(1, Math.min(4096, Number(sizeMatch[2])))
                                 : null;
-                            img.style.width = `${width}px`;
+                            img.style.width = toOverlayEm(width);
+                            img.style.maxWidth = 'none';
                             if (height !== null) {
-                                img.style.height = `${height}px`;
+                                img.style.height = toOverlayEm(height);
+                                img.style.maxHeight = 'none';
+                            }
+                        } else {
+                            const applyNaturalWidth = () => {
+                                const naturalWidth = Math.max(1, Math.min(4096, img.naturalWidth || 0));
+                                if (naturalWidth > 0) {
+                                    img.style.width = toOverlayEm(naturalWidth);
+                                }
+                            };
+                            if (img.complete) {
+                                applyNaturalWidth();
+                            } else {
+                                img.addEventListener('load', applyNaturalWidth, { once: true });
                             }
                         }
                         const openImage = (e: MouseEvent) => {
