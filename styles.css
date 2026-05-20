@@ -1742,15 +1742,15 @@ align-items: center;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    background: #27313b;
-    padding: 20px;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    border: 1px solid #3e4a57;
     z-index: 1000;
     display: flex;
     align-items: center;
     gap: 10px;
+    padding: 20px;
+    background: #1a1f2e;
+    border: 1px solid #2a3f5f;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     pointer-events: none;
 }
 
@@ -1758,10 +1758,10 @@ align-items: center;
 .zk-spinner {
     width: 20px;
     height: 20px;
-    border: 3px solid #3e4a57;
-    border-top-color: #00a8ff;
+    border: 2px solid #2a3f5f;
+    border-top: 2px solid #00a8ff;
     border-radius: 50%;
-    animation: zk-spin 0.8s linear infinite;
+    animation: zk-spin 1s linear infinite;
 }
 
 @keyframes zk-spin {
@@ -1772,13 +1772,13 @@ align-items: center;
 
 /* MOC 选择器样式优化 */
 .zk-moc-selector {
-    margin-left: 10px;
+    margin-left: 8px;
     padding: 4px 8px;
-    border-radius: 4px;
     border: 1px solid #2a3f5f;
-    background-color: #1a1f2e;
+    border-radius: 4px;
+    background: #1a1f2e;
     color: #e0e0e0;
-    font-size: 12px;
+    font-size: 14px;
     min-width: 120px;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -2385,48 +2385,6 @@ align-items: center;
     justify-content: center;
     z-index: 1000;
     transition: opacity 0.2s ease-in-out;
-}
-
-.zk-loading-indicator {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 20px;
-    background: #1a1f2e;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    border: 1px solid #2a3f5f;
-}
-
-.zk-spinner {
-    width: 20px;
-    height: 20px;
-    border: 2px solid #2a3f5f;
-    border-top: 2px solid #00a8ff;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-
-/* MOC 选择器样式 */
-.zk-moc-selector {
-    margin-left: 8px;
-    padding: 4px 8px;
-    border-radius: 4px;
-    border: 1px solid #2a3f5f;
-    background: #1a1f2e;
-    color: #e0e0e0;
-    font-size: 14px;
-    min-width: 120px;
-}
-
-.zk-moc-hint {
-    color: #808080;
-    margin-left: 4px;
 }
 
 .zk-moc-file-input {
