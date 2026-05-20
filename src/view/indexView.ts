@@ -7,7 +7,7 @@ import { AddFreeNodeModal } from "src/modal/addFreeNodeModal";
 import { expandGraphModal } from "src/modal/expandGraphModal";
 import { MOCSelectorModal } from "src/modal/mocSelectorModal";
 import { NoteSearchModal } from "src/modal/noteSearchModal";
-import { convertMOCToZKNodes, createMOCTreeNode, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX, MOCParseResult, MOCTreeNode, parseMOCStructure, saveMOCStructure, stripMocSuffix } from "src/utils/utils";
+import { convertMOCToZKNodes, createMOCTreeNode, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX, MOCParseResult, MOCTreeNode, NODE_FLAG_MANUALLY_MOVED, parseMOCStructure, saveMOCStructure, stripMocSuffix } from "src/utils/utils";
 import { FolderDrawer } from "src/view/folderDrawer";
 import { ScratchpadDrawer } from "src/view/scratchpadDrawer";
 import { ScratchpadEntry } from "src/scratch/scratchpadManager";
@@ -2146,6 +2146,11 @@ cy.fit(null, 40);
                                         x: Math.round(pos.x * 100) / 100,
                                         y: Math.round(pos.y * 100) / 100
                                     };
+                                    // 标记为用户手动拖动过, 防止后续 auto 收紧时被覆盖
+                                    const treeNode = this.findNodeInTree(mocData.nodes, nodeID);
+                                    if (treeNode) {
+                                        treeNode.extBitMap = ((treeNode.extBitMap || 0) | NODE_FLAG_MANUALLY_MOVED) & 0xff;
+                                    }
                                 }
                                 for (const { nodeId, groupId } of groupLeaves) {
                                     const group = mocData.groups?.find((g: any) => g.id === groupId);
@@ -2752,6 +2757,20 @@ cy.fit(null, 40);
 
                     // 刷新视图
                     await this.refreshBranchMermaid();
+
+                    // auto 布局下,删除子节点后让剩余兄弟自动收紧
+                    if (!node.isCrossDomain) {
+                        const idStr = String(node.IDStr || '');
+                        const dotIdx = idStr.lastIndexOf('.');
+                        if (dotIdx > 0) {
+                            const parentId = idStr.substring(0, dotIdx);
+                            if (parentId && this.isNodeAutoLayout(parentId)) {
+                                await this.relayoutAutoLayoutSiblings(parentId, {
+                                    ignoreSavedPositionsForIds: this.collectAutoLayoutSubtreeIds(parentId)
+                                });
+                            }
+                        }
+                    }
 
                     new Notice(t("Node deleted").replace("{id}", String(node.ID)));
                 }
@@ -6376,10 +6395,22 @@ cy.fit(null, 40);
             await this.relayoutAutoLayoutSiblings(suggestedID);
         } else if (placeholderInfo?.parentNodeId) {
             const parentPreset = this.getPresetForChildren(placeholderInfo.parentNodeId);
-            if (parentPreset !== 'top-down') {
-                await this.relayoutAutoLayoutSiblings(placeholderInfo.parentNodeId, {
-                    ignoreSavedPositionsForIds: this.collectAutoLayoutSubtreeIds(placeholderInfo.parentNodeId, suggestedID)
-                });
+            // Enter 兄弟创建已经通过 pushAutoSiblingsAfterReference 完成精确推开,
+            // 此时再 relayout 会把"未被推开的参考节点"按 cursor 居中导致它往上跳;
+            // 因此仅在没有手动 shift 时才处理 (例如 Tab 新建子节点)。
+            if (parentPreset !== 'top-down' && placeholderInfo?.shiftedNodePositions === undefined) {
+                // Tab 创建子节点:children 已沿 stackAxis 堆叠在 parent 下方,
+                // 不要把 children 反向居中到 parent 两侧 (会顶到上方兄弟子树),
+                // 而是把 parent 挪到 children 投影中点,后置同向兄弟一起推下去。
+                const shifted = await this.shiftParentToChildrenCenter(placeholderInfo.parentNodeId);
+                if (mocFile && Object.keys(shifted).length > 0) {
+                    await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
+                        if (!mocData.nodePositions) mocData.nodePositions = {};
+                        for (const [id, pos] of Object.entries(shifted)) {
+                            mocData.nodePositions[id] = pos;
+                        }
+                    });
+                }
             }
         }
 
@@ -6487,10 +6518,22 @@ cy.fit(null, 40);
             await this.relayoutAutoLayoutSiblings(suggestedID);
         } else if (placeholderInfo?.parentNodeId) {
             const parentPreset = this.getPresetForChildren(placeholderInfo.parentNodeId);
-            if (parentPreset !== 'top-down') {
-                await this.relayoutAutoLayoutSiblings(placeholderInfo.parentNodeId, {
-                    ignoreSavedPositionsForIds: this.collectAutoLayoutSubtreeIds(placeholderInfo.parentNodeId, suggestedID)
-                });
+            // Enter 兄弟创建已经通过 pushAutoSiblingsAfterReference 完成精确推开,
+            // 此时再 relayout 会把"未被推开的参考节点"按 cursor 居中导致它往上跳;
+            // 因此仅在没有手动 shift 时才处理 (例如 Tab 新建子节点)。
+            if (parentPreset !== 'top-down' && placeholderInfo?.shiftedNodePositions === undefined) {
+                // Tab 创建子节点:children 已沿 stackAxis 堆叠在 parent 下方,
+                // 不要把 children 反向居中到 parent 两侧 (会顶到上方兄弟子树),
+                // 而是把 parent 挪到 children 投影中点,后置同向兄弟一起推下去。
+                const shifted = await this.shiftParentToChildrenCenter(placeholderInfo.parentNodeId);
+                if (mocFile && Object.keys(shifted).length > 0) {
+                    await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
+                        if (!mocData.nodePositions) mocData.nodePositions = {};
+                        for (const [id, pos] of Object.entries(shifted)) {
+                            mocData.nodePositions[id] = pos;
+                        }
+                    });
+                }
             }
         }
 
@@ -6818,20 +6861,84 @@ cy.fit(null, 40);
         }
         const referencePos = referenceId ? this.getNodePositionForLayout(referenceId) : null;
 
+        let initial: { x: number; y: number };
         if (referencePos && referenceId) {
             const siblingGap = this.computeSiblingSlotGap(referenceId, stackAxis);
-            return {
+            initial = {
                 x: referencePos.x + stackAxis.x * siblingGap,
                 y: referencePos.y + stackAxis.y * siblingGap
             };
+        } else {
+            const dirVec = DIR_VECTORS[direction];
+            const directionalDistance = this.getAutoChildDirectionalDistance(parentNodeId, direction);
+            initial = {
+                x: parentPos.x + dirVec.x * directionalDistance,
+                y: parentPos.y + dirVec.y * directionalDistance
+            };
         }
 
-        const dirVec = DIR_VECTORS[direction];
-        const directionalDistance = this.getAutoChildDirectionalDistance(parentNodeId, direction);
-        return {
-            x: parentPos.x + dirVec.x * directionalDistance,
-            y: parentPos.y + dirVec.y * directionalDistance
-        };
+        // 防止占位符落在表兄/其他子树节点上,沿 stackAxis 推开直到无碰撞
+        return this.avoidPlaceholderCollision(initial, stackAxis, parentNodeId, childIds, referenceId);
+    }
+
+    /**
+     * 检测占位符位置是否与现有可见节点发生 AABB 碰撞;
+     * 若有则沿 stackAxis 方向递推,直到无碰撞或达到上限
+     */
+    private avoidPlaceholderCollision(
+        initial: { x: number; y: number },
+        stackAxis: { x: number; y: number },
+        parentNodeId: string,
+        sameParentChildIds: string[],
+        referenceId?: string
+    ): { x: number; y: number } {
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        if (!cy) return initial;
+
+        const axisLen = Math.hypot(stackAxis.x, stackAxis.y);
+        if (axisLen < 1e-6) return initial;
+
+        // 占位符可能尺寸 (与 getAutoChildDirectionalDistance 中的 240/90 保持一致)
+        const phW = 240;
+        const phH = 90;
+        const pad = 12;
+
+        // 同父兄弟会被 pushAutoSiblingsAfterReference 处理,且参考节点本身按 slotGap 已分隔
+        const ignore = new Set<string>([parentNodeId]);
+        if (referenceId) ignore.add(referenceId);
+        sameParentChildIds.forEach((id) => ignore.add(id));
+
+        const obstacles: Array<{ x: number; y: number; w: number; h: number }> = [];
+        cy.$('node').forEach((node: any) => {
+            const data = node.data();
+            if (data?.isGroup || data?.isPlaceholder) return;
+            const original = data?.originalNode;
+            const nid = original?.IDStr || original?.ID;
+            if (!nid || ignore.has(nid)) return;
+            const p = node.position();
+            obstacles.push({
+                x: p.x,
+                y: p.y,
+                w: Math.max(Number(node.outerWidth?.() ?? 0), 80),
+                h: Math.max(Number(node.outerHeight?.() ?? 0), 44)
+            });
+        });
+        if (obstacles.length === 0) return initial;
+
+        const stepGap = 56;
+        const stepX = (stackAxis.x / axisLen) * stepGap;
+        const stepY = (stackAxis.y / axisLen) * stepGap;
+
+        let cur = { x: initial.x, y: initial.y };
+        for (let i = 0; i < 80; i++) {
+            const hit = obstacles.find((o) =>
+                Math.abs(cur.x - o.x) < (phW + o.w) / 2 + pad
+                && Math.abs(cur.y - o.y) < (phH + o.h) / 2 + pad
+            );
+            if (!hit) return cur;
+            cur = { x: cur.x + stepX, y: cur.y + stepY };
+        }
+        return cur;
     }
 
     private pushAutoSiblingsAfterReference(
@@ -6899,6 +7006,66 @@ cy.fit(null, 40);
             });
         });
         return shiftedPositions;
+    }
+
+    /**
+     * Tab 新建子节点后:children 已沿 stackAxis 堆叠在 parent 下方,
+     * 把 parent 沿 axis 挪到 children 投影中点; children 不动,避免反向顶到上方兄弟子树.
+     * 同时把 parent 后置同向兄弟一起推下去保持间距.
+     */
+    private async shiftParentToChildrenCenter(parentNodeId: string): Promise<Record<string, { x: number; y: number }>> {
+        const childIds = this.getChildNodeIds(parentNodeId);
+        if (childIds.length === 0) return {};
+
+        const parentPos = this.getNodePositionForLayout(parentNodeId);
+        if (!parentPos) return {};
+
+        const preset = this.getPresetForChildren(parentNodeId);
+        const referenceDir = this.getNodeDirectionFromParent(childIds[0], preset);
+        const axis = this.getAutoStackAxis(referenceDir, preset);
+
+        let minProj = Infinity;
+        let maxProj = -Infinity;
+        for (const childId of childIds) {
+            if (this.getNodeDirectionFromParent(childId, preset) !== referenceDir) continue;
+            const cp = this.getNodePositionForLayout(childId);
+            if (!cp) continue;
+            const proj = (cp.x - parentPos.x) * axis.x + (cp.y - parentPos.y) * axis.y;
+            if (proj < minProj) minProj = proj;
+            if (proj > maxProj) maxProj = proj;
+        }
+        if (minProj === Infinity) return {};
+
+        const centerProj = (minProj + maxProj) / 2;
+        if (Math.abs(centerProj) < 1) return {};
+
+        const deltaX = axis.x * centerProj;
+        const deltaY = axis.y * centerProj;
+
+        const grandparentId = parentNodeId.split('.').slice(0, -1).join('.');
+        let shifted: Record<string, { x: number; y: number }> = {};
+        if (grandparentId) {
+            shifted = this.pushAutoSiblingsAfterReference(grandparentId, parentNodeId, centerProj);
+        }
+
+        const newParentPos = { x: parentPos.x + deltaX, y: parentPos.y + deltaY };
+        shifted[parentNodeId] = {
+            x: Math.round(newParentPos.x * 100) / 100,
+            y: Math.round(newParentPos.y * 100) / 100
+        };
+
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        if (cy) {
+            cy.batch(() => {
+                const cyNode: any = cy.$('node').filter((node: any) => {
+                    const o = node.data('originalNode');
+                    return o && (o.IDStr === parentNodeId || o.ID === parentNodeId);
+                }).first();
+                if (cyNode && cyNode.length > 0) cyNode.position(newParentPos);
+            });
+        }
+
+        return shifted;
     }
 
     private getPrimaryMocRootId(): string | null {
@@ -7035,6 +7202,7 @@ cy.fit(null, 40);
             compactVisibleNodes?: boolean;
             persistPositions?: boolean;
             ignoreSavedPositionsForIds?: string[];
+            forceResetManuallyMoved?: boolean;
         } = {}
     ): Promise<void> {
         if (!this.isNodeAutoLayout(parentNodeId) || !this.branchRenderer) {
@@ -7149,7 +7317,23 @@ cy.fit(null, 40);
             realMocRootIds,
             nodePositions: mocData.nodePositions || {},
             ignoreSavedPositionsForIds: (() => {
-                const explicit = relayoutOptions.ignoreSavedPositionsForIds?.filter((id) => id !== relayoutRootId);
+                // 用户手动拖动过的节点必须保留其保存位置 (除非显式 force 重置)
+                const bitMapByID = new Map<string, number>();
+                const collectBitMap = (ns: MOCTreeNode[]) => {
+                    for (const n of ns) {
+                        if (typeof n.extBitMap === 'number' && n.extBitMap !== 0) {
+                            bitMapByID.set(n.nodeID, n.extBitMap & 0xff);
+                        }
+                        if (n.children?.length) collectBitMap(n.children);
+                    }
+                };
+                collectBitMap(mocData.nodes);
+                const isManuallyMoved = (nid: string) =>
+                    !relayoutOptions.forceResetManuallyMoved
+                    && ((bitMapByID.get(nid) || 0) & NODE_FLAG_MANUALLY_MOVED) !== 0;
+                const explicit = relayoutOptions.ignoreSavedPositionsForIds
+                    ?.filter((id) => id !== relayoutRootId)
+                    .filter((id) => !isManuallyMoved(id));
                 if (relayoutOptions.compactVisibleNodes) {
                     const set = new Set(Object.keys(nodes).filter((nodeId) => {
                         if (nodeId === relayoutRootId) return false;
@@ -7157,6 +7341,7 @@ cy.fit(null, 40);
                         if (relayoutOptions.collapsedNodeIds?.includes(nodeId)) return false;
                         const parentId = parentById[nodeId];
                         if (parentId && realMocRootIds.has(parentId)) return false;
+                        if (isManuallyMoved(nodeId)) return false;
                         return true;
                     }));
                     explicit?.forEach((id) => set.add(id));

@@ -107,6 +107,20 @@ export class MermaidSerializer {
         if (data.nodeLayoutPresets && Object.keys(data.nodeLayoutPresets).length > 0) {
             metadata.node_layout_presets = data.nodeLayoutPresets;
         }
+        // 从节点级 extBitMap 收集为 metadata.node_ext_bit_map（Mermaid 无法在节点字面量中存额外字段）
+        const collectedBitMap: Record<string, number> = {};
+        const collectBitMap = (ns: MOCTreeNode[]) => {
+            for (const n of ns) {
+                if (typeof n.extBitMap === 'number' && n.extBitMap !== 0) {
+                    collectedBitMap[n.nodeID] = n.extBitMap & 0xff;
+                }
+                if (n.children?.length) collectBitMap(n.children);
+            }
+        };
+        collectBitMap(data.nodes);
+        if (Object.keys(collectedBitMap).length > 0) {
+            metadata.node_ext_bit_map = collectedBitMap;
+        }
 
         const jsonStr = JSON.stringify(metadata);
         return `%% ext:${jsonStr} %%`;

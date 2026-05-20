@@ -17,6 +17,7 @@ function deepCopyMOCTreeNode(node: MOCTreeNode): MOCTreeNode {
         relationText: node.relationText,
     };
     if (node.alias !== undefined) copy.alias = node.alias;
+    if (typeof node.extBitMap === 'number' && node.extBitMap !== 0) copy.extBitMap = node.extBitMap & 0xff;
     if (node.isArrowRelation) copy.isArrowRelation = node.isArrowRelation;
     if (node.arrowSource !== undefined) copy.arrowSource = node.arrowSource;
     if (node.arrowTarget !== undefined) copy.arrowTarget = node.arrowTarget;

@@ -13,6 +13,7 @@ export type MOCNodeType = 'file' | 'text' | 'embed';
 export interface MOCTreeNode {
     nodeID: string;             // 节点ID，如 "a", "a.1", "a.1.a"
     nodeType: MOCNodeType;      // 节点类型
+    extBitMap?: number;         // 节点扩展位图 (8位, 0-255); 见 NODE_FLAG_* 常量
     target: string;             // file/embed: wiki 链接目标；text: 原始文本内容
     alias?: string;             // 显示别名（仅 file 类型 + [[link|alias]] 语法；与 target 不同时才有值）
     depth: number;              // 缩进深度（用于确定父子关系）
@@ -49,6 +50,7 @@ export function stripMocSuffix(name: string): string {
 export function createMOCTreeNode(opts: {
     nodeID: string;
     nodeType?: MOCNodeType;
+    extBitMap?: number;
     target?: string;
     alias?: string;
     depth?: number;
@@ -69,6 +71,7 @@ export function createMOCTreeNode(opts: {
         relationText: opts.relationText ?? '',
     };
     if (opts.alias !== undefined && opts.alias !== node.target) node.alias = opts.alias;
+    if (opts.extBitMap !== undefined && opts.extBitMap !== 0) node.extBitMap = opts.extBitMap & 0xff;
     if (opts.isArrowRelation) node.isArrowRelation = opts.isArrowRelation;
     if (opts.arrowSource !== undefined) node.arrowSource = opts.arrowSource;
     if (opts.arrowTarget !== undefined) node.arrowTarget = opts.arrowTarget;
@@ -86,6 +89,9 @@ export interface ReverseRelation {
     targetID: string;           // 目标节点ID
     relationText: string;       // 关系描述
 }
+
+// 节点扩展位图标志位 (存于 MOCTreeNode.extBitMap, 0-255 的 8 位整数)
+export const NODE_FLAG_MANUALLY_MOVED = 1 << 0; // bit0: 用户手动拖动过
 
 // MOC 解析结果
 export interface MOCParseResult {

@@ -7,6 +7,7 @@ import { LayoutPreset, normalizeLayoutPreset, normalizeNodeLayoutPresets } from 
 interface JsonNodeData {
     nodeID: string;
     nodeType: MOCNodeType;      // 'file' | 'text' | 'embed'
+    extBitMap?: number;         // 节点扩展位图 (8位); 见 NODE_FLAG_* 常量
     target: string;             // file/embed: wiki link；text: 原始文本
     alias?: string;             // 仅 file + [[link|alias]] 时存在
     depth: number;
@@ -59,6 +60,7 @@ function normalizeNode(data: any): JsonNodeData {
     return {
         nodeID: data.nodeID,
         nodeType: data.nodeType,
+        ...(typeof data.extBitMap === 'number' && data.extBitMap !== 0 ? { extBitMap: data.extBitMap & 0xff } : {}),
         target: data.target ?? '',
         ...(data.alias ? { alias: data.alias } : {}),
         depth: data.depth,
@@ -114,6 +116,7 @@ function resolveJsonNode(app: App, data: JsonNodeData, basePath: string, resolve
     return createMOCTreeNode({
         nodeID: data.nodeID,
         nodeType: data.nodeType,
+        extBitMap: data.extBitMap,
         target: data.target,
         alias: data.alias,
         depth: data.depth,
@@ -133,6 +136,7 @@ function treeNodeToJson(node: MOCTreeNode): JsonNodeData {
         relationText: node.relationText || '',
     };
     if (node.alias !== undefined && node.alias !== node.target) d.alias = node.alias;
+    if (typeof node.extBitMap === 'number' && node.extBitMap !== 0) d.extBitMap = node.extBitMap & 0xff;
     return d;
 }
 
@@ -177,6 +181,19 @@ export function parseMOCJson(content: string, filePath: string, app: App): MOCPa
     // 兼容读取：旧 shape (wikiLink/displayText/isTextOnly/isEmbed) 自动迁移到新 shape
     const normalized = (json.nodes || []).map(normalizeNode);
     const nodes = normalized.map(n => resolveJsonNode(app, n, basePath, resolvedFileCache));
+
+    // 兼容读取：旧版顶层 nodeExtBitMap 映射 → 注入到每个节点的 extBitMap
+    const legacyBitMap = (json as any).nodeExtBitMap as Record<string, number> | undefined;
+    if (legacyBitMap && Object.keys(legacyBitMap).length > 0) {
+        const apply = (ns: MOCTreeNode[]) => {
+            for (const n of ns) {
+                const v = legacyBitMap[n.nodeID];
+                if (typeof v === 'number' && v !== 0) n.extBitMap = v & 0xff;
+                if (n.children?.length) apply(n.children);
+            }
+        };
+        apply(nodes);
+    }
 
     const reverseRelations = new Map<string, ReverseRelation>();
     for (const rel of (json.reverseRelations || [])) {
