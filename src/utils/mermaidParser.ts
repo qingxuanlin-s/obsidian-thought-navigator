@@ -288,6 +288,7 @@ export class MermaidParser {
         nodeLayoutOverrides?: Record<string, 'auto' | 'free'>;
         layoutPreset?: LayoutPreset;
         nodeLayoutPresets?: Record<string, LayoutPreset>;
+        nodeExtBitMap?: Record<string, number>; // 内部中转：metadata→节点级 extBitMap
     } {
         const defaultMetadata = {
             nodePositions: {} as Record<string, { x: number; y: number }>,
@@ -303,7 +304,8 @@ export class MermaidParser {
             nodeLayoutStyle: undefined as ('free' | 'auto' | undefined),
             nodeLayoutOverrides: undefined as (Record<string, 'auto' | 'free'> | undefined),
             layoutPreset: undefined as (LayoutPreset | undefined),
-            nodeLayoutPresets: undefined as (Record<string, LayoutPreset> | undefined)
+            nodeLayoutPresets: undefined as (Record<string, LayoutPreset> | undefined),
+            nodeExtBitMap: undefined as (Record<string, number> | undefined)
         };
         
         // 匹配元数据注释：%% ext:{JSON} %%
@@ -334,7 +336,8 @@ export class MermaidParser {
                 nodeLayoutStyle: metadata.node_layout_style || undefined,
                 nodeLayoutOverrides: metadata.node_layout_overrides || undefined,
                 layoutPreset: metadata.layout_preset ? normalizeLayoutPreset(metadata.layout_preset) : undefined,
-                nodeLayoutPresets: normalizeNodeLayoutPresets(metadata.node_layout_presets)
+                nodeLayoutPresets: normalizeNodeLayoutPresets(metadata.node_layout_presets),
+                nodeExtBitMap: metadata.node_ext_bit_map || undefined
             };
         } catch (e) {
             this.warnings.push({
@@ -517,6 +520,19 @@ export class MermaidParser {
         // 提取 filePath 的目录部分作为 basePath，用于解析 wikilink
         const basePath = filePath.includes('/') ? filePath.substring(0, filePath.lastIndexOf('/')) : '';
         const mocNodes = await this.buildMOCTreeNodes(nodesMap, validEdges, basePath);
+
+        // 将旧版 metadata 中的 node_ext_bit_map 注入到节点级 extBitMap
+        if (metadata.nodeExtBitMap && Object.keys(metadata.nodeExtBitMap).length > 0) {
+            const bitMap = metadata.nodeExtBitMap;
+            const apply = (ns: MOCTreeNode[]) => {
+                for (const n of ns) {
+                    const v = bitMap[n.nodeID];
+                    if (typeof v === 'number' && v !== 0) n.extBitMap = v & 0xff;
+                    if (n.children?.length) apply(n.children);
+                }
+            };
+            apply(mocNodes);
+        }
 
         // 构建反向关系 Map
         // 将所有边都添加到 reverseRelations 中（包括无标签的边）
