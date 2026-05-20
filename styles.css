@@ -5794,30 +5794,18 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
   border-top-color: rgba(92, 101, 128, 0.16);
 }
 
-.zk-theme-light .zk-focus-link-chip {
-  background: rgba(248, 250, 253, 0.78);
-  border-color: rgba(92, 101, 128, 0.18);
-}
-
-.zk-theme-light .zk-focus-link-chip:hover {
-  background: rgba(239, 243, 250, 0.98);
-}
-
-.zk-theme-light .zk-local-mode-switch,
+/* 注:.zk-focus-link-chip / .zk-local-mode-* 的视觉值由文件末尾的硬编码版本覆盖,
+   此处的中间 token 版本已被后续规则完全 shadow,故移除以避免歧义。
+   .zk-local-section-actions > .clickable-icon:hover 与 .zk-local-section-select / file
+   的 hover 背景仍依赖此分组,故保留。 */
 .zk-theme-light .zk-local-section-select,
 .zk-theme-light .zk-local-section-file {
   background: var(--zk-control-bg);
   border-color: var(--zk-control-border);
 }
 
-.zk-theme-light .zk-local-mode-btn:hover,
 .zk-theme-light .zk-local-section-actions > .clickable-icon:hover {
   background: var(--zk-control-bg-hover);
-}
-
-.zk-theme-light .zk-local-mode-btn.is-active {
-  background: color-mix(in srgb, var(--interactive-accent) 76%, #f6f8fc 24%);
-  color: #ffffff;
 }
 
 .zk-theme-light .zk-local-section-count,
@@ -5907,25 +5895,8 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
   color: var(--zk-text);
 }
 
-.zk-theme-light .zk-local-mode-switch {
-  background: #e8edf6;
-  border-color: rgba(92, 101, 128, 0.22);
-}
-
-.zk-theme-light .zk-local-mode-btn {
-  color: #3f4858;
-}
-
-.zk-theme-light .zk-local-mode-btn:hover {
-  color: var(--zk-text);
-  background: rgba(92, 101, 128, 0.10);
-}
-
-.zk-theme-light .zk-local-mode-btn.is-active {
-  color: #ffffff;
-  background: #7d5fd6;
-  box-shadow: 0 1px 4px rgba(54, 42, 100, 0.22);
-}
+/* 注:.zk-local-mode-switch / btn / btn:hover / btn.is-active 的中间版本
+   已被下方 .zk-view-content.zk-theme-light 同名规则完全覆盖,故移除。 */
 
 .zk-theme-light .zk-focus-radial-canvas,
 .zk-view-content.zk-theme-light .zk-focus-radial-canvas {
