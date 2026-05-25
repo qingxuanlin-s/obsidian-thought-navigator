@@ -6034,3 +6034,58 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 .zk-theme-light .zk-focus-link-chip-outlink {
   border-left-color: rgba(12, 152, 168, 0.72);
 }
+
+/* Changelog modal */
+.zk-changelog-modal {
+  padding: 4px 8px 0;
+}
+.zk-changelog-modal .zk-changelog-header {
+  margin-bottom: 12px;
+}
+.zk-changelog-modal .zk-changelog-header h2 {
+  margin: 0 0 4px;
+}
+.zk-changelog-modal .zk-changelog-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.zk-changelog-modal .zk-changelog-list {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.zk-changelog-modal .zk-changelog-entry {
+  padding: 10px 0;
+  border-top: 1px solid var(--background-modifier-border);
+}
+.zk-changelog-modal .zk-changelog-entry:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+.zk-changelog-modal .zk-changelog-entry-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.zk-changelog-modal .zk-changelog-version {
+  font-weight: 600;
+  color: var(--text-accent);
+}
+.zk-changelog-modal .zk-changelog-date {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.zk-changelog-modal .zk-changelog-highlights {
+  margin: 0;
+  padding-left: 22px;
+}
+.zk-changelog-modal .zk-changelog-highlights li {
+  margin-bottom: 4px;
+  line-height: 1.5;
+}
+.zk-changelog-modal .zk-changelog-footer {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+}
