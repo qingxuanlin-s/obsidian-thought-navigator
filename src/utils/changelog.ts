@@ -12,6 +12,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
     {
+        version: '0.1.4',
+        date: '2026-05-25',
+        highlights: [
+            {
+                zh: '修复 Cmd+V 误把 Scratchpad 顶部条目当外部内容粘出:统一调度到外部剪贴板 > 内部节点 > Scratchpad 的优先级',
+                en: 'Fix Cmd+V pasting Scratchpad top entry instead of external clipboard: unified priority is now external clipboard > internal nodes > Scratchpad',
+            },
+        ],
+    },
+    {
         version: '0.1.3',
         date: '2026-05-25',
         highlights: [
