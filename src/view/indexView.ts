@@ -147,7 +147,6 @@ export class ZKIndexView extends FileView {
         suggestedNodeId?: string;  // 预生成的节点 ID
         childNodeId?: string;  // 需要移动到此节点下的子节点 ID（用于创建父节点时）
         layoutStyle?: 'free' | 'auto';
-        shiftedNodePositions?: Record<string, { x: number; y: number }>;
     }> = new Map();
     private readonly PLACEHOLDER_EXPIRY_MS = 10 * 60 * 1000;
 
@@ -434,7 +433,6 @@ export class ZKIndexView extends FileView {
             suggestedNodeId?: string;
             childNodeId?: string;
             layoutStyle?: 'free' | 'auto';
-            shiftedNodePositions?: Record<string, { x: number; y: number }>;
         } = {}
     ): void {
         const mocPath = this.plugin.settings.mocCurrentFile || '__graph__';
@@ -450,7 +448,6 @@ export class ZKIndexView extends FileView {
             suggestedNodeId: extra.suggestedNodeId,
             childNodeId: extra.childNodeId,
             layoutStyle: extra.layoutStyle,
-            shiftedNodePositions: extra.shiftedNodePositions
         });
     }
 
@@ -2758,16 +2755,14 @@ cy.fit(null, 40);
                     // 刷新视图
                     await this.refreshBranchMermaid();
 
-                    // auto 布局下,删除子节点后让剩余兄弟自动收紧
+                    // 声明式 reflow: 删除后整棵树重排, 回收空缺。
                     if (!node.isCrossDomain) {
                         const idStr = String(node.IDStr || '');
                         const dotIdx = idStr.lastIndexOf('.');
                         if (dotIdx > 0) {
                             const parentId = idStr.substring(0, dotIdx);
                             if (parentId && this.isNodeAutoLayout(parentId)) {
-                                await this.relayoutAutoLayoutSiblings(parentId, {
-                                    ignoreSavedPositionsForIds: this.collectAutoLayoutSubtreeIds(parentId)
-                                });
+                                await this.reflowAutoLayout(parentId);
                             }
                         }
                     }
@@ -2931,8 +2926,7 @@ cy.fit(null, 40);
                 await this.savePlaceholderLayoutPositions(
                     mocFile,
                     suggestedID,
-                    placeholderInfo.position,
-                    placeholderInfo.shiftedNodePositions
+                    placeholderInfo.position
                 );
             }
 
@@ -2941,6 +2935,11 @@ cy.fit(null, 40);
 
             // 刷新视图
             await this.refreshBranchMermaid();
+
+            // 声明式 reflow: 整棵树重排, 给新节点腾位置, 回收空缺。
+            if (this.isNodeAutoLayout(suggestedID)) {
+                await this.reflowAutoLayout(suggestedID);
+            }
 
             // 清理所有占位符连接线（因为视图已经刷新，占位符节点已不存在）
             branchGraphDiv.dispatchEvent(new CustomEvent('cleanup-all-placeholder-connections'));
@@ -3005,8 +3004,7 @@ cy.fit(null, 40);
                 await this.savePlaceholderLayoutPositions(
                     mocFile,
                     suggestedID,
-                    placeholderInfo.position,
-                    placeholderInfo.shiftedNodePositions
+                    placeholderInfo.position
                 );
             }
 
@@ -3015,6 +3013,11 @@ cy.fit(null, 40);
 
             // 刷新视图
             await this.refreshBranchMermaid();
+
+            // 声明式 reflow: 整棵树重排, 给新节点腾位置, 回收空缺。
+            if (this.isNodeAutoLayout(suggestedID)) {
+                await this.reflowAutoLayout(suggestedID);
+            }
 
             // 清理所有占位符连接线（因为视图已经刷新，占位符节点已不存在）
             branchGraphDiv.dispatchEvent(new CustomEvent('cleanup-all-placeholder-connections'));
@@ -3329,6 +3332,13 @@ cy.fit(null, 40);
                     }
 
                     await this.refreshBranchMermaid();
+
+                    // 声明式 reflow: 批量删除后整棵树重排
+                    const reflowParentId = this.pickAutoLayoutParentForReflow(nodeIds);
+                    if (reflowParentId) {
+                        await this.reflowAutoLayout(reflowParentId);
+                    }
+
                     new Notice(t("Deleted nodes").replace("{count}", String(nodeIds.length)));
                 }
             } catch (error) {
@@ -6133,15 +6143,10 @@ cy.fit(null, 40);
         const finalPosition = placeholderLayoutStyle === 'auto'
             ? this.getAutoPlaceholderPosition(parentId, position, activeNode.IDStr)
             : position;
-        let shiftedNodePositions: Record<string, { x: number; y: number }> | undefined;
-        if (placeholderLayoutStyle === 'auto') {
-            shiftedNodePositions = this.pushAutoSiblingsAfterReference(parentId, activeNode.IDStr);
-        }
         this.createPlaceholderRecord(tempId, finalPosition, {
             parentNodeId: parentId,
             suggestedNodeId: effectiveSuggestedId,
             layoutStyle: placeholderLayoutStyle,
-            shiftedNodePositions
         });
 
         // 通知 Cytoscape 渲染器添加占位符节点
@@ -6380,8 +6385,7 @@ cy.fit(null, 40);
             await this.savePlaceholderLayoutPositions(
                 mocFile,
                 suggestedID,
-                finalPosition,
-                placeholderInfo?.shiftedNodePositions
+                finalPosition
             );
         }
 
@@ -6391,27 +6395,10 @@ cy.fit(null, 40);
         // 刷新视图
         await this.refreshBranchMermaid();
 
-        if (placeholderInfo?.childNodeId) {
-            await this.relayoutAutoLayoutSiblings(suggestedID);
-        } else if (placeholderInfo?.parentNodeId) {
-            const parentPreset = this.getPresetForChildren(placeholderInfo.parentNodeId);
-            // Enter 兄弟创建已经通过 pushAutoSiblingsAfterReference 完成精确推开,
-            // 此时再 relayout 会把"未被推开的参考节点"按 cursor 居中导致它往上跳;
-            // 因此仅在没有手动 shift 时才处理 (例如 Tab 新建子节点)。
-            if (parentPreset !== 'top-down' && placeholderInfo?.shiftedNodePositions === undefined) {
-                // Tab 创建子节点:children 已沿 stackAxis 堆叠在 parent 下方,
-                // 不要把 children 反向居中到 parent 两侧 (会顶到上方兄弟子树),
-                // 而是把 parent 挪到 children 投影中点,后置同向兄弟一起推下去。
-                const shifted = await this.shiftParentToChildrenCenter(placeholderInfo.parentNodeId);
-                if (mocFile && Object.keys(shifted).length > 0) {
-                    await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
-                        if (!mocData.nodePositions) mocData.nodePositions = {};
-                        for (const [id, pos] of Object.entries(shifted)) {
-                            mocData.nodePositions[id] = pos;
-                        }
-                    });
-                }
-            }
+        // 声明式 reflow: 让算法重新分配整棵树的空间, 给新节点腾位置,
+        // 同时回收被删/移动节点留下的空缺。手动拖过的节点作为锚点保留。
+        if (this.isNodeAutoLayout(suggestedID)) {
+            await this.reflowAutoLayout(suggestedID);
         }
 
         // 清理所有占位符连接线（因为视图已经刷新，占位符节点已不存在）
@@ -6497,8 +6484,7 @@ cy.fit(null, 40);
             await this.savePlaceholderLayoutPositions(
                 mocFile,
                 suggestedID,
-                finalPosition,
-                placeholderInfo?.shiftedNodePositions
+                finalPosition
             );
         }
 
@@ -6514,27 +6500,10 @@ cy.fit(null, 40);
         // 刷新视图
         await this.refreshBranchMermaid();
 
-        if (placeholderInfo?.childNodeId) {
-            await this.relayoutAutoLayoutSiblings(suggestedID);
-        } else if (placeholderInfo?.parentNodeId) {
-            const parentPreset = this.getPresetForChildren(placeholderInfo.parentNodeId);
-            // Enter 兄弟创建已经通过 pushAutoSiblingsAfterReference 完成精确推开,
-            // 此时再 relayout 会把"未被推开的参考节点"按 cursor 居中导致它往上跳;
-            // 因此仅在没有手动 shift 时才处理 (例如 Tab 新建子节点)。
-            if (parentPreset !== 'top-down' && placeholderInfo?.shiftedNodePositions === undefined) {
-                // Tab 创建子节点:children 已沿 stackAxis 堆叠在 parent 下方,
-                // 不要把 children 反向居中到 parent 两侧 (会顶到上方兄弟子树),
-                // 而是把 parent 挪到 children 投影中点,后置同向兄弟一起推下去。
-                const shifted = await this.shiftParentToChildrenCenter(placeholderInfo.parentNodeId);
-                if (mocFile && Object.keys(shifted).length > 0) {
-                    await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
-                        if (!mocData.nodePositions) mocData.nodePositions = {};
-                        for (const [id, pos] of Object.entries(shifted)) {
-                            mocData.nodePositions[id] = pos;
-                        }
-                    });
-                }
-            }
+        // 声明式 reflow: 让算法重新分配整棵树的空间, 给新节点腾位置,
+        // 同时回收被删/移动节点留下的空缺。手动拖过的节点作为锚点保留。
+        if (this.isNodeAutoLayout(suggestedID)) {
+            await this.reflowAutoLayout(suggestedID);
         }
 
         // 清理所有占位符连接线（因为视图已经刷新，占位符节点已不存在）
@@ -6903,7 +6872,7 @@ cy.fit(null, 40);
         const phH = 90;
         const pad = 12;
 
-        // 同父兄弟会被 pushAutoSiblingsAfterReference 处理,且参考节点本身按 slotGap 已分隔
+        // 同父兄弟由后续 reflowAutoLayout 统一重排,占位符只需避开外部子树
         const ignore = new Set<string>([parentNodeId]);
         if (referenceId) ignore.add(referenceId);
         sameParentChildIds.forEach((id) => ignore.add(id));
@@ -6939,133 +6908,6 @@ cy.fit(null, 40);
             cur = { x: cur.x + stepX, y: cur.y + stepY };
         }
         return cur;
-    }
-
-    private pushAutoSiblingsAfterReference(
-        parentNodeId: string,
-        referenceNodeId: string,
-        gap?: number
-    ): Record<string, { x: number; y: number }> {
-        const parentPos = this.getNodePositionForLayout(parentNodeId);
-        const referencePos = this.getNodePositionForLayout(referenceNodeId);
-        if (!parentPos || !referencePos) return {};
-
-        const preset = this.getPresetForChildren(parentNodeId);
-        const referenceDir = this.getNodeDirectionFromParent(referenceNodeId, preset);
-        const axis = this.getAutoStackAxis(referenceDir, preset);
-        const slotGap = gap ?? this.computeSiblingSlotGap(referenceNodeId, axis);
-        const referenceProj = (referencePos.x - parentPos.x) * axis.x + (referencePos.y - parentPos.y) * axis.y;
-        const referenceDirVec = DIR_VECTORS[referenceDir];
-        const referenceDirProj = (referencePos.x - parentPos.x) * referenceDirVec.x + (referencePos.y - parentPos.y) * referenceDirVec.y;
-        const cy = this.branchRenderer?.getCytoscapeInstance();
-        if (!cy) return {};
-
-        const childIds = this.getChildNodeIds(parentNodeId);
-        const movedIds = new Set<string>();
-        const shiftedPositions: Record<string, { x: number; y: number }> = {};
-        for (const childId of childIds) {
-            if (childId === referenceNodeId) continue;
-            const childPos = this.getNodePositionForLayout(childId);
-            if (!childPos) continue;
-            const childDir = this.getNodeDirectionFromParent(childId, preset);
-            if (childDir !== referenceDir) continue;
-
-            const childProj = (childPos.x - parentPos.x) * axis.x + (childPos.y - parentPos.y) * axis.y;
-            const childDirProj = (childPos.x - parentPos.x) * referenceDirVec.x + (childPos.y - parentPos.y) * referenceDirVec.y;
-            if (childProj <= referenceProj + 1 || childDirProj < referenceDirProj - 80) continue;
-
-            movedIds.add(childId);
-            const prefix = `${childId}.`;
-            for (const node of this.mocNodes) {
-                const nodeId = node.IDStr || node.ID;
-                if (nodeId.startsWith(prefix)) {
-                    movedIds.add(nodeId);
-                }
-            }
-        }
-
-        if (movedIds.size === 0) return {};
-        cy.batch(() => {
-            movedIds.forEach((nodeId) => {
-                const cyNode: any = cy.$('node').filter((node: any) => {
-                    const originalNode = node.data('originalNode');
-                    return originalNode && (originalNode.IDStr === nodeId || originalNode.ID === nodeId);
-                }).first();
-                if (cyNode && cyNode.length > 0) {
-                    const pos = cyNode.position();
-                    const nextPos = {
-                        x: pos.x + axis.x * slotGap,
-                        y: pos.y + axis.y * slotGap
-                    };
-                    shiftedPositions[nodeId] = {
-                        x: Math.round(nextPos.x * 100) / 100,
-                        y: Math.round(nextPos.y * 100) / 100
-                    };
-                    cyNode.position(nextPos);
-                }
-            });
-        });
-        return shiftedPositions;
-    }
-
-    /**
-     * Tab 新建子节点后:children 已沿 stackAxis 堆叠在 parent 下方,
-     * 把 parent 沿 axis 挪到 children 投影中点; children 不动,避免反向顶到上方兄弟子树.
-     * 同时把 parent 后置同向兄弟一起推下去保持间距.
-     */
-    private async shiftParentToChildrenCenter(parentNodeId: string): Promise<Record<string, { x: number; y: number }>> {
-        const childIds = this.getChildNodeIds(parentNodeId);
-        if (childIds.length === 0) return {};
-
-        const parentPos = this.getNodePositionForLayout(parentNodeId);
-        if (!parentPos) return {};
-
-        const preset = this.getPresetForChildren(parentNodeId);
-        const referenceDir = this.getNodeDirectionFromParent(childIds[0], preset);
-        const axis = this.getAutoStackAxis(referenceDir, preset);
-
-        let minProj = Infinity;
-        let maxProj = -Infinity;
-        for (const childId of childIds) {
-            if (this.getNodeDirectionFromParent(childId, preset) !== referenceDir) continue;
-            const cp = this.getNodePositionForLayout(childId);
-            if (!cp) continue;
-            const proj = (cp.x - parentPos.x) * axis.x + (cp.y - parentPos.y) * axis.y;
-            if (proj < minProj) minProj = proj;
-            if (proj > maxProj) maxProj = proj;
-        }
-        if (minProj === Infinity) return {};
-
-        const centerProj = (minProj + maxProj) / 2;
-        if (Math.abs(centerProj) < 1) return {};
-
-        const deltaX = axis.x * centerProj;
-        const deltaY = axis.y * centerProj;
-
-        const grandparentId = parentNodeId.split('.').slice(0, -1).join('.');
-        let shifted: Record<string, { x: number; y: number }> = {};
-        if (grandparentId) {
-            shifted = this.pushAutoSiblingsAfterReference(grandparentId, parentNodeId, centerProj);
-        }
-
-        const newParentPos = { x: parentPos.x + deltaX, y: parentPos.y + deltaY };
-        shifted[parentNodeId] = {
-            x: Math.round(newParentPos.x * 100) / 100,
-            y: Math.round(newParentPos.y * 100) / 100
-        };
-
-        const cy = this.branchRenderer?.getCytoscapeInstance();
-        if (cy) {
-            cy.batch(() => {
-                const cyNode: any = cy.$('node').filter((node: any) => {
-                    const o = node.data('originalNode');
-                    return o && (o.IDStr === parentNodeId || o.ID === parentNodeId);
-                }).first();
-                if (cyNode && cyNode.length > 0) cyNode.position(newParentPos);
-            });
-        }
-
-        return shifted;
     }
 
     private getPrimaryMocRootId(): string | null {
@@ -7137,18 +6979,11 @@ cy.fit(null, 40);
     private async savePlaceholderLayoutPositions(
         mocFile: TFile,
         nodeId: string,
-        position: { x: number; y: number },
-        shiftedNodePositions?: Record<string, { x: number; y: number }>
+        position: { x: number; y: number }
     ): Promise<void> {
         await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
             if (!mocData.nodePositions) {
                 mocData.nodePositions = {};
-            }
-            for (const [shiftedNodeId, shiftedPosition] of Object.entries(shiftedNodePositions || {})) {
-                mocData.nodePositions[shiftedNodeId] = {
-                    x: Math.round(shiftedPosition.x * 100) / 100,
-                    y: Math.round(shiftedPosition.y * 100) / 100
-                };
             }
             mocData.nodePositions[nodeId] = {
                 x: Math.round(position.x * 100) / 100,
@@ -7193,6 +7028,38 @@ cy.fit(null, 40);
         await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
             (mocData as any).collapsedNodeIds = normalizedCollapsedIds;
         });
+    }
+
+    /**
+     * 声明式 reflow: 以 anchorNodeId 所在子树为起点, 上溯到 MOC root, 整棵树按
+     * computeAutoLayout 的"子树跨度求和 → 自顶向下分配"算法重排。
+     * 用户手动拖动过的节点 (NODE_FLAG_MANUALLY_MOVED) 作为锚点保留。
+     *
+     * 所有创建/删除/移动节点的操作都应该走这个入口。
+     */
+    private async reflowAutoLayout(anchorNodeId: string): Promise<void> {
+        await this.relayoutAutoLayoutSiblings(anchorNodeId, {
+            compactVisibleNodes: true,
+            collapsedNodeIds: this.collapsedNodeIds,
+        });
+    }
+
+    /**
+     * 给定一组被删除的节点 ID, 返回任意一个仍在 auto 布局下的祖先 ID 用于触发 reflow。
+     * 由于 reflowAutoLayout 会从 anchor 沿父链上溯到 MOC root, 任选一个有效的
+     * 祖先即可触发整棵树重排。
+     */
+    private pickAutoLayoutParentForReflow(deletedNodeIds: string[]): string | null {
+        for (const nodeId of deletedNodeIds) {
+            const idStr = String(nodeId || '');
+            const dotIdx = idStr.lastIndexOf('.');
+            if (dotIdx <= 0) continue;
+            const parentId = idStr.substring(0, dotIdx);
+            if (parentId && this.isNodeAutoLayout(parentId)) {
+                return parentId;
+            }
+        }
+        return null;
     }
 
     private async relayoutAutoLayoutSiblings(
@@ -8430,12 +8297,21 @@ cy.fit(null, 40);
             if (operation === 'cut' && mocFile) {
                 try {
                     await this.saveAllNodePositionsBeforeRefresh();
+                    const cutIds: string[] = [];
                     for (const node of nodes) {
                         if (node.isCrossDomain) continue;
+                        cutIds.push(node.IDStr);
                         await this.mocHandler.deleteNodeFromMOC(mocFile, node.IDStr);
                     }
                     await new Promise(r => setTimeout(r, 20));
                     await this.refreshBranchMermaid();
+
+                    // 声明式 reflow: scratchpad cut 后整棵树重排
+                    const reflowParentId = this.pickAutoLayoutParentForReflow(cutIds);
+                    if (reflowParentId) {
+                        await this.reflowAutoLayout(reflowParentId);
+                    }
+
                     new Notice(t("scratch cut notice").replace('{n}', String(nodes.length)));
                 } catch (e) {
                     console.error("[scratchpad] cut 失败", e);
