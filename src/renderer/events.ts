@@ -71,6 +71,57 @@ function getLastWrittenSystemText(): string {
     }
 }
 
+export { rememberWrittenSystemText, getLastWrittenSystemText };
+export async function readSystemClipboardText(): Promise<string> {
+    return readTextFromSystemClipboard();
+}
+
+/**
+ * 统一的 Cmd+V 调度:由 indexView 的 scope.register('Mod','v') 调用,
+ * 避免 Obsidian scope 拦截后 DOM keydown 拿不到事件、scratchpad 抢先粘贴的问题。
+ * 优先级:外部剪贴板新内容 > 内部 clipboardNodes;两者皆无返回 false 让上层 fallback 到 scratchpad。
+ */
+export async function handlePasteShortcut(this: any): Promise<boolean> {
+    if (!this.cy) return false;
+    const pan = this.cy.pan();
+    const zoom = this.cy.zoom();
+    const pasteCenter = {
+        x: (this.cy.width() / 2 - pan.x) / zoom,
+        y: (this.cy.height() / 2 - pan.y) / zoom,
+    };
+    const systemText = await readTextFromSystemClipboard();
+    const trimmed = (systemText || '').trim();
+    const hasInternal = this.clipboardNodes.length > 0;
+    const lastWritten = (this.lastCopiedSystemText || getLastWrittenSystemText()).trim();
+    const isPluginOwned = !!trimmed && trimmed === lastWritten;
+
+    if (isPluginOwned) {
+        if (hasInternal) {
+            this.container?.dispatchEvent(new CustomEvent('node-paste', {
+                detail: { nodes: this.clipboardNodes, pasteCenter }
+            }));
+            return true;
+        }
+        // 插件残留文本 + 无内部节点 → 当作"无可粘贴",让 scratchpad 兜底
+        return false;
+    }
+
+    if (trimmed) {
+        this.container?.dispatchEvent(new CustomEvent('system-text-paste', {
+            detail: { text: trimmed, pasteCenter }
+        }));
+        return true;
+    }
+
+    if (hasInternal) {
+        this.container?.dispatchEvent(new CustomEvent('node-paste', {
+            detail: { nodes: this.clipboardNodes, pasteCenter }
+        }));
+        return true;
+    }
+    return false;
+}
+
 async function readTextFromSystemClipboard(): Promise<string> {
     try {
         if (navigator.clipboard?.readText) {
@@ -1548,51 +1599,8 @@ export function bindKeyboardEvents(this: any): void {
                 return;
             }
 
-            // Cmd+V：先读系统剪贴板;若内容跟上次内部复制一致则走节点粘贴,
-            // 否则视为用户从外部复制了新内容,走系统文本粘贴
-            if (event.key === 'v' && (event.metaKey || event.ctrlKey) && !event.repeat) {
-                if (!this.cy) return;
-                event.preventDefault();
-                event.stopPropagation();
-                const pan = this.cy.pan();
-                const zoom = this.cy.zoom();
-                const pasteCenter = {
-                    x: (this.cy.width() / 2 - pan.x) / zoom,
-                    y: (this.cy.height() / 2 - pan.y) / zoom
-                };
-                void readTextFromSystemClipboard().then((systemText) => {
-                    const trimmed = (systemText || '').trim();
-                    const hasInternal = this.clipboardNodes.length > 0;
-                    // 同会话内存快照 + localStorage 持久化的"上次插件写入文本",
-                    // 任一命中都视为插件自己写的(避免重启后残留被误识别为外部内容)
-                    const lastWritten = (this.lastCopiedSystemText || getLastWrittenSystemText()).trim();
-                    const isPluginOwned = !!trimmed && trimmed === lastWritten;
-
-                    if (isPluginOwned) {
-                        if (hasInternal) {
-                            this.container?.dispatchEvent(new CustomEvent('node-paste', {
-                                detail: { nodes: this.clipboardNodes, pasteCenter }
-                            }));
-                        }
-                        // 插件自己写的但内部已没节点 → 不做任何粘贴(避免变成残留文本节点)
-                        return;
-                    }
-
-                    if (trimmed) {
-                        this.container?.dispatchEvent(new CustomEvent('system-text-paste', {
-                            detail: { text: trimmed, pasteCenter }
-                        }));
-                        return;
-                    }
-
-                    if (hasInternal) {
-                        this.container?.dispatchEvent(new CustomEvent('node-paste', {
-                            detail: { nodes: this.clipboardNodes, pasteCenter }
-                        }));
-                    }
-                });
-                return;
-            }
+            // Cmd+V 已上移到 indexView 的 scope.register('Mod','v')，由 handlePasteShortcut 统一调度，
+            // 此处不再单独处理（否则 scope 拦截 + DOM 监听会造成路径分裂）
 
             // Command/Meta 键：启用框选模式
             if ((event.key === 'Meta' || event.key === 'Meta') && !event.repeat) {

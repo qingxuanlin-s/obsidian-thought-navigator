@@ -72,6 +72,7 @@ import {
     batchDeleteNodes as event_batchDeleteNodes,
     batchChangeColor as event_batchChangeColor,
     isSmartConnectionEnabled as event_isSmartConnectionEnabled,
+    handlePasteShortcut as event_handlePasteShortcut,
 } from './events';
 import {
     attachContentSelectionToolbar as inlineAttachContentSelectionToolbar,
@@ -801,6 +802,14 @@ export class CytoscapeRenderer implements IGraphRenderer {
      */
     getCytoscapeInstance(): cytoscape.Core | null {
         return this.cy;
+    }
+
+    /**
+     * Cmd+V 入口:供 indexView 的 scope.register('Mod','v') 调用,统一调度
+     * 外部剪贴板 / 内部 clipboardNodes 的粘贴。两者皆无时返回 false 让上层 fallback 到 scratchpad。
+     */
+    handlePasteShortcut(): Promise<boolean> {
+        return event_handlePasteShortcut.call(this);
     }
 
     applyFocusOverlayState(visibleCyIds: Set<string> | null, visibilityMode: 'hide' | 'dim' = 'hide', persistState: boolean = true): void {
