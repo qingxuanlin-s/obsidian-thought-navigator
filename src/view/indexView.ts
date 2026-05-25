@@ -302,13 +302,14 @@ export class ZKIndexView extends FileView {
                 return false;
             }
         });
+        // Cmd+V 优先级:外部剪贴板新内容 > 渲染器内 clipboardNodes > scratchpad 顶部条目
+        // (统一在 scope 层异步调度,避免 scope 拦截后 DOM keydown 拿不到事件、scratchpad 抢先粘贴)
         this.scope.register(['Mod'], 'v', (event: KeyboardEvent) => {
             if (isInputFocused()) return;
-            if (this.pasteTopFromScratchpad()) {
-                event.preventDefault();
-                event.stopPropagation();
-                return false;
-            }
+            event.preventDefault();
+            event.stopPropagation();
+            void this.dispatchPasteShortcut();
+            return false;
         });
     }
 
@@ -8401,6 +8402,18 @@ cy.fit(null, 40);
         const position = this.getViewportCenterModelPosition();
         void this.materializeScratchpadEntryAt(top, position);
         return true;
+    }
+
+    /**
+     * Cmd+V 统一入口:先让渲染器尝试用外部剪贴板 / 内部节点处理;
+     * 若两者皆无可用内容,再退化到 scratchpad 顶部条目。
+     */
+    private async dispatchPasteShortcut(): Promise<void> {
+        if (this.branchRenderer) {
+            const handled = await this.branchRenderer.handlePasteShortcut();
+            if (handled) return;
+        }
+        this.pasteTopFromScratchpad();
     }
 
     private getViewportCenterModelPosition(): { x: number; y: number } {
