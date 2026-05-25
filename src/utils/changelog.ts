@@ -19,6 +19,22 @@ export const CHANGELOG: ChangelogEntry[] = [
                 zh: '修复 Cmd+V 误把 Scratchpad 顶部条目当外部内容粘出:统一调度到外部剪贴板 > 内部节点 > Scratchpad 的优先级',
                 en: 'Fix Cmd+V pasting Scratchpad top entry instead of external clipboard: unified priority is now external clipboard > internal nodes > Scratchpad',
             },
+            {
+                zh: 'Cmd+V 现在支持从系统剪贴板粘贴: 自动识别 [[link]] / ![[embed]] / 纯文本并创建对应节点',
+                en: 'Cmd+V now reads system clipboard: auto-detects [[link]] / ![[embed]] / plain text to create matching nodes',
+            },
+            {
+                zh: '在任何文件管理器中右键文件夹(包括 Notebook Navigator)均可"新建 MOC 文件"',
+                en: 'Folder right-click in any file manager (including Notebook Navigator) can now create a new MOC file',
+            },
+            {
+                zh: '更新后弹出公告窗口,展示本次版本的关键变更',
+                en: 'After plugin update, a changelog popup shows the key changes of this version',
+            },
+            {
+                zh: '自动布局重构: 删除/新建/移动节点后统一走声明式 reflow,自动回收空缺并避免重叠',
+                en: 'Auto-layout rewrite: deleting/creating/moving nodes now triggers declarative reflow that reclaims gaps and avoids overlaps',
+            },
         ],
     },
     {
