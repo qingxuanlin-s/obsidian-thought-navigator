@@ -50,6 +50,27 @@ async function writeTextToSystemClipboard(text: string): Promise<boolean> {
     return copied;
 }
 
+// 用 localStorage 跨会话持久化"插件最近一次写入系统剪贴板的文本",
+// 用于 Cmd+V 时判断系统剪贴板内容是不是插件自己写入的残留(避免
+// 重启后把上次复制的节点文本误认为外部新内容粘回画布)
+const ZK_LAST_WRITTEN_KEY = 'zk-clipboard-last-written-text';
+
+function rememberWrittenSystemText(text: string): void {
+    try {
+        window.localStorage.setItem(ZK_LAST_WRITTEN_KEY, text || '');
+    } catch (e) {
+        console.warn('[ZK] failed to persist clipboard write marker:', e);
+    }
+}
+
+function getLastWrittenSystemText(): string {
+    try {
+        return window.localStorage.getItem(ZK_LAST_WRITTEN_KEY) || '';
+    } catch {
+        return '';
+    }
+}
+
 async function readTextFromSystemClipboard(): Promise<string> {
     try {
         if (navigator.clipboard?.readText) {
@@ -1514,6 +1535,7 @@ export function bindKeyboardEvents(this: any): void {
                         .filter((text: string) => text.length > 0)
                         .join('\n');
                     this.lastCopiedSystemText = clipboardText;
+                    rememberWrittenSystemText(clipboardText);
                     void writeTextToSystemClipboard(clipboardText).then((systemClipboardWritten) => {
                         if (!systemClipboardWritten) {
                             new Notice(t("System clipboard write failed"));
@@ -1541,12 +1563,18 @@ export function bindKeyboardEvents(this: any): void {
                 void readTextFromSystemClipboard().then((systemText) => {
                     const trimmed = (systemText || '').trim();
                     const hasInternal = this.clipboardNodes.length > 0;
-                    const internalMatches = hasInternal && trimmed === (this.lastCopiedSystemText || '').trim();
+                    // 同会话内存快照 + localStorage 持久化的"上次插件写入文本",
+                    // 任一命中都视为插件自己写的(避免重启后残留被误识别为外部内容)
+                    const lastWritten = (this.lastCopiedSystemText || getLastWrittenSystemText()).trim();
+                    const isPluginOwned = !!trimmed && trimmed === lastWritten;
 
-                    if (internalMatches) {
-                        this.container?.dispatchEvent(new CustomEvent('node-paste', {
-                            detail: { nodes: this.clipboardNodes, pasteCenter }
-                        }));
+                    if (isPluginOwned) {
+                        if (hasInternal) {
+                            this.container?.dispatchEvent(new CustomEvent('node-paste', {
+                                detail: { nodes: this.clipboardNodes, pasteCenter }
+                            }));
+                        }
+                        // 插件自己写的但内部已没节点 → 不做任何粘贴(避免变成残留文本节点)
                         return;
                     }
 
@@ -1557,7 +1585,6 @@ export function bindKeyboardEvents(this: any): void {
                         return;
                     }
 
-                    // 系统剪贴板空 + 内部还有节点 → 回退到内部粘贴
                     if (hasInternal) {
                         this.container?.dispatchEvent(new CustomEvent('node-paste', {
                             detail: { nodes: this.clipboardNodes, pasteCenter }
