@@ -1513,6 +1513,7 @@ export function bindKeyboardEvents(this: any): void {
                         .map((node: any) => getClipboardTextForNode(node))
                         .filter((text: string) => text.length > 0)
                         .join('\n');
+                    this.lastCopiedSystemText = clipboardText;
                     void writeTextToSystemClipboard(clipboardText).then((systemClipboardWritten) => {
                         if (!systemClipboardWritten) {
                             new Notice(t("System clipboard write failed"));
@@ -1525,7 +1526,8 @@ export function bindKeyboardEvents(this: any): void {
                 return;
             }
 
-            // Cmd+V：粘贴节点(内部剪贴板)或系统剪贴板文本/链接
+            // Cmd+V：先读系统剪贴板;若内容跟上次内部复制一致则走节点粘贴,
+            // 否则视为用户从外部复制了新内容,走系统文本粘贴
             if (event.key === 'v' && (event.metaKey || event.ctrlKey) && !event.repeat) {
                 if (!this.cy) return;
                 event.preventDefault();
@@ -1536,18 +1538,32 @@ export function bindKeyboardEvents(this: any): void {
                     x: (this.cy.width() / 2 - pan.x) / zoom,
                     y: (this.cy.height() / 2 - pan.y) / zoom
                 };
-                if (this.clipboardNodes.length > 0) {
-                    this.container?.dispatchEvent(new CustomEvent('node-paste', {
-                        detail: { nodes: this.clipboardNodes, pasteCenter }
-                    }));
-                } else {
-                    void readTextFromSystemClipboard().then((text) => {
-                        if (!text || !text.trim()) return;
-                        this.container?.dispatchEvent(new CustomEvent('system-text-paste', {
-                            detail: { text: text.trim(), pasteCenter }
+                void readTextFromSystemClipboard().then((systemText) => {
+                    const trimmed = (systemText || '').trim();
+                    const hasInternal = this.clipboardNodes.length > 0;
+                    const internalMatches = hasInternal && trimmed === (this.lastCopiedSystemText || '').trim();
+
+                    if (internalMatches) {
+                        this.container?.dispatchEvent(new CustomEvent('node-paste', {
+                            detail: { nodes: this.clipboardNodes, pasteCenter }
                         }));
-                    });
-                }
+                        return;
+                    }
+
+                    if (trimmed) {
+                        this.container?.dispatchEvent(new CustomEvent('system-text-paste', {
+                            detail: { text: trimmed, pasteCenter }
+                        }));
+                        return;
+                    }
+
+                    // 系统剪贴板空 + 内部还有节点 → 回退到内部粘贴
+                    if (hasInternal) {
+                        this.container?.dispatchEvent(new CustomEvent('node-paste', {
+                            detail: { nodes: this.clipboardNodes, pasteCenter }
+                        }));
+                    }
+                });
                 return;
             }
 

@@ -185,6 +185,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
     // 节点剪贴板（Cmd+C/V 复制粘贴）
     private clipboardNodes: Array<{ originalNode: any; position: { x: number; y: number } }> = [];
+    // Cmd+C 时同步写入系统剪贴板的文本快照;Cmd+V 时跟系统剪贴板比对,
+    // 若不一致则说明用户从外部复制了新内容,优先走系统剪贴板路径
+    private lastCopiedSystemText: string = '';
 
     // SimpleMind 风格布局常量
     private readonly VERTICAL_GAP = 80;       // 垂直间距
