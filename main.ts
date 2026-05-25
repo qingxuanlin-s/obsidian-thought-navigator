@@ -18,6 +18,8 @@ import { MOCPreviewView, MOC_PREVIEW_VIEW_TYPE } from "src/view/mocPreviewView";
 import { LayoutPreset, normalizeLayoutPreset } from "src/utils/growthDirection";
 import { Scratchpad, ScratchpadEntry, ScratchpadManager } from "src/scratch/scratchpadManager";
 import { resolveThemeMode } from "src/utils/themeMode";
+import { ChangelogModal } from "src/modal/changelogModal";
+import { getUnreadEntries } from "src/utils/changelog";
 
 interface Point {
     x: number;
@@ -132,6 +134,7 @@ interface ZKNavigationSettings {
     showNoteIdInBranchView: boolean;   // 分支视图是否显示笔记编号
     scratchpads: Scratchpad[];          // 临时工作区:跨 MOC 共享的节点暂存(支持多 pad)
     activeScratchpadId: string;         // 当前激活的暂存区 id
+    lastShownChangelogVersion: string;  // 上次已展示更新公告的版本号(用于避免重复弹窗)
 }
 
 //Default value for setting field
@@ -214,6 +217,7 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     showNoteIdInBranchView: true,
     scratchpads: [],
     activeScratchpadId: '',
+    lastShownChangelogVersion: '',
 }
 
 export default class ZKNavigationPlugin extends Plugin {
@@ -557,39 +561,27 @@ export default class ZKNavigationPlugin extends Plugin {
 
         this.registerEvent(
             this.app.workspace.on("file-menu", (menu, file, source) => {
-
-                if (
-                    !(
-                        source === "more-options" ||
-                        source === "tab-header" ||
-                        source == "file-explorer-context-menu"
-                    )
-                ) {
-                    return;
-                }
-
-                // 文件夹右键：新建思维树
+                // 文件夹右键:任何来源都允许新建 MOC(兼容 Notebook Navigator 等第三方文件管理器)
                 if (file instanceof TFolder) {
                     menu.addItem((item) => {
                         item.setTitle(t("New MOC file"))
                             .setIcon("git-branch")
                             .setSection("plugin")
                             .onClick(async () => {
-                                try {
-                                    const folder = file as TFolder;
-                                    const baseName = t('default MOC file prefix') + '-' + moment().format('YYYYMMDDHHmmss');
-                                    const filePath = folder.path ? `${folder.path}/${baseName}${MOC_FILE_SUFFIX}` : `${baseName}${MOC_FILE_SUFFIX}`;
-                                    const content = createMOCJsonWithInitialNode(
-                                        this.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free',
-                                        t('Default node title')
-                                    );
-                                    await this.app.vault.create(filePath, content);
-                                } catch (e) {
-                                    console.error('[zk-navigation] 新建思维树失败', e);
-                                    new Notice(`新建失败: ${e.message}`);
-                                }
+                                await this.createMOCInFolder(file as TFolder);
                             });
                     });
+                    return;
+                }
+
+                // 文件右键:限制来源,避免在 link-context 等无关菜单中出现多余项
+                if (
+                    !(
+                        source === "more-options" ||
+                        source === "tab-header" ||
+                        source === "file-explorer-context-menu"
+                    )
+                ) {
                     return;
                 }
 
@@ -749,6 +741,7 @@ export default class ZKNavigationPlugin extends Plugin {
             );
             await this.vaultIndex?.bootstrap();
             this.registerNotebookNavigatorFolderMenu();
+            this.showChangelogIfNeeded();
         });
 
         // 拦截 .moc 文件打开，用分支视图（IndexView）代替默认编辑器
@@ -1169,6 +1162,35 @@ export default class ZKNavigationPlugin extends Plugin {
             new Notice(`新建失败: ${e.message}`);
             return null;
         }
+    }
+
+    /**
+     * 版本升级后弹出更新公告。新安装(无 lastShownChangelogVersion 记录)时静默写入当前版本,
+     * 避免首次安装的用户被打扰;后续版本升级会展示新增的 changelog 条目。
+     */
+    private showChangelogIfNeeded(): void {
+        const currentVersion = this.manifest.version;
+        const lastShown = this.settings.lastShownChangelogVersion;
+        if (lastShown === currentVersion) return;
+
+        // 新安装:静默记录当前版本
+        if (!lastShown) {
+            this.settings.lastShownChangelogVersion = currentVersion;
+            void this.saveData(this.settings);
+            return;
+        }
+
+        const entries = getUnreadEntries(lastShown, currentVersion);
+        if (entries.length === 0) {
+            this.settings.lastShownChangelogVersion = currentVersion;
+            void this.saveData(this.settings);
+            return;
+        }
+
+        new ChangelogModal(this.app, entries, currentVersion, () => {
+            this.settings.lastShownChangelogVersion = currentVersion;
+            void this.saveData(this.settings);
+        }).open();
     }
 
     private registerNotebookNavigatorFolderMenu() {
