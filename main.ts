@@ -1165,20 +1165,14 @@ export default class ZKNavigationPlugin extends Plugin {
     }
 
     /**
-     * 版本升级后弹出更新公告。新安装(无 lastShownChangelogVersion 记录)时静默写入当前版本,
-     * 避免首次安装的用户被打扰;后续版本升级会展示新增的 changelog 条目。
+     * 版本升级后弹出更新公告。无 lastShownChangelogVersion 记录时(新安装 / 老用户首次升级),
+     * 弹出当前版本对应的那一条;后续升级弹出 lastShown→current 之间的所有新条目。
+     * 弹完或无内容可弹时都会把 lastShown 更新为当前版本,保证下次不重复。
      */
     private showChangelogIfNeeded(): void {
         const currentVersion = this.manifest.version;
         const lastShown = this.settings.lastShownChangelogVersion;
         if (lastShown === currentVersion) return;
-
-        // 新安装:静默记录当前版本
-        if (!lastShown) {
-            this.settings.lastShownChangelogVersion = currentVersion;
-            void this.saveData(this.settings);
-            return;
-        }
 
         const entries = getUnreadEntries(lastShown, currentVersion);
         if (entries.length === 0) {

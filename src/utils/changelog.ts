@@ -66,10 +66,13 @@ export function compareVersion(a: string, b: string): number {
 
 /**
  * 取出 lastShown 之后(不含)到 current(含)之间的所有 changelog 条目,按倒序返回。
- * lastShown 为空字符串视为"新安装",此时不返回任何条目(避免新用户被打扰)。
+ * lastShown 为空字符串(新安装 / 老用户首次升级到带 changelog 字段的版本)时,
+ * 只返回当前版本对应的那一条,让用户也能看到新版的关键变更。
  */
 export function getUnreadEntries(lastShown: string, current: string): ChangelogEntry[] {
-    if (!lastShown) return [];
+    if (!lastShown) {
+        return CHANGELOG.filter((entry) => entry.version === current);
+    }
     return CHANGELOG.filter(
         (entry) => compareVersion(entry.version, lastShown) > 0
             && compareVersion(entry.version, current) <= 0
