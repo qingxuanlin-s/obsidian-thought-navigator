@@ -50,6 +50,18 @@ async function writeTextToSystemClipboard(text: string): Promise<boolean> {
     return copied;
 }
 
+async function readTextFromSystemClipboard(): Promise<string> {
+    try {
+        if (navigator.clipboard?.readText) {
+            const text = await navigator.clipboard.readText();
+            return text ?? '';
+        }
+    } catch (error) {
+        console.warn('[ZK] navigator.clipboard.readText failed:', error);
+    }
+    return '';
+}
+
 export function bindEvents(this: any): void {
         if (!this.cy || !this.container) return;
 
@@ -1513,9 +1525,9 @@ export function bindKeyboardEvents(this: any): void {
                 return;
             }
 
-            // Cmd+V：粘贴节点
+            // Cmd+V：粘贴节点(内部剪贴板)或系统剪贴板文本/链接
             if (event.key === 'v' && (event.metaKey || event.ctrlKey) && !event.repeat) {
-                if (!this.cy || this.clipboardNodes.length === 0) return;
+                if (!this.cy) return;
                 event.preventDefault();
                 event.stopPropagation();
                 const pan = this.cy.pan();
@@ -1524,9 +1536,18 @@ export function bindKeyboardEvents(this: any): void {
                     x: (this.cy.width() / 2 - pan.x) / zoom,
                     y: (this.cy.height() / 2 - pan.y) / zoom
                 };
-                this.container?.dispatchEvent(new CustomEvent('node-paste', {
-                    detail: { nodes: this.clipboardNodes, pasteCenter }
-                }));
+                if (this.clipboardNodes.length > 0) {
+                    this.container?.dispatchEvent(new CustomEvent('node-paste', {
+                        detail: { nodes: this.clipboardNodes, pasteCenter }
+                    }));
+                } else {
+                    void readTextFromSystemClipboard().then((text) => {
+                        if (!text || !text.trim()) return;
+                        this.container?.dispatchEvent(new CustomEvent('system-text-paste', {
+                            detail: { text: text.trim(), pasteCenter }
+                        }));
+                    });
+                }
                 return;
             }
 

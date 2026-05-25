@@ -2702,6 +2702,70 @@ cy.fit(null, 40);
             new Notice(t("Pasted nodes").replace("{count}", String(nodes.length)));
         });
 
+        // 监听系统剪贴板粘贴事件(Cmd+V 且内部剪贴板为空时回退)
+        // 自动识别 [[link]] / ![[embed]] / 多行 wiki link / 纯文本,创建对应节点
+        this.addTrackedListener(branchGraphDiv, 'system-text-paste', async (event: any) => {
+            if (this.isMobileReadOnly()) return;
+            const { text, pasteCenter } = event.detail as {
+                text: string;
+                pasteCenter: { x: number; y: number };
+            };
+            if (!text) return;
+
+            const mocFilePath = this.plugin.settings.mocCurrentFile;
+            if (!mocFilePath) return;
+            const mocFile = this.app.vault.getFileByPath(mocFilePath);
+            if (!mocFile) return;
+
+            // 解析剪贴板内容:整段当作一个文本节点;若整段是单个 [[..]] / ![[..]] 则识别为 file/embed
+            type ParsedNode = { type: 'file' | 'embed' | 'text'; target: string; alias?: string };
+            const parseClipboard = (raw: string): ParsedNode => {
+                const trimmed = raw.trim();
+                const embedMatch = trimmed.match(/^!\[\[([^\]]+)\]\]$/);
+                if (embedMatch) {
+                    const [target, alias] = embedMatch[1].split('|').map((s) => s.trim());
+                    return { type: 'embed', target, alias: alias || undefined };
+                }
+                const linkMatch = trimmed.match(/^\[\[([^\]]+)\]\]$/);
+                if (linkMatch) {
+                    const [target, alias] = linkMatch[1].split('|').map((s) => s.trim());
+                    return { type: 'file', target, alias: alias || undefined };
+                }
+                return { type: 'text', target: trimmed };
+            };
+
+            const parsed = parseClipboard(text);
+
+            await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
+                const collectIds = (nodes: MOCTreeNode[]): string[] =>
+                    nodes.flatMap((n) => [n.nodeID, ...collectIds(n.children || [])]);
+                const existingIds = new Set(collectIds(mocData.nodes));
+                const maxFree = Math.max(0, ...Array.from(existingIds)
+                    .map((id) => { const m = id?.match(/^free\.(\d+)$/); return m ? parseInt(m[1]) : 0; }));
+                const newID = `free.${maxFree + 1}`;
+
+                const newNode: MOCTreeNode = {
+                    nodeID: newID,
+                    nodeType: parsed.type,
+                    target: parsed.target,
+                    depth: 0,
+                    children: [],
+                    file: parsed.type === 'text' ? null : null,
+                    relationText: '',
+                };
+                if (parsed.alias && parsed.type !== 'text') {
+                    newNode.alias = parsed.alias;
+                }
+                mocData.nodes.push(newNode);
+
+                if (!mocData.nodePositions) mocData.nodePositions = {};
+                mocData.nodePositions[newID] = { x: pasteCenter.x, y: pasteCenter.y };
+            });
+
+            await this.refreshBranchMermaid();
+            new Notice(t("Pasted nodes").replace("{count}", '1'));
+        });
+
         // 监听节点删除键事件
         this.addTrackedListener(branchGraphDiv, 'node-delete-key', async (event: any) => {
             if (this.isMobileReadOnly()) {
