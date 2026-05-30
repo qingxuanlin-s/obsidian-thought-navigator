@@ -2,6 +2,7 @@ import { TFile } from "obsidian";
 import ZKNavigationPlugin from "main";
 import { MOCParseResult, CrossDomainLink, MOCTreeNode } from "src/utils/utils";
 import { LayoutPreset, normalizeLayoutPreset } from "src/utils/growthDirection";
+import { computeAutoLayout, AutoLayoutNodeInput } from "src/utils/autoLayoutEngine";
 
 /**
  * 深拷贝 MOCTreeNode 树结构
@@ -157,6 +158,175 @@ export class MOCHandler {
                 await modifyCallback(mocData);
             }
         });
+    }
+
+    /**
+     * 程序化追加子节点(供 URI / 外部脚本调用,不依赖 UI)。
+     * 子节点 ID 采用点号层级约定(parentID.N),边由 GraphDataBuilder 的层级兜底自动渲染,
+     * 因此无需写 reverseRelations。不写坐标,交给自动布局。
+     * @param parentID 父节点 ID;传 '__root__' 在根层追加
+     * @returns 新节点 ID
+     */
+    async addChildNodeToMOC(
+        mocFile: TFile,
+        parentID: string,
+        title: string,
+        kind: 'text' | 'file' = 'text',
+    ): Promise<string> {
+        let newID = '';
+        await this.modifyMOCData(mocFile, (mocData) => {
+            newID = MOCHandler.insertChildNode(mocData, parentID, title, kind);
+            this.applyHeadlessAutoLayout(mocData);
+        });
+        return newID;
+    }
+
+    /**
+     * 批量追加子节点(供 CLI / 脚本一次性建树)。所有插入在同一次 modifyMOCData 中完成:
+     * 单次读-改-写,后续 item 在内存中即可看到前面新增的节点,无读后写竞态,且只触发一次文件写入。
+     * @param items 每项 {parent, title, kind?};parent 可用 '__root__' 表示根层,
+     *              也可引用本批次中前面刚生成的节点 ID(按顺序应用)。
+     * @returns 与 items 对应的新节点 ID 数组
+     */
+    async addNodesToMOC(
+        mocFile: TFile,
+        items: Array<{ parent: string; title: string; kind?: 'text' | 'file' }>,
+    ): Promise<string[]> {
+        const newIDs: string[] = [];
+        await this.modifyMOCData(mocFile, (mocData) => {
+            for (const item of items) {
+                newIDs.push(MOCHandler.insertChildNode(mocData, item.parent, item.title, item.kind ?? 'text'));
+            }
+            this.applyHeadlessAutoLayout(mocData);
+        });
+        return newIDs;
+    }
+
+    /**
+     * 无头(CLI/脚本)场景下,直接为 auto 文件算好居中坐标写入 nodePositions,
+     * 使文件创建时即居中——视图打开无需再 reflow,避免"先歪后居中"的闪动。
+     * 节点尺寸用文本长度估算;居中的对称性不依赖精确尺寸,故根节点必然居中。
+     * 仅处理 auto 文件;手动拖动过的节点(NODE_FLAG_MANUALLY_MOVED)保留其坐标。
+     */
+    private applyHeadlessAutoLayout(mocData: MOCParseResult): void {
+        if (mocData.nodeLayoutStyle !== 'auto') return;
+        const tree: any[] = (mocData as any).nodes;
+        if (!tree?.length) return;
+
+        const nodes: Record<string, AutoLayoutNodeInput> = {};
+        const parentById: Record<string, string | undefined> = {};
+        const childrenById: Record<string, string[]> = {};
+        const rootIds: string[] = [];
+
+        // 真实渲染的分支节点高度≈92(由手动文件同级间距 148.6 − stackGap 56 反推),
+        // 用它估算高度,使 CLI 产出的竖向间距与手动/视图一致,避免同级挤在一起。
+        const estimateSize = (text: string) => {
+            const len = [...String(text ?? '')].reduce((s, ch) => s + (ch.charCodeAt(0) > 255 ? 2 : 1), 0);
+            return { width: Math.min(320, Math.max(80, len * 11 + 36)), height: 92 };
+        };
+
+        // 方向提示:沿用视图首次布局的同款偏置(depth 越深 x 越大 → 全部朝同侧 E,竖向堆叠),
+        // 保证 CLI 产出与手动/视图重排一致(同侧堆叠、根竖直居中),而非左右交替。
+        const dirHint: Record<string, { x: number; y: number }> = {};
+        let order = 0;
+        const walk = (list: any[], parentId: string | undefined, depth: number) => {
+            for (const n of list) {
+                const id = String(n.nodeID);
+                nodes[id] = {
+                    id,
+                    size: estimateSize(n.target),
+                    position: { x: 0, y: 0 },
+                    colorKey: '__default__',
+                };
+                dirHint[id] = { x: depth * 260, y: order * 150 };
+                parentById[id] = parentId;
+                childrenById[id] = [];
+                if (parentId) childrenById[parentId].push(id);
+                else rootIds.push(id);
+                order++;
+                walk(n.children || [], id, depth + 1);
+            }
+        };
+        walk(tree, undefined, 0);
+
+        const realMocRootIds = new Set<string>(rootIds);
+        const preset = normalizeLayoutPreset(this.plugin.settings.autoLayoutDefaultGrowthDirection);
+        // 用 dirHint 仅决定方向;ignore 全部非根 → 实际坐标由引擎对称重排(忽略 hint 的位置)
+        const ignore = new Set<string>(Object.keys(nodes).filter((id) => !realMocRootIds.has(id)));
+
+        const merged: Record<string, { x: number; y: number }> = {};
+        for (const rootId of rootIds) {
+            nodes[rootId].position = { x: 0, y: 0 };
+            const positions = computeAutoLayout({
+                relayoutRootId: rootId,
+                nodes,
+                parentById,
+                childrenById,
+                realMocRootIds,
+                nodePositions: dirHint,
+                ignoreSavedPositionsForIds: ignore,
+                layoutPreset: preset,
+                nodeLayoutPresets: (mocData as any).nodeLayoutPresets,
+            });
+            Object.assign(merged, positions);
+        }
+
+        if (!mocData.nodePositions) mocData.nodePositions = {};
+        Object.assign(mocData.nodePositions, merged);
+        if (!mocData.layoutPreset) mocData.layoutPreset = preset;
+    }
+
+    /**
+     * 纯内存插入一个子节点,返回新节点 ID。不做 IO,供单个/批量两条路径共用。
+     * 子节点 ID 采用点号层级约定(parentID.N),边由 GraphDataBuilder 的层级兜底自动渲染,
+     * 因此无需写 reverseRelations。不写坐标,交给自动布局。
+     */
+    private static insertChildNode(
+        mocData: MOCParseResult,
+        parentID: string,
+        title: string,
+        kind: 'text' | 'file' = 'text',
+    ): string {
+        const text = (title ?? '').trim();
+        if (!text) throw new Error('empty node title');
+
+        const nodes: any[] = (mocData as any).nodes;
+        // 收集所有现有 ID,保证唯一
+        const allIDs = new Set<string>();
+        const collect = (ns: any[]) => { for (const n of ns) { allIDs.add(String(n.nodeID)); collect(n.children ?? []); } };
+        collect(nodes);
+
+        // 定位父节点(__root__ 表示根层)
+        const findNode = (ns: any[]): any => {
+            for (const n of ns) {
+                if (String(n.nodeID) === parentID) return n;
+                const found = findNode(n.children ?? []);
+                if (found) return found;
+            }
+            return null;
+        };
+        const parent = parentID === '__root__' ? null : findNode(nodes);
+        if (parentID !== '__root__' && !parent) {
+            throw new Error(`parent node not found: "${parentID}"`);
+        }
+
+        const siblings: any[] = parent ? (parent.children ??= []) : nodes;
+        const depth = parent ? (parent.depth ?? 0) + 1 : 0;
+
+        // 计算下一个可用编号:根层用整数,子层用 parentID.N
+        const prefix = parent ? `${parentID}.` : '';
+        let maxIdx = 0;
+        for (const node of siblings) {
+            const id = String(node.nodeID);
+            const rest = parent ? (id.startsWith(prefix) ? id.slice(prefix.length) : null) : id;
+            if (rest && /^\d+$/.test(rest)) maxIdx = Math.max(maxIdx, parseInt(rest));
+        }
+        let idx = maxIdx + 1;
+        let newID = `${prefix}${idx}`;
+        while (allIDs.has(newID)) { idx++; newID = `${prefix}${idx}`; }
+
+        siblings.push({ nodeID: newID, nodeType: kind, target: text, depth, children: [], relationText: '' });
+        return newID;
     }
 
     private updateNodeColorInData(mocData: MOCParseResult, nodeID: string, color: string): void {

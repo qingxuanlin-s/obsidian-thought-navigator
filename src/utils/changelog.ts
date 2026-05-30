@@ -12,6 +12,24 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
     {
+        version: '0.1.5',
+        date: '2026-05-31',
+        highlights: [
+            {
+                zh: '新增 obsidian:// URI 入口:?action=create 创建 .moc、?action=add-node 向父节点追加子节点,支持脚本化/批量生成',
+                en: 'New obsidian:// URI: ?action=create makes a .moc, ?action=add-node appends a child to a parent — enabling scripted/batch generation',
+            },
+            {
+                zh: '新增外部 API,可经 Obsidian CLI `obsidian eval` 调用(createMOC / addNode / addNodes),一条命令即可建出整棵关系树',
+                en: 'New external API callable via Obsidian CLI `obsidian eval` (createMOC / addNode / addNodes) — build a whole relation tree in one command',
+            },
+            {
+                zh: '自动布局:新建子节点后根节点相对子节点竖直居中;CLI/程序化创建时即算好居中坐标,打开无闪动、间距与手动创建一致',
+                en: 'Auto-layout: root now centers vertically against its children after adding nodes; CLI/programmatic creation computes centered positions upfront — no flicker on open and spacing matches manual creation',
+            },
+        ],
+    },
+    {
         version: '0.1.4',
         date: '2026-05-25',
         highlights: [
