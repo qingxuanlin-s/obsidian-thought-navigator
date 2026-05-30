@@ -233,3 +233,50 @@ open "obsidian://zk-navigation?action=create&name=read-notes&folder=MOC&overwrit
 - 目录不存在 / 不是目录 / 文件已存在（未传 `overwrite=true`）：`Notice` 给出明确错误，不写文件。
 
 > 含特殊字符的参数（中文、空格、`/`）请做 URL 编码。多行/大段初始内容不适合走 URI（长度与编码限制），属后续增强。
+
+> 提示：想让脚本后续稳定地往根节点挂子节点，创建时传 `rootId=<固定ID>`（如 `rootId=1`），否则根节点会被分配随机 2 字母 ID。
+
+---
+
+## 向已有 .moc 追加子节点（已实现）
+
+`obsidian://zk-navigation?action=add-node` 在指定 `.moc` 的某个父节点下追加一个子节点。子节点 ID 按点号层级自动生成（`parentID.N`），父子边由渲染层的层级规则自动画出——**无需手填关系**。节点不写坐标，交给自动布局。
+
+### URI 参数
+
+```
+obsidian://zk-navigation?action=add-node
+  &file=<目标 .moc/.moc.md 路径,必填,须已存在>
+  &parent=<父节点 ID,必填;根层追加用 __root__>
+  &title=<新节点内容,必填>
+  &kind=<text|file,可选,默认 text;file 时 title 作为 wiki 链接目标>
+  &open=<true|false,可选,默认 true>
+```
+
+### 示例:搭一棵关系树 动物 → 哺乳动物 → 人类 / 鸟类
+
+```bash
+B="obsidian://zk-navigation"
+
+# 1) 建文件,根节点 id 固定为 1
+open "$B?action=create&name=animals&rootId=1&title=动物&layout=auto&open=false"
+
+# 2) 逐个挂子节点(ID 自动 1.1 / 1.1.1 / 1.2)
+open "$B?action=add-node&file=animals.moc.md&parent=1&title=哺乳动物&open=false"
+open "$B?action=add-node&file=animals.moc.md&parent=1.1&title=人类&open=false"
+open "$B?action=add-node&file=animals.moc.md&parent=1&title=鸟类"
+```
+
+结果：
+
+```
+1   动物
+├─ 1.1   哺乳动物
+│   └─ 1.1.1  人类
+└─ 1.2   鸟类
+```
+
+### 反馈
+
+- 成功：`Notice` 提示 `node added (id: <新ID>)`，该 `.moc` 设为当前文件。
+- `file` 不存在 / 不是 `.moc` 文件 / `parent` 找不到 / `title` 为空：`Notice` 明确报错，不写文件。
