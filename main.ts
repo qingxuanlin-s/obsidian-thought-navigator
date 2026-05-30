@@ -36,6 +36,16 @@ export interface CreateMOCOptions {
     rootId?: string;           // 指定根节点 ID(便于脚本后续 add-node);省略 = 随机
 }
 
+export interface ZKNavigationExternalAPI {
+    version(): string;
+    /** 创建新 .moc.md,返回文件路径 */
+    createMOC(opts?: CreateMOCOptions): Promise<string>;
+    /** 向已有 .moc 的父节点追加子节点,返回新节点 ID */
+    addNode(filePath: string, parentID: string, title: string, kind?: 'text' | 'file'): Promise<string>;
+    /** 一次性批量追加多个子节点(单次读改写,适合 CLI 一次建整棵树),返回新 ID 数组 */
+    addNodes(filePath: string, items: Array<{ parent: string; title: string; kind?: 'text' | 'file' }>): Promise<string[]>;
+}
+
 export interface ZoomPanScale{
     graphID: string;
     zoomScale: number;
@@ -251,6 +261,8 @@ export default class ZKNavigationPlugin extends Plugin {
     mocReverseIndex: MOCReverseIndex | null = null;
     // 供 URI / 外部脚本复用的轻量 MOCHandler(懒加载)
     cliMocHandler?: MOCHandler;
+    // 外部 API(Obsidian CLI eval / 其他插件),onload 末尾注册
+    api!: ZKNavigationExternalAPI;
     // 自建 Space 树索引(spaces.json,只虚拟存在,不创建真实文件夹)
     vaultIndex: VaultIndex | null = null;
     spaceService: SpaceService | null = null;
@@ -903,6 +915,31 @@ export default class ZKNavigationPlugin extends Plugin {
                 }
             })
         );
+
+        // 外部 API:供 Obsidian CLI `obsidian eval` / 其他插件复用,与 URI 走同一份内部逻辑
+        this.api = {
+            version: () => this.manifest.version,
+            createMOC: async (opts: CreateMOCOptions = {}) => {
+                const file = await this.createMOCFile(opts);
+                return file.path;
+            },
+            addNode: async (filePath: string, parentID: string, title: string, kind: 'text' | 'file' = 'text') => {
+                const target = this.app.vault.getAbstractFileByPath(filePath);
+                if (!(target instanceof TFile) || !isMocFile(target)) {
+                    throw new Error(t('MOC not a moc file').replace('{path}', filePath));
+                }
+                const handler = this.cliMocHandler ??= new MOCHandler(this, this.app);
+                return await handler.addChildNodeToMOC(target, parentID, title, kind === 'file' ? 'file' : 'text');
+            },
+            addNodes: async (filePath: string, items: Array<{ parent: string; title: string; kind?: 'text' | 'file' }>) => {
+                const target = this.app.vault.getAbstractFileByPath(filePath);
+                if (!(target instanceof TFile) || !isMocFile(target)) {
+                    throw new Error(t('MOC not a moc file').replace('{path}', filePath));
+                }
+                const handler = this.cliMocHandler ??= new MOCHandler(this, this.app);
+                return await handler.addNodesToMOC(target, items || []);
+            },
+        };
 
     }
 

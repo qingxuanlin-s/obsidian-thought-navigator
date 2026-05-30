@@ -172,58 +172,83 @@ export class MOCHandler {
         title: string,
         kind: 'text' | 'file' = 'text',
     ): Promise<string> {
+        let newID = '';
+        await this.modifyMOCData(mocFile, (mocData) => {
+            newID = MOCHandler.insertChildNode(mocData, parentID, title, kind);
+        });
+        return newID;
+    }
+
+    /**
+     * 批量追加子节点(供 CLI / 脚本一次性建树)。所有插入在同一次 modifyMOCData 中完成:
+     * 单次读-改-写,后续 item 在内存中即可看到前面新增的节点,无读后写竞态,且只触发一次文件写入。
+     * @param items 每项 {parent, title, kind?};parent 可用 '__root__' 表示根层,
+     *              也可引用本批次中前面刚生成的节点 ID(按顺序应用)。
+     * @returns 与 items 对应的新节点 ID 数组
+     */
+    async addNodesToMOC(
+        mocFile: TFile,
+        items: Array<{ parent: string; title: string; kind?: 'text' | 'file' }>,
+    ): Promise<string[]> {
+        const newIDs: string[] = [];
+        await this.modifyMOCData(mocFile, (mocData) => {
+            for (const item of items) {
+                newIDs.push(MOCHandler.insertChildNode(mocData, item.parent, item.title, item.kind ?? 'text'));
+            }
+        });
+        return newIDs;
+    }
+
+    /**
+     * 纯内存插入一个子节点,返回新节点 ID。不做 IO,供单个/批量两条路径共用。
+     * 子节点 ID 采用点号层级约定(parentID.N),边由 GraphDataBuilder 的层级兜底自动渲染,
+     * 因此无需写 reverseRelations。不写坐标,交给自动布局。
+     */
+    private static insertChildNode(
+        mocData: MOCParseResult,
+        parentID: string,
+        title: string,
+        kind: 'text' | 'file' = 'text',
+    ): string {
         const text = (title ?? '').trim();
         if (!text) throw new Error('empty node title');
 
-        let newID = '';
-        await this.modifyMOCData(mocFile, (mocData) => {
-            // 收集所有现有 ID,保证唯一
-            const allIDs = new Set<string>();
-            const collect = (nodes: any[]) => {
-                for (const n of nodes) { allIDs.add(String(n.nodeID)); collect(n.children ?? []); }
-            };
-            collect(mocData.nodes);
+        const nodes: any[] = (mocData as any).nodes;
+        // 收集所有现有 ID,保证唯一
+        const allIDs = new Set<string>();
+        const collect = (ns: any[]) => { for (const n of ns) { allIDs.add(String(n.nodeID)); collect(n.children ?? []); } };
+        collect(nodes);
 
-            // 定位父节点(__root__ 表示根层)
-            const findNode = (nodes: any[]): any => {
-                for (const n of nodes) {
-                    if (String(n.nodeID) === parentID) return n;
-                    const found = findNode(n.children ?? []);
-                    if (found) return found;
-                }
-                return null;
-            };
-            const parent = parentID === '__root__' ? null : findNode(mocData.nodes);
-            if (parentID !== '__root__' && !parent) {
-                throw new Error(`parent node not found: "${parentID}"`);
+        // 定位父节点(__root__ 表示根层)
+        const findNode = (ns: any[]): any => {
+            for (const n of ns) {
+                if (String(n.nodeID) === parentID) return n;
+                const found = findNode(n.children ?? []);
+                if (found) return found;
             }
+            return null;
+        };
+        const parent = parentID === '__root__' ? null : findNode(nodes);
+        if (parentID !== '__root__' && !parent) {
+            throw new Error(`parent node not found: "${parentID}"`);
+        }
 
-            const siblings: any[] = parent ? (parent.children ??= []) : mocData.nodes;
-            const depth = parent ? (parent.depth ?? 0) + 1 : 0;
+        const siblings: any[] = parent ? (parent.children ??= []) : nodes;
+        const depth = parent ? (parent.depth ?? 0) + 1 : 0;
 
-            // 计算下一个可用编号:根层用整数,子层用 parentID.N
-            const prefix = parent ? `${parentID}.` : '';
-            let maxIdx = 0;
-            for (const node of (parent ? siblings : mocData.nodes)) {
-                const id = String(node.nodeID);
-                const rest = parent
-                    ? (id.startsWith(prefix) ? id.slice(prefix.length) : null)
-                    : id;
-                if (rest && /^\d+$/.test(rest)) maxIdx = Math.max(maxIdx, parseInt(rest));
-            }
-            let idx = maxIdx + 1;
-            newID = `${prefix}${idx}`;
-            while (allIDs.has(newID)) { idx++; newID = `${prefix}${idx}`; }
+        // 计算下一个可用编号:根层用整数,子层用 parentID.N
+        const prefix = parent ? `${parentID}.` : '';
+        let maxIdx = 0;
+        for (const node of siblings) {
+            const id = String(node.nodeID);
+            const rest = parent ? (id.startsWith(prefix) ? id.slice(prefix.length) : null) : id;
+            if (rest && /^\d+$/.test(rest)) maxIdx = Math.max(maxIdx, parseInt(rest));
+        }
+        let idx = maxIdx + 1;
+        let newID = `${prefix}${idx}`;
+        while (allIDs.has(newID)) { idx++; newID = `${prefix}${idx}`; }
 
-            siblings.push({
-                nodeID: newID,
-                nodeType: kind,
-                target: text,
-                depth,
-                children: [],
-                relationText: '',
-            });
-        });
+        siblings.push({ nodeID: newID, nodeType: kind, target: text, depth, children: [], relationText: '' });
         return newID;
     }
 
