@@ -310,9 +310,9 @@ function createRandomTwoLetterNodeId(): string {
  */
 export function createMOCJsonWithInitialNode(
     nodeLayoutStyle: 'free' | 'auto' = 'free',
-    initialNodeTitle: string = '新节点'
+    initialNodeTitle: string = '新节点',
+    initialNodeId: string = createRandomTwoLetterNodeId()
 ): string {
-    const initialNodeId = createRandomTwoLetterNodeId();
     const json: MOCJsonSchema = {
         version: 1,
         nodes: [

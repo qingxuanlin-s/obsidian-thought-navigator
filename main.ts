@@ -5,6 +5,7 @@ import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
 import { ZKNavigationSettngTab } from "src/settings/settings";
 import { mainNoteInit, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX } from "src/utils/utils";
 import { createMOCJsonWithInitialNode } from "src/utils/mocJsonCodec";
+import { MOCHandler } from "src/view/index/mocHandler";
 import { MOCFileMonitor } from "src/utils/mocMonitor";
 import { ensureMOCPreviewPNG } from "src/embed/mocEmbedExporter";
 import { MOCReverseIndex } from "src/utils/mocReverseIndex";
@@ -24,6 +25,25 @@ import { getUnreadEntries } from "src/utils/changelog";
 interface Point {
     x: number;
     y: number;
+}
+
+export interface CreateMOCOptions {
+    folderPath?: string;       // 不含文件名,'' 或省略 = vault 根
+    name?: string;             // 不含后缀,省略 = 默认前缀+时间戳
+    title?: string;            // 根节点文本,省略 = t('Default node title')
+    layout?: 'free' | 'auto';  // 省略 = settings.nodeLayoutStyle
+    overwrite?: boolean;       // 目标已存在时是否覆盖,默认 false
+    rootId?: string;           // 指定根节点 ID(便于脚本后续 add-node);省略 = 随机
+}
+
+export interface ZKNavigationExternalAPI {
+    version(): string;
+    /** 创建新 .moc.md,返回文件路径 */
+    createMOC(opts?: CreateMOCOptions): Promise<string>;
+    /** 向已有 .moc 的父节点追加子节点,返回新节点 ID */
+    addNode(filePath: string, parentID: string, title: string, kind?: 'text' | 'file'): Promise<string>;
+    /** 一次性批量追加多个子节点(单次读改写,适合 CLI 一次建整棵树),返回新 ID 数组 */
+    addNodes(filePath: string, items: Array<{ parent: string; title: string; kind?: 'text' | 'file' }>): Promise<string[]>;
 }
 
 export interface ZoomPanScale{
@@ -239,6 +259,10 @@ export default class ZKNavigationPlugin extends Plugin {
     mocFileMonitor: MOCFileMonitor | null = null;
     // MOC 反向索引
     mocReverseIndex: MOCReverseIndex | null = null;
+    // 供 URI / 外部脚本复用的轻量 MOCHandler(懒加载)
+    cliMocHandler?: MOCHandler;
+    // 外部 API(Obsidian CLI eval / 其他插件),onload 末尾注册
+    api!: ZKNavigationExternalAPI;
     // 自建 Space 树索引(spaces.json,只虚拟存在,不创建真实文件夹)
     vaultIndex: VaultIndex | null = null;
     spaceService: SpaceService | null = null;
@@ -495,7 +519,85 @@ export default class ZKNavigationPlugin extends Plugin {
         
         this.registerObsidianProtocolHandler("zk-navigation",async (para)=>{
 
-            if(para.file){             
+            if(para.action === 'create'){
+                try {
+                    const file = await this.createMOCFile({
+                        name: para.name,
+                        folderPath: para.folder,
+                        title: para.title,
+                        layout: para.layout === 'auto' ? 'auto'
+                              : para.layout === 'free' ? 'free' : undefined,
+                        overwrite: para.overwrite === 'true',
+                        rootId: para.rootId,
+                    });
+
+                    this.settings.mocCurrentFile = file.path;
+                    await this.saveData(this.settings);
+                    new Notice(t('MOC created').replace('{path}', file.path));
+
+                    if(para.open !== 'false'){
+                        this.settings.lastRetrival = {
+                            type: 'index',
+                            ID: '',
+                            displayText: '',
+                            filePath: file.path,
+                            openTime: '',
+                        };
+                        this.settings.zoomPanScaleArr = [];
+                        this.settings.BranchTab = 0;
+                        this.RefreshIndexViewFlag = true;
+                        await this.openIndexView();
+                    }
+                    this.app.workspace.trigger('zk-navigation:refresh-index-graph');
+                } catch (e) {
+                    new Notice(t('MOC create failed').replace('{message}', e.message));
+                    console.error('[zk-navigation] create via uri failed', e);
+                }
+                return;
+            }
+
+            if(para.action === 'add-node'){
+                try {
+                    const target = this.app.vault.getAbstractFileByPath(para.file ?? '');
+                    if(!(target instanceof TFile) || !isMocFile(target)){
+                        throw new Error(t('MOC not a moc file').replace('{path}', para.file ?? ''));
+                    }
+                    if(!para.parent){
+                        throw new Error('missing parent node id');
+                    }
+                    if(!para.title){
+                        throw new Error('missing node title');
+                    }
+                    const kind = para.kind === 'file' ? 'file' : 'text';
+                    const handler = this.cliMocHandler ??= new MOCHandler(this, this.app);
+                    const newID = await handler.addChildNodeToMOC(target, para.parent, para.title, kind);
+
+                    this.settings.mocCurrentFile = target.path;
+                    await this.saveData(this.settings);
+                    new Notice(t('MOC node added').replace('{id}', newID));
+
+                    if(para.open !== 'false'){
+                        this.settings.lastRetrival = {
+                            type: 'index',
+                            ID: '',
+                            displayText: '',
+                            filePath: target.path,
+                            openTime: '',
+                        };
+                        this.settings.zoomPanScaleArr = [];
+                        this.settings.BranchTab = 0;
+                        this.RefreshIndexViewFlag = true;
+                        await this.openIndexView();
+                    }
+                    this.app.workspace.trigger('zk-navigation:refresh-index-graph');
+                } catch (e) {
+                    new Notice(t('MOC create failed').replace('{message}', e.message));
+                    console.error('[zk-navigation] add-node via uri failed', e);
+                }
+                return;
+            }
+
+            if(para.file){
                 
                 let file = this.app.vault.getFileByPath(para.file);
 
@@ -677,13 +779,7 @@ export default class ZKNavigationPlugin extends Plugin {
                 if (!activeFile) return;
                 try {
                     const folder = activeFile.parent;
-                    const baseName = t('default MOC file prefix') + '-' + moment().format('YYYYMMDDHHmmss');
-                    const filePath = folder?.path ? folder.path + '/' + baseName + MOC_FILE_SUFFIX : baseName + MOC_FILE_SUFFIX;
-                    const mocContent = createMOCJsonWithInitialNode(
-                        this.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free',
-                        t('Default node title')
-                    );
-                    const newFile = await this.app.vault.create(filePath, mocContent);
+                    const newFile = await this.createMOCFile({ folderPath: folder?.path ?? '' });
                     editor.replaceSelection('![[' + newFile.name + ']]');
                     this.settings.mocCurrentFile = newFile.path;
                     await this.saveData(this.settings);
@@ -819,6 +915,31 @@ export default class ZKNavigationPlugin extends Plugin {
                 }
             })
         );
+
+        // 外部 API:供 Obsidian CLI `obsidian eval` / 其他插件复用,与 URI 走同一份内部逻辑
+        this.api = {
+            version: () => this.manifest.version,
+            createMOC: async (opts: CreateMOCOptions = {}) => {
+                const file = await this.createMOCFile(opts);
+                return file.path;
+            },
+            addNode: async (filePath: string, parentID: string, title: string, kind: 'text' | 'file' = 'text') => {
+                const target = this.app.vault.getAbstractFileByPath(filePath);
+                if (!(target instanceof TFile) || !isMocFile(target)) {
+                    throw new Error(t('MOC not a moc file').replace('{path}', filePath));
+                }
+                const handler = this.cliMocHandler ??= new MOCHandler(this, this.app);
+                return await handler.addChildNodeToMOC(target, parentID, title, kind === 'file' ? 'file' : 'text');
+            },
+            addNodes: async (filePath: string, items: Array<{ parent: string; title: string; kind?: 'text' | 'file' }>) => {
+                const target = this.app.vault.getAbstractFileByPath(filePath);
+                if (!(target instanceof TFile) || !isMocFile(target)) {
+                    throw new Error(t('MOC not a moc file').replace('{path}', filePath));
+                }
+                const handler = this.cliMocHandler ??= new MOCHandler(this, this.app);
+                return await handler.addNodesToMOC(target, items || []);
+            },
+        };
 
     }
 
@@ -1146,17 +1267,48 @@ export default class ZKNavigationPlugin extends Plugin {
         return extIndex > path.lastIndexOf('/') ? path.slice(0, extIndex) : path;
     }
 
+    /**
+     * 共享创建逻辑:校验目录 → 文件名安全化 → 已存在策略 → 写入合法 .moc.md。
+     * 三处入口(右键文件夹 / zk-new-moc-embed / URI create)共用,消除行为漂移。
+     */
+    async createMOCFile(opts: CreateMOCOptions = {}): Promise<TFile> {
+        const layout = opts.layout
+            ?? (this.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free');
+        const baseName = opts.name?.trim()
+            || (t('default MOC file prefix') + '-' + moment().format('YYYYMMDDHHmmss'));
+
+        // 1) 目录校验:不存在则报错(不静默新建,避免脚本误写)
+        const folderPath = (opts.folderPath ?? '').replace(/\/+$/, '');
+        if (folderPath) {
+            const folder = this.app.vault.getAbstractFileByPath(folderPath);
+            if (!folder) throw new Error(t('MOC folder not found').replace('{path}', folderPath));
+            if (!(folder instanceof TFolder)) throw new Error(t('MOC not a folder').replace('{path}', folderPath));
+        }
+
+        // 2) 文件名安全化(去掉非法字符 / 路径分隔符)
+        const safeName = baseName.replace(/[\\/:*?"<>|]/g, '_');
+        const filePath = folderPath
+            ? `${folderPath}/${safeName}${MOC_FILE_SUFFIX}`
+            : `${safeName}${MOC_FILE_SUFFIX}`;
+
+        // 3) 已存在策略
+        const existing = this.app.vault.getAbstractFileByPath(filePath);
+        const rootId = opts.rootId?.trim();
+        const content = rootId
+            ? createMOCJsonWithInitialNode(layout, opts.title?.trim() || t('Default node title'), rootId)
+            : createMOCJsonWithInitialNode(layout, opts.title?.trim() || t('Default node title'));
+        if (existing) {
+            if (!(existing instanceof TFile)) throw new Error(t('MOC path occupied').replace('{path}', filePath));
+            if (!opts.overwrite) throw new Error(t('MOC file already exists').replace('{path}', filePath));
+            await this.app.vault.modify(existing, content);
+            return existing;
+        }
+        return await this.app.vault.create(filePath, content);
+    }
+
     private async createMOCInFolder(folder: TFolder): Promise<TFile | null> {
         try {
-            const baseName = t('default MOC file prefix') + '-' + moment().format('YYYYMMDDHHmmss');
-            const filePath = folder.path
-                ? `${folder.path}/${baseName}${MOC_FILE_SUFFIX}`
-                : `${baseName}${MOC_FILE_SUFFIX}`;
-            const content = createMOCJsonWithInitialNode(
-                this.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free',
-                t('Default node title')
-            );
-            return await this.app.vault.create(filePath, content);
+            return await this.createMOCFile({ folderPath: folder.path });
         } catch (e) {
             console.error('[zk-navigation] 新建思维树失败', e);
             new Notice(`新建失败: ${e.message}`);
