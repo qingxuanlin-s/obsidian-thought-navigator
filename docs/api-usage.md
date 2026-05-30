@@ -280,3 +280,57 @@ open "$B?action=add-node&file=animals.moc.md&parent=1&title=鸟类"
 
 - 成功：`Notice` 提示 `node added (id: <新ID>)`，该 `.moc` 设为当前文件。
 - `file` 不存在 / 不是 `.moc` 文件 / `parent` 找不到 / `title` 为空：`Notice` 明确报错，不写文件。
+
+---
+
+## 用 Obsidian CLI (`obsidian eval`) 直接调用（已实现，推荐脚本化用）
+
+插件在 `app.plugins.plugins['thought-navigator'].api` 上暴露了三个方法，可经 Obsidian 内置 CLI 的 `eval` 调用（无需 `open` URI）：
+
+| 方法 | 说明 | 返回 |
+|------|------|------|
+| `createMOC(opts)` | 创建新 `.moc.md`，`opts` 同 URI（`name/folder/title/layout/overwrite/rootId`） | 文件路径 |
+| `addNode(file, parent, title, kind?)` | 向父节点追加一个子节点 | 新节点 ID |
+| `addNodes(file, items)` | **一次性**追加多个子节点（`items=[{parent,title,kind?}]`） | 新 ID 数组 |
+| `version()` | 插件版本 | string |
+
+### ⚠️ 重要：`obsidian eval` 是「发射后不管」
+
+`obsidian eval` 命令**会立即返回，不等待异步操作完成**，且异步结果通常不打印。这意味着：
+
+- 连续快速 fire 多条 `eval`（每条一个 `addNode`）会因为命令体在后台异步执行而**落盘有明显延迟**，过早读取文件会以为「丢了节点」。
+- **建议用 `addNodes` 在一次 `eval` 里建整棵树**：单次读-改-写，无竞态、最可靠。
+
+### 推荐写法：一条命令建整棵树
+
+```bash
+OBS=/Applications/Obsidian.app/Contents/MacOS/obsidian   # macOS 内置 CLI
+"$OBS" eval code="(async()=>{
+  const a = app.plugins.plugins['thought-navigator'].api;
+  await a.createMOC({name:'animals', rootId:'1', title:'动物', layout:'auto'});
+  return await a.addNodes('animals.moc.md', [
+    {parent:'1',   title:'哺乳动物'},   // → 1.1
+    {parent:'1.1', title:'人类'},       // → 1.1.1
+    {parent:'1',   title:'鸟类'},       // → 1.2
+  ]);
+})()"
+```
+
+结果（已实测）：
+
+```
+1   动物
+├─ 1.1   哺乳动物
+│   └─ 1.1.1  人类
+└─ 1.2   鸟类
+```
+
+> `addNodes` 里靠 `rootId='1'` 固定根 ID，后续 `parent` 才能稳定引用；`parent` 也可引用本批次中前面刚生成的 ID（按数组顺序应用）。`parent='__root__'` 表示加在根层。
+
+### 重新加载插件后才生效
+
+改动插件后(重新构建 `main.js`),运行中的 Obsidian 仍在用旧代码,需重载:
+
+```bash
+"$OBS" eval code="(async()=>{await app.plugins.disablePlugin('thought-navigator');await app.plugins.enablePlugin('thought-navigator');return 'reloaded';})()"
+```

@@ -174,13 +174,17 @@ export async function parseMOCStructure(
     }
 
 
-    const content = await app.vault.read(file);
-
     // .moc / .moc.md 文件使用 JSON codec，普通 .md 文件使用 Mermaid 解析器
     if (isMocFile(file)) {
+        // 用 adapter.read 直读磁盘，绕过 vault.read 基于 mtime 的缓存：
+        // 同一秒内连续写入(如脚本/CLI 快速 addNode)mtime 不变会导致 vault.read 返回旧内容，
+        // 造成"读到刚写入前的快照、父节点找不到"的竞态。adapter.read 总是磁盘真实内容。
+        const diskContent = await app.vault.adapter.read(filePath);
         const { parseMOCJson } = await import('./mocJsonCodec');
-        return parseMOCJson(content, filePath, app);
+        return parseMOCJson(diskContent, filePath, app);
     }
+
+    const content = await app.vault.read(file);
 
     const { MermaidParser } = await import('./mermaidParser');
     const mermaidParser = new MermaidParser(app);
