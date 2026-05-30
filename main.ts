@@ -26,6 +26,14 @@ interface Point {
     y: number;
 }
 
+export interface CreateMOCOptions {
+    folderPath?: string;       // 不含文件名,'' 或省略 = vault 根
+    name?: string;             // 不含后缀,省略 = 默认前缀+时间戳
+    title?: string;            // 根节点文本,省略 = t('Default node title')
+    layout?: 'free' | 'auto';  // 省略 = settings.nodeLayoutStyle
+    overwrite?: boolean;       // 目标已存在时是否覆盖,默认 false
+}
+
 export interface ZoomPanScale{
     graphID: string;
     zoomScale: number;
@@ -495,7 +503,43 @@ export default class ZKNavigationPlugin extends Plugin {
         
         this.registerObsidianProtocolHandler("zk-navigation",async (para)=>{
 
-            if(para.file){             
+            if(para.action === 'create'){
+                try {
+                    const file = await this.createMOCFile({
+                        name: para.name,
+                        folderPath: para.folder,
+                        title: para.title,
+                        layout: para.layout === 'auto' ? 'auto'
+                              : para.layout === 'free' ? 'free' : undefined,
+                        overwrite: para.overwrite === 'true',
+                    });
+
+                    this.settings.mocCurrentFile = file.path;
+                    await this.saveData(this.settings);
+                    new Notice(t('MOC created').replace('{path}', file.path));
+
+                    if(para.open !== 'false'){
+                        this.settings.lastRetrival = {
+                            type: 'index',
+                            ID: '',
+                            displayText: '',
+                            filePath: file.path,
+                            openTime: '',
+                        };
+                        this.settings.zoomPanScaleArr = [];
+                        this.settings.BranchTab = 0;
+                        this.RefreshIndexViewFlag = true;
+                        await this.openIndexView();
+                    }
+                    this.app.workspace.trigger('zk-navigation:refresh-index-graph');
+                } catch (e) {
+                    new Notice(t('MOC create failed').replace('{message}', e.message));
+                    console.error('[zk-navigation] create via uri failed', e);
+                }
+                return;
+            }
+
+            if(para.file){
                 
                 let file = this.app.vault.getFileByPath(para.file);
 
@@ -677,13 +721,7 @@ export default class ZKNavigationPlugin extends Plugin {
                 if (!activeFile) return;
                 try {
                     const folder = activeFile.parent;
-                    const baseName = t('default MOC file prefix') + '-' + moment().format('YYYYMMDDHHmmss');
-                    const filePath = folder?.path ? folder.path + '/' + baseName + MOC_FILE_SUFFIX : baseName + MOC_FILE_SUFFIX;
-                    const mocContent = createMOCJsonWithInitialNode(
-                        this.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free',
-                        t('Default node title')
-                    );
-                    const newFile = await this.app.vault.create(filePath, mocContent);
+                    const newFile = await this.createMOCFile({ folderPath: folder?.path ?? '' });
                     editor.replaceSelection('![[' + newFile.name + ']]');
                     this.settings.mocCurrentFile = newFile.path;
                     await this.saveData(this.settings);
@@ -1146,17 +1184,48 @@ export default class ZKNavigationPlugin extends Plugin {
         return extIndex > path.lastIndexOf('/') ? path.slice(0, extIndex) : path;
     }
 
+    /**
+     * 共享创建逻辑:校验目录 → 文件名安全化 → 已存在策略 → 写入合法 .moc.md。
+     * 三处入口(右键文件夹 / zk-new-moc-embed / URI create)共用,消除行为漂移。
+     */
+    async createMOCFile(opts: CreateMOCOptions = {}): Promise<TFile> {
+        const layout = opts.layout
+            ?? (this.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free');
+        const baseName = opts.name?.trim()
+            || (t('default MOC file prefix') + '-' + moment().format('YYYYMMDDHHmmss'));
+
+        // 1) 目录校验:不存在则报错(不静默新建,避免脚本误写)
+        const folderPath = (opts.folderPath ?? '').replace(/\/+$/, '');
+        if (folderPath) {
+            const folder = this.app.vault.getAbstractFileByPath(folderPath);
+            if (!folder) throw new Error(t('MOC folder not found').replace('{path}', folderPath));
+            if (!(folder instanceof TFolder)) throw new Error(t('MOC not a folder').replace('{path}', folderPath));
+        }
+
+        // 2) 文件名安全化(去掉非法字符 / 路径分隔符)
+        const safeName = baseName.replace(/[\\/:*?"<>|]/g, '_');
+        const filePath = folderPath
+            ? `${folderPath}/${safeName}${MOC_FILE_SUFFIX}`
+            : `${safeName}${MOC_FILE_SUFFIX}`;
+
+        // 3) 已存在策略
+        const existing = this.app.vault.getAbstractFileByPath(filePath);
+        const content = createMOCJsonWithInitialNode(
+            layout,
+            opts.title?.trim() || t('Default node title')
+        );
+        if (existing) {
+            if (!(existing instanceof TFile)) throw new Error(t('MOC path occupied').replace('{path}', filePath));
+            if (!opts.overwrite) throw new Error(t('MOC file already exists').replace('{path}', filePath));
+            await this.app.vault.modify(existing, content);
+            return existing;
+        }
+        return await this.app.vault.create(filePath, content);
+    }
+
     private async createMOCInFolder(folder: TFolder): Promise<TFile | null> {
         try {
-            const baseName = t('default MOC file prefix') + '-' + moment().format('YYYYMMDDHHmmss');
-            const filePath = folder.path
-                ? `${folder.path}/${baseName}${MOC_FILE_SUFFIX}`
-                : `${baseName}${MOC_FILE_SUFFIX}`;
-            const content = createMOCJsonWithInitialNode(
-                this.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free',
-                t('Default node title')
-            );
-            return await this.app.vault.create(filePath, content);
+            return await this.createMOCFile({ folderPath: folder.path });
         } catch (e) {
             console.error('[zk-navigation] 新建思维树失败', e);
             new Notice(`新建失败: ${e.message}`);

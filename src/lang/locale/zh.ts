@@ -227,6 +227,12 @@ export default {
     "Mount current MOC to project folder": "添加当前 MOC 到项目文件夹",
     "No current MOC file selected": "当前未选中 MOC 文件",
     "Current MOC file does not exist": "当前 MOC 文件不存在",
+    "MOC created": "zk-navigation: 已创建 \"{path}\"",
+    "MOC folder not found": "zk-navigation: 目录不存在: \"{path}\"",
+    "MOC not a folder": "zk-navigation: 不是目录: \"{path}\"",
+    "MOC file already exists": "zk-navigation: 文件已存在: \"{path}\"(传 overwrite=true 可覆盖)",
+    "MOC path occupied": "zk-navigation: 路径被占用: \"{path}\"",
+    "MOC create failed": "zk-navigation: {message}",
 
     //indexModal.ts
     "Index folder not set!": "❌设置错误: 关键词文件夹没有设置!",

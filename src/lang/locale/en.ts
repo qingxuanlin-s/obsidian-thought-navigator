@@ -228,6 +228,12 @@ export default {
     "Mount current MOC to project folder": "Mount current MOC to project folder",
     "No current MOC file selected": "No current MOC file selected",
     "Current MOC file does not exist": "Current MOC file does not exist",
+    "MOC created": "zk-navigation: created \"{path}\"",
+    "MOC folder not found": "zk-navigation: folder not found: \"{path}\"",
+    "MOC not a folder": "zk-navigation: not a folder: \"{path}\"",
+    "MOC file already exists": "zk-navigation: file already exists: \"{path}\" (pass overwrite=true to replace)",
+    "MOC path occupied": "zk-navigation: path occupied: \"{path}\"",
+    "MOC create failed": "zk-navigation: {message}",
 
     //indexModal.ts
     "Index folder not set!": "❌Setting error: Index folder not set!",
