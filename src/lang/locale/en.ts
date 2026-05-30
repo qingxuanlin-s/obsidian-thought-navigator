@@ -233,6 +233,8 @@ export default {
     "MOC not a folder": "zk-navigation: not a folder: \"{path}\"",
     "MOC file already exists": "zk-navigation: file already exists: \"{path}\" (pass overwrite=true to replace)",
     "MOC path occupied": "zk-navigation: path occupied: \"{path}\"",
+    "MOC not a moc file": "zk-navigation: not a .moc file: \"{path}\"",
+    "MOC node added": "zk-navigation: node added (id: {id})",
     "MOC create failed": "zk-navigation: {message}",
 
     //indexModal.ts

@@ -159,6 +159,74 @@ export class MOCHandler {
         });
     }
 
+    /**
+     * 程序化追加子节点(供 URI / 外部脚本调用,不依赖 UI)。
+     * 子节点 ID 采用点号层级约定(parentID.N),边由 GraphDataBuilder 的层级兜底自动渲染,
+     * 因此无需写 reverseRelations。不写坐标,交给自动布局。
+     * @param parentID 父节点 ID;传 '__root__' 在根层追加
+     * @returns 新节点 ID
+     */
+    async addChildNodeToMOC(
+        mocFile: TFile,
+        parentID: string,
+        title: string,
+        kind: 'text' | 'file' = 'text',
+    ): Promise<string> {
+        const text = (title ?? '').trim();
+        if (!text) throw new Error('empty node title');
+
+        let newID = '';
+        await this.modifyMOCData(mocFile, (mocData) => {
+            // 收集所有现有 ID,保证唯一
+            const allIDs = new Set<string>();
+            const collect = (nodes: any[]) => {
+                for (const n of nodes) { allIDs.add(String(n.nodeID)); collect(n.children ?? []); }
+            };
+            collect(mocData.nodes);
+
+            // 定位父节点(__root__ 表示根层)
+            const findNode = (nodes: any[]): any => {
+                for (const n of nodes) {
+                    if (String(n.nodeID) === parentID) return n;
+                    const found = findNode(n.children ?? []);
+                    if (found) return found;
+                }
+                return null;
+            };
+            const parent = parentID === '__root__' ? null : findNode(mocData.nodes);
+            if (parentID !== '__root__' && !parent) {
+                throw new Error(`parent node not found: "${parentID}"`);
+            }
+
+            const siblings: any[] = parent ? (parent.children ??= []) : mocData.nodes;
+            const depth = parent ? (parent.depth ?? 0) + 1 : 0;
+
+            // 计算下一个可用编号:根层用整数,子层用 parentID.N
+            const prefix = parent ? `${parentID}.` : '';
+            let maxIdx = 0;
+            for (const node of (parent ? siblings : mocData.nodes)) {
+                const id = String(node.nodeID);
+                const rest = parent
+                    ? (id.startsWith(prefix) ? id.slice(prefix.length) : null)
+                    : id;
+                if (rest && /^\d+$/.test(rest)) maxIdx = Math.max(maxIdx, parseInt(rest));
+            }
+            let idx = maxIdx + 1;
+            newID = `${prefix}${idx}`;
+            while (allIDs.has(newID)) { idx++; newID = `${prefix}${idx}`; }
+
+            siblings.push({
+                nodeID: newID,
+                nodeType: kind,
+                target: text,
+                depth,
+                children: [],
+                relationText: '',
+            });
+        });
+        return newID;
+    }
+
     private updateNodeColorInData(mocData: MOCParseResult, nodeID: string, color: string): void {
         if (!mocData.nodeColors) {
             mocData.nodeColors = {};

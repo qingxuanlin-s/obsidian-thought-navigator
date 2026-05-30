@@ -5,6 +5,7 @@ import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
 import { ZKNavigationSettngTab } from "src/settings/settings";
 import { mainNoteInit, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX } from "src/utils/utils";
 import { createMOCJsonWithInitialNode } from "src/utils/mocJsonCodec";
+import { MOCHandler } from "src/view/index/mocHandler";
 import { MOCFileMonitor } from "src/utils/mocMonitor";
 import { ensureMOCPreviewPNG } from "src/embed/mocEmbedExporter";
 import { MOCReverseIndex } from "src/utils/mocReverseIndex";
@@ -32,6 +33,7 @@ export interface CreateMOCOptions {
     title?: string;            // 根节点文本,省略 = t('Default node title')
     layout?: 'free' | 'auto';  // 省略 = settings.nodeLayoutStyle
     overwrite?: boolean;       // 目标已存在时是否覆盖,默认 false
+    rootId?: string;           // 指定根节点 ID(便于脚本后续 add-node);省略 = 随机
 }
 
 export interface ZoomPanScale{
@@ -247,6 +249,8 @@ export default class ZKNavigationPlugin extends Plugin {
     mocFileMonitor: MOCFileMonitor | null = null;
     // MOC 反向索引
     mocReverseIndex: MOCReverseIndex | null = null;
+    // 供 URI / 外部脚本复用的轻量 MOCHandler(懒加载)
+    cliMocHandler?: MOCHandler;
     // 自建 Space 树索引(spaces.json,只虚拟存在,不创建真实文件夹)
     vaultIndex: VaultIndex | null = null;
     spaceService: SpaceService | null = null;
@@ -512,6 +516,7 @@ export default class ZKNavigationPlugin extends Plugin {
                         layout: para.layout === 'auto' ? 'auto'
                               : para.layout === 'free' ? 'free' : undefined,
                         overwrite: para.overwrite === 'true',
+                        rootId: para.rootId,
                     });
 
                     this.settings.mocCurrentFile = file.path;
@@ -535,6 +540,47 @@ export default class ZKNavigationPlugin extends Plugin {
                 } catch (e) {
                     new Notice(t('MOC create failed').replace('{message}', e.message));
                     console.error('[zk-navigation] create via uri failed', e);
+                }
+                return;
+            }
+
+            if(para.action === 'add-node'){
+                try {
+                    const target = this.app.vault.getAbstractFileByPath(para.file ?? '');
+                    if(!(target instanceof TFile) || !isMocFile(target)){
+                        throw new Error(t('MOC not a moc file').replace('{path}', para.file ?? ''));
+                    }
+                    if(!para.parent){
+                        throw new Error('missing parent node id');
+                    }
+                    if(!para.title){
+                        throw new Error('missing node title');
+                    }
+                    const kind = para.kind === 'file' ? 'file' : 'text';
+                    const handler = this.cliMocHandler ??= new MOCHandler(this, this.app);
+                    const newID = await handler.addChildNodeToMOC(target, para.parent, para.title, kind);
+
+                    this.settings.mocCurrentFile = target.path;
+                    await this.saveData(this.settings);
+                    new Notice(t('MOC node added').replace('{id}', newID));
+
+                    if(para.open !== 'false'){
+                        this.settings.lastRetrival = {
+                            type: 'index',
+                            ID: '',
+                            displayText: '',
+                            filePath: target.path,
+                            openTime: '',
+                        };
+                        this.settings.zoomPanScaleArr = [];
+                        this.settings.BranchTab = 0;
+                        this.RefreshIndexViewFlag = true;
+                        await this.openIndexView();
+                    }
+                    this.app.workspace.trigger('zk-navigation:refresh-index-graph');
+                } catch (e) {
+                    new Notice(t('MOC create failed').replace('{message}', e.message));
+                    console.error('[zk-navigation] add-node via uri failed', e);
                 }
                 return;
             }
@@ -1210,10 +1256,10 @@ export default class ZKNavigationPlugin extends Plugin {
 
         // 3) 已存在策略
         const existing = this.app.vault.getAbstractFileByPath(filePath);
-        const content = createMOCJsonWithInitialNode(
-            layout,
-            opts.title?.trim() || t('Default node title')
-        );
+        const rootId = opts.rootId?.trim();
+        const content = rootId
+            ? createMOCJsonWithInitialNode(layout, opts.title?.trim() || t('Default node title'), rootId)
+            : createMOCJsonWithInitialNode(layout, opts.title?.trim() || t('Default node title'));
         if (existing) {
             if (!(existing instanceof TFile)) throw new Error(t('MOC path occupied').replace('{path}', filePath));
             if (!opts.overwrite) throw new Error(t('MOC file already exists').replace('{path}', filePath));

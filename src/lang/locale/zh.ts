@@ -232,6 +232,8 @@ export default {
     "MOC not a folder": "zk-navigation: 不是目录: \"{path}\"",
     "MOC file already exists": "zk-navigation: 文件已存在: \"{path}\"(传 overwrite=true 可覆盖)",
     "MOC path occupied": "zk-navigation: 路径被占用: \"{path}\"",
+    "MOC not a moc file": "zk-navigation: 不是 .moc 文件: \"{path}\"",
+    "MOC node added": "zk-navigation: 已添加节点(id: {id})",
     "MOC create failed": "zk-navigation: {message}",
 
     //indexModal.ts
