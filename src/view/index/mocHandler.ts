@@ -2,6 +2,7 @@ import { TFile } from "obsidian";
 import ZKNavigationPlugin from "main";
 import { MOCParseResult, CrossDomainLink, MOCTreeNode } from "src/utils/utils";
 import { LayoutPreset, normalizeLayoutPreset } from "src/utils/growthDirection";
+import { computeAutoLayout, AutoLayoutNodeInput } from "src/utils/autoLayoutEngine";
 
 /**
  * 深拷贝 MOCTreeNode 树结构
@@ -175,6 +176,7 @@ export class MOCHandler {
         let newID = '';
         await this.modifyMOCData(mocFile, (mocData) => {
             newID = MOCHandler.insertChildNode(mocData, parentID, title, kind);
+            this.applyHeadlessAutoLayout(mocData);
         });
         return newID;
     }
@@ -195,8 +197,81 @@ export class MOCHandler {
             for (const item of items) {
                 newIDs.push(MOCHandler.insertChildNode(mocData, item.parent, item.title, item.kind ?? 'text'));
             }
+            this.applyHeadlessAutoLayout(mocData);
         });
         return newIDs;
+    }
+
+    /**
+     * 无头(CLI/脚本)场景下,直接为 auto 文件算好居中坐标写入 nodePositions,
+     * 使文件创建时即居中——视图打开无需再 reflow,避免"先歪后居中"的闪动。
+     * 节点尺寸用文本长度估算;居中的对称性不依赖精确尺寸,故根节点必然居中。
+     * 仅处理 auto 文件;手动拖动过的节点(NODE_FLAG_MANUALLY_MOVED)保留其坐标。
+     */
+    private applyHeadlessAutoLayout(mocData: MOCParseResult): void {
+        if (mocData.nodeLayoutStyle !== 'auto') return;
+        const tree: any[] = (mocData as any).nodes;
+        if (!tree?.length) return;
+
+        const nodes: Record<string, AutoLayoutNodeInput> = {};
+        const parentById: Record<string, string | undefined> = {};
+        const childrenById: Record<string, string[]> = {};
+        const rootIds: string[] = [];
+
+        const estimateSize = (text: string) => {
+            const len = [...String(text ?? '')].reduce((s, ch) => s + (ch.charCodeAt(0) > 255 ? 2 : 1), 0);
+            return { width: Math.min(320, Math.max(80, len * 11 + 36)), height: 44 };
+        };
+
+        // 方向提示:沿用视图首次布局的同款偏置(depth 越深 x 越大 → 全部朝同侧 E,竖向堆叠),
+        // 保证 CLI 产出与手动/视图重排一致(同侧堆叠、根竖直居中),而非左右交替。
+        const dirHint: Record<string, { x: number; y: number }> = {};
+        let order = 0;
+        const walk = (list: any[], parentId: string | undefined, depth: number) => {
+            for (const n of list) {
+                const id = String(n.nodeID);
+                nodes[id] = {
+                    id,
+                    size: estimateSize(n.target),
+                    position: { x: 0, y: 0 },
+                    colorKey: '__default__',
+                };
+                dirHint[id] = { x: depth * 260, y: order * 150 };
+                parentById[id] = parentId;
+                childrenById[id] = [];
+                if (parentId) childrenById[parentId].push(id);
+                else rootIds.push(id);
+                order++;
+                walk(n.children || [], id, depth + 1);
+            }
+        };
+        walk(tree, undefined, 0);
+
+        const realMocRootIds = new Set<string>(rootIds);
+        const preset = normalizeLayoutPreset(this.plugin.settings.autoLayoutDefaultGrowthDirection);
+        // 用 dirHint 仅决定方向;ignore 全部非根 → 实际坐标由引擎对称重排(忽略 hint 的位置)
+        const ignore = new Set<string>(Object.keys(nodes).filter((id) => !realMocRootIds.has(id)));
+
+        const merged: Record<string, { x: number; y: number }> = {};
+        for (const rootId of rootIds) {
+            nodes[rootId].position = { x: 0, y: 0 };
+            const positions = computeAutoLayout({
+                relayoutRootId: rootId,
+                nodes,
+                parentById,
+                childrenById,
+                realMocRootIds,
+                nodePositions: dirHint,
+                ignoreSavedPositionsForIds: ignore,
+                layoutPreset: preset,
+                nodeLayoutPresets: (mocData as any).nodeLayoutPresets,
+            });
+            Object.assign(merged, positions);
+        }
+
+        if (!mocData.nodePositions) mocData.nodePositions = {};
+        Object.assign(mocData.nodePositions, merged);
+        if (!mocData.layoutPreset) mocData.layoutPreset = preset;
     }
 
     /**
