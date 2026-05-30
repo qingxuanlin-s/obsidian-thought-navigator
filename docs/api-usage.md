@@ -190,3 +190,46 @@ obsidian eval code="typeof app.plugins.plugins['thought-navigator'].api"
 ```
 
 生成文件默认路径：与源笔记同目录，文件名为 `{原文件名}.moc.md`。
+
+---
+
+## 通过 URI 创建 .moc 文件（已实现）
+
+> 与上文 `plugin.api`（设计中、尚未实现）不同，下面的 `obsidian://zk-navigation?action=create` 协议**已经实现**，可直接用于脚本化创建。需 Obsidian 正在运行（非真无头；Linux 服务器需 xvfb）。
+
+### URI 参数
+
+```
+obsidian://zk-navigation?action=create
+  &name=<文件名,不含后缀,可选;默认 前缀+时间戳>
+  &folder=<目标目录,可选;默认 vault 根。目录不存在会报错,不会自动创建>
+  &title=<根节点文本,可选;默认插件默认标题>
+  &layout=<free|auto,可选;默认取设置 nodeLayoutStyle>
+  &overwrite=<true|false,可选;默认 false。已存在且非 true 时报错>
+  &open=<true|false,可选;默认 true,创建后在思维树视图打开>
+```
+
+> 节点不写坐标，交给自动布局；`layout` 仅为 `free|auto`，与 Mermaid 的 `LR/RL/TB/BT` 方向无关。
+
+### 命令行示例
+
+```bash
+# macOS
+open "obsidian://zk-navigation?action=create&name=read-notes&folder=MOC&title=阅读笔记&layout=auto"
+
+# Windows
+start "" "obsidian://zk-navigation?action=create&name=read-notes&folder=MOC&title=阅读笔记"
+
+# Linux
+xdg-open "obsidian://zk-navigation?action=create&name=read-notes&folder=MOC"
+
+# 已存在则覆盖;不自动打开视图
+open "obsidian://zk-navigation?action=create&name=read-notes&folder=MOC&overwrite=true&open=false"
+```
+
+### 反馈
+
+- 成功：`Notice` 提示 `created "<path>"`，并设为当前 MOC。
+- 目录不存在 / 不是目录 / 文件已存在（未传 `overwrite=true`）：`Notice` 给出明确错误，不写文件。
+
+> 含特殊字符的参数（中文、空格、`/`）请做 URL 编码。多行/大段初始内容不适合走 URI（长度与编码限制），属后续增强。
