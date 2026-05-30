@@ -218,9 +218,11 @@ export class MOCHandler {
         const childrenById: Record<string, string[]> = {};
         const rootIds: string[] = [];
 
+        // 真实渲染的分支节点高度≈92(由手动文件同级间距 148.6 − stackGap 56 反推),
+        // 用它估算高度,使 CLI 产出的竖向间距与手动/视图一致,避免同级挤在一起。
         const estimateSize = (text: string) => {
             const len = [...String(text ?? '')].reduce((s, ch) => s + (ch.charCodeAt(0) > 255 ? 2 : 1), 0);
-            return { width: Math.min(320, Math.max(80, len * 11 + 36)), height: 44 };
+            return { width: Math.min(320, Math.max(80, len * 11 + 36)), height: 92 };
         };
 
         // 方向提示:沿用视图首次布局的同款偏置(depth 越深 x 越大 → 全部朝同侧 E,竖向堆叠),
