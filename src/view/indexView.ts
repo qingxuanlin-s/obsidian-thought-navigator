@@ -7106,6 +7106,7 @@ cy.fit(null, 40);
         await this.relayoutAutoLayoutSiblings(anchorNodeId, {
             compactVisibleNodes: true,
             collapsedNodeIds: this.collapsedNodeIds,
+            rebalanceRootChildren: true,
         });
     }
 
@@ -7135,6 +7136,7 @@ cy.fit(null, 40);
             persistPositions?: boolean;
             ignoreSavedPositionsForIds?: string[];
             forceResetManuallyMoved?: boolean;
+            rebalanceRootChildren?: boolean;
         } = {}
     ): Promise<void> {
         if (!this.isNodeAutoLayout(parentNodeId) || !this.branchRenderer) {
@@ -7272,7 +7274,10 @@ cy.fit(null, 40);
                         if (!this.isNodeAutoLayout(nodeId)) return false;
                         if (relayoutOptions.collapsedNodeIds?.includes(nodeId)) return false;
                         const parentId = parentById[nodeId];
-                        if (parentId && realMocRootIds.has(parentId)) return false;
+                        // 默认豁免根的一级子节点(收起场景沿用,保持分支根稳定);
+                        // rebalanceRootChildren=true 时(新建/移动节点的 reflow)放开,
+                        // 让一级子节点也对称重排 → 根节点相对子节点竖直居中。
+                        if (!relayoutOptions.rebalanceRootChildren && parentId && realMocRootIds.has(parentId)) return false;
                         if (isManuallyMoved(nodeId)) return false;
                         return true;
                     }));
