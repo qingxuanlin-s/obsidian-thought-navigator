@@ -2272,13 +2272,20 @@ cy.fit(null, 40);
                 if (!mocFile) return;
                 this.collapsedNodeIds = collapsedNodeIds;
                 await this.persistCollapseState(mocFile, collapsedNodeIds);
-                if (collapsed || collapsedNodeIds.length > 0) {
+                if (this.isNodeAutoLayout(nodeId)) {
+                    // auto 布局:收起和展开都按当前 collapsedNodeIds 重新计算可见节点的紧凑布局。
+                    // 展开不能只 restoreSavedNodePositions —— auto 子节点通常没有保存坐标,
+                    // 收起时被挪近填空当的兄弟分支会还原不回去,导致展开后子树重叠。
+                    // collapsedNodeIds 为空(全部展开)时即对整棵树重新对称布局。
+                    // persistPositions:false → 仅临时视觉重排,不写坐标;手动拖动过的节点仍保留其保存位置。
                     await this.relayoutAutoLayoutSiblings(nodeId, {
                         collapsedNodeIds,
                         compactVisibleNodes: true,
+                        rebalanceRootChildren: true,
                         persistPositions: false,
                     });
-                } else {
+                } else if (collapsedNodeIds.length === 0) {
+                    // free 布局:节点都有保存坐标,展开时还原即可。
                     await this.restoreSavedNodePositions(mocFile);
                 }
             } catch (error) {

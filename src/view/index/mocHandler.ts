@@ -3,6 +3,35 @@ import ZKNavigationPlugin from "main";
 import { MOCParseResult, CrossDomainLink, MOCTreeNode } from "src/utils/utils";
 import { LayoutPreset, normalizeLayoutPreset } from "src/utils/growthDirection";
 import { computeAutoLayout, AutoLayoutNodeInput } from "src/utils/autoLayoutEngine";
+import { DomTextMeasurer } from "src/renderer/domTextMeasurer";
+import { measureNodeLabel } from "src/renderer/renderPipeline";
+
+// 文本节点盒子尺寸:与 src/renderer/stylesheet.ts 的逐层级测量保持一致
+// (root 用纯函数 measureNodeLabel;一级/更深用 DomTextMeasurer 实测文本宽 + 同款 padding)。
+// 修改这里时务必同步 stylesheet.ts 对应选择器的常量,否则 CLI 与视图布局会漂移。
+function measureTextNodeBox(
+    label: string,
+    depth: number,
+    domMeasure: ((text: string, opts: { fontSize: number; fontWeight?: string; maxWidth: number; lineHeight?: number }) => { width: number; height: number }) | null
+): { width: number; height: number } {
+    const text = label || ' ';
+    if (depth <= 0) {
+        // 根节点(stylesheet.ts node[?isRoot] 文本分支)
+        const m = measureNodeLabel(text, { baseWidth: 210, minHeight: 78, maxWidth: 560, charWidth: 18, lineHeight: 42, paddingX: 88, paddingY: 38 });
+        return { width: m.width, height: m.height };
+    }
+    // computeAutoTextMetrics 的等价实现
+    const opts = depth === 1
+        ? { fontSize: 24, fontWeight: 'bold', maxContentWidth: 296, baseWidth: 118, minHeight: 90, paddingX: 72, paddingY: 34 }
+        : { fontSize: 20, fontWeight: '500', maxContentWidth: 280, baseWidth: 90, minHeight: 42, paddingX: 72, paddingY: 44 };
+    const lineHeight = Math.ceil(opts.fontSize * 1.4);
+    const m = domMeasure
+        ? domMeasure(text, { fontSize: opts.fontSize, fontWeight: opts.fontWeight, maxWidth: opts.maxContentWidth, lineHeight })
+        : measureNodeLabel(text, { fontSize: opts.fontSize, maxWidth: opts.maxContentWidth, lineHeight, paddingX: 0, paddingY: 0 });
+    const width = Math.max(opts.baseWidth, Math.min(opts.maxContentWidth + opts.paddingX, Math.ceil(m.width) + opts.paddingX));
+    const height = Math.max(opts.minHeight, Math.ceil(m.height) + opts.paddingY);
+    return { width, height };
+}
 
 /**
  * 深拷贝 MOCTreeNode 树结构
@@ -218,12 +247,16 @@ export class MOCHandler {
         const childrenById: Record<string, string[]> = {};
         const rootIds: string[] = [];
 
-        // 真实渲染的分支节点高度≈92(由手动文件同级间距 148.6 − stackGap 56 反推),
-        // 用它估算高度,使 CLI 产出的竖向间距与手动/视图一致,避免同级挤在一起。
-        const estimateSize = (text: string) => {
-            const len = [...String(text ?? '')].reduce((s, ch) => s + (ch.charCodeAt(0) > 255 ? 2 : 1), 0);
-            return { width: Math.min(320, Math.max(80, len * 11 + 36)), height: 92 };
-        };
+        // 用真实 DOM 测量(与视图同一套字体/算法),使 CLI 产出的尺寸=视图实测尺寸,
+        // 从而布局与手动创建像素级一致。运行环境是 Obsidian 渲染进程,document 可用;
+        // 万一不可用(无 document)则回退到 measureNodeLabel 纯估算。
+        let measurer: DomTextMeasurer | null = null;
+        const hasDom = typeof document !== 'undefined' && !!document.body;
+        if (hasDom) {
+            try { measurer = new DomTextMeasurer(document.body); } catch { measurer = null; }
+        }
+        const domMeasure = measurer ? (text: string, opts: any) => measurer!.measure(text, opts) : null;
+        const sizeOf = (label: string, depth: number) => measureTextNodeBox(label, depth, domMeasure);
 
         // 方向提示:沿用视图首次布局的同款偏置(depth 越深 x 越大 → 全部朝同侧 E,竖向堆叠),
         // 保证 CLI 产出与手动/视图重排一致(同侧堆叠、根竖直居中),而非左右交替。
@@ -234,7 +267,7 @@ export class MOCHandler {
                 const id = String(n.nodeID);
                 nodes[id] = {
                     id,
-                    size: estimateSize(n.target),
+                    size: sizeOf(n.target, depth),
                     position: { x: 0, y: 0 },
                     colorKey: '__default__',
                 };
@@ -274,6 +307,8 @@ export class MOCHandler {
         if (!mocData.nodePositions) mocData.nodePositions = {};
         Object.assign(mocData.nodePositions, merged);
         if (!mocData.layoutPreset) mocData.layoutPreset = preset;
+
+        measurer?.destroy();
     }
 
     /**
