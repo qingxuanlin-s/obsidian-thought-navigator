@@ -623,7 +623,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         __lap('finalize');
         if (__zkPerf) {
             const total = Object.values(__mark).reduce((a, b) => a + b, 0);
-            console.debug(
+            console.log(
                 `[zkPerf:render] total=${total.toFixed(1)}ms`,
                 Object.fromEntries(Object.entries(__mark).map(([k, v]) => [k, +v.toFixed(1)]))
             );
