@@ -64,6 +64,17 @@ function modelToRendered(value: number, zoom: number, panValue: number): number 
 export function renderNodeBadges(this: any): void {
         if (!this.cy || !this.container) return;
 
+        // 性能埋点(window.__zkPerf=true):细分 renderNodeBadges 内部各子系统耗时
+        const __zkPerf = (window as any).__zkPerf === true;
+        const __bMark: Record<string, number> = {};
+        let __bPrev = __zkPerf ? performance.now() : 0;
+        const __bLap = (name: string) => {
+            if (!__zkPerf) return;
+            const t = performance.now();
+            __bMark[name] = (__bMark[name] || 0) + (t - __bPrev);
+            __bPrev = t;
+        };
+
         // 清理旧的统一 overlay 调度器（badge 重建时所有子系统也会重建）
         this.overlayScheduler.cleanupScheduler();
         this.cleanupBadgeInteractionBindings();
@@ -1207,8 +1218,11 @@ export function renderNodeBadges(this: any): void {
             });
         }
 
+        __bLap('domPasses');
+
         // 文本节点 Markdown 渲染 overlay
         buildTextMarkdownOverlays.call(this, badgeContainer, badgeUpdaters);
+        __bLap('textMD');
 
         // 注册到统一 overlay 调度器
         const badgePositionUpdater = () => badgeUpdaters.forEach(updater => updater());
@@ -1225,16 +1239,27 @@ export function renderNodeBadges(this: any): void {
 
         // 添加连线手柄
         this.edgeControls.addConnectionHandles();
+        __bLap('edgeControls');
 
         // 添加折叠/展开子节点手柄
         addCollapseToggleHandle.call(this);
-        
+        __bLap('collapseHandle');
+
         // 添加分组调整大小手柄
         this.addGroupResizeHandles();
+        __bLap('groupResize');
 
         // 所有 overlay 子系统注册完毕后，绑定统一事件监听
         this.overlayScheduler.bindListeners();
         this.overlayScheduler.immediate();
+        __bLap('schedulerImmediate');
+        if (__zkPerf) {
+            const total = Object.values(__bMark).reduce((a, b) => a + b, 0);
+            console.log(
+                `[zkPerf:badges] total=${total.toFixed(1)}ms`,
+                Object.fromEntries(Object.entries(__bMark).map(([k, v]) => [k, +v.toFixed(1)]))
+            );
+        }
     }
 
     /**
