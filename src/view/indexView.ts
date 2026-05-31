@@ -1787,9 +1787,23 @@ cy.fit(null, 40);
             }
         }
 
+        // 性能埋点：在控制台执行 `window.__zkPerf = true` 后,每次刷新会打印各阶段耗时,
+        // 用于定位大图新增节点变慢的真实瓶颈(parse / convert / build / render)。
+        const __zkPerf = (window as any).__zkPerf === true;
+        const __now = () => (__zkPerf ? performance.now() : 0);
+        const __mark: Record<string, number> = {};
+        let __tPrev = __now();
+        const __lap = (name: string) => {
+            if (!__zkPerf) return;
+            const t = performance.now();
+            __mark[name] = t - __tPrev;
+            __tPrev = t;
+        };
+
         let mocParseResult = await parseMOCStructure(this.app, currentMOCPath, headingTitle);
         mocParseResult = await this.ensureInitialRootNode(currentMOCFile, mocParseResult, headingTitle);
         mocParseResult = await this.ensureNodePositions(currentMOCFile, mocParseResult, headingTitle);
+        __lap('parse');
 
         // 项目徽章:当前 MOC 是否被挂载到任意 FolderNode 下
         this.refreshProjectBadge(currentMOCPath);
@@ -1810,6 +1824,7 @@ cy.fit(null, 40);
             : [];
         // 克隆 reverseRelations Map，避免修改缓存中的数据
         this.mocReverseRelations = new Map(Array.from(mocParseResult.reverseRelations.entries()));
+        __lap('convertZKNodes');
 
         // 性能优化：复用或创建图形容器（不复用 renderer 内部的 Cytoscape 实例）
         let branchGraphDiv = document.getElementById("zk-branch-cytoscape") as HTMLElement;
@@ -1867,6 +1882,7 @@ cy.fit(null, 40);
             this.nodeAnchors,
             this.collapsedNodeIds
         );
+        __lap('buildGraphData');
 
         // 配置渲染选项
         const options: RenderOptions = {
@@ -1895,6 +1911,14 @@ cy.fit(null, 40);
         // 渲染或更新图形
         // CytoscapeRenderer 内部会智能判断是否需要完全重建或增量更新
         await this.branchRenderer.render(branchGraphDiv, graphData, options);
+        __lap('render');
+        if (__zkPerf) {
+            const total = Object.values(__mark).reduce((a, b) => a + b, 0);
+            console.debug(
+                `[zkPerf] nodes=${this.mocNodes.length} total=${total.toFixed(1)}ms`,
+                Object.fromEntries(Object.entries(__mark).map(([k, v]) => [k, +v.toFixed(1)]))
+            );
+        }
         this.lastRenderedMOCPath = currentMOCPath;
         this.lastRenderSignature = renderSignature;
 
