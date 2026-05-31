@@ -1790,6 +1790,7 @@ function addCollapseToggleHandle(this: any): void {
         `;
         this.container.appendChild(handleContainer);
         const handleUpdaters: Array<() => void> = [];
+        const nodeHoverCleanups: Array<() => void> = [];
 
         const hasChildren = (originalId: string): boolean => {
             return this.cy!.nodes().some((n: any) => {
@@ -1827,6 +1828,11 @@ function addCollapseToggleHandle(this: any): void {
             `;
             handleContainer.appendChild(handle);
 
+            // hover 节点即显示收起按钮（与右侧连线手柄一致）；已收起/选中时常驻。
+            // 用「在节点上 || 在按钮上」两个标志桥接节点与按钮之间的间隙，避免移动途中闪退。
+            let overNode = false;
+            let overHandle = false;
+
             const updateHandle = () => {
                 if (!this.cy) return;
 
@@ -1838,14 +1844,15 @@ function addCollapseToggleHandle(this: any): void {
 
                 const bb = node.renderedBoundingBox();
                 const size = 24;
-                const gap = 6;
+                // 负间隙：按钮右侧叠在节点左边缘上，消除节点→按钮移动途中的鼠标死区
+                const gap = -4;
                 const rawLeft = bb.x1 - size - gap;
                 const left = rawLeft < 4 ? bb.x1 + 4 : rawLeft;
                 const rawTop = bb.y1 + (bb.h - size) / 2;
                 const maxTop = Math.max(4, this.container.clientHeight - size - 4);
                 const top = Math.min(Math.max(rawTop, 4), maxTop);
                 const isCollapsed = this.collapsedNodeIds.has(originalId);
-                const shouldShow = isCollapsed || node.selected();
+                const shouldShow = isCollapsed || node.selected() || overNode || overHandle;
 
                 if (!shouldShow) {
                     handle.style.display = 'none';
@@ -1890,6 +1897,20 @@ function addCollapseToggleHandle(this: any): void {
             };
             handle.addEventListener('click', toggleCollapse);
             handle.addEventListener('touchend', toggleCollapse, { passive: false });
+
+            // hover 节点 / hover 按钮本身 → 显示；移开两者 → 隐藏（未收起且未选中时）
+            const onNodeOver = () => { overNode = true; updateHandle(); };
+            const onNodeOut = () => { overNode = false; updateHandle(); };
+            node.on('mouseover', onNodeOver);
+            node.on('mouseout', onNodeOut);
+            const onHandleEnter = () => { overHandle = true; updateHandle(); };
+            const onHandleLeave = () => { overHandle = false; updateHandle(); };
+            handle.addEventListener('mouseenter', onHandleEnter);
+            handle.addEventListener('mouseleave', onHandleLeave);
+            nodeHoverCleanups.push(() => {
+                node.off('mouseover', onNodeOver);
+                node.off('mouseout', onNodeOut);
+            });
         });
 
         // 注册到统一 overlay 调度器
@@ -1900,6 +1921,7 @@ function addCollapseToggleHandle(this: any): void {
         this.collapseHandleCleanup = () => {
             this.overlayScheduler.updaters.delete(collapsePositionUpdater);
             this.overlayScheduler.extraUpdaters.delete(collapsePositionUpdater);
+            nodeHoverCleanups.forEach((fn) => fn());
             handleContainer.remove();
         };
     }
