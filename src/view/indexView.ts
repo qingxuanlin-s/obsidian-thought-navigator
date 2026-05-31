@@ -2276,6 +2276,10 @@ cy.fit(null, 40);
                     await this.relayoutAutoLayoutSiblings(nodeId, {
                         collapsedNodeIds,
                         compactVisibleNodes: true,
+                        // 收起时让根的一级子节点也参与聚拢(填补被收起子树留下的空当),
+                        // 与新建/移动 reflow 一致;persistPositions:false → 仅临时视觉收紧,不写坐标,
+                        // 展开时由 restoreSavedNodePositions 还原。
+                        rebalanceRootChildren: true,
                         persistPositions: false,
                     });
                 } else {
