@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spaces · 侧边栏原型</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#1a1b1e; --bg-sidebar:#191a1d;
+  --bg-hover:#26282d; --bg-active:#2c2f36; --line:#2a2c31; --line-soft:#232529;
+  --txt:#dcdee3; --txt-dim:#9a9da6; --txt-faint:#6b6e77;
+  --moc:#b794f6; --area:#7fd49a; --project:#6ba3ff; --resource:#f2a65a;
+  --archive:#8a8e98; --practice:#e0c46c;
+  --overview:#6ba3ff; --topic:#7fd49a; --note:#cf94e5; --danger:#e57373;
+  font-synthesis:none;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:radial-gradient(900px 500px at 30% -10%, #232530 0%, transparent 60%),#101114;
+  color:var(--txt);font-family:'Outfit','PingFang SC','Microsoft YaHei',sans-serif;
+  font-size:14px;letter-spacing:.1px;-webkit-font-smoothing:antialiased;
+  display:grid;place-items:center;height:100vh;overflow:hidden;
+}
+svg{width:16px;height:16px;stroke-width:1.9;fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round;flex:none;display:block}
+.icon-sm svg{width:14px;height:14px}
+
+/* 仅一个侧边栏面板,居中 */
+.sidebar{
+  width:358px;height:90vh;max-height:880px;flex:none;
+  background:var(--bg-sidebar);border:1px solid var(--line);
+  border-radius:14px;box-shadow:0 30px 80px rgba(0,0,0,.55);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.side-head{padding:15px 16px 9px;display:flex;align-items:center;justify-content:space-between}
+.side-head h1{font-size:16px;font-weight:600;letter-spacing:.4px;display:flex;align-items:center;gap:9px}
+.side-head h1 svg{width:18px;height:18px;color:var(--txt-dim)}
+.head-btns{display:flex;gap:4px}
+.icon-btn{width:26px;height:26px;border-radius:6px;display:grid;place-items:center;color:var(--txt-dim);cursor:pointer;transition:.15s}
+.icon-btn:hover{background:var(--bg-hover);color:var(--txt)}
+
+.space-switch{margin:2px 14px 10px;display:flex;gap:7px}
+.space-pill{flex:1;display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:10px;cursor:pointer;background:#1d1f24;border:1px solid var(--line-soft);transition:.16s;min-width:0}
+.space-pill:hover{border-color:#34373f}
+.space-pill.on{background:linear-gradient(180deg,#262931,#1f2127);border-color:#3c4049}
+.space-pill .si svg{width:18px;height:18px}
+.space-pill .sm{min-width:0}
+.space-pill .sn{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.space-pill .ss{font-size:10px;color:var(--txt-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.space-pill.on .sn{color:#fff}
+
+.modes{margin:0 14px 11px;display:flex;gap:2px;background:#15161a;border:1px solid var(--line-soft);border-radius:9px;padding:3px}
+.mode{flex:1;text-align:center;padding:6px 0;border-radius:6px;font-size:12.5px;font-weight:500;color:var(--txt-faint);cursor:pointer;transition:.18s;letter-spacing:.3px;display:flex;align-items:center;justify-content:center;gap:6px}
+.mode svg{width:14px;height:14px}
+.mode:hover{color:var(--txt-dim)}
+.mode.on{background:var(--bg-active);color:var(--txt);box-shadow:0 1px 0 rgba(0,0,0,.3)}
+
+.hint{margin:0 14px 10px;padding:9px 12px;border-radius:8px;font-size:11px;line-height:1.55}
+.hint.para{background:rgba(127,212,154,.06);border:1px solid rgba(127,212,154,.16);color:#9be0b0}
+.hint.zk{background:rgba(207,148,229,.07);border:1px solid rgba(207,148,229,.18);color:#dcb4ec}
+
+.tree{flex:1;overflow-y:auto;padding:2px 8px 14px}
+.tree::-webkit-scrollbar{width:9px}
+.tree::-webkit-scrollbar-thumb{background:#303339;border-radius:6px;border:2px solid var(--bg-sidebar)}
+
+.row{display:flex;align-items:center;gap:7px;padding:5px 8px;border-radius:6px;cursor:pointer;position:relative;user-select:none;transition:background .12s}
+.row:hover{background:var(--bg-hover)}
+.row.sel{background:var(--bg-active)}
+.row.sel::before{content:"";position:absolute;left:-8px;top:4px;bottom:4px;width:2.5px;border-radius:2px;background:var(--moc)}
+.chev{width:16px;color:var(--txt-faint);transition:transform .18s}
+.chev.open{transform:rotate(90deg)}
+.chev.leaf{visibility:hidden}
+.row .label{flex:1;display:flex;align-items:center;gap:7px;min-width:0;flex-wrap:wrap}
+.row .label .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.row .label .bg{display:flex;gap:4px;flex-wrap:wrap;flex:none}
+.row .count{font-size:11px;color:var(--txt-faint);background:#212327;border:1px solid var(--line-soft);padding:1px 7px;border-radius:20px;font-variant-numeric:tabular-nums;flex:none}
+.row .actions{display:none;gap:2px;align-items:center;flex:none}
+.row:hover .actions{display:flex}
+.act{width:22px;height:22px;border-radius:5px;display:grid;place-items:center;color:var(--txt-faint);transition:.13s}
+.act:hover{background:#34373d;color:var(--txt)}
+.children{margin-left:14px;border-left:1px solid var(--line-soft);padding-left:2px}
+.bucket .label .nm{font-size:12.5px;color:var(--txt-dim);font-weight:500;letter-spacing:.3px}
+
+.badge{font-size:10px;font-weight:500;padding:1px 6px;border-radius:5px;display:inline-flex;align-items:center;gap:3px;letter-spacing:.2px;line-height:1.4}
+.badge svg{width:10px;height:10px}
+.dot{width:6px;height:6px;border-radius:50%;flex:none}
+.b-active{color:#8fe0a8;background:rgba(127,212,154,.13)}
+.b-paused{color:#e6c478;background:rgba(230,196,120,.13)}
+.b-done{color:#9aa0ab;background:rgba(138,142,152,.15)}
+.b-cad{color:#e6cf8e;background:rgba(224,196,108,.12)}
+.b-dl{color:#9bc0ff;background:rgba(107,163,255,.13)}
+.b-topic{color:var(--txt-dim);background:#222428}
+.b-id{color:#e0bdf0;background:rgba(207,148,229,.13);font-family:'JetBrains Mono',monospace;font-size:9.5px}
+.b-upd{color:var(--txt-faint);background:#202227}
+.b-link{color:#9bc0ff;background:rgba(107,163,255,.1)}
+
+.type-ico.practice{color:var(--practice)} .type-ico.project{color:var(--project)}
+.type-ico.resource{color:var(--resource)} .type-ico.area{color:var(--area)}
+.type-ico.overview{color:var(--overview)} .type-ico.topic{color:var(--topic)} .type-ico.note{color:var(--note)}
+
+/* 行内 frontmatter peek */
+.fm-peek{margin:3px 8px 7px 30px;background:#15161a;border:1px solid var(--line);border-radius:8px;
+  padding:9px 11px;font-family:'JetBrains Mono',monospace;font-size:10.5px;line-height:1.75;overflow-x:auto;animation:fade .18s}
+@keyframes fade{from{opacity:0;transform:translateY(-3px)}to{opacity:1}}
+.yk{color:#7fb0e8}.yv{color:#d8c98a}.yl{color:#b794f6}.yc{color:var(--txt-faint)}
+
+/* 行内添加卡 */
+.add-card{margin:4px 6px 8px;background:#202229;border:1px solid #3a3d45;border-radius:9px;padding:10px;animation:fade .18s}
+.add-chips{display:flex;gap:5px;margin-bottom:8px}
+.add-chip{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;padding:6px;border-radius:7px;font-size:11.5px;cursor:pointer;background:#15161a;border:1px solid var(--line);color:var(--txt-dim);transition:.13s}
+.add-chip svg{width:12px;height:12px}
+.add-chip.on{border-color:var(--practice);background:rgba(224,196,108,.1);color:#e6cf8e}
+.add-card.zk .add-chip.on{border-color:var(--note);background:rgba(207,148,229,.1);color:#e0bdf0}
+.add-id{font-family:'JetBrains Mono',monospace;font-size:11px;color:#e0bdf0;background:rgba(207,148,229,.13);padding:2px 8px;border-radius:5px;margin-bottom:8px;display:inline-block}
+.add-input{width:100%;background:#15161a;border:1px solid var(--line);color:var(--txt);padding:8px 10px;border-radius:7px;font-family:inherit;font-size:13px;outline:none;transition:.14s}
+.add-input:focus{border-color:var(--practice)}
+.add-card.zk .add-input:focus{border-color:var(--note)}
+.add-ctx{margin-top:7px}
+.add-ctx select,.add-ctx input{width:100%;background:#15161a;border:1px solid var(--line);color:var(--txt);padding:7px 10px;border-radius:7px;font-family:inherit;font-size:12.5px;outline:none}
+.add-prev{margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--txt-faint);line-height:1.7;background:#15161a;border-radius:6px;padding:7px 9px;border:1px dashed #313440}
+.add-btns{display:flex;gap:6px;margin-top:9px}
+.add-btns .b{flex:1;text-align:center;padding:7px;border-radius:7px;font-size:12.5px;font-weight:500;cursor:pointer;transition:.13s}
+.add-btns .ok{background:linear-gradient(180deg,#e6cf8e,#d8be72);color:#2a230d;font-weight:600}
+.add-card.zk .add-btns .ok{background:linear-gradient(180deg,#dcb4ec,#cf94e5);color:#2a1733}
+.add-btns .ok:hover{filter:brightness(1.07)}
+.add-btns .cancel{background:#15161a;border:1px solid var(--line);color:var(--txt-dim);flex:0 0 42px}
+.add-btns .cancel:hover{color:var(--txt)}
+
+.empty-note{color:var(--txt-faint);font-size:12px;padding:5px 8px;font-style:italic}
+
+/* footer 状态条:点条目“在主面板打开”的反馈 */
+.side-foot{padding:9px 14px;border-top:1px solid var(--line);font-size:11.5px;color:var(--txt-faint);display:flex;align-items:center;gap:8px;min-height:38px}
+.side-foot svg{width:13px;height:13px}
+.side-foot b{color:var(--txt-dim);font-weight:500}
+
+.placeholder{padding:18px 14px;color:var(--txt-faint);font-size:12px;line-height:1.85}
+.placeholder .note-line{display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:6px}
+.placeholder .ind{margin-left:16px}
+
+.toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(20px);background:#24262b;border:1px solid #3a3d45;border-radius:10px;padding:11px 17px;display:flex;align-items:center;gap:9px;font-size:12.5px;box-shadow:0 12px 40px rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:.3s;z-index:60}
+.toast svg{color:var(--area)}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+
+<svg style="display:none">
+  <symbol id="i-branch" viewBox="0 0 24 24"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M3 4.5A1.5 1.5 0 0 1 4.5 3H10a2 2 0 0 1 2 2v15a2 2 0 0 0-2-2H4a1 1 0 0 1-1-1z"/><path d="M21 4.5A1.5 1.5 0 0 0 19.5 3H14a2 2 0 0 0-2 2v15a2 2 0 0 1 2-2h5a1 1 0 0 0 1-1z"/></symbol>
+  <symbol id="i-archive" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><line x1="10" y1="12" x2="14" y2="12"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></symbol>
+  <symbol id="i-flag" viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V4s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></symbol>
+  <symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polygon points="16 8 11 11 8 16 13 13"/></symbol>
+  <symbol id="i-files" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></symbol>
+  <symbol id="i-graph" viewBox="0 0 24 24"><circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7 7l4 9M17 7l-4 9"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="6" y1="18" x2="18" y2="6"/></symbol>
+  <symbol id="i-map" viewBox="0 0 24 24"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></symbol>
+  <symbol id="i-open" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></symbol>
+</svg>
+
+<div class="sidebar">
+  <div class="side-head">
+    <h1><svg><use href="#i-grid"/></svg> Spaces</h1>
+    <div class="head-btns">
+      <div class="icon-btn" title="新建 Space"><svg><use href="#i-plus"/></svg></div>
+      <div class="icon-btn" title="关闭"><svg><use href="#i-x"/></svg></div>
+    </div>
+  </div>
+  <div class="space-switch" id="space-switch"></div>
+  <div class="modes" id="modes">
+    <div class="mode on" data-mode="sem"><svg><use href="#i-target"/></svg><span id="sem-label">PARA</span></div>
+    <div class="mode" data-mode="files"><svg><use href="#i-files"/></svg>Files</div>
+    <div class="mode" data-mode="graph"><svg><use href="#i-graph"/></svg>Graph</div>
+  </div>
+  <div class="hint" id="hint"></div>
+  <div class="tree" id="tree"></div>
+  <div class="side-foot" id="side-foot"></div>
+</div>
+
+<div class="toast" id="toast"><svg><use href="#i-check"/></svg><span id="toast-msg"></span></div>
+
+<script>
+/* ===================== 数据 ===================== */
+let notes = [
+  {id:1, space:'人生一梦', title:'每日卡片写作', type:'practice', area:'写作', status:'active', cadence:'daily'},
+  {id:2, space:'人生一梦', title:'每周长文训练', type:'practice', area:'写作', status:'active', cadence:'weekly'},
+  {id:3, space:'人生一梦', title:'写完 Zettelkasten 插件设计文档', type:'project', area:'写作', status:'active', deadline:'2026-06-30'},
+  {id:4, space:'人生一梦', title:'卡片盒方法论拆解', type:'project', area:'写作', status:'done', deadline:'2026-04-12'},
+  {id:5, space:'人生一梦', title:'写作方法论', type:'resource', area:'写作', topic:'方法论'},
+  {id:6, space:'人生一梦', title:'好文章拆解合集', type:'resource', area:'写作', topic:'素材'},
+  {id:7, space:'人生一梦', title:'每周三次运动', type:'practice', area:'健康', status:'active', cadence:'weekly'},
+  {id:8, space:'人生一梦', title:'睡眠记录', type:'practice', area:'健康', status:'paused', cadence:'daily'},
+  {id:9, space:'人生一梦', title:'体脂下降到 18%', type:'project', area:'健康', status:'active', deadline:'2026-08-01'},
+  {id:10,space:'人生一梦', title:'运动生理学笔记', type:'resource', area:'健康', topic:'科学'},
+
+  {id:20, space:'ky', title:'ky 总览', type:'overview'},
+  {id:21, space:'ky', title:'英语', type:'topic', letter:'a'},
+  {id:22, space:'ky', title:'口语', type:'topic', letter:'b'},
+  {id:23, space:'ky', title:'高频词梳理', type:'note', topic:'英语', lid:'a.1', updated:'1周前', links:1},
+  {id:24, space:'ky', title:'例句汇总小故事', type:'note', topic:'英语', lid:'a.2', updated:'2天前', links:5},
+  {id:25, space:'ky', title:'时态故事', type:'note', topic:'英语', lid:'a.2.a', updated:'5天前', links:2},
+  {id:26, space:'ky', title:'介词故事', type:'note', topic:'英语', lid:'a.2.b', updated:'昨天', links:3},
+  {id:27, space:'ky', title:'听力笔记', type:'note', topic:'英语', lid:'a.3', updated:'3周前', links:0},
+  {id:28, space:'ky', title:'场景对话', type:'note', topic:'口语', lid:'b.1', updated:'3天前', links:4},
+  {id:29, space:'ky', title:'餐厅点餐', type:'note', topic:'口语', lid:'b.1.a', updated:'昨天', links:2},
+  {id:30, space:'ky', title:'发音纠正', type:'note', topic:'口语', lid:'b.2', updated:'1天前', links:1},
+];
+let uid = 100;
+
+const SPACES = {
+  '人生一梦':{schema:'para', icon:'i-branch', color:'var(--moc)', sub:'PARA · 责任与状态'},
+  'ky':      {schema:'zk',   icon:'i-compass', color:'var(--note)', sub:'总览 / 主题 / 局部'},
+};
+const SCHEMAS = {
+  para:{ label:'PARA', accent:'#e0c46c',
+    hint:'frontmatter 生成结构,不绑定文件夹。展开 <b style="color:#9be0b0">写作 / 健康</b> 看分桶;徽章是<b>状态轴</b>。行末 ✛ 行内添加。',
+    groups:[
+      {key:'Areas',icon:'i-target',color:'var(--area)',kind:'areas'},
+      {key:'Projects',icon:'i-folder',color:'var(--project)',kind:'flat',filter:n=>n.type==='project'&&n.status!=='done',empty:'没有进行中的项目'},
+      {key:'Resources',icon:'i-book',color:'var(--resource)',kind:'flat',filter:n=>n.type==='resource'},
+      {key:'Archive',icon:'i-archive',color:'var(--archive)',kind:'flat',filter:n=>n.status==='done',empty:'暂无归档'},
+    ]},
+  zk:{ label:'主题', accent:'#cf94e5',
+    hint:'同引擎换 schema。展开<b>主题</b>,局部知识<b>按 Luhmann ID 自动嵌套</b>;徽章是<b>连接/时间轴</b>。任意卡片 ✛ 加子卡。',
+    groups:[
+      {key:'总览',icon:'i-map',color:'var(--overview)',kind:'flat',filter:n=>n.type==='overview'},
+      {key:'主题',icon:'i-target',color:'var(--topic)',kind:'topics'},
+      {key:'局部知识',icon:'i-pin',color:'var(--note)',kind:'allLocal'},
+    ]},
+};
+
+let curSpace='人生一梦', mode='sem', expanded=new Set(), selected=null, adding=null;
+const curSchema=()=>SPACES[curSpace].schema;
+const schemaDef=()=>SCHEMAS[curSchema()];
+
+const $=s=>document.querySelector(s);
+const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
+const ico=id=>`<svg><use href="#${id}"/></svg>`;
+const typeIco={practice:'i-repeat',project:'i-flag',resource:'i-book',area:'i-target',overview:'i-map',topic:'i-target',note:'i-pin'};
+const cap=s=>s[0].toUpperCase()+s.slice(1);
+
+const spaceNotes=()=>notes.filter(n=>n.space===curSpace);
+const byArea=(a,t)=>spaceNotes().filter(n=>n.area===a&&n.type===t);
+const activeOf=(a,t)=>byArea(a,t).filter(n=>n.status==='active');
+const areasOf=()=>[...new Set(spaceNotes().filter(n=>n.area).map(n=>n.area))];
+const topicsOf=()=>spaceNotes().filter(n=>n.type==='topic');
+const localsInTopic=t=>spaceNotes().filter(n=>n.type==='note'&&n.topic===t);
+function byLid(a,b){const pa=a.lid.split('.'),pb=b.lid.split('.');for(let i=0;i<Math.max(pa.length,pb.length);i++){const x=pa[i]??'',y=pb[i]??'',nx=+x,ny=+y,dA=String(nx)===x,dB=String(ny)===y;if(dA&&dB){if(nx!==ny)return nx-ny;}else if(x!==y)return x<y?-1:1;}return 0;}
+const localRoots=l=>spaceNotes().filter(n=>n.type==='note'&&n.lid&&n.lid.split('.').length===2&&n.lid.startsWith(l+'.')).sort(byLid);
+const localChildren=p=>!p.lid?[]:spaceNotes().filter(n=>n.type==='note'&&n.lid&&(()=>{const x=n.lid.split('.');return x.length>1&&x.slice(0,-1).join('.')===p.lid;})()).sort(byLid);
+const nextRootId=l=>{const r=localRoots(l).map(n=>+n.lid.split('.')[1]).filter(x=>!isNaN(x));return `${l}.${(r.length?Math.max(...r):0)+1}`;};
+const nextChildId=p=>{const k=localChildren({lid:p}).map(n=>n.lid.split('.').pop()).filter(s=>/^[a-z]$/.test(s));return `${p}.${k.length?String.fromCharCode(Math.max(...k.map(c=>c.charCodeAt(0)))+1):'a'}`;};
+
+const statusBadge=s=>({active:`<span class="badge b-active"><span class="dot" style="background:#7fd49a"></span>active</span>`,paused:`<span class="badge b-paused"><span class="dot" style="background:#e6c478"></span>paused</span>`,done:`<span class="badge b-done"><span class="dot" style="background:#8a8e98"></span>done</span>`}[s]||'');
+const cadBadge=c=>c?`<span class="badge b-cad">${ico('i-repeat')}${c}</span>`:'';
+const dlBadge=d=>d?`<span class="badge b-dl">${ico('i-flag')}${d}</span>`:'';
+const idBadge=l=>l?`<span class="badge b-id">${l}</span>`:'';
+const updBadge=u=>u?`<span class="badge b-upd">${ico('i-clock')}${u}</span>`:'';
+const linkBadge=n=>n?`<span class="badge b-link">${ico('i-link')}${n}</span>`:'';
+
+function noteBadges(n,opts={}){
+  const t=[];
+  if(curSchema()==='para'){
+    if(n.cadence)t.push(cadBadge(n.cadence));
+    if(n.deadline&&n.status!=='done')t.push(dlBadge(n.deadline));
+    if(n.status&&n.status!=='active')t.push(statusBadge(n.status));
+    if(opts.showOwner&&n.area)t.push(`<span class="badge b-topic">${ico('i-target')}${n.area}</span>`);
+  }else{
+    if(n.lid)t.push(idBadge(n.lid));
+    if(n.updated)t.push(updBadge(n.updated));
+    if(n.links)t.push(linkBadge(n.links));
+    if(opts.showOwner&&n.topic)t.push(`<span class="badge b-topic">${ico('i-target')}${n.topic}</span>`);
+  }
+  return t;
+}
+const isSel=n=>selected?.kind==='note'&&selected.id===n.id;
+
+/* ===================== render ===================== */
+function renderSwitcher(){
+  const sw=$('#space-switch'); sw.innerHTML='';
+  Object.entries(SPACES).forEach(([name,cfg])=>{
+    const p=el('div','space-pill'+(name===curSpace?' on':''));
+    p.innerHTML=`<span class="si" style="color:${cfg.color}">${ico(cfg.icon)}</span><div class="sm"><div class="sn">${name}</div><div class="ss">${cfg.sub}</div></div>`;
+    p.onclick=()=>selectSpace(name);
+    sw.appendChild(p);
+  });
+}
+function renderTree(){
+  renderSwitcher();
+  const tree=$('#tree'); tree.innerHTML='';
+  const sd=schemaDef();
+  $('#sem-label').textContent=sd.label;
+  const hint=$('#hint'); hint.className='hint '+curSchema(); hint.style.display=mode==='sem'?'block':'none'; hint.innerHTML=sd.hint;
+  document.documentElement.style.setProperty('--accent',sd.accent);
+  if(mode==='files'){renderFiles(tree);renderFoot();return;}
+  if(mode==='graph'){renderGraph(tree);renderFoot();return;}
+
+  sd.groups.forEach(g=>{
+    const open=expanded.has(g.key);
+    tree.appendChild(mkRow({icon:g.icon,color:g.color,label:g.key,bold:true,hasChildren:true,open,onToggle:()=>toggle(g.key)}));
+    if(!open)return;
+    const box=el('div','children'); tree.appendChild(box);
+    if(g.kind==='areas')renderAreas(box);
+    else if(g.kind==='topics')renderTopics(box);
+    else if(g.kind==='flat'){const items=spaceNotes().filter(g.filter);items.forEach(n=>appendNote(box,n,{flat:true,showOwner:true}));if(!items.length&&g.empty)box.appendChild(el('div','empty-note',g.empty));}
+    else if(g.kind==='allLocal'){spaceNotes().filter(n=>n.type==='note').sort(byLid).forEach(n=>appendNote(box,n,{flat:true,showOwner:true}));}
+  });
+  renderFoot();
+}
+function renderAreas(box){
+  areasOf().forEach(area=>{
+    const akey='area:'+area, aopen=expanded.has(akey);
+    box.appendChild(mkRow({icon:'i-branch',color:'var(--moc)',label:area,hasChildren:true,open:aopen,
+      sel:selected?.kind==='area'&&selected.area===area,
+      actions:[{icon:'i-plus',title:'加 Practice / Project',onClick:e=>{e.stopPropagation();startAddPara(area);}}],
+      onToggle:()=>toggle(akey),onSelect:()=>selectArea(area)}));
+    if(!aopen)return;
+    const abox=el('div','children'); box.appendChild(abox);
+    if(adding&&adding.schema==='para'&&adding.area===area) abox.appendChild(buildAddCard());
+    [['Practices','practice'],['Projects','project'],['Resources','resource']].forEach(([lbl,tp])=>{
+      const items=byArea(area,tp), bkey=`bucket:${area}:${tp}`, bopen=expanded.has(bkey);
+      abox.appendChild(mkRow({bucket:true,icon:typeIco[tp],color:`var(--${tp})`,label:lbl,count:items.length,hasChildren:items.length>0,open:bopen,onToggle:()=>toggle(bkey)}));
+      if(bopen&&items.length){const ib=el('div','children');abox.appendChild(ib);items.forEach(n=>appendNote(ib,n,{flat:true}));}
+    });
+  });
+}
+function renderTopics(box){
+  topicsOf().forEach(t=>{
+    const tkey='topic:'+t.title, topen=expanded.has(tkey), roots=localRoots(t.letter);
+    box.appendChild(mkRow({icon:'i-target',color:'var(--topic)',label:t.title,count:localsInTopic(t.title).length,
+      hasChildren:roots.length>0,open:topen,sel:selected?.kind==='topic'&&selected.topic===t.title,
+      actions:[{icon:'i-plus',title:'加局部知识',onClick:e=>{e.stopPropagation();startAddZK(t.title);}}],
+      onToggle:()=>toggle(tkey),onSelect:()=>selectTopic(t.title)}));
+    if(!topen)return;
+    const tb=el('div','children'); box.appendChild(tb);
+    if(adding&&adding.schema==='zk'&&adding.topic===t.title&&!adding.parentLid) tb.appendChild(buildAddCard());
+    roots.forEach(n=>appendNote(tb,n,{}));
+  });
+}
+function appendNote(box,n,opts){
+  const kids=(curSchema()==='zk'&&!opts.flat)?localChildren(n):[];
+  const key='node:'+curSpace+':'+(n.lid||n.id), open=expanded.has(key);
+  const row=el('div','row note-row'+(isSel(n)?' sel':''));
+  const chev=el('span','chev'+(open?' open':'')+(kids.length?'':' leaf'),ico('i-chev')); row.appendChild(chev);
+  row.appendChild(Object.assign(el('span','type-ico '+n.type+' icon-sm',ico(typeIco[n.type]))));
+  row.appendChild(el('span','label',`<span class="nm">${n.title}</span><span class="bg">${noteBadges(n,opts).join('')}</span>`));
+  if(curSchema()==='zk'&&n.type==='note'){
+    const a=el('span','actions'); const b=el('span','act',ico('i-plus')); b.title='加子卡片';
+    b.onclick=e=>{e.stopPropagation();startAddZK(n.topic,n.lid);}; a.appendChild(b); row.appendChild(a);
+  }
+  chev.onclick=e=>{e.stopPropagation();toggle(key);};
+  row.onclick=()=>selectNote(n);
+  box.appendChild(row);
+  if(isSel(n)) box.appendChild(fmPeek(n));            // 行内 frontmatter
+  const cb=(open&&kids.length)?el('div','children'):null;
+  if(cb){box.appendChild(cb);
+    if(adding&&adding.schema==='zk'&&adding.parentLid===n.lid) cb.appendChild(buildAddCard());
+    kids.forEach(k=>appendNote(cb,k,opts));
+  } else if(adding&&adding.schema==='zk'&&adding.parentLid===n.lid){
+    const cb2=el('div','children'); box.appendChild(cb2); cb2.appendChild(buildAddCard());
+  }
+}
+function mkRow(o){
+  const row=el('div','row'+(o.bucket?' bucket':'')+(o.sel?' sel':''));
+  const chev=el('span','chev'+(o.open?' open':'')+(o.hasChildren?'':' leaf'),ico('i-chev')); row.appendChild(chev);
+  const ic=el('span','type-ico icon-sm',ico(o.icon)); ic.style.color=o.color||'var(--txt-dim)'; row.appendChild(ic);
+  row.appendChild(el('span','label',`<span class="nm" ${o.bold?'style="font-weight:600"':''}>${o.label}</span>`));
+  if(o.count!=null)row.appendChild(el('span','count',o.count));
+  if(o.actions){const a=el('span','actions');o.actions.forEach(ac=>{const b=el('span','act',ico(ac.icon));b.title=ac.title||'';b.onclick=ac.onClick;a.appendChild(b);});row.appendChild(a);}
+  chev.onclick=e=>{e.stopPropagation();o.onToggle&&o.onToggle();};
+  row.onclick=()=>{o.onSelect?o.onSelect():o.onToggle&&o.onToggle();};
+  return row;
+}
+
+/* 行内 frontmatter peek */
+function fmPeek(n){
+  let L;
+  if(curSchema()==='para'){
+    L=[`<span class="yk">type</span>: <span class="yv">${n.type}</span>`,`<span class="yk">area</span>: <span class="yl">"[[${n.area} MOC]]"</span>`];
+    if(n.cadence)L.push(`<span class="yk">cadence</span>: <span class="yv">${n.cadence}</span>`);
+    if(n.deadline)L.push(`<span class="yk">deadline</span>: <span class="yv">${n.deadline}</span>`);
+    L.push(`<span class="yk">status</span>: <span class="yv">${n.status}</span>`);
+  }else{
+    L=[`<span class="yk">type</span>: <span class="yv">note</span>`,`<span class="yk">topic</span>: <span class="yl">"[[${n.topic} MOC]]"</span>`,`<span class="yk">id</span>: <span class="yv">${n.lid}</span>`,`<span class="yk">links</span>: <span class="yv">${n.links||0}</span>`];
+  }
+  return el('div','fm-peek',`<span class="yc">--- ${n.title}.md</span><br>${L.join('<br>')}`);
+}
+
+/* 行内添加卡 */
+function buildAddCard(){
+  const zk = adding.schema==='zk';
+  const card=el('div','add-card'+(zk?' zk':''));
+  if(!zk){
+    const chips=el('div','add-chips');
+    ['practice','project','resource'].forEach(tp=>{
+      const c=el('div','add-chip'+(adding.type===tp?' on':''),`${ico(typeIco[tp])}${cap(tp)}`);
+      c.onclick=()=>{adding.type=tp;renderTree();focusAdd();};
+      chips.appendChild(c);
+    });
+    card.appendChild(chips);
+  } else {
+    card.appendChild(el('div','add-id',(adding.parentLid?'子卡片 ':'局部知识 ')+adding.newLid));
+  }
+  const inp=el('input','add-input'); inp.id='add-input';
+  inp.placeholder = zk?'卡片标题…':`${cap(adding.type)} 名称…`;
+  inp.value=adding.name||'';
+  inp.oninput=()=>{adding.name=inp.value;updPrev();};
+  inp.onkeydown=e=>{if(e.key==='Enter')confirmAdd();if(e.key==='Escape')cancelAdd();};
+  card.appendChild(inp);
+
+  if(!zk){
+    const ctx=el('div','add-ctx');
+    if(adding.type==='practice'){
+      const s=el('select','',`<option>daily</option><option ${adding.cadence==='weekly'?'selected':''}>weekly</option><option>monthly</option>`);
+      s.onchange=()=>{adding.cadence=s.value;updPrev();}; ctx.appendChild(s);
+    } else if(adding.type==='project'){
+      const d=el('input'); d.type='date'; d.value=adding.deadline||'2026-06-30'; d.onchange=()=>{adding.deadline=d.value;updPrev();}; ctx.appendChild(d);
+    } else {
+      const t=el('input'); t.placeholder='topic(可选)'; t.value=adding.topic||''; t.oninput=()=>{adding.topic=t.value;updPrev();}; ctx.appendChild(t);
+    }
+    card.appendChild(ctx);
+  }
+  card.appendChild(el('div','add-prev',prevText()));
+  const btns=el('div','add-btns');
+  const ok=el('div','b ok','创建并写入'); ok.onclick=confirmAdd;
+  const cc=el('div','b cancel',ico('i-x')); cc.onclick=cancelAdd;
+  btns.appendChild(ok); btns.appendChild(cc); card.appendChild(btns);
+  return card;
+}
+function prevText(){
+  if(adding.schema==='para'){
+    const extra=adding.type==='practice'?`cadence: ${adding.cadence||'weekly'}`:adding.type==='project'?`deadline: ${adding.deadline||'2026-06-30'}`:(adding.topic?`topic: ${adding.topic}`:'');
+    return `→ type: ${adding.type} · area: [[${adding.area} MOC]] · status: active${extra?' · '+extra:''}`;
+  }
+  return `→ type: note · topic: [[${adding.topic} MOC]] · id: ${adding.newLid}`;
+}
+function updPrev(){const p=document.querySelector('.add-prev'); if(p)p.textContent=prevText();}
+function focusAdd(){setTimeout(()=>{const i=$('#add-input'); if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);}},20);}
+
+/* placeholders */
+function renderFiles(tree){
+  const w=el('div','placeholder');
+  const s=curSpace==='ky'
+    ?`<div class="note-line">${ico('i-folder')} ky</div><div class="note-line ind">${ico('i-files')} ky 总览.md</div><div class="note-line ind">${ico('i-files')} 例句汇总小故事.md</div><div class="note-line ind">${ico('i-files')} 时态故事.md</div>`
+    :`<div class="note-line">${ico('i-folder')} 人生一梦</div><div class="note-line ind">${ico('i-files')} 每日卡片写作.md</div><div class="note-line ind">${ico('i-files')} 设计文档.md</div>`;
+  w.innerHTML=`<div style="color:var(--txt-dim);margin-bottom:8px">真实 vault 目录</div>${s}<div style="margin-top:12px;font-style:italic;line-height:1.7">文件平铺,看不出状态/层级 —— 语义模式补的就是这层关系。</div>`;
+  tree.appendChild(w);
+}
+function renderGraph(tree){
+  const w=el('div','placeholder');
+  w.innerHTML=curSpace==='ky'
+    ?`<div style="color:var(--txt-dim);margin-bottom:8px">关系视图(Luhmann ID + topic)</div><div style="text-align:center;padding:20px 0;line-height:2.1"><span style="color:var(--topic)">●</span> 英语<br>├─ a.2 例句汇总<br>│&nbsp;&nbsp;├─ a.2.a 时态<br>│&nbsp;&nbsp;└─ a.2.b 介词<br>└─ a.3 听力</div>`
+    :`<div style="color:var(--txt-dim);margin-bottom:8px">关系视图(area / practice)</div><div style="text-align:center;padding:20px 0;line-height:2.1"><span style="color:var(--area)">●</span> 写作<br>├─ <span style="color:var(--practice)">◆</span> 每日卡片写作<br>├─ <span style="color:var(--project)">▲</span> 设计文档<br>└─ <span style="color:var(--resource)">■</span> 写作方法论</div>`;
+  tree.appendChild(w);
+}
+
+/* footer:模拟“在主面板打开” */
+function renderFoot(){
+  const f=$('#side-foot');
+  if(!selected){f.innerHTML=`<span style="color:var(--txt-faint)">点条目 →</span> 在主面板打开`;return;}
+  let label='', file='';
+  if(selected.kind==='area'){label=selected.area;file=selected.area+' MOC.md';}
+  else if(selected.kind==='topic'){label=selected.topic;file=selected.topic+' MOC.md';}
+  else{const n=notes.find(x=>x.id===selected.id);label=n.title;file=n.title+'.md';}
+  f.innerHTML=`${ico('i-open')}<span>已在主面板打开 <b>${file}</b></span>`;
+}
+
+/* ===================== 交互 ===================== */
+function toggle(k){expanded.has(k)?expanded.delete(k):expanded.add(k);renderTree();}
+function selectArea(a){adding=null;selected={kind:'area',area:a};expanded.add('Areas');expanded.add('area:'+a);renderTree();}
+function selectTopic(t){adding=null;selected={kind:'topic',topic:t};expanded.add('主题');expanded.add('topic:'+t);renderTree();}
+function selectNote(n){adding=null;selected={kind:'note',id:n.id};renderTree();}
+function selectSpace(name){
+  if(name===curSpace)return;
+  curSpace=name;selected=null;adding=null;expanded=new Set();
+  if(curSchema()==='para'){expanded.add('Areas');expanded.add('area:写作');}
+  else{expanded.add('主题');expanded.add('topic:英语');expanded.add('node:ky:a.2');}
+  renderTree();
+}
+$('#modes').onclick=e=>{const m=e.target.closest('.mode');if(!m)return;adding=null;mode=m.dataset.mode;[...$('#modes').children].forEach(c=>c.classList.toggle('on',c.dataset.mode===mode));renderTree();};
+
+/* 行内添加 */
+function startAddPara(area){selected=null;adding={schema:'para',area,type:'practice',cadence:'weekly',deadline:'2026-06-30',name:''};expanded.add('Areas');expanded.add('area:'+area);renderTree();focusAdd();}
+function startAddZK(topic,parentLid){
+  selected=null;
+  const t=topicsOf().find(x=>x.title===topic), letter=t?t.letter:'x';
+  adding={schema:'zk',topic,parentLid,newLid:parentLid?nextChildId(parentLid):nextRootId(letter),name:''};
+  expanded.add('主题');expanded.add('topic:'+topic);
+  if(parentLid)expanded.add('node:'+curSpace+':'+parentLid);
+  renderTree();focusAdd();
+}
+function cancelAdd(){adding=null;renderTree();}
+function confirmAdd(){
+  let n;
+  if(adding.schema==='para'){
+    n={id:++uid,space:curSpace,title:(adding.name||'').trim()||`未命名 ${cap(adding.type)}`,type:adding.type,area:adding.area,status:'active'};
+    if(adding.type==='practice')n.cadence=adding.cadence||'weekly';
+    if(adding.type==='project')n.deadline=adding.deadline||'2026-06-30';
+    if(adding.type==='resource'&&(adding.topic||'').trim())n.topic=adding.topic.trim();
+    notes.push(n); expanded.add(`bucket:${n.area}:${n.type}`);
+  }else{
+    n={id:++uid,space:curSpace,title:(adding.name||'').trim()||'未命名卡片',type:'note',topic:adding.topic,lid:adding.newLid,updated:'刚刚',links:0};
+    notes.push(n);
+  }
+  const msg=`已创建「${n.title}」${adding.schema==='zk'?' · ID '+n.lid:''}`;
+  adding=null; selected={kind:'note',id:n.id}; renderTree(); toast(msg+' 并写入 frontmatter');
+}
+function toast(m){$('#toast-msg').textContent=m;const t=$('#toast');t.classList.add('on');setTimeout(()=>t.classList.remove('on'),2800);}
+
+/* init */
+expanded.add('Areas');expanded.add('area:写作');
+renderTree();
+</script>
+</body>
+</html>

@@ -497,18 +497,33 @@ function getCanvasCtx(): CanvasRenderingContext2D | null {
 	return _canvasMeasureCtx;
 }
 
+// 文本测宽缓存：measureText 是纯函数(同 text/fontSize/fontWeight 必得同宽),
+// 但在全量渲染时会被逐节点反复调用。缓存命中可省去大量 canvas measureText 调用。
+const _textWidthCache = new Map<string, number>();
+
 export function measureTextWidthCanvas(text: string, fontSize: number, fontWeight = '500'): number {
+	const cacheKey = `${fontWeight} ${fontSize} ${text}`;
+	const cached = _textWidthCache.get(cacheKey);
+	if (cached !== undefined) return cached;
+
+	let width: number;
 	const ctx = getCanvasCtx();
 	if (ctx) {
 		ctx.font = `${fontWeight} ${fontSize}px system-ui, -apple-system, sans-serif`;
-		return ctx.measureText(text).width;
+		width = ctx.measureText(text).width;
+	} else {
+		// fallback: rough estimate
+		let w = 0;
+		for (const ch of text) {
+			w += isCJKChar(ch) ? fontSize * 1.1 : fontSize * 0.6;
+		}
+		width = w;
 	}
-	// fallback: rough estimate
-	let w = 0;
-	for (const ch of text) {
-		w += isCJKChar(ch) ? fontSize * 1.1 : fontSize * 0.6;
-	}
-	return w;
+
+	// 防止无界增长：超过阈值清空(标签集合通常远小于此)
+	if (_textWidthCache.size > 4000) _textWidthCache.clear();
+	_textWidthCache.set(cacheKey, width);
+	return width;
 }
 
 export function measureNodeLabel(label: string, options?: {

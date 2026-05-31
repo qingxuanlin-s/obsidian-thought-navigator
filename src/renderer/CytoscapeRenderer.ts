@@ -278,6 +278,17 @@ export class CytoscapeRenderer implements IGraphRenderer {
         // 确保扩展已注册
         registerExtensions();
 
+        // 性能埋点(与 indexView 共用 window.__zkPerf 开关),细分 render 内部各阶段耗时
+        const __zkPerf = (window as any).__zkPerf === true;
+        const __mark: Record<string, number> = {};
+        let __tPrev = __zkPerf ? performance.now() : 0;
+        const __lap = (name: string) => {
+            if (!__zkPerf) return;
+            const t = performance.now();
+            __mark[name] = (__mark[name] || 0) + (t - __tPrev);
+            __tPrev = t;
+        };
+
         const containerChanged = this.container !== container;
         const previousOptions = this.currentOptions;
 
@@ -307,6 +318,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             edgeControlPoints: this.edgeControlPoints,
             rootToFirstLevelEdgeWidth: this.ROOT_TO_FIRST_LEVEL_EDGE_WIDTH,
         });
+        __lap('convertElements');
 
         // 如果没有 Cytoscape 实例、实例已销毁或容器变化，需要完全重建
         if (!this.isCyUsable() || containerChanged) {
@@ -567,15 +579,20 @@ export class CytoscapeRenderer implements IGraphRenderer {
             });
         }
 
+        __lap('cyDiff');
+
         // 更新节点徽章（exportMode 下跳过，避免 MarkdownRenderer 触发 MutationObserver 导致跳转）
         if (!options.exportMode) {
             this.addNodeBadges();
+            __lap('badges');
             this.addEmbedNodePreviews();
             this.addImageNodePreviews();
+            __lap('previews');
             this.reapplyFocusOverlayState();
             if (this.shouldShowMinimap(options)) {
                 this.minimap?.refresh();
             }
+            __lap('overlaysMisc');
         }
 
         // 运行布局
@@ -600,8 +617,17 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 this.runLayoutSafely(layoutConfig);
             }
         }
+        __lap('layout');
         this.applyCollapsedState();
         this.updateActiveFirstLevelBranch();
+        __lap('finalize');
+        if (__zkPerf) {
+            const total = Object.values(__mark).reduce((a, b) => a + b, 0);
+            console.debug(
+                `[zkPerf:render] total=${total.toFixed(1)}ms`,
+                Object.fromEntries(Object.entries(__mark).map(([k, v]) => [k, +v.toFixed(1)]))
+            );
+        }
     }
 
     /**
