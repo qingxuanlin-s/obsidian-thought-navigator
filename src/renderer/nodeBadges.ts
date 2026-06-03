@@ -257,8 +257,9 @@ export function renderNodeBadges(this: any): void {
                 labelMaskEl.style.height = `${Math.max(4, labelH + maskPadY)}px`;
             };
 
+            // 不在此 inline 定位:末尾 overlayScheduler.immediate() 会在同一同步周期内
+            // (paint 前)统一跑一遍全部 updater,inline 调用纯属重复昂贵的 renderedBoundingBox。
             badgeUpdaters.push(updateGlassPos);
-            updateGlassPos();
         });
 
         const IMAGE_EXTS_BADGE = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
@@ -591,7 +592,6 @@ export function renderNodeBadges(this: any): void {
             };
 
             badgeUpdaters.push(updateUnderlinePosition);
-            updateUnderlinePosition();
         });
 
         this.cy.nodes().forEach((node: any) => {
@@ -744,7 +744,6 @@ export function renderNodeBadges(this: any): void {
             };
 
             badgeUpdaters.push(updateRemarkPosition);
-            updateRemarkPosition();
 
             remarkEl.addEventListener('click', (e) => {
                 if (this.isReadOnlyMode()) {
@@ -838,7 +837,6 @@ export function renderNodeBadges(this: any): void {
             };
 
             badgeUpdaters.push(updateAnchorPos);
-            updateAnchorPos();
         });
 
         // 兼容旧语义：文字前小色点（legacy customColor）
@@ -897,7 +895,6 @@ export function renderNodeBadges(this: any): void {
             };
 
             badgeUpdaters.push(updateDotPos);
-            updateDotPos();
         });
 
         // 为每个有 badge 的节点创建徽章元素（跳过 embed 节点，由预览卡片展示）
@@ -988,9 +985,6 @@ export function renderNodeBadges(this: any): void {
             };
 
             badgeUpdaters.push(updateBadgePosition);
-
-            // 初始位置
-            updateBadgePosition();
 
             // 点击徽章时选中节点
             badgeEl.addEventListener('click', (e) => {
@@ -1124,7 +1118,6 @@ export function renderNodeBadges(this: any): void {
                 };
 
                 badgeUpdaters.push(updateResizeHandle);
-                updateResizeHandle();
             });
         }
 
@@ -1219,7 +1212,6 @@ export function renderNodeBadges(this: any): void {
                 };
 
                 badgeUpdaters.push(updateTogglePos);
-                updateTogglePos();
             });
         }
 
@@ -1722,7 +1714,6 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                 currentEntry.el.style.pointerEvents = (isSelected && overflowY) ? 'auto' : 'none';
             };
             badgeUpdaters.push(updateOverlayPos);
-            updateOverlayPos();
         });
 
         // 批量尺寸回写：先处理同步完成的（快路径），异步完成的在 Promise.all 后再批量
@@ -1918,7 +1909,6 @@ function addCollapseToggleHandle(this: any): void {
             };
 
             handleUpdaters.push(updateHandle);
-            updateHandle();
 
             handle.addEventListener('mousedown', (e) => {
                 e.preventDefault();

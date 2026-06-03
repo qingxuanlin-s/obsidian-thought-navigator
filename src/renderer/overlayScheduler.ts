@@ -53,7 +53,9 @@ export class OverlayScheduler {
 
 	immediate(): void {
 		this.updaters.forEach(fn => fn());
-		this.immediateUpdaters.forEach(fn => fn());
+		// immediateUpdaters 中已在 updaters 里的成员上一行已执行,跳过避免每次 immediate()
+		// 把 badge/边控制点等最贵的定位 updater 重复跑一遍(它们三者目前都同时注册在两个集合)。
+		this.immediateUpdaters.forEach(fn => { if (!this.updaters.has(fn)) fn(); });
 		this.updateScheduled = false;
 	}
 
