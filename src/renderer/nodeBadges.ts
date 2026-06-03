@@ -83,6 +83,11 @@ export function renderNodeBadges(this: any): void {
         this.textMdOverlayCache.forEach((entry: any) => {
             entry.usedInCycle = false;
             // 防御性清理：清除可能遗留的编辑标记和隐藏样式，避免下次复用时继续不显示
+            if (entry.el.dataset.editing === '1') {
+                // 编辑期 overlay 的 cssText 可能被内联编辑器改写,失效 styleSig 以强制
+                // 下个渲染周期重写基样式(否则 styleSig 守卫会误判为无变化而跳过恢复)。
+                delete entry.el.dataset.styleSig;
+            }
             delete entry.el.dataset.editing;
             entry.el.style.display = 'block';
             if (entry.el.parentNode) entry.el.parentNode.removeChild(entry.el);
@@ -1339,28 +1344,36 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                 }
                 // 注意:不要在 cssText 里写 color,让 CSS 选择器(基于 [data-level-muted="1"]
                 // 和 .zk-ancestor-active)处理颜色,这样祖先链高亮可以靠 class 切换来覆盖 muted。
-                overlayEl.style.cssText = `
-                    position: absolute;
-                    left: 0;
-                    top: 0;
-                    display: ${overlayDisplay};
-                    flex-direction: column;
-                    justify-content: center;
-                    align-items: ${overlayAlignItems};
-                    pointer-events: none;
-                    overflow: hidden;
-                    box-sizing: border-box;
-                    padding: ${overlayPadding};
-                    max-width: none;
-                    font-family: var(--font-text);
-                    font-size: ${overlayFontSize}px;
-                    font-weight: ${overlayFontWeight};
-                    line-height: 1.35;
-                    word-wrap: break-word;
-                    overflow-wrap: anywhere;
-                    user-select: none;
-                    text-align: ${overlayTextAlign};
-                `;
+                // 仅当影响 cssText 的静态输入(层级/字号/对齐等)变化时才整段重写。大字符串
+                // cssText 赋值会触发样式失效与重排;缓存命中复用 overlay 时这些值通常不变,
+                // 逐节点跳过可显著降低 textMD 阶段成本。位置类属性由 updateOverlayPos 单独写入,
+                // 不受此守卫影响。
+                const styleSig = `${overlayDisplay}|${overlayAlignItems}|${overlayPadding}|${overlayFontSize}|${overlayFontWeight}|${overlayTextAlign}`;
+                if (overlayEl.dataset.styleSig !== styleSig) {
+                    overlayEl.dataset.styleSig = styleSig;
+                    overlayEl.style.cssText = `
+                        position: absolute;
+                        left: 0;
+                        top: 0;
+                        display: ${overlayDisplay};
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: ${overlayAlignItems};
+                        pointer-events: none;
+                        overflow: hidden;
+                        box-sizing: border-box;
+                        padding: ${overlayPadding};
+                        max-width: none;
+                        font-family: var(--font-text);
+                        font-size: ${overlayFontSize}px;
+                        font-weight: ${overlayFontWeight};
+                        line-height: 1.35;
+                        word-wrap: break-word;
+                        overflow-wrap: anywhere;
+                        user-select: none;
+                        text-align: ${overlayTextAlign};
+                    `;
+                }
                 const isLevelDimmed = node.hasClass?.('zk-level-dimmed') === true;
                 if (isLevelDimmed) {
                     const isLightTheme = this.container?.classList.contains('zk-theme-light')
@@ -1817,12 +1830,22 @@ function addCollapseToggleHandle(this: any): void {
         const handleUpdaters: Array<() => void> = [];
         const nodeHoverCleanups: Array<() => void> = [];
 
-        const hasChildren = (originalId: string): boolean => {
-            return this.cy!.nodes().some((n: any) => {
-                const childId = n.data()?.originalNode?.IDStr;
-                return typeof childId === 'string' && childId !== originalId && childId.startsWith(`${originalId}.`);
-            });
-        };
+        // 预计算"哪些 originalId 拥有子节点":单趟 O(N) 收集所有 IDStr 的点号祖先前缀,
+        // 取代每节点 O(N) 的 cy.nodes().some() 全量扫描(整体 O(N²) → O(N))。
+        // 一个 id 的"严格点号前缀"(段数更少且 id.startsWith(prefix + '.'))恰好等价于原
+        // childId.startsWith(`${originalId}.`) 的判定,故二者结果完全一致。
+        const parentIdsWithChildren = new Set<string>();
+        this.cy.nodes().forEach((n: any) => {
+            const id = n.data()?.originalNode?.IDStr;
+            if (typeof id !== 'string' || !id) return;
+            const parts = id.split('.');
+            let prefix = '';
+            for (let i = 0; i < parts.length - 1; i++) {
+                prefix = i === 0 ? parts[0] : `${prefix}.${parts[i]}`;
+                parentIdsWithChildren.add(prefix);
+            }
+        });
+        const hasChildren = (originalId: string): boolean => parentIdsWithChildren.has(originalId);
 
         this.cy.nodes().forEach((node: any) => {
             const data = node.data();
