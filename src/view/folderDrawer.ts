@@ -4,8 +4,9 @@ import { FolderNode, SpaceTemplate } from "src/types/folder";
 import { VaultIndex } from "src/index/VaultIndex";
 import { SpaceService } from "src/services/SpaceService";
 import { BUILTIN_TEMPLATES } from "src/templates";
-import { isMocFile, stripMocSuffix } from "src/utils/utils";
+import { isMocFile, isMocPath, stripMocSuffix } from "src/utils/utils";
 import { FolderMountModal } from "src/modal/folderMountModal";
+import { FilePickerModal } from "src/modal/filePickerModal";
 import { t } from "src/lang/helper";
 
 /**
@@ -26,8 +27,8 @@ export class FolderDrawer {
     private isOpen: boolean = false;
     private unsubscribe: (() => void) | null = null;
     private mocChangeRef: EventRef | null = null;
-    // MOC 拖拽载荷:跨节点共享,避免依赖 DataTransfer 序列化
-    private dragMocPayload: { mocPath: string; fromFolderId: string } | null = null;
+    // 节点拖拽载荷:跨节点共享,避免依赖 DataTransfer 序列化(可拖 file 节点重新挂载)
+    private dragPayload: { nodeId: string } | null = null;
     // 上次定位过的 MOC 路径:仅在切换到新 MOC 时自动展开祖先文件夹,避免反复覆盖用户折叠操作
     private lastFocusedMoc: string = '';
     private revealCurrentOnNextRender = false;
@@ -215,14 +216,22 @@ export class FolderDrawer {
     }
 
     private renderNode(parent: HTMLElement, node: FolderNode): void {
+        if (node.kind === 'file') {
+            this.renderFileNode(parent, node);
+            return;
+        }
+        this.renderFolderNode(parent, node);
+    }
+
+    private renderFolderNode(parent: HTMLElement, node: FolderNode): void {
         const row = parent.createDiv("zk-folder-drawer-row zk-folder-drawer-row-folder");
         row.style.paddingLeft = `${10 + node.depth * 14}px`;
 
+        const hasChildren = node.childIds.length > 0;
         const chev = row.createSpan("zk-folder-drawer-chev");
-        const mocList = (node.mocRefs ?? []).filter(p => !!this.app.vault.getFileByPath(p));
-        const hasChildren = node.childIds.length > 0 || mocList.length > 0;
         if (hasChildren) {
             setIcon(chev, node.collapsed ? "chevron-right" : "chevron-down");
+            chev.addEventListener("click", (e) => { e.stopPropagation(); this.toggleCollapse(node); });
         } else {
             chev.addClass("is-leaf");
         }
@@ -238,8 +247,15 @@ export class FolderDrawer {
 
         // 行末尾操作:仅鼠标悬停显示
         const actions = row.createDiv("zk-folder-drawer-row-actions");
+        const mountBtn = actions.createDiv("zk-folder-drawer-row-action");
+        setIcon(mountBtn, "file-plus");
+        setTooltip(mountBtn, t("Mount files here"));
+        mountBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            this.openFilePicker(node);
+        });
         const addBtn = actions.createDiv("zk-folder-drawer-row-action");
-        setIcon(addBtn, "plus");
+        setIcon(addBtn, "folder-plus");
         setTooltip(addBtn, t("New child folder"));
         addBtn.addEventListener("click", (e) => {
             e.stopPropagation();
@@ -257,11 +273,119 @@ export class FolderDrawer {
             e.stopPropagation();
             this.toggleCollapse(node);
         });
+        row.addEventListener("contextmenu", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.openFilePicker(node);
+        });
+        this.attachDropTarget(row, node);
 
-        // 接受 MOC 拖拽:仅当存在 dragMocPayload 且目标 ≠ 源时高亮 + 接收
+        this.renderChildren(parent, node);
+    }
+
+    private renderFileNode(parent: HTMLElement, node: FolderNode): void {
+        const filePath = node.filePath || "";
+        const file = this.app.vault.getFileByPath(filePath);
+        const exists = file instanceof TFile;
+        const isCurrent = this.plugin.settings.mocCurrentFile === filePath;
+
+        const row = parent.createDiv("zk-folder-drawer-row zk-folder-drawer-row-moc");
+        row.style.paddingLeft = `${10 + node.depth * 14}px`;
+        if (isCurrent) row.addClass("is-current");
+        if (!exists) row.style.opacity = "0.5";
+
+        const hasChildren = node.childIds.length > 0;
+        const chev = row.createSpan("zk-folder-drawer-chev");
+        if (hasChildren) {
+            setIcon(chev, node.collapsed ? "chevron-right" : "chevron-down");
+            chev.addEventListener("click", (e) => { e.stopPropagation(); this.toggleCollapse(node); });
+        } else {
+            chev.addClass("is-leaf");
+        }
+
+        // 拖拽:把该 file 节点重新挂到其他节点下
+        row.draggable = true;
+        row.addEventListener("dragstart", (e: DragEvent) => {
+            this.dragPayload = { nodeId: node.id };
+            row.addClass("zk-folder-drawer-row-dragging");
+            if (e.dataTransfer) {
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("application/x-zk-node", node.id);
+            }
+        });
+        row.addEventListener("dragend", () => {
+            row.removeClass("zk-folder-drawer-row-dragging");
+            this.dragPayload = null;
+        });
+
+        const icon = row.createSpan("zk-folder-drawer-icon");
+        setIcon(icon, isMocPath(filePath) ? "git-branch" : "file-text");
+
+        const display = isMocPath(filePath)
+            ? stripMocSuffix(file ? file.basename : (node.name.replace(/\.md$/i, "")))
+            : (file ? file.basename : node.name.replace(/\.md$/i, ""));
+        row.createSpan("zk-folder-drawer-name").setText(display);
+
+        const actions = row.createDiv("zk-folder-drawer-row-actions");
+        const mountBtn = actions.createDiv("zk-folder-drawer-row-action");
+        setIcon(mountBtn, "file-plus");
+        setTooltip(mountBtn, t("Mount files here"));
+        mountBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            this.openFilePicker(node);
+        });
+        const addBtn = actions.createDiv("zk-folder-drawer-row-action");
+        setIcon(addBtn, "folder-plus");
+        setTooltip(addBtn, t("New child folder"));
+        addBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            this.showNewChildInput(node, parent, row);
+        });
+        const unmount = actions.createDiv("zk-folder-drawer-row-action zk-folder-drawer-row-action-danger");
+        setIcon(unmount, "x");
+        setTooltip(unmount, t("Unmount from this folder"));
+        unmount.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            const parentNode = node.parentId ? this.index.getNode(node.parentId) : null;
+            try {
+                if (parentNode) {
+                    await this.service.unmountMoc(parentNode.id, filePath);
+                    new Notice(t("Unmounted from folder").replace("{name}", parentNode.name));
+                }
+            } catch (err: any) {
+                new Notice(t("Unmount failed").replace("{message}", String(err?.message || err)));
+            }
+        });
+
+        row.addEventListener("contextmenu", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.openFilePicker(node);
+        });
+        this.attachDropTarget(row, node);
+
+        row.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            await this.openFileNode(node);
+        });
+
+        this.renderChildren(parent, node);
+    }
+
+    /** 渲染某节点的子节点(folder/file 混合),折叠时跳过 */
+    private renderChildren(parent: HTMLElement, node: FolderNode): void {
+        if (node.childIds.length === 0 || node.collapsed) return;
+        const childrenEl = parent.createDiv("zk-folder-drawer-children");
+        for (const child of this.index.getChildren(node.id)) {
+            this.renderNode(childrenEl, child);
+        }
+    }
+
+    /** 给行绑定"接受节点拖拽 → 重新挂载"的 drop 行为 */
+    private attachDropTarget(row: HTMLElement, node: FolderNode): void {
         row.addEventListener("dragover", (e: DragEvent) => {
-            const payload = this.dragMocPayload;
-            if (!payload || payload.fromFolderId === node.id) return;
+            const payload = this.dragPayload;
+            if (!payload || payload.nodeId === node.id) return;
             e.preventDefault();
             if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
             row.addClass("zk-folder-drawer-row-drop-target");
@@ -271,92 +395,61 @@ export class FolderDrawer {
         });
         row.addEventListener("drop", async (e: DragEvent) => {
             row.removeClass("zk-folder-drawer-row-drop-target");
-            const payload = this.dragMocPayload;
-            if (!payload || payload.fromFolderId === node.id) return;
+            const payload = this.dragPayload;
+            if (!payload || payload.nodeId === node.id) return;
             e.preventDefault();
             e.stopPropagation();
             try {
-                await this.service.moveMoc(payload.fromFolderId, node.id, payload.mocPath);
+                await this.service.moveNode(payload.nodeId, node.id);
             } catch (err: any) {
                 new Notice(t("Move failed").replace("{message}", String(err?.message || err)));
             } finally {
-                this.dragMocPayload = null;
+                this.dragPayload = null;
             }
         });
-
-        if (hasChildren && !node.collapsed) {
-            const childrenEl = parent.createDiv("zk-folder-drawer-children");
-            for (const child of this.index.getChildren(node.id)) {
-                this.renderNode(childrenEl, child);
-            }
-            for (const mocPath of mocList) {
-                this.renderMocRef(childrenEl, node, mocPath);
-            }
-        }
     }
 
-    private renderMocRef(parent: HTMLElement, ownerFolder: FolderNode, mocPath: string): void {
-        const file = this.app.vault.getFileByPath(mocPath);
-        if (!file || !(file instanceof TFile) || !isMocFile(file)) return;
-        const isCurrent = this.plugin.settings.mocCurrentFile === mocPath;
-
-        const row = parent.createDiv("zk-folder-drawer-row zk-folder-drawer-row-moc");
-        row.style.paddingLeft = `${10 + (ownerFolder.depth + 1) * 14}px`;
-        if (isCurrent) row.addClass("is-current");
-
-        // 拖拽到其他文件夹下
-        row.draggable = true;
-        row.addEventListener("dragstart", (e: DragEvent) => {
-            this.dragMocPayload = { mocPath, fromFolderId: ownerFolder.id };
-            row.addClass("zk-folder-drawer-row-dragging");
-            if (e.dataTransfer) {
-                e.dataTransfer.effectAllowed = "move";
-                // 设一个不会被外部消费的占位,避免某些浏览器把空 dataTransfer 视为非法拖拽
-                e.dataTransfer.setData("application/x-zk-moc-ref", mocPath);
-            }
-        });
-        row.addEventListener("dragend", () => {
-            row.removeClass("zk-folder-drawer-row-dragging");
-            this.dragMocPayload = null;
-        });
-
-        // 占位 chev 保持对齐
-        const chev = row.createSpan("zk-folder-drawer-chev");
-        chev.addClass("is-leaf");
-
-        const icon = row.createSpan("zk-folder-drawer-icon");
-        setIcon(icon, "git-branch");
-
-        row.createSpan("zk-folder-drawer-name").setText(stripMocSuffix(file.basename));
-
-        const actions = row.createDiv("zk-folder-drawer-row-actions");
-        const unmount = actions.createDiv("zk-folder-drawer-row-action zk-folder-drawer-row-action-danger");
-        setIcon(unmount, "x");
-        setTooltip(unmount, t("Unmount from this folder"));
-        unmount.addEventListener("click", async (e) => {
-            e.stopPropagation();
-            try {
-                await this.service.unmountMoc(ownerFolder.id, mocPath);
-                new Notice(t("Unmounted from folder").replace("{name}", ownerFolder.name));
-            } catch (err: any) {
-                new Notice(t("Unmount failed").replace("{message}", String(err?.message || err)));
-            }
-        });
-
-        row.addEventListener("click", async (e) => {
-            e.stopPropagation();
-            this.plugin.settings.mocCurrentFile = mocPath;
+    /** 点击 file 节点:moc → 设为当前思维树并刷新;普通文件 → 在 Obsidian 中打开 */
+    private async openFileNode(node: FolderNode): Promise<void> {
+        const filePath = node.filePath || "";
+        const file = this.app.vault.getFileByPath(filePath);
+        if (!(file instanceof TFile)) {
+            new Notice(t("File no longer exists"));
+            return;
+        }
+        if (isMocFile(file)) {
+            this.plugin.settings.mocCurrentFile = filePath;
             await this.plugin.saveData(this.plugin.settings);
             this.app.workspace.trigger("zk-navigation:refresh-index-graph");
             this.render();
-        });
+        } else {
+            await this.app.workspace.getLeaf(false).openFile(file);
+        }
+    }
+
+    /** 打开多选文件框,把选中的文件挂到该节点下 */
+    private openFilePicker(node: FolderNode): void {
+        const mounted = this.index.getChildren(node.id)
+            .filter(c => c.kind === 'file' && c.filePath)
+            .map(c => c.filePath!);
+        const label = node.kind === 'file'
+            ? stripMocSuffix(node.name)
+            : node.name;
+        new FilePickerModal(this.app, label, mounted, async (paths) => {
+            try {
+                if (node.collapsed) await this.service.setCollapsed(node.id, false);
+                const n = await this.service.mountFiles(node.id, paths);
+                if (n > 0) new Notice(t("Mounted files notice").replace("{count}", String(n)));
+            } catch (err: any) {
+                new Notice(t("Operation failed").replace("{message}", String(err?.message || err)));
+            }
+        }).open();
     }
 
     // ---------- 交互 ----------
 
     private async toggleCollapse(node: FolderNode): Promise<void> {
-        const mocCount = (node.mocRefs ?? []).filter(p => !!this.app.vault.getFileByPath(p)).length;
-        if (node.childIds.length === 0 && mocCount === 0) return;
+        if (node.childIds.length === 0) return;
         try {
             await this.service.setCollapsed(node.id, !node.collapsed);
         } catch (e) {

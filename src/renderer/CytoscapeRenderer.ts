@@ -163,6 +163,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private boxSelectionElement: HTMLElement | null = null;
     private liveEditCleanupHandlers: Set<() => void> = new Set();
     private collapseHandleCleanup: (() => void) | null = null;
+    // #43 增量新增标记:由 render() 在"复用实例+纯新增+已有节点未变"路径上置为新节点 id 集合,
+    // renderNodeBadges 读到后只为这些新节点构建+定位 overlay(一次性消费)。
+    private _incrementalAddIds: Set<string> | null = null;
     private domTextMeasurer: DomTextMeasurer | null = null;
     private collapsedNodeIds: Set<string> = new Set();
     private focusOverlayVisibleCyIds: Set<string> | null = null;
@@ -449,6 +452,13 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     toRemove.push(id);
                 }
             });
+            // #43 fast path:区分"真实节点删除"与"占位符移除"。占位符没有任何持久 badge overlay
+            // (各子系统都按 isPlaceholder 跳过,编辑框/连线在 batch 内单独清理),所以"只移除占位符"
+            // 仍可视为纯新增。realRemovedCount 只统计非占位符的删除。
+            const realRemovedCount = toRemove.filter((id) => {
+                const ele = cy.$id(id);
+                return ele.length > 0 && !ele.data('isPlaceholder');
+            }).length;
 
             // 找出需要添加的元素
             const toAdd = elements.filter(ele => {
@@ -471,10 +481,45 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 });
             }
 
+            // #43 增量新增 fast path 追踪:是否有"已有节点"的数据/位置/分组发生变化、是否移除了占位符。
+            // 任一为真说明已有 overlay 可能失效 → 不能走 fast path。
+            let existingChanged = false;
+            let existingChangeDetail: string | null = null;
+            let placeholdersRemoved = false;
+            const markExistingChanged = (reason: string) => {
+                existingChanged = true;
+                if (!existingChangeDetail) existingChangeDetail = reason;
+            };
+            // fast path 判定专用:找出已有节点中"会影响 overlay 的"真实数据变化字段(无则返回空)。
+            // 跳过不影响 overlay 视觉的字段:
+            //  - originalNode:每次 build 都是新对象引用,内容已由 label 等标量字段反映,且体积大不宜深比。
+            //  - position:节点的文档排序序号(GraphDataBuilder 里的 index+1),并非坐标;在插入点之前
+            //    插入新节点会让后续所有节点序号 +1,但 overlay 不读它(渲染只用 cy 的 x/y 坐标)。
+            // 其余对象值字段按内容比较,避免"引用每次都变"的伪变化;节点真移动时坐标内容不同会照常判变。
+            const IGNORED_OVERLAY_DATA_KEYS = new Set(['originalNode', 'position']);
+            const overlayMeaningfulChange = (cur: any, next: any): string => {
+                for (const key in next) {
+                    if (IGNORED_OVERLAY_DATA_KEYS.has(key)) continue;
+                    const a = cur[key];
+                    const b = next[key];
+                    if (a === b) continue;
+                    if (a && b && typeof a === 'object' && typeof b === 'object') {
+                        try { if (JSON.stringify(a) === JSON.stringify(b)) continue; } catch { /* 比不了就当变化 */ }
+                    }
+                    // 诊断:带上变化前后的值(截断),帮助分辨 undefined→值 还是真实数值变化
+                    let av = ''; let bv = '';
+                    try { av = JSON.stringify(a); } catch { av = String(a); }
+                    try { bv = JSON.stringify(b); } catch { bv = String(b); }
+                    return `${key} (${(av || 'undefined').slice(0, 60)} -> ${(bv || 'undefined').slice(0, 60)})`;
+                }
+                return '';
+            };
+
             cy.batch(() => {
                 // 先删除所有占位符节点（因为它们不在传入的数据中）
                 const placeholderNodes = cy.nodes().filter((node: any) => node.data('isPlaceholder'));
                 if (placeholderNodes.length > 0) {
+                    placeholdersRemoved = true;
                     cy.remove(placeholderNodes);
                 }
 
@@ -528,6 +573,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     if (id) {
                         const existing = cy.$id(id);
                         if (existing.length > 0) {
+                            // 该元素在本次渲染前已存在(非本轮新增)。其变化才可能让已有 overlay 失效。
+                            // 排除分组节点:分组没有 badge overlay,仅驱动 glass(fast path 已跳过、靠 pan/zoom
+                            // 惰性更新)。新节点加入分组会改分组的 nodeIds,这对其他节点 overlay 无影响。
+                            const isExisting = currentIds.has(id) && !existing.data('isGroup');
                             const wasEmbed = !!existing.data('isEmbed');
                             const nextIsEmbed = !!ele.data.isEmbed;
                             // 浅比较 ele.data 与现有 data,只有变化时才写入,避免触发不必要的 style/data 事件
@@ -540,11 +589,22 @@ export class CytoscapeRenderer implements IGraphRenderer {
                                 }
                             }
                             if (dataChanged) {
+                                if (isExisting) {
+                                    const mkey = overlayMeaningfulChange(currentData, ele.data);
+                                    if (mkey) markExistingChanged(`data:${id}:${mkey}`);
+                                }
                                 existing.data(ele.data);
                             }
 
                             // 同步更新位置（savedPosition 对应的坐标在 ele.position 上，data 里不含位置）
                             if (ele.group === 'nodes' && (ele as any).position) {
+                                if (isExisting) {
+                                    const cur = existing.position();
+                                    const next = (ele as any).position;
+                                    if (Math.abs(cur.x - next.x) > 0.01 || Math.abs(cur.y - next.y) > 0.01) {
+                                        markExistingChanged(`pos:${id}`);
+                                    }
+                                }
                                 existing.position((ele as any).position);
                             }
 
@@ -568,6 +628,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
                                 // 如果 parent 发生变化，需要使用 move() 方法更新
                                 if (newParent !== currentParent) {
+                                    if (isExisting) markExistingChanged(`parent:${id}`);
                                     existing.move({
                                         parent: newParent || null
                                     });
@@ -577,6 +638,34 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     }
                 });
             });
+
+            // #43 fast path 判定:复用实例 + 纯新增(无删除) + 已有节点未变 + 未移除占位符 +
+            // 无样式刷新 → 仅为新增节点构建/定位 overlay。任一条件不满足则保持 _incrementalAddIds=null
+            // 走全量重建。布局无关:用"已有节点位置是否变化"直接刻画"已有 overlay 是否仍有效"
+            // (free 布局纯新增时已有节点不动 → 命中;auto 布局新增会移动同级 → existingChanged=true → 全量)。
+            const addedNodeIds = toAdd
+                .filter(e => e.group === 'nodes' && e.data.id)
+                .map(e => e.data.id as string);
+            const fastAddOk = !options.exportMode
+                && realRemovedCount === 0
+                && addedNodeIds.length > 0
+                && !existingChanged
+                && !shouldRefreshStyle;
+            if (fastAddOk) {
+                this._incrementalAddIds = new Set(addedNodeIds);
+            }
+            if ((window as any).__zkPerf === true) {
+                console.log('[zkPerf:fastadd]', {
+                    taken: fastAddOk,
+                    added: addedNodeIds.length,
+                    toRemove: toRemove.length,
+                    realRemoved: realRemovedCount,
+                    existingChanged,
+                    existingChangeDetail,
+                    placeholdersRemoved,
+                    shouldRefreshStyle,
+                });
+            }
         }
 
         __lap('cyDiff');

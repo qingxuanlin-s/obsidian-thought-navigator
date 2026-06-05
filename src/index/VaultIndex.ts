@@ -1,6 +1,12 @@
 import { App, Component } from "obsidian";
 import { FolderNode } from "src/types/folder";
-import { readSpaceStore, writeSpaceStore } from "src/services/folderJson";
+import { readSpaceStore, writeSpaceStore, genFolderId } from "src/services/folderJson";
+
+/** 从 vault 路径取文件 basename(含扩展名)作为 file 节点显示名 */
+function basenameOf(path: string): string {
+    const seg = path.split('/').pop() || path;
+    return seg;
+}
 
 type ChangeListener = () => void;
 
@@ -40,9 +46,56 @@ export class VaultIndex extends Component {
         const list = await readSpaceStore(this.app.vault.adapter, this.storePath);
         this.nodes.clear();
         for (const n of list) this.nodes.set(n.id, n);
+        const migrated = this.migrateLegacyMocRefs();
         this.rebuildTree();
         this.rebuildMocReverseMap();
         this.emitChange();
+        if (migrated) {
+            // 迁移结果落盘(串行,避免与后续写入竞争)
+            this.flushChain = this.flushChain.then(() => this.flush()).catch((e) => {
+                console.error('[zk-navigation] spaces.json 迁移写入失败', e);
+            });
+            await this.flushChain;
+        }
+    }
+
+    /**
+     * 一次性迁移:把旧版 node.mocRefs(路径数组)转成 kind==='file' 的子节点。
+     * 迁移后清空 mocRefs,使新模型统一为"文件即节点"。返回是否发生了变更。
+     */
+    private migrateLegacyMocRefs(): boolean {
+        let changed = false;
+        // 先快照,避免在遍历中改 Map
+        const snapshot = Array.from(this.nodes.values());
+        for (const node of snapshot) {
+            const refs = node.mocRefs;
+            if (!refs || refs.length === 0) {
+                if (refs) { node.mocRefs = undefined; }
+                continue;
+            }
+            let order = snapshot.filter(n => n.parentId === node.id).length;
+            for (const path of refs) {
+                const now = node.updatedAt || Date.now();
+                const fileNode: FolderNode = {
+                    id: genFolderId(),
+                    name: basenameOf(path),
+                    parentId: node.id,
+                    childIds: [],
+                    depth: 0,
+                    kind: 'file',
+                    filePath: path,
+                    isProject: false,
+                    order: order++,
+                    collapsed: false,
+                    createdAt: now,
+                    updatedAt: now,
+                };
+                this.nodes.set(fileNode.id, fileNode);
+            }
+            node.mocRefs = undefined;
+            changed = true;
+        }
+        return changed;
     }
 
     /**
@@ -65,15 +118,17 @@ export class VaultIndex extends Component {
         await writeSpaceStore(this.app.vault.adapter, this.storePath, Array.from(this.nodes.values()));
     }
 
+    /**
+     * filePath → 承载它的父节点 id 集合。
+     * 现在文件是一等节点(kind==='file'),所以反向索引扫描 file 节点的 parentId。
+     */
     private rebuildMocReverseMap(): void {
         this.mocToFolders.clear();
         for (const node of this.nodes.values()) {
-            if (!node.mocRefs) continue;
-            for (const p of node.mocRefs) {
-                let set = this.mocToFolders.get(p);
-                if (!set) { set = new Set(); this.mocToFolders.set(p, set); }
-                set.add(node.id);
-            }
+            if (node.kind !== 'file' || !node.filePath || !node.parentId) continue;
+            let set = this.mocToFolders.get(node.filePath);
+            if (!set) { set = new Set(); this.mocToFolders.set(node.filePath, set); }
+            set.add(node.parentId);
         }
     }
 
@@ -126,6 +181,25 @@ export class VaultIndex extends Component {
 
     /** 返回所有 FolderNode(任意顺序) */
     getAllNodes(): FolderNode[] { return Array.from(this.nodes.values()); }
+
+    /** 返回所有 kind==='file' 且 filePath===path 的节点(同一文件可被多处挂载) */
+    getFileNodesByPath(path: string): FolderNode[] {
+        const out: FolderNode[] = [];
+        for (const node of this.nodes.values()) {
+            if (node.kind === 'file' && node.filePath === path) out.push(node);
+        }
+        return out;
+    }
+
+    /** 父节点下是否已有指向该文件的直接子节点(避免同层重复挂载) */
+    hasFileChild(parentId: string, path: string): boolean {
+        const p = this.nodes.get(parentId);
+        if (!p) return false;
+        return p.childIds.some(cid => {
+            const c = this.nodes.get(cid);
+            return !!c && c.kind === 'file' && c.filePath === path;
+        });
+    }
 
     /** 该 MOC 被挂在哪些文件夹下 */
     getFoldersHostingMoc(mocPath: string): FolderNode[] {

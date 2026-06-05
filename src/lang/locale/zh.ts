@@ -346,6 +346,15 @@ export default {
     "Folder with same name exists": "已存在同名文件夹: {name}",
     "Name cannot be empty": "名称不能为空",
     "Name contains invalid characters": "名称包含非法字符 \\ / : * ? \" < > |",
+    // 挂载文件(多选)
+    "Mount files here": "挂载文件到这里…",
+    "File no longer exists": "文件已不存在",
+    "Mounted files notice": "已挂载 {count} 个文件",
+    "Add files to node": "添加文件到「{name}」",
+    "Search files to mount placeholder": "搜索要挂载的文件…",
+    "No matching files": "没有匹配的文件",
+    "Already mounted tag": "已挂载",
+    "Add files confirm": "添加（{count}）",
     // 批量操作工具栏
     "batch selected count": "已选中 {count} 个",
     "batch group": "分组",
