@@ -22,7 +22,10 @@ export function nodeToStore(node: FolderNode): SpaceStoreNode {
         createdAt: node.createdAt,
         updatedAt: node.updatedAt,
     };
-    if (node.mocRefs && node.mocRefs.length > 0) out.mocRefs = node.mocRefs.slice();
+    if (node.kind === 'file') {
+        out.kind = 'file';
+        if (node.filePath) out.filePath = node.filePath;
+    }
     return out;
 }
 
@@ -34,12 +37,15 @@ export function storeToNode(meta: SpaceStoreNode): FolderNode {
         parentId: meta.parentId ?? null,
         childIds: [],
         depth: 0,
+        kind: meta.kind === 'file' ? 'file' : 'folder',
+        filePath: meta.kind === 'file' ? meta.filePath : undefined,
         isProject: !!meta.isProject,
         icon: meta.icon,
         color: meta.color,
         order: typeof meta.order === 'number' ? meta.order : 0,
         collapsed: !!meta.collapsed,
-        mocRefs: Array.isArray(meta.mocRefs) ? meta.mocRefs.slice() : [],
+        // 旧字段保留以供 VaultIndex 一次性迁移成 file 子节点
+        mocRefs: Array.isArray(meta.mocRefs) ? meta.mocRefs.slice() : undefined,
         createdAt: meta.createdAt ?? Date.now(),
         updatedAt: meta.updatedAt ?? Date.now(),
     };

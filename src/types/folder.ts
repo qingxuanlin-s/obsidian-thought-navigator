@@ -8,12 +8,23 @@
  * - depth=0 的节点是顶层 Space
  */
 
+/**
+ * 节点种类:
+ * - 'folder'(默认):虚拟分类文件夹
+ * - 'file':挂载的 vault 文件(可以是 .moc.md,也可以是任意普通文件);
+ *   作为一等节点存在,因此自身也能挂子文件夹 / 子文件
+ */
+export type NodeKind = 'folder' | 'file';
+
 export interface FolderNode {
     id: string;             // "flt_xxxxxxxx",永不改变
-    name: string;           // 用户可见名
+    name: string;           // 用户可见名(file 节点 = 文件 basename)
     parentId: string | null; // null = 顶层 Space
     childIds: string[];     // 子节点 id,显式存储用于稳定排序
     depth: number;          // 0 = Space, >=1 子层
+
+    kind: NodeKind;         // 'folder' | 'file',缺省视为 'folder'
+    filePath?: string;      // kind==='file' 时:被挂载文件的 vault 路径
 
     isProject: boolean;     // 是否升级为"项目"
     icon?: string;          // emoji 或 Lucide 图标名
@@ -23,10 +34,10 @@ export interface FolderNode {
     collapsed: boolean;     // UI 折叠状态(持久化)
 
     /**
-     * 挂载在该文件夹下的 MOC 文件路径(虚拟引用,不实际移动文件)
-     * 同一个 MOC 可被多个 FolderNode 引用
+     * @deprecated 旧版本把挂载文件存成路径数组;现已迁移为 kind==='file' 的子节点。
+     * 仅用于读取旧 spaces.json 时的一次性迁移,新数据不再写入。
      */
-    mocRefs: string[];
+    mocRefs?: string[];
 
     createdAt: number;
     updatedAt: number;
@@ -40,12 +51,14 @@ export interface SpaceStoreNode {
     id: string;
     name: string;
     parentId: string | null;
+    kind?: NodeKind;        // 缺省 'folder'
+    filePath?: string;      // kind==='file' 时持久化
     isProject: boolean;
     icon?: string;
     color?: string;
     order: number;
     collapsed: boolean;
-    mocRefs?: string[];
+    mocRefs?: string[];     // 旧字段,仅向后兼容读取
     createdAt: number;
     updatedAt: number;
 }

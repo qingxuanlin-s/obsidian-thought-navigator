@@ -75,65 +75,83 @@ export function renderNodeBadges(this: any): void {
             __bPrev = t;
         };
 
-        // 清理旧的统一 overlay 调度器（badge 重建时所有子系统也会重建）
-        this.overlayScheduler.cleanupScheduler();
-        this.cleanupBadgeInteractionBindings();
+        // 增量新增模式(#43):由 render() 在"free 布局 + 纯新增 + 无样式/数据变化"路径上设置
+        // this._incrementalAddIds = 新节点 id 集合。命中时只为这些新节点追加 badge/textMD overlay,
+        // 不清理调度器、不摘除已有 overlay、复用现有容器,其余节点的 overlay 及其已注册 updater 原地
+        // 保留(pan/zoom 仍由 scheduler 统一更新)。这样新增节点不再付"全部节点重建+重定位"的成本。
+        // 一次性消费,避免标记泄漏到后续全量渲染。
+        let incIds: Set<string> | null = this._incrementalAddIds || null;
+        this._incrementalAddIds = null;
 
-        // 先从旧 badgeContainer 中摘下缓存的 MD overlay（保持 DOM 节点存活，便于下面复用）
-        this.textMdOverlayCache.forEach((entry: any) => {
-            entry.usedInCycle = false;
-            // 防御性清理：清除可能遗留的编辑标记和隐藏样式，避免下次复用时继续不显示
-            if (entry.el.dataset.editing === '1') {
-                // 编辑期 overlay 的 cssText 可能被内联编辑器改写,失效 styleSig 以强制
-                // 下个渲染周期重写基样式(否则 styleSig 守卫会误判为无变化而跳过恢复)。
-                delete entry.el.dataset.styleSig;
-            }
-            delete entry.el.dataset.editing;
-            entry.el.style.display = 'block';
-            if (entry.el.parentNode) entry.el.parentNode.removeChild(entry.el);
-        });
-
-        // 移除旧的徽章容器
-        const oldBadgeContainer = this.container.querySelector('.zk-node-badges');
-        if (oldBadgeContainer) {
-            oldBadgeContainer.remove();
-        }
-
-        // 移除旧的分组 glass 层
-        const oldGlassLayer = this.container.querySelector('.zk-group-glass-layer');
-        if (oldGlassLayer) {
-            oldGlassLayer.remove();
-        }
-
-        // 创建分组 glass 层（插到最前，位于 canvas 下方）
         const isLightTheme = this.currentOptions?.themeMode === 'light' || document.body.classList.contains('theme-light');
-        const glassLayer = document.createElement('div');
-        glassLayer.className = 'zk-group-glass-layer';
-        glassLayer.style.cssText = `
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 0;
-            overflow: hidden;
-        `;
-        this.container.insertBefore(glassLayer, this.container.firstChild);
 
-        // 创建徽章容器
-        const badgeContainer = document.createElement('div');
-        badgeContainer.className = 'zk-node-badges';
-        badgeContainer.style.cssText = `
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 3;
-        `;
-        this.container.appendChild(badgeContainer);
+        const existingBadgeContainer = this.container.querySelector('.zk-node-badges') as HTMLElement | null;
+        const existingGlassLayer = this.container.querySelector('.zk-group-glass-layer') as HTMLElement | null;
+        // 缺少可复用容器(理论上增量前必有一次全量渲染)→ 降级为全量,避免空指针
+        if (incIds && (!existingBadgeContainer || !existingGlassLayer)) {
+            incIds = null;
+        }
+
+        let glassLayer: HTMLElement;
+        let badgeContainer: HTMLElement;
+
+        if (incIds) {
+            // 复用现有容器,不做任何清理
+            glassLayer = existingGlassLayer!;
+            badgeContainer = existingBadgeContainer!;
+        } else {
+            // 全量重建:清理调度器 + 摘除缓存 overlay + 重建容器
+            this.overlayScheduler.cleanupScheduler();
+            this.cleanupBadgeInteractionBindings();
+
+            // 先从旧 badgeContainer 中摘下缓存的 MD overlay（保持 DOM 节点存活，便于下面复用）
+            this.textMdOverlayCache.forEach((entry: any) => {
+                entry.usedInCycle = false;
+                // 防御性清理：清除可能遗留的编辑标记和隐藏样式，避免下次复用时继续不显示
+                if (entry.el.dataset.editing === '1') {
+                    // 编辑期 overlay 的 cssText 可能被内联编辑器改写,失效 styleSig 以强制
+                    // 下个渲染周期重写基样式(否则 styleSig 守卫会误判为无变化而跳过恢复)。
+                    delete entry.el.dataset.styleSig;
+                }
+                delete entry.el.dataset.editing;
+                entry.el.style.display = 'block';
+                if (entry.el.parentNode) entry.el.parentNode.removeChild(entry.el);
+            });
+
+            // 移除旧的徽章容器
+            if (existingBadgeContainer) existingBadgeContainer.remove();
+            // 移除旧的分组 glass 层
+            if (existingGlassLayer) existingGlassLayer.remove();
+
+            // 创建分组 glass 层（插到最前，位于 canvas 下方）
+            glassLayer = document.createElement('div');
+            glassLayer.className = 'zk-group-glass-layer';
+            glassLayer.style.cssText = `
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                pointer-events: none;
+                z-index: 0;
+                overflow: hidden;
+            `;
+            this.container.insertBefore(glassLayer, this.container.firstChild);
+
+            // 创建徽章容器
+            badgeContainer = document.createElement('div');
+            badgeContainer.className = 'zk-node-badges';
+            badgeContainer.style.cssText = `
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                pointer-events: none;
+                z-index: 3;
+            `;
+            this.container.appendChild(badgeContainer);
+        }
 
         // 存储所有徽章的更新函数
         const badgeUpdaters: Array<() => void> = [];
@@ -145,6 +163,9 @@ export function renderNodeBadges(this: any): void {
 
         // 分组 glass overlay
         this.cy.nodes('.group-node').forEach((groupNode: any) => {
+            // 增量模式跳过分组 glass:组 bbox 由 Cytoscape 复合节点维护,旧 glass updater 仍在
+            // scheduler 中,pan/zoom 时会自动把新子节点纳入。
+            if (incIds) return;
             const glassEl = document.createElement('div');
             glassEl.className = 'zk-group-glass';
             glassEl.style.position = 'absolute';
@@ -264,6 +285,7 @@ export function renderNodeBadges(this: any): void {
 
         const IMAGE_EXTS_BADGE = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
         this.cy.nodes('[?hasFileIcon]').forEach((node: any) => {
+            if (incIds && !incIds.has(node.id())) return;
             // 跳过所有 embed 节点（由预览卡片渲染标题和内容）
             if (node.data('isEmbed')) return;
 			const underlineGroupEl = document.createElement('div');
@@ -595,6 +617,7 @@ export function renderNodeBadges(this: any): void {
         });
 
         this.cy.nodes().forEach((node: any) => {
+            if (incIds && !incIds.has(node.id())) return;
             if (node.data('isGroup') || node.data('isPlaceholder') || node.data('isEmbed')) {
                 return;
             }
@@ -775,6 +798,7 @@ export function renderNodeBadges(this: any): void {
         // 锚点星星 badge — 金色圆环 + 深色底 + 发光星标
         const MIN_ANCHOR_PX = 20;
         this.cy.nodes('[?isAnchor]').forEach((node: any) => {
+            if (incIds && !incIds.has(node.id())) return;
             if (node.data('isGroup') || node.data('isPlaceholder')) return;
 
 			const starEl = document.createElement('div');
@@ -841,6 +865,7 @@ export function renderNodeBadges(this: any): void {
 
         // 兼容旧语义：文字前小色点（legacy customColor）
         this.cy.nodes('[customColor]').forEach((node: any) => {
+            if (incIds && !incIds.has(node.id())) return;
             if (node.data('isGroup') || node.data('isEmbed')) return;
             const rawColor = String(node.data('customColor') || '');
             if (!rawColor || rawColor.startsWith('fill2:')) return;
@@ -899,6 +924,7 @@ export function renderNodeBadges(this: any): void {
 
         // 为每个有 badge 的节点创建徽章元素（跳过 embed 节点，由预览卡片展示）
         this.cy.nodes('[badge]').forEach((node: any) => {
+            if (incIds && !incIds.has(node.id())) return;
             const badge = String(node.data('badge') || '');
             if (!badge || node.data('isEmbed')) return;
             const isModern = isModernThemeStyle(this.currentOptions);
@@ -996,6 +1022,7 @@ export function renderNodeBadges(this: any): void {
         // 文本节点右下角拉伸手柄（仅选中时可见）
         if (!readOnly) {
             this.cy.nodes('[?isTextOnly]').forEach((node: any) => {
+                if (incIds && !incIds.has(node.id())) return;
                 if (node.data('isGroup') || node.data('isPlaceholder') || node.data('isEmbed')) return;
 
                 const resizeEl = document.createElement('div');
@@ -1124,6 +1151,7 @@ export function renderNodeBadges(this: any): void {
         // embed toggle 按钮（睁眼/闭眼，文件节点⟷预览节点互转）
         if (!readOnly) {
             this.cy.nodes().forEach((node: any) => {
+                if (incIds && !incIds.has(node.id())) return;
                 if (node.data('isRoot') || node.data('isPlaceholder') || node.data('isGroup') || node.data('isStandaloneText')) return;
                 if (node.data('isTextOnly')) return;
                 if (node.data('isCrossDomain')) return;
@@ -1217,39 +1245,53 @@ export function renderNodeBadges(this: any): void {
 
         __bLap('domPasses');
 
-        // 文本节点 Markdown 渲染 overlay
-        buildTextMarkdownOverlays.call(this, badgeContainer, badgeUpdaters);
+        // 文本节点 Markdown 渲染 overlay（增量模式只处理新节点、不做缓存淘汰）
+        buildTextMarkdownOverlays.call(this, badgeContainer, badgeUpdaters, incIds);
         __bLap('textMD');
 
-        // 注册到统一 overlay 调度器
+        // 注册到统一 overlay 调度器。增量模式下 badgeUpdaters 只含新节点的 updater,
+        // 这里追加一个新的 badgePositionUpdater(不清理旧的),旧节点的 updater 仍在调度器中,
+        // pan/zoom 时新旧并集都会被更新。
         const badgePositionUpdater = () => badgeUpdaters.forEach(updater => updater());
         this.overlayScheduler.updaters.add(badgePositionUpdater);
         this.overlayScheduler.immediateUpdaters.add(badgePositionUpdater);
         this.overlayScheduler.extraUpdaters.add(badgePositionUpdater);
         this.overlayScheduler.selectionUpdaters.add(badgePositionUpdater);
 
-        // 添加边控制点
-        this.edgeControls.addEdgeControlPoints();
+        if (incIds) {
+            // 增量模式:只定位本次新增节点的 overlay。边控制点/端点(选中时惰性创建,select 处理器
+            // 仍是上次全量渲染所绑、对新边同样有效)、收起手柄、分组手柄、glass 均保持原状;不调用会
+            // 重定位全部节点的 overlayScheduler.immediate(),从而省去全图重定位成本。
+            badgeUpdaters.forEach(updater => updater());
+            // 连线手柄(hover 小蓝点)是逐节点绑定的,新节点必须重建才有手柄。addConnectionHandles
+            // 已做自幂等(注销旧 updater + 解绑旧逐节点监听),可独立调用而不累积、不影响边 select 处理器。
+            // 手柄默认 opacity:0、hover 才显示+定位,故无需在此跑全图定位。
+            this.edgeControls.addConnectionHandles();
+            __bLap('schedulerImmediate');
+        } else {
+            // 添加边控制点
+            this.edgeControls.addEdgeControlPoints();
 
-        // 添加边端点手柄
-        this.edgeControls.addEdgeEndpointHandles();
+            // 添加边端点手柄
+            this.edgeControls.addEdgeEndpointHandles();
 
-        // 添加连线手柄
-        this.edgeControls.addConnectionHandles();
-        __bLap('edgeControls');
+            // 添加连线手柄
+            this.edgeControls.addConnectionHandles();
+            __bLap('edgeControls');
 
-        // 添加折叠/展开子节点手柄
-        addCollapseToggleHandle.call(this);
-        __bLap('collapseHandle');
+            // 添加折叠/展开子节点手柄
+            addCollapseToggleHandle.call(this);
+            __bLap('collapseHandle');
 
-        // 添加分组调整大小手柄
-        this.addGroupResizeHandles();
-        __bLap('groupResize');
+            // 添加分组调整大小手柄
+            this.addGroupResizeHandles();
+            __bLap('groupResize');
 
-        // 所有 overlay 子系统注册完毕后，绑定统一事件监听
-        this.overlayScheduler.bindListeners();
-        this.overlayScheduler.immediate();
-        __bLap('schedulerImmediate');
+            // 所有 overlay 子系统注册完毕后，绑定统一事件监听
+            this.overlayScheduler.bindListeners();
+            this.overlayScheduler.immediate();
+            __bLap('schedulerImmediate');
+        }
         if (__zkPerf) {
             const total = Object.values(__bMark).reduce((a, b) => a + b, 0);
             console.log(
@@ -1266,7 +1308,7 @@ export function renderNodeBadges(this: any): void {
      *   2) 快路径检测 —— 无 MD 语法时跳过 MarkdownRenderer，直接 textContent
      *   3) 批量尺寸回写 —— Promise.all 完成后 cy.batch 一次性刷新节点宽高
      */
-function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badgeUpdaters: Array<() => void>): void {
+function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badgeUpdaters: Array<() => void>, incIds: Set<string> | null = null): void {
         if (!this.cy) return;
         const app = this.currentOptions?.app;
         if (!app) return;
@@ -1276,6 +1318,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
         const renderPromises: Promise<void>[] = [];
 
         this.cy.nodes('[?isTextOnly]').forEach((node: any) => {
+            if (incIds && !incIds.has(node.id())) return;
             const data = node.data();
             if (data.isPlaceholder) return;
             const originalNode: ZKNode | undefined = data.originalNode;
@@ -1778,13 +1821,16 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
             });
         }
 
-        // 清理本次未使用的缓存项（mark-sweep）
+        // 清理本次未使用的缓存项（mark-sweep）。增量模式跳过:本次只遍历了新节点,
+        // 其余缓存项的 usedInCycle 没被置位,若清理会误删仍在用的 overlay。
         const toEvict: string[] = [];
-        this.textMdOverlayCache.forEach((e: any, key: string) => {
-            if (!e.usedInCycle) {
-                toEvict.push(key);
-            }
-        });
+        if (!incIds) {
+            this.textMdOverlayCache.forEach((e: any, key: string) => {
+                if (!e.usedInCycle) {
+                    toEvict.push(key);
+                }
+            });
+        }
         toEvict.forEach(key => {
             const e = this.textMdOverlayCache.get(key);
             if (e) {

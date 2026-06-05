@@ -27,6 +27,9 @@ export class EdgeControls {
 	private edgeEndpointRemoveHandler: (() => void) | null = null;
 	private edgeControlPointUpdaters: Set<() => void> = new Set();
 	private edgeEndpointUpdaters: Set<() => void> = new Set();
+	// 连线手柄(hover 小蓝点)的统一定位 updater。单独持有引用以便重复调用 addConnectionHandles
+	// 时先注销旧的,避免在不经过 cleanupScheduler 的增量路径上累积。
+	private connectionPositionUpdater: (() => void) | null = null;
 
 	constructor(private deps: EdgeControlsDeps) {}
 
@@ -78,12 +81,24 @@ export class EdgeControls {
 			this.deps.overlayScheduler.updaters.delete(fn);
 		});
 		this.edgeEndpointUpdaters.clear();
+		if (this.connectionPositionUpdater) {
+			this.deps.overlayScheduler.updaters.delete(this.connectionPositionUpdater);
+			this.deps.overlayScheduler.immediateUpdaters.delete(this.connectionPositionUpdater);
+			this.connectionPositionUpdater = null;
+		}
 	}
 
 	addConnectionHandles(): void {
 		const cy = this.deps.getCy();
 		const container = this.deps.getContainer();
 		if (!cy || !container) return;
+
+		// 自幂等:移除上一次注册的统一定位 updater,避免在增量路径(不走 cleanupScheduler)上累积。
+		if (this.connectionPositionUpdater) {
+			this.deps.overlayScheduler.updaters.delete(this.connectionPositionUpdater);
+			this.deps.overlayScheduler.immediateUpdaters.delete(this.connectionPositionUpdater);
+			this.connectionPositionUpdater = null;
+		}
 
 		const oldHandleContainer = container.querySelector('.zk-connection-handles');
 		if (oldHandleContainer) oldHandleContainer.remove();
@@ -104,6 +119,12 @@ export class EdgeControls {
 		const handleUpdaters: Array<() => void> = [];
 
 		cy.nodes('[!isPlaceholder]').forEach((node: any) => {
+			// 自幂等:解绑该节点上一次的 hover 监听(独立调用时无 cleanupBindings 兜底),避免重复绑定。
+			const oldListeners = node.scratch('_zkConnectionHandleListeners');
+			if (oldListeners) {
+				if (oldListeners.mouseover) node.off('mouseover', oldListeners.mouseover);
+				if (oldListeners.mouseout) node.off('mouseout', oldListeners.mouseout);
+			}
 			const handle = document.createElement('div');
 			handle.className = 'zk-connection-handle';
 			const baseHandleSize = 36;
@@ -241,6 +262,7 @@ export class EdgeControls {
 		});
 
 		const connectionPositionUpdater = () => handleUpdaters.forEach(updater => updater());
+		this.connectionPositionUpdater = connectionPositionUpdater;
 		this.deps.overlayScheduler.updaters.add(connectionPositionUpdater);
 		this.deps.overlayScheduler.immediateUpdaters.add(connectionPositionUpdater);
 	}

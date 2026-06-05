@@ -34,7 +34,7 @@ export class FolderMountModal extends SuggestModal<PickItem> {
 
         const items: PickItem[] = all.map(n => ({
             node: n,
-            mounted: !!n.mocRefs?.includes(this.mocFile.path),
+            mounted: this.index.hasFileChild(n.id, this.mocFile.path),
         }));
 
         const filtered = q

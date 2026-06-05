@@ -347,6 +347,15 @@ export default {
     "Folder with same name exists": "A folder named \"{name}\" already exists",
     "Name cannot be empty": "Name cannot be empty",
     "Name contains invalid characters": "Name contains invalid characters: \\ / : * ? \" < > |",
+    // Mount files (multi-select)
+    "Mount files here": "Mount files here...",
+    "File no longer exists": "File no longer exists",
+    "Mounted files notice": "Mounted {count} file(s)",
+    "Add files to node": "Add files to \"{name}\"",
+    "Search files to mount placeholder": "Search files to mount...",
+    "No matching files": "No matching files",
+    "Already mounted tag": "mounted",
+    "Add files confirm": "Add ({count})",
     // Batch toolbar
     "batch selected count": "{count} selected",
     "batch group": "Group",
