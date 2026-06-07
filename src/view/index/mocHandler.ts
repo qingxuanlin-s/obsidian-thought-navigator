@@ -81,6 +81,25 @@ function deepCopyMOCResult(original: MOCParseResult): MOCParseResult {
 }
 
 /**
+ * 只读查询返回的精简节点视图(供 CLI / 脚本)。
+ * 与存储的节点同构,仅保留稳定字段,children 按需嵌套。
+ */
+export interface MOCNodeView {
+    nodeID: string;
+    nodeType: string;          // 'file' | 'text' | 'embed'
+    target: string;            // file/embed: wiki 链接;text: 原始文本
+    alias?: string;            // 仅 file + [[link|alias]] 时存在
+    depth: number;
+    children: MOCNodeView[];
+}
+
+export interface MOCQueryOptions {
+    nodeID?: string;           // 精确按 ID 定位单个节点(连同其子树)
+    query?: string;           // 模糊匹配 target/alias/nodeID,返回所有命中节点
+    recursive?: boolean;       // 默认 true=带全部后代;false=只到直接子节点
+}
+
+/**
  * MOC (Map of Content) 处理器
  * 负责处理所有与 MOC 文件相关的操作
  */
@@ -229,6 +248,66 @@ export class MOCHandler {
             this.applyHeadlessAutoLayout(mocData);
         });
         return newIDs;
+    }
+
+    /**
+     * 只读查询(供 CLI / 脚本),不写文件。解析 .moc,返回精简嵌套节点树。
+     * - 不传 nodeID / query:返回整棵树(顶层节点数组,各自带 children)
+     * - nodeID:精确定位该节点,返回它及其后代(单元素数组)
+     * - query:对 nodeID / target / alias 大小写不敏感模糊匹配,返回所有命中节点(各自带其子树)
+     * nodeID 与 query 同时传时以 nodeID 优先。recursive=false 时只保留直接子节点(不含孙级)。
+     */
+    async queryMOC(mocFile: TFile, opts: MOCQueryOptions = {}): Promise<MOCNodeView[]> {
+        const headingTitle = this.plugin.settings.mocHeadingTitle;
+        const { parseMOCStructure } = await import('src/utils/utils');
+        const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+        const roots: any[] = (mocData as any).nodes || [];
+
+        const levels = opts.recursive === false ? 1 : Infinity;
+        const viewOf = (n: any, depthLeft: number): MOCNodeView => {
+            const v: MOCNodeView = {
+                nodeID: String(n.nodeID),
+                nodeType: n.nodeType,
+                target: n.target,
+                depth: n.depth,
+                children: depthLeft > 0 ? (n.children || []).map((c: any) => viewOf(c, depthLeft - 1)) : [],
+            };
+            if (n.alias) v.alias = n.alias;
+            return v;
+        };
+
+        // 精确按 ID:在整棵树里递归定位
+        if (opts.nodeID) {
+            const wanted = String(opts.nodeID);
+            const find = (list: any[]): any => {
+                for (const n of list) {
+                    if (String(n.nodeID) === wanted) return n;
+                    const hit = find(n.children || []);
+                    if (hit) return hit;
+                }
+                return null;
+            };
+            const node = find(roots);
+            return node ? [viewOf(node, levels)] : [];
+        }
+
+        // 模糊按文本:扁平收集后过滤(命中节点各自带子树)
+        if (opts.query) {
+            const q = opts.query.toLowerCase();
+            const hits: any[] = [];
+            const collect = (list: any[]) => {
+                for (const n of list) {
+                    const hay = `${n.nodeID}\n${n.target ?? ''}\n${n.alias ?? ''}`.toLowerCase();
+                    if (hay.includes(q)) hits.push(n);
+                    collect(n.children || []);
+                }
+            };
+            collect(roots);
+            return hits.map((n) => viewOf(n, levels));
+        }
+
+        // 无条件:整棵树
+        return roots.map((n) => viewOf(n, levels));
     }
 
     /**

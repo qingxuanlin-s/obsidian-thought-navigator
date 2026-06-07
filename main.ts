@@ -5,7 +5,7 @@ import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
 import { ZKNavigationSettngTab } from "src/settings/settings";
 import { mainNoteInit, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX } from "src/utils/utils";
 import { createMOCJsonWithInitialNode } from "src/utils/mocJsonCodec";
-import { MOCHandler } from "src/view/index/mocHandler";
+import { MOCHandler, MOCNodeView, MOCQueryOptions } from "src/view/index/mocHandler";
 import { MOCFileMonitor } from "src/utils/mocMonitor";
 import { ensureMOCPreviewPNG } from "src/embed/mocEmbedExporter";
 import { MOCReverseIndex } from "src/utils/mocReverseIndex";
@@ -44,6 +44,12 @@ export interface ZKNavigationExternalAPI {
     addNode(filePath: string, parentID: string, title: string, kind?: 'text' | 'file'): Promise<string>;
     /** 一次性批量追加多个子节点(单次读改写,适合 CLI 一次建整棵树),返回新 ID 数组 */
     addNodes(filePath: string, items: Array<{ parent: string; title: string; kind?: 'text' | 'file' }>): Promise<string[]>;
+    /**
+     * 只读查询节点(精确 by nodeID / 模糊 by 文本 / 整棵树),返回精简嵌套节点树。
+     * opts.nodeID 精确定位单节点(连同后代);opts.query 模糊匹配 nodeID/target/alias;
+     * 都不传则返回整棵树;opts.recursive=false 只返回直接子节点。
+     */
+    queryNodes(filePath: string, opts?: MOCQueryOptions): Promise<MOCNodeView[]>;
 }
 
 export interface ZoomPanScale{
@@ -938,6 +944,14 @@ export default class ZKNavigationPlugin extends Plugin {
                 }
                 const handler = this.cliMocHandler ??= new MOCHandler(this, this.app);
                 return await handler.addNodesToMOC(target, items || []);
+            },
+            queryNodes: async (filePath: string, opts: MOCQueryOptions = {}) => {
+                const target = this.app.vault.getAbstractFileByPath(filePath);
+                if (!(target instanceof TFile) || !isMocFile(target)) {
+                    throw new Error(t('MOC not a moc file').replace('{path}', filePath));
+                }
+                const handler = this.cliMocHandler ??= new MOCHandler(this, this.app);
+                return await handler.queryMOC(target, opts || {});
             },
         };
 

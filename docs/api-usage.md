@@ -292,7 +292,32 @@ open "$B?action=add-node&file=animals.moc.md&parent=1&title=鸟类"
 | `createMOC(opts)` | 创建新 `.moc.md`，`opts` 同 URI（`name/folder/title/layout/overwrite/rootId`） | 文件路径 |
 | `addNode(file, parent, title, kind?)` | 向父节点追加一个子节点 | 新节点 ID |
 | `addNodes(file, items)` | **一次性**追加多个子节点（`items=[{parent,title,kind?}]`） | 新 ID 数组 |
+| `queryNodes(file, opts?)` | **只读**查询节点(精确 `nodeID` / 模糊 `query` / 整棵树),`opts={nodeID?,query?,recursive?}` | 精简嵌套节点数组 |
 | `version()` | 插件版本 | string |
+
+### `queryNodes` 详解
+
+只读、不写文件。返回精简嵌套节点 `{nodeID, nodeType, target, alias?, depth, children[]}`:
+
+| `opts` | 行为 |
+|--------|------|
+| `{}` / 省略 | 返回整棵树(顶层节点数组,各自带 `children`) |
+| `{nodeID:'1.1'}` | 精确定位该节点,返回它**及其全部后代**(单元素数组) |
+| `{query:'哺乳'}` | 对 `nodeID/target/alias` 大小写不敏感模糊匹配,返回所有命中节点(各带子树) |
+| `{...,recursive:false}` | 只返回直接子节点(不含孙级);默认 `recursive:true` 带全部后代 |
+
+`nodeID` 与 `query` 同传时 `nodeID` 优先。
+
+```bash
+OBS=/Applications/Obsidian.app/Contents/MacOS/obsidian
+
+# ⚠️ queryNodes 是 async,经 obsidian eval 通常不回显返回值(同 addNodes)。
+# 想在 CLI 拿到可打印结果,直接用 fs 同步读 .moc.md(纯 JSON)更可靠:
+"$OBS" eval code="(()=>{const fs=require('fs');const d=JSON.parse(fs.readFileSync(app.vault.adapter.basePath+'/animals.moc.md','utf8'));const flat=[];(function w(l){for(const n of l){flat.push(n);w(n.children||[])}})(d.nodes);return JSON.stringify(flat.filter(n=>(n.target||'').includes('哺乳')).map(n=>n.nodeID));})()"
+
+# 程序化(其他插件 / 能真正 await 的环境)直接用 api:
+#   const r = await app.plugins.plugins['thought-navigator'].api.queryNodes('animals.moc.md', {nodeID:'1.1'});
+```
 
 ### ⚠️ 重要：`obsidian eval` 是「发射后不管」
 

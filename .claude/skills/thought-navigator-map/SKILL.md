@@ -1,6 +1,7 @@
 ---
 name: thought-navigator-map
-description: 把一个主题/大纲生成为 Thought Navigator 插件的知识导图(.moc.md),并在「思维树」视图中打开。仅在用户显式点名调用本 skill（例如输入 /thought-navigator-map，或明确说"用 thought-navigator-map / 生成思维导图并打开思维树视图"）时使用；不要在普通对话中自动触发。
+version: 1.1.0
+description: 把一个主题/大纲生成为 Thought Navigator 插件的知识导图(.moc.md),并在「思维树」视图中打开;也能查询已有导图的节点(精确/模糊/取子树)。仅在用户显式点名调用本 skill（例如输入 /thought-navigator-map，或明确说"用 thought-navigator-map / 生成思维导图并打开思维树视图 / 查询某个导图节点"）时使用；不要在普通对话中自动触发。
 ---
 
 # Thought Navigator 知识导图生成器
@@ -44,6 +45,14 @@ description: 把一个主题/大纲生成为 Thought Navigator 插件的知识�
   - 单次读-改-写建整棵树，无竞态。`parent` 可引用本批次中**前面刚生成**的节点 ID。
   - `kind`：`'text'`(默认，纯文本节点) 或 `'file'`(文件节点)。建图一般用默认。
   - 根层用 `parent:'__root__'`；但本 skill 用固定 `rootId:'1'`，子节点直接挂 `'1'`。
+- `queryNodes(filePath, {nodeID?, query?, recursive?})` → `Promise<MOCNodeView[]>`(只读,不写文件)
+  - 返回精简嵌套节点:`{nodeID, nodeType, target, alias?, depth, children[]}`。
+  - 都不传 → 整棵树;`nodeID` → 精确定位该节点连同后代(单元素数组);
+    `query` → 对 `nodeID/target/alias` 大小写不敏感模糊匹配,返回所有命中节点(各带子树)。
+  - `recursive`(默认 `true`)= 带全部后代;`false` = 只到直接子节点。
+  - ⚠️ `queryNodes` 是 **async**,经 `obsidian eval` 同样不回显(同建图的 async 问题)。
+    CLI 查询请用下方「查询已有导图」的 **fs 同步读法**(可回显);`api.queryNodes` 留给能真正
+    `await` 的程序化调用方(其他插件、in-process 脚本)。
 
 ## ID 规则(决定 `parent` 怎么填)
 
@@ -153,6 +162,60 @@ sleep 1   # 等异步落盘
 预期 B 输出：`=> {"path":"animals1.moc.md","title":"动物","ids":["1","1.1","1.1.1","1.2"]}`
 
 指定 vault：在每条 `eval` 前加 `vault="My Vault"`。
+
+## 查询已有导图(精确 / 模糊 / 取子树)
+
+查询不建图,只读现有 `.moc.md`。因为 `.moc.md` 是纯 JSON,**直接用 `fs.readFileSync` 同步读 + 在 JS 里过滤**(可回显,一条 eval 搞定),无需两步法。
+逻辑与插件的 `api.queryNodes` 等价:精确按 `nodeID`、模糊按 `nodeID/target/alias`、`recursive` 控制是否带全部后代。
+
+### 查询模板(同步,会打印)
+
+把 `<相对路径>` 换成 `.moc.md` 路径;`<MODE>` 选一种:
+
+```js
+(() => {
+  const fs = require('fs');
+  const full = app.vault.adapter.basePath + '/' + '<相对路径>';
+  const d = JSON.parse(fs.readFileSync(full, 'utf8'));
+  const RECURSIVE = true;          // false = 只到直接子节点
+  const NODE_ID = '<节点ID或空>';   // 精确:填 ID;否则留空
+  const QUERY   = '<关键词或空>';   // 模糊:填文本;否则留空
+
+  const slim = (n, lv) => ({
+    nodeID: n.nodeID, nodeType: n.nodeType, target: n.target,
+    ...(n.alias ? { alias: n.alias } : {}),
+    depth: n.depth,
+    children: lv > 0 ? (n.children || []).map(c => slim(c, lv - 1)) : [],
+  });
+  const lv = RECURSIVE ? Infinity : 1;
+  const flat = []; (function w(l){ for (const n of l){ flat.push(n); w(n.children||[]); } })(d.nodes);
+
+  let out;
+  if (NODE_ID) { const hit = flat.find(n => String(n.nodeID) === NODE_ID); out = hit ? [slim(hit, lv)] : []; }
+  else if (QUERY) { const q = QUERY.toLowerCase();
+    out = flat.filter(n => `${n.nodeID}\n${n.target||''}\n${n.alias||''}`.toLowerCase().includes(q)).map(n => slim(n, lv)); }
+  else out = (d.nodes || []).map(n => slim(n, lv));
+  return JSON.stringify(out);
+})()
+```
+
+### 三种查询的一行命令
+
+```bash
+OBS=/Applications/Obsidian.app/Contents/MacOS/obsidian
+FILE=animals1.moc.md
+
+# 1) 整棵树
+"$OBS" eval code="(()=>{const fs=require('fs');const d=JSON.parse(fs.readFileSync(app.vault.adapter.basePath+'/$FILE','utf8'));const slim=(n,lv)=>({nodeID:n.nodeID,nodeType:n.nodeType,target:n.target,...(n.alias?{alias:n.alias}:{}),depth:n.depth,children:lv>0?(n.children||[]).map(c=>slim(c,lv-1)):[]});return JSON.stringify(d.nodes.map(n=>slim(n,Infinity)));})()"
+
+# 2) 精确按 ID(连同后代):查 1.1
+"$OBS" eval code="(()=>{const fs=require('fs');const d=JSON.parse(fs.readFileSync(app.vault.adapter.basePath+'/$FILE','utf8'));const slim=(n,lv)=>({nodeID:n.nodeID,nodeType:n.nodeType,target:n.target,...(n.alias?{alias:n.alias}:{}),depth:n.depth,children:lv>0?(n.children||[]).map(c=>slim(c,lv-1)):[]});const flat=[];(function w(l){for(const n of l){flat.push(n);w(n.children||[])}})(d.nodes);const hit=flat.find(n=>String(n.nodeID)==='1.1');return JSON.stringify(hit?[slim(hit,Infinity)]:[]);})()"
+
+# 3) 模糊按文本:查"哺乳"
+"$OBS" eval code="(()=>{const fs=require('fs');const d=JSON.parse(fs.readFileSync(app.vault.adapter.basePath+'/$FILE','utf8'));const slim=(n,lv)=>({nodeID:n.nodeID,nodeType:n.nodeType,target:n.target,...(n.alias?{alias:n.alias}:{}),depth:n.depth,children:lv>0?(n.children||[]).map(c=>slim(c,lv-1)):[]});const flat=[];(function w(l){for(const n of l){flat.push(n);w(n.children||[])}})(d.nodes);const q='哺乳';return JSON.stringify(flat.filter(n=>(n.nodeID+'\n'+(n.target||'')+'\n'+(n.alias||'')).toLowerCase().includes(q.toLowerCase())).map(n=>slim(n,Infinity)));})()"
+```
+
+> 只要直接子节点(不含孙级):把 `slim(...,Infinity)` 改成 `slim(...,1)`。
 
 ## 注意事项
 
