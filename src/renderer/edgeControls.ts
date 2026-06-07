@@ -232,15 +232,36 @@ export class EdgeControls {
 			handle.dataset.imageNodeId = nodeId;
 			handle.dataset.embedNodeId = nodeId;
 
-			const handleMouseOver = () => {
+			// 小蓝点左半边压在节点右边缘上(x = x2,translate(-50%))。鼠标从节点内向右移到小蓝点时,
+			// 指针落到 handle(pointer-events:auto,z-index 高于画布)上 → cytoscape 立刻对节点派发
+			// mouseout。若此时立即 display:none,小蓝点会在「节点→小蓝点」的交接处消失,且因元素已隐藏,
+			// handle 自身的 mouseenter 永远不会触发。故改为「延迟隐藏 + handle.mouseenter 取消隐藏」:
+			// node.mouseout 仅预约隐藏(此刻 handle 仍可见可命中),指针真正落到 handle 上时 mouseenter
+			// 取消预约,从而桥接交接间隙。从节点外接近时同理无副作用。
+			let hideTimer: number | null = null;
+			const cancelHide = () => {
+				if (hideTimer !== null) {
+					clearTimeout(hideTimer);
+					hideTimer = null;
+				}
+			};
+			const showHandle = () => {
 				if (this.isEdgeSelected) return;
+				cancelHide();
 				handle.style.opacity = '1';
 				updateHandlePosition();
 			};
-			const handleMouseOut = () => {
-				handle.style.opacity = '0';
-				handle.style.display = 'none';
+			const scheduleHide = () => {
+				cancelHide();
+				hideTimer = window.setTimeout(() => {
+					hideTimer = null;
+					handle.style.opacity = '0';
+					handle.style.display = 'none';
+				}, 80);
 			};
+
+			const handleMouseOver = showHandle;
+			const handleMouseOut = scheduleHide;
 			node.on('mouseover', handleMouseOver);
 			node.on('mouseout', handleMouseOut);
 			node.scratch('_zkConnectionHandleListeners', {
@@ -248,14 +269,14 @@ export class EdgeControls {
 				mouseout: handleMouseOut
 			});
 
+			handle.addEventListener('mouseenter', showHandle);
 			handle.addEventListener('mouseleave', (e: MouseEvent) => {
 				const currentContainer = this.deps.getContainer();
 				const imageCard = currentContainer?.querySelector(`.zk-image-preview-card[data-node-id="${nodeId}"]`);
 				if (imageCard && (e.relatedTarget === imageCard || imageCard.contains(e.relatedTarget as Node))) return;
 				const embedCard = currentContainer?.querySelector(`.zk-embed-preview-card[data-node-id="${nodeId}"]`);
 				if (embedCard && (e.relatedTarget === embedCard || embedCard.contains(e.relatedTarget as Node))) return;
-				handle.style.opacity = '0';
-				handle.style.display = 'none';
+				scheduleHide();
 			});
 
 			this.bindConnectionDrag(handle, node);
