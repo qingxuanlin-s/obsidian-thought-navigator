@@ -65,6 +65,12 @@ export interface ZKNavigationExternalAPI {
         items: Array<{ content: string; kind?: 'text' | 'file'; parentRealId?: string; parentLocalId?: string; localId?: string }>,
         batchId?: string
     ): Promise<string[]>;
+    /**
+     * 开启/关闭某个已打开 MOC 的「草稿模式」(#20)。开启后该视图里新建的节点都先作为草稿,
+     * 待用户审批落地或丢弃。filePath 必须是当前已在思维树视图中打开的 MOC。
+     * @returns 设置后的草稿模式状态(true=开启)
+     */
+    setDraftMode(filePath: string, on: boolean): Promise<boolean>;
 }
 
 export interface ZoomPanScale{
@@ -992,6 +998,20 @@ export default class ZKNavigationPlugin extends Plugin {
                     throw new Error(t('Draft view not open').replace('{path}', filePath));
                 }
                 return (view as any).injectDraftNodes(items || [], 'ai', batchId) as string[];
+            },
+            setDraftMode: async (filePath: string, on: boolean) => {
+                const target = this.app.vault.getAbstractFileByPath(filePath);
+                if (!(target instanceof TFile) || !isMocFile(target)) {
+                    throw new Error(t('MOC not a moc file').replace('{path}', filePath));
+                }
+                const leaves = this.app.workspace.getLeavesOfType(ZK_INDEX_TYPE);
+                const leaf = leaves.find((l) => (l.view as any)?.file?.path === filePath) ?? leaves[0];
+                const view = leaf?.view as ZKIndexView | undefined;
+                if (!view || typeof (view as any).setDraftMode !== 'function') {
+                    throw new Error(t('Draft view not open').replace('{path}', filePath));
+                }
+                (view as any).setDraftMode(!!on);
+                return !!on;
             },
         };
 
