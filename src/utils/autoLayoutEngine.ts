@@ -26,6 +26,8 @@ export interface ComputeAutoLayoutInput {
 	realMocRootIds: Set<string>;
 	nodePositions: Record<string, Vec2>;
 	ignoreSavedPositionsForIds?: Set<string>;
+	// 侧别已固定的节点:无论层级都按自身保存位置导出方向,不继承父方向。
+	sidePinnedIds?: Set<string>;
 	layoutPreset?: LayoutPreset;
 	nodeLayoutPresets?: Record<string, LayoutPreset>;
 	forwardGap?: number;
@@ -110,9 +112,16 @@ export function computeAutoLayout(input: ComputeAutoLayoutInput): Record<string,
 		}
 
 		let direction: GrowthDirection;
-		if (input.realMocRootIds.has(parentId)) {
+		// relayout 根(auto 子树岛顶点,挂在 free 祖先链下)按自身位置定向,
+		// 不沿 free 链继承——否则会继承到远祖的方向,导致子节点朝反方向生长。
+		if (nodeId === input.relayoutRootId) {
+			direction = resolveFromPool(nodeId, parentId, getBranchPreset(nodeId));
+		} else if (input.realMocRootIds.has(parentId)) {
 			direction = resolveFromPool(nodeId, parentId, filePreset);
 		} else if (isBranchStart(parentId)) {
+			direction = resolveFromPool(nodeId, parentId, getBranchPreset(parentId));
+		} else if (input.sidePinnedIds?.has(nodeId)) {
+			// 侧别已固定:深层节点也按自身保存位置导出方向,不继承父方向。
 			direction = resolveFromPool(nodeId, parentId, getBranchPreset(parentId));
 		} else {
 			direction = getDirection(parentId) || PRESET_POOL[getBranchPreset(parentId)][0];
@@ -156,10 +165,12 @@ export function computeAutoLayout(input: ComputeAutoLayoutInput): Record<string,
 		const node = input.nodes[nodeId];
 		const dir = getDirection(nodeId);
 		const stackAxis = dir ? stackAxisOf(dir) : null;
-		const groupChildren = input.realMocRootIds.has(nodeId) || isBranchStart(nodeId);
 		const childAxis = stackAxis || { x: 0, y: 1 };
 		const childIds = sortChildren(input.childrenById[nodeId] || [], childAxis, node.position);
 		const children = childIds.map((childId) => buildLayout(childId));
+		// 子节点方向不一致(如部分被固定到对侧)时也分组放置,否则单方向放置会把对侧子节点拉回。
+		const groupChildren = input.realMocRootIds.has(nodeId) || isBranchStart(nodeId)
+			|| new Set(children.map((c) => c.dir)).size > 1;
 		const childrenSpan = children.reduce((sum, child) => sum + child.subtreeSpan, 0)
 			+ Math.max(0, children.length - 1) * stackGap;
 		const selfSpan = stackAxis ? projectSize(node.size, stackAxis) : projectSize(node.size, childAxis);
@@ -298,7 +309,11 @@ export function computeBidirectionalAutoLayout(input: ComputeAutoLayoutInput): R
 		}
 
 		let direction: GrowthDirection;
-		if (input.realMocRootIds.has(parentId) || isBranchStart(parentId)) {
+		// relayout 根(auto 子树岛顶点)按自身位置定向,不沿 free 祖先链继承。
+		if (nodeId === input.relayoutRootId || input.realMocRootIds.has(parentId) || isBranchStart(parentId)) {
+			direction = resolveBidirectional(nodeId, parentId);
+		} else if (input.sidePinnedIds?.has(nodeId)) {
+			// 侧别已固定:深层节点也按自身保存位置导出左右,不继承父方向。
 			direction = resolveBidirectional(nodeId, parentId);
 		} else {
 			direction = getDirection(parentId) || 'E';
@@ -341,10 +356,12 @@ export function computeBidirectionalAutoLayout(input: ComputeAutoLayoutInput): R
 		const node = input.nodes[nodeId];
 		const dir = getDirection(nodeId);
 		const stackAxis: Vec2 | null = dir ? { x: 0, y: 1 } : null;
-		const groupChildren = input.realMocRootIds.has(nodeId) || isBranchStart(nodeId);
 		const childAxis: Vec2 = { x: 0, y: 1 };
 		const childIds = sortChildren(input.childrenById[nodeId] || [], childAxis, node.position);
 		const children = childIds.map((childId) => buildLayout(childId));
+		// 子节点方向不一致(如部分被固定到对侧)时也分组放置,否则单方向放置会把对侧子节点拉回。
+		const groupChildren = input.realMocRootIds.has(nodeId) || isBranchStart(nodeId)
+			|| new Set(children.map((c) => c.dir)).size > 1;
 		const childrenSpan = children.reduce((sum, child) => sum + child.subtreeSpan, 0)
 			+ Math.max(0, children.length - 1) * stackGap;
 		const selfSpan = stackAxis ? projectSize(node.size, stackAxis) : projectSize(node.size, childAxis);
@@ -478,7 +495,11 @@ export function computeTopDownAutoLayout(input: ComputeAutoLayoutInput): Record<
 		}
 
 		let direction: GrowthDirection;
-		if (input.realMocRootIds.has(parentId) || isBranchStart(parentId)) {
+		// relayout 根(auto 子树岛顶点)按自身位置定向,不沿 free 祖先链继承。
+		if (nodeId === input.relayoutRootId || input.realMocRootIds.has(parentId) || isBranchStart(parentId)) {
+			direction = resolveTopDown(nodeId, parentId);
+		} else if (input.sidePinnedIds?.has(nodeId)) {
+			// 侧别已固定:深层节点也按自身保存位置导出上下,不继承父方向。
 			direction = resolveTopDown(nodeId, parentId);
 		} else {
 			direction = getDirection(parentId) || 'S';
@@ -520,9 +541,11 @@ export function computeTopDownAutoLayout(input: ComputeAutoLayoutInput): Record<
 	const buildLayout = (nodeId: string): LayoutNode => {
 		const node = input.nodes[nodeId];
 		const dir = getDirection(nodeId);
-		const groupChildren = input.realMocRootIds.has(nodeId) || isBranchStart(nodeId);
 		const childIds = sortChildren(input.childrenById[nodeId] || [], stackAxis, node.position);
 		const children = childIds.map((childId) => buildLayout(childId));
+		// 子节点方向不一致(如部分被固定到对侧)时也分组放置,否则单方向放置会把对侧子节点拉回。
+		const groupChildren = input.realMocRootIds.has(nodeId) || isBranchStart(nodeId)
+			|| new Set(children.map((c) => c.dir)).size > 1;
 		const childrenSpan = children.reduce((sum, child) => sum + child.subtreeSpan, 0)
 			+ Math.max(0, children.length - 1) * stackGap;
 		const selfSpan = projectSize(node.size, stackAxis);
@@ -670,7 +693,11 @@ export function computeRadialAutoLayout(input: ComputeAutoLayoutInput): Record<s
 		}
 
 		let direction: GrowthDirection;
-		if (input.realMocRootIds.has(parentId) || isBranchStart(parentId)) {
+		// relayout 根(auto 子树岛顶点)按自身位置定向,不沿 free 祖先链继承。
+		if (nodeId === input.relayoutRootId || input.realMocRootIds.has(parentId) || isBranchStart(parentId)) {
+			direction = resolveRadial(nodeId, parentId);
+		} else if (input.sidePinnedIds?.has(nodeId)) {
+			// 侧别已固定:深层节点也按自身保存位置导出象限,不继承父方向。
 			direction = resolveRadial(nodeId, parentId);
 		} else {
 			direction = getDirection(parentId) || 'SE';
@@ -713,9 +740,11 @@ export function computeRadialAutoLayout(input: ComputeAutoLayoutInput): Record<s
 		const node = input.nodes[nodeId];
 		const dir = getDirection(nodeId);
 		const stackAxis = getRadialStackAxis(dir);
-		const groupChildren = input.realMocRootIds.has(nodeId) || isBranchStart(nodeId);
 		const childIds = sortChildren(input.childrenById[nodeId] || [], stackAxis, node.position);
 		const children = childIds.map((childId) => buildLayout(childId));
+		// 子节点方向不一致(如部分被固定到对侧)时也分组放置,否则单方向放置会把对侧子节点拉回。
+		const groupChildren = input.realMocRootIds.has(nodeId) || isBranchStart(nodeId)
+			|| new Set(children.map((c) => c.dir)).size > 1;
 		const childrenSpan = children.reduce((sum, child) => sum + child.subtreeSpan, 0)
 			+ Math.max(0, children.length - 1) * stackGap;
 		const selfSpan = projectSize(node.size, stackAxis);

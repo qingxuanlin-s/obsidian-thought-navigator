@@ -235,7 +235,7 @@ export class MOCHandler {
      * 无头(CLI/脚本)场景下,直接为 auto 文件算好居中坐标写入 nodePositions,
      * 使文件创建时即居中——视图打开无需再 reflow,避免"先歪后居中"的闪动。
      * 节点尺寸用文本长度估算;居中的对称性不依赖精确尺寸,故根节点必然居中。
-     * 仅处理 auto 文件;手动拖动过的节点(NODE_FLAG_MANUALLY_MOVED)保留其坐标。
+     * 仅处理 auto 文件;已分离的节点(NODE_FLAG_SEPARATED)保留其坐标。
      */
     private applyHeadlessAutoLayout(mocData: MOCParseResult): void {
         if (mocData.nodeLayoutStyle !== 'auto') return;

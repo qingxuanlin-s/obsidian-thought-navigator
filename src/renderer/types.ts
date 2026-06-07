@@ -62,6 +62,9 @@ export interface RenderOptions {
     edgeStyle?: 'straight' | 'bezier' | 'polyline';
     nodeLayoutStyle?: 'free' | 'auto';
     nodeLayoutOverrides?: Record<string, 'auto' | 'free'>;
+    // auto 布局下已与父节点轨道分离的节点 ID(NODE_FLAG_SEPARATED)。
+    // 渲染器据此在拖动时算"分离圆"半径时排除这些远处的兄弟。
+    separatedNodeIds?: string[];
     showNoteId?: boolean;
     smartConnection?: boolean;
     readOnly?: boolean;

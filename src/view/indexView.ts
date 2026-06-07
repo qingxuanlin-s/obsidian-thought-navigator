@@ -7,7 +7,7 @@ import { AddFreeNodeModal } from "src/modal/addFreeNodeModal";
 import { expandGraphModal } from "src/modal/expandGraphModal";
 import { MOCSelectorModal } from "src/modal/mocSelectorModal";
 import { NoteSearchModal } from "src/modal/noteSearchModal";
-import { convertMOCToZKNodes, createMOCTreeNode, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX, MOCParseResult, MOCTreeNode, NODE_FLAG_MANUALLY_MOVED, parseMOCStructure, saveMOCStructure, stripMocSuffix } from "src/utils/utils";
+import { convertMOCToZKNodes, createMOCTreeNode, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX, MOCParseResult, MOCTreeNode, NODE_FLAG_SEPARATED, NODE_FLAG_SIDE_PINNED, parseMOCStructure, saveMOCStructure, stripMocSuffix } from "src/utils/utils";
 import { FolderDrawer } from "src/view/folderDrawer";
 import { ScratchpadDrawer } from "src/view/scratchpadDrawer";
 import { ScratchpadEntry } from "src/scratch/scratchpadManager";
@@ -1884,6 +1884,18 @@ cy.fit(null, 40);
         );
         __lap('buildGraphData');
 
+        // 收集已分离节点 ID(NODE_FLAG_SEPARATED),供渲染器拖动时计算"分离圆"半径排除远处兄弟。
+        const separatedNodeIds: string[] = [];
+        {
+            const collect = (ns: MOCTreeNode[]) => {
+                for (const n of ns) {
+                    if (((n.extBitMap || 0) & NODE_FLAG_SEPARATED) !== 0) separatedNodeIds.push(n.nodeID);
+                    if (n.children?.length) collect(n.children);
+                }
+            };
+            collect(mocParseResult.nodes);
+        }
+
         // 配置渲染选项
         const options: RenderOptions = {
             app: this.app,
@@ -1897,6 +1909,7 @@ cy.fit(null, 40);
             edgeStyle: this.plugin.settings.edgeStyle || 'bezier',
             nodeLayoutStyle: this.currentNodeLayoutStyle,
             nodeLayoutOverrides: this.currentNodeLayoutOverrides,
+            separatedNodeIds,
             showNoteId: this.plugin.settings.showNoteIdInBranchView,
             smartConnection: this.plugin.settings.smartConnection === true,
             readOnly: this.isMobileReadOnly(),
@@ -2117,11 +2130,13 @@ cy.fit(null, 40);
         let pendingMOCPath: string | null = null; // 事件发生时的 MOC 路径
         let pendingGroupLeaves: Array<{ nodeId: string; groupId: string }> = [];
         let pendingGroupJoins: Array<{ nodeId: string; groupId: string }> = [];
+        // auto 布局分离意图:nodeKey → {父节点, 拖出/拖回, 拖动前是否已分离}
+        let pendingSeparations: Map<string, { parentId: string; willSeparate: boolean; wasSeparated: boolean }> = new Map();
         this.addTrackedListener(branchGraphDiv, 'node-position-changed', async (event: any) => {
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { node, position, leftGroup, joinedGroup } = event.detail;
+            const { node, position, leftGroup, joinedGroup, separation } = event.detail;
             const nodeKey = node?.IDStr || node?.ID;
 
             // 检查节点是否有效
@@ -2143,6 +2158,10 @@ cy.fit(null, 40);
             if (joinedGroup) {
                 pendingGroupJoins.push(joinedGroup);
             }
+            // auto 布局:拖出/拖回分离圆的意图(仅被拖节点携带)
+            if (separation && typeof separation.parentId === 'string') {
+                pendingSeparations.set(nodeKey, separation);
+            }
 
             // 使用防抖，等所有 dragfree 事件到达后一次性保存
             if (this.nodePositionSaveTimeout) {
@@ -2156,6 +2175,8 @@ cy.fit(null, 40);
                     this.pendingPositionChanges.clear();
                     const groupLeaves = pendingGroupLeaves.splice(0);
                     const groupJoins = pendingGroupJoins.splice(0);
+                    const separations = pendingSeparations;
+                    pendingSeparations = new Map();
 
                     try {
                         // 使用事件发生时捕获的 MOC 路径，防止切换后写入错误文件
@@ -2188,10 +2209,19 @@ cy.fit(null, 40);
                                         x: Math.round(pos.x * 100) / 100,
                                         y: Math.round(pos.y * 100) / 100
                                     };
-                                    // 标记为用户手动拖动过, 防止后续 auto 收紧时被覆盖
+                                }
+                                // auto 布局分离标志:仅被拖节点据"分离圆"内外置/清 SEPARATED。
+                                // 拖出 → 置位(成为独立生长锚点);拖回 → 清位(归队,随后 reflow 吸附)。
+                                // 不再对所有拖动节点盲打标志:圆内的节点要吸附回树,不应被钉住。
+                                for (const [nodeID, sep] of separations) {
                                     const treeNode = this.findNodeInTree(mocData.nodes, nodeID);
-                                    if (treeNode) {
-                                        treeNode.extBitMap = ((treeNode.extBitMap || 0) | NODE_FLAG_MANUALLY_MOVED) & 0xff;
+                                    if (!treeNode) continue;
+                                    if (sep.willSeparate) {
+                                        treeNode.extBitMap = ((treeNode.extBitMap || 0) | NODE_FLAG_SEPARATED) & 0xff;
+                                    } else {
+                                        // 圆内:取消分离 + 固定该侧。固定后无论层级深浅,reflow 都按
+                                        // 该节点自身保存位置导出左右,不再继承父方向弹回对侧。
+                                        treeNode.extBitMap = (((treeNode.extBitMap || 0) & ~NODE_FLAG_SEPARATED) | NODE_FLAG_SIDE_PINNED) & 0xff;
                                     }
                                 }
                                 for (const { nodeId, groupId } of groupLeaves) {
@@ -2234,6 +2264,28 @@ cy.fit(null, 40);
                                 crossDomainLink,
                                 pos
                             );
+                        }
+
+                        // auto 布局分离/归队后:重排受影响父节点的子树。
+                        // 分离 → 其余兄弟紧凑回收空位(分离节点子树被排除,保留原位);
+                        // 归队/圆内拖动 → 该节点吸附回树(按落点定侧/序),不留自由坐标。
+                        // saveMOCStructure 已清解析缓存,reflow 重新解析即拿到最新标志位。
+                        if (separations.size > 0) {
+                            const reflowParents = new Set<string>();
+                            for (const sep of separations.values()) reflowParents.add(sep.parentId);
+                            for (const parentId of reflowParents) {
+                                // 仅局部重排该父节点的子树(不上溯整棵树):分离 → 兄弟补位;
+                                // 吸附 → 该节点归位。避免拖一个节点导致整棵树所有分支重排。
+                                await this.relayoutAutoLayoutSiblings(parentId, {
+                                    compactVisibleNodes: true,
+                                    collapsedNodeIds: this.collapsedNodeIds,
+                                    rebalanceRootChildren: true,
+                                    localOnly: true,
+                                });
+                            }
+                            // separatedNodeIds 选项随之变化 → 触发刷新,保证下次拖动的分离圆半径准确。
+                            this.lastRenderSignature = null;
+                            this.app.workspace.trigger("zk-navigation:refresh-index-graph");
                         }
                     } catch (error) {
                         console.error('Failed to save node positions:', error);
@@ -2845,6 +2897,10 @@ cy.fit(null, 40);
             try {
                 const mocFile = getLatestMOCFile();
                 if (mocFile) {
+                    // 删除前解析真实父级(自由节点父子关系只在边里,删除+刷新后丢失)
+                    const reflowParentId = node.isCrossDomain
+                        ? null
+                        : this.pickAutoLayoutParentForReflow([node.IDStr]);
                     // 根据 isCrossDomain 属性选择删除方法
                     if (node.isCrossDomain) {
                         // 跨领域节点：使用专门的删除方法
@@ -2872,15 +2928,8 @@ cy.fit(null, 40);
                     await this.refreshBranchMermaid();
 
                     // 声明式 reflow: 删除后整棵树重排, 回收空缺。
-                    if (!node.isCrossDomain) {
-                        const idStr = String(node.IDStr || '');
-                        const dotIdx = idStr.lastIndexOf('.');
-                        if (dotIdx > 0) {
-                            const parentId = idStr.substring(0, dotIdx);
-                            if (parentId && this.isNodeAutoLayout(parentId)) {
-                                await this.reflowAutoLayout(parentId);
-                            }
-                        }
+                    if (reflowParentId) {
+                        await this.reflowAutoLayout(reflowParentId);
                     }
 
                     new Notice(t("Node deleted").replace("{id}", String(node.ID)));
@@ -3054,6 +3103,7 @@ cy.fit(null, 40);
 
             // 声明式 reflow: 整棵树重排, 给新节点腾位置, 回收空缺。
             if (this.isNodeAutoLayout(suggestedID)) {
+                await this.applyNewSiblingSide(suggestedID);
                 await this.reflowAutoLayout(suggestedID);
             }
 
@@ -3132,6 +3182,7 @@ cy.fit(null, 40);
 
             // 声明式 reflow: 整棵树重排, 给新节点腾位置, 回收空缺。
             if (this.isNodeAutoLayout(suggestedID)) {
+                await this.applyNewSiblingSide(suggestedID);
                 await this.reflowAutoLayout(suggestedID);
             }
 
@@ -3438,6 +3489,8 @@ cy.fit(null, 40);
                         nodeData: nodes[index]
                     }));
                     await this.flushAndSaveCurrentPositions();
+                    // 删除前解析真实父级(自由节点父子关系只在边里,删除+刷新后丢失)
+                    const reflowParentId = this.pickAutoLayoutParentForReflow(nodeIds);
                     await this.mocHandler.deleteNodesFromMOC(mocFile, batchNodes);
 
                     // 删除嵌入图片节点对应的图片文件
@@ -3450,7 +3503,6 @@ cy.fit(null, 40);
                     await this.refreshBranchMermaid();
 
                     // 声明式 reflow: 批量删除后整棵树重排
-                    const reflowParentId = this.pickAutoLayoutParentForReflow(nodeIds);
                     if (reflowParentId) {
                         await this.reflowAutoLayout(reflowParentId);
                     }
@@ -6139,6 +6191,58 @@ cy.fit(null, 40);
         return !!nodeId && String(nodeId).startsWith('free.');
     }
 
+    /**
+     * 解析节点的真实父级 ID。
+     * 普通节点 ID 编码层级,走点号路径快路径;
+     * 自由节点 (free.*) ID 是扁平的,父子关系只存在于图的 parent 边里,需查边。
+     * 注意:查边依赖 cy 当前状态,删除节点前调用(删除+刷新后边已消失)。
+     */
+    private resolveRealParentId(nodeId?: string | null): string | null {
+        const idStr = String(nodeId || '');
+        if (!idStr) return null;
+        if (!this.isFreeNodeID(idStr)) {
+            const dotIdx = idStr.lastIndexOf('.');
+            return dotIdx > 0 ? idStr.substring(0, dotIdx) : null;
+        }
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        if (!cy) return null;
+        let parentId: string | null = null;
+        cy.$('edge').filter((edge: any) => edge.data('type') === 'parent').forEach((edge: any) => {
+            if (parentId) return;
+            const targetOriginal = edge.target().data('originalNode') as ZKNode | undefined;
+            const targetId = targetOriginal?.IDStr || targetOriginal?.ID;
+            if (targetId !== idStr) return;
+            const sourceOriginal = edge.source().data('originalNode') as ZKNode | undefined;
+            parentId = sourceOriginal?.IDStr || sourceOriginal?.ID || null;
+        });
+        return parentId;
+    }
+
+    /**
+     * 取节点的真实直接子节点 ID(基于图的 parent 边,自由节点同样适用)。
+     */
+    private getRealChildNodeIds(parentNodeId: string): string[] {
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        if (!cy) return [];
+        const children: string[] = [];
+        cy.$('edge').filter((edge: any) => edge.data('type') === 'parent').forEach((edge: any) => {
+            const sourceOriginal = edge.source().data('originalNode') as ZKNode | undefined;
+            const sourceId = sourceOriginal?.IDStr || sourceOriginal?.ID;
+            if (sourceId !== parentNodeId) return;
+            const targetOriginal = edge.target().data('originalNode') as ZKNode | undefined;
+            const targetId = targetOriginal?.IDStr || targetOriginal?.ID;
+            if (targetId) children.push(targetId);
+        });
+        return children;
+    }
+
+    /**
+     * 父节点下是否存在 auto 布局子节点(自由父 + 自动子场景判断)。
+     */
+    private hasAutoLayoutChild(parentNodeId: string): boolean {
+        return this.getRealChildNodeIds(parentNodeId).some((id) => this.isNodeAutoLayout(id));
+    }
+
     private getBranchStylePalette(): string[] {
         return ['#ff5a5f', '#ff8a3d', '#f7c948', '#56d364', '#38d9a9', '#4dabf7', '#9775fa', '#f06595'];
     }
@@ -6514,6 +6618,7 @@ cy.fit(null, 40);
         // 声明式 reflow: 让算法重新分配整棵树的空间, 给新节点腾位置,
         // 同时回收被删/移动节点留下的空缺。手动拖过的节点作为锚点保留。
         if (this.isNodeAutoLayout(suggestedID)) {
+            await this.applyNewSiblingSide(suggestedID);
             await this.reflowAutoLayout(suggestedID);
         }
 
@@ -6619,6 +6724,7 @@ cy.fit(null, 40);
         // 声明式 reflow: 让算法重新分配整棵树的空间, 给新节点腾位置,
         // 同时回收被删/移动节点留下的空缺。手动拖过的节点作为锚点保留。
         if (this.isNodeAutoLayout(suggestedID)) {
+            await this.applyNewSiblingSide(suggestedID);
             await this.reflowAutoLayout(suggestedID);
         }
 
@@ -7075,6 +7181,20 @@ cy.fit(null, 40);
         } else {
             this.currentNodeLayoutOverrides[nodeId] = style;
         }
+
+        // 切到 auto: 立即把该节点的子树围绕它重排。以 nodeId 为锚点(保留其当前
+        // 位置,父节点即便是 free 也不动),强制忽略子节点的旧保存坐标,让它们重新
+        // 对称排布 —— 否则刚切成 auto 的子节点会停在原地,表现为"没反应"(issue #48)。
+        // 切到 free: 子节点保留当前坐标(手动模式),无需重排。
+        if (style === 'auto') {
+            const subtreeIds = this.collectAutoLayoutSubtreeIds(nodeId);
+            await this.relayoutAutoLayoutSiblings(nodeId, {
+                ignoreSavedPositionsForIds: subtreeIds,
+                persistPositions: true,
+            });
+            this.lastRenderSignature = null;
+            this.app.workspace.trigger("zk-navigation:refresh-index-graph");
+        }
     }
 
     private async setBranchLayoutPreset(nodeId: string, preset: LayoutPreset): Promise<void> {
@@ -7149,7 +7269,7 @@ cy.fit(null, 40);
     /**
      * 声明式 reflow: 以 anchorNodeId 所在子树为起点, 上溯到 MOC root, 整棵树按
      * computeAutoLayout 的"子树跨度求和 → 自顶向下分配"算法重排。
-     * 用户手动拖动过的节点 (NODE_FLAG_MANUALLY_MOVED) 作为锚点保留。
+     * 已分离的节点 (NODE_FLAG_SEPARATED) 作为锚点保留,且不占父节点排布槽位。
      *
      * 所有创建/删除/移动节点的操作都应该走这个入口。
      */
@@ -7162,17 +7282,53 @@ cy.fit(null, 40);
     }
 
     /**
-     * 给定一组被删除的节点 ID, 返回任意一个仍在 auto 布局下的祖先 ID 用于触发 reflow。
+     * 新建同级节点跟随"最近创建的兄弟"(children 数组末尾 = 最大 id)的左右侧:
+     * 读取该兄弟相对父节点的位置定出左/右,把新节点放到同侧并打 SIDE_PINNED,
+     * 随后的 reflow 即据此摆放。把最后一个节点挪到对侧,之后新建的也跟到对侧。
+     * 必须在 reflowAutoLayout 之前调用。
+     */
+    private async applyNewSiblingSide(newNodeId: string): Promise<void> {
+        if (!this.isNodeAutoLayout(newNodeId)) return;
+        const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+        if (!mocFile) return;
+        const parentId = this.resolveRealParentId(newNodeId);
+        if (!parentId) return;
+        await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
+            const parent = this.findNodeInTree(mocData.nodes, parentId);
+            const siblings = (parent?.children || []).filter((c: any) => c.nodeID !== newNodeId);
+            if (siblings.length === 0) return;
+            const last = siblings[siblings.length - 1]; // 数组按创建顺序 → 末尾 = 最大 id
+            const pos = mocData.nodePositions || (mocData.nodePositions = {});
+            const pp = pos[parentId];
+            const lp = pos[last.nodeID];
+            if (!pp || !lp) return;
+            const leftSide = (lp.x - pp.x) < 0;
+            pos[newNodeId] = {
+                x: Math.round((pp.x + (leftSide ? -315 : 315)) * 100) / 100,
+                y: lp.y,
+            };
+            const nn = this.findNodeInTree(mocData.nodes, newNodeId);
+            if (nn) nn.extBitMap = ((nn.extBitMap || 0) | NODE_FLAG_SIDE_PINNED) & 0xff;
+        });
+    }
+
+    /**
+     * 给定一组被删除的节点 ID, 返回一个仍存活、可用于触发 reflow 的父级 ID。
      * 由于 reflowAutoLayout 会从 anchor 沿父链上溯到 MOC root, 任选一个有效的
      * 祖先即可触发整棵树重排。
+     *
+     * 用 resolveRealParentId 解析真实父级(自由节点 ID 扁平,父子关系只在边里),
+     * 因此**必须在删除节点之前调用**(删除+刷新后 parent 边已消失)。
+     * 父级自身为 auto,或父级是自由节点但其下仍有 auto 子节点(issue #48 场景),
+     * 都需要 reflow。
      */
     private pickAutoLayoutParentForReflow(deletedNodeIds: string[]): string | null {
+        const deleted = new Set(deletedNodeIds.map((id) => String(id)));
         for (const nodeId of deletedNodeIds) {
-            const idStr = String(nodeId || '');
-            const dotIdx = idStr.lastIndexOf('.');
-            if (dotIdx <= 0) continue;
-            const parentId = idStr.substring(0, dotIdx);
-            if (parentId && this.isNodeAutoLayout(parentId)) {
+            const parentId = this.resolveRealParentId(nodeId);
+            // 父级自身也在删除集合里 → 刷新后不存在,跳过
+            if (!parentId || deleted.has(parentId)) continue;
+            if (this.isNodeAutoLayout(parentId) || this.hasAutoLayoutChild(parentId)) {
                 return parentId;
             }
         }
@@ -7186,16 +7342,24 @@ cy.fit(null, 40);
             compactVisibleNodes?: boolean;
             persistPositions?: boolean;
             ignoreSavedPositionsForIds?: string[];
-            forceResetManuallyMoved?: boolean;
+            forceResetSeparated?: boolean;
             rebalanceRootChildren?: boolean;
+            localOnly?: boolean;
         } = {}
     ): Promise<void> {
-        if (!this.isNodeAutoLayout(parentNodeId) || !this.branchRenderer) {
+        if (!this.branchRenderer) {
             return;
         }
 
         const cy = this.branchRenderer.getCytoscapeInstance();
         if (!cy) {
+            return;
+        }
+
+        // 父节点自身为 auto,或它是自由节点但其下仍有 auto 子节点(issue #48):
+        // 都需要布局。自由父节点作为固定锚点(保留 savedPosition),
+        // 其 auto 子节点围绕它排列。两者皆否(纯 free 子树)才跳过。
+        if (!this.isNodeAutoLayout(parentNodeId) && !this.hasAutoLayoutChild(parentNodeId)) {
             return;
         }
 
@@ -7224,6 +7388,27 @@ cy.fit(null, 40);
                 || node?.data?.('branchNodeBackground')
                 || '__default__';
         };
+
+        // 分离标志位:已分离节点作为固定锚点保留坐标,且不占父节点排布槽位。
+        const bitMapByID = new Map<string, number>();
+        const collectBitMap = (ns: MOCTreeNode[]) => {
+            for (const n of ns) {
+                if (typeof n.extBitMap === 'number' && n.extBitMap !== 0) {
+                    bitMapByID.set(n.nodeID, n.extBitMap & 0xff);
+                }
+                if (n.children?.length) collectBitMap(n.children);
+            }
+        };
+        collectBitMap(mocData.nodes);
+        const isSeparated = (nid: string) =>
+            !relayoutOptions.forceResetSeparated
+            && ((bitMapByID.get(nid) || 0) & NODE_FLAG_SEPARATED) !== 0;
+        // 侧别已固定的节点:传给引擎,使其无论层级都按自身保存位置导出方向。
+        const sidePinnedIds = new Set<string>(
+            Array.from(bitMapByID.entries())
+                .filter(([, bm]) => (bm & NODE_FLAG_SIDE_PINNED) !== 0)
+                .map(([id]) => id)
+        );
 
         const nodes: Record<string, AutoLayoutNodeInput> = {};
         const parentById: Record<string, string | undefined> = {};
@@ -7261,18 +7446,38 @@ cy.fit(null, 40);
             const targetId = targetOriginal?.IDStr || targetOriginal?.ID;
             if (!sourceId || !targetId || !nodes[sourceId] || !nodes[targetId]) return;
             parentById[targetId] = sourceId;
-            if (this.isNodeAutoLayout(targetId)) {
+            // 已分离的子节点不进父节点的排布列表:其余兄弟据此重新紧凑排布(关闭空位),
+            // 分离子树自身保留拖动后坐标,不被本次重排触及。parentById 仍保留映射,
+            // 故分离岛内部(以分离节点为锚点)的重排上溯链不受影响。
+            if (this.isNodeAutoLayout(targetId) && !isSeparated(targetId)) {
                 childrenById[sourceId].push(targetId);
             }
         });
 
         const realMocRootIds = new Set<string>(mocData.nodes.map((node) => node.nodeID));
         let relayoutRootId = parentNodeId;
-        if (relayoutOptions.compactVisibleNodes) {
+        // 上溯到 free 非根父节点即停 = 该 auto 子树岛的顶点。
+        // 引擎只沿 auto 子链下行(childrenById 仅收 auto 子节点),若 auto 子树挂在
+        // free 祖先链下(如深层节点),继续上溯到 MOC root 会让引擎无法穿过 free 链
+        // 回到该子树 → 深层 auto 节点完全不被布局(issue:很多层后父节点不居中)。
+        // 父节点是 MOC root 时仍上溯到它,保留一级 auto 子节点的对称分组("第一级会平衡")。
+        const stopAtAutoIslandTop = (parentId: string): boolean =>
+            !this.isNodeAutoLayout(parentId) && !realMocRootIds.has(parentId);
+        if (relayoutOptions.localOnly) {
+            // 仅局部重排:不上溯,以传入的 parentNodeId 为根,只重排其直接子树。
+            // 拖动后(分离/吸附)只需让该父节点的子节点重新紧凑/吸附,不应牵动整棵树。
+        } else if (relayoutOptions.compactVisibleNodes) {
             const visitedRelayoutRoots = new Set<string>();
             while (!realMocRootIds.has(relayoutRootId)) {
+                // 已分离节点是其子树岛的锚点:上溯到它即停,使岛内 reflow 以它为根。
+                if (isSeparated(relayoutRootId)) {
+                    break;
+                }
                 const parentId = parentById[relayoutRootId];
                 if (!parentId || !nodes[parentId] || visitedRelayoutRoots.has(parentId)) {
+                    break;
+                }
+                if (stopAtAutoIslandTop(parentId)) {
                     break;
                 }
                 visitedRelayoutRoots.add(relayoutRootId);
@@ -7281,8 +7486,15 @@ cy.fit(null, 40);
         } else {
             const visitedRelayoutRoots = new Set<string>();
             while (!realMocRootIds.has(relayoutRootId)) {
+                // 已分离节点是其子树岛的锚点:上溯到它即停,使岛内 reflow 以它为根。
+                if (isSeparated(relayoutRootId)) {
+                    break;
+                }
                 const parentId = parentById[relayoutRootId];
                 if (!parentId || !nodes[parentId] || visitedRelayoutRoots.has(parentId)) {
+                    break;
+                }
+                if (stopAtAutoIslandTop(parentId)) {
                     break;
                 }
                 // 当前节点有保存位置(已拖动过)时,以它为锚点,不再向上
@@ -7300,25 +7512,13 @@ cy.fit(null, 40);
             parentById,
             childrenById,
             realMocRootIds,
+            sidePinnedIds,
             nodePositions: mocData.nodePositions || {},
             ignoreSavedPositionsForIds: (() => {
-                // 用户手动拖动过的节点必须保留其保存位置 (除非显式 force 重置)
-                const bitMapByID = new Map<string, number>();
-                const collectBitMap = (ns: MOCTreeNode[]) => {
-                    for (const n of ns) {
-                        if (typeof n.extBitMap === 'number' && n.extBitMap !== 0) {
-                            bitMapByID.set(n.nodeID, n.extBitMap & 0xff);
-                        }
-                        if (n.children?.length) collectBitMap(n.children);
-                    }
-                };
-                collectBitMap(mocData.nodes);
-                const isManuallyMoved = (nid: string) =>
-                    !relayoutOptions.forceResetManuallyMoved
-                    && ((bitMapByID.get(nid) || 0) & NODE_FLAG_MANUALLY_MOVED) !== 0;
+                // 已分离节点必须保留其保存位置作为锚点 (复用上方 isSeparated)
                 const explicit = relayoutOptions.ignoreSavedPositionsForIds
                     ?.filter((id) => id !== relayoutRootId)
-                    .filter((id) => !isManuallyMoved(id));
+                    .filter((id) => !isSeparated(id));
                 if (relayoutOptions.compactVisibleNodes) {
                     const set = new Set(Object.keys(nodes).filter((nodeId) => {
                         if (nodeId === relayoutRootId) return false;
@@ -7329,7 +7529,7 @@ cy.fit(null, 40);
                         // rebalanceRootChildren=true 时(新建/移动节点的 reflow)放开,
                         // 让一级子节点也对称重排 → 根节点相对子节点竖直居中。
                         if (!relayoutOptions.rebalanceRootChildren && parentId && realMocRootIds.has(parentId)) return false;
-                        if (isManuallyMoved(nodeId)) return false;
+                        if (isSeparated(nodeId)) return false;
                         return true;
                     }));
                     explicit?.forEach((id) => set.add(id));
@@ -7340,6 +7540,48 @@ cy.fit(null, 40);
             layoutPreset: normalizeLayoutPreset(this.plugin.settings.autoLayoutDefaultGrowthDirection),
             nodeLayoutPresets: mocData.nodeLayoutPresets,
         });
+
+        // 自底向上把每个 auto 父节点重定位到其子节点的横轴中点。
+        // 引擎只让"子节点围绕父节点对称",从不反过来"父节点对齐子节点中点";
+        // 当子节点被手动拖动或顺序向下追加导致整体偏移时,父节点会停在顶端不居中。
+        // 对称健康的子树里 中点==父节点 → 本步是空操作,幂等安全。
+        // 只动 auto 节点;根/分支根(分组放置)与 free 锚点(issue #48)保持不动。
+        {
+            const depthOf = (id: string): number => {
+                let depth = 0;
+                let cur: string | undefined = id;
+                const seen = new Set<string>();
+                while (cur && parentById[cur] && !seen.has(cur)) {
+                    seen.add(cur);
+                    cur = parentById[cur];
+                    depth++;
+                }
+                return depth;
+            };
+            const round2 = (v: number) => Math.round(v * 100) / 100;
+            const order = Object.keys(nodePositions).sort((a, b) => depthOf(b) - depthOf(a));
+            for (const id of order) {
+                if (!this.isNodeAutoLayout(id)) continue;
+                if (realMocRootIds.has(id)) continue;            // 根:分组放置,跳过
+                if (relayoutOptions.localOnly && id === relayoutRootId) continue; // 局部重排:锚点(父)固定不动
+                const pid = parentById[id];
+                if (pid && realMocRootIds.has(pid)) continue;     // 分支根:分组放置,跳过
+                const cur = nodePositions[id];
+                if (!cur) continue;
+                const pts = (childrenById[id] || [])
+                    .map((kid) => nodePositions[kid])
+                    .filter(Boolean) as { x: number; y: number }[];
+                if (pts.length === 0) continue;
+                const xs = pts.map((p) => p.x);
+                const ys = pts.map((p) => p.y);
+                const minX = Math.min(...xs), maxX = Math.max(...xs);
+                const minY = Math.min(...ys), maxY = Math.max(...ys);
+                // 横轴 = 子节点铺开(跨度更大)的那条轴;沿该轴取中点,前进轴坐标保持不变
+                nodePositions[id] = (maxY - minY) >= (maxX - minX)
+                    ? { x: cur.x, y: round2((minY + maxY) / 2) }
+                    : { x: round2((minX + maxX) / 2), y: cur.y };
+            }
+        }
 
         cy.batch(() => {
             Object.entries(nodePositions).forEach(([nodeId, position]) => {
@@ -8418,17 +8660,18 @@ cy.fit(null, 40);
             if (operation === 'cut' && mocFile) {
                 try {
                     await this.saveAllNodePositionsBeforeRefresh();
-                    const cutIds: string[] = [];
-                    for (const node of nodes) {
-                        if (node.isCrossDomain) continue;
-                        cutIds.push(node.IDStr);
-                        await this.mocHandler.deleteNodeFromMOC(mocFile, node.IDStr);
+                    const cutIds: string[] = nodes
+                        .filter((node) => !node.isCrossDomain)
+                        .map((node) => node.IDStr);
+                    // 删除前解析真实父级(自由节点父子关系只在边里,删除+刷新后丢失)
+                    const reflowParentId = this.pickAutoLayoutParentForReflow(cutIds);
+                    for (const id of cutIds) {
+                        await this.mocHandler.deleteNodeFromMOC(mocFile, id);
                     }
                     await new Promise(r => setTimeout(r, 20));
                     await this.refreshBranchMermaid();
 
                     // 声明式 reflow: scratchpad cut 后整棵树重排
-                    const reflowParentId = this.pickAutoLayoutParentForReflow(cutIds);
                     if (reflowParentId) {
                         await this.reflowAutoLayout(reflowParentId);
                     }

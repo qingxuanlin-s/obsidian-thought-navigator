@@ -160,6 +160,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private embedCardCache: Map<string, HTMLElement> = new Map();
     private embedRendererComponents: Set<Component> = new Set();
     private activeAlignmentOverlay: SVGSVGElement | null = null;
+    private activeSeparationOverlay: SVGSVGElement | null = null;
     private boxSelectionElement: HTMLElement | null = null;
     private liveEditCleanupHandlers: Set<() => void> = new Set();
     private collapseHandleCleanup: (() => void) | null = null;
@@ -333,6 +334,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 this.overlayScheduler.cleanupScheduler();
                 this.activeAlignmentOverlay?.remove();
                 this.activeAlignmentOverlay = null;
+                this.activeSeparationOverlay?.remove();
+                this.activeSeparationOverlay = null;
                 this.boxSelectionElement?.remove();
                 this.boxSelectionElement = null;
                 if (this.minimap) {
@@ -878,6 +881,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
         }
         this.activeAlignmentOverlay?.remove();
         this.activeAlignmentOverlay = null;
+        this.activeSeparationOverlay?.remove();
+        this.activeSeparationOverlay = null;
         this.boxSelectionElement?.remove();
         this.boxSelectionElement = null;
         this.embedCardCache.forEach((card) => {
