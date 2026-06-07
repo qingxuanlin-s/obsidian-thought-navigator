@@ -6458,10 +6458,10 @@ cy.fit(null, 40);
                 : this.generateChildNodeID(explicitParentId);
     
         }
-        // 否则，在以下场景查找最近节点并作为父节点：
-        // 1) 启用了智能连线
-        // 2) 当前文件是自动布局风格（auto 模式下新增节点应优先遵循层级规则）
-        else if (this.plugin.settings.smartConnection || this.isAutoNodeLayoutStyle()) {
+        // 否则，仅在启用了「智能连线」时才查找最近节点并作为父节点。
+        // 注意：auto 布局文件也尊重该开关——关闭时背景新建的节点为游离节点，
+        // 不会自动挂到最近节点（不再无视开关强制连边）。
+        else if (this.plugin.settings.smartConnection) {
             let nearestNode: ZKNode | null = null;
             let minDistance = Infinity;
             const PROXIMITY_THRESHOLD = 250;  // 250px 范围
