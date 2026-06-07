@@ -1,6 +1,6 @@
 ---
 name: thought-navigator-map
-version: 1.3.0
+version: 1.4.0
 description: 把一个主题/大纲生成为 Thought Navigator 插件的知识导图(.moc.md),并在「思维树」视图中打开;也能查询已有导图的节点(精确/模糊/取子树),或注入「待审批草稿节点」(由用户在画布上确认落地/丢弃)。仅在用户显式点名调用本 skill（例如输入 /thought-navigator-map，或明确说"用 thought-navigator-map / 生成思维导图并打开思维树视图 / 查询某个导图节点 / 生成草稿等我审批"）时使用；不要在普通对话中自动触发。
 ---
 
@@ -11,6 +11,11 @@ description: 把一个主题/大纲生成为 Thought Navigator 插件的知识�
 
 > **触发约束**：本 skill 必须由用户主动调用，不要自动感知触发。只有当用户明确点名
 > （`/thought-navigator-map`，或直白地说"用这个 skill 生成思维导图/思维树导图并打开"）时才执行。
+
+> **正常建图 vs 草稿(关键规则)**：
+> - **新建一张 `.moc.md`(全新导图)** → 走正常建图(`createMOC` + `addNodes`),节点**直接写入**,不进草稿。
+> - **在已有导图的已有节点上新增**(扩展用户既有的思维树) → **默认进入草稿模式**,用
+>   `addDraftNodes` 注入为「待审批草稿」,让用户在画布上确认落地或丢弃后再生效,**不要**直接 `addNodes` 改动用户既有树。
 
 ## 前置条件
 
@@ -54,6 +59,9 @@ description: 把一个主题/大纲生成为 Thought Navigator 插件的知识�
     子节点用 `parentLocalId` 指向父的 `localId`(父先子后排列),落地时会原样建成子树。
   - ⚠️ **前置:目标 MOC 必须已在思维树视图中打开**(否则抛错)。且与建图同样有"async 不回显"问题,
     注入是副作用、无需回显;稳妥起见用"先开视图→sleep→再注入"两步(见下)。
+- `setDraftMode(filePath, on)` → `Promise<boolean>`(开/关某个已打开 MOC 的「草稿模式」)
+  - 开启后该视图里**新建的节点都先作为草稿**,待审批落地/丢弃。`addDraftNodes` 注入时会自动开启。
+  - 前置同上:MOC 必须已在思维树视图中打开。
 - `queryNodes(filePath, {nodeID?, query?, recursive?})` → `Promise<MOCNodeView[]>`(只读,不写文件)
   - 返回精简嵌套节点:`{nodeID, nodeType, target, alias?, depth, children[]}`。
   - 都不传 → 整棵树;`nodeID` → 精确定位该节点连同后代(单元素数组);
