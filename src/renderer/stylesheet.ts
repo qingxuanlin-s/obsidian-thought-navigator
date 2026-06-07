@@ -553,6 +553,27 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'overlay-opacity': 0.3
             } as any
         },
+        // 草稿节点(#20):与普通节点同款渲染(尺寸/背景/文字都走通用规则),仅边框不同——
+        // 虚线 + origin 配色(ai=紫,manual=灰),标识"待审批"。不覆盖 width/height/background。
+        {
+            selector: 'node[?isDraft]',
+            style: {
+                'border-style': 'dashed',
+                'border-width': '2px',
+                'border-color': (ele: any) => ele.data('draftOrigin') === 'ai' ? '#a855f7' : '#94a3b8'
+            } as any
+        },
+        {
+            selector: 'node[?isDraft]:selected',
+            style: {
+                'border-style': 'dashed',
+                'border-width': '3px',
+                'border-color': (ele: any) => ele.data('draftOrigin') === 'ai' ? '#a855f7' : '#64748b',
+                'overlay-color': (ele: any) => ele.data('draftOrigin') === 'ai' ? '#a855f7' : '#64748b',
+                'overlay-padding': '4px',
+                'overlay-opacity': 0.2
+            } as any
+        },
         // 折叠隐藏的子节点/连线
         {
             selector: 'node.zk-collapsed-hidden',

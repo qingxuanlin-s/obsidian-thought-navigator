@@ -238,8 +238,8 @@ export function bindEvents(this: any): void {
                 return;
             }
 
-            // 占位符节点：双击显示内联编辑器
-            if (data.isPlaceholder) {
+            // 占位符 / 草稿节点(#20):双击进入同一套内联编辑器(草稿保存只更新内存)
+            if (data.isPlaceholder || data.isDraft) {
                 this.showInlineNodeEditor(node);
                 return;
             }
@@ -519,6 +519,75 @@ export function bindEvents(this: any): void {
                     }
                 });
             }
+        });
+
+        // 草稿连线:用真实 cy 边(type:'parent'),渲染与正式连线完全一致,且随节点删除自动回收。
+        // parentNodeId 可为真实节点 IDStr(按 originalNode.IDStr 匹配)或另一草稿的 cy id(直查)。
+        const addDraftEdge = (childId: string, parentNodeId: string) => {
+            if (!this.cy) return;
+            const child = this.cy.$id(childId);
+            if (!child || child.length === 0) return;
+            let parent = this.cy.$('node').filter((n: any) => n.data('originalNode')?.IDStr === parentNodeId);
+            if (!parent || parent.length === 0) parent = this.cy.$id(parentNodeId);
+            if (!parent || parent.length === 0) return;
+            const edgeId = `draft-edge-${childId}`;
+            if (this.cy.$id(edgeId).length === 0) {
+                this.cy.add({
+                    group: 'edges',
+                    data: { id: edgeId, source: parent.id(), target: childId, type: 'parent', label: '', isDraftEdge: true }
+                });
+            }
+        };
+
+        // 监听添加草稿节点事件(#20)。与占位符同源:纯内存注入 Cytoscape,不写 MOC。
+        // 区别:草稿预填内容、带 batchId/origin、不自动打开编辑器(等批量审批)。
+        this.overlayScheduler.addManagedDomListener(this.container, 'add-draft-node', (event: any) => {
+            const { nodeId, position, label, origin, batchId, parentNodeId } = event.detail;
+            try {
+                this.cy?.add({
+                    group: 'nodes',
+                    data: {
+                        id: nodeId,
+                        label: label || '',
+                        isDraft: true,
+                        draftOrigin: origin === 'ai' ? 'ai' : 'manual',
+                        draftBatchId: batchId,
+                        isTextOnly: true,
+                        // 走 Cytoscape 原生 label 渲染(非 Markdown overlay):卡片外观仍由通用样式表决定(仅边框不同),
+                        // 但文字由 cy 自身绘制 —— 不需要 addNodeBadges 全量重建 overlay(避免连带把 embed 预览等其它
+                        // overlay 推回原点),编辑时 node.data('label') 即时刷新。originalNode 留 null 让护栏自动跳过草稿。
+                        hasMarkdownOverlay: false,
+                        originalNode: null,
+                        parentNodeId: parentNodeId
+                    },
+                    position: position
+                });
+                if (parentNodeId) addDraftEdge(nodeId, parentNodeId);
+            } catch (error) {
+                console.error('[CytoscapeRenderer] Error adding draft node:', error);
+            }
+        });
+
+        // 移除单个草稿节点(连接的草稿边随节点一并被 cy 回收)
+        this.overlayScheduler.addManagedDomListener(this.container, 'remove-draft-node', (event: any) => {
+            const { nodeId } = event.detail;
+            const node = this.cy?.$id(nodeId);
+            if (node && node.length > 0) this.cy?.remove(node);
+        });
+
+        // 草稿改父(#20):删旧草稿边,连到新父(同样用真实 cy 边)
+        this.overlayScheduler.addManagedDomListener(this.container, 'draft-relink', (event: any) => {
+            const { childId, parentId } = event.detail;
+            const oldEdge = this.cy?.$id(`draft-edge-${childId}`);
+            if (oldEdge && oldEdge.length > 0) this.cy?.remove(oldEdge);
+            if (parentId) addDraftEdge(childId, parentId);
+        });
+
+        // 批量移除某批次的所有草稿节点(边随节点回收)
+        this.overlayScheduler.addManagedDomListener(this.container, 'remove-draft-batch', (event: any) => {
+            const { batchId } = event.detail;
+            const nodes = this.cy?.nodes().filter((n: any) => n.data('isDraft') && n.data('draftBatchId') === batchId);
+            if (nodes && nodes.length > 0) this.cy?.remove(nodes);
         });
 
         // 监听通过 ID 选中节点事件（用于新建节点后自动选中）
@@ -1403,6 +1472,9 @@ export function bindEvents(this: any): void {
             // 如果是分组节点，不触发位置保存
             if (data.isGroup) return;
 
+            // 草稿节点(#20):画布上可自由拖动,但纯内存、不写 MOC、不参与智能连线
+            if (data.isDraft) return;
+
             const position = node.position();
 
             // 处理占位符节点的智能连线
@@ -1595,6 +1667,9 @@ export function bindEvents(this: any): void {
             const edge = evt.target;
             const data = edge.data();
 
+            // 草稿边(#20):不进入标签编辑(纯内存,无关系文本可存)
+            if (data.isDraftEdge) return;
+
             // 允许编辑所有边的标签
             this.showInlineEdgeLabelEditor(edge);
         });
@@ -1607,6 +1682,9 @@ export function bindEvents(this: any): void {
             const edge = evt.target;
             const data = edge.data();
             const originalEvent = evt.originalEvent as MouseEvent;
+
+            // 草稿边(#20):不弹删除菜单(改父用连线手柄重连,丢弃用批次操作条)
+            if (data.isDraftEdge) return;
 
             // 获取目标节点的 nodeSons 信息
             const targetNode = this.cy!.$id(data.target);
@@ -1747,8 +1825,22 @@ export function bindKeyboardEvents(this: any): void {
                 // 获取选中的元素
                 const selected = this.cy.$(':selected');
 
-                // 检查是否有选中的普通节点
-                const selectedNodes = selected.filter('node[!isGroup]');
+                // 草稿节点(#20):单独走内存删除,不进入 MOC 删除流程
+                const selectedDrafts = selected.filter('node[?isDraft]');
+                if (selectedDrafts.length > 0) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    selectedDrafts.forEach((n: any) => {
+                        this.container?.dispatchEvent(new CustomEvent('draft-node-delete', {
+                            detail: { draftId: n.id() }
+                        }));
+                    });
+                    // 若选中的全是草稿,处理完即返回;否则继续删除其余真实节点
+                    if (selected.filter('node[!isGroup][!isDraft]').length === 0) return;
+                }
+
+                // 检查是否有选中的普通节点(排除草稿)
+                const selectedNodes = selected.filter('node[!isGroup][!isDraft]');
 
                 if (selectedNodes.length > 0) {
                     // 阻止默认行为（避免浏览器后退）
@@ -3138,10 +3230,16 @@ export function createPlaceholderConnectionLine(this: any, placeholderNodeId: st
         if (!this.cy || !this.container) return;
 
         const placeholderNode = this.cy.$id(placeholderNodeId);
-        const parentNode = this.cy.$('node').filter((node: any) => {
+        // 父节点解析:优先按真实节点 IDStr 匹配;匹配不到再按 cy 节点 id 直查
+        // (草稿↔草稿连线时父是另一个草稿,没有 originalNode.IDStr,只能按 cy id 找)。
+        let parentNode = this.cy.$('node').filter((node: any) => {
             const data = node.data();
             return data.originalNode && data.originalNode.IDStr === parentNodeId;
         });
+        if (!parentNode || parentNode.length === 0) {
+            const byId = this.cy.$id(parentNodeId);
+            if (byId && byId.length > 0) parentNode = byId;
+        }
 
         if (!placeholderNode || placeholderNode.length === 0) {
             console.warn('[CytoscapeRenderer] 未找到占位符节点', placeholderNodeId);
@@ -3194,11 +3292,8 @@ export function createPlaceholderConnectionLine(this: any, placeholderNodeId: st
         (nodeData as any).connectionLine = connectionLine;
         (nodeData as any).connectionParentNode = parentNode;
 
-        // 缓存父节点引用，避免每次都遍历所有节点
-        const cachedParent = this.cy.$('node').filter((node: any) => {
-            const data = node.data();
-            return data.originalNode && data.originalNode.IDStr === parentNodeId;
-        });
+        // 缓存父节点引用，避免每次都遍历所有节点(复用上面已解析到的 parentNode)
+        const cachedParent = parentNode;
 
         // 更新连接线位置的函数（轻量，只读取两个节点的位置）
         const updateConnectionLine = () => {

@@ -91,6 +91,11 @@ export interface MOCNodeView {
     alias?: string;            // 仅 file + [[link|alias]] 时存在
     depth: number;
     children: MOCNodeView[];
+    isDraft?: boolean;         // 草稿节点(#20,未落地、仅存于打开中的视图内存)
+    draftOrigin?: 'ai' | 'manual'; // 草稿来源:ai=CLI/API,manual=页面新建
+    draftBatchId?: string;     // 所属草稿批次
+    parentRealId?: string;     // 草稿挂载的真实节点 ID(若有)
+    parentDraftId?: string;    // 草稿挂载的同批草稿 ID(若有)
 }
 
 export interface MOCQueryOptions {
@@ -248,6 +253,41 @@ export class MOCHandler {
             this.applyHeadlessAutoLayout(mocData);
         });
         return newIDs;
+    }
+
+    /**
+     * 落地一批草稿节点(#20),支持「同批内部父子树」。在同一次 modifyMOCData 中按序插入,
+     * 用 localId→真实ID 映射解析批内父子引用,避免预测 ID。items 须父先子后(拓扑序)。
+     * @param items 每项 {localId, title, kind?, parentLocalId?, parentRealId?}
+     *   - parentLocalId:指向同批前面已插入项的 localId(批内树)
+     *   - parentRealId:挂到已存在真实节点;两者都无 → 挂根 '__root__'
+     * @returns localId → 落地后真实节点 ID 的映射
+     */
+    async addDraftTreeToMOC(
+        mocFile: TFile,
+        items: Array<{ localId: string; title: string; kind?: 'text' | 'file'; parentLocalId?: string; parentRealId?: string; position?: { x: number; y: number } }>,
+    ): Promise<Map<string, string>> {
+        const localToReal = new Map<string, string>();
+        await this.modifyMOCData(mocFile, (mocData) => {
+            for (const item of items) {
+                let parent = '__root__';
+                if (item.parentLocalId && localToReal.has(item.parentLocalId)) {
+                    parent = localToReal.get(item.parentLocalId)!;
+                } else if (item.parentRealId) {
+                    parent = item.parentRealId;
+                }
+                const newId = MOCHandler.insertChildNode(mocData, parent, item.title, item.kind ?? 'text');
+                localToReal.set(item.localId, newId);
+                // 把草稿在画布上的落点写入 nodePositions,让落地后节点停在用户看到的位置(free 布局尤为关键)。
+                // auto 布局文件随后由 applyHeadlessAutoLayout 重算居中坐标覆盖,符合"自动排布"语义。
+                if (item.position) {
+                    if (!mocData.nodePositions) mocData.nodePositions = {};
+                    mocData.nodePositions[newId] = { x: item.position.x, y: item.position.y };
+                }
+            }
+            this.applyHeadlessAutoLayout(mocData);
+        });
+        return localToReal;
     }
 
     /**
