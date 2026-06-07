@@ -50,6 +50,21 @@ export interface ZKNavigationExternalAPI {
      * 都不传则返回整棵树;opts.recursive=false 只返回直接子节点。
      */
     queryNodes(filePath: string, opts?: MOCQueryOptions): Promise<MOCNodeView[]>;
+    /**
+     * 注入一批「草稿节点」到当前打开的思维树视图(#20)。纯内存渲染、不写文件,
+     * 用户在画布上审阅后点「确认落地」才经正式流程写入,或「丢弃」不影响真实数据。
+     * 走本 API(CLI/脚本)的草稿标记为 origin='ai'。filePath 必须是当前已打开的 MOC。
+     * @param items 每项 {content, kind?, parentRealId?, parentLocalId?, localId?}
+     *   - content:节点文本;kind:'text'(默认)/'file'
+     *   - parentRealId:挂到某个已存在真实节点(其 nodeID/IDStr)
+     *   - localId + parentLocalId:同批草稿内部父子关系(localId 为本批内引用名)
+     * @returns 生成的 draftId 列表;若目标 MOC 未在思维树视图中打开则返回 []
+     */
+    addDraftNodes(
+        filePath: string,
+        items: Array<{ content: string; kind?: 'text' | 'file'; parentRealId?: string; parentLocalId?: string; localId?: string }>,
+        batchId?: string
+    ): Promise<string[]>;
 }
 
 export interface ZoomPanScale{
@@ -951,7 +966,32 @@ export default class ZKNavigationPlugin extends Plugin {
                     throw new Error(t('MOC not a moc file').replace('{path}', filePath));
                 }
                 const handler = this.cliMocHandler ??= new MOCHandler(this, this.app);
-                return await handler.queryMOC(target, opts || {});
+                const base = await handler.queryMOC(target, opts || {});
+                // #20:把当前视图里未落地的草稿节点也并入结果(扁平,带 isDraft 标记与父引用)
+                const leaves = this.app.workspace.getLeavesOfType(ZK_INDEX_TYPE);
+                const view = leaves.find((l) => (l.view as any)?.file?.path === filePath)?.view as ZKIndexView | undefined;
+                const drafts = typeof (view as any)?.getDraftNodeViews === 'function'
+                    ? (view as any).getDraftNodeViews(opts || {}) as MOCNodeView[]
+                    : [];
+                return drafts.length ? [...base, ...drafts] : base;
+            },
+            addDraftNodes: async (
+                filePath: string,
+                items: Array<{ content: string; kind?: 'text' | 'file'; parentRealId?: string; parentLocalId?: string; localId?: string }>,
+                batchId?: string
+            ) => {
+                const target = this.app.vault.getAbstractFileByPath(filePath);
+                if (!(target instanceof TFile) || !isMocFile(target)) {
+                    throw new Error(t('MOC not a moc file').replace('{path}', filePath));
+                }
+                // 草稿是纯内存渲染层能力,必须有一个已打开该 MOC 的思维树视图来承载
+                const leaves = this.app.workspace.getLeavesOfType(ZK_INDEX_TYPE);
+                const leaf = leaves.find((l) => (l.view as any)?.file?.path === filePath) ?? leaves[0];
+                const view = leaf?.view as ZKIndexView | undefined;
+                if (!view || typeof (view as any).injectDraftNodes !== 'function') {
+                    throw new Error(t('Draft view not open').replace('{path}', filePath));
+                }
+                return (view as any).injectDraftNodes(items || [], 'ai', batchId) as string[];
             },
         };
 

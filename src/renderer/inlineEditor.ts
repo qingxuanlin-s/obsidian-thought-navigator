@@ -868,8 +868,9 @@ export function showInlineNodeEditor(this: any, node: any): void {
         const data = node.data();
         const originalNode = data.originalNode;
         const isPlaceholder = !!data.isPlaceholder;
+        const isDraft = !!data.isDraft;  // 草稿节点(#20):复用同一文本框编辑,保存时只更新内存
         const isExistingNode = !!originalNode && !data.isGroup;
-        if (!isPlaceholder && !isExistingNode) return;
+        if (!isPlaceholder && !isExistingNode && !isDraft) return;
 
         this.ensureNodeVisibleInViewport(node);
 
@@ -919,7 +920,7 @@ export function showInlineNodeEditor(this: any, node: any): void {
         // 创建 textarea，直接覆盖在节点上
         const textarea = document.createElement('textarea');
         const originalDisplayLabel = data.label || '';
-        const initialValue = isPlaceholder
+        const initialValue = (isPlaceholder || isDraft)
             ? (data.label || '')
             : (originalNode?.isTextOnly
                 ? (String(originalNode.title || originalNode.displayText || data.label || '').replace(/\\n/g, '\n'))
@@ -952,8 +953,8 @@ export function showInlineNodeEditor(this: any, node: any): void {
             const fontPx = parsePx(getRenderedNodeFontSize(), 20);
             return `${Math.round(fontPx * 1.35)}px`;
         };
-        // 文本节点使用与 MD overlay 一致的字体和左对齐
-        const isTextOnlyEdit = !!originalNode?.isTextOnly;
+        // 文本节点使用与 MD overlay 一致的字体和左对齐(草稿也走文本编辑样式)
+        const isTextOnlyEdit = !!originalNode?.isTextOnly || isDraft;
         const isRootEdit = !!data.isRoot && !data.isFreeNode;
         const isFirstLevelEdit = !!data.isFirstLevelNode && !data.isRoot && !data.isFreeNode;
         const nodeFontSize = isTextOnlyEdit
@@ -1119,7 +1120,10 @@ export function showInlineNodeEditor(this: any, node: any): void {
                     detail: {
                         node: originalNode,
                         content: newLabel,
-                        position: actualPosition
+                        position: actualPosition,
+                        // 草稿节点没有 originalNode,带上 cy id + 标记,交给 indexView 路由到内存更新
+                        nodeId: data.id,
+                        isDraft: isDraft
                     }
                 }));
             }

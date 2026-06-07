@@ -1,7 +1,7 @@
 ---
 name: thought-navigator-map
-version: 1.1.0
-description: 把一个主题/大纲生成为 Thought Navigator 插件的知识导图(.moc.md),并在「思维树」视图中打开;也能查询已有导图的节点(精确/模糊/取子树)。仅在用户显式点名调用本 skill（例如输入 /thought-navigator-map，或明确说"用 thought-navigator-map / 生成思维导图并打开思维树视图 / 查询某个导图节点"）时使用；不要在普通对话中自动触发。
+version: 1.3.0
+description: 把一个主题/大纲生成为 Thought Navigator 插件的知识导图(.moc.md),并在「思维树」视图中打开;也能查询已有导图的节点(精确/模糊/取子树),或注入「待审批草稿节点」(由用户在画布上确认落地/丢弃)。仅在用户显式点名调用本 skill（例如输入 /thought-navigator-map，或明确说"用 thought-navigator-map / 生成思维导图并打开思维树视图 / 查询某个导图节点 / 生成草稿等我审批"）时使用；不要在普通对话中自动触发。
 ---
 
 # Thought Navigator 知识导图生成器
@@ -45,6 +45,15 @@ description: 把一个主题/大纲生成为 Thought Navigator 插件的知识�
   - 单次读-改-写建整棵树，无竞态。`parent` 可引用本批次中**前面刚生成**的节点 ID。
   - `kind`：`'text'`(默认，纯文本节点) 或 `'file'`(文件节点)。建图一般用默认。
   - 根层用 `parent:'__root__'`；但本 skill 用固定 `rootId:'1'`，子节点直接挂 `'1'`。
+- `addDraftNodes(filePath, [{content, kind?, parentRealId?, localId?, parentLocalId?}], batchId?)` → `Promise<string[]>`
+  - **草稿节点(#20):不写文件**,只把"待审批"的虚拟节点注入到**已打开**的思维树视图,
+    用户在画布上点「确认落地」才真正写入,或「丢弃」不留痕迹。适合"先给方案让人审"的场景。
+  - `content`:节点文本;`kind`:`'text'`(默认)/`'file'`。
+  - `parentRealId`:挂到某个**已存在真实节点**(其 nodeID,如 `'1.1'`)。
+  - `localId` + `parentLocalId`:表达**同批草稿内部父子树**——给本批每个节点起个 `localId`,
+    子节点用 `parentLocalId` 指向父的 `localId`(父先子后排列),落地时会原样建成子树。
+  - ⚠️ **前置:目标 MOC 必须已在思维树视图中打开**(否则抛错)。且与建图同样有"async 不回显"问题,
+    注入是副作用、无需回显;稳妥起见用"先开视图→sleep→再注入"两步(见下)。
 - `queryNodes(filePath, {nodeID?, query?, recursive?})` → `Promise<MOCNodeView[]>`(只读,不写文件)
   - 返回精简嵌套节点:`{nodeID, nodeType, target, alias?, depth, children[]}`。
   - 都不传 → 整棵树;`nodeID` → 精确定位该节点连同后代(单元素数组);
@@ -216,6 +225,38 @@ FILE=animals1.moc.md
 ```
 
 > 只要直接子节点(不含孙级):把 `slim(...,Infinity)` 改成 `slim(...,1)`。
+
+## 草稿模式(让用户审批后再落地,#20)
+
+当用户希望"先看 AI 的提案、确认后再进图"而不是直接建图时,用 `addDraftNodes` 注入草稿节点。
+草稿在画布上与普通节点**同款渲染,仅边框为紫色虚线**并带 `AI` 角标,右上角出现批次操作条:
+**确认落地 / 丢弃**。注入会**自动进入草稿模式**(用户在此期间新建的节点也都是草稿),
+直到所有批次被确认/丢弃后自动退出。草稿纯内存,刷新/重启会丢失,确认前不写文件。
+
+**前置**:目标 MOC 已在思维树视图打开。若是新建,先用建图模板的"开视图"段打开,`sleep` 后再注入。
+
+### 注入草稿模板(两步:开视图 → 注入)
+
+```bash
+OBS=/Applications/Obsidian.app/Contents/MacOS/obsidian
+FILE=animals1.moc.md   # 已存在 / 刚建好并打开的 MOC
+
+# (若该 MOC 尚未打开)先打开思维树视图
+"$OBS" eval code="(async()=>{const p=app.plugins.plugins['thought-navigator'];p.settings.mocCurrentFile='$FILE';p.settings.lastRetrival={type:'index',ID:'',displayText:'',filePath:'$FILE',openTime:''};p.RefreshIndexViewFlag=true;await p.saveData(p.settings);await p.openIndexView();app.workspace.trigger('zk-navigation:refresh-index-graph');})()"
+
+sleep 1   # 等视图渲染出 Cytoscape 画布
+
+# 注入一批草稿(本例:在根 '1' 下提一个二级子树,等用户审批)
+"$OBS" eval code="(async()=>{const a=app.plugins.plugins['thought-navigator'].api;await a.addDraftNodes('$FILE',[
+  {localId:'A', content:'爬行动物', parentRealId:'1'},
+  {localId:'B', content:'蜥蜴',     parentLocalId:'A'},
+  {localId:'C', content:'蛇',       parentLocalId:'A'}
+]);})()"
+```
+
+- `parentRealId:'1'` 把草稿挂到真实根节点 `1` 下;`parentLocalId` 串起草稿内部父子。
+- 注入后**告诉用户**:已在画布生成 N 个 AI 草稿,请在思维树里点「确认落地」或「丢弃」。
+- 无需第二步同步读回——草稿不写文件,确认后才经正式流程落盘。
 
 ## 注意事项
 

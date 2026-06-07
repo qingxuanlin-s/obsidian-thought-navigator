@@ -63,6 +63,7 @@ export interface ZKNode {
     crossDomainSourceNodeId?: string; // 跨领域节点的源节点 ID（用于删除）
     crossDomainOriginalNodeId?: string; // 跨领域节点的原始节点 ID
     isPlaceholder?: boolean; // 是否为占位符节点（未完成编辑）
+    isDraft?: boolean; // 是否为草稿节点（待审批落地，#20）
     isTextOnly?: boolean; // 是否为纯文字节点（不关联文件）
     isEmbed?: boolean; // 是否为嵌入节点（![[...]]）
     wikiLink?: string; // 原始 wikilink（用于官方预览解析）
@@ -151,6 +152,24 @@ export class ZKIndexView extends FileView {
         layoutStyle?: 'free' | 'auto';
     }> = new Map();
     private readonly PLACEHOLDER_EXPIRY_MS = 10 * 60 * 1000;
+
+    // 草稿节点(#20):AI/人产出、待审批落地的虚拟节点。纯内存,不写文件,刷新/卸载即丢失。
+    // origin 由入口决定:'ai'=走 CLI/公共 API,'manual'=页面 UI 新建。
+    private draftNodes: Map<string /* draftId */, {
+        draftId: string;
+        batchId: string;
+        mocPath: string;
+        content: string;
+        kind: 'text' | 'file';
+        origin: 'ai' | 'manual';
+        position: { x: number; y: number };
+        parentDraftId?: string;   // 指向同批另一个草稿(草稿内部树,P4)
+        parentRealId?: string;    // 挂到已存在的真实节点
+        timestamp: number;
+    }> = new Map();
+    private draftBatchBar: HTMLElement | null = null;
+    // 草稿模式:开启后新建的节点都先作为草稿(待审批);AI 注入会自动开启,批次清空后自动关闭。
+    private draftMode: boolean = false;
 
     // MOC 芯片标签引用（用于更新显示）
     private mocChipLabel: HTMLElement | null = null;
@@ -452,6 +471,378 @@ export class ZKIndexView extends FileView {
             childNodeId: extra.childNodeId,
             layoutStyle: extra.layoutStyle,
         });
+    }
+
+    // ============ 草稿节点(#20)============
+    // AI(CLI)/人工(UI)产出待审批的虚拟节点。纯内存渲染,确认才经 modifyMOCData 落地。
+
+    /**
+     * 注入一批草稿节点到当前思维树视图。纯内存,不写文件。
+     * @param items 每项 {content, kind?, parentRealId?, parentLocalId?, localId?}
+     *   - parentRealId:挂到某个已存在真实节点(IDStr)
+     *   - localId/parentLocalId:同批草稿内部父子关系(P4 用,本批渲染连线)
+     * @param origin 'ai'=走 CLI/API,'manual'=页面新建
+     * @returns 生成的 draftId 列表(与 items 同序)
+     */
+    injectDraftNodes(
+        items: Array<{ content: string; kind?: 'text' | 'file'; parentRealId?: string; parentLocalId?: string; localId?: string; position?: { x: number; y: number } }>,
+        origin: 'ai' | 'manual',
+        batchId?: string
+    ): string[] {
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+        if (!cy || !branchGraphDiv || !items?.length) return [];
+
+        // 注入草稿即进入草稿模式(AI 自动开启);用户提交/丢弃完所有批次后自动退出。
+        this.draftMode = true;
+
+        const mocPath = this.plugin.settings.mocCurrentFile || '__graph__';
+        const realBatchId = batchId || `batch-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+        const localToDraft = new Map<string, string>();
+        const createdIds: string[] = [];
+
+        // 起始布局:从当前视口中心纵向级联铺开(简单稳态,用户可再拖动调整)
+        const extent = cy.extent();
+        const centerX = (extent.x1 + extent.x2) / 2;
+        const startY = (extent.y1 + extent.y2) / 2 - (items.length * 50) / 2;
+
+        items.forEach((item, idx) => {
+            const draftId = `draft-${realBatchId}-${idx}`;
+            if (item.localId) localToDraft.set(item.localId, draftId);
+
+            // 解析父节点:优先同批草稿(P4 内部树),其次真实节点
+            const parentDraftId = item.parentLocalId ? localToDraft.get(item.parentLocalId) : undefined;
+            const parentRealId = item.parentRealId;
+
+            // 位置:显式指定(如手动点击落点)优先;否则挂真实父放其右下方,再否则中心纵向级联
+            let position = { x: centerX, y: startY + idx * 55 };
+            if (item.position) {
+                position = { ...item.position };
+            } else if (parentRealId) {
+                const parentCy = this.findCyNodeByIdStr(parentRealId);
+                if (parentCy) {
+                    const pp = parentCy.position();
+                    position = { x: pp.x + 220, y: pp.y + (idx * 50) };
+                }
+            } else if (parentDraftId) {
+                const pInfo = this.draftNodes.get(parentDraftId);
+                if (pInfo) position = { x: pInfo.position.x + 220, y: pInfo.position.y + 50 };
+            }
+
+            this.draftNodes.set(draftId, {
+                draftId,
+                batchId: realBatchId,
+                mocPath,
+                content: item.content || '',
+                kind: item.kind === 'file' ? 'file' : 'text',
+                origin,
+                position,
+                parentDraftId,
+                parentRealId,
+                timestamp: Date.now(),
+            });
+            createdIds.push(draftId);
+
+            // 连线父节点:挂真实节点用其 IDStr,挂同批草稿用该草稿的 cy id
+            // (createPlaceholderConnectionLine 已支持两种解析)。
+            const lineParent = parentRealId ?? parentDraftId;
+            branchGraphDiv.dispatchEvent(new CustomEvent('add-draft-node', {
+                detail: {
+                    nodeId: draftId,
+                    position,
+                    label: item.content || '',
+                    origin,
+                    batchId: realBatchId,
+                    parentNodeId: lineParent,
+                }
+            }));
+        });
+
+        this.refreshDraftBatchBar();
+        return createdIds;
+    }
+
+    /**
+     * 把当前内存里的草稿节点导出为 MOCNodeView[](供 api.queryNodes 合并返回,#20)。
+     * 扁平返回(children 恒空),用 parentRealId/parentDraftId 表达挂载关系;按 opts 过滤。
+     */
+    getDraftNodeViews(opts: { nodeID?: string; query?: string } = {}): import("src/view/index/mocHandler").MOCNodeView[] {
+        const all = Array.from(this.draftNodes.values());
+        const q = opts.query?.toLowerCase();
+        return all
+            .filter(d => {
+                if (opts.nodeID) return d.draftId === opts.nodeID;
+                if (q) return `${d.draftId}\n${d.content}`.toLowerCase().includes(q);
+                return true;
+            })
+            .map(d => ({
+                nodeID: d.draftId,
+                nodeType: d.kind,
+                target: d.content,
+                depth: 0,
+                children: [],
+                isDraft: true,
+                draftOrigin: d.origin,
+                draftBatchId: d.batchId,
+                ...(d.parentRealId ? { parentRealId: d.parentRealId } : {}),
+                ...(d.parentDraftId ? { parentDraftId: d.parentDraftId } : {}),
+            }));
+    }
+
+    /** 切换草稿模式(手动) */
+    toggleDraftMode(): void {
+        this.setDraftMode(!this.draftMode);
+    }
+
+    /** 设置草稿模式开关 */
+    setDraftMode(on: boolean): void {
+        if (this.draftMode === on) return;
+        this.draftMode = on;
+        new Notice(on ? t('Draft mode entered') : t('Draft mode exited'));
+        this.refreshDraftBatchBar();
+    }
+
+    /** 是否处于草稿模式(供创建路径判断) */
+    isDraftMode(): boolean {
+        return this.draftMode;
+    }
+
+    /**
+     * 草稿模式下:把刚编辑完的占位符转存为草稿(内存),不写 MOC。返回是否已处理。
+     * 复用占位符的位置/智能连线父节点,保持与普通新建一致的交互。
+     */
+    private convertPlaceholderToDraft(nodeId: string, content: string): boolean {
+        if (!this.draftMode) return false;
+        const info = this.placeholderNodes.get(nodeId);
+        const position = info?.position;
+        const parentRealId = info?.parentNodeId;  // 智能连线父(真实节点 IDStr / free.N)
+        // 先移除占位符(画布节点 + 记录 + 连线),再注入草稿
+        void this.removePlaceholderNode(nodeId);
+        const text = (content || '').trim();
+        if (text) {
+            this.injectDraftNodes([{ content: text, parentRealId, position }], 'manual');
+        }
+        return true;
+    }
+
+    /**
+     * 草稿模式下:把"自由节点创建"(文件拖入 / 新建自由节点弹框)转存为草稿,不写 MOC。
+     * 返回 true 表示已按草稿处理,调用方应 return,跳过 saveFreeNodeToMOC。
+     */
+    private divertFreeNodeToDraft(
+        result: { wikiLink?: string; text?: string; isTextOnly?: boolean; isEmbed?: boolean; file?: TFile | null; connectToNodeID?: string },
+        position?: { x: number; y: number }
+    ): boolean {
+        if (!this.draftMode) return false;
+        const content = result.isTextOnly
+            ? (result.text || '')
+            : `${result.isEmbed ? '!' : ''}[[${result.wikiLink || result.file?.basename || ''}]]`;
+        if (content.trim()) {
+            this.injectDraftNodes([{ content, parentRealId: result.connectToNodeID || undefined, position }], 'manual');
+        }
+        return true;
+    }
+
+    /** 删除单个草稿节点(纯内存 + 画布,连带边随节点回收);子草稿的父引用悬空时落地按根处理 */
+    deleteDraftNode(draftId: string): void {
+        if (!this.draftNodes.has(draftId)) return;
+        this.draftNodes.delete(draftId);
+        const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+        branchGraphDiv?.dispatchEvent(new CustomEvent('remove-draft-node', { detail: { nodeId: draftId } }));
+        // 全部删完则退出草稿模式
+        if (this.draftNodes.size === 0) this.draftMode = false;
+        this.refreshDraftBatchBar();
+    }
+
+    /** 更新草稿节点内容(纯内存):同步 Map 与画布 label */
+    updateDraftContent(draftId: string, content: string): void {
+        const info = this.draftNodes.get(draftId);
+        if (!info) return;
+        info.content = content;
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        const node = cy?.$id(draftId);
+        // 草稿走原生 label,直接改 data 即时重绘,无需重建 overlay
+        if (node && node.length > 0) node.data('label', content);
+    }
+
+    /**
+     * 草稿连线(#20):把草稿端点改父子,纯内存,不写 MOC。箭头 source→target 表示 source 是父。
+     * - target 是草稿 → 让 target 认 source 为父(draft→draft / real→draft)
+     * - 否则 source 是草稿 → 让 source 认 target 为父(draft→real,把草稿挂到已有节点下)
+     * 父若也是草稿用 parentDraftId,否则用 parentRealId;随后重绘该草稿的连线。
+     */
+    private connectDraftRelation(sourceId: string, targetId: string): void {
+        const reparent = (childId: string, parentId: string) => {
+            const child = this.draftNodes.get(childId);
+            if (!child) return;
+            if (this.draftNodes.has(parentId)) {
+                child.parentDraftId = parentId;
+                child.parentRealId = undefined;
+            } else {
+                child.parentRealId = parentId;
+                child.parentDraftId = undefined;
+            }
+            const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+            branchGraphDiv?.dispatchEvent(new CustomEvent('draft-relink', {
+                detail: { childId, parentId }
+            }));
+        };
+
+        if (this.draftNodes.has(targetId)) reparent(targetId, sourceId);
+        else if (this.draftNodes.has(sourceId)) reparent(sourceId, targetId);
+    }
+
+    /** 一键确认落地所有草稿:经 modifyMOCData 写入真实 MOC,然后刷新重渲染为真实节点 */
+    async commitAllDrafts(): Promise<void> {
+        if (this.isMobileReadOnly()) return;
+        const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+        if (!mocFile) {
+            new Notice(t('Draft no moc'));
+            return;
+        }
+
+        // 取出全部草稿,按父子层级(父先子后)排序,使 parentLocalId 引用先落地
+        const all = Array.from(this.draftNodes.values());
+        if (!all.length) return;
+        const ordered = this.topoSortDrafts(all);
+
+        // 落地前快照每个草稿在画布上的实时位置(model 坐标),写回 MOC 让节点停在原处
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        const livePos = new Map<string, { x: number; y: number }>();
+        ordered.forEach(d => {
+            const n = cy?.$id(d.draftId);
+            if (n && n.length > 0) {
+                const p = n.position();
+                livePos.set(d.draftId, { x: p.x, y: p.y });
+            }
+        });
+
+        // 用 draftId 作为 localId,parentDraftId 作为批内父引用(跨批也唯一),一次性解析建树
+        const items = ordered.map(d => ({
+            localId: d.draftId,
+            title: d.content,
+            kind: d.kind,
+            parentLocalId: d.parentDraftId,
+            parentRealId: d.parentRealId,
+            position: livePos.get(d.draftId) ?? d.position,
+        }));
+
+        try {
+            const { MermaidParser } = await import('src/utils/mermaidParser');
+            MermaidParser.clearCacheForFile(mocFile.path);
+            const localToReal = await this.mocHandler.addDraftTreeToMOC(mocFile, items);
+            new Notice(t('Draft committed').replace('{n}', String(localToReal.size)));
+        } catch (e) {
+            console.error('[Draft] commit failed:', e);
+            new Notice(t('Draft commit failed'));
+            return;
+        }
+
+        // 清空所有草稿(内存 + 画布)并退出草稿模式,刷新重渲染为真实节点
+        this.discardAllDrafts();
+        await this.refreshBranchMermaid();
+    }
+
+    /** 一键驳回所有草稿:全部移除,不影响真实数据,并退出草稿模式 */
+    discardAllDrafts(): void {
+        this.clearAllDrafts();
+        this.draftMode = false;
+    }
+
+    /** 草稿内部父子拓扑排序(父先子后),用于落地顺序 */
+    private topoSortDrafts(batch: Array<{ draftId: string; parentDraftId?: string }>): any[] {
+        const byId = new Map(batch.map(d => [d.draftId, d]));
+        const result: any[] = [];
+        const visited = new Set<string>();
+        const visit = (d: any) => {
+            if (visited.has(d.draftId)) return;
+            if (d.parentDraftId && byId.has(d.parentDraftId)) visit(byId.get(d.parentDraftId));
+            visited.add(d.draftId);
+            result.push(d);
+        };
+        batch.forEach(visit);
+        return result;
+    }
+
+    /** 清空所有草稿(视图刷新/卸载时调用) */
+    clearAllDrafts(): void {
+        const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+        const batchIds = new Set(Array.from(this.draftNodes.values()).map(d => d.batchId));
+        batchIds.forEach(bid => branchGraphDiv?.dispatchEvent(new CustomEvent('remove-draft-batch', { detail: { batchId: bid } })));
+        this.draftNodes.clear();
+        this.removeDraftBatchBar();
+    }
+
+    /** 重建画布右上角的草稿操作条:单一一条,汇总全部草稿,一键提交 / 驳回 */
+    private refreshDraftBatchBar(): void {
+        this.removeDraftBatchBar();
+
+        const total = this.draftNodes.size;
+        const hasAi = Array.from(this.draftNodes.values()).some(d => d.origin === 'ai');
+        // 无草稿且未开启草稿模式 → 不显示
+        if (total === 0 && !this.draftMode) return;
+
+        const host = document.getElementById("zk-branch-cytoscape");
+        if (!host) return;
+
+        const bar = document.createElement('div');
+        bar.className = 'zk-draft-batch-bar';
+        bar.style.cssText = `
+            position: absolute; top: 12px; right: 12px; z-index: 20;
+            display: flex; align-items: center; gap: 8px; max-width: 360px;
+            padding: 8px 10px; border-radius: 10px;
+            background: var(--background-secondary);
+            border: 1px ${total === 0 ? 'dashed' : 'solid'} ${hasAi ? '#a855f7' : '#94a3b8'};
+            box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+        `;
+
+        const tag = document.createElement('span');
+        tag.textContent = hasAi ? t('Draft tag ai') : t('Draft tag manual');
+        tag.style.cssText = `
+            font-size: 11px; font-weight: 700; color: #fff;
+            padding: 2px 6px; border-radius: 6px;
+            background: ${hasAi ? '#a855f7' : '#64748b'};
+        `;
+
+        const label = document.createElement('span');
+        label.textContent = total === 0
+            ? t('Draft mode entered')
+            : t('Draft batch count').replace('{n}', String(total));
+        label.style.cssText = 'font-size: 12px; flex: 1; color: var(--text-normal);';
+
+        bar.appendChild(tag);
+        bar.appendChild(label);
+
+        if (total > 0) {
+            const commitBtn = document.createElement('button');
+            commitBtn.textContent = t('Draft confirm');
+            commitBtn.style.cssText = `
+                font-size: 12px; padding: 4px 10px; border-radius: 6px; cursor: pointer;
+                border: none; color: #fff; background: var(--interactive-accent);
+            `;
+            commitBtn.onclick = () => { void this.commitAllDrafts(); };
+            bar.appendChild(commitBtn);
+        }
+
+        const discardBtn = document.createElement('button');
+        discardBtn.textContent = total > 0 ? t('Draft discard') : t('Draft mode exit');
+        discardBtn.style.cssText = `
+            font-size: 12px; padding: 4px 10px; border-radius: 6px; cursor: pointer;
+            border: 1px solid var(--background-modifier-border); background: transparent;
+            color: var(--text-muted);
+        `;
+        discardBtn.onclick = () => this.discardAllDrafts();
+        bar.appendChild(discardBtn);
+
+        host.appendChild(bar);
+        this.draftBatchBar = bar;
+    }
+
+    private removeDraftBatchBar(): void {
+        if (this.draftBatchBar?.parentNode) this.draftBatchBar.parentNode.removeChild(this.draftBatchBar);
+        this.draftBatchBar = null;
+        // 兜底清理可能残留的同类节点
+        document.querySelectorAll('.zk-draft-batch-bar').forEach(el => el.remove());
     }
 
     private async undoLastMOCChange(): Promise<void> {
@@ -810,6 +1201,17 @@ export class ZKIndexView extends FileView {
         const menu = document.body.createDiv('zk-more-menu');
         menu.style.position = 'fixed';
         menu.style.zIndex = '10000';
+
+        // 草稿模式开关(#20):开启后新建节点都先作为草稿,待审批落地
+        const draftOption = menu.createDiv('zk-menu-option');
+        setIcon(draftOption.createSpan('zk-menu-option-icon'), this.draftMode ? 'check-square' : 'square-pen');
+        draftOption.createSpan().setText(this.draftMode ? t('Draft mode on') : t('Draft mode off'));
+        draftOption.addEventListener('click', (e) => {
+            e.stopPropagation();
+            menu.remove();
+            this.toggleDraftMode();
+        });
+        menu.createDiv('zk-menu-separator');
 
         // 添加到项目文件夹(仅 .moc / .moc.md 可用)
         const currentPath = this.plugin.settings.mocCurrentFile;
@@ -1353,6 +1755,9 @@ cy.fit(null, 40);
         const mocFile = this.app.vault.getFileByPath(mocFilePath);
         if (!mocFile) return;
 
+        // 草稿模式(#20):拖入的文件也先作为草稿,待审批
+        if (this.divertFreeNodeToDraft({ wikiLink: file.basename, file }, position)) return;
+
         await this.saveFreeNodeToMOC({
             wikiLink: file.basename,
             nodeID,
@@ -1786,6 +2191,10 @@ cy.fit(null, 40);
                 return;
             }
         }
+
+        // 真实重建画布前清空未落地草稿(#20:刷新可丢失);no-op 短路路径上方已 return,故草稿在
+        // 纯交互(拖动草稿不触发刷新)期间得以保留,只有真正重建才回收。
+        if (this.draftNodes.size > 0) this.clearAllDrafts();
 
         // 性能埋点：在控制台执行 `window.__zkPerf = true` 后,每次刷新会打印各阶段耗时,
         // 用于定位大图新增节点变慢的真实瓶颈(parse / convert / build / render)。
@@ -2622,11 +3031,23 @@ cy.fit(null, 40);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { node, content, position, nodeSize } = event.detail;
+            const { node, content, position, nodeSize, nodeId, isDraft } = event.detail;
+            // 草稿节点(#20):复用同一内联文本框,保存只更新内存,不写 MOC
+            if (isDraft && nodeId && this.draftNodes.has(nodeId)) {
+                this.updateDraftContent(nodeId, content);
+                return;
+            }
             if (!node) {
                 return;
             }
             await this.saveNodeContent(node, content, nodeSize, position);
+        });
+
+        // 草稿节点(#20):删除键 → 仅从内存与画布移除,不碰 MOC
+        this.addTrackedListener(branchGraphDiv, 'draft-node-delete', (event: any) => {
+            if (this.isMobileReadOnly()) return;
+            const { draftId } = event.detail || {};
+            if (draftId) this.deleteDraftNode(draftId);
         });
 
         this.addTrackedListener(branchGraphDiv, 'node-remark-edit', async (event: any) => {
@@ -2996,7 +3417,7 @@ cy.fit(null, 40);
             }
             const { position } = event.detail;
 
-            // 创建占位符节点，而不是直接打开模态框
+            // 草稿模式(#20):仍走常规占位符文本框,只是完成时存为草稿(见 placeholder-node-edit)
             await this.createPlaceholderNode(position);
         });
 
@@ -3006,6 +3427,16 @@ cy.fit(null, 40);
                 return;
             }
             const { nodeId, label, position, suggestedNodeId, nodeSize } = event.detail;
+
+            // 草稿模式(#20):占位符内容转存为草稿,不写 MOC
+            if (this.draftMode) {
+                if (label.trim()) {
+                    this.convertPlaceholderToDraft(nodeId, label.trim());
+                } else {
+                    await this.removePlaceholderNode(nodeId);
+                }
+                return;
+            }
 
             // 如果有预生成的节点 ID，更新占位符信息
             if (suggestedNodeId) {
@@ -3045,6 +3476,12 @@ cy.fit(null, 40);
                 return;
             }
             const { nodeId, wikiLink, file, isEmbed } = event.detail;
+
+            // 草稿模式(#20):选中的文件也转存为草稿(以 wiki 链接文本形式),不写 MOC
+            if (this.draftMode) {
+                this.convertPlaceholderToDraft(nodeId, `${isEmbed ? '!' : ''}[[${wikiLink}]]`);
+                return;
+            }
 
             // 获取占位符信息
             const placeholderInfo = this.placeholderNodes.get(nodeId);
@@ -3124,6 +3561,12 @@ cy.fit(null, 40);
                 return;
             }
             const { nodeId, wikiLink, file, isEmbed } = event.detail;
+
+            // 草稿模式(#20):选中的文件也转存为草稿(以 wiki 链接文本形式),不写 MOC
+            if (this.draftMode) {
+                this.convertPlaceholderToDraft(nodeId, `${isEmbed ? '!' : ''}[[${wikiLink}]]`);
+                return;
+            }
 
             // 获取占位符信息
             const placeholderInfo = this.placeholderNodes.get(nodeId);
@@ -3364,6 +3807,13 @@ cy.fit(null, 40);
 
             if (!finalSourceId || !finalTargetId) {
                 console.warn('Invalid nodes for arrow relation:', { sourceNode, targetNode, sourceId, targetId });
+                return;
+            }
+
+            // 草稿节点(#20)参与连线:纯内存改父子,绝不写 MOC
+            // (否则会把 draft-batch-* 这种临时 id 写进文件,还会触发刷新把草稿清空)
+            if (this.draftNodes.has(finalSourceId) || this.draftNodes.has(finalTargetId)) {
+                this.connectDraftRelation(finalSourceId, finalTargetId);
                 return;
             }
 
@@ -6024,9 +6474,12 @@ cy.fit(null, 40);
             this.mocNodes,
             suggestedID,
             async (result) => {
+                // 草稿模式(#20):新建自由节点也先作为草稿
+                if (this.divertFreeNodeToDraft(result, defaultPosition || undefined)) return;
+
                 // 在刷新前保存所有节点的当前位置
                 await this.saveAllNodePositionsBeforeRefresh();
-                
+
                 // 添加到 MOC 文件
                 await this.saveFreeNodeToMOC(result, defaultPosition || undefined);
                 
@@ -7675,9 +8128,12 @@ cy.fit(null, 40);
             this.mocNodes, // 当前 MOC 的所有节点
             suggestedID,
             async (result) => {
+                // 草稿模式(#20):新建自由节点也先作为草稿
+                if (this.divertFreeNodeToDraft(result, position)) return;
+
                 // 添加到 MOC 文件，并在同一次写入里持久化新节点位置
                 await this.saveFreeNodeToMOC(result, position);
-                
+
                 // 刷新视图
                 await this.refreshBranchMermaid();
             }
@@ -7861,6 +8317,7 @@ cy.fit(null, 40);
         this.renderedBranches.clear();
         this.mocViewStates.clear();
         this.placeholderNodes.clear();
+        this.clearAllDrafts();
         this.undoStack = [];
         this.mocNodes = [];
         this.mocTreeStructure = [];

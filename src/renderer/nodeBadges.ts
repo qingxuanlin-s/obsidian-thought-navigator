@@ -863,6 +863,59 @@ export function renderNodeBadges(this: any): void {
             badgeUpdaters.push(updateAnchorPos);
         });
 
+        // 草稿节点角标 — 左上角小药丸,AI=紫/人工=灰,标识待审批节点(#20)
+        const MIN_DRAFT_PX = 16;
+        this.cy.nodes('[?isDraft]').forEach((node: any) => {
+            if (incIds && !incIds.has(node.id())) return;
+            const origin = node.data('draftOrigin') === 'ai' ? 'ai' : 'manual';
+            const badgeText = origin === 'ai' ? 'AI' : '草';
+            const badgeColor = origin === 'ai' ? '#a855f7' : '#64748b';
+
+            const draftEl = document.createElement('div');
+            draftEl.className = 'zk-node-draft-badge';
+            draftEl.dataset.nodeId = node.id();
+            draftEl.textContent = badgeText;
+            draftEl.style.cssText = `
+                position: absolute;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: #ffffff;
+                font-weight: 700;
+                line-height: 1;
+                pointer-events: none;
+                background: ${badgeColor};
+                border: 1.5px solid ${isLightTheme ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.5)'};
+                border-radius: 999px;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+                z-index: 8;
+                transform: translate(-50%, -50%);
+            `;
+            badgeContainer.appendChild(draftEl);
+
+            const updateDraftPos = () => {
+                if (!this.cy) return;
+                const isHidden =
+                    node.removed() ||
+                    node.hasClass('zk-collapsed-hidden') ||
+                    node.style('display') === 'none' ||
+                    !node.visible();
+                if (isHidden) { draftEl.style.display = 'none'; return; }
+
+                draftEl.style.display = 'flex';
+                const zoom = this.cy.zoom();
+                const bb = node.renderedBoundingBox();
+                const badgeSize = Math.max(MIN_DRAFT_PX, 22 * zoom);
+                const fontSize = Math.max(9, badgeSize * 0.5);
+                draftEl.style.width = `${badgeSize}px`;
+                draftEl.style.height = `${badgeSize}px`;
+                draftEl.style.fontSize = `${fontSize}px`;
+                draftEl.style.transform = `translate(${bb.x1 + badgeSize * 0.4}px, ${bb.y1 + badgeSize * 0.4}px) translate(-50%, -50%)`;
+            };
+
+            badgeUpdaters.push(updateDraftPos);
+        });
+
         // 兼容旧语义：文字前小色点（legacy customColor）
         this.cy.nodes('[customColor]').forEach((node: any) => {
             if (incIds && !incIds.has(node.id())) return;
@@ -1322,6 +1375,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
             const data = node.data();
             if (data.isPlaceholder) return;
             const originalNode: ZKNode | undefined = data.originalNode;
+            // 草稿节点(#20)走原生 label,无 overlay;此处仍要求有 originalNode(跳过草稿)
             if (!originalNode) return;
 
             const rawSource = String(
@@ -1332,8 +1386,8 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
             ).replace(/\\n/g, '\n');
             const nodeCacheId = String(
                 data.originalNodeId
-                || originalNode.IDStr
-                || originalNode.ID
+                || originalNode?.IDStr
+                || originalNode?.ID
                 || node.id?.()
                 || ''
             );
