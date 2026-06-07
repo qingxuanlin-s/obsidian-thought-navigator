@@ -574,6 +574,17 @@ export function bindEvents(this: any): void {
         let autoHierarchyGrabbedNode: any = null;
         let autoHierarchyStyled = false;
 
+        // 分离圆状态(auto 布局:把节点拖出此圆 = 与父节点轨道分离;拖回 = 取消分离)
+        let separationOverlay: SVGSVGElement | null = null;
+        let separationCircle: SVGCircleElement | null = null;
+        let separationOrbit: { cx: number; cy: number; radius: number; parentId: string } | null = null;
+        let separationWillSeparate = false;
+        let separationWasSeparated = false; // 拖动前该节点是否已分离
+        const SEPARATION_FORWARD_GAP = 150;  // 与 autoLayoutEngine forwardGap 默认值一致
+        const SEPARATION_MIN_RADIUS = SEPARATION_FORWARD_GAP * 2; // 独子/无兄弟时的默认轨道半径
+        const SEPARATION_STROKE = 'rgba(148, 163, 184, 0.7)';      // 圈内:中性灰
+        const SEPARATION_STROKE_ACTIVE = 'rgba(248, 113, 113, 0.95)'; // 越界:将分离,红
+
         // 分组退出检测状态
         let draggedNodeOriginalGroup: any = null;
         let draggedNodeOriginalGroupModelBounds: { x1: number; y1: number; x2: number; y2: number } | null = null;
@@ -692,6 +703,96 @@ export function bindEvents(this: any): void {
             if (horizontalAlignmentLine) horizontalAlignmentLine.style.display = 'none';
             if (spacingGuideLineA) spacingGuideLineA.style.display = 'none';
             if (spacingGuideLineB) spacingGuideLineB.style.display = 'none';
+        };
+
+        const ensureSeparationOverlay = () => {
+            if (separationCircle || !this.container) return;
+            separationOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            separationOverlay.style.cssText = `
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                pointer-events: none;
+                z-index: 3;
+            `;
+            separationCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            separationCircle.setAttribute('fill', 'none');
+            separationCircle.setAttribute('stroke', SEPARATION_STROKE);
+            separationCircle.setAttribute('stroke-width', '1.5');
+            separationCircle.setAttribute('stroke-dasharray', '6,5');
+            separationCircle.style.display = 'none';
+            separationOverlay.appendChild(separationCircle);
+            this.container.appendChild(separationOverlay);
+            this.activeSeparationOverlay = separationOverlay;
+        };
+
+        // grab 时计算分离圆:圆心=父节点位置,半径=非分离兄弟最远距离+forwardGap,
+        // 独子/无兄弟用默认最小半径。返回 null 表示该节点不参与分离(无父/非 auto)。
+        const computeSeparationOrbit = (
+            grabbedNode: any,
+            grabbedBizId: string
+        ): { cx: number; cy: number; radius: number; parentId: string } | null => {
+            if (!this.cy) return null;
+            const bizIdOf = (n: any): string => {
+                const d = n.data();
+                return d.originalNode?.ID || d.originalSource || n.id();
+            };
+            // 找父节点(指向 grabbedNode 的 parent 边的源)
+            let parentNode: any = null;
+            grabbedNode.connectedEdges().forEach((e: any) => {
+                if (e.data('type') === 'parent' && e.target().id() === grabbedNode.id()) {
+                    parentNode = e.source();
+                }
+            });
+            if (!parentNode || parentNode.length === 0) return null;
+            const parentBizId = bizIdOf(parentNode);
+            const ppos = parentNode.position();
+            const separatedSet = new Set(this.currentOptions?.separatedNodeIds || []);
+            // 收集父节点的其它子节点(非分离、可见),取最远距离
+            let maxDist = 0;
+            parentNode.connectedEdges().forEach((e: any) => {
+                if (e.data('type') !== 'parent' || e.source().id() !== parentNode.id()) return;
+                const sib = e.target();
+                if (sib.id() === grabbedNode.id()) return;
+                const sd = sib.data();
+                if (sd.isGroup || sd.isPlaceholder || sd.isCrossDomain) return;
+                if (sib.removed() || !sib.visible() || sib.hasClass('zk-collapsed-hidden')) return;
+                if (separatedSet.has(bizIdOf(sib))) return; // 已分离的远处兄弟不计入
+                const sp = sib.position();
+                const dist = Math.hypot(sp.x - ppos.x, sp.y - ppos.y);
+                if (dist > maxDist) maxDist = dist;
+            });
+            const radius = maxDist > 0
+                ? Math.max(maxDist + SEPARATION_FORWARD_GAP, SEPARATION_MIN_RADIUS)
+                : SEPARATION_MIN_RADIUS;
+            return { cx: ppos.x, cy: ppos.y, radius, parentId: parentBizId };
+        };
+
+        // drag 期间刷新虚线圆位置 + 内外状态(模型空间判定,与 zoom 无关)
+        const updateSeparationCircle = (grabbedNode: any) => {
+            if (!separationOrbit || !separationCircle || !this.cy) return;
+            const zoom = this.cy.zoom();
+            const pan = this.cy.pan();
+            separationCircle.setAttribute('cx', String(separationOrbit.cx * zoom + pan.x));
+            separationCircle.setAttribute('cy', String(separationOrbit.cy * zoom + pan.y));
+            separationCircle.setAttribute('r', String(separationOrbit.radius * zoom));
+            separationCircle.style.display = 'block';
+            const np = grabbedNode.position();
+            const dist = Math.hypot(np.x - separationOrbit.cx, np.y - separationOrbit.cy);
+            const willSeparate = dist > separationOrbit.radius;
+            if (willSeparate !== separationWillSeparate) {
+                separationWillSeparate = willSeparate;
+                separationCircle.setAttribute('stroke', willSeparate ? SEPARATION_STROKE_ACTIVE : SEPARATION_STROKE);
+            }
+        };
+
+        const clearSeparation = () => {
+            if (separationCircle) separationCircle.style.display = 'none';
+            separationOrbit = null;
+            separationWillSeparate = false;
+            separationWasSeparated = false;
         };
 
         const getRenderedMetrics = (node: any) => {
@@ -1022,10 +1123,15 @@ export function bindEvents(this: any): void {
             isAutoHierarchyDrag = false;
             autoHierarchyGrabbedNode = null;
             autoHierarchyStyled = false;
+            clearSeparation();
             if (!isMultiNodeDrag && !data.isPlaceholder && !data.isGroup && !data.isCrossDomain) {
                 const grabbedId = data.originalNode?.ID || data.originalSource || data.id;
                 if (typeof grabbedId === 'string' && grabbedId.length > 0 && this.isNodeAutoLayoutForId(grabbedId)) {
                     const prefix = `${grabbedId}.`;
+                    // 分离圆:对所有 auto 子节点(含叶子)生效,拖出圆即与父节点轨道分离
+                    ensureSeparationOverlay();
+                    separationOrbit = computeSeparationOrbit(node, grabbedId);
+                    separationWasSeparated = new Set(this.currentOptions?.separatedNodeIds || []).has(grabbedId);
                     const grabPos = node.position();
                     autoHierarchyGrabStartX = grabPos.x;
                     autoHierarchyGrabStartY = grabPos.y;
@@ -1133,6 +1239,11 @@ export function bindEvents(this: any): void {
                 });
             }
 
+            // 分离圆:auto 子节点(含叶子)拖动时刷新虚线圆与内外状态
+            if (separationOrbit) {
+                updateSeparationCircle(node);
+            }
+
             // 多节点拖动时跳过辅助线和智能连线，避免 N 个节点 × 每帧的重复计算
             if (isMultiNodeDrag) return;
 
@@ -1220,6 +1331,19 @@ export function bindEvents(this: any): void {
             const smartEnabled = this.isSmartConnectionEnabled();
             const smartTargetNodeId = nearbyNodeId;
             hideAlignmentGuides();
+
+            // 分离判定:auto 子节点拖出/拖回分离圆 → 记录意图,随被拖节点的
+            // node-position-changed 一并派发,由 indexView 决定置/清 SEPARATED 标志。
+            let separationDetail: { parentId: string; willSeparate: boolean; wasSeparated: boolean } | null = null;
+            if (separationOrbit) {
+                const np = node.position();
+                const dist = Math.hypot(np.x - separationOrbit.cx, np.y - separationOrbit.cy);
+                separationDetail = {
+                    parentId: separationOrbit.parentId,
+                    willSeparate: dist > separationOrbit.radius,
+                    wasSeparated: separationWasSeparated,
+                };
+            }
 
             // 自动布局：为同步平移的后代派发位置变化事件（以便批量持久化）
             if (isAutoHierarchyDrag) {
@@ -1391,9 +1515,11 @@ export function bindEvents(this: any): void {
                         y: position.y
                     },
                     leftGroup: groupLeaveInfo,
-                    joinedGroup: groupJoinInfo
+                    joinedGroup: groupJoinInfo,
+                    separation: separationDetail
                 }
             }));
+            clearSeparation();
         });
 
         // 节点释放事件（清理 SVG 叠加层）
@@ -1402,6 +1528,10 @@ export function bindEvents(this: any): void {
             const data = node.data();
             hideAlignmentGuides();
             clearDragCandidateSnapshot();
+            // 注意:不在此清除 separationOrbit。Cytoscape 不保证 free 与 dragfree 的先后,
+            // 若 free 先于 dragfree 触发,这里清掉会让 dragfree 读到 null(分离意图丢失)。
+            // 清理交给 dragfree 末尾 + 下次 grab 开头。这里仅隐藏可能残留的虚线圆。
+            if (separationCircle) separationCircle.style.display = 'none';
 
             // 纯点击（未发生移动）时，dragfree 不触发，在此恢复分组关系
             // 若实际发生了拖动，由 dragfree 负责处理，free 不干预

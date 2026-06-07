@@ -26,3 +26,6 @@ CLAUDE.md
 claude_code_env.sh
 .claude/settings.local.json
 .claude/worktrees/
+
+# Local-only deploy target for `npm run build`
+deploy.local.mjs

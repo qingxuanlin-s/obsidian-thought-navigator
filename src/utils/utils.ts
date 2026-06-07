@@ -91,7 +91,15 @@ export interface ReverseRelation {
 }
 
 // 节点扩展位图标志位 (存于 MOCTreeNode.extBitMap, 0-255 的 8 位整数)
-export const NODE_FLAG_MANUALLY_MOVED = 1 << 0; // bit0: 用户手动拖动过
+// bit0: 已从父节点轨道分离 —— auto 布局下被拖出"分离圆"外的节点,作为固定锚点
+// 保留坐标、子树独立生长,且不占父节点的排布槽位。
+// (兼容:旧版此位语义为"用户手动拖动过 NODE_FLAG_MANUALLY_MOVED",复用同一 bit
+//  平滑迁移——旧的手动钉住节点会被当作已分离锚点。)
+export const NODE_FLAG_SEPARATED = 1 << 0;
+// bit1: 侧别已被用户固定 —— auto 布局下被拖到某一侧的节点,无论层级深浅都按自身
+// 保存位置导出左右(E/W 等),不再继承父节点方向。否则深层节点会在每次 reflow 时
+// 被强制继承父方向 → 用户拖到对侧的节点会弹回。
+export const NODE_FLAG_SIDE_PINNED = 1 << 1;
 
 // MOC 解析结果
 export interface MOCParseResult {

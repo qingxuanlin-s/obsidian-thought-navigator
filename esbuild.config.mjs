@@ -1,6 +1,52 @@
 import esbuild from "esbuild";
 import process from "process";
 import { builtinModules as builtins } from 'module'
+import { copyFileSync, existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
+import { execFileSync } from 'child_process';
+import path from 'path';
+
+// Copy build artifacts into the local Obsidian vault, then reload the plugin via
+// the bundled `obsidian-cli` (`plugin:reload`). Targets come from gitignored
+// deploy.local.mjs or env vars; absent => no-op (so it never breaks other machines).
+async function deployToVault() {
+	let pluginDir = process.env.OBSIDIAN_PLUGIN_DIR;
+	let obsidianCli;
+	let vault;
+	if (!pluginDir) {
+		try {
+			const local = await import('./deploy.local.mjs');
+			pluginDir = local.pluginDir;
+			obsidianCli = local.obsidianCli;
+			vault = local.vault;
+		} catch {
+			return; // no local deploy config; skip silently
+		}
+	}
+	if (!pluginDir) return;
+	mkdirSync(pluginDir, { recursive: true });
+	for (const file of ['main.js', 'styles.css', 'manifest.json']) {
+		if (existsSync(file)) copyFileSync(file, path.join(pluginDir, file));
+	}
+	// Keep the Hot-Reload marker as a fallback for machines without obsidian-cli.
+	const marker = path.join(pluginDir, '.hotreload');
+	if (!existsSync(marker)) writeFileSync(marker, '');
+	console.log(`✅ Deployed to ${pluginDir}`);
+
+	// Reload the plugin via obsidian-cli (best-effort; never fail the build).
+	// NB: it must be the `obsidian-cli` binary, NOT the `obsidian` app binary.
+	const cli = obsidianCli || process.env.OBSIDIAN_CLI
+		|| '/Applications/Obsidian.app/Contents/MacOS/obsidian-cli';
+	if (!existsSync(cli)) return; // no CLI here; Hot-Reload marker covers the rest
+	try {
+		const manifest = JSON.parse(readFileSync(path.join(pluginDir, 'manifest.json'), 'utf8'));
+		const args = ['plugin:reload', `id=${manifest.id}`];
+		if (vault) args.unshift(`vault=${vault}`);
+		const out = execFileSync(cli, args, { encoding: 'utf8' }).trim();
+		console.log(`🔄 ${out || 'reloaded'}`);
+	} catch (e) {
+		console.log(`⚠️  plugin reload skipped: ${String(e.message || e).split('\n')[0]}`);
+	}
+}
 
 const banner =
 `/*
@@ -39,4 +85,6 @@ esbuild.build({
 	sourcemap: prod ? false : 'inline',
 	treeShaking: true,
 	outfile: 'main.js',
+}).then(() => {
+	if (prod) return deployToVault();
 }).catch(() => process.exit(1));
