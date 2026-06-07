@@ -3597,7 +3597,7 @@ cy.fit(null, 40);
 
         // 当前节点名称
         const nodeChip = this.multiverseContainer.createDiv("zk-chip zk-chip-outlined zk-multiverse-node");
-        let nodeLabel = node.title || node.displayText || node.IDStr;
+        let nodeLabel = this.firstLineLabel(node.title || node.displayText || '') || node.IDStr;
         if (nodeLabel.length > 10) {
             nodeLabel = nodeLabel.substring(0, 10) + "...";
         }
@@ -3732,8 +3732,17 @@ cy.fit(null, 40);
         return idStr.split('.').pop() || idStr;
     }
 
+    /**
+     * 面包屑只展示第一行:兼容真实换行与文本节点标题里的字面量 \n,
+     * 按换行切分取首段并 trim,避免多行文本把面包屑撑高(issue #49)。
+     */
+    private firstLineLabel(s: string): string {
+        return String(s ?? '').replace(/\\n/g, '\n').split('\n')[0].trim();
+    }
+
     private truncateLabel(s: string, max: number): string {
-        return s.length > max ? s.substring(0, max) + '…' : s;
+        const first = this.firstLineLabel(s);
+        return first.length > max ? first.substring(0, max) + '…' : first;
     }
 
     /**
