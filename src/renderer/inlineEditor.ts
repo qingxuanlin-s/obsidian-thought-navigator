@@ -1339,8 +1339,11 @@ export function startInPlaceTextEdit(this: any, node: any,
         const restoreSavedOverlay = () => {
             overlayEl.replaceChildren(...savedNodes.map((child) => child.cloneNode(true)));
         };
-        const savedWidth = entry.width;
-        const savedHeight = entry.height;
+        // 用节点真实样式尺寸(不含边框)。此前用 entry.width/height(展示态 renderedBoundingBox
+        // 含边框,根节点边框 4.5px),取消编辑时会把含边框尺寸锁成 manualWidthModel,导致
+        // 每次"双击不编辑再退出"都涨一圈。
+        const savedWidth = Number(node.width()) || entry.width;
+        const savedHeight = Number(node.height()) || entry.height;
         const rawSource = String(
             originalNode.title
             || originalNode.displayText
@@ -1509,7 +1512,10 @@ export function startInPlaceTextEdit(this: any, node: any,
             overlayEl.style.top = `${bb.y1}px`;
             overlayEl.style.width = `${bb.w}px`;
             overlayEl.style.height = `${bb.h}px`;
-            overlayEl.style.fontSize = `${20 * zoom}px`;
+            // 编辑态字号与展示态 overlay 同源:根=36/一级=24/普通=20(写在 dataset.baseFontSize)。
+            // 此前写死 20px,导致根节点编辑时字号被缩小、与展示态不一致。
+            const overlayBaseFontSize = Number(overlayEl.dataset.baseFontSize) || 20;
+            overlayEl.style.fontSize = `${overlayBaseFontSize * zoom}px`;
             entry.width = Number(node.width() || entry.width);
             entry.height = Number(node.height() || entry.height);
             return entry.height;
