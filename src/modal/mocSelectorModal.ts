@@ -35,9 +35,9 @@ export class MOCSelectorModal extends SuggestModal<MOCItem> {
         this.mocFiles = mocFiles;
         this.onSubmit = onSubmit;
         this.vaultIndex = vaultIndex;
-        this.setPlaceholder("搜索 MOC 文件(项目置顶)...");
+        this.setPlaceholder("搜索 MOC 文件...");
 
-        // 按 mtime 倒序
+        // 按 mtime 倒序(编辑时间)
         this.sortedFiles = [...mocFiles].sort((a, b) => b.stat.mtime - a.stat.mtime);
     }
 
@@ -51,25 +51,8 @@ export class MOCSelectorModal extends SuggestModal<MOCItem> {
             ? this.sortedFiles.filter(f => f.basename.toLowerCase().includes(q))
             : this.sortedFiles;
 
-        const projects: MOCItem[] = [];
-        const normals: MOCItem[] = [];
-        for (const f of filtered) {
-            const isProject = this.isProjectMoc(f);
-            const item: MOCItem = { type: 'moc', file: f, isProject };
-            if (isProject) projects.push(item);
-            else normals.push(item);
-        }
-
-        const result: MOCItem[] = [];
-        if (projects.length > 0) {
-            result.push({ type: 'moc', file: null, sectionHeader: `项目 · ${projects.length}` });
-            result.push(...projects);
-        }
-        if (normals.length > 0) {
-            result.push({ type: 'moc', file: null, sectionHeader: `普通思维树 · ${normals.length}` });
-            result.push(...normals);
-        }
-        return result;
+        // 不再区分项目/普通思维树:统一一个列表,按编辑时间(mtime)倒序。
+        return filtered.map(f => ({ type: 'moc', file: f, isProject: this.isProjectMoc(f) }));
     }
 
     renderSuggestion(item: MOCItem, el: HTMLElement): void {
