@@ -553,11 +553,19 @@ export function bindEvents(this: any): void {
                         draftOrigin: origin === 'ai' ? 'ai' : 'manual',
                         draftBatchId: batchId,
                         isTextOnly: true,
-                        // 走 Cytoscape 原生 label 渲染(非 Markdown overlay):卡片外观仍由通用样式表决定(仅边框不同),
-                        // 但文字由 cy 自身绘制 —— 不需要 addNodeBadges 全量重建 overlay(避免连带把 embed 预览等其它
-                        // overlay 推回原点),编辑时 node.data('label') 即时刷新。originalNode 留 null 让护栏自动跳过草稿。
+                        // 走 Cytoscape 原生 label 渲染(overlay 构建器会按 isDraft 跳过),编辑即时刷新。
                         hasMarkdownOverlay: false,
-                        originalNode: null,
+                        // 一等节点(#20):补全 synthetic originalNode(IDStr=草稿 cy id),使自动布局引擎
+                        // 原生把草稿当真实 auto 子节点参与排布(父居中/兄弟级联);isDraft 标记供各处护栏跳过,
+                        // 位置保存/落地写文件时按 draftNodes 过滤,绝不把草稿 id 写进 MOC。
+                        originalNode: {
+                            ID: nodeId, IDStr: nodeId, IDArr: String(nodeId).split('.'),
+                            isTextOnly: true, isDraft: true,
+                            title: label || '', displayText: label || '',
+                            file: null, relationText: '', position: 0, ctime: 0,
+                            randomId: '', nodeSons: 0, startY: 0, height: 0,
+                            isRoot: false, fixWidth: 0, branchName: '', gitNodePos: 0,
+                        },
                         parentNodeId: parentNodeId
                     },
                     position: position

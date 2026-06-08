@@ -1374,8 +1374,10 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
             if (incIds && !incIds.has(node.id())) return;
             const data = node.data();
             if (data.isPlaceholder) return;
+            // 草稿节点(#20)虽有 synthetic originalNode,但走 Cytoscape 原生 label 渲染,不建 Markdown overlay
+            // (否则与原生 label 叠成双重文字,且需全量重建 overlay 影响 embed 预览)
+            if (data.isDraft) return;
             const originalNode: ZKNode | undefined = data.originalNode;
-            // 草稿节点(#20)走原生 label,无 overlay;此处仍要求有 originalNode(跳过草稿)
             if (!originalNode) return;
 
             const rawSource = String(
