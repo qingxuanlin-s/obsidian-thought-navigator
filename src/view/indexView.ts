@@ -501,10 +501,18 @@ export class ZKIndexView extends FileView {
         const localToDraft = new Map<string, string>();
         const createdIds: string[] = [];
 
-        // 起始布局:从当前视口中心纵向级联铺开(简单稳态,用户可再拖动调整)
+        // 起始布局:从当前视口中心铺开(简单稳态,用户可再拖动调整)
         const extent = cy.extent();
         const centerX = (extent.x1 + extent.x2) / 2;
-        const startY = (extent.y1 + extent.y2) / 2 - (items.length * 50) / 2;
+        const centerY = (extent.y1 + extent.y2) / 2;
+        const SIBLING_GAP = 110;  // 草稿卡片高度(~90)+ 间隙,避免同父草稿堆叠重叠
+        // 同父草稿的总数 / 已放置序号:用于把兄弟纵向「居中」铺在父节点两侧(父节点居中,贴近 auto 落地排布)
+        const parentTotals = new Map<string, number>();
+        items.forEach((it) => {
+            const k = it.parentRealId || it.parentLocalId || '__root__';
+            parentTotals.set(k, (parentTotals.get(k) || 0) + 1);
+        });
+        const siblingIdx = new Map<string, number>();
 
         items.forEach((item, idx) => {
             const draftId = `draft-${realBatchId}-${idx}`;
@@ -513,20 +521,39 @@ export class ZKIndexView extends FileView {
             // 解析父节点:优先同批草稿(P4 内部树),其次真实节点
             const parentDraftId = item.parentLocalId ? localToDraft.get(item.parentLocalId) : undefined;
             const parentRealId = item.parentRealId;
+            const rawKey = item.parentRealId || item.parentLocalId || '__root__';
+            const total = parentTotals.get(rawKey) || 1;
+            const sib = siblingIdx.get(rawKey) || 0;
+            siblingIdx.set(rawKey, sib + 1);
+            // 相对父节点纵向中心的偏移:让该父的草稿们对称分布、父节点居中
+            const centerOffset = (sib - (total - 1) / 2) * SIBLING_GAP;
 
-            // 位置:显式指定(如手动点击落点)优先;否则挂真实父放其右下方,再否则中心纵向级联
-            let position = { x: centerX, y: startY + idx * 55 };
+            // 位置:显式指定(手动点击落点)优先;否则锚定父节点
+            let position = { x: centerX, y: centerY + centerOffset };
             if (item.position) {
                 position = { ...item.position };
             } else if (parentRealId) {
                 const parentCy = this.findCyNodeByIdStr(parentRealId);
-                if (parentCy) {
-                    const pp = parentCy.position();
-                    position = { x: pp.x + 220, y: pp.y + (idx * 50) };
+                const pp = parentCy ? parentCy.position() : { x: centerX, y: centerY };
+                const hasExistingChildren = this.getChildNodeIds(parentRealId).length > 0;
+                if (this.isNodeAutoLayout(parentRealId)) {
+                    // auto 布局:用算法取"下一个空槽"(已避开父的现有子节点和其它子树)
+                    const anchor = this.getAutoPlaceholderPosition(parentRealId, { x: pp.x + 260, y: pp.y });
+                    position = hasExistingChildren
+                        // 父已有真实子节点:接在它们之后,逐个向下堆叠(防止压在已有子节点上)
+                        ? { x: anchor.x, y: anchor.y + sib * SIBLING_GAP }
+                        // 父暂无子节点:以父为中心对称铺开,父节点居中
+                        : { x: anchor.x, y: pp.y + centerOffset };
+                } else {
+                    // free 布局:父右侧,以父为中心对称(无现有子)或顺序堆叠(有现有子)
+                    position = hasExistingChildren
+                        ? { x: pp.x + 260, y: pp.y + sib * SIBLING_GAP }
+                        : { x: pp.x + 260, y: pp.y + centerOffset };
                 }
             } else if (parentDraftId) {
                 const pInfo = this.draftNodes.get(parentDraftId);
-                if (pInfo) position = { x: pInfo.position.x + 220, y: pInfo.position.y + 50 };
+                const base = pInfo ? pInfo.position : { x: centerX, y: centerY };
+                position = { x: base.x + 260, y: base.y + centerOffset };
             }
 
             this.draftNodes.set(draftId, {
@@ -7888,7 +7915,7 @@ cy.fit(null, 40);
             const data = node.data();
             const originalNode = data.originalNode;
             const nodeId = originalNode?.IDStr || originalNode?.ID;
-            if (!nodeId || data.isGroup || data.isPlaceholder) return;
+            if (!nodeId || data.isGroup || data.isPlaceholder || data.isDraft) return;
             if (relayoutOptions.compactVisibleNodes && isHiddenByCollapse(nodeId)) return;
             nodes[nodeId] = {
                 id: nodeId,
