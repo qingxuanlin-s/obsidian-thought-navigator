@@ -794,15 +794,19 @@ export class ZKIndexView extends FileView {
             return;
         }
 
-        // 清空所有草稿(内存 + 画布)并退出草稿模式,刷新重渲染为真实节点
-        this.discardAllDrafts();
-        await this.refreshBranchMermaid();
+        // 清空所有草稿(内存 + 画布)并退出草稿模式,强制重建以正确渲染落地后的真实树
+        this.clearAllDrafts();
+        this.draftMode = false;
+        await this.refreshBranchMermaid(true);
     }
 
     /** 一键驳回所有草稿:全部移除,不影响真实数据,并退出草稿模式 */
     discardAllDrafts(): void {
         this.clearAllDrafts();
         this.draftMode = false;
+        // 预览期的 reflow 只改了 cy 视觉(未写文件),丢弃后强制从文件重建,
+        // 让被预览推动的真实节点恢复原布局(普通刷新因 mtime 未变会走 no-op 短路)。
+        void this.refreshBranchMermaid(true);
     }
 
     /** 草稿内部父子拓扑排序(父先子后),用于落地顺序 */
@@ -8823,6 +8827,11 @@ cy.fit(null, 40);
      */
     private async saveAllNodePositionsBeforeRefresh(targetMOCPath?: string): Promise<void> {
         if (!this.branchRenderer) {
+            return;
+        }
+        // 草稿预览期(#20):真实节点被预览 reflow 临时移动了,此时绝不持久化它们的位置,
+        // 否则会把临时布局写进文件,导致丢弃草稿后无法恢复原布局。
+        if (this.draftNodes.size > 0) {
             return;
         }
 
