@@ -513,14 +513,19 @@ export class ZKIndexView extends FileView {
             parentTotals.set(k, (parentTotals.get(k) || 0) + 1);
         });
         const siblingIdx = new Map<string, number>();
+        // 草稿用「预测的真实子 id」(如 1.1.3),让布局引擎按层级正确摆放;reserved 防同批重复
+        const reserved = new Set<string>(this.draftNodes.keys());
 
         items.forEach((item, idx) => {
-            const draftId = `draft-${realBatchId}-${idx}`;
-            if (item.localId) localToDraft.set(item.localId, draftId);
-
-            // 解析父节点:优先同批草稿(P4 内部树),其次真实节点
+            // 解析父节点:优先同批草稿(内部树),其次真实节点
             const parentDraftId = item.parentLocalId ? localToDraft.get(item.parentLocalId) : undefined;
             const parentRealId = item.parentRealId;
+
+            // 预测真实 id(父优先用草稿父的预测 id,其次真实父;都无则 free.N)
+            const draftId = this.predictDraftId(parentDraftId || parentRealId, reserved);
+            reserved.add(draftId);
+            if (item.localId) localToDraft.set(item.localId, draftId);
+
             const rawKey = item.parentRealId || item.parentLocalId || '__root__';
             const total = parentTotals.get(rawKey) || 1;
             const sib = siblingIdx.get(rawKey) || 0;
@@ -586,6 +591,30 @@ export class ZKIndexView extends FileView {
         });
 
         this.refreshDraftBatchBar();
+
+        // 草稿已是引擎眼里的一等 auto 子节点 → 用现有自动布局做一次「视觉重排」(persistPositions:false,
+        // 不写文件):父节点居中、兄弟子树级联让位,与落地后效果一致。刷新/落地/丢弃都会重算或还原。
+        const affectedAutoParents = new Set(
+            items.map(it => it.parentRealId).filter((id): id is string => !!id && this.isNodeAutoLayout(id))
+        );
+        if (affectedAutoParents.size > 0) {
+            void (async () => {
+                for (const pid of affectedAutoParents) {
+                    await this.relayoutAutoLayoutSiblings(pid, {
+                        compactVisibleNodes: true,
+                        collapsedNodeIds: this.collapsedNodeIds,
+                        rebalanceRootChildren: true,
+                        persistPositions: false,
+                    });
+                }
+                // 把重排后的 cy 坐标同步回内存草稿,落地时按此写入
+                const c = this.branchRenderer?.getCytoscapeInstance();
+                if (c) for (const [id, info] of this.draftNodes) {
+                    const n = c.$id(id);
+                    if (n && n.length > 0) { const p = n.position(); info.position = { x: p.x, y: p.y }; }
+                }
+            })();
+        }
         return createdIds;
     }
 
@@ -4163,7 +4192,7 @@ cy.fit(null, 40);
         cy.nodes().forEach((n: any) => {
             const original = n.data('originalNode') as ZKNode | undefined;
             if (!original) return;
-            if (original.isCrossDomain || original.isPlaceholder) return;
+            if (original.isCrossDomain || original.isPlaceholder || original.isDraft) return;
             if ((original.IDStr || '').startsWith('free.')) return;
             if (original.IDArr?.length === 1) roots.push(original);
         });
@@ -4186,7 +4215,7 @@ cy.fit(null, 40);
         cy.nodes().forEach((n: any) => {
             const original = n.data('originalNode') as ZKNode | undefined;
             if (!original) return;
-            if (original.isCrossDomain || original.isPlaceholder) return;
+            if (original.isCrossDomain || original.isPlaceholder || original.isDraft) return;
             if (original.IDArr?.length === parentDepth + 1
                 && (original.IDStr || '').startsWith(prefix)) {
                 children.push(original);
@@ -4230,7 +4259,7 @@ cy.fit(null, 40);
             this.refreshLevelBreadcrumb();
             return;
         }
-        if (node.isCrossDomain || node.isPlaceholder) return;
+        if (node.isCrossDomain || node.isPlaceholder || node.isDraft) return;
         if ((node.IDStr || '').startsWith('free.')) return;
         this.levelPath = [...node.IDArr];
         // 校验暗淡级别是否仍有效
@@ -6650,6 +6679,37 @@ cy.fit(null, 40);
     }
 
     /**
+     * 为草稿(#20)预测一个「真实」子 id(考虑现有真实子 + 本批已预留的草稿),
+     * 让布局引擎按层级把草稿摆在与真实子一致的位置/侧别(避免 id 不入流导致左右乱跳)。
+     * 无父则用 free.N。规则与 generateChildNodeID 一致:父为字母→数字子,否则字母子。
+     */
+    private predictDraftId(parentId: string | undefined, reserved: Set<string>): string {
+        if (!parentId) {
+            const used = new Set<number>();
+            this.mocNodes.filter(n => n.ID.startsWith('free.')).forEach(n => { const m = n.ID.match(/free\.(\d+)/); if (m) used.add(parseInt(m[1])); });
+            reserved.forEach(id => { const m = id.match(/^free\.(\d+)$/); if (m) used.add(parseInt(m[1])); });
+            let n = 1; while (used.has(n)) n++;
+            return `free.${n}`;
+        }
+        const depth = parentId.split('.').length;
+        const last = parentId.split('.').pop() || '';
+        const useNumberChild = /^[a-z]+$/.test(last); // 父为字母 → 数字子;数字/其它 → 字母子
+        const usedSegs = new Set<string>();
+        this.getDirectChildren(parentId).forEach(c => usedSegs.add(c.IDStr.split('.').pop()!));
+        reserved.forEach(id => {
+            if (id.startsWith(parentId + '.') && id.split('.').length === depth + 1) usedSegs.add(id.split('.').pop()!);
+        });
+        if (useNumberChild) {
+            let n = 1; while (usedSegs.has(String(n))) n++;
+            return `${parentId}.${n}`;
+        }
+        const letters = 'abcdefghijklmnopqrstuvwxyz';
+        for (const l of letters) if (!usedSegs.has(l)) return `${parentId}.${l}`;
+        for (let i = 0; i < 26; i++) for (let j = 0; j < 26; j++) { const d = letters[i] + letters[j]; if (!usedSegs.has(d)) return `${parentId}.${d}`; }
+        return `${parentId}.aaa`;
+    }
+
+    /**
      * 获取指定父节点的直接子节点
      */
     private getDirectChildren(parentNodeID: string): ZKNode[] {
@@ -7381,6 +7441,8 @@ cy.fit(null, 40);
      * 判断某个节点是否启用自动布局（沿父级链继承，最后回退到文件级默认）
      */
     private isNodeAutoLayout(nodeId: string): boolean {
+        // 草稿节点(#20)作为一等 auto 节点参与布局:跟随当前 MOC 的布局风格
+        if (this.draftNodes.has(nodeId)) return this.currentNodeLayoutStyle === 'auto';
         return this.getEffectiveNodeLayoutStyle(nodeId) === 'auto';
     }
 
@@ -7915,7 +7977,8 @@ cy.fit(null, 40);
             const data = node.data();
             const originalNode = data.originalNode;
             const nodeId = originalNode?.IDStr || originalNode?.ID;
-            if (!nodeId || data.isGroup || data.isPlaceholder || data.isDraft) return;
+            // 草稿(#20)作为一等节点参与重排(有 synthetic originalNode);占位符/分组仍排除
+            if (!nodeId || data.isGroup || data.isPlaceholder) return;
             if (relayoutOptions.compactVisibleNodes && isHiddenByCollapse(nodeId)) return;
             nodes[nodeId] = {
                 id: nodeId,
@@ -7995,6 +8058,15 @@ cy.fit(null, 40);
             }
         }
 
+        // 草稿(#20)无文件保存位置,把其当前 cy 位置喂给引擎,使方向按"位置相对父节点"判定
+        // (而非退化到 sibling-index 交替导致左右乱跳);布局仍因 isNodeAutoLayout=true 进入忽略集重排。
+        const draftSavedPositions: Record<string, { x: number; y: number }> = {};
+        cy.$('node').forEach((node: any) => {
+            if (!node.data('isDraft')) return;
+            const id = node.data('originalNode')?.IDStr;
+            if (id) { const p = node.position(); draftSavedPositions[id] = { x: p.x, y: p.y }; }
+        });
+
         const nodePositions = computeAutoLayout({
             relayoutRootId,
             nodes,
@@ -8002,7 +8074,7 @@ cy.fit(null, 40);
             childrenById,
             realMocRootIds,
             sidePinnedIds,
-            nodePositions: mocData.nodePositions || {},
+            nodePositions: { ...(mocData.nodePositions || {}), ...draftSavedPositions },
             ignoreSavedPositionsForIds: (() => {
                 // 已分离节点必须保留其保存位置作为锚点 (复用上方 isSeparated)
                 const explicit = relayoutOptions.ignoreSavedPositionsForIds
@@ -8093,6 +8165,8 @@ cy.fit(null, 40);
                 mocData.nodePositions = {};
             }
             Object.entries(nodePositions).forEach(([nodeId, pos]) => {
+                // 草稿节点(#20)纯内存,不写入文件
+                if (this.draftNodes.has(nodeId)) return;
                 mocData.nodePositions[nodeId] = pos;
             });
         });
@@ -8771,6 +8845,8 @@ cy.fit(null, 40);
             const originalNode = data.originalNode;
             const nodeId = originalNode?.IDStr || originalNode?.ID;
             if (originalNode && nodeId) {
+                // 草稿节点(#20)纯内存,绝不写文件
+                if (data.isDraft || originalNode.isDraft) return;
                 // 跳过跨领域节点（跨领域节点的位置保存在 cross_domain_links 中）
                 if (originalNode.isCrossDomain || nodeId.startsWith('cd-')) {
                     return;
