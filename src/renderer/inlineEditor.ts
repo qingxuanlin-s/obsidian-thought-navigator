@@ -880,8 +880,8 @@ export function showInlineNodeEditor(this: any, node: any): void {
             existingEditor.remove();
         }
 
-        // 占位符节点：使用与文本节点一致的 CM6 编辑器
-        if (isPlaceholder) {
+        // 占位符 / 草稿节点(#20):使用与文本节点一致的 CM6 原地编辑器
+        if (isPlaceholder || isDraft) {
             this.startPlaceholderInPlaceEdit(node);
             return;
         }
@@ -1667,6 +1667,8 @@ export function startPlaceholderInPlaceEdit(this: any, node: any): void {
         if (!this.cy || !this.container) return;
 
         const data = node.data();
+        const isDraft = !!data.isDraft;                 // 草稿节点(#20):复用本 CM6 编辑器,但保存只更新内存
+        const originalLabel = String(data.label || ''); // 草稿原始内容,用于取消时还原 / 判断是否新建空节点
 
         this.ensureNodeVisibleInViewport(node);
 
@@ -1829,6 +1831,16 @@ export function startPlaceholderInPlaceEdit(this: any, node: any): void {
             if (isSaved) return;
             isSaved = true;
             cleanup();
+            // 草稿(#20):取消不走占位符删除流程。空的新草稿删掉,否则还原原内容、保留节点
+            if (isDraft) {
+                if (!originalLabel.trim()) {
+                    this.container?.dispatchEvent(new CustomEvent('draft-node-delete', { detail: { draftId: data.id } }));
+                } else {
+                    node.data('label', originalLabel);
+                }
+                this.container?.focus();
+                return;
+            }
             this.container?.dispatchEvent(new CustomEvent('placeholder-node-cancel', {
                 detail: { nodeId: data.id }
             }));
@@ -1838,6 +1850,21 @@ export function startPlaceholderInPlaceEdit(this: any, node: any): void {
         const saveEdit = () => {
             if (isSaved) return;
             const newValue = (mdEditor?.getValue() ?? '').trim();
+            // 草稿(#20):保存只更新内存草稿内容(不写 MOC);空内容则删除该草稿
+            if (isDraft) {
+                isSaved = true;
+                cleanup();
+                if (!newValue) {
+                    this.container?.dispatchEvent(new CustomEvent('draft-node-delete', { detail: { draftId: data.id } }));
+                } else {
+                    node.data('label', newValue);
+                    this.container?.dispatchEvent(new CustomEvent('node-inline-edit-save', {
+                        detail: { nodeId: data.id, content: newValue, isDraft: true }
+                    }));
+                }
+                this.container?.focus();
+                return;
+            }
             if (!newValue) {
                 cancelEdit();
                 return;
@@ -1915,7 +1942,7 @@ export function startPlaceholderInPlaceEdit(this: any, node: any): void {
             mdEditor = new EmbeddableMarkdownEditor({
                 app: this.currentOptions?.app,
                 containerEl: editorHost,
-                initialValue: '',
+                initialValue: isDraft ? originalLabel : '',
                 sourcePath,
                 onChange: () => autoGrow(),
                 onEnter: (_value, evt) => {
