@@ -517,9 +517,12 @@ export class ZKIndexView extends FileView {
         const reserved = new Set<string>(this.draftNodes.keys());
 
         items.forEach((item, idx) => {
-            // 解析父节点:优先同批草稿(内部树),其次真实节点
-            const parentDraftId = item.parentLocalId ? localToDraft.get(item.parentLocalId) : undefined;
-            const parentRealId = item.parentRealId;
+            // 解析父节点:优先同批草稿(内部树),其次真实节点。
+            // 若传入的 parentRealId 其实是一个已存在的草稿(如在草稿上 Tab/Enter),按草稿父处理。
+            const parentIsExistingDraft = !!item.parentRealId && this.draftNodes.has(item.parentRealId);
+            const parentDraftId = (item.parentLocalId ? localToDraft.get(item.parentLocalId) : undefined)
+                || (parentIsExistingDraft ? item.parentRealId : undefined);
+            const parentRealId = parentIsExistingDraft ? undefined : item.parentRealId;
 
             // 预测真实 id(父优先用草稿父的预测 id,其次真实父;都无则 free.N)
             const draftId = this.predictDraftId(parentDraftId || parentRealId, reserved);
@@ -6867,7 +6870,26 @@ cy.fit(null, 40);
     /**
      * 从活动节点创建子节点（Tab 键）
      */
+    /** 在选中的草稿上 Tab/Enter:创建子/兄弟草稿(纯内存),并打开内联编辑器 */
+    private createDraftRelativeToActive(activeDraftId: string, mode: 'child' | 'sibling'): void {
+        const di = this.draftNodes.get(activeDraftId);
+        if (!di) return;
+        // child: 父=该草稿;sibling: 父=该草稿的父(草稿父或真实父)
+        const parentRef = mode === 'child' ? activeDraftId : (di.parentDraftId || di.parentRealId);
+        const ids = this.injectDraftNodes([{ content: '', parentRealId: parentRef }], di.origin);
+        const newId = ids[0];
+        if (newId) {
+            const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+            branchGraphDiv?.dispatchEvent(new CustomEvent('open-inline-editor-for', { detail: { nodeId: newId } }));
+        }
+    }
+
     async createChildNodeFromActive(activeNodeId: string, position: { x: number; y: number }) {
+        // 选中的是草稿节点(#20):创建子草稿,不走真实节点流程
+        if (this.draftNodes.has(activeNodeId)) {
+            this.createDraftRelativeToActive(activeNodeId, 'child');
+            return;
+        }
         // 查找活动节点
         const activeNode = this.mocNodes.find(n => n.IDStr === activeNodeId || n.ID === activeNodeId);
         if (!activeNode) {
@@ -6888,6 +6910,11 @@ cy.fit(null, 40);
      * 从活动节点创建兄弟节点（Enter 键）
      */
     async createSiblingNodeFromActive(activeNodeId: string, position: { x: number; y: number }) {
+        // 选中的是草稿节点(#20):创建兄弟草稿(与其同父)
+        if (this.draftNodes.has(activeNodeId)) {
+            this.createDraftRelativeToActive(activeNodeId, 'sibling');
+            return;
+        }
         // 查找活动节点
         const activeNode = this.mocNodes.find(n => n.IDStr === activeNodeId || n.ID === activeNodeId);
         if (!activeNode) {
@@ -6943,6 +6970,11 @@ cy.fit(null, 40);
      * 从活动节点创建父节点（Shift+Tab 键）
      */
     async createParentNodeFromActive(activeNodeId: string, position: { x: number; y: number }) {
+        // 草稿节点(#20)尚未落地,不支持为其插入父节点
+        if (this.draftNodes.has(activeNodeId)) {
+            new Notice(t("Draft no parent op"));
+            return;
+        }
         // 查找活动节点
         const activeNode = this.mocNodes.find(n => n.IDStr === activeNodeId || n.ID === activeNodeId);
         if (!activeNode) {
