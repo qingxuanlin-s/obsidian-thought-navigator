@@ -506,15 +506,16 @@ export class ZKIndexView extends FileView {
         const centerX = (extent.x1 + extent.x2) / 2;
         const centerY = (extent.y1 + extent.y2) / 2;
         const SIBLING_GAP = 110;  // 草稿卡片高度(~90)+ 间隙,避免同父草稿堆叠重叠
-        // 同父草稿的总数 / 已放置序号:用于把兄弟纵向「居中」铺在父节点两侧(父节点居中,贴近 auto 落地排布)
-        const parentTotals = new Map<string, number>();
-        items.forEach((it) => {
-            const k = it.parentRealId || it.parentLocalId || '__root__';
-            parentTotals.set(k, (parentTotals.get(k) || 0) + 1);
-        });
-        const siblingIdx = new Map<string, number>();
-        // 草稿用「预测的真实子 id」(如 1.1.3),让布局引擎按层级正确摆放;reserved 防同批重复
+        // 草稿用「预测的真实子 id」(如 1.1.a),让布局引擎按层级正确摆放;reserved 防同批重复
         const reserved = new Set<string>(this.draftNodes.keys());
+        // 每个有效父下的"已有兄弟数"(真实子 + 已存在草稿子)作为起始序号,本批内累加。
+        // 新草稿严格排在已有兄弟之后,保证最终顺序 = 注入顺序(reflow 按位置排序,故初始 y 必须按序递增)。
+        const siblingOrder = new Map<string, number>();
+        const baseSiblingCount = (parentId: string): number => {
+            let c = this.isFreeNodeID(parentId) ? 0 : this.getChildNodeIds(parentId).length;
+            for (const d of this.draftNodes.values()) if ((d.parentDraftId || d.parentRealId) === parentId) c++;
+            return c;
+        };
 
         items.forEach((item, idx) => {
             // 解析父节点:优先同批草稿(内部树),其次真实节点。
@@ -523,45 +524,34 @@ export class ZKIndexView extends FileView {
             const parentDraftId = (item.parentLocalId ? localToDraft.get(item.parentLocalId) : undefined)
                 || (parentIsExistingDraft ? item.parentRealId : undefined);
             const parentRealId = parentIsExistingDraft ? undefined : item.parentRealId;
+            const effParent = parentDraftId || parentRealId;  // 有效父 id(真实或草稿)
 
             // 预测真实 id(父优先用草稿父的预测 id,其次真实父;都无则 free.N)
-            const draftId = this.predictDraftId(parentDraftId || parentRealId, reserved);
+            const draftId = this.predictDraftId(effParent, reserved);
             reserved.add(draftId);
             if (item.localId) localToDraft.set(item.localId, draftId);
 
-            const rawKey = item.parentRealId || item.parentLocalId || '__root__';
-            const total = parentTotals.get(rawKey) || 1;
-            const sib = siblingIdx.get(rawKey) || 0;
-            siblingIdx.set(rawKey, sib + 1);
-            // 相对父节点纵向中心的偏移:让该父的草稿们对称分布、父节点居中
-            const centerOffset = (sib - (total - 1) / 2) * SIBLING_GAP;
+            // 兄弟序号:首次取该父已有兄弟数,本批内递增 → 严格向下排,顺序稳定
+            const pk = effParent || '__root__';
+            if (!siblingOrder.has(pk)) siblingOrder.set(pk, effParent ? baseSiblingCount(effParent) : 0);
+            const order = siblingOrder.get(pk)!;
+            siblingOrder.set(pk, order + 1);
 
-            // 位置:显式指定(手动点击落点)优先;否则锚定父节点
-            let position = { x: centerX, y: centerY + centerOffset };
+            // 位置:点击落点优先;否则锚定父节点,按 order 向下排(reflow 随后按位置排序并居中)
+            let position: { x: number; y: number };
             if (item.position) {
                 position = { ...item.position };
-            } else if (parentRealId) {
-                const parentCy = this.findCyNodeByIdStr(parentRealId);
+            } else if (effParent) {
+                const parentCy = this.findCyNodeByIdStr(effParent);
                 const pp = parentCy ? parentCy.position() : { x: centerX, y: centerY };
-                const hasExistingChildren = this.getChildNodeIds(parentRealId).length > 0;
-                if (this.isNodeAutoLayout(parentRealId)) {
-                    // auto 布局:用算法取"下一个空槽"(已避开父的现有子节点和其它子树)
-                    const anchor = this.getAutoPlaceholderPosition(parentRealId, { x: pp.x + 260, y: pp.y });
-                    position = hasExistingChildren
-                        // 父已有真实子节点:接在它们之后,逐个向下堆叠(防止压在已有子节点上)
-                        ? { x: anchor.x, y: anchor.y + sib * SIBLING_GAP }
-                        // 父暂无子节点:以父为中心对称铺开,父节点居中
-                        : { x: anchor.x, y: pp.y + centerOffset };
-                } else {
-                    // free 布局:父右侧,以父为中心对称(无现有子)或顺序堆叠(有现有子)
-                    position = hasExistingChildren
-                        ? { x: pp.x + 260, y: pp.y + sib * SIBLING_GAP }
-                        : { x: pp.x + 260, y: pp.y + centerOffset };
+                let x = pp.x + 260;
+                if (parentRealId && this.isNodeAutoLayout(parentRealId)) {
+                    const anchor = this.getAutoPlaceholderPosition(parentRealId, { x, y: pp.y });
+                    if (anchor) x = anchor.x;
                 }
-            } else if (parentDraftId) {
-                const pInfo = this.draftNodes.get(parentDraftId);
-                const base = pInfo ? pInfo.position : { x: centerX, y: centerY };
-                position = { x: base.x + 260, y: base.y + centerOffset };
+                position = { x, y: pp.y + order * SIBLING_GAP };
+            } else {
+                position = { x: centerX, y: centerY + order * SIBLING_GAP };
             }
 
             this.draftNodes.set(draftId, {
