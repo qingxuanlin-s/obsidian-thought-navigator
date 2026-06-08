@@ -452,4 +452,5 @@ export default {
     "Draft mode entered": "Draft mode on — new nodes are drafts pending review",
     "Draft mode exited": "Draft mode off",
     "Draft mode exit": "Exit",
+    "Draft no parent op": "Can't add a parent to a draft node before it's committed",
 }

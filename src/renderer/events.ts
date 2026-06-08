@@ -583,6 +583,19 @@ export function bindEvents(this: any): void {
             if (node && node.length > 0) this.cy?.remove(node);
         });
 
+        // 打开指定节点的内联编辑器(草稿 Tab/Enter 新建后自动进入编辑)
+        this.overlayScheduler.addManagedDomListener(this.container, 'open-inline-editor-for', (event: any) => {
+            const { nodeId } = event.detail || {};
+            setTimeout(() => {
+                const node = this.cy?.$id(nodeId);
+                if (node && node.length > 0) {
+                    this.cy!.$(':selected').unselect();
+                    node.select();
+                    this.showInlineNodeEditor(node);
+                }
+            }, 20);
+        });
+
         // 草稿改父(#20):删旧草稿边,连到新父(同样用真实 cy 边)
         this.overlayScheduler.addManagedDomListener(this.container, 'draft-relink', (event: any) => {
             const { childId, parentId } = event.detail;

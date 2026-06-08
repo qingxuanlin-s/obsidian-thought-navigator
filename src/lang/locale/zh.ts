@@ -451,4 +451,5 @@ export default {
     "Draft mode entered": "已进入草稿模式 — 新建节点都是待审批草稿",
     "Draft mode exited": "已退出草稿模式",
     "Draft mode exit": "退出",
+    "Draft no parent op": "草稿节点落地前不支持插入父节点",
 }
