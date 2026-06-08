@@ -585,6 +585,13 @@ export class ZKIndexView extends FileView {
 
         this.refreshDraftBatchBar();
 
+        // 选中最后创建的草稿,使后续 Tab/Enter 直接以它为活动节点继续(否则首个新建后无选中态)
+        const lastId = createdIds[createdIds.length - 1];
+        if (lastId) {
+            const ln = cy.$id(lastId);
+            if (ln && ln.length > 0) { cy.$(':selected').unselect(); ln.select(); }
+        }
+
         // 草稿已是引擎眼里的一等 auto 子节点 → 用现有自动布局做一次「视觉重排」(persistPositions:false,
         // 不写文件):父节点居中、兄弟子树级联让位,与落地后效果一致。刷新/落地/丢弃都会重算或还原。
         const affectedAutoParents = new Set(
