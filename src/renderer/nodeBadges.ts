@@ -5,7 +5,7 @@ import { darkenColor, hexToRgba, isModernThemeStyle, normalizeHexColor } from '.
 import { estimateWrappedLines } from './renderPipeline';
 import { renderExcalidrawPreview, wrapForImageToolkit } from './embedPreview';
 
-export const TEXT_MD_OVERLAY_RENDER_VERSION = 2;
+export const TEXT_MD_OVERLAY_RENDER_VERSION = 3;
 
 function middleEllipsizeToWidth(text: string, maxWidth: number, ctx: CanvasRenderingContext2D | null, font: string): string {
 	const fullText = String(text || '');
@@ -1799,6 +1799,11 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                         container.appendChild(document.createTextNode(input.slice(lastIndex)));
                     }
                 };
+                // 列表缩进层级：tab 折算 4 空格，每 2 空格算 1 级，封顶 8 级
+                const computeListIndentLevel = (ws: string): number => {
+                    const normalized = ws.replace(/\t/g, '    ');
+                    return Math.min(Math.floor(normalized.length / 2), 8);
+                };
                 const buildRoughLines = (parent: HTMLElement) => {
                     const lines = normalizedSource.split('\n');
                     for (const line of lines) {
@@ -1816,12 +1821,36 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                             div.className = `zk-rough-heading-line zk-rough-h${level}-line`;
                             applyRoughInlineMarkdown(div, headingMatch[2]);
                             parent.appendChild(div);
-                        } else {
-                            const div = document.createElement('div');
-                            div.className = 'zk-rough-text-line';
-                            applyRoughInlineMarkdown(div, line);
-                            parent.appendChild(div);
+                            continue;
                         }
+                        // 无序列表:- / * / + 后跟空白(`---` 等分隔线因首字符后无空白不会命中)
+                        const bulletMatch = line.match(/^(\s*)([-*+])\s+(.*)$/);
+                        // 有序列表:1. / 2) 这类数字+. 或 ) 后跟空白
+                        const orderedMatch = bulletMatch ? null : line.match(/^(\s*)(\d{1,9})([.)])\s+(.*)$/);
+                        if (bulletMatch || orderedMatch) {
+                            const indentWs = (bulletMatch ? bulletMatch[1] : orderedMatch![1]) || '';
+                            const indentLevel = computeListIndentLevel(indentWs);
+                            const content = bulletMatch ? bulletMatch[3] : orderedMatch![4];
+                            const div = document.createElement('div');
+                            div.className = `zk-rough-list-line ${bulletMatch ? 'zk-rough-list-bullet' : 'zk-rough-list-ordered'}`;
+                            if (indentLevel > 0) {
+                                div.style.marginLeft = `${indentLevel * 1.2}em`;
+                            }
+                            const marker = document.createElement('span');
+                            marker.className = 'zk-rough-list-marker';
+                            marker.textContent = bulletMatch ? '•' : `${orderedMatch![2]}${orderedMatch![3]}`;
+                            div.appendChild(marker);
+                            const body = document.createElement('span');
+                            body.className = 'zk-rough-list-content';
+                            applyRoughInlineMarkdown(body, content);
+                            div.appendChild(body);
+                            parent.appendChild(div);
+                            continue;
+                        }
+                        const div = document.createElement('div');
+                        div.className = 'zk-rough-text-line';
+                        applyRoughInlineMarkdown(div, line);
+                        parent.appendChild(div);
                     }
                 };
                 overlayEl.empty?.();

@@ -1092,7 +1092,20 @@ export function showInlineNodeEditor(this: any, node: any): void {
             if (!newLabel) {
                 if (isPlaceholder) {
                     cancelEdit();
+                    return;
                 }
+                // 空内容 = 删除已有节点(交给 indexView 的 node-inline-edit-save 走删除流程)
+                if (isSaved) return;
+                isSaved = true;
+                if (textarea.parentNode) textarea.remove();
+                selectionToolbar.destroy();
+                if (suggesterPopoverRef.value && suggesterPopoverRef.value.parentNode) {
+                    suggesterPopoverRef.value.remove();
+                }
+                this.container?.dispatchEvent(new CustomEvent('node-inline-edit-save', {
+                    detail: { node: originalNode, content: '', relationCount: node.connectedEdges?.().length ?? 0 }
+                }));
+                this.container?.focus();
                 return;
             }
 
@@ -1554,7 +1567,15 @@ export function startInPlaceTextEdit(this: any, node: any,
             if (isSaved) return;
             const rawValue = (mdEditor?.getValue() ?? '').replace(/\r\n/g, '\n');
             if (!rawValue.trim()) {
-                cancelEdit();
+                // 空内容 = 删除节点(交给 indexView 的 node-inline-edit-save 走删除流程)
+                isSaved = true;
+                clearLiveEdit();
+                restoreNodeInteractivity();
+                overlayEl.style.pointerEvents = prevPointerEvents || 'none';
+                this.container?.dispatchEvent(new CustomEvent('node-inline-edit-save', {
+                    detail: { node: originalNode, content: '', relationCount: node.connectedEdges?.().length ?? 0 }
+                }));
+                this.container?.focus();
                 return;
             }
             if (rawValue === rawSource) {

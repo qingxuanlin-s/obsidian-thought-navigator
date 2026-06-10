@@ -657,6 +657,23 @@ export class ZKIndexView extends FileView {
             }));
     }
 
+    /**
+     * 读取画布上所有节点的实时位置(model 坐标),供 api.queryNodes 返回更准确的 x,y。
+     * auto 布局文件未必把每个节点都写进 nodePositions,但 cy 上恒有坐标,故以实时为准。
+     */
+    getLivePositions(): Record<string, { x: number; y: number }> {
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        const out: Record<string, { x: number; y: number }> = {};
+        if (!cy) return out;
+        cy.nodes().forEach((n: any) => {
+            const p = n.position();
+            if (p && typeof p.x === 'number' && typeof p.y === 'number') {
+                out[n.id()] = { x: p.x, y: p.y };
+            }
+        });
+        return out;
+    }
+
     /** 切换草稿模式(手动) */
     toggleDraftMode(): void {
         this.setDraftMode(!this.draftMode);
@@ -3103,16 +3120,21 @@ cy.fit(null, 40);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { node, content, position, nodeSize, nodeId, isDraft } = event.detail;
+            const { node, content, position, nodeSize, nodeId, isDraft, relationCount } = event.detail;
             // 草稿节点(#20):复用同一内联文本框,保存只更新内存,不写 MOC
             if (isDraft && nodeId && this.draftNodes.has(nodeId)) {
-                this.updateDraftContent(nodeId, content);
+                // 空内容 = 删除该草稿
+                if (!content || !content.trim()) {
+                    this.deleteDraftNode(nodeId);
+                } else {
+                    this.updateDraftContent(nodeId, content);
+                }
                 return;
             }
             if (!node) {
                 return;
             }
-            await this.saveNodeContent(node, content, nodeSize, position);
+            await this.saveNodeContent(node, content, nodeSize, position, relationCount || 0);
         });
 
         // 草稿节点(#20):删除键 → 仅从内存与画布移除,不碰 MOC
@@ -3375,62 +3397,7 @@ cy.fit(null, 40);
                 return;
             }
 
-            // 如果关系数量超过2个，需要二次确认
-            if (relationCount > 2) {
-                const confirmed = await this.showDeleteConfirmDialog(node, relationCount);
-                if (!confirmed) {
-                    return;
-                }
-            }
-
-            // 在刷新前保存所有节点的当前位置，并取消尚未落盘的拖拽位置保存
-            await this.flushAndSaveCurrentPositions();
-
-            // 删除节点
-            try {
-                const mocFile = getLatestMOCFile();
-                if (mocFile) {
-                    // 删除前解析真实父级(自由节点父子关系只在边里,删除+刷新后丢失)
-                    const reflowParentId = node.isCrossDomain
-                        ? null
-                        : this.pickAutoLayoutParentForReflow([node.IDStr]);
-                    // 根据 isCrossDomain 属性选择删除方法
-                    if (node.isCrossDomain) {
-                        // 跨领域节点：使用专门的删除方法
-                        const crossDomainLinkInfo = {
-                            sourceNodeId: node.crossDomainSourceNodeId,
-                            nodeId: node.crossDomainOriginalNodeId
-                        };
-                        await this.mocHandler.deleteCrossDomainNodeFromMOC(
-                            mocFile,
-                            node.IDStr,
-                            crossDomainLinkInfo
-                        );
-                    } else {
-                        // 普通节点：使用常规删除方法
-                        await this.mocHandler.deleteNodeFromMOC(mocFile, node.IDStr);
-                    }
-
-                    // 如果是嵌入图片节点，删除对应的图片文件
-                    await this.deleteImageFileIfNeeded(node);
-
-                    // 等待一小段时间确保文件保存完成
-                    await new Promise(resolve => setTimeout(resolve, 20));
-
-                    // 刷新视图
-                    await this.refreshBranchMermaid();
-
-                    // 声明式 reflow: 删除后整棵树重排, 回收空缺。
-                    if (reflowParentId) {
-                        await this.reflowAutoLayout(reflowParentId);
-                    }
-
-                    new Notice(t("Node deleted").replace("{id}", String(node.ID)));
-                }
-            } catch (error) {
-                console.error('Failed to delete node:', error);
-                new Notice(t("Delete node failed").replace("{message}", String(error.message)));
-            }
+            await this.deleteNodeFromGraph(node, relationCount);
         });
 
         // 监听跨领域节点右键菜单事件
@@ -5541,16 +5508,81 @@ cy.fit(null, 40);
         await this.saveNodeContent(node, newContent);
     }
 
+    /**
+     * 删除节点(从画布与 MOC),复用删除键的完整流程:
+     * 关系数 > 2 时二次确认 → 落盘当前位置 → 区分跨领域/普通节点删除 → 清理图片 → 刷新 → reflow。
+     */
+    private async deleteNodeFromGraph(node: ZKNode, relationCount: number = 0) {
+        // 关系数量超过2个，删除前需要二次确认(空内容删除与删除键共用此护栏)
+        if (relationCount > 2) {
+            const confirmed = await this.showDeleteConfirmDialog(node, relationCount);
+            if (!confirmed) {
+                return;
+            }
+        }
+
+        // 在刷新前保存所有节点的当前位置，并取消尚未落盘的拖拽位置保存
+        await this.flushAndSaveCurrentPositions();
+
+        try {
+            const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+            if (!mocFile) return;
+
+            // 删除前解析真实父级(自由节点父子关系只在边里,删除+刷新后丢失)
+            const reflowParentId = node.isCrossDomain
+                ? null
+                : this.pickAutoLayoutParentForReflow([node.IDStr]);
+            // 根据 isCrossDomain 属性选择删除方法
+            if (node.isCrossDomain) {
+                // 跨领域节点：使用专门的删除方法
+                const crossDomainLinkInfo = {
+                    sourceNodeId: node.crossDomainSourceNodeId,
+                    nodeId: node.crossDomainOriginalNodeId
+                };
+                await this.mocHandler.deleteCrossDomainNodeFromMOC(
+                    mocFile,
+                    node.IDStr,
+                    crossDomainLinkInfo
+                );
+            } else {
+                // 普通节点：使用常规删除方法
+                await this.mocHandler.deleteNodeFromMOC(mocFile, node.IDStr);
+            }
+
+            // 如果是嵌入图片节点，删除对应的图片文件
+            await this.deleteImageFileIfNeeded(node);
+
+            // 等待一小段时间确保文件保存完成
+            await new Promise(resolve => setTimeout(resolve, 20));
+
+            // 刷新视图
+            await this.refreshBranchMermaid();
+
+            // 声明式 reflow: 删除后整棵树重排, 回收空缺。
+            if (reflowParentId) {
+                await this.reflowAutoLayout(reflowParentId);
+            }
+
+            new Notice(t("Node deleted").replace("{id}", String(node.ID)));
+        } catch (error) {
+            console.error('Failed to delete node:', error);
+            new Notice(t("Delete node failed").replace("{message}", String(error.message)));
+        }
+    }
+
     private async saveNodeContent(
         node: ZKNode,
         newContent: string,
         nodeSize?: { widthModel: number; heightModel: number },
-        position?: { x: number; y: number }
+        position?: { x: number; y: number },
+        relationCount: number = 0
     ) {
         const currentContent = node.isTextOnly
             ? this.decodeMultilineText(node.title || '')
             : this.buildFileNodeRawWikiText(node);
-        if (!newContent) {
+        // 提交时内容为空 = 删除节点(关系多时由 deleteNodeFromGraph 二次确认)
+        if (!newContent || !newContent.trim()) {
+            await this.deleteNodeFromGraph(node, relationCount);
             return;
         }
 
