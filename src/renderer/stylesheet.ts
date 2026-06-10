@@ -560,7 +560,11 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
             style: {
                 'border-style': 'dashed',
                 'border-width': '2px',
-                'border-color': (ele: any) => ele.data('draftOrigin') === 'ai' ? '#a855f7' : '#94a3b8'
+                'border-color': (ele: any) => ele.data('draftOrigin') === 'ai' ? '#a855f7' : '#94a3b8',
+                // 草稿走 Cytoscape 原生 label(无 Markdown overlay 兜底文字),text-max-width 必须从
+                // label 直接量取,与 width mapper 同源——否则 isTextOnly 规则里基于 ele.width() 的换行宽度
+                // 会在样式解析时读到瞬时/过期宽度,造成"未选中换行、选中(强制重算)又变一行"的抖动。
+                'text-max-width': (ele: any) => computeAutoTextMetrics(getTextMeasureLabel(ele)).wrapWidth
             } as any
         },
         {
