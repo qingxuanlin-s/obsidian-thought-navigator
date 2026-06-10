@@ -1,6 +1,7 @@
 import { TFile } from "obsidian";
 import { ZKNode } from "src/view/indexView";
 import { GraphData, Edge, GraphMetadata } from "./types";
+import { stripMocSuffix } from "src/utils/utils";
 
 /**
  * 图形数据构建器
@@ -283,9 +284,17 @@ export class GraphDataBuilder {
             for (const link of links) {
                 // 创建跨领域节点（虚拟节点，不在当前 MOC 中）
                 // 使用简短的 ID 格式：cd-节点ID-MOC文件名
-                // 从 mocPath 中提取 MOC 文件名（如 "测试/跨界.md" -> "测试"）
-                const mocFileName = link.mocPath.split('/')[0];
+                // 从 mocPath 中提取 MOC 文件【基名】(如 "索引笔记/初中数学.moc.md" -> "初中数学")
+                // 旧实现误用 split('/')[0] 取到目录名(如 "索引笔记"),导致显示错误。
+                const mocFileName = stripMocSuffix(String(link.mocPath || '').split('/').pop() || '');
                 const crossDomainNodeId = `cd-${link.nodeId}-${mocFileName}`;
+
+                // 兜底显示文本:旧数据可能存了 displayText=undefined(保存时读错字段)。
+                // 优先用存的 displayText,否则退回关联笔记文件名,再否则用原节点 ID。
+                const linkFileBasename = link.filePath
+                    ? String(link.filePath).split('/').pop()?.replace(/\.md$/i, '') || ''
+                    : '';
+                const crossDomainDisplayText = link.displayText || linkFileBasename || link.nodeId;
 
                 // 检查是否已经添加过这个跨领域节点
                 let crossDomainNode = this.nodes.find(n => n.ID === crossDomainNodeId);
@@ -313,8 +322,8 @@ export class GraphDataBuilder {
                         IDStr: crossDomainNodeId,
                         position: this.nodes.length,
                         file: link as any,  // 存储链接信息
-                        title: link.displayText,
-                        displayText: link.displayText,
+                        title: crossDomainDisplayText,
+                        displayText: crossDomainDisplayText,
                         relationText: `跨领域: ${link.mocPath}`,
                         ctime: Date.now(),
                         randomId: Math.random().toString(36),
@@ -340,9 +349,11 @@ export class GraphDataBuilder {
                     source: sourceNode.ID,
                     target: crossDomainNode.ID,
                     type: 'cross-domain' as any,  // 新的边类型
-                    label: '跨领域',
-                    // 存储跨领域链接信息，用于点击跳转
-                    crossDomainLink: link
+                    // 关系标签:优先用户自定义(应用/类比/推广…),回退默认"跨领域"
+                    label: (link.relationLabel && String(link.relationLabel).trim()) || '跨领域',
+                    // 存储跨领域链接信息，用于点击跳转 + 标签编辑持久化定位
+                    crossDomainLink: link,
+                    crossDomainSourceNodeId: sourceNodeId
                 });
             }
         }

@@ -17,6 +17,7 @@ export interface Edge {
     type: 'parent' | 'child' | 'sibling' | 'link' | 'inlink' | 'outlink' | 'forward' | 'reverse' | 'cross-domain';
     label?: string;
     crossDomainLink?: any;  // 跨领域链接信息（用于 cross-domain 类型）
+    crossDomainSourceNodeId?: string;  // 跨领域边的源节点 ID（= ext metadata 中 cross_domain_links 的键，用于标签持久化定位）
 }
 
 export interface GraphMetadata {

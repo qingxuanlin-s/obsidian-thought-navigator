@@ -223,6 +223,12 @@ export function convertEdgesToElements(
 			}
 		};
 
+		// 跨领域边:透传链接信息 + 持久化定位键(供双击改标签写回 ext metadata)
+		if ((edge as any).crossDomainLink) {
+			element.data.crossDomainLink = (edge as any).crossDomainLink;
+			element.data.crossDomainSourceNodeId = (edge as any).crossDomainSourceNodeId;
+		}
+
 		const key = `${edge.source}-${edge.target}`;
 		const curvature = edgeControlPoints.get(key);
 		if (curvature) {
@@ -268,6 +274,7 @@ export function getNodeLabel(node: ZKNode, options: RenderOptions | null): strin
 			label = showNoteId ? node.displayText : (node.title || node.displayText);
 			break;
 	}
+	label = label || node.title || node.displayText || node.ID || '';
 
 	label = processDisplayText(label, nodeText, showNoteId);
 	return label.replace(/\\n/g, '\n');
@@ -280,11 +287,17 @@ export function getNodeBadge(node: ZKNode, options: RenderOptions | null): strin
 	const showNoteId = (options?.showNoteId ?? true) && !isFreeNode;
 
 	if (!showNoteId || isLocalLinkNode) return '';
+	// 跨领域节点的 node.ID 是合成 ID(cd-<原ID>-<MOC基名>),展示原节点 ID 更有意义。
+	if (node.isCrossDomain) {
+		const originalId = (node as any).crossDomainOriginalNodeId || '';
+		return (nodeText === 'id-title' || nodeText === 'both') ? originalId : '';
+	}
 	if (nodeText === 'id-title' || nodeText === 'both') return node.ID;
 	return '';
 }
 
 export function processDisplayText(text: string, nodeText: string, showNoteId: boolean): string {
+	text = String(text ?? '');
 	if (!showNoteId) {
 		return text
 			.replace(/^[a-zA-Z0-9._]+(?::\s*|\s+)/, '')

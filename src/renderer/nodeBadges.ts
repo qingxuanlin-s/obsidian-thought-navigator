@@ -1,4 +1,4 @@
-import { Component, Platform, setIcon } from 'obsidian';
+import { Component, Platform, finishRenderMath, renderMath, setIcon } from 'obsidian';
 import { ZKNode } from 'src/view/indexView';
 import { EmbeddableMarkdownEditor } from 'src/utils/EmbeddableMarkdownEditor';
 import { darkenColor, hexToRgba, isModernThemeStyle, normalizeHexColor } from './colorUtils';
@@ -916,6 +916,61 @@ export function renderNodeBadges(this: any): void {
             badgeUpdaters.push(updateDraftPos);
         });
 
+        // 跨领域虚拟节点角标 — 左上角紫色 ↗,标识"来自其他 MOC 的客人"(配合虚线描边)
+        const MIN_CD_PX = 16;
+        const cdBadgeColor = isLightTheme ? '#7357c6' : '#a08be8';
+        this.cy.nodes('[?isCrossDomain]').forEach((node: any) => {
+            if (incIds && !incIds.has(node.id())) return;
+            if (node.data('isGroup') || node.data('isPlaceholder')) return;
+
+            const cdEl = document.createElement('div');
+            cdEl.className = 'zk-node-cross-domain-badge';
+            cdEl.dataset.nodeId = node.id();
+            cdEl.textContent = '↗';
+            const mocName = String(node.data('originalNode')?.file?.mocPath || '')
+                .split('/').pop()?.replace(/\.moc\.md$|\.md$/i, '') || '';
+            cdEl.title = mocName ? `跨领域链接 · 来自《${mocName}》` : '跨领域链接 · 来自其他 MOC';
+            cdEl.style.cssText = `
+                position: absolute;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: #ffffff;
+                font-weight: 700;
+                line-height: 1;
+                pointer-events: none;
+                background: ${cdBadgeColor};
+                border: 1.5px solid ${isLightTheme ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.5)'};
+                border-radius: 999px;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+                z-index: 8;
+                transform: translate(-50%, -50%);
+            `;
+            badgeContainer.appendChild(cdEl);
+
+            const updateCdPos = () => {
+                if (!this.cy) return;
+                const isHidden =
+                    node.removed() ||
+                    node.hasClass('zk-collapsed-hidden') ||
+                    node.style('display') === 'none' ||
+                    !node.visible();
+                if (isHidden) { cdEl.style.display = 'none'; return; }
+
+                cdEl.style.display = 'flex';
+                const zoom = this.cy.zoom();
+                const bb = node.renderedBoundingBox();
+                const badgeSize = Math.max(MIN_CD_PX, 22 * zoom);
+                const fontSize = Math.max(10, badgeSize * 0.56);
+                cdEl.style.width = `${badgeSize}px`;
+                cdEl.style.height = `${badgeSize}px`;
+                cdEl.style.fontSize = `${fontSize}px`;
+                cdEl.style.transform = `translate(${bb.x1 + badgeSize * 0.4}px, ${bb.y1 + badgeSize * 0.4}px) translate(-50%, -50%)`;
+            };
+
+            badgeUpdaters.push(updateCdPos);
+        });
+
         // 兼容旧语义：文字前小色点（legacy customColor）
         this.cy.nodes('[customColor]').forEach((node: any) => {
             if (incIds && !incIds.has(node.id())) return;
@@ -1529,6 +1584,8 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                 this.textMdOverlayCache.set(cacheKey, entry);
 
                 const normalizedSource = rawSource.replace(/\r\n?/g, '\n');
+                // 本节点是否含 $...$ / $$...$$ 数学公式(决定是否在渲染后 flush MathJax 并重新测量)
+                let mathRendered = false;
                 // 粗糙渲染：用 DOM API 构建，避免大量字符串拼接
                 const applyRoughInlineMarkdown = (container: HTMLElement, input: string): void => {
                     const toOverlayEm = (px: number): string => `${Number((px / overlayFontSize).toFixed(4))}em`;
@@ -1676,7 +1733,18 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                         return wrapForImageToolkit(img);
                     };
                     // 按内联标记拆分并逐段追加 DOM 节点
-                    const tokenRe = /!\[\[([^\]\n]+)\]\]|\[\[([^\]\n]+)\]\]|\*\*(.+?)\*\*|~~(.+?)~~|__(.+?)__|<u>(.*?)<\/u>|\[([^\]]+)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)|<span\s+style=["']([^"']+)["']>(.*?)<\/span>|((?:https?:\/\/|www\.)[^\s<>()\]]+)/g;
+                    const renderMathInline = (expr: string, display: boolean): HTMLElement => {
+                        mathRendered = true;
+                        const wrap = document.createElement('span');
+                        wrap.className = 'zk-text-md-math';
+                        try {
+                            wrap.appendChild(renderMath(expr, display));
+                        } catch {
+                            wrap.textContent = display ? `$$${expr}$$` : `$${expr}$`;
+                        }
+                        return wrap;
+                    };
+                    const tokenRe = /!\[\[([^\]\n]+)\]\]|\[\[([^\]\n]+)\]\]|\*\*(.+?)\*\*|~~(.+?)~~|__(.+?)__|<u>(.*?)<\/u>|\[([^\]]+)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)|<span\s+style=["']([^"']+)["']>(.*?)<\/span>|((?:https?:\/\/|www\.)[^\s<>()\]]+)|\$\$([^$]+?)\$\$|\$([^$\n]+?)\$/g;
                     let lastIndex = 0;
                     let m: RegExpExecArray | null;
                     while ((m = tokenRe.exec(input)) !== null) {
@@ -1720,6 +1788,10 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                             if (trailing) {
                                 container.appendChild(document.createTextNode(trailing));
                             }
+                        } else if (m[13] !== undefined) {
+                            container.appendChild(renderMathInline(m[13], true));
+                        } else if (m[14] !== undefined) {
+                            container.appendChild(renderMathInline(m[14], false));
                         }
                         lastIndex = m.index + m[0].length;
                     }
@@ -1765,6 +1837,19 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                 entry.width = Math.max(80, Math.min(rect.width + 4, 640));
                 entry.height = Math.max(32, Math.min(rect.height + 4, 640));
                 measureAndSizePending.push({ node, entry });
+                // 含公式时 MathJax 异步排版，typeset 完成后再测一次尺寸(供手动锁宽高节点回写)
+                if (mathRendered) {
+                    const mathEntry = entry;
+                    renderPromises.push(
+                        finishRenderMath().then(() => {
+                            if (node.removed?.()) return;
+                            const r = mathEntry.el.getBoundingClientRect();
+                            mathEntry.width = Math.max(80, Math.min(r.width + 4, 640));
+                            mathEntry.height = Math.max(32, Math.min(r.height + 4, 640));
+                            measureAndSizePending.push({ node, entry: mathEntry });
+                        }).catch(() => { /* ignore */ })
+                    );
+                }
             }
 
             // 标记节点已有 overlay（供样式层判断是否隐藏 Canvas 文字）

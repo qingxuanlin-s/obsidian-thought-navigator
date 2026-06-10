@@ -41,6 +41,8 @@ export interface GraphThemeTokens {
 		activeRootGradient: string;
 		activeRootArrow: string;
 		crossDomain: string;
+		crossDomainLabelBg: string;
+		crossDomainLabelText: string;
 	};
 	badge: {
 		background: string;
@@ -102,6 +104,8 @@ const lightGraphTheme: GraphThemeTokens = {
 		activeRootGradient: '#4f7fd5 #8b6bd6',
 		activeRootArrow: '#8b6bd6',
 		crossDomain: '#7357c6',
+		crossDomainLabelBg: '#f4f1fc',
+		crossDomainLabelText: '#5b41a8',
 	},
 	badge: {
 		background: '#256fd1',
@@ -163,6 +167,8 @@ const darkGraphTheme: GraphThemeTokens = {
 		activeRootGradient: '#8a78e8 #c8a8ff',
 		activeRootArrow: '#c8a8ff',
 		crossDomain: '#a08be8',
+		crossDomainLabelBg: '#241f33',
+		crossDomainLabelText: '#cdbcff',
 	},
 	badge: {
 		background: '#5b8fd9',

@@ -4431,6 +4431,19 @@ align-items: center;
   margin-bottom: 0;
 }
 
+/* 文本节点内联/块级公式（$...$ / $$...$$）随 font-size(*zoom) 等比缩放 */
+.zk-text-md-math {
+  display: inline-block;
+  vertical-align: middle;
+}
+.zk-text-md-math .math-block,
+.zk-text-md-math mjx-container[display="true"] {
+  margin: 0.2em 0;
+}
+.zk-text-md-math mjx-container {
+  margin: 0;
+}
+
 .zk-text-md-overlay h1,
 .zk-text-md-overlay h2,
 .zk-text-md-overlay h3,
