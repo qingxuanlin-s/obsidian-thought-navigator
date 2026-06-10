@@ -574,6 +574,29 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'overlay-opacity': 0.2
             } as any
         },
+        // 跨领域虚拟节点(cd- 前缀):从别的 MOC 拉进来的"客人"。
+        // 紫色虚线描边把它和本图原生节点区分开,配合左上角 ↗ 角标(见 nodeBadges)。
+        {
+            selector: 'node[?isCrossDomain]',
+            style: {
+                'border-style': 'dashed',
+                'border-width': '2px',
+                'border-color': theme.edge.crossDomain,
+                'border-opacity': 0.85
+            } as any
+        },
+        {
+            selector: 'node[?isCrossDomain]:selected',
+            style: {
+                'border-style': 'dashed',
+                'border-width': '3px',
+                'border-color': theme.edge.crossDomain,
+                'border-opacity': 1,
+                'overlay-color': theme.edge.crossDomain,
+                'overlay-padding': '4px',
+                'overlay-opacity': 0.2
+            } as any
+        },
         // 折叠隐藏的子节点/连线
         {
             selector: 'node.zk-collapsed-hidden',
@@ -708,6 +731,8 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
             } as any
         },
         // 跨领域边（虚线连接 + 特殊样式）
+        // 线本身降噪(line-opacity)，但标签用 text-opacity:1 + 药丸底保持清晰可读，
+        // 不被整体 opacity 拖暗。药丸浮在虚线之上而非与之交叠。
         {
             selector: 'edge[type="cross-domain"]',
             style: {
@@ -717,12 +742,20 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'target-arrow-color': theme.edge.crossDomain,
                 'width': 1.8,
                 'arrow-scale': 1.2,
-                'opacity': 0.58,
+                'line-opacity': 0.5,
                 'label': 'data(label)',
-                'font-size': '18px',
-                'color': theme.edge.crossDomain,
-                'text-background-opacity': 0,
-                'text-border-opacity': 0,
+                'font-size': '14px',
+                'font-weight': 600,
+                'color': theme.edge.crossDomainLabelText,
+                'text-opacity': 1,
+                'text-background-color': theme.edge.crossDomainLabelBg,
+                'text-background-opacity': 1,
+                'text-background-shape': 'roundrectangle',
+                'text-background-padding': '5px',
+                'text-border-color': theme.edge.crossDomain,
+                'text-border-width': 1,
+                'text-border-opacity': 0.9,
+                'text-margin-y': -1,
                 'z-index': 998
             } as any
         },

@@ -781,7 +781,11 @@ export function showInlineEdgeLabelEditor(this: any, edge: any): void {
                         source: data.originalSource || data.source,
                         target: data.originalTarget || data.target,
                         oldLabel: currentLabel,
-                        newLabel: newLabel
+                        newLabel: newLabel,
+                        // 跨领域边走 ext metadata 持久化(非普通箭头关系)
+                        edgeType: data.type,
+                        crossDomainLink: data.crossDomainLink || null,
+                        crossDomainSourceNodeId: data.crossDomainSourceNodeId || null
                     }
                 }));
             }

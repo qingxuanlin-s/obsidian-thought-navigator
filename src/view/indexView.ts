@@ -592,20 +592,32 @@ export class ZKIndexView extends FileView {
             if (ln && ln.length > 0) { cy.$(':selected').unselect(); ln.select(); }
         }
 
-        // 草稿已是引擎眼里的一等 auto 子节点 → 用现有自动布局做一次「视觉重排」(persistPositions:false,
-        // 不写文件):父节点居中、兄弟子树级联让位,与落地后效果一致。刷新/落地/丢弃都会重算或还原。
-        const affectedAutoParents = new Set(
-            items.map(it => it.parentRealId).filter((id): id is string => !!id && this.isNodeAutoLayout(id))
+        // 草稿是合成的一等 auto 节点(isNodeAutoLayout 恒真)→ 用自动布局按真实尺寸做一次「视觉重排」
+        // (persistPositions:false,不写文件):整棵草稿子树按节点高度级联让位,杜绝固定步长堆叠重叠。
+        // 锚定在草稿挂载的真实父节点上——父是 auto(自动 MOC)走级联紧凑重排;父是 free(自由 MOC)
+        // 则以该父为固定锚点、仅局部摆放其下的 auto 草稿子树(localOnly,不牵动用户手摆的真实节点)。
+        // 草稿无文件位置,统一把草稿 id 放进 ignoreSavedPositionsForIds,确保用引擎算出的坐标而非注入落点。
+        const realAnchors = new Set(
+            items.map(it => it.parentRealId).filter((id): id is string => !!id && !this.draftNodes.has(id))
         );
-        if (affectedAutoParents.size > 0) {
+        if (realAnchors.size > 0) {
             void (async () => {
-                for (const pid of affectedAutoParents) {
-                    await this.relayoutAutoLayoutSiblings(pid, {
-                        compactVisibleNodes: true,
-                        collapsedNodeIds: this.collapsedNodeIds,
-                        rebalanceRootChildren: true,
-                        persistPositions: false,
-                    });
+                const draftIds = Array.from(this.draftNodes.keys());
+                for (const anchor of realAnchors) {
+                    const anchorIsAuto = this.getEffectiveNodeLayoutStyle(anchor) === 'auto';
+                    await this.relayoutAutoLayoutSiblings(anchor, anchorIsAuto
+                        ? {
+                            compactVisibleNodes: true,
+                            collapsedNodeIds: this.collapsedNodeIds,
+                            rebalanceRootChildren: true,
+                            ignoreSavedPositionsForIds: draftIds,
+                            persistPositions: false,
+                        }
+                        : {
+                            localOnly: true,
+                            ignoreSavedPositionsForIds: draftIds,
+                            persistPositions: false,
+                        });
                 }
                 // 把重排后的 cy 坐标同步回内存草稿,落地时按此写入
                 const c = this.branchRenderer?.getCytoscapeInstance();
@@ -3781,15 +3793,21 @@ cy.fit(null, 40);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { edgeId, source, target, oldLabel, newLabel } = event.detail;
+            const { edgeId, source, target, oldLabel, newLabel, edgeType, crossDomainLink, crossDomainSourceNodeId } = event.detail;
 
             try {
                 const mocFile = getLatestMOCFile();
-                if (mocFile) {
+                if (!mocFile) return;
+
+                if (edgeType === 'cross-domain' && crossDomainLink && crossDomainSourceNodeId) {
+                    // 跨领域边:标签存进 cross_domain_links 的 relationLabel(非普通箭头关系)。
+                    // 空标签回退默认"跨领域"(清空 relationLabel 字段)。
+                    await this.saveCrossDomainRelationLabel(mocFile, crossDomainSourceNodeId, crossDomainLink, newLabel);
+                } else {
                     await this.updateArrowRelationLabelInMOC(mocFile, source, target, newLabel);
-                    // 刷新视图
-                    await this.refreshBranchMermaid();
                 }
+                // 刷新视图
+                await this.refreshBranchMermaid();
             } catch (error) {
                 console.error('Failed to update arrow relation label:', error);
                 new Notice(`更新关系文本失败: ${error.message}`);
@@ -5145,8 +5163,9 @@ cy.fit(null, 40);
         // 获取节点 ID（兼容不同类型）
         const sourceNodeId = sourceNode.IDStr || sourceNode.nodeID;
         const targetNodeId = targetNode.nodeID || targetNode.IDStr;
-        const sourceDisplayText = sourceNode.displayText || sourceNode.title;
-        const targetDisplayText = targetNode.title || targetNode.displayText;
+        const sourceDisplayText = sourceNode.displayText || sourceNode.title || sourceNode.alias || sourceNode.target;
+        // 目标节点是 MOCTreeNode(来自 parseMOCStructure),只有 alias/target,没有 title/displayText
+        const targetDisplayText = targetNode.title || targetNode.displayText || targetNode.alias || targetNode.target;
         const sourceFilePath = sourceNode.file?.path || sourceNode.filePath;
         const targetFilePath = targetNode.filePath || targetNode.file?.path;
 
@@ -5189,7 +5208,7 @@ cy.fit(null, 40);
     ): Promise<void> {
         // 获取源节点信息
         const sourceNodeId = sourceNode.IDStr || sourceNode.nodeID;
-        const sourceDisplayText = sourceNode.displayText || sourceNode.title;
+        const sourceDisplayText = sourceNode.displayText || sourceNode.title || sourceNode.alias || sourceNode.target;
         const sourceFilePath = sourceNode.file?.path || sourceNode.filePath;
 
         // 构建源节点关联数据
@@ -5205,7 +5224,8 @@ cy.fit(null, 40);
         if (sourceMOCFile) {
             for (const targetNode of targetNodes) {
                 const targetNodeId = targetNode.nodeID || targetNode.IDStr;
-                const targetDisplayText = targetNode.title || targetNode.displayText;
+                // 目标节点是 MOCTreeNode(来自 parseMOCStructure),只有 alias/target,没有 title/displayText
+                const targetDisplayText = targetNode.title || targetNode.displayText || targetNode.alias || targetNode.target;
                 const targetFilePath = targetNode.filePath || targetNode.file?.path;
 
                 const targetLink = {
@@ -7474,8 +7494,10 @@ cy.fit(null, 40);
      * 判断某个节点是否启用自动布局（沿父级链继承，最后回退到文件级默认）
      */
     private isNodeAutoLayout(nodeId: string): boolean {
-        // 草稿节点(#20)作为一等 auto 节点参与布局:跟随当前 MOC 的布局风格
-        if (this.draftNodes.has(nodeId)) return this.currentNodeLayoutStyle === 'auto';
+        // 草稿节点(#20)无自身布局覆盖:其预测 id 即真实层级前缀(如 1.d.4 / 1.d.4.1),
+        // 故与真实节点共用同一套溯源逻辑——沿父级链上溯 overrides,最后回退文件默认。
+        // 关键:不能只看文件级默认(currentNodeLayoutStyle),否则 free 默认文件里的 auto 分支
+        // (如 1.d 有 override:auto)上的草稿会被误判为 free → 退化成固定步长堆叠重叠。
         return this.getEffectiveNodeLayoutStyle(nodeId) === 'auto';
     }
 
@@ -9106,6 +9128,33 @@ cy.fit(null, 40);
                     filePath: crossDomainLink.filePath,
                     position: roundedPosition
                 });
+            }
+        });
+    }
+
+    /**
+     * 保存跨领域边的关系标签到 cross_domain_links.relationLabel
+     * 空标签(或等于默认"跨领域")时清掉字段,回退默认显示。
+     */
+    private async saveCrossDomainRelationLabel(
+        mocFile: TFile,
+        sourceNodeId: string,
+        crossDomainLink: any,
+        newLabel: string
+    ): Promise<void> {
+        const trimmed = (newLabel || '').trim();
+        await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
+            const links = mocData.crossDomainLinks?.[sourceNodeId];
+            if (!links) return;
+            const link = links.find(l =>
+                l.nodeId === crossDomainLink.nodeId &&
+                l.mocPath === crossDomainLink.mocPath
+            );
+            if (!link) return;
+            if (!trimmed || trimmed === '跨领域') {
+                delete (link as any).relationLabel;
+            } else {
+                (link as any).relationLabel = trimmed;
             }
         });
     }
