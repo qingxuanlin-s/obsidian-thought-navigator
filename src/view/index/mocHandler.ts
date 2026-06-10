@@ -90,6 +90,8 @@ export interface MOCNodeView {
     target: string;            // file/embed: wiki 链接;text: 原始文本
     alias?: string;            // 仅 file + [[link|alias]] 时存在
     depth: number;
+    x?: number;                // 节点位置 X(model 坐标);来自 nodePositions,缺省表示交给自动布局
+    y?: number;                // 节点位置 Y(model 坐标)
     children: MOCNodeView[];
     isDraft?: boolean;         // 草稿节点(#20,未落地、仅存于打开中的视图内存)
     draftOrigin?: 'ai' | 'manual'; // 草稿来源:ai=CLI/API,manual=页面新建
@@ -302,6 +304,7 @@ export class MOCHandler {
         const { parseMOCStructure } = await import('src/utils/utils');
         const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
         const roots: any[] = (mocData as any).nodes || [];
+        const positions = (mocData as any).nodePositions || {};
 
         const levels = opts.recursive === false ? 1 : Infinity;
         const viewOf = (n: any, depthLeft: number): MOCNodeView => {
@@ -313,6 +316,11 @@ export class MOCHandler {
                 children: depthLeft > 0 ? (n.children || []).map((c: any) => viewOf(c, depthLeft - 1)) : [],
             };
             if (n.alias) v.alias = n.alias;
+            const pos = positions[String(n.nodeID)];
+            if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') {
+                v.x = pos.x;
+                v.y = pos.y;
+            }
             return v;
         };
 

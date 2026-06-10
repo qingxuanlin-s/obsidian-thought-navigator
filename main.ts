@@ -45,6 +45,11 @@ export interface ZKNavigationExternalAPI {
     /** 一次性批量追加多个子节点(单次读改写,适合 CLI 一次建整棵树),返回新 ID 数组 */
     addNodes(filePath: string, items: Array<{ parent: string; title: string; kind?: 'text' | 'file' }>): Promise<string[]>;
     /**
+     * 删除指定节点(连同其全部后代),并清理其位置/颜色/备注等元数据。直接写文件。
+     * 若该 MOC 正在思维树视图打开,删除后自动刷新画布。nodeID 不存在则静默无操作。
+     */
+    deleteNode(filePath: string, nodeID: string): Promise<void>;
+    /**
      * 只读查询节点(精确 by nodeID / 模糊 by 文本 / 整棵树),返回精简嵌套节点树。
      * opts.nodeID 精确定位单节点(连同后代);opts.query 模糊匹配 nodeID/target/alias;
      * 都不传则返回整棵树;opts.recursive=false 只返回直接子节点。
@@ -71,6 +76,12 @@ export interface ZKNavigationExternalAPI {
      * @returns 设置后的草稿模式状态(true=开启)
      */
     setDraftMode(filePath: string, on: boolean): Promise<boolean>;
+    /**
+     * 丢弃「待审批草稿节点」(#20)。纯内存,不影响真实数据。filePath 必须是当前已打开的 MOC。
+     * @param draftId 省略 = 丢弃该视图全部草稿并退出草稿模式;传入则只丢弃这一个草稿节点。
+     * @returns true=已丢弃;false=目标 MOC 未在思维树视图打开
+     */
+    discardDrafts(filePath: string, draftId?: string): Promise<boolean>;
 }
 
 export interface ZoomPanScale{
@@ -966,6 +977,23 @@ export default class ZKNavigationPlugin extends Plugin {
                 const handler = this.cliMocHandler ??= new MOCHandler(this, this.app);
                 return await handler.addNodesToMOC(target, items || []);
             },
+            deleteNode: async (filePath: string, nodeID: string) => {
+                const target = this.app.vault.getAbstractFileByPath(filePath);
+                if (!(target instanceof TFile) || !isMocFile(target)) {
+                    throw new Error(t('MOC not a moc file').replace('{path}', filePath));
+                }
+                const handler = this.cliMocHandler ??= new MOCHandler(this, this.app);
+                const { MermaidParser } = await import('src/utils/mermaidParser');
+                MermaidParser.clearCacheForFile(target.path);
+                await handler.deleteNodeFromMOC(target, nodeID);
+                // 若该 MOC 正在思维树视图打开,刷新画布让删除即时可见
+                const leaves = this.app.workspace.getLeavesOfType(ZK_INDEX_TYPE);
+                const open = leaves.some((l) => (l.view as any)?.file?.path === filePath);
+                if (open) {
+                    this.RefreshIndexViewFlag = true;
+                    this.app.workspace.trigger('zk-navigation:refresh-index-graph');
+                }
+            },
             queryNodes: async (filePath: string, opts: MOCQueryOptions = {}) => {
                 const target = this.app.vault.getAbstractFileByPath(filePath);
                 if (!(target instanceof TFile) || !isMocFile(target)) {
@@ -973,13 +1001,26 @@ export default class ZKNavigationPlugin extends Plugin {
                 }
                 const handler = this.cliMocHandler ??= new MOCHandler(this, this.app);
                 const base = await handler.queryMOC(target, opts || {});
-                // #20:把当前视图里未落地的草稿节点也并入结果(扁平,带 isDraft 标记与父引用)
                 const leaves = this.app.workspace.getLeavesOfType(ZK_INDEX_TYPE);
                 const view = leaves.find((l) => (l.view as any)?.file?.path === filePath)?.view as ZKIndexView | undefined;
+                // 视图已打开时,用 cy 上的实时坐标覆盖存档坐标(auto 布局未必把每个节点写进 nodePositions)
+                const live = typeof (view as any)?.getLivePositions === 'function'
+                    ? (view as any).getLivePositions() as Record<string, { x: number; y: number }>
+                    : {};
+                // #20:把当前视图里未落地的草稿节点也并入结果(扁平,带 isDraft 标记与父引用)
                 const drafts = typeof (view as any)?.getDraftNodeViews === 'function'
                     ? (view as any).getDraftNodeViews(opts || {}) as MOCNodeView[]
                     : [];
-                return drafts.length ? [...base, ...drafts] : base;
+                const result = drafts.length ? [...base, ...drafts] : base;
+                if (Object.keys(live).length) {
+                    const applyLive = (n: MOCNodeView) => {
+                        const p = live[n.nodeID];
+                        if (p) { n.x = p.x; n.y = p.y; }
+                        (n.children || []).forEach(applyLive);
+                    };
+                    result.forEach(applyLive);
+                }
+                return result;
             },
             addDraftNodes: async (
                 filePath: string,
@@ -1012,6 +1053,23 @@ export default class ZKNavigationPlugin extends Plugin {
                 }
                 (view as any).setDraftMode(!!on);
                 return !!on;
+            },
+            discardDrafts: async (filePath: string, draftId?: string) => {
+                const target = this.app.vault.getAbstractFileByPath(filePath);
+                if (!(target instanceof TFile) || !isMocFile(target)) {
+                    throw new Error(t('MOC not a moc file').replace('{path}', filePath));
+                }
+                const leaves = this.app.workspace.getLeavesOfType(ZK_INDEX_TYPE);
+                const view = leaves.find((l) => (l.view as any)?.file?.path === filePath)?.view as ZKIndexView | undefined;
+                if (!view) return false;
+                if (draftId) {
+                    if (typeof (view as any).deleteDraftNode !== 'function') return false;
+                    (view as any).deleteDraftNode(draftId);
+                } else {
+                    if (typeof (view as any).discardAllDrafts !== 'function') return false;
+                    (view as any).discardAllDrafts();
+                }
+                return true;
             },
         };
 
