@@ -1100,9 +1100,10 @@ export class ZKIndexView extends FileView {
         let { containerEl } = this;
 
         // 主题类(每次都要重设,否则切主题不生效)
-        // Nebula 风格强制走暗色容器(深空黑底下浅色面板/文字会失效),不随 themeMode 切换。
+        // Nebula 跟随 themeMode:暗色=深空黑底霓虹,浅色=浅灰冷底白卡柔影
+        // (styles.css 按 .zk-style-nebula.zk-theme-dark/light 分别提供容器变量与画布渐变)。
         const isNebula = this.plugin.settings.themeStyle === 'nebula';
-        const isLight = !isNebula && resolveThemeMode(this.plugin.settings.themeMode) === 'light';
+        const isLight = resolveThemeMode(this.plugin.settings.themeMode) === 'light';
         containerEl.toggleClass('zk-theme-light', isLight);
         containerEl.toggleClass('zk-theme-dark', !isLight);
         containerEl.toggleClass('zk-style-nebula', isNebula);
@@ -2386,8 +2387,8 @@ cy.fit(null, 40);
             branchGraphDiv.style.boxShadow = '';
             branchGraphDiv.style.outline = '';
         }
-        // Nebula 走深空黑底(让 CSS 的星云径向渐变透出),否则按 light/dark 给纯色底。
-        // 注意:这里是 inline 样式,会盖过 CSS,所以必须显式处理 nebula。
+        // Nebula 走透明底(让 CSS 按 dark/light 提供的星云/浅灰径向渐变透出),
+        // 否则按 light/dark 给纯色底。注意:这里是 inline 样式,会盖过 CSS,必须显式处理 nebula。
         const isNebulaStyle = this.plugin.settings.themeStyle === 'nebula';
         branchGraphDiv.style.backgroundColor = isNebulaStyle
             ? 'transparent'

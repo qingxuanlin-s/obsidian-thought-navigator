@@ -46,9 +46,9 @@
   --zk-shadow-soft: 0 12px 30px rgba(42, 57, 82, 0.12);
 }
 
-/* Nebula 风格:深空黑底 + 霓虹冷色调。强制走暗色面板(不随 themeMode 切换),
+/* Nebula 风格(暗色):深空黑底 + 霓虹冷色调,
    配合 stylesheet 的节点发光 underlay / 左侧色条 / 药丸边标签。 */
-.zk-view-content.zk-style-nebula {
+.zk-view-content.zk-style-nebula.zk-theme-dark {
   --zk-canvas-bg: #07080d;
   --zk-surface: rgba(20, 23, 33, 0.86);
   --zk-surface-solid: #14161f;
@@ -66,12 +66,40 @@
   --zk-shadow-soft: 0 14px 40px rgba(0, 0, 0, 0.5);
 }
 
-/* 画布:近纯黑 + 居中淡紫星云径向渐变,制造深空纵深 */
-.zk-view-content.zk-style-nebula .zk-index-mermaid-container {
+/* 画布(暗色):近纯黑 + 居中淡紫星云径向渐变,制造深空纵深 */
+.zk-view-content.zk-style-nebula.zk-theme-dark .zk-index-mermaid-container {
   background-color: #06070b;
   background-image:
     radial-gradient(ellipse 70% 55% at 50% 42%, rgba(49, 37, 82, 0.29), transparent 62%),
     radial-gradient(ellipse 50% 45% at 82% 78%, rgba(29, 51, 82, 0.19), transparent 60%);
+}
+
+/* Nebula 风格(浅色):浅灰冷底 + 白卡柔影,绿色为主强调、紫色语义线。
+   在 .zk-theme-light 基础上微调:边框更淡、阴影更柔、强调色转绿/紫。 */
+.zk-view-content.zk-style-nebula.zk-theme-light {
+  --zk-canvas-bg: #eceef2;
+  --zk-surface: rgba(255, 255, 255, 0.9);
+  --zk-surface-solid: #ffffff;
+  --zk-surface-raised: #ffffff;
+  --zk-border-subtle: rgba(110, 122, 145, 0.16);
+  --zk-border-strong: rgba(124, 111, 224, 0.4);
+  --zk-text: #1f2937;
+  --zk-text-muted: #6b7484;
+  --zk-text-faint: #98a0ae;
+  --zk-accent: #7c6fe0;
+  --zk-accent-soft: rgba(124, 111, 224, 0.14);
+  --zk-focus: #3fae72;
+  --zk-panel-bg: #f4f5f8;
+  --zk-panel-muted-bg: #eceef2;
+  --zk-shadow-soft: 0 14px 36px rgba(50, 60, 80, 0.14);
+}
+
+/* 画布(浅色):浅灰冷底 + 极淡的冷色径向渐变,保留纵深但不抢卡片 */
+.zk-view-content.zk-style-nebula.zk-theme-light .zk-index-mermaid-container {
+  background-color: #eceef2;
+  background-image:
+    radial-gradient(ellipse 70% 55% at 38% 30%, rgba(255, 255, 255, 0.6), transparent 62%),
+    radial-gradient(ellipse 55% 48% at 82% 80%, rgba(124, 111, 224, 0.05), transparent 60%);
 }
 
 /* 文件夹抽屉 (FolderDrawer) */
