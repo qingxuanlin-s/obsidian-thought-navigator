@@ -317,6 +317,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
         this.presetInOutLinksPositions(data);
         // 检查是否有保存的位置
         const hasSavedPositions = data.nodes.some(node => node.savedPosition);
+        // 复用现有实例 = 增量重渲染(如删除/新增节点后刷新)。此时不应让布局再 fit:
+        // 用户已经手动缩放/平移,内部 fit 会把视图重新适配到全图(缩回最小),还会通过
+        // 防抖的 viewStateChanged 污染已保存的缩放。首次构建/换容器才需要 fit 来初始定位,
+        // 各调用方(indexView 的视图状态恢复 / graphView 的 fitAndCenter)会在 render 后显式处理视口。
+        const reusedInstance = this.isCyUsable() && !containerChanged;
 
         // 转换元素（包含分组）
         const elements = convertToElementsWithGroups(data, {
@@ -698,7 +703,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             // exportMode 下禁用 fit：cy.fit() 会通过 setTimeout 延迟触发 viewport 回调，
             // 而 renderer.destroy() 在 finally 里立即销毁 cy，导致回调执行时 cy 已 null。
             // cy.png({ full:true }) 自己会处理 fit，layout 不需要再 fit。
-            const noFit = options.exportMode ? { fit: false } : {};
+            const noFit = (options.exportMode || reusedInstance) ? { fit: false } : {};
             if (hasSavedPositions) {
                 // 如果有保存的位置，使用 preset 布局（保持原位置）
                 this.runLayoutSafely({ name: 'preset', ...noFit });
