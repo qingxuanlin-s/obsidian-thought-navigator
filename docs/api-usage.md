@@ -292,12 +292,14 @@ open "$B?action=add-node&file=animals.moc.md&parent=1&title=鸟类"
 | `createMOC(opts)` | 创建新 `.moc.md`，`opts` 同 URI（`name/folder/title/layout/overwrite/rootId`） | 文件路径 |
 | `addNode(file, parent, title, kind?)` | 向父节点追加一个子节点 | 新节点 ID |
 | `addNodes(file, items)` | **一次性**追加多个子节点（`items=[{parent,title,kind?}]`） | 新 ID 数组 |
-| `queryNodes(file, opts?)` | **只读**查询节点(精确 `nodeID` / 模糊 `query` / 整棵树),`opts={nodeID?,query?,recursive?}` | 精简嵌套节点数组 |
+| `deleteNode(file, nodeID)` | 删除节点连同后代,清理其元数据;MOC 已打开则自动刷新画布 | `Promise<void>` |
+| `queryNodes(file, opts?)` | **只读**查询节点(精确 `nodeID` / 模糊 `query` / 整棵树),`opts={nodeID?,query?,recursive?}`;返回项含 `x,y` 坐标 | 精简嵌套节点数组 |
+| `discardDrafts(file, draftId?)` | 丢弃待审批草稿(#20):省略 `draftId`=全部+退出草稿模式,传入=单个;需 MOC 已打开 | `Promise<boolean>` |
 | `version()` | 插件版本 | string |
 
 ### `queryNodes` 详解
 
-只读、不写文件。返回精简嵌套节点 `{nodeID, nodeType, target, alias?, depth, children[]}`:
+只读、不写文件。返回精简嵌套节点 `{nodeID, nodeType, target, alias?, depth, x?, y?, children[]}`(`x,y` 为节点 model 坐标:视图已打开时取实时位置,否则取存档 `nodePositions`,auto 未排布节点可能缺省):
 
 | `opts` | 行为 |
 |--------|------|

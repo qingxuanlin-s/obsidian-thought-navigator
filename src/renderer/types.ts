@@ -59,7 +59,7 @@ export interface RenderOptions {
     animationDuration?: number;
     nodeText?: 'id' | 'title' | 'both' | 'id-title';
     themeMode?: 'dark' | 'light';
-    themeStyle?: 'default' | 'modern';
+    themeStyle?: 'default' | 'modern' | 'nebula';
     edgeStyle?: 'straight' | 'bezier' | 'polyline';
     nodeLayoutStyle?: 'free' | 'auto';
     nodeLayoutOverrides?: Record<string, 'auto' | 'free'>;

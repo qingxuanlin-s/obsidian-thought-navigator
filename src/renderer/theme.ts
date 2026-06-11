@@ -189,6 +189,42 @@ const darkGraphTheme: GraphThemeTokens = {
 	},
 };
 
+// Nebula —— 深空黑底 + 霓虹描边的暗色变体。强制走暗色 token(不随 themeMode 切换),
+// 在 darkGraphTheme 基础上压暗节点底色、提亮边/语义线饱和度,配合 stylesheet 的发光 underlay
+// 与左侧色条,营造"星云"质感。
+const nebulaGraphTheme: GraphThemeTokens = {
+	...darkGraphTheme,
+	node: {
+		...darkGraphTheme.node,
+		background: '#161a24',
+		backgroundHover: '#1f2533',
+		backgroundSelected: '#27314c',
+		border: '#3a4a66',
+		borderSelected: '#7cb2ff',
+		text: '#eef2f8',
+		textMuted: '#8b93a7',
+		firstLevelFallback: '#141a26',
+		activeFirstLevelFallback: '#1a3656',
+		rootBackground: '#0a1d38',
+		rootBorder: '#9fd4ff',
+		rootSelectedBackground: '#0d2748',
+		rootSelectedBorder: '#bfe2ff',
+		currentBackground: '#1f3556',
+		currentBorder: '#6ec0ff',
+	},
+	edge: {
+		...darkGraphTheme.edge,
+		normal: '#3f495f',
+		reverse: '#9b6bff',
+		selected: '#a06bff',
+		rootToFirstLevel: '#7e8bb5',
+		crossDomain: '#b48bff',
+		crossDomainLabelBg: '#191430',
+		crossDomainLabelText: '#dccbff',
+	},
+};
+
 export function getGraphTheme(options: RenderOptions): GraphThemeTokens {
+	if (options.themeStyle === 'nebula') return nebulaGraphTheme;
 	return options.themeMode === 'light' ? lightGraphTheme : darkGraphTheme;
 }

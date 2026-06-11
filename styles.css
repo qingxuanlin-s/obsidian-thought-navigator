@@ -46,6 +46,34 @@
   --zk-shadow-soft: 0 12px 30px rgba(42, 57, 82, 0.12);
 }
 
+/* Nebula 风格:深空黑底 + 霓虹冷色调。强制走暗色面板(不随 themeMode 切换),
+   配合 stylesheet 的节点发光 underlay / 左侧色条 / 药丸边标签。 */
+.zk-view-content.zk-style-nebula {
+  --zk-canvas-bg: #07080d;
+  --zk-surface: rgba(20, 23, 33, 0.86);
+  --zk-surface-solid: #14161f;
+  --zk-surface-raised: #1a1d28;
+  --zk-border-subtle: rgba(150, 140, 220, 0.12);
+  --zk-border-strong: rgba(155, 107, 255, 0.42);
+  --zk-text: #eef2f8;
+  --zk-text-muted: #8b93a7;
+  --zk-text-faint: #636978;
+  --zk-accent: #9b6bff;
+  --zk-accent-soft: rgba(155, 107, 255, 0.18);
+  --zk-focus: #7cb2ff;
+  --zk-panel-bg: #11131c;
+  --zk-panel-muted-bg: #171a24;
+  --zk-shadow-soft: 0 14px 40px rgba(0, 0, 0, 0.5);
+}
+
+/* 画布:近纯黑 + 居中淡紫星云径向渐变,制造深空纵深 */
+.zk-view-content.zk-style-nebula .zk-index-mermaid-container {
+  background-color: #06070b;
+  background-image:
+    radial-gradient(ellipse 70% 55% at 50% 42%, rgba(49, 37, 82, 0.29), transparent 62%),
+    radial-gradient(ellipse 50% 45% at 82% 78%, rgba(29, 51, 82, 0.19), transparent 60%);
+}
+
 /* 文件夹抽屉 (FolderDrawer) */
 .zk-folder-drawer {
   position: absolute;
@@ -6207,6 +6235,48 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
   right: -23px;
   border-left: none;
   border-radius: 0 8px 8px 0;
+}
+
+/* 拖拽调宽把手:贴内边、竖向全高 */
+.zk-detail-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  z-index: 5;
+  cursor: ew-resize;
+  touch-action: none;
+  transition: background 0.12s;
+}
+.zk-detail-panel-right .zk-detail-resize { left: -3px; }
+.zk-detail-panel-left .zk-detail-resize { right: -3px; }
+.zk-detail-resize:hover { background: var(--zk-accent-soft, rgba(139, 107, 214, 0.18)); }
+.zk-detail-resizing { user-select: none; }
+.zk-detail-resizing .zk-detail-body { pointer-events: none; }
+
+/* 钉住/常驻 按钮:贴外侧上角 */
+.zk-detail-pin {
+  position: absolute;
+  top: 14px;
+  z-index: 6;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--zk-text-muted, #9a9ca6);
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+.zk-detail-panel-right .zk-detail-pin { right: 16px; }
+.zk-detail-panel-left .zk-detail-pin { left: 16px; }
+.zk-detail-pin:hover { opacity: 1; background: var(--zk-control-bg, rgba(255, 255, 255, 0.045)); }
+.zk-detail-pin svg { width: 15px; height: 15px; }
+.zk-detail-pin.is-pinned {
+  color: var(--zk-accent, #8b6bd6);
+  opacity: 1;
 }
 
 /* 头部 */
