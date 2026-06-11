@@ -454,7 +454,9 @@ export function buildVividNodeStyleMap(
 	options: RenderOptions | null
 ): Map<string, NodeBranchStyle> {
 	const styleMap = new Map<string, NodeBranchStyle>();
-	if (!isModernThemeStyle(options)) return styleMap;
+	const isNebula = options?.themeStyle === 'nebula';
+	// Nebula 也需要分支色(左侧色条 / 1 级边框继承),与 modern 共用调色板但取更亮的 accent。
+	if (!isModernThemeStyle(options) && !isNebula) return styleMap;
 
 	const branchIds = Array.from(
 		new Set(
@@ -479,7 +481,12 @@ export function buildVividNodeStyleMap(
 		let background: string;
 		let border: string;
 		let shadow: string;
-		if (isLight) {
+		if (isNebula) {
+			// border 用鲜亮 accent —— 既作概念节点左侧色条,又作 1 级节点边框,继承分支色系。
+			background = baseBackground;
+			border = accentColor;
+			shadow = hexToRgba(accentColor, 0.3);
+		} else if (isLight) {
 			border = softenColor(accentColor, true);
 			background = hexToRgba(border, 0.12);
 			shadow = 'transparent';

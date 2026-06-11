@@ -45,6 +45,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
     const theme = getGraphTheme(options);
     const isLight = theme.isLight;
     const isModern = (options.themeStyle || 'modern') === 'modern';
+    const isNebula = options.themeStyle === 'nebula';
     const edgeStyle = options.edgeStyle || 'bezier';
     const colors = {
         nodeBackground: theme.node.background,
@@ -1045,6 +1046,90 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'z-index': 1004
             } as any
         },
+        // ===== Nebula 风格专属层 =====
+        // 放在所有常规节点/边状态之后、dimmed 之前:既能压过 muted/firstLevel/selected 的底色,
+        // 又不会把被 dimmed 的无关分支重新点亮(dimmed 规则在后,underlay/opacity 仍胜出)。
+        ...(isNebula ? [
+            // 节点外发光:沿分支色(或选中/根色)散出霓虹光晕,营造"星云"漂浮感。
+            // 排除分组/嵌入/图片/占位/锚点(锚点有自己的金光 underlay)。
+            {
+                selector: 'node[!isGroup][!isEmbed][!isImageNode][!isPlaceholder][!isAnchor][!isStandaloneText]',
+                style: {
+                    'underlay-color': (ele: any) =>
+                        ele.data('branchNodeBorder')
+                        || (ele.data('isRoot') ? theme.node.rootBorder : theme.node.borderSelected),
+                    'underlay-opacity': 0.12,
+                    'underlay-padding': 7,
+                    'underlay-shape': 'round-rectangle',
+                } as any
+            },
+            // 左侧色条:概念节点(2 级及以下,非根/非 1 级/非特殊节点)左缘一道分支色亮条,
+            // 用 to-right 线性渐变实现(前 ~4% 为色条,其余为卡片底色)。仅未选中态启用,
+            // 选中时回退实心底,选中高亮正常显示。
+            {
+                selector: 'node[!isRoot][!isFirstLevelNode][!isFreeNode][!isEmbed][!isStandaloneText][!isGroup][!isPlaceholder][!isImageNode][!isCrossDomain][!isDraft]:unselected',
+                style: {
+                    'background-opacity': 0.96,
+                    'background-fill': 'linear-gradient',
+                    'background-gradient-direction': 'to-right',
+                    // stop-colors 必须是空格分隔的纯色 token,内部不能含空格/逗号
+                    // (rgba(r, g, b, a) 会被 Cytoscape 解析器拆错),故一律用 hex。
+                    'background-gradient-stop-colors': (ele: any) => {
+                        const accent = deps.normalizeHexColor(ele.data('branchNodeBorder')) || '#5fd3c6';
+                        const fill = deps.normalizeHexColor(ele.data('customFillColor')) || theme.node.background;
+                        return `${accent} ${accent} ${fill} ${fill}`;
+                    },
+                    'background-gradient-stop-positions': '0 4 4 100',
+                    'border-opacity': 0.5,
+                    'color': theme.node.text,
+                } as any
+            },
+            // 1 级节点:卡片左缘同样加一道更亮的分支色条(未选中态)。
+            {
+                selector: 'node[?isFirstLevelNode][!isRoot][!isFreeNode][!isEmbed][!isStandaloneText]:unselected',
+                style: {
+                    'background-fill': 'linear-gradient',
+                    'background-gradient-direction': 'to-right',
+                    // 同上:stop-colors 仅用 hex,避免 rgba() 内的空格/逗号破坏解析。
+                    'background-gradient-stop-colors': (ele: any) => {
+                        const branch = deps.normalizeHexColor(ele.data('branchNodeBorder') || '');
+                        const accent = branch || theme.node.borderSelected;
+                        const fill = branch
+                            ? deps.darkenColor(branch, 0.62)
+                            : theme.node.firstLevelFallback;
+                        return `${accent} ${accent} ${fill} ${fill}`;
+                    },
+                    'background-gradient-stop-positions': '0 5 5 100',
+                } as any
+            },
+            // 语义/反向边:霓虹紫虚线,提高可见度(默认反向边偏灰且很淡)。
+            {
+                selector: 'edge[type="reverse"]',
+                style: {
+                    'line-color': '#9b6bff',
+                    'target-arrow-color': '#9b6bff',
+                    'line-dash-pattern': [10, 7],
+                    'width': 2.2,
+                    'opacity': 0.72,
+                } as any
+            },
+            // 带标签的边:药丸式标签底(圆角 + 紫色细描边 + 深底),漂在连线之上清晰可读。
+            {
+                selector: 'edge[label]',
+                style: {
+                    'color': '#dccbff',
+                    'font-size': '14px',
+                    'font-weight': 600,
+                    'text-background-color': '#191430',
+                    'text-background-opacity': 0.92,
+                    'text-background-shape': 'roundrectangle',
+                    'text-background-padding': '5px',
+                    'text-border-color': 'rgba(155, 107, 255, 0.55)',
+                    'text-border-width': 1,
+                    'text-border-opacity': 0.85,
+                } as any
+            },
+        ] : []),
         // 弱化无关分支的节点需要放在所有节点状态之后，避免被选中/当前文件/自定义状态覆盖。
         {
             selector: 'node.zk-level-dimmed',

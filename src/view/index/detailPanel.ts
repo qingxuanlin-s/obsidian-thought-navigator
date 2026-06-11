@@ -24,6 +24,10 @@ export interface NodeDetailPanelDeps {
         applyTransform: (formatter: (selectedText: string) => string) => boolean,
         hostContainer: HTMLElement,
     ) => { destroy: () => void } | null;
+    /** 宽度变化(拖拽结束)→ 持久化 */
+    onWidthChange: (px: number) => void;
+    /** 钉住状态变化 → 持久化 */
+    onPinChange: (pinned: boolean) => void;
     /** markdown 渲染生命周期挂载点 */
     component: Component;
 }
@@ -50,6 +54,9 @@ export class NodeDetailPanel {
     private currentNode: ZKNode | null = null;
     private side: 'left' | 'right' = 'right';
     private renderToken = 0;
+    private pinned = false;
+    private widthPx = 0; // 0 = 用 CSS 默认宽度
+    private pinBtn: HTMLElement;
 
     constructor(parent: HTMLElement, app: App, deps: NodeDetailPanelDeps) {
         this.app = app;
@@ -58,11 +65,21 @@ export class NodeDetailPanel {
         this.root = parent.createDiv("zk-detail-panel zk-detail-panel-right");
         this.root.style.display = 'none';
 
-        // 关闭把手(竖向贴边)
+        // 拖拽调宽把手(贴内边,竖向全高)
+        const resizeHandle = this.root.createDiv("zk-detail-resize");
+        this.bindResize(resizeHandle);
+
+        // 关闭把手(竖向贴边)— 显式关闭并解除常驻
         const handle = this.root.createDiv("zk-detail-handle");
         setIcon(handle, "x");
         handle.setAttribute("title", t("Close") || "关闭");
-        handle.addEventListener("click", () => this.hide());
+        handle.addEventListener("click", () => this.close());
+
+        // 钉住/常驻 按钮(右上角)
+        this.pinBtn = this.root.createDiv("zk-detail-pin");
+        setIcon(this.pinBtn, "pin");
+        this.pinBtn.setAttribute("title", t("detail pin"));
+        this.pinBtn.addEventListener("click", () => this.setPinned(!this.pinned, true));
 
         const header = this.root.createDiv("zk-detail-header");
         this.kickerEl = header.createDiv("zk-detail-kicker");
@@ -76,13 +93,67 @@ export class NodeDetailPanel {
         const footer = this.root.createDiv("zk-detail-footer");
         const closeBtn = footer.createDiv("zk-detail-close-btn");
         closeBtn.setText((t("Close") || "关闭") + " · Esc");
-        closeBtn.addEventListener("click", () => this.hide());
+        closeBtn.addEventListener("click", () => this.close());
+    }
+
+    /** 拖拽内边调整面板宽度,松手持久化 */
+    private bindResize(handle: HTMLElement): void {
+        handle.addEventListener("pointerdown", (e: PointerEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const startX = e.clientX;
+            const startW = this.root.offsetWidth;
+            handle.setPointerCapture(e.pointerId);
+            this.root.addClass("zk-detail-resizing");
+
+            const onMove = (ev: PointerEvent) => {
+                const delta = this.side === 'right' ? (startX - ev.clientX) : (ev.clientX - startX);
+                this.setWidth(startW + delta);
+            };
+            const onUp = (ev: PointerEvent) => {
+                handle.releasePointerCapture(ev.pointerId);
+                handle.removeEventListener("pointermove", onMove);
+                handle.removeEventListener("pointerup", onUp);
+                this.root.removeClass("zk-detail-resizing");
+                this.deps.onWidthChange(this.widthPx);
+            };
+            handle.addEventListener("pointermove", onMove);
+            handle.addEventListener("pointerup", onUp);
+        });
     }
 
     setSide(side: 'left' | 'right'): void {
         this.side = side;
         this.root.toggleClass("zk-detail-panel-left", side === 'left');
         this.root.toggleClass("zk-detail-panel-right", side === 'right');
+    }
+
+    /** 设置宽度(px),夹在 [320, 容器 85%];<=0 回落 CSS 默认 */
+    setWidth(px: number): void {
+        if (!px || px <= 0) {
+            this.widthPx = 0;
+            this.root.style.width = '';
+            return;
+        }
+        const parentW = this.root.parentElement?.clientWidth || window.innerWidth;
+        const max = Math.max(360, Math.round(parentW * 0.85));
+        this.widthPx = Math.round(Math.max(320, Math.min(max, px)));
+        this.root.style.width = `${this.widthPx}px`;
+    }
+
+    /** 钉住=常驻:背景点击 / Esc 不再关闭;persist=true 时回写设置 */
+    setPinned(pinned: boolean, persist = false): void {
+        this.pinned = pinned;
+        this.root.toggleClass("zk-detail-pinned", pinned);
+        this.pinBtn.toggleClass("is-pinned", pinned);
+        this.pinBtn.setAttribute("title", pinned ? t("detail unpin") : t("detail pin"));
+        if (persist) this.deps.onPinChange(pinned);
+        // 钉住时若当前没在展示,弹出占位常驻
+        if (pinned && !this.isOpen) this.showPlaceholder();
+    }
+
+    get isPinned(): boolean {
+        return this.pinned;
     }
 
     get isOpen(): boolean {
@@ -123,7 +194,9 @@ export class NodeDetailPanel {
         await this.renderBody(node, token);
     }
 
-    hide(): void {
+    /** 常态收起:钉住时忽略(常驻);force=true 强制收起 */
+    hide(force = false): void {
+        if (this.pinned && !force) return;
         this.teardownEditor();
         this.root.removeClass("zk-detail-panel-open");
         this.currentNode = null;
@@ -133,6 +206,30 @@ export class NodeDetailPanel {
         window.setTimeout(() => {
             if (!r.hasClass("zk-detail-panel-open")) r.style.display = 'none';
         }, 200);
+    }
+
+    /** 显式关闭按钮:解除常驻并强制收起 */
+    close(): void {
+        if (this.pinned) this.setPinned(false, true);
+        this.hide(true);
+    }
+
+    /** 常驻但无选中时的占位:打开面板,展示提示 */
+    showPlaceholder(): void {
+        this.teardownEditor();
+        this.currentNode = null;
+        this.renderToken++;
+        this.dotEl.style.backgroundColor = 'var(--zk-text-faint, #6f727c)';
+        this.kickerTextEl.setText('');
+        this.titleEl.setText('');
+        this.titleEl.removeAttribute("title");
+        this.breadcrumbEl.style.display = 'none';
+        this.bodyEl.empty();
+        const ph = this.bodyEl.createDiv("zk-detail-empty");
+        ph.createDiv("zk-detail-empty-text").setText(t("detail placeholder"));
+        this.root.style.display = 'flex';
+        void this.root.offsetWidth;
+        this.root.addClass("zk-detail-panel-open");
     }
 
     destroy(): void {

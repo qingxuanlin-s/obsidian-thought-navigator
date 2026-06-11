@@ -299,7 +299,7 @@ export class ZKIndexView extends FileView {
         // Esc 关闭节点详情侧栏(仅在面板打开且不在内联编辑时拦截;
         // 编辑中的 Esc 留给 CM6 编辑器自己取消)
         this.scope.register([], 'Escape', (event: KeyboardEvent) => {
-            if (this.detailPanel?.isOpen && !this.detailPanel.isEditing) {
+            if (this.detailPanel?.isOpen && !this.detailPanel.isEditing && !this.detailPanel.isPinned) {
                 event.preventDefault();
                 event.stopPropagation();
                 this.detailPanelLastId = null;
@@ -1100,9 +1100,12 @@ export class ZKIndexView extends FileView {
         let { containerEl } = this;
 
         // 主题类(每次都要重设,否则切主题不生效)
-        const isLight = resolveThemeMode(this.plugin.settings.themeMode) === 'light';
+        // Nebula 风格强制走暗色容器(深空黑底下浅色面板/文字会失效),不随 themeMode 切换。
+        const isNebula = this.plugin.settings.themeStyle === 'nebula';
+        const isLight = !isNebula && resolveThemeMode(this.plugin.settings.themeMode) === 'light';
         containerEl.toggleClass('zk-theme-light', isLight);
         containerEl.toggleClass('zk-theme-dark', !isLight);
+        containerEl.toggleClass('zk-style-nebula', isNebula);
 
         // 性能优化：分离静态 UI 层和动态图形层
         // 只在首次创建时初始化静态 UI
@@ -1151,9 +1154,13 @@ export class ZKIndexView extends FileView {
                 onNavigate: (idStr) => this.selectAndShowDetailByIdStr(idStr),
                 attachSelectionToolbar: (rootEl, applyTransform, hostContainer) =>
                     this.branchRenderer?.attachSelectionToolbarToHost(rootEl, applyTransform, hostContainer) ?? null,
+                onWidthChange: (px) => { this.plugin.settings.detailPanelWidth = px; void this.plugin.saveData(this.plugin.settings); },
+                onPinChange: (pinned) => { this.plugin.settings.detailPanelPinned = pinned; void this.plugin.saveData(this.plugin.settings); },
                 component: this,
             });
             this.detailPanel.setSide(this.plugin.settings.detailPanelSide === 'left' ? 'left' : 'right');
+            this.detailPanel.setWidth(this.plugin.settings.detailPanelWidth || 0);
+            if (this.plugin.settings.detailPanelPinned) this.detailPanel.setPinned(true);
 
             // 订阅 VaultIndex 变化,实时刷新项目徽章
             if (this.plugin.vaultIndex && !this.vaultIndexUnsubscribe) {
@@ -2379,7 +2386,12 @@ cy.fit(null, 40);
             branchGraphDiv.style.boxShadow = '';
             branchGraphDiv.style.outline = '';
         }
-        branchGraphDiv.style.backgroundColor = resolveThemeMode(this.plugin.settings.themeMode) === 'light' ? '#f2f5fa' : '#2a2a2a';
+        // Nebula 走深空黑底(让 CSS 的星云径向渐变透出),否则按 light/dark 给纯色底。
+        // 注意:这里是 inline 样式,会盖过 CSS,所以必须显式处理 nebula。
+        const isNebulaStyle = this.plugin.settings.themeStyle === 'nebula';
+        branchGraphDiv.style.backgroundColor = isNebulaStyle
+            ? 'transparent'
+            : (resolveThemeMode(this.plugin.settings.themeMode) === 'light' ? '#f2f5fa' : '#2a2a2a');
         this.ensureBranchFullscreenBackButton(branchGraphDiv);
 
         // 注意：不再清空 branchGraphDiv，让 CytoscapeRenderer 内部的增量更新逻辑处理
@@ -3131,8 +3143,11 @@ cy.fit(null, 40);
             this.updateMultiverseBadge(null);
             this.clearLevelDim();
             this.refreshLevelBreadcrumb();
-            this.detailPanelLastId = null;
-            this.detailPanel?.hide();
+            // 钉住(常驻)时背景点击不收起,也不丢失当前节点引用
+            if (!this.detailPanel?.isPinned) {
+                this.detailPanelLastId = null;
+                this.detailPanel?.hide();
+            }
         });
 
         // 监听节点编辑事件（双击）
@@ -4309,7 +4324,8 @@ cy.fit(null, 40);
         const auto = this.plugin.settings.detailPanelAutoOpen !== false;
         const reClicked = this.detailPanelLastId === node.IDStr;
         this.detailPanelLastId = node.IDStr;
-        if (auto || this.detailPanel.isOpen || reClicked) {
+        // 钉住(常驻)时始终跟随选中刷新内容
+        if (auto || this.detailPanel.isOpen || this.detailPanel.isPinned || reClicked) {
             void this.detailPanel.show(node);
         }
     }

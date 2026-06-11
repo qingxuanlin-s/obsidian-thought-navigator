@@ -185,7 +185,7 @@ interface ZKNavigationSettings {
     mocNodePositions: Record<string, Record<string, { x: number; y: number }>>; // MOC 节点位置存储 {mocFilePath: {nodeId: {x, y}}}
     smartConnection: boolean;          // 智能连线开关
     themeMode: 'dark' | 'light' | 'auto';       // 主题模式(auto = 跟随 Obsidian)
-    themeStyle: 'default' | 'modern';   // 主题风格（淡雅/现代）
+    themeStyle: 'default' | 'modern' | 'nebula';   // 主题风格（淡雅/现代/星云）
     edgeStyle: 'straight' | 'bezier' | 'polyline'; // 连线风格
     nodeLayoutStyle: 'free' | 'auto';  // 节点布局风格（自由/自动）
     autoLayoutDefaultGrowthDirection: LayoutPreset; // 自动布局默认生长方向
@@ -195,6 +195,8 @@ interface ZKNavigationSettings {
     lastShownChangelogVersion: string;  // 上次已展示更新公告的版本号(用于避免重复弹窗)
     detailPanelSide: 'left' | 'right';  // 节点详情侧栏停靠侧
     detailPanelAutoOpen: boolean;       // 单击选中是否自动展开详情侧栏(false = 再点一下才展开)
+    detailPanelWidth: number;           // 侧栏宽度(px,可拖拽调整),0 = CSS 默认
+    detailPanelPinned: boolean;         // 侧栏是否钉住常驻(背景点击/Esc 不收起)
 }
 
 //Default value for setting field
@@ -280,6 +282,8 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     lastShownChangelogVersion: '',
     detailPanelSide: 'right',
     detailPanelAutoOpen: true,
+    detailPanelWidth: 0,
+    detailPanelPinned: false,
 }
 
 export default class ZKNavigationPlugin extends Plugin {

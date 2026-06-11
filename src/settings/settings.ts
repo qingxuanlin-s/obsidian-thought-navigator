@@ -48,9 +48,11 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
             .addDropdown(options => options
                 .addOption("default", t("Default style"))
                 .addOption("modern", t("Modern style"))
+                .addOption("nebula", t("Nebula style"))
                 .setValue(this.plugin.settings.themeStyle || "modern")
                 .onChange((value) => {
-                    this.plugin.settings.themeStyle = value as 'default' | 'modern';
+                    this.plugin.settings.themeStyle = value as 'default' | 'modern' | 'nebula';
+                    this.plugin.applyTheme();
                     this.plugin.RefreshIndexViewFlag = true;
                 })
             );
