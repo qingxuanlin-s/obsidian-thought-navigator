@@ -189,9 +189,8 @@ const darkGraphTheme: GraphThemeTokens = {
 	},
 };
 
-// Nebula —— 深空黑底 + 霓虹描边的暗色变体。强制走暗色 token(不随 themeMode 切换),
-// 在 darkGraphTheme 基础上压暗节点底色、提亮边/语义线饱和度,配合 stylesheet 的发光 underlay
-// 与左侧色条,营造"星云"质感。
+// Nebula(暗色)—— 深空黑底 + 霓虹描边。在 darkGraphTheme 基础上压暗节点底色、
+// 提亮边/语义线饱和度,配合 stylesheet 的发光 underlay 与左侧色条,营造"星云"质感。
 const nebulaGraphTheme: GraphThemeTokens = {
 	...darkGraphTheme,
 	node: {
@@ -224,7 +223,52 @@ const nebulaGraphTheme: GraphThemeTokens = {
 	},
 };
 
+// Nebula(浅色)—— 浅灰冷底 + 白卡片柔影。卡片纯白、边框极淡(层次靠 underlay 柔影
+// 与左侧分支色条),根节点绿色强调,语义/跨域线走紫色虚线 + 淡紫药丸标签。
+const nebulaLightGraphTheme: GraphThemeTokens = {
+	...lightGraphTheme,
+	node: {
+		...lightGraphTheme.node,
+		background: '#ffffff',
+		backgroundHover: '#f4f6fa',
+		backgroundSelected: '#e9f1fd',
+		border: '#dfe3ea',
+		borderSelected: '#5a8fe6',
+		text: '#1f2937',
+		textMuted: '#8d95a3',
+		firstLevelFallback: '#f3f5f9',
+		firstLevelText: '#1f2937',
+		activeFirstLevelFallback: '#e8f2ff',
+		activeFirstLevelText: '#152238',
+		rootBackground: '#e7f6ee',
+		rootBorder: '#3fae72',
+		rootSelectedBackground: '#daf0e5',
+		rootSelectedBorder: '#2f9a62',
+		currentBackground: '#e6f0fd',
+		currentBorder: '#5a8fe6',
+	},
+	edge: {
+		...lightGraphTheme.edge,
+		normal: '#c3c9d4',
+		forward: '#5a8fe6',
+		reverse: '#7c6fe0',
+		selected: '#7c5fd6',
+		rootToFirstLevel: '#b7bfcd',
+		activeRootGradient: '#4faf78 #8b6bd6',
+		activeRootArrow: '#8b6bd6',
+		crossDomain: '#8a76e0',
+		crossDomainLabelBg: '#efecfb',
+		crossDomainLabelText: '#5b4bbd',
+	},
+	badge: {
+		background: '#3fae72',
+		text: '#ffffff',
+	},
+};
+
 export function getGraphTheme(options: RenderOptions): GraphThemeTokens {
-	if (options.themeStyle === 'nebula') return nebulaGraphTheme;
+	if (options.themeStyle === 'nebula') {
+		return options.themeMode === 'light' ? nebulaLightGraphTheme : nebulaGraphTheme;
+	}
 	return options.themeMode === 'light' ? lightGraphTheme : darkGraphTheme;
 }

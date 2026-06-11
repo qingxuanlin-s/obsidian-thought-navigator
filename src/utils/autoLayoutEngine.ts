@@ -209,11 +209,6 @@ export function computeAutoLayout(input: ComputeAutoLayoutInput): Record<string,
 		return layout;
 	};
 
-	const avgProjection = (children: LayoutNode[], axis: Vec2): number => {
-		if (children.length === 0) return 0;
-		return children.reduce((sum, child) => sum + projectSize(child.size, axis), 0) / children.length;
-	};
-
 	const gapFor = (dir: GrowthDirection): number => {
 		return dir.length === 2 ? forwardGap * DIAGONAL_GAP_FACTOR : forwardGap;
 	};
@@ -224,15 +219,17 @@ export function computeAutoLayout(input: ComputeAutoLayoutInput): Record<string,
 		const dirVec = DIR_VECTORS[dir];
 		const axis = group[0].stackAxis || axisFor(dir, filePreset);
 		const ordered = sortIdsByAxis(group.map((c) => c.id), axis).map((id) => layoutById.get(id)!);
-		const forward = projectSize(parent.size, dirVec) / 2
-			+ gapFor(dir)
-			+ avgProjection(ordered, dirVec) / 2;
+		// 近端对齐:各子节点"朝向父节点的那条边"统一落在 parentHalf + gap 处,
+		// 再按自身投影尺寸的一半把中心推到外侧。中心对齐(用平均宽度)会让比平均更宽的
+		// 大文本节点的近端反向越过父节点造成遮挡;近端对齐则保证任何宽度都不会压到父节点。
+		const baseForward = projectSize(parent.size, dirVec) / 2 + gapFor(dir);
 		const total = ordered.reduce((sum, child) => sum + child.subtreeSpan, 0)
 			+ Math.max(0, ordered.length - 1) * stackGap;
 		let cursor = -total / 2;
 
 		for (const child of ordered) {
 			const stackOff = cursor + child.subtreeSpan / 2;
+			const forward = baseForward + projectSize(child.size, dirVec) / 2;
 			placeLayout(
 				child,
 				cx + dirVec.x * forward + axis.x * stackOff,
