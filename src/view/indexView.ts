@@ -10,6 +10,7 @@ import { NoteSearchModal } from "src/modal/noteSearchModal";
 import { convertMOCToZKNodes, createMOCTreeNode, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX, MOCParseResult, MOCTreeNode, NODE_FLAG_SEPARATED, NODE_FLAG_SIDE_PINNED, parseMOCStructure, saveMOCStructure, stripMocSuffix } from "src/utils/utils";
 import { FolderDrawer } from "src/view/folderDrawer";
 import { ScratchpadDrawer } from "src/view/scratchpadDrawer";
+import { NodeDetailPanel } from "src/view/index/detailPanel";
 import { ScratchpadEntry } from "src/scratch/scratchpadManager";
 import { resolveDroppedVaultFiles } from "src/utils/dropFileResolver";
 import { createMOCJsonWithInitialNode } from "src/utils/mocJsonCodec";
@@ -190,6 +191,9 @@ export class ZKIndexView extends FileView {
     private staticToolbarDiv: HTMLElement | null = null;
     private folderDrawer: FolderDrawer | null = null;
     private scratchDrawer: ScratchpadDrawer | null = null;
+    // 节点详情侧栏(单击节点 → 跟随展示备注/笔记预览)
+    private detailPanel: NodeDetailPanel | null = null;
+    private detailPanelLastId: string | null = null;
     private vaultIndexUnsubscribe: (() => void) | null = null;
 
     // 性能优化：追踪事件监听器初始化状态，避免重复添加
@@ -291,6 +295,17 @@ export class ZKIndexView extends FileView {
             event.stopPropagation();
             this.openBranchSearchBar();
             return false;
+        });
+        // Esc 关闭节点详情侧栏(仅在面板打开且不在内联编辑时拦截;
+        // 编辑中的 Esc 留给 CM6 编辑器自己取消)
+        this.scope.register([], 'Escape', (event: KeyboardEvent) => {
+            if (this.detailPanel?.isOpen && !this.detailPanel.isEditing) {
+                event.preventDefault();
+                event.stopPropagation();
+                this.detailPanelLastId = null;
+                this.detailPanel.hide();
+                return false;
+            }
         });
         this.mocHandler = new MOCHandler(plugin, (this.app as any), {
             onBeforeModify: ({ filePath, content }) => {
@@ -1124,6 +1139,21 @@ export class ZKIndexView extends FileView {
                 );
                 this.registerScratchpadDocumentListeners();
             }
+
+            // 节点详情侧栏(右侧/左侧,覆盖在图上)
+            this.detailPanel = new NodeDetailPanel(containerEl, this.app, {
+                getRemark: (n) => this.getNodeRemark(n),
+                getLabel: (idStr) => this.getNodeLabelByIdStr(idStr),
+                getBranchColor: (n) => this.findCyNodeByIdStr(n.IDStr)?.data('branchNodeBorder') || null,
+                onSaveRemark: (n, text) => this.saveNodeRemarkFromPanel(n, text),
+                canEdit: () => !this.isMobileReadOnly(),
+                onOpenFile: (file) => { this.app.workspace.getLeaf(false).openFile(file); },
+                onNavigate: (idStr) => this.selectAndShowDetailByIdStr(idStr),
+                attachSelectionToolbar: (rootEl, applyTransform, hostContainer) =>
+                    this.branchRenderer?.attachSelectionToolbarToHost(rootEl, applyTransform, hostContainer) ?? null,
+                component: this,
+            });
+            this.detailPanel.setSide(this.plugin.settings.detailPanelSide === 'left' ? 'left' : 'right');
 
             // 订阅 VaultIndex 变化,实时刷新项目徽章
             if (this.plugin.vaultIndex && !this.vaultIndexUnsubscribe) {
@@ -3093,6 +3123,7 @@ cy.fit(null, 40);
             const { node } = event.detail;
             this.updateMultiverseBadge(node);
             this.syncLevelBreadcrumbWithNode(node);
+            this.handleDetailPanelSelect(node);
         });
 
         // 点击画布空白处 — 隐藏平行宇宙徽章,清除暗淡;层级面包屑保持显示
@@ -3100,6 +3131,8 @@ cy.fit(null, 40);
             this.updateMultiverseBadge(null);
             this.clearLevelDim();
             this.refreshLevelBreadcrumb();
+            this.detailPanelLastId = null;
+            this.detailPanel?.hide();
         });
 
         // 监听节点编辑事件（双击）
@@ -4258,6 +4291,44 @@ cy.fit(null, 40);
             this.applyLevelDim(this.currentDimLevel, this.levelPath[this.currentDimLevel - 1]);
         }
         this.refreshLevelBreadcrumb();
+    }
+
+    /**
+     * 单击选中 → 详情侧栏跟随。
+     * - autoOpen=true:任意选中即展开
+     * - autoOpen=false:首次选中只选中,再次点同一节点(或面板已开)才展开
+     */
+    private handleDetailPanelSelect(node: ZKNode | null): void {
+        if (!this.detailPanel) return;
+        if (!node || node.isPlaceholder || node.isDraft) {
+            this.detailPanelLastId = null;
+            this.detailPanel.hide();
+            return;
+        }
+        this.detailPanel.setSide(this.plugin.settings.detailPanelSide === 'left' ? 'left' : 'right');
+        const auto = this.plugin.settings.detailPanelAutoOpen !== false;
+        const reClicked = this.detailPanelLastId === node.IDStr;
+        this.detailPanelLastId = node.IDStr;
+        if (auto || this.detailPanel.isOpen || reClicked) {
+            void this.detailPanel.show(node);
+        }
+    }
+
+    /** 面包屑点击某一级 → 选中并居中该节点,同时刷新侧栏 */
+    private selectAndShowDetailByIdStr(idStr: string): void {
+        const cyNode = this.findCyNodeByIdStr(idStr);
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        if (!cyNode || !cy) return;
+        cy.nodes(':selected').unselect();
+        cyNode.select();
+        cy.animate({ center: { eles: cyNode }, duration: 250 });
+        const original = cyNode.data('originalNode') as ZKNode | undefined;
+        if (original) {
+            this.updateMultiverseBadge(original);
+            this.syncLevelBreadcrumbWithNode(original);
+            this.detailPanelLastId = original.IDStr;
+            void this.detailPanel?.show(original);
+        }
     }
 
     /**
@@ -5655,6 +5726,22 @@ cy.fit(null, 40);
             }
         } catch (error) {
             console.error('Failed to edit node remark:', error);
+            new Notice(`修改备注失败: ${error.message}`);
+        }
+    }
+
+    /** 详情侧栏内联编辑保存备注(无弹窗,与画布文本编辑体验一致) */
+    private async saveNodeRemarkFromPanel(node: ZKNode, text: string): Promise<void> {
+        try {
+            const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+            if (!mocFile) return;
+            await this.mocHandler.updateNodeRemarkInMOC(mocFile, node.IDStr, text);
+            // 乐观本地更新,避免刷新时序导致侧栏读到旧值
+            if (text) this.nodeRemarks[node.IDStr] = text;
+            else delete this.nodeRemarks[node.IDStr];
+            await this.refreshBranchMermaid();
+        } catch (error) {
+            console.error('Failed to save node remark from panel:', error);
             new Notice(`修改备注失败: ${error.message}`);
         }
     }
@@ -8484,6 +8571,8 @@ cy.fit(null, 40);
         }
 
         this.scratchDrawer = null;
+        this.detailPanel = null;
+        this.detailPanelLastId = null;
 
         // 清理所有防抖定时器
         this.cleanupTimers();

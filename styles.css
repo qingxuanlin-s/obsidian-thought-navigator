@@ -6147,3 +6147,261 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
   display: flex;
   justify-content: flex-end;
 }
+
+/* ============================================================
+   节点详情侧栏 (NodeDetailPanel)
+   单击节点 → 跟随展示备注 / 笔记预览。图1 视觉系统。
+   ============================================================ */
+.zk-detail-panel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: min(420px, 38vw);
+  min-width: 320px;
+  background: color-mix(in srgb, var(--zk-surface-solid, #1f1f1f) 96%, transparent);
+  box-shadow: var(--zk-shadow-soft, 0 12px 32px rgba(0, 0, 0, 0.28));
+  display: flex;
+  flex-direction: column;
+  z-index: 60;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.zk-detail-panel-right {
+  right: 0;
+  border-left: 1px solid var(--zk-border-subtle, #3a3a3a);
+  transform: translateX(100%);
+}
+.zk-detail-panel-left {
+  left: 0;
+  border-right: 1px solid var(--zk-border-subtle, #3a3a3a);
+  transform: translateX(-100%);
+}
+.zk-detail-panel.zk-detail-panel-open { transform: translateX(0); }
+
+/* 竖向贴边关闭把手 */
+.zk-detail-handle {
+  position: absolute;
+  top: 50%;
+  width: 22px;
+  height: 48px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--zk-surface-raised, #282828);
+  border: 1px solid var(--zk-border-subtle, #3a3a3a);
+  color: var(--zk-text-muted, #8a8e98);
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.12s, color 0.12s;
+}
+.zk-detail-handle:hover { opacity: 1; color: var(--zk-text, #e6e7ea); }
+.zk-detail-handle svg { width: 13px; height: 13px; }
+.zk-detail-panel-right .zk-detail-handle {
+  left: -23px;
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+}
+.zk-detail-panel-left .zk-detail-handle {
+  right: -23px;
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+}
+
+/* 头部 */
+.zk-detail-header {
+  padding: 28px 28px 18px;
+  border-bottom: 1px solid var(--zk-border-subtle, #2f2f2f);
+  flex-shrink: 0;
+}
+.zk-detail-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.zk-detail-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.zk-detail-kicker-text {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--zk-text-muted, #9a9ca6);
+}
+.zk-detail-title {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--zk-text, #e6e7ea);
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.zk-detail-breadcrumb {
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--zk-text-faint, #6f727c);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.zk-detail-crumb {
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: color 0.12s;
+}
+.zk-detail-crumb:not(.zk-detail-crumb-current):hover { color: var(--zk-accent, #8b6bd6); }
+.zk-detail-crumb-current {
+  color: var(--zk-text-muted, #9a9ca6);
+  cursor: default;
+}
+.zk-detail-crumb-sep { color: var(--zk-text-faint, #6f727c); opacity: 0.6; }
+
+/* 主体 */
+.zk-detail-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 22px 28px;
+  color: var(--zk-text, #e6e7ea);
+  font-size: 14px;
+  line-height: 1.7;
+}
+.zk-detail-remark { color: var(--zk-text, #e6e7ea); }
+.zk-detail-remark > :first-child { margin-top: 0; }
+.zk-detail-remark > :last-child { margin-bottom: 0; }
+.zk-detail-remark-callout {
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  border-left: 3px solid var(--zk-accent, #8b6bd6);
+  background: var(--zk-accent-soft, rgba(139, 107, 214, 0.18));
+  border-radius: 4px;
+}
+
+/* 文件节点笔记预览 */
+.zk-detail-note-preview { margin-top: 4px; }
+.zk-detail-open-bar {
+  display: flex;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed var(--zk-border-subtle, #2f2f2f);
+}
+.zk-detail-open-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--zk-text-muted, #9a9ca6);
+  cursor: pointer;
+  transition: color 0.12s;
+}
+.zk-detail-open-link:hover { color: var(--zk-accent, #8b6bd6); }
+.zk-detail-open-icon svg { width: 13px; height: 13px; }
+.zk-detail-note-content {
+  font-size: 13.5px;
+  line-height: 1.7;
+}
+.zk-detail-note-content > :first-child { margin-top: 0; }
+
+/* 空态 */
+.zk-detail-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 48px 0;
+  text-align: center;
+}
+.zk-detail-empty-text { color: var(--zk-text-faint, #6f727c); font-size: 13px; }
+.zk-detail-add-btn {
+  padding: 6px 16px;
+  font-size: 13px;
+  color: var(--zk-text, #e6e7ea);
+  background: var(--zk-control-bg, rgba(255, 255, 255, 0.045));
+  border: 1px solid var(--zk-control-border, rgba(150, 150, 190, 0.24));
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.zk-detail-add-btn:hover { background: var(--zk-control-bg-hover, rgba(255, 255, 255, 0.075)); }
+
+/* 备注可编辑态:双击进编辑 */
+.zk-detail-remark-area { margin-bottom: 6px; }
+.zk-detail-editable { cursor: text; border-radius: 6px; transition: background 0.12s; }
+.zk-detail-editable:not(.zk-detail-remark-callout):hover {
+  background: var(--zk-control-bg, rgba(255, 255, 255, 0.045));
+}
+
+/* 文件节点空备注:细条「+ 添加备注」 */
+.zk-detail-add-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 16px;
+  padding: 4px 9px;
+  font-size: 12px;
+  color: var(--zk-text-muted, #9a9ca6);
+  border: 1px dashed var(--zk-control-border, rgba(150, 150, 190, 0.24));
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.zk-detail-add-inline:hover {
+  color: var(--zk-accent, #8b6bd6);
+  border-color: var(--zk-accent, #8b6bd6);
+}
+.zk-detail-add-icon svg { width: 12px; height: 12px; }
+
+/* 备注 CM6 编辑器宿主(与画布内联编辑同款) */
+.zk-detail-remark-editor {
+  border: 1px solid var(--zk-border-strong, rgba(166, 152, 224, 0.38));
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: var(--zk-canvas-bg, #252525);
+}
+.zk-detail-remark-editor .cm-editor { background: transparent; font-size: 14px; }
+.zk-detail-remark-editor .cm-scroller { padding: 0; }
+.zk-detail-remark-editor .cm-content { padding: 0; }
+
+/* 底部关闭 */
+.zk-detail-footer {
+  flex-shrink: 0;
+  padding: 14px 28px 26px;
+  border-top: 1px solid var(--zk-border-subtle, #2f2f2f);
+}
+.zk-detail-close-btn {
+  text-align: center;
+  padding: 9px;
+  font-size: 13px;
+  color: var(--zk-text-muted, #9a9ca6);
+  background: var(--zk-control-bg, rgba(255, 255, 255, 0.045));
+  border: 1px solid var(--zk-control-border, rgba(150, 150, 190, 0.24));
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.zk-detail-close-btn:hover {
+  background: var(--zk-control-bg-hover, rgba(255, 255, 255, 0.075));
+  color: var(--zk-text, #e6e7ea);
+}
+
+/* 备注 tooltip 富文本:压平块级间距,贴合小气泡 */
+.zk-node-remark-tooltip.markdown-rendered p,
+.zk-node-remark-tooltip.markdown-rendered ul,
+.zk-node-remark-tooltip.markdown-rendered ol,
+.zk-node-remark-tooltip.markdown-rendered h1,
+.zk-node-remark-tooltip.markdown-rendered h2,
+.zk-node-remark-tooltip.markdown-rendered h3 { margin: 0; }
+.zk-node-remark-tooltip.markdown-rendered > :first-child { margin-top: 0; }
+.zk-node-remark-tooltip.markdown-rendered > :last-child { margin-bottom: 0; }
+.zk-node-remark-tooltip.markdown-rendered ul,
+.zk-node-remark-tooltip.markdown-rendered ol { padding-left: 1.2em; }

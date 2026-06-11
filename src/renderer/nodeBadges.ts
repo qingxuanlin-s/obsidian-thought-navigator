@@ -1,4 +1,4 @@
-import { Component, Platform, finishRenderMath, renderMath, setIcon } from 'obsidian';
+import { Component, MarkdownRenderer, Platform, finishRenderMath, renderMath, setIcon } from 'obsidian';
 import { ZKNode } from 'src/view/indexView';
 import { EmbeddableMarkdownEditor } from 'src/utils/EmbeddableMarkdownEditor';
 import { darkenColor, hexToRgba, isModernThemeStyle, normalizeHexColor } from './colorUtils';
@@ -654,7 +654,7 @@ export function renderNodeBadges(this: any): void {
             badgeContainer.appendChild(remarkEl);
 
 			const tooltipEl = document.createElement('div');
-			tooltipEl.className = 'zk-node-remark-tooltip';
+			tooltipEl.className = 'zk-node-remark-tooltip markdown-rendered';
 			tooltipEl.dataset.nodeId = node.id();
 			tooltipEl.style.cssText = `
                 position: absolute;
@@ -680,6 +680,8 @@ export function renderNodeBadges(this: any): void {
             // 懒缓存：embed/image 卡片在 addNodeBadges 之后才创建，首次查到后复用
             let remarkImageCardCache: HTMLElement | null = null;
             let remarkEmbedCardCache: HTMLElement | null = null;
+            // tooltip 富文本渲染:仅当备注源文本变化时才重渲染(updateRemarkPosition 每帧调用)
+            let lastTooltipSource: string | null = null;
 
             const updateRemarkPosition = () => {
                 if (!this.cy) return;
@@ -700,7 +702,11 @@ export function renderNodeBadges(this: any): void {
                     node.style('display') === 'none' ||
                     !node.visible();
                 const shouldShow = !isHidden;
-                tooltipEl.textContent = remarkText;
+                // 富文本渲染备注(与画布文本节点一致):仅源文本变化时重渲染,避免每帧跑 MarkdownRenderer
+                if (remarkText !== lastTooltipSource) {
+                    lastTooltipSource = remarkText;
+                    this.renderRemarkTooltipContent(tooltipEl, remarkText);
+                }
                 applyRemarkBadgeStyle();
 
                 if (!shouldShow) {

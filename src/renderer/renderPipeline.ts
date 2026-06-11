@@ -389,8 +389,10 @@ export function getDepthFromNearestRoot(nodeId: string, nodeMap: Map<string, ZKN
 
 export function getHierarchyEdgeWidth(depthFromRoot: number | null, rootToFirstLevelEdgeWidth: number): number {
 	const depth = Math.max(1, depthFromRoot || 1);
-	const width = rootToFirstLevelEdgeWidth - (depth - 1) * 0.55;
-	return Math.max(1.6, Math.round(width * 10) / 10);
+	// 步长 0.7 + floor 1.3:主干(root→L1)保持粗,L1→L2 起明显渐细,深层末梢退到细线,
+	// 让"主干一眼可见、末梢退后"读得出来(此前 0.55 步长差异过小,几乎看不出锥度)
+	const width = rootToFirstLevelEdgeWidth - (depth - 1) * 0.7;
+	return Math.max(1.3, Math.round(width * 10) / 10);
 }
 
 export function loadEdgeControlPointsAndParentLinks(

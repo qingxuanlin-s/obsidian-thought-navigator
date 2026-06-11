@@ -76,6 +76,28 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
 
         await this.updateSructureSettings(structureSettingDiv);
 
+        new Setting(branchSection)
+            .setName(t("detail panel side"))
+            .setDesc(t("detail panel side desc"))
+            .addDropdown(options => options
+                .addOption("right", t("detail side right"))
+                .addOption("left", t("detail side left"))
+                .setValue(this.plugin.settings.detailPanelSide || "right")
+                .onChange((value) => {
+                    this.plugin.settings.detailPanelSide = value as 'left' | 'right';
+                    this.plugin.RefreshIndexViewFlag = true;
+                })
+            );
+
+        new Setting(branchSection)
+            .setName(t("detail auto open"))
+            .setDesc(t("detail auto open desc"))
+            .addToggle(toggle => toggle.setValue(this.plugin.settings.detailPanelAutoOpen !== false)
+                .onChange((value) => {
+                    this.plugin.settings.detailPanelAutoOpen = value;
+                })
+            );
+
         // ========== 局部视图 (Local Graph) ==========
         containerEl.createEl("h3", { text: t("thought-local-graph-view") });
         const localSection = containerEl.createDiv("zk-setting-card");

@@ -193,6 +193,8 @@ interface ZKNavigationSettings {
     scratchpads: Scratchpad[];          // 临时工作区:跨 MOC 共享的节点暂存(支持多 pad)
     activeScratchpadId: string;         // 当前激活的暂存区 id
     lastShownChangelogVersion: string;  // 上次已展示更新公告的版本号(用于避免重复弹窗)
+    detailPanelSide: 'left' | 'right';  // 节点详情侧栏停靠侧
+    detailPanelAutoOpen: boolean;       // 单击选中是否自动展开详情侧栏(false = 再点一下才展开)
 }
 
 //Default value for setting field
@@ -276,6 +278,8 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     scratchpads: [],
     activeScratchpadId: '',
     lastShownChangelogVersion: '',
+    detailPanelSide: 'right',
+    detailPanelAutoOpen: true,
 }
 
 export default class ZKNavigationPlugin extends Plugin {
