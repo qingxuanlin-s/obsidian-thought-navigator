@@ -839,6 +839,10 @@ export async function saveMOCStructure(
         const { serializeMOCJson } = await import('./mocJsonCodec');
         await app.vault.modify(file, serializeMOCJson(data));
         await new Promise(resolve => setTimeout(resolve, 50));
+        // 与下方 Mermaid 分支一致：写入后清除旧 mtime 的解析缓存,
+        // 避免同一 mtime 粒度内的连续写入读到过期数据
+        const { MermaidParser } = await import('./mermaidParser');
+        MermaidParser.clearCacheForFile(filePath);
         return;
     }
 
