@@ -3,7 +3,7 @@ import * as dagreNamespace from 'cytoscape-dagre';
 import * as coseBilkentNamespace from 'cytoscape-cose-bilkent';
 import { IGraphRenderer, GraphData, RenderOptions, GraphChanges, ViewState } from './types';
 import { ZKNode } from 'src/view/indexView';
-import { Component, Platform } from 'obsidian';
+import { Component, MarkdownRenderer, Platform } from 'obsidian';
 import { EmbeddableMarkdownEditor } from 'src/utils/EmbeddableMarkdownEditor';
 import { Minimap } from './Minimap';
 import { buildStylesheet } from './stylesheet';
@@ -159,6 +159,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
     // 缓存已渲染的预览卡片 DOM，避免重建时 excalidraw/markdown 内容闪烁
     private embedCardCache: Map<string, HTMLElement> = new Map();
     private embedRendererComponents: Set<Component> = new Set();
+    // 备注 tooltip 富文本渲染共享生命周期组件(懒建,destroy 时 unload)
+    private remarkTooltipComponent: Component | null = null;
     private activeAlignmentOverlay: SVGSVGElement | null = null;
     private activeSeparationOverlay: SVGSVGElement | null = null;
     private boxSelectionElement: HTMLElement | null = null;
@@ -903,6 +905,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
             if (entry.el.parentNode) entry.el.remove();
         });
         this.textMdOverlayCache.clear();
+        if (this.remarkTooltipComponent) {
+            try { this.remarkTooltipComponent.unload(); } catch { /* ignore */ }
+            this.remarkTooltipComponent = null;
+        }
         if (this.cy) {
             if (this.isCyUsable()) {
                 this.cy.destroy();
@@ -1566,6 +1572,50 @@ export class CytoscapeRenderer implements IGraphRenderer {
         containsTarget: (target: Node | null) => boolean;
     } {
         return inlineAttachContentSelectionToolbar.call(this, rootEl, applyTransform);
+    }
+
+    /**
+     * 渲染备注 tooltip 内容为富文本(与画布文本节点一致):支持 **粗** / ~~删~~ / <u> / 颜色/字号 span。
+     * 纯文本走快路径直接 textContent;含 markdown/HTML 语法才走 MarkdownRenderer。
+     * 仅在源文本变化时被调用(调用方做 diff),避免每帧渲染。
+     */
+    private renderRemarkTooltipContent(el: HTMLElement, source: string): void {
+        el.empty();
+        const text = String(source || '');
+        if (!text) return;
+        // 快路径:无 markdown/HTML 语法
+        if (!/[<*_~`\[\]#>]|==|!\[/.test(text)) {
+            el.textContent = text;
+            return;
+        }
+        const app = this.currentOptions?.app;
+        if (!app) { el.textContent = text; return; }
+        if (!this.remarkTooltipComponent) {
+            this.remarkTooltipComponent = new Component();
+            this.remarkTooltipComponent.load();
+        }
+        const sourcePath = this.currentData?.metadata?.currentFile || '';
+        void MarkdownRenderer.render(app, text, el, sourcePath, this.remarkTooltipComponent);
+    }
+
+    /**
+     * 在任意宿主元素(如节点详情侧栏的备注编辑器)上挂载选区格式工具栏。
+     * 复用画布同款 attachContentSelectionToolbar:用 hostContainer 替换定位/挂载容器,
+     * 并关闭 cy 缩放联动(侧栏无图缩放)。共享 strip/取色等渲染器逻辑,保持格式一致。
+     */
+    public attachSelectionToolbarToHost(
+        rootEl: HTMLElement,
+        applyTransform: (formatter: (selectedText: string) => string) => boolean,
+        hostContainer: HTMLElement
+    ): {
+        destroy: () => void;
+        containsTarget: (target: Node | null) => boolean;
+    } {
+        const ctx: any = Object.create(this);
+        ctx.container = hostContainer;          // 工具栏挂载/定位改用侧栏根
+        ctx.cy = null;                          // 侧栏不随图缩放/平移
+        ctx.activeTextSelectionToolbarCleanup = null; // 独立于画布工具栏的清理引用
+        return inlineAttachContentSelectionToolbar.call(ctx, rootEl, applyTransform);
     }
 
     private showInlineEdgeLabelEditor(edge: any): void {
