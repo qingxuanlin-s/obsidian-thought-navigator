@@ -2486,6 +2486,23 @@ cy.fit(null, 40);
             }
         }
 
+        // 收起态紧凑视图 = f(文件坐标, collapsedNodeIds) 的纯函数,渲染后统一重放。
+        // 收起时的紧凑重排不落盘(避免污染文件坐标),而任何文件驱动的刷新
+        // (persistCollapseState 自写触发的 mocMonitor 刷新、外部编辑、主题切换)
+        // 都会把节点打回文件坐标 —— 不在这里重放,临时紧凑布局就会被刷新撤销,
+        // 表现为收起/展开后位置错乱。relayout 内部对纯 free 树自动跳过。
+        if (this.collapsedNodeIds.length > 0) {
+            const collapseRootId = this.getPrimaryMocRootId();
+            if (collapseRootId) {
+                await this.relayoutAutoLayoutSiblings(collapseRootId, {
+                    collapsedNodeIds: this.collapsedNodeIds,
+                    compactVisibleNodes: true,
+                    rebalanceRootChildren: true,
+                    persistPositions: false,
+                });
+            }
+        }
+
         // 恢复或自动居中视图
         const cy = this.branchRenderer.getCytoscapeInstance();
         if (cy) {
@@ -2890,15 +2907,15 @@ cy.fit(null, 40);
                 await this.persistCollapseState(mocFile, collapsedNodeIds);
                 if (this.isNodeAutoLayout(nodeId)) {
                     // auto 布局:收起和展开都按当前 collapsedNodeIds 重新计算可见节点的紧凑布局。
-                    // 展开不能只 restoreSavedNodePositions —— auto 子节点通常没有保存坐标,
-                    // 收起时被挪近填空当的兄弟分支会还原不回去,导致展开后子树重叠。
-                    // collapsedNodeIds 为空(全部展开)时即对整棵树重新对称布局。
-                    // persistPositions:false → 仅临时视觉重排,不写坐标;手动拖动过的节点仍保留其保存位置。
+                    // 收起/部分展开 → persistPositions:false,仅临时视觉重排,不污染文件坐标
+                    // (文件驱动的刷新会在渲染后统一重放这份紧凑布局,见 refreshBranchMermaidMOC 尾部);
+                    // 全部展开 → 落盘整树重算结果:收起期间的持久化 reflow(新建/删除/移动节点)
+                    // 不包含隐藏节点,会让隐藏子树的文件坐标过期,此时必须整体重写使其重新自洽。
                     await this.relayoutAutoLayoutSiblings(nodeId, {
                         collapsedNodeIds,
                         compactVisibleNodes: true,
                         rebalanceRootChildren: true,
-                        persistPositions: false,
+                        persistPositions: collapsedNodeIds.length === 0,
                     });
                 } else if (collapsedNodeIds.length === 0) {
                     // free 布局:节点都有保存坐标,展开时还原即可。
@@ -8154,7 +8171,9 @@ cy.fit(null, 40);
         const nodes: Record<string, AutoLayoutNodeInput> = {};
         const parentById: Record<string, string | undefined> = {};
         const childrenById: Record<string, string[]> = {};
-        const collapsedIds = new Set(relayoutOptions.collapsedNodeIds || []);
+        // 未显式传入时回退到视图当前收起状态:所有调用方(拖拽、新建、切换布局风格等)
+        // 都不该让隐藏节点参与布局。
+        const collapsedIds = new Set(relayoutOptions.collapsedNodeIds ?? this.collapsedNodeIds);
         const isHiddenByCollapse = (nodeId: string): boolean => {
             for (const collapsedId of collapsedIds) {
                 if (nodeId !== collapsedId && nodeId.startsWith(`${collapsedId}.`)) {
@@ -8163,13 +8182,18 @@ cy.fit(null, 40);
             }
             return false;
         };
+        const cyNodeById = new Map<string, any>();
         cy.$('node').forEach((node: any) => {
             const data = node.data();
             const originalNode = data.originalNode;
             const nodeId = originalNode?.IDStr || originalNode?.ID;
             // 草稿(#20)作为一等节点参与重排(有 synthetic originalNode);占位符/分组仍排除
             if (!nodeId || data.isGroup || data.isPlaceholder) return;
-            if (relayoutOptions.compactVisibleNodes && isHiddenByCollapse(nodeId)) return;
+            // 被收起隐藏的节点(display:none)一律不参与布局:量不到真实尺寸(会被钳到
+            // 80×44 兜底值),算出的跨度是错的。不依赖 compactVisibleNodes 开关 ——
+            // 任何调用方(切换布局风格/preset 等)都不该让隐藏节点参与。
+            if (isHiddenByCollapse(nodeId)) return;
+            cyNodeById.set(nodeId, node);
             nodes[nodeId] = {
                 id: nodeId,
                 size: getNodeSize(node),
@@ -8274,7 +8298,6 @@ cy.fit(null, 40);
                     const set = new Set(Object.keys(nodes).filter((nodeId) => {
                         if (nodeId === relayoutRootId) return false;
                         if (!this.isNodeAutoLayout(nodeId)) return false;
-                        if (relayoutOptions.collapsedNodeIds?.includes(nodeId)) return false;
                         const parentId = parentById[nodeId];
                         // 默认豁免根的一级子节点(收起场景沿用,保持分支根稳定);
                         // rebalanceRootChildren=true 时(新建/移动节点的 reflow)放开,
@@ -8336,13 +8359,7 @@ cy.fit(null, 40);
 
         cy.batch(() => {
             Object.entries(nodePositions).forEach(([nodeId, position]) => {
-                const cyNode: any = cy.$('node').filter((node: any) => {
-                    const originalNode = node.data('originalNode');
-                    return originalNode && (originalNode.IDStr === nodeId || originalNode.ID === nodeId);
-                }).first();
-                if (cyNode && cyNode.length > 0) {
-                    cyNode.position(position);
-                }
+                cyNodeById.get(nodeId)?.position(position);
             });
         });
 
@@ -8373,15 +8390,16 @@ cy.fit(null, 40);
 
         const mocData = await parseMOCStructure(this.app, mocFile.path, this.plugin.settings.mocHeadingTitle);
         const savedPositions = mocData.nodePositions || {};
+        const cyNodeById = new Map<string, any>();
+        cy.$('node').forEach((node: any) => {
+            const originalNode = node.data('originalNode');
+            if (!originalNode) return;
+            if (originalNode.IDStr && !cyNodeById.has(originalNode.IDStr)) cyNodeById.set(originalNode.IDStr, node);
+            if (originalNode.ID && !cyNodeById.has(originalNode.ID)) cyNodeById.set(originalNode.ID, node);
+        });
         cy.batch(() => {
             Object.entries(savedPositions).forEach(([nodeId, position]) => {
-                const cyNode: any = cy.$('node').filter((node: any) => {
-                    const originalNode = node.data('originalNode');
-                    return originalNode && (originalNode.IDStr === nodeId || originalNode.ID === nodeId);
-                }).first();
-                if (cyNode && cyNode.length > 0) {
-                    cyNode.position(position);
-                }
+                cyNodeById.get(nodeId)?.position(position);
             });
         });
     }
