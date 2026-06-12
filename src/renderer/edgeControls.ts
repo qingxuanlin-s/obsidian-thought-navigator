@@ -132,13 +132,15 @@ export class EdgeControls {
 				position: absolute;
 				width: ${baseHandleSize}px;
 				height: ${baseHandleSize}px;
-				background-color: #5b8fd9;
-				border: 2px solid #ffffff;
+				background: radial-gradient(circle at 50% 34%, #7aa6e6 0%, #5b8fd9 60%, #4a7bc4 100%);
+				border: 1.5px solid rgba(255, 255, 255, 0.55);
 				border-radius: 50%;
 				cursor: crosshair;
 				pointer-events: auto;
 				transform: translate(-50%, -50%);
-				box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+				box-shadow: 0 0 10px rgba(91, 143, 217, 0.55),
+					0 1px 3px rgba(0, 0, 0, 0.3),
+					inset 0 1px 0 rgba(255, 255, 255, 0.35);
 				opacity: 0;
 				transition: opacity 0.2s;
 			`;
