@@ -1751,6 +1751,25 @@ export function bindEvents(this: any): void {
             }
         });
 
+        // 方向感知 S 形边:节点移动时 Cytoscape 不会重评估控制点样式函数,需主动重算。
+        // 用 rAF 把一帧内的多次 position(拖动/布局动画/reflow)合并为一次,只刷新受影响的边。
+        let curveRafPending = false;
+        let pendingCurveEdges = this.cy.collection();
+        const scheduleCurveRefresh = (edges: any) => {
+            pendingCurveEdges = pendingCurveEdges.union(edges);
+            if (curveRafPending) return;
+            curveRafPending = true;
+            requestAnimationFrame(() => {
+                curveRafPending = false;
+                const eds = pendingCurveEdges;
+                pendingCurveEdges = this.cy ? this.cy.collection() : eds;
+                this.refreshDirectionalEdgeCurves?.(eds);
+            });
+        };
+        this.cy.on('position', 'node', (evt: any) => {
+            scheduleCurveRefresh(evt.target.connectedEdges());
+        });
+
         // 监听视图状态变化（缩放和平移）
         // 使用防抖避免频繁触发
         let viewStateTimeout: NodeJS.Timeout | null = null;

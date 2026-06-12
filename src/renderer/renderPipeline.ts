@@ -240,6 +240,70 @@ export function convertEdgesToElements(
 	});
 }
 
+/**
+ * 方向感知的三次贝塞尔(S 形流线)控制点。
+ *
+ * 目标:让层级边在父节点沿布局主轴切出、在子节点沿主轴切入(LR=水平、TB=竖直),
+ * 像 org-chart / D3 linkHorizontal 那样顺滑,而不是固定垂直偏移的通用圆弧。
+ *
+ * 做法:在绝对坐标里定出两个三次贝塞尔控制点 C1/C2(经典 k=0.5),再换算成 Cytoscape
+ * `unbundled-bezier` 的「弦上权重 weight + 法向距离 distance」表示——因为 Cytoscape 用
+ * `控制点 = 弦点(weight) + 法向(-dy,dx)/L × distance` 实时重算,两者可逆且无损还原 C1/C2。
+ * 需配合样式 `edge-distances: node-position`,使其法向基准取节点中心(与此处一致)。
+ *
+ * 返回长度 2 的数组 → 渲染为三次(双控制点)贝塞尔。
+ */
+export function computeDirectionalEdgeControlPoints(
+	sx: number,
+	sy: number,
+	tx: number,
+	ty: number,
+	direction: 'LR' | 'RL' | 'TB' | 'BT',
+	k = 0.5,
+	minTangent = 12
+): { distances: number[]; weights: number[] } {
+	const dx = tx - sx;
+	const dy = ty - sy;
+	const L2 = dx * dx + dy * dy;
+	if (L2 < 1) {
+		// 端点几乎重合:退化为近直线,避免除零
+		return { distances: [0, 0], weights: [0.33, 0.66] };
+	}
+	const L = Math.sqrt(L2);
+	const horizontal = direction === 'LR' || direction === 'RL';
+	// 控制点离端点的最小切向距离。两个作用:
+	//  1) 节点沿主轴对齐时 dx*k(或 dy*k)趋近 0,控制点塌到端点 → 端点切线退化为 NaN,边不渲染;
+	//  2) 更关键:Cytoscape 从「最后一个控制点」朝目标中心射线求节点边框交点,控制点一旦落进
+	//     目标节点框内部就找不到交点("invalid endpoints",边消失)。因此 minTangent 需 ≥ 节点半宽,
+	//     由调用方按 source/target 实际尺寸传入,保证控制点始终在节点外。正常间距下 |dx|*k 远大于它。
+	const axisTangent = (delta: number, flow: number): number => {
+		const sign = delta !== 0 ? Math.sign(delta) : flow;
+		return Math.max(Math.abs(delta) * k, minTangent) * sign;
+	};
+	let c1x: number, c1y: number, c2x: number, c2y: number;
+	if (horizontal) {
+		const tan = axisTangent(dx, direction === 'RL' ? -1 : 1);
+		c1x = sx + tan; c1y = sy;
+		c2x = tx - tan; c2y = ty;
+	} else {
+		const tan = axisTangent(dy, direction === 'BT' ? -1 : 1);
+		c1x = sx; c1y = sy + tan;
+		c2x = tx; c2y = ty - tan;
+	}
+	// 绝对坐标 → (weight 沿弦, distance 沿法向 (-dy,dx)/L)
+	const toWD = (cx: number, cy: number): { w: number; d: number } => {
+		const rx = cx - sx;
+		const ry = cy - sy;
+		return {
+			w: (rx * dx + ry * dy) / L2,
+			d: (rx * -dy + ry * dx) / L,
+		};
+	};
+	const a = toWD(c1x, c1y);
+	const b = toWD(c2x, c2y);
+	return { distances: [a.d, b.d], weights: [a.w, b.w] };
+}
+
 export function getNodeLabel(node: ZKNode, options: RenderOptions | null): string {
 	if (node.isTextOnly) {
 		return String(node.title || node.displayText || '').replace(/\\n/g, '\n');
@@ -389,10 +453,10 @@ export function getDepthFromNearestRoot(nodeId: string, nodeMap: Map<string, ZKN
 
 export function getHierarchyEdgeWidth(depthFromRoot: number | null, rootToFirstLevelEdgeWidth: number): number {
 	const depth = Math.max(1, depthFromRoot || 1);
-	// 步长 0.7 + floor 1.3:主干(root→L1)保持粗,L1→L2 起明显渐细,深层末梢退到细线,
-	// 让"主干一眼可见、末梢退后"读得出来(此前 0.55 步长差异过小,几乎看不出锥度)
+	// 步长 0.7 + floor 1.8:主干(root→L1)保持粗,L1→L2 起明显渐细呈锥度;但深层末梢不再
+	// 细到 ~1.3px 溶进背景,保底 1.8px 仍清晰可读(配合提亮的 normal 色与次级透明度)。
 	const width = rootToFirstLevelEdgeWidth - (depth - 1) * 0.7;
-	return Math.max(1.3, Math.round(width * 10) / 10);
+	return Math.max(1.8, Math.round(width * 10) / 10);
 }
 
 export function loadEdgeControlPointsAndParentLinks(

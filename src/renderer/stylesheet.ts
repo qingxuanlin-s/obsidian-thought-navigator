@@ -649,15 +649,24 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     : (edgeStyle === 'polyline' ? 'taxi' : 'unbundled-bezier'),
                 'taxi-direction': 'auto',
                 'taxi-turn': 40,
+                // 控制点基准取节点中心,与 computeDirectionalEdgeControlPoints 的 S 形换算一致
+                'edge-distances': 'node-position',
+                // 优先级:用户手动拖动的控制点 > 方向感知 S 形(autoCp*) > 兜底单弧
                 'control-point-distances': (ele: any) => {
                     if (edgeStyle !== 'bezier') return 0;
                     const distance = ele.data('controlPointDistance');
-                    return distance !== undefined ? distance : 60;
+                    if (distance !== undefined) return distance;
+                    const auto = ele.data('autoCpDistances');
+                    if (auto) return auto;
+                    return 60;
                 },
                 'control-point-weights': (ele: any) => {
                     if (edgeStyle !== 'bezier') return 0.5;
                     const weight = ele.data('controlPointWeight');
-                    return weight !== undefined ? weight : 0.5;
+                    if (weight !== undefined) return weight;
+                    const auto = ele.data('autoCpWeights');
+                    if (auto) return auto;
+                    return 0.5;
                 },
                 'arrow-scale': 1.5,
                 'label': 'data(label)',
@@ -667,6 +676,13 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'text-border-opacity': 0,
                 'z-index-compare': 'manual',
                 'z-index': 999
+            } as any
+        },
+        // 近距回退:两节点过近时贝塞尔会缩进节点框下/端点无解,按边降级为直线(拉开自动恢复)
+        {
+            selector: 'edge.zk-near-straight',
+            style: {
+                'curve-style': 'straight'
             } as any
         },
         // 普通父子边降噪，让根 -> 1级主干成为第一眼路径
