@@ -213,7 +213,7 @@ const nebulaGraphTheme: GraphThemeTokens = {
 	},
 	edge: {
 		...darkGraphTheme.edge,
-		normal: '#3f495f',
+		normal: '#5e6e8c',
 		reverse: '#9b6bff',
 		selected: '#a06bff',
 		rootToFirstLevel: '#7e8bb5',

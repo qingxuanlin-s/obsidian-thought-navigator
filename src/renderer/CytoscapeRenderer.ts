@@ -19,6 +19,7 @@ import {
 import {
     buildElementConversionContext,
     compensateFreeLikeNodeFrameSize,
+    computeDirectionalEdgeControlPoints,
     convertEdgesToElements,
     convertNodesToElements,
     convertToElementsWithGroups,
@@ -207,7 +208,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private readonly ROOT_TO_FIRST_LEVEL_EDGE_WIDTH = 3.6;
     private readonly ROOT_TO_FIRST_LEVEL_EDGE_OPACITY = 0.78;
     private readonly ACTIVE_ROOT_TO_FIRST_LEVEL_EDGE_OPACITY = 0.85;
-    private readonly SECONDARY_PARENT_EDGE_OPACITY = 0.52;
+    private readonly SECONDARY_PARENT_EDGE_OPACITY = 0.7;
 
     private isReadOnlyMode(): boolean {
         return this.currentOptions?.readOnly === true || Platform.isMobile;
@@ -719,6 +720,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
         __lap('layout');
         this.applyCollapsedState();
         this.updateActiveFirstLevelBranch();
+        // 方向感知 S 形边:布局定稿后按最终坐标重算全部层级边的控制点(覆盖新增边)
+        this.refreshDirectionalEdgeCurves();
         __lap('finalize');
         if (__zkPerf) {
             const total = Object.values(__mark).reduce((a, b) => a + b, 0);
@@ -1147,6 +1150,55 @@ export class CytoscapeRenderer implements IGraphRenderer {
             
             this.cy.center();
         }
+    }
+
+    /**
+     * 方向感知的 S 形层级边:按节点最终坐标重算 unbundled-bezier 的控制点数组并写入 edge.data,
+     * 样式从 autoCpDistances/autoCpWeights 取值。Cytoscape 不会在节点移动时重评估控制点样式函数,
+     * 因此移动后必须主动调用本方法(布局结束 / 拖动 / reflow,见 events 的全局 position 监听)。
+     *
+     * 只处理层级骨架边(parent / forward),且跳过用户手动拖过的控制点(controlPointDistance 优先)。
+     * @param edges 仅刷新这些边(增量,如拖动时的 connectedEdges);省略则全量。
+     */
+    refreshDirectionalEdgeCurves(edges?: any): void {
+        if (!this.isCyUsable()) return;
+        const cy = this.cy;
+        if (!cy) return;
+        const opts = this.currentOptions;
+        // 仅贝塞尔风格需要;直线/折线无控制点
+        if (opts?.edgeStyle && opts.edgeStyle !== 'bezier') return;
+        const direction = ((opts as any)?.direction || 'LR') as 'LR' | 'RL' | 'TB' | 'BT';
+        const horizontal = direction === 'LR' || direction === 'RL';
+        const targetEdges = edges || cy.edges('[type="parent"], [type="forward"]');
+        cy.batch(() => {
+            targetEdges.forEach((edge: any) => {
+                const type = edge.data('type');
+                if (type !== 'parent' && type !== 'forward') return;
+                const sn = edge.source();
+                const tn = edge.target();
+                const s = sn.position();
+                const t = tn.position();
+                // 控制点必须在两端节点框外,否则 Cytoscape 求不到端点交点会丢边。
+                // 沿主轴取两端较大的半尺寸 + 余量作为最小切向距离。
+                const margin = 10;
+                const minTangent = horizontal
+                    ? Math.max(sn.width(), tn.width()) / 2 + margin
+                    : Math.max(sn.height(), tn.height()) / 2 + margin;
+                // 近距回退:主轴间距 < 2×minTangent 时 S 形控制点交叉,曲线缩进两节点框
+                // 之间被盖住(看起来"没有线");贝塞尔在重叠/极近时还可能端点无解直接不画。
+                // 此时整条边降级为直线(zk-near-straight 类切换 curve-style),最稳;拉开自动恢复。
+                const mainSpan = horizontal ? Math.abs(t.x - s.x) : Math.abs(t.y - s.y);
+                if (mainSpan < 2 * minTangent) {
+                    edge.addClass('zk-near-straight');
+                    return;
+                }
+                edge.removeClass('zk-near-straight');
+                if (edge.data('controlPointDistance') !== undefined) return; // 手动控制点优先
+                const cp = computeDirectionalEdgeControlPoints(s.x, s.y, t.x, t.y, direction, 0.5, minTangent);
+                edge.data('autoCpDistances', cp.distances);
+                edge.data('autoCpWeights', cp.weights);
+            });
+        });
     }
 
     /**
