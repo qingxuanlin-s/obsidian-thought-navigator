@@ -635,13 +635,16 @@ export function renderNodeBadges(this: any): void {
                 position: absolute;
                 width: 28px;
                 height: 28px;
-                background-color: ${remarkColor};
+                background: radial-gradient(circle at 50% 32%, ${remarkColor} 0%, ${remarkColor} 58%, ${remarkColor}d8 100%);
                 color: #ffffff;
                 font-size: 16px;
                 font-weight: 700;
                 border-radius: 999px;
-                border: 2px solid rgba(255, 255, 255, 0.95);
-                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+                border: 1.5px solid rgba(255, 255, 255, 0.5);
+                box-shadow: 0 0 8px ${remarkColor}59,
+                    0 1px 3px rgba(0, 0, 0, 0.35),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+                text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -810,32 +813,30 @@ export function renderNodeBadges(this: any): void {
 			const starEl = document.createElement('div');
 			starEl.className = 'zk-node-anchor-badge';
 			starEl.dataset.nodeId = node.id();
-			starEl.textContent = '★';
+			starEl.textContent = '✦';
+            // 星图风格:发光的星而非卡通贴纸 —— 通透光晕 + 外发光,去掉不透明深色圆底
             const anchorBadgeBackground = isLightTheme
-                ? 'linear-gradient(145deg, rgba(255, 251, 235, 0.96) 0%, rgba(254, 243, 199, 0.96) 100%)'
-                : 'radial-gradient(circle at 30% 30%, #0f172a 0%, #0b1220 65%, #090f1a 100%)';
+                ? 'radial-gradient(circle at 50% 45%, rgba(255, 246, 214, 0.85) 0%, rgba(254, 240, 196, 0.5) 50%, rgba(254, 240, 196, 0) 80%)'
+                : 'radial-gradient(circle at 50% 45%, rgba(255, 226, 150, 0.16) 0%, rgba(255, 214, 120, 0.06) 50%, rgba(255, 214, 120, 0) 78%)';
             const anchorBadgeShadow = isLightTheme
-                ? `0 0 0 1px rgba(146, 112, 25, 0.12),
-                    0 6px 14px rgba(88, 65, 18, 0.18),
-                    inset 0 1px 0 rgba(255, 255, 255, 0.78)`
-                : `0 0 0 1px rgba(255, 234, 154, 0.18),
-                    0 6px 14px rgba(0, 0, 0, 0.4),
-                    inset 0 1px 0 rgba(255, 236, 168, 0.24)`;
+                ? `0 1px 4px rgba(120, 84, 16, 0.16)`
+                : `0 0 4px rgba(255, 216, 128, 0.22),
+                    inset 0 0 4px rgba(255, 232, 160, 0.12)`;
             const anchorBadgeTextShadow = isLightTheme
-                ? '0 1px 0 rgba(255, 255, 255, 0.82)'
-                : `0 0 6px rgba(245, 220, 104, 0.65),
-                    0 0 14px rgba(245, 220, 104, 0.30)`;
+                ? `0 1px 0 rgba(255, 255, 255, 0.5)`
+                : `0 0 3px rgba(255, 224, 140, 0.5),
+                    0 0 7px rgba(255, 206, 100, 0.3)`;
             starEl.style.cssText = `
                 position: absolute;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                color: ${isLightTheme ? '#9a6a00' : '#f5dc68'};
+                color: ${isLightTheme ? '#b8860b' : '#f0d489'};
                 font-size: 18px;
                 line-height: 1;
                 pointer-events: none;
                 background: ${anchorBadgeBackground};
-                border: 2px solid ${isLightTheme ? 'rgba(204, 155, 22, 0.72)' : 'rgba(216, 197, 119, 0.95)'};
+                border: 1px solid ${isLightTheme ? 'rgba(204, 155, 22, 0.35)' : 'rgba(255, 234, 154, 0.32)'};
                 border-radius: 999px;
                 box-shadow: ${anchorBadgeShadow};
                 text-shadow: ${anchorBadgeTextShadow};
@@ -857,8 +858,8 @@ export function renderNodeBadges(this: any): void {
                 const zoom = this.cy.zoom();
                 const bb = node.renderedBoundingBox();
                 const badgeSize = Math.max(MIN_ANCHOR_PX, 26 * zoom);
-                const fontSize = Math.max(13, badgeSize * 0.52 - 1);
-                const borderWidth = Math.max(1.5, badgeSize * 0.08);
+                const fontSize = Math.max(14, badgeSize * 0.62);
+                const borderWidth = Math.max(1, badgeSize * 0.045);
                 starEl.style.width = `${badgeSize}px`;
                 starEl.style.height = `${badgeSize}px`;
                 starEl.style.fontSize = `${fontSize}px`;

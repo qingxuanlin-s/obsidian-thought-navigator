@@ -1826,6 +1826,15 @@ align-items: center;
     }
 }
 
+/* 锚点星 —— 星图风格的轻微闪烁(只动 opacity/filter,避免覆盖内联 transform) */
+@keyframes zk-anchor-twinkle {
+    0%, 100% { opacity: 0.82; filter: brightness(0.96); }
+    50%      { opacity: 1;    filter: brightness(1.08); }
+}
+.zk-node-anchor-badge {
+    animation: zk-anchor-twinkle 3.2s ease-in-out infinite;
+}
+
 /* MOC 选择器样式优化 */
 .zk-moc-selector {
     margin-left: 8px;
