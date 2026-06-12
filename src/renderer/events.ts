@@ -2764,6 +2764,37 @@ export function showSearchBar(this: any): void {
             }
         };
 
+        // 把命中关键词包成 <mark> 高亮(大小写不敏感、可多处命中),其余文本做 HTML 转义防注入
+        const escapeHtml = (s: string): string =>
+            s.replace(/[&<>"']/g, (c) => (
+                { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string
+            ));
+        const highlightTerm = (text: string, term: string): string => {
+            if (!term) return escapeHtml(text);
+            const lower = text.toLowerCase();
+            const t = term.toLowerCase();
+            let out = '';
+            let i = 0;
+            while (i < text.length) {
+                const idx = lower.indexOf(t, i);
+                if (idx === -1) { out += escapeHtml(text.slice(i)); break; }
+                out += escapeHtml(text.slice(i, idx));
+                out += `<mark class="zk-search-hit">${escapeHtml(text.slice(idx, idx + t.length))}</mark>`;
+                i = idx + t.length;
+            }
+            return out;
+        };
+        // 命中可能落在长文本靠后处,2 行省略会把它截掉 → 从关键词前若干字截取片段,
+        // 保证高亮始终在可见区(类似搜索结果预览),尾部超出由 CSS 省略号兜底。
+        const buildSnippetHtml = (text: string, term: string): string => {
+            if (!term) return escapeHtml(text);
+            const idx = text.toLowerCase().indexOf(term.toLowerCase());
+            if (idx < 0) return escapeHtml(text);
+            const before = 16;
+            if (idx <= before) return highlightTerm(text, term);
+            return '…' + highlightTerm(text.slice(idx - before), term);
+        };
+
         const renderSuggestions = () => {
             suggestionBox.empty();
             if (!input.value.trim() || filteredNodes.length === 0) {
@@ -2771,6 +2802,7 @@ export function showSearchBar(this: any): void {
                 return;
             }
 
+            const term = input.value.trim();
             const visibleCount = Math.min(filteredNodes.length, 12);
             for (let i = 0; i < visibleCount; i++) {
                 const node = filteredNodes[i];
@@ -2783,7 +2815,7 @@ export function showSearchBar(this: any): void {
 
                 const origNode = node.data('originalNode');
                 const title = origNode?.title || node.data('label') || '';
-                item.textContent = title;
+                item.innerHTML = buildSnippetHtml(title, term);
 
                 item.addEventListener('mousedown', (e) => {
                     e.preventDefault();
