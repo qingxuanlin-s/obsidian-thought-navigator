@@ -66,7 +66,7 @@ function deepCopyMOCResult(original: MOCParseResult): MOCParseResult {
         edgeCurvatures: { ...original.edgeCurvatures },
         nodeColors: { ...original.nodeColors },
         nodeStyleColors: { ...(original as any).nodeStyleColors || {} },
-        crossDomainLinks: original.crossDomainLinks ? JSON.parse(JSON.stringify(original.crossDomainLinks)) : {},
+        crossDomainLinks: original.crossDomainLinks ? structuredClone(original.crossDomainLinks) : {},
         embedNodeSizes: { ...(original as any).embedNodeSizes || {} },
         nodeRemarks: { ...(original as any).nodeRemarks || {} },
         nodeAnchors: { ...(original as any).nodeAnchors || {} },
