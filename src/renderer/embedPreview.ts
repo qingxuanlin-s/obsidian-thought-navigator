@@ -212,6 +212,16 @@ export function renderEmbedNodePreviews(this: any): void {
         });
         if (embedNodes.length === 0) { this.embedCardCache.clear(); return; }
 
+        // mark-sweep 淘汰:只保留当前 MOC 仍存在的嵌入节点缓存卡片。
+        // 否则切换 MOC 时,旧 MOC 的卡片(detached DOM + 解码后的图片位图)会以旧 nodeId
+        // 永久留在 embedCardCache 里(再也不命中、不释放),浏览多个带嵌入的 MOC 即无界增长。
+        // 镜像 nodeBadges 里 textMdOverlayCache 的同款回收。
+        const liveEmbedNodeIds = new Set<string>();
+        embedNodes.forEach((node: any) => liveEmbedNodeIds.add(node.id()));
+        for (const key of Array.from(this.embedCardCache.keys()) as string[]) {
+            if (!liveEmbedNodeIds.has(key)) this.embedCardCache.delete(key);
+        }
+
         const app = this.currentOptions?.app;
         if (!app) return;
 
