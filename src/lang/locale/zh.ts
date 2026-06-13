@@ -316,6 +316,7 @@ export default {
     "detail no remark": "暂无备注",
     "detail add remark": "添加备注",
     "detail dblclick edit": "双击编辑",
+    "detail copy": "复制备注",
     "detail pin": "钉住常驻(不自动收起)",
     "detail unpin": "取消常驻",
     "detail placeholder": "在画布中选择一个节点查看详情",

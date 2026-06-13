@@ -85,7 +85,9 @@ export class NodeDetailPanel {
         this.kickerEl = header.createDiv("zk-detail-kicker");
         this.dotEl = this.kickerEl.createDiv("zk-detail-dot");
         this.kickerTextEl = this.kickerEl.createSpan("zk-detail-kicker-text");
-        this.titleEl = header.createDiv("zk-detail-title");
+        // markdown-rendered:让标题内的 strong/em/高亮等吃到主题/用户片段对 .markdown-rendered
+        // 的样式(如本仓库用户片段把 **加粗** 染成 accent 色),与画布文本节点 overlay 观感一致。
+        this.titleEl = header.createDiv("zk-detail-title markdown-rendered");
         this.breadcrumbEl = header.createDiv("zk-detail-breadcrumb");
 
         this.bodyEl = this.root.createDiv("zk-detail-body");
@@ -181,8 +183,9 @@ export class NodeDetailPanel {
         this.kickerTextEl.setText(this.typeLabel(node));
 
         const titleText = (node.title || node.displayText || node.IDStr || '').trim() || node.IDStr;
-        this.titleEl.setText(titleText);
-        this.titleEl.setAttribute("title", titleText); // 缩略后 hover 看全文
+        // 标题富文本:用 Obsidian 的 MarkdownRenderer 渲染(与备注一致,能正确处理 **加粗** 内
+        // 嵌套 <span style> 颜色等组合),再平铺段落保持内联 + line-clamp 截断。
+        void this.renderTitleRich(this.titleEl, titleText, token);
 
         this.renderBreadcrumb(node);
 
@@ -260,6 +263,46 @@ export class NodeDetailPanel {
         return s.length > max ? s.slice(0, max) + '…' : s;
     }
 
+    /** 去除内联富文本标记,得到纯文本(面包屑等不渲染富文本处用) */
+    private stripMarkup(text: string): string {
+        return (text || '')
+            .replace(/<span\s+style=["'][^"']*["']>([\s\S]*?)<\/span>/gi, '$1')
+            .replace(/<\/?[a-z][^>]*>/gi, '')
+            .replace(/\*\*(.+?)\*\*|__(.+?)__|~~(.+?)~~|==(.+?)==|`([^`]+?)`/g,
+                (_m, a, b, c, d, e) => a ?? b ?? c ?? d ?? e ?? '')
+            .replace(/\\([-*+#])/g, '$1')
+            .trim();
+    }
+
+    /**
+     * 标题富文本渲染:复用 Obsidian MarkdownRenderer(与备注一致,能正确处理
+     * **加粗** 内嵌套 <span style> 颜色、高亮等组合),再把渲染出的段落内联内容平铺到
+     * 标题元素,保持 -webkit-line-clamp 截断生效。
+     * - 多行折成单行;转义行首块级标记(- * + 数字. #),避免被当成列表/标题块。
+     * - token 守卫:渲染期间若切换了节点则丢弃结果。
+     */
+    private async renderTitleRich(el: HTMLElement, input: string, token: number): Promise<void> {
+        el.empty();
+        let text = (input || '').replace(/\r\n?/g, '\n').replace(/\n+/g, ' ').trim();
+        if (!text) { el.setAttribute("title", input || ''); return; }
+        // 快路径:无 markdown/HTML 语法 → 纯文本
+        if (!/[*~_`=<\[#]/.test(text)) {
+            el.textContent = text;
+            el.setAttribute("title", text);
+            return;
+        }
+        // 转义行首块级标记,避免 "- xxx" / "# xxx" 被解析成列表/标题
+        text = text.replace(/^(\s*)([-*+#]|\d+\.)/, (_m, sp, mk) => `${sp}\\${mk}`);
+        const tmp = createDiv();
+        await MarkdownRenderer.render(this.app, text, tmp, this.currentNode?.file?.path || '', this.deps.component);
+        if (token !== this.renderToken) { tmp.remove(); return; } // 期间切换了节点,丢弃
+        // 取首个块级元素(通常 <p>)的内联内容平铺进标题
+        const block = tmp.querySelector("p") || tmp.firstElementChild || tmp;
+        while (block.firstChild) el.appendChild(block.firstChild);
+        tmp.remove();
+        el.setAttribute("title", el.textContent || input || ''); // 缩略后 hover 看全文
+    }
+
     private renderBreadcrumb(node: ZKNode): void {
         this.breadcrumbEl.empty();
         const arr = node.IDArr || [];
@@ -271,7 +314,7 @@ export class NodeDetailPanel {
         arr.forEach((idStr, i) => {
             // IDArr 元素本身即该层的完整 IDStr(累积前缀),直接使用
             const crumb = this.breadcrumbEl.createSpan("zk-detail-crumb");
-            const full = this.deps.getLabel(idStr);
+            const full = this.stripMarkup(this.deps.getLabel(idStr));
             crumb.setText(this.truncate(full, 10));
             crumb.setAttribute("title", full); // 截断后 hover 看全
             if (i < arr.length - 1) {
@@ -314,6 +357,8 @@ export class NodeDetailPanel {
                 isFileNode ? "zk-detail-remark markdown-rendered zk-detail-remark-callout" : "zk-detail-remark markdown-rendered"
             );
             void MarkdownRenderer.render(this.app, remark, remarkEl, node.file?.path || '', this.deps.component);
+            // 右上角复制按钮:复制备注的可见纯文本(便于粘贴到他处)
+            this.attachCopyButton(remarkEl, () => remarkEl.innerText || remark);
             if (canEdit) {
                 remarkEl.addClass("zk-detail-editable");
                 remarkEl.setAttribute("title", t("detail dblclick edit"));
@@ -341,6 +386,30 @@ export class NodeDetailPanel {
             addBtn.setText(t("detail add remark"));
             addBtn.addEventListener("click", () => this.enterRemarkEdit(node, '', isFileNode));
         }
+    }
+
+    /** 在备注块右上角挂一个复制按钮:点击复制 getText() 返回的内容到剪贴板,带短暂成功反馈 */
+    private attachCopyButton(host: HTMLElement, getText: () => string): void {
+        host.addClass("zk-detail-has-copy");
+        const btn = host.createDiv("zk-detail-copy-btn");
+        setIcon(btn, "copy");
+        btn.setAttribute("title", t("detail copy") || "复制");
+        btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const text = (getText() || '').trim();
+            if (!text) return;
+            void navigator.clipboard.writeText(text).then(() => {
+                btn.addClass("is-copied");
+                setIcon(btn, "check");
+                window.setTimeout(() => {
+                    if (!btn.isConnected) return;
+                    btn.removeClass("is-copied");
+                    setIcon(btn, "copy");
+                }, 1200);
+            });
+        });
+        // 双击复制按钮不应进入备注编辑
+        btn.addEventListener("dblclick", (e) => e.stopPropagation());
     }
 
     /** 备注编辑模式:挂载与画布同款 CM6 编辑器(Enter 保存 / Shift+Enter 换行 / Esc 取消 / 失焦保存) */

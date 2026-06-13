@@ -6422,8 +6422,36 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
   color: var(--zk-text, #e6e7ea);
   font-size: 14px;
   line-height: 1.7;
+  /* 详情正文/备注允许选中并局部复制(覆盖画布容器的 user-select:none 继承) */
+  user-select: text;
+  -webkit-user-select: text;
 }
 .zk-detail-remark { color: var(--zk-text, #e6e7ea); }
+
+/* 备注右上角复制按钮 */
+.zk-detail-has-copy { position: relative; }
+.zk-detail-copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--zk-text-muted, #9a9ca6);
+  background: color-mix(in srgb, var(--zk-surface-solid, #1f1f1f) 70%, transparent);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+  user-select: none;
+  z-index: 2;
+}
+.zk-detail-has-copy:hover .zk-detail-copy-btn { opacity: 0.75; }
+.zk-detail-copy-btn:hover { opacity: 1; color: var(--zk-text, #e6e7ea); background: var(--zk-control-bg, rgba(255, 255, 255, 0.075)); }
+.zk-detail-copy-btn.is-copied { opacity: 1; color: var(--zk-accent, #8b6bd6); }
+.zk-detail-copy-btn svg { width: 14px; height: 14px; }
 .zk-detail-remark > :first-child { margin-top: 0; }
 .zk-detail-remark > :last-child { margin-bottom: 0; }
 /* 备注富文本 **加粗**:不依赖主题 --bold-weight(部分主题设为 400 → 读模式看不出加粗),

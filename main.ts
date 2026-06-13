@@ -272,7 +272,7 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     mocNodePositions: {}, // MOC 节点位置存储
     smartConnection: false, // 智能连线默认关闭
     themeMode: 'auto', // 默认跟随 Obsidian
-    themeStyle: 'modern', // 默认现代风格
+    themeStyle: 'nebula', // 默认星云风格
     edgeStyle: 'bezier', // 默认贝塞尔曲线
     nodeLayoutStyle: 'auto', // 默认自动节点布局
     autoLayoutDefaultGrowthDirection: 'bidirectional',

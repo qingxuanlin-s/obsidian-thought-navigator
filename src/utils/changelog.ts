@@ -12,6 +12,40 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
     {
+        version: '0.1.8',
+        date: '2026-06-13',
+        highlights: [
+            {
+                zh: '新增草稿节点:AI/程序产出的节点先以「待审批草稿」形态注入画布,父级实时居中预览,确认后落地、丢弃则原样还原,不污染文件;草稿可直接选中并 Tab/Enter 续建子/兄弟节点',
+                en: 'New draft nodes: AI/programmatic output is injected as "pending-approval drafts" with live parent-centered preview — commit to keep, discard to fully restore without touching the file; drafts are selectable and support Tab/Enter to keep building children/siblings',
+            },
+            {
+                zh: '节点详情侧栏:单击节点即跟随展示,概念节点内联编辑富文本备注、文件节点预览正文;支持钉住常驻与拖拽调宽并持久化;标题按富文本渲染(加粗/颜色随主题),备注可划选局部复制并新增一键复制按钮',
+                en: 'Node detail panel: single-click a node to follow it — edit rich-text remarks inline on concept nodes, preview note body on file nodes; pin it open and drag-resize with persistence; the title now renders rich text (bold/color follow your theme) and remarks are selectable with a one-click copy button',
+            },
+            {
+                zh: '新增 Nebula 星云主题(暗色深空霓虹 / 浅色冷灰白卡两套),并设为默认风格',
+                en: 'New Nebula theme (dark deep-space neon / light cool-grey white-card variants), now the default style',
+            },
+            {
+                zh: '新增只读节点查询 API queryNodes:支持精确 / 模糊 / 取子树,便于脚本与外部工具检索导图',
+                en: 'New read-only queryNodes API: exact / fuzzy / subtree lookups for scripting and external tools',
+            },
+            {
+                zh: '搜索框 UI 增强,匹配结果高亮关键词',
+                en: 'Search bar UI refresh with keyword highlighting in results',
+            },
+            {
+                zh: '性能与稳定性:大图渲染/拖拽/缩放更顺(overlay 增量复用 + 视口剔除),修复跨 MOC 切换的内存泄露,删除节点不再缩回最小视图,贝塞尔曲线与连线显示优化',
+                en: 'Performance & stability: smoother rendering/drag/zoom on large maps (incremental overlay reuse + viewport culling), fixed a memory leak when switching MOCs, deleting a node no longer collapses the viewport, plus bezier/edge rendering tweaks',
+            },
+            {
+                zh: '多项布局与交互修复:收起手柄移出即消失、收起/展开位置错乱、连线小蓝点拖出节点消失、auto 布局新建节点尊重「智能连线」开关',
+                en: 'Various layout & interaction fixes: collapse handle vanishing on hover-out, collapse/expand position glitches, the connection dot disappearing when dragged outside a node, and auto-layout new nodes now respecting the "smart connection" toggle',
+            },
+        ],
+    },
+    {
         version: '0.1.7',
         date: '2026-06-07',
         highlights: [

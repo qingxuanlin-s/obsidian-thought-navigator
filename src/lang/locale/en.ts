@@ -317,6 +317,7 @@ export default {
     "detail no remark": "No remark yet",
     "detail add remark": "Add remark",
     "detail dblclick edit": "Double-click to edit",
+    "detail copy": "Copy remark",
     "detail pin": "Pin panel (keep open)",
     "detail unpin": "Unpin panel",
     "detail placeholder": "Select a node to view details",
