@@ -647,6 +647,7 @@ export function renderNodeBadges(this: any): void {
                 lastRemarkColor = remarkColor;
                 remarkEl.style.cssText = `
                 position: absolute;
+                transform-origin: top left;
                 width: 28px;
                 height: 28px;
                 background: radial-gradient(circle at 50% 32%, ${remarkColor} 0%, ${remarkColor} 58%, ${remarkColor}d8 100%);
@@ -781,11 +782,8 @@ export function renderNodeBadges(this: any): void {
                     y = boundingBox.y1 - size * 0.35;
                 }
 
-                remarkEl.style.transform = `translate(${x}px, ${y}px)`;
-                remarkEl.style.width = `${size}px`;
-                remarkEl.style.height = `${size}px`;
-                remarkEl.style.fontSize = `${16 * zoom}px`;
-                remarkEl.style.borderWidth = `${Math.max(1, 2 * zoom)}px`;
+                // 尺寸固定为基准 28px 一档,缩放交给 transform: scale,每帧只写 transform(无重排)。
+                remarkEl.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`;
 
                 const tooltipX = x + size + (8 * zoom);
                 const tooltipY = y - (6 * zoom);
@@ -1101,7 +1099,11 @@ export function renderNodeBadges(this: any): void {
             (badgeEl.style as any).textSizeAdjust = 'none';
             badgeContainer.appendChild(badgeEl);
 
-            // 更新徽章位置的函数
+            // 徽章文本按"模型宽度"截断并缓存:zoom/pan 不改变模型宽度,故截断结果在缩放过程中不变。
+            // 仅当节点模型宽度真正变化时才重新跑 middleEllipsizeToWidth(二分 measureText,昂贵)。
+            // 字号/内边距/圆角全部固定为基准 9px 一档,缩放交给 transform: scale —— 每帧只写一次 transform。
+            // (maxZoom=1,scale 永远是缩小,文本不会被放大糊化。)
+            let cachedTextKey = -1;
             const updateBadgePosition = () => {
                 if (!this.cy) return;
 
@@ -1122,26 +1124,18 @@ export function renderNodeBadges(this: any): void {
                 // 徽章位置：节点右下角内侧
                 const x = boundingBox.x2 - 8 * zoom;
                 const y = boundingBox.y2 - 8 * zoom;
-                if (Platform.isMobile) {
-                    // 移动端使用 transform scale，规避 WebView 文本最小字号干预导致的“ID 不缩放”
-                    const safeScale = Math.max(0.28, zoom);
-                    const maxVisualWidth = Math.max(0, boundingBox.w - 16 * zoom);
-                    const maxTextWidth = Math.max(0, maxVisualWidth / safeScale - 16 - 2);
-                    badgeEl.textContent = middleEllipsizeToWidth(badge, maxTextWidth, badgeMeasureCtx, '600 9px ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace');
-                    badgeEl.style.transform = `translate(${x}px, ${y}px) translate(-100%, -100%) scale(${safeScale})`;
-                    badgeEl.style.fontSize = '9px';
-                    badgeEl.style.padding = '3px 8px';
-                    badgeEl.style.borderRadius = '20px';
-                } else {
-                    const fontSize = 9 * zoom;
-                    const paddingX = 8 * zoom;
-                    const maxTextWidth = Math.max(0, boundingBox.w - 16 * zoom - paddingX * 2 - 2);
-                    badgeEl.textContent = middleEllipsizeToWidth(badge, maxTextWidth, badgeMeasureCtx, `600 ${fontSize}px ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace`);
-                    badgeEl.style.transform = `translate(${x}px, ${y}px) translate(-100%, -100%)`;
-                    badgeEl.style.fontSize = `${fontSize}px`;
-                    badgeEl.style.padding = `${3 * zoom}px ${8 * zoom}px`;
-                    badgeEl.style.borderRadius = `${20 * zoom}px`;
+                // 移动端用 0.28 下限保证最小可读字号;桌面端 zoom(maxZoom=1) 直接作 scale。
+                const scale = Platform.isMobile ? Math.max(0.28, zoom) : zoom;
+
+                // 基准坐标系(9px)下的可用文本宽度 = 模型宽度 - 左右内缩 - 内边距 - 余量。
+                const modelW = boundingBox.w / zoom;
+                const baseMaxTextWidth = Math.max(0, modelW - 16 - 16 - 2);
+                const key = Math.round(baseMaxTextWidth);
+                if (key !== cachedTextKey) {
+                    cachedTextKey = key;
+                    badgeEl.textContent = middleEllipsizeToWidth(badge, baseMaxTextWidth, badgeMeasureCtx, '600 9px ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace');
                 }
+                badgeEl.style.transform = `translate(${x}px, ${y}px) translate(-100%, -100%) scale(${scale})`;
             };
 
             badgeUpdaters.push({ node, fn: updateBadgePosition });
@@ -1972,12 +1966,16 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                     currentEntry.width = bb.w / zoom;
                     currentEntry.height = bb.h / zoom;
                 }
-                const isSelected = node.selected();
-                const overflowY = (currentEntry.el.scrollHeight - currentEntry.el.clientHeight) > 1;
-                currentEntry.el.dataset.overflowing = overflowY ? '1' : '0';
-                currentEntry.el.style.overflowX = 'hidden';
-                currentEntry.el.style.overflowY = (isSelected && overflowY) ? 'auto' : 'hidden';
-                currentEntry.el.style.pointerEvents = (isSelected && overflowY) ? 'auto' : 'none';
+                // 溢出检测要读 scrollHeight/clientHeight,紧跟在上面的尺寸写入之后会触发强制同步重排。
+                // pan/zoom 交互帧跳过它(沿用上一帧的 overflow 状态),仅在交互结束的空闲帧精确计算。
+                if (!this.overlayScheduler.isInteracting) {
+                    const isSelected = node.selected();
+                    const overflowY = (currentEntry.el.scrollHeight - currentEntry.el.clientHeight) > 1;
+                    currentEntry.el.dataset.overflowing = overflowY ? '1' : '0';
+                    currentEntry.el.style.overflowX = 'hidden';
+                    currentEntry.el.style.overflowY = (isSelected && overflowY) ? 'auto' : 'hidden';
+                    currentEntry.el.style.pointerEvents = (isSelected && overflowY) ? 'auto' : 'none';
+                }
             };
             badgeUpdaters.push({ node, fn: updateOverlayPos });
         });
