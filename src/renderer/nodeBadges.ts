@@ -7,6 +7,15 @@ import { renderExcalidrawPreview, wrapForImageToolkit } from './embedPreview';
 
 export const TEXT_MD_OVERLAY_RENDER_VERSION = 3;
 
+// overlay 定位 updater + 其所属 Cytoscape 节点(用于视口剔除)。
+// node 为 null 表示该 updater 不绑定单一节点(始终执行,不参与剔除)。
+type BadgeUpdater = { node: any | null; fn: () => void };
+
+// 交互(pan/zoom/drag)期视口剔除的安全外扩边距(rendered px):
+// 节点中心在 [视口 - M, 视口 + M] 外才剔除,覆盖节点自身尺寸 + 单帧快速 pan 的位移,
+// 避免节点刚滑入视口时 overlay 慢一帧。交互结束后 scheduleExtra/immediate 会全量补正。
+const OVERLAY_CULL_MARGIN = 320;
+
 function middleEllipsizeToWidth(text: string, maxWidth: number, ctx: CanvasRenderingContext2D | null, font: string): string {
 	const fullText = String(text || '');
 	if (!fullText || maxWidth <= 0 || !ctx) return fullText;
@@ -82,6 +91,9 @@ export function renderNodeBadges(this: any): void {
         // 一次性消费,避免标记泄漏到后续全量渲染。
         let incIds: Set<string> | null = this._incrementalAddIds || null;
         this._incrementalAddIds = null;
+        // 已有节点被推开(仅位置变化)时为 true:增量末尾需重定位全部 overlay 而非只定位新节点。
+        const repositionAll = this._incrementalRepositionAll === true;
+        this._incrementalRepositionAll = false;
 
         const isLightTheme = this.currentOptions?.themeMode === 'light' || document.body.classList.contains('theme-light');
 
@@ -154,7 +166,7 @@ export function renderNodeBadges(this: any): void {
         }
 
         // 存储所有徽章的更新函数
-        const badgeUpdaters: Array<() => void> = [];
+        const badgeUpdaters: BadgeUpdater[] = [];
         const readOnly = this.isReadOnlyMode();
         const underlineMeasure = document.createElement('canvas');
         const underlineMeasureCtx = underlineMeasure.getContext('2d');
@@ -280,7 +292,9 @@ export function renderNodeBadges(this: any): void {
 
             // 不在此 inline 定位:末尾 overlayScheduler.immediate() 会在同一同步周期内
             // (paint 前)统一跑一遍全部 updater,inline 调用纯属重复昂贵的 renderedBoundingBox。
-            badgeUpdaters.push(updateGlassPos);
+            // node:null = 不参与视口剔除。分组可能跨越整个视口而中心在视口外,
+            // 基于中心的剔除会误删其 glass;分组数量少,始终更新成本可忽略。
+            badgeUpdaters.push({ node: null, fn: updateGlassPos });
         });
 
         const IMAGE_EXTS_BADGE = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
@@ -613,7 +627,7 @@ export function renderNodeBadges(this: any): void {
                 }
             };
 
-            badgeUpdaters.push(updateUnderlinePosition);
+            badgeUpdaters.push({ node, fn: updateUnderlinePosition });
         });
 
         this.cy.nodes().forEach((node: any) => {
@@ -779,7 +793,7 @@ export function renderNodeBadges(this: any): void {
                 tooltipEl.style.top = `${tooltipY}px`;
             };
 
-            badgeUpdaters.push(updateRemarkPosition);
+            badgeUpdaters.push({ node, fn: updateRemarkPosition });
 
             remarkEl.addEventListener('click', (e) => {
                 if (this.isReadOnlyMode()) {
@@ -872,7 +886,7 @@ export function renderNodeBadges(this: any): void {
                 starEl.style.transform = `translate(${bb.x1 + badgeSize * 0.48}px, ${bb.y1 + badgeSize * 0.48}px) translate(-50%, -50%)`;
             };
 
-            badgeUpdaters.push(updateAnchorPos);
+            badgeUpdaters.push({ node, fn: updateAnchorPos });
         });
 
         // 草稿节点角标 — 左上角小药丸,AI=紫/人工=灰,标识待审批节点(#20)
@@ -925,7 +939,7 @@ export function renderNodeBadges(this: any): void {
                 draftEl.style.transform = `translate(${bb.x1 + badgeSize * 0.4}px, ${bb.y1 + badgeSize * 0.4}px) translate(-50%, -50%)`;
             };
 
-            badgeUpdaters.push(updateDraftPos);
+            badgeUpdaters.push({ node, fn: updateDraftPos });
         });
 
         // 跨领域虚拟节点角标 — 左上角紫色 ↗,标识"来自其他 MOC 的客人"(配合虚线描边)
@@ -980,7 +994,7 @@ export function renderNodeBadges(this: any): void {
                 cdEl.style.transform = `translate(${bb.x1 + badgeSize * 0.4}px, ${bb.y1 + badgeSize * 0.4}px) translate(-50%, -50%)`;
             };
 
-            badgeUpdaters.push(updateCdPos);
+            badgeUpdaters.push({ node, fn: updateCdPos });
         });
 
         // 兼容旧语义：文字前小色点（legacy customColor）
@@ -1039,7 +1053,7 @@ export function renderNodeBadges(this: any): void {
                 dotEl.style.transform = `translate(${textStartX}px, ${centerY}px) translate(-50%, -50%)`;
             };
 
-            badgeUpdaters.push(updateDotPos);
+            badgeUpdaters.push({ node, fn: updateDotPos });
         });
 
         // 为每个有 badge 的节点创建徽章元素（跳过 embed 节点，由预览卡片展示）
@@ -1130,7 +1144,7 @@ export function renderNodeBadges(this: any): void {
                 }
             };
 
-            badgeUpdaters.push(updateBadgePosition);
+            badgeUpdaters.push({ node, fn: updateBadgePosition });
 
             // 点击徽章时选中节点
             badgeEl.addEventListener('click', (e) => {
@@ -1264,7 +1278,7 @@ export function renderNodeBadges(this: any): void {
                     resizeEl.style.transform = `translate(${bb.x2 - size}px, ${bb.y2 - size}px)`;
                 };
 
-                badgeUpdaters.push(updateResizeHandle);
+                badgeUpdaters.push({ node, fn: updateResizeHandle });
             });
         }
 
@@ -1359,7 +1373,7 @@ export function renderNodeBadges(this: any): void {
                     toggleEl.style.transform = `translate(${x}px, ${y}px)`;
                 };
 
-                badgeUpdaters.push(updateTogglePos);
+                badgeUpdaters.push({ node, fn: updateTogglePos });
             });
         }
 
@@ -1372,17 +1386,44 @@ export function renderNodeBadges(this: any): void {
         // 注册到统一 overlay 调度器。增量模式下 badgeUpdaters 只含新节点的 updater,
         // 这里追加一个新的 badgePositionUpdater(不清理旧的),旧节点的 updater 仍在调度器中,
         // pan/zoom 时新旧并集都会被更新。
-        const badgePositionUpdater = () => badgeUpdaters.forEach(updater => updater());
+        const badgePositionUpdater = () => {
+            // 非交互帧(idle / 交互结束后的 scheduleExtra/immediate):全量定位,保证稳态精确。
+            if (!this.cy || !this.overlayScheduler.isInteracting) {
+                for (const u of badgeUpdaters) u.fn();
+                return;
+            }
+            // 交互(pan/zoom/drag)帧:剔除中心远离视口的节点 overlay。判据用 node.position()
+            // (模型坐标,廉价,不触发 renderedBoundingBox),换算到 rendered 坐标后与视口比较。
+            const pan = this.cy.pan();
+            const zoom = this.cy.zoom();
+            const W = this.container?.clientWidth ?? 0;
+            const H = this.container?.clientHeight ?? 0;
+            const M = OVERLAY_CULL_MARGIN;
+            for (const u of badgeUpdaters) {
+                if (u.node && !u.node.removed()) {
+                    const p = u.node.position();
+                    const rx = p.x * zoom + pan.x;
+                    const ry = p.y * zoom + pan.y;
+                    if (rx < -M || rx > W + M || ry < -M || ry > H + M) continue;
+                }
+                u.fn();
+            }
+        };
         this.overlayScheduler.updaters.add(badgePositionUpdater);
         this.overlayScheduler.immediateUpdaters.add(badgePositionUpdater);
         this.overlayScheduler.extraUpdaters.add(badgePositionUpdater);
         this.overlayScheduler.selectionUpdaters.add(badgePositionUpdater);
 
         if (incIds) {
-            // 增量模式:只定位本次新增节点的 overlay。边控制点/端点(选中时惰性创建,select 处理器
-            // 仍是上次全量渲染所绑、对新边同样有效)、收起手柄、分组手柄、glass 均保持原状;不调用会
-            // 重定位全部节点的 overlayScheduler.immediate(),从而省去全图重定位成本。
-            badgeUpdaters.forEach(updater => updater());
+            // 增量模式:默认只定位本次新增节点的 overlay。边控制点/端点(选中时惰性创建,select 处理器
+            // 仍是上次全量渲染所绑、对新边同样有效)、收起手柄、分组手柄、glass 均保持原状;省去全图重定位成本。
+            if (repositionAll) {
+                // 已有同级被推开(auto 布局新增):已有 overlay DOM 仍有效但坐标过期,
+                // immediate() 跑一遍全部已注册 updater 重定位全图(成本=一帧 pan,远低于重建 N 个 DOM)。
+                this.overlayScheduler.immediate();
+            } else {
+                badgeUpdaters.forEach(u => u.fn());
+            }
             // 连线手柄(hover 小蓝点)是逐节点绑定的,新节点必须重建才有手柄。addConnectionHandles
             // 已做自幂等(注销旧 updater + 解绑旧逐节点监听),可独立调用而不累积、不影响边 select 处理器。
             // 手柄默认 opacity:0、hover 才显示+定位,故无需在此跑全图定位。
@@ -1428,7 +1469,7 @@ export function renderNodeBadges(this: any): void {
      *   2) 快路径检测 —— 无 MD 语法时跳过 MarkdownRenderer，直接 textContent
      *   3) 批量尺寸回写 —— Promise.all 完成后 cy.batch 一次性刷新节点宽高
      */
-function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badgeUpdaters: Array<() => void>, incIds: Set<string> | null = null): void {
+function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badgeUpdaters: BadgeUpdater[], incIds: Set<string> | null = null): void {
         if (!this.cy) return;
         const app = this.currentOptions?.app;
         if (!app) return;
@@ -1938,7 +1979,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                 currentEntry.el.style.overflowY = (isSelected && overflowY) ? 'auto' : 'hidden';
                 currentEntry.el.style.pointerEvents = (isSelected && overflowY) ? 'auto' : 'none';
             };
-            badgeUpdaters.push(updateOverlayPos);
+            badgeUpdaters.push({ node, fn: updateOverlayPos });
         });
 
         // 批量尺寸回写：先处理同步完成的（快路径），异步完成的在 Promise.all 后再批量
@@ -2099,6 +2140,15 @@ function addCollapseToggleHandle(this: any): void {
             // 用「在节点上 || 在按钮上」两个标志桥接节点与按钮之间的间隙，避免移动途中闪退。
             let overNode = false;
             let overHandle = false;
+            // 移出节点/手柄后的隐藏宽限期 timer:给鼠标从节点移到框外手柄的时间(见 shouldShow)。
+            let hideTimer: number | null = null;
+            const clearHideTimer = () => {
+                if (hideTimer !== null) { window.clearTimeout(hideTimer); hideTimer = null; }
+            };
+            const scheduleHide = () => {
+                clearHideTimer();
+                hideTimer = window.setTimeout(() => { hideTimer = null; updateHandle(); }, 260);
+            };
 
             const updateHandle = () => {
                 if (!this.cy) return;
@@ -2119,7 +2169,9 @@ function addCollapseToggleHandle(this: any): void {
                 const maxTop = Math.max(4, this.container.clientHeight - size - 4);
                 const top = Math.min(Math.max(rawTop, 4), maxTop);
                 const isCollapsed = this.collapsedNodeIds.has(originalId);
-                const shouldShow = isCollapsed || node.selected() || overNode || overHandle;
+                // 宽限期内(hideTimer 未到期)保持显示:手柄在节点框左外侧,鼠标从节点移到手柄
+                // 途中会先触发节点 mouseout,若此刻就隐藏则手柄消失、收不到 mouseenter → 点不到。
+                const shouldShow = isCollapsed || node.selected() || overNode || overHandle || hideTimer !== null;
 
                 if (!shouldShow) {
                     handle.style.display = 'none';
@@ -2164,16 +2216,18 @@ function addCollapseToggleHandle(this: any): void {
             handle.addEventListener('click', toggleCollapse);
             handle.addEventListener('touchend', toggleCollapse, { passive: false });
 
-            // hover 节点 / hover 按钮本身 → 显示；移开两者 → 隐藏（未收起且未选中时）
-            const onNodeOver = () => { overNode = true; updateHandle(); };
-            const onNodeOut = () => { overNode = false; updateHandle(); };
+            // hover 节点 / hover 按钮本身 → 显示；移开两者 → 宽限期后隐藏（未收起且未选中时）。
+            // 进入任一方立即取消待隐藏;离开任一方走 scheduleHide,期间鼠标落到手柄会被 onHandleEnter 取消。
+            const onNodeOver = () => { clearHideTimer(); overNode = true; updateHandle(); };
+            const onNodeOut = () => { overNode = false; scheduleHide(); };
             node.on('mouseover', onNodeOver);
             node.on('mouseout', onNodeOut);
-            const onHandleEnter = () => { overHandle = true; updateHandle(); };
-            const onHandleLeave = () => { overHandle = false; updateHandle(); };
+            const onHandleEnter = () => { clearHideTimer(); overHandle = true; updateHandle(); };
+            const onHandleLeave = () => { overHandle = false; scheduleHide(); };
             handle.addEventListener('mouseenter', onHandleEnter);
             handle.addEventListener('mouseleave', onHandleLeave);
             nodeHoverCleanups.push(() => {
+                clearHideTimer();
                 node.off('mouseover', onNodeOver);
                 node.off('mouseout', onNodeOut);
             });

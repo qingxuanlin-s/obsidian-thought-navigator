@@ -170,6 +170,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
     // #43 增量新增标记:由 render() 在"复用实例+纯新增+已有节点未变"路径上置为新节点 id 集合,
     // renderNodeBadges 读到后只为这些新节点构建+定位 overlay(一次性消费)。
     private _incrementalAddIds: Set<string> | null = null;
+    // 与 _incrementalAddIds 配套:增量新增时若已有节点被推开(仅位置变化),置 true,
+    // renderNodeBadges 在增量末尾改用 scheduler.immediate() 重定位全部 overlay(一次性消费)。
+    private _incrementalRepositionAll = false;
     private domTextMeasurer: DomTextMeasurer | null = null;
     private collapsedNodeIds: Set<string> = new Set();
     private focusOverlayVisibleCyIds: Set<string> | null = null;
@@ -497,6 +500,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
             let existingChanged = false;
             let existingChangeDetail: string | null = null;
             let placeholdersRemoved = false;
+            // 已有节点"仅位置变化"(典型:auto 布局新增节点推开同级)。这类变化不会让 overlay DOM
+            // 失效——badge/备注等内容不变,只需在增量渲染末尾用 scheduler.immediate() 重定位一次
+            // (成本=一帧 pan,远低于全量重建 N 个 overlay DOM)。因此它不计入 existingChanged,
+            // 不阻断 fast path,仅通过 existingMoved 触发增量后的一次性重定位。
+            let existingMoved = false;
             const markExistingChanged = (reason: string) => {
                 existingChanged = true;
                 if (!existingChangeDetail) existingChangeDetail = reason;
@@ -613,7 +621,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                                     const cur = existing.position();
                                     const next = (ele as any).position;
                                     if (Math.abs(cur.x - next.x) > 0.01 || Math.abs(cur.y - next.y) > 0.01) {
-                                        markExistingChanged(`pos:${id}`);
+                                        // 仅位置变化:不阻断 fast path,改由 existingMoved 触发增量后重定位
+                                        existingMoved = true;
                                     }
                                 }
                                 existing.position((ele as any).position);
@@ -650,10 +659,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 });
             });
 
-            // #43 fast path 判定:复用实例 + 纯新增(无删除) + 已有节点未变 + 未移除占位符 +
-            // 无样式刷新 → 仅为新增节点构建/定位 overlay。任一条件不满足则保持 _incrementalAddIds=null
-            // 走全量重建。布局无关:用"已有节点位置是否变化"直接刻画"已有 overlay 是否仍有效"
-            // (free 布局纯新增时已有节点不动 → 命中;auto 布局新增会移动同级 → existingChanged=true → 全量)。
+            // #43 fast path 判定:复用实例 + 纯新增(无删除) + 已有节点"内容"未变(data/parent) +
+            // 未移除占位符 + 无样式刷新 → 仅为新增节点构建 overlay。任一条件不满足则保持
+            // _incrementalAddIds=null 走全量重建。
+            // 已有节点"仅位置变化"(auto 布局新增推开同级)不再阻断 fast path:overlay 内容仍有效,
+            // 只需增量末尾 immediate() 重定位一次(_incrementalRepositionAll 透传该意图)。
             const addedNodeIds = toAdd
                 .filter(e => e.group === 'nodes' && e.data.id)
                 .map(e => e.data.id as string);
@@ -664,6 +674,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 && !shouldRefreshStyle;
             if (fastAddOk) {
                 this._incrementalAddIds = new Set(addedNodeIds);
+                this._incrementalRepositionAll = existingMoved;
             }
             if ((window as any).__zkPerf === true) {
                 console.log('[zkPerf:fastadd]', {
@@ -673,6 +684,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     realRemoved: realRemovedCount,
                     existingChanged,
                     existingChangeDetail,
+                    existingMoved,
                     placeholdersRemoved,
                     shouldRefreshStyle,
                 });

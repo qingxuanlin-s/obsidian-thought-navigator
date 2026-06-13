@@ -381,7 +381,7 @@ export class MermaidParser {
                     edgeCurvatures: { ...cached.edgeCurvatures },
                     nodeColors: { ...cached.nodeColors },
                     nodeStyleColors: { ...(cached as any).nodeStyleColors || {} },
-                    crossDomainLinks: cached.crossDomainLinks ? JSON.parse(JSON.stringify(cached.crossDomainLinks)) : {},
+                    crossDomainLinks: cached.crossDomainLinks ? structuredClone(cached.crossDomainLinks) : {},
                     embedNodeSizes: { ...(cached as any).embedNodeSizes || {} },
                     nodeRemarks: { ...(cached as any).nodeRemarks || {} },
                     nodeAnchors: { ...(cached as any).nodeAnchors || {} },
