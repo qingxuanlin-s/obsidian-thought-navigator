@@ -683,8 +683,15 @@ export function renderNodeBadges(this: any): void {
             // 懒缓存：embed/image 卡片在 addNodeBadges 之后才创建，首次查到后复用
             let remarkImageCardCache: HTMLElement | null = null;
             let remarkEmbedCardCache: HTMLElement | null = null;
-            // tooltip 富文本渲染:仅当备注源文本变化时才重渲染(updateRemarkPosition 每帧调用)
-            let lastTooltipSource: string | null = null;
+            // tooltip 富文本懒渲染:打开 MOC 时不为每个备注跑 MarkdownRenderer,推迟到首次 hover。
+            // renderedTooltipSource = 当前已渲染进 DOM 的源文本;与最新备注不一致时下次 hover 才重渲。
+            let renderedTooltipSource: string | null = null;
+            const ensureTooltipRendered = () => {
+                const remarkText = node.data('remark') || '';
+                if (remarkText === renderedTooltipSource) return;
+                renderedTooltipSource = remarkText;
+                this.renderRemarkTooltipContent(tooltipEl, remarkText);
+            };
 
             const updateRemarkPosition = () => {
                 if (!this.cy) return;
@@ -705,11 +712,8 @@ export function renderNodeBadges(this: any): void {
                     node.style('display') === 'none' ||
                     !node.visible();
                 const shouldShow = !isHidden;
-                // 富文本渲染备注(与画布文本节点一致):仅源文本变化时重渲染,避免每帧跑 MarkdownRenderer
-                if (remarkText !== lastTooltipSource) {
-                    lastTooltipSource = remarkText;
-                    this.renderRemarkTooltipContent(tooltipEl, remarkText);
-                }
+                // 备注 tooltip 内容改为懒渲染(见 ensureTooltipRendered):此处不再每帧/首帧跑
+                // MarkdownRenderer,推迟到 hover 时才渲染,避免打开 MOC 时为全部备注一次性渲染。
                 applyRemarkBadgeStyle();
 
                 if (!shouldShow) {
@@ -794,6 +798,7 @@ export function renderNodeBadges(this: any): void {
             remarkEl.addEventListener('mouseenter', () => {
                 const remarkText = node.data('remark') || '';
                 if (!remarkText) return;
+                ensureTooltipRendered(); // 首次 hover 才渲染富文本(懒加载)
                 tooltipEl.style.opacity = '1';
                 tooltipEl.style.transform = 'translateY(0)';
             });

@@ -307,8 +307,11 @@ export class NodeDetailPanel {
         const canEdit = this.deps.canEdit();
 
         if (remark) {
+            // markdown-rendered:与 hover tooltip 一致,让主题/Obsidian 的阅读视图排版(含
+            // strong 加粗)在侧栏也生效。缺这个类时,strong 只吃全局 `--bold-weight`(部分主题
+            // 设为 400 → 侧栏看不出加粗,而 tooltip 因带此类正常)。
             const remarkEl = this.remarkArea.createDiv(
-                isFileNode ? "zk-detail-remark zk-detail-remark-callout" : "zk-detail-remark"
+                isFileNode ? "zk-detail-remark markdown-rendered zk-detail-remark-callout" : "zk-detail-remark markdown-rendered"
             );
             void MarkdownRenderer.render(this.app, remark, remarkEl, node.file?.path || '', this.deps.component);
             if (canEdit) {
