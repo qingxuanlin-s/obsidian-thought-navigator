@@ -6426,6 +6426,14 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 .zk-detail-remark { color: var(--zk-text, #e6e7ea); }
 .zk-detail-remark > :first-child { margin-top: 0; }
 .zk-detail-remark > :last-child { margin-bottom: 0; }
+/* 备注富文本 **加粗**:不依赖主题 --bold-weight(部分主题设为 400 → 读模式看不出加粗),
+   在详情面板与 hover tooltip 上显式锁死字重,保证 strong/b 始终可见。 */
+.zk-detail-remark strong,
+.zk-detail-remark b,
+.zk-node-remark-tooltip strong,
+.zk-node-remark-tooltip b {
+  font-weight: 700;
+}
 .zk-detail-remark-callout {
   padding: 12px 16px;
   margin-bottom: 18px;
