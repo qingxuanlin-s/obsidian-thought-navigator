@@ -164,6 +164,14 @@ export function bindEvents(this: any): void {
             const data = node.data();
             const originalEvent = evt.originalEvent as MouseEvent;
 
+            // 点击的是节点内的文件链接/wiki 链接区域(其 mousedown 会打时间戳):
+            // 只打开文件,不选中、不开 detail。tap 由 pointerup 合成,早于 DOM click,
+            // 故无法靠 click 的 stopPropagation 拦截,改用 mousedown 时间戳窗口。
+            if (this.suppressTapSelectAt && performance.now() - this.suppressTapSelectAt < 600) {
+                this.suppressTapSelectAt = 0;
+                return;
+            }
+
             // 如果是分组节点或占位符节点，不触发普通节点点击事件
             if (data.isGroup) {
                 return;

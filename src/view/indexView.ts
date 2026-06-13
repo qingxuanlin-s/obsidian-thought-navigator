@@ -203,6 +203,8 @@ export class ZKIndexView extends FileView {
     private fullscreenBackButtonListenerBound: boolean = false;
     private lastHoverPreviewPath: string | null = null;
     private lastHoverPreviewAt = 0;
+    // 分屏打开模式下复用的内容叶,避免每次点击都新建一个分屏
+    private fileOpenSplitLeaf: WorkspaceLeaf | null = null;
     private undoStack: Array<{ filePath: string; content: string; timestamp: number }> = [];
     // 30 步在长操作会话足够使用;30 × ~50KB MOC = ~1.5MB,V8 内存无压力
     private readonly MAX_UNDO_STEPS = 30;
@@ -2455,6 +2457,7 @@ cy.fit(null, 40);
             smartConnection: this.plugin.settings.smartConnection === true,
             readOnly: this.isMobileReadOnly(),
             initialCollapsedNodeIds: this.collapsedNodeIds,
+            openLink: (linkText, sourcePath, forceTab) => this.openLinkInPreferredLeaf(linkText, sourcePath, forceTab),
         };
 
         // 性能优化：复用或创建渲染器，避免每次都销毁重建
@@ -3074,8 +3077,10 @@ cy.fit(null, 40);
 
             const isMouseEvent = triggerEvent instanceof MouseEvent;
             const isMocTarget = isMocPath(targetFile.path);
-            // 默认复用当前标签；Cmd/Ctrl+点击在新标签页打开（MOC 目标仍走当前视图切换逻辑）。
-            const openInNewLeaf = !isMocTarget && isMouseEvent && (triggerEvent.metaKey || triggerEvent.ctrlKey);
+            // Cmd/Ctrl+点击始终在新标签页打开（MOC 目标仍走当前视图切换逻辑）；否则按设置的默认打开方式。
+            const forceTab = !isMocTarget && isMouseEvent && (triggerEvent.metaKey || triggerEvent.ctrlKey);
+            // 是否会“复用/覆盖”已有视图（用于决定是否先查已打开的同路径 leaf）
+            const reuseExisting = !forceTab;
 
             // 带 #heading / #^blockRef 的链接（如 Excalidraw 的 #^group=xxx）：
             // 用 leaf.openFile + eState.subpath 让 ExcalidrawView.setEphemeralState 解析 subpath 并自动 zoomToElementId
@@ -3085,7 +3090,7 @@ cy.fit(null, 40);
 
             if (subpath) {
                 // 查已有 leaf；有则直接 setEphemeralState，避免重复 openFile 打断 Excalidraw 状态
-                const existingLeaf = !openInNewLeaf ? this.app.workspace.getLeavesOfType('markdown').concat(
+                const existingLeaf = reuseExisting ? this.app.workspace.getLeavesOfType('markdown').concat(
                     this.app.workspace.getLeavesOfType('excalidraw' as any)
                 ).find(
                     leaf => (leaf.view as any)?.file?.path === targetFile.path
@@ -3096,7 +3101,7 @@ cy.fit(null, 40);
                     // 让 Excalidraw view 自己处理 subpath
                     (existingLeaf.view as any).setEphemeralState?.({ subpath });
                 } else {
-                    this.app.workspace.getLeaf(openInNewLeaf).openFile(targetFile, {
+                    this.getFileOpenLeaf(forceTab).openFile(targetFile, {
                         eState: { subpath },
                         active: true,
                     } as any);
@@ -3105,7 +3110,7 @@ cy.fit(null, 40);
             }
 
             // 如果不是强制新开，先查已有 tab
-            if (!openInNewLeaf) {
+            if (reuseExisting) {
                 const existingLeaf = this.app.workspace.getLeavesOfType('markdown').find(
                     leaf => (leaf.view as any)?.file?.path === targetFile.path
                 );
@@ -3114,7 +3119,7 @@ cy.fit(null, 40);
                     return;
                 }
             }
-            this.app.workspace.getLeaf(openInNewLeaf).openFile(targetFile);
+            this.getFileOpenLeaf(forceTab).openFile(targetFile);
         });
 
         // 监听节点悬停事件
@@ -9343,6 +9348,83 @@ cy.fit(null, 40);
 
     private isMobileReadOnly(): boolean {
         return Platform.isMobile;
+    }
+
+    /**
+     * 根据「文件默认打开方式」设置返回一个用于打开笔记的 leaf。
+     * 关键:锚定一个真正的文件视图叶(FileView),绝不拿图谱自己的 leaf 去打开,
+     * 否则 getLeaf('tab')/getLeaf(false) 会把图谱盖住或覆盖掉。
+     * forceTab=true(Cmd/Ctrl+点击)时始终新标签页;主区没有文件叶时退化为在图谱旁开分屏。
+     */
+    private getFileOpenLeaf(forceTab: boolean): WorkspaceLeaf {
+        const ws = this.app.workspace;
+        const mode = forceTab ? 'tab' : (this.plugin.settings.defaultFileOpenMode || 'replace');
+
+        // 主区域里真正的文件视图叶(markdown / excalidraw / pdf / image 等),最近用的优先
+        const contentLeaves: WorkspaceLeaf[] = [];
+        ws.iterateRootLeaves(l => { if ((l.view as any) instanceof FileView) contentLeaves.push(l); });
+        const recent = ws.getMostRecentLeaf();
+        const anchor: WorkspaceLeaf | null =
+            (recent && contentLeaves.includes(recent)) ? recent : (contentLeaves[0] ?? null);
+
+        // 在图谱旁新建分屏(并缓存复用,连续点击不会堆出一排分屏)
+        const splitBesideGraph = (before: boolean): WorkspaceLeaf => {
+            let alive = false;
+            if (this.fileOpenSplitLeaf) ws.iterateAllLeaves(l => { if (l === this.fileOpenSplitLeaf) alive = true; });
+            if (alive && this.fileOpenSplitLeaf) return this.fileOpenSplitLeaf;
+            // before=true 放图谱左侧,false 放右侧
+            const leaf = ws.createLeafBySplit(this.leaf, 'vertical', before);
+            this.fileOpenSplitLeaf = leaf;
+            return leaf;
+        };
+
+        if (mode === 'split-left') return splitBesideGraph(true);
+        if (mode === 'split-right') return splitBesideGraph(false);
+
+        if (mode === 'tab') {
+            // 有内容叶 → 在其标签组里新建标签(不碰图谱);否则在图谱旁开分屏,避免盖住图谱
+            if (anchor) {
+                ws.setActiveLeaf(anchor, { focus: false });
+                return ws.getLeaf('tab');
+            }
+            return splitBesideGraph(false);
+        }
+
+        // 'replace':覆盖最近的内容叶;主区没有文件叶时在图谱旁开分屏(绝不覆盖图谱)
+        return anchor ?? splitBesideGraph(false);
+    }
+
+    /**
+     * 由节点内 wiki 链接(concept/text-only 节点里的 [[..]])点击触发。
+     * 解析 linkText → 文件后,按「文件默认打开方式」打开;复用 getFileOpenLeaf,
+     * 因此和直接点文件节点行为一致,绝不覆盖图谱。
+     */
+    private openLinkInPreferredLeaf(linkText: string, sourcePath: string, forceTab: boolean): void {
+        const raw = (linkText || '').trim();
+        if (!raw) return;
+        const hashIdx = raw.indexOf('#');
+        const subpath = hashIdx >= 0 ? raw.substring(hashIdx) : '';
+        const pathPart = (hashIdx >= 0 ? raw.substring(0, hashIdx) : raw).trim();
+        const targetFile = this.app.metadataCache.getFirstLinkpathDest(pathPart, sourcePath || '');
+        if (!targetFile) {
+            // 解析失败(未创建的链接等)→ 退回 Obsidian 默认行为
+            this.app.workspace.openLinkText(raw, sourcePath || '', forceTab ? 'tab' : false);
+            return;
+        }
+        // 非强制新标签时,若已在某个 leaf 打开则直接聚焦,避免重复打开
+        if (!forceTab) {
+            const existingLeaf = this.app.workspace.getLeavesOfType('markdown').concat(
+                this.app.workspace.getLeavesOfType('excalidraw' as any)
+            ).find(leaf => (leaf.view as any)?.file?.path === targetFile.path);
+            if (existingLeaf) {
+                this.app.workspace.setActiveLeaf(existingLeaf, { focus: true });
+                if (subpath) (existingLeaf.view as any).setEphemeralState?.({ subpath });
+                return;
+            }
+        }
+        const leaf = this.getFileOpenLeaf(forceTab);
+        if (subpath) leaf.openFile(targetFile, { eState: { subpath }, active: true } as any);
+        else leaf.openFile(targetFile);
     }
 
     private mocFullscreenExitBtn: HTMLElement | null = null;

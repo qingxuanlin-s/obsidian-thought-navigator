@@ -100,6 +100,20 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                 })
             );
 
+        new Setting(branchSection)
+            .setName(t("default file open mode"))
+            .setDesc(t("default file open mode desc"))
+            .addDropdown(options => options
+                .addOption("replace", t("open mode replace"))
+                .addOption("tab", t("open mode tab"))
+                .addOption("split-left", t("open mode split-left"))
+                .addOption("split-right", t("open mode split-right"))
+                .setValue(this.plugin.settings.defaultFileOpenMode || "replace")
+                .onChange((value) => {
+                    this.plugin.settings.defaultFileOpenMode = value as 'replace' | 'tab' | 'split-left' | 'split-right';
+                })
+            );
+
         // ========== 局部视图 (Local Graph) ==========
         containerEl.createEl("h3", { text: t("thought-local-graph-view") });
         const localSection = containerEl.createDiv("zk-setting-card");

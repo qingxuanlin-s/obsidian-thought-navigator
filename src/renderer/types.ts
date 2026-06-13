@@ -73,6 +73,9 @@ export interface RenderOptions {
     exportMode?: boolean;  // 纯导出模式：跳过所有 DOM 事件绑定和预览渲染，防止触发 MutationObserver 副作用
     mocPreviewExporter?: (mocFile: TFile) => Promise<TFile | null>;
     initialCollapsedNodeIds?: string[];
+    // 点击节点内 wiki 链接时按「文件默认打开方式」打开;未提供时回退到 openLinkText。
+    // forceTab=true(Cmd/Ctrl+点击)始终新标签页。
+    openLink?: (linkText: string, sourcePath: string, forceTab: boolean) => void;
 }
 
 /**

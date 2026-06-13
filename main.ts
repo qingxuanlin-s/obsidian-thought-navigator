@@ -197,6 +197,7 @@ interface ZKNavigationSettings {
     detailPanelAutoOpen: boolean;       // 单击选中是否自动展开详情侧栏(false = 再点一下才展开)
     detailPanelWidth: number;           // 侧栏宽度(px,可拖拽调整),0 = CSS 默认
     detailPanelPinned: boolean;         // 侧栏是否钉住常驻(背景点击/Esc 不收起)
+    defaultFileOpenMode: 'replace' | 'tab' | 'split-left' | 'split-right'; // 点击文件节点的默认打开方式
 }
 
 //Default value for setting field
@@ -284,6 +285,7 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     detailPanelAutoOpen: true,
     detailPanelWidth: 0,
     detailPanelPinned: false,
+    defaultFileOpenMode: 'replace',
 }
 
 export default class ZKNavigationPlugin extends Plugin {

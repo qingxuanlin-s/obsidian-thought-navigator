@@ -492,9 +492,13 @@ export function renderNodeBadges(this: any): void {
                     hitEl.style.pointerEvents = 'auto';
                     hitEl.style.cursor = 'pointer';
                     hitEl.addEventListener('mousedown', (e: MouseEvent) => {
-                        if (e.button !== 0 || !(e.metaKey || e.ctrlKey)) return;
-                        e.preventDefault();
-                        e.stopPropagation();
+                        if (e.button !== 0) return;
+                        // 标记:本次点击落在文件链接区,tap 不应触发选中/detail
+                        this.suppressTapSelectAt = performance.now();
+                        if (e.metaKey || e.ctrlKey) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                        }
                     });
                     hitEl.addEventListener('click', (e) => {
                         e.preventDefault();
@@ -1658,11 +1662,18 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                         a.href = linkText;
                         a.dataset.href = linkText;
                         a.textContent = displayText || linkText;
+                        a.addEventListener('mousedown', (e: MouseEvent) => {
+                            // 标记:本次点击落在 wiki 链接区,tap 不应触发选中/detail
+                            if (e.button === 0) this.suppressTapSelectAt = performance.now();
+                        });
                         a.addEventListener('click', (e: MouseEvent) => {
                             e.preventDefault();
                             e.stopPropagation();
                             if (!linkText) return;
-                            app?.workspace?.openLinkText?.(linkText, sourcePath, (e.ctrlKey || e.metaKey) ? 'tab' : undefined);
+                            const forceTab = e.ctrlKey || e.metaKey;
+                            const openLink = this.currentOptions?.openLink;
+                            if (openLink) openLink(linkText, sourcePath, forceTab);
+                            else app?.workspace?.openLinkText?.(linkText, sourcePath, forceTab ? 'tab' : undefined);
                         });
                         a.addEventListener('mouseover', (e: MouseEvent) => {
                             if (!linkText) return;
