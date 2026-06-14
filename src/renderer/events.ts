@@ -591,6 +591,48 @@ export function bindEvents(this: any): void {
             if (node && node.length > 0) this.cy?.remove(node);
         });
 
+        // 端点解析:真实节点按 originalNode.IDStr 命中,草稿节点(IDStr=draftId)同样命中,兜底直查 cy id
+        const resolveEndpoint = (idStr: string): any | null => {
+            if (!this.cy) return null;
+            let n = this.cy.$('node').filter((x: any) => x.data('originalNode')?.IDStr === idStr);
+            if (!n || n.length === 0) n = this.cy.$id(idStr);
+            return n && n.length > 0 ? n[0] : null;
+        };
+        const draftRelEdgeId = (relKey: string) => `draft-rel::${relKey}`;
+
+        // 草稿关联(#20):待审批的关联反向连线。渲染为虚线 reverse 边 + 草稿配色(紫=ai/灰=manual)。
+        this.overlayScheduler.addManagedDomListener(this.container, 'add-draft-relation', (event: any) => {
+            const { relKey, source, target, label, origin, batchId } = event.detail;
+            if (!this.cy) return;
+            const src = resolveEndpoint(source);
+            const tgt = resolveEndpoint(target);
+            if (!src || !tgt) return;
+            const edgeId = draftRelEdgeId(relKey);
+            if (this.cy.$id(edgeId).length > 0) return;
+            this.cy.add({
+                group: 'edges',
+                data: {
+                    id: edgeId,
+                    source: src.id(),
+                    target: tgt.id(),
+                    type: 'reverse',
+                    label: label || '',
+                    isDraftEdge: true,
+                    isDraftRelation: true,
+                    relKey,
+                    draftOrigin: origin === 'ai' ? 'ai' : 'manual',
+                    draftBatchId: batchId,
+                },
+            });
+        });
+
+        // 移除单个草稿关联边
+        this.overlayScheduler.addManagedDomListener(this.container, 'remove-draft-relation', (event: any) => {
+            const { relKey } = event.detail;
+            const edge = this.cy?.$id(draftRelEdgeId(relKey));
+            if (edge && edge.length > 0) this.cy?.remove(edge);
+        });
+
         // 打开指定节点的内联编辑器(草稿 Tab/Enter 新建后自动进入编辑)
         this.overlayScheduler.addManagedDomListener(this.container, 'open-inline-editor-for', (event: any) => {
             const { nodeId } = event.detail || {};
@@ -612,11 +654,13 @@ export function bindEvents(this: any): void {
             if (parentId) addDraftEdge(childId, parentId);
         });
 
-        // 批量移除某批次的所有草稿节点(边随节点回收)
+        // 批量移除某批次的所有草稿节点 + 草稿关联边(节点上的从属草稿边随节点回收)
         this.overlayScheduler.addManagedDomListener(this.container, 'remove-draft-batch', (event: any) => {
             const { batchId } = event.detail;
             const nodes = this.cy?.nodes().filter((n: any) => n.data('isDraft') && n.data('draftBatchId') === batchId);
             if (nodes && nodes.length > 0) this.cy?.remove(nodes);
+            const relEdges = this.cy?.edges().filter((e: any) => e.data('isDraftRelation') && e.data('draftBatchId') === batchId);
+            if (relEdges && relEdges.length > 0) this.cy?.remove(relEdges);
         });
 
         // 监听通过 ID 选中节点事件（用于新建节点后自动选中）
@@ -1965,13 +2009,27 @@ export function bindKeyboardEvents(this: any): void {
                 // 检查是否有选中的边（所有类型）
                 const selectedEdges = selected.filter('edge');
 
-                if (selectedEdges.length > 0) {
+                // 草稿关联边(#20):单独走内存丢弃,不进入真实 MOC 删边流程
+                const selectedDraftRels = selectedEdges.filter('edge[?isDraftRelation]');
+                if (selectedDraftRels.length > 0) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    selectedDraftRels.forEach((edge: any) => {
+                        this.container?.dispatchEvent(new CustomEvent('draft-relation-delete', {
+                            detail: { relKey: edge.data('relKey') }
+                        }));
+                    });
+                    if (selectedEdges.filter('edge[!isDraftRelation]').length === 0) return;
+                }
+
+                const realEdges = selectedEdges.filter('edge[!isDraftRelation]');
+                if (realEdges.length > 0) {
                     // 阻止默认行为
                     event.preventDefault();
                     event.stopPropagation();
 
                     // 触发删除边事件
-                    selectedEdges.forEach((edge: any) => {
+                    realEdges.forEach((edge: any) => {
                         const data = edge.data();
 
                         // 获取目标节点的 nodeSons 信息

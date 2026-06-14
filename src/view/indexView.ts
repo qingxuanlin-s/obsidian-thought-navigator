@@ -168,6 +168,18 @@ export class ZKIndexView extends FileView {
         parentRealId?: string;    // 挂到已存在的真实节点
         timestamp: number;
     }> = new Map();
+    // 草稿关联(#20):AI/人产出、待审批落地的「关联反向连线」。纯内存,不写文件,与草稿节点共用批次操作条。
+    // key = `${source}->${target}`;端点可为已存在真实节点 IDStr,或同期草稿节点的 draftId(落地时映射成真实 ID)。
+    private draftRelations: Map<string /* relKey */, {
+        relKey: string;
+        batchId: string;
+        mocPath: string;
+        source: string;
+        target: string;
+        label: string;
+        origin: 'ai' | 'manual';
+        timestamp: number;
+    }> = new Map();
     private draftBatchBar: HTMLElement | null = null;
     // 草稿模式:开启后新建的节点都先作为草稿(待审批);AI 注入会自动开启,批次清空后自动关闭。
     private draftMode: boolean = false;
@@ -751,8 +763,71 @@ export class ZKIndexView extends FileView {
         this.draftNodes.delete(draftId);
         const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
         branchGraphDiv?.dispatchEvent(new CustomEvent('remove-draft-node', { detail: { nodeId: draftId } }));
-        // 全部删完则退出草稿模式
-        if (this.draftNodes.size === 0) this.draftMode = false;
+        // 全部草稿(节点+关联)删完则退出草稿模式
+        if (this.draftNodes.size === 0 && this.draftRelations.size === 0) this.draftMode = false;
+        this.refreshDraftBatchBar();
+    }
+
+    /**
+     * 注入一批「草稿关联」(待审批的关联反向连线,#20)。纯内存,不写文件,与草稿节点共用批次操作条。
+     * 端点 source/target 可为已存在真实节点的 IDStr,或同期草稿节点的 draftId(落地时按 localToReal 映射)。
+     * @param origin 'ai'=走 CLI/API,'manual'=页面新建
+     * @returns 实际新增的边 key 数组(`source->target`);端点不存在 / 自环 / 已存在同向草稿边会被跳过。
+     */
+    injectDraftRelations(
+        items: Array<{ source: string; target: string; label?: string }>,
+        origin: 'ai' | 'manual',
+        batchId?: string
+    ): string[] {
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+        if (!cy || !branchGraphDiv || !items?.length) return [];
+
+        // 注入草稿关联即进入草稿模式;用户提交/丢弃完所有批次后自动退出。
+        this.draftMode = true;
+        const mocPath = this.plugin.settings.mocCurrentFile || '__graph__';
+        const realBatchId = batchId || `batch-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+        const createdKeys: string[] = [];
+
+        // 端点存在性:真实节点(originalNode.IDStr)或草稿节点(draftId)皆可——findCyNodeByIdStr 对两者都按 IDStr 命中
+        const exists = (id: string) => this.draftNodes.has(id) || !!this.findCyNodeByIdStr(id);
+
+        for (const item of items) {
+            const source = String(item.source ?? '').trim();
+            const target = String(item.target ?? '').trim();
+            if (!source || !target || source === target) continue;
+            if (!exists(source) || !exists(target)) continue;
+            const relKey = `${source}->${target}`;
+            if (this.draftRelations.has(relKey)) continue; // 已有同向草稿边,跳过
+
+            this.draftRelations.set(relKey, {
+                relKey,
+                batchId: realBatchId,
+                mocPath,
+                source,
+                target,
+                label: item.label ?? '',
+                origin,
+                timestamp: Date.now(),
+            });
+            createdKeys.push(relKey);
+
+            branchGraphDiv.dispatchEvent(new CustomEvent('add-draft-relation', {
+                detail: { relKey, source, target, label: item.label ?? '', origin, batchId: realBatchId }
+            }));
+        }
+
+        this.refreshDraftBatchBar();
+        return createdKeys;
+    }
+
+    /** 删除单个草稿关联(纯内存 + 画布);全部草稿(节点+关联)清空后退出草稿模式 */
+    deleteDraftRelation(relKey: string): void {
+        if (!this.draftRelations.has(relKey)) return;
+        this.draftRelations.delete(relKey);
+        const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+        branchGraphDiv?.dispatchEvent(new CustomEvent('remove-draft-relation', { detail: { relKey } }));
+        if (this.draftNodes.size === 0 && this.draftRelations.size === 0) this.draftMode = false;
         this.refreshDraftBatchBar();
     }
 
@@ -803,9 +878,11 @@ export class ZKIndexView extends FileView {
             return;
         }
 
-        // 取出全部草稿,按父子层级(父先子后)排序,使 parentLocalId 引用先落地
+        // 取出全部草稿(节点 + 关联)
         const all = Array.from(this.draftNodes.values());
-        if (!all.length) return;
+        const allRels = Array.from(this.draftRelations.values());
+        if (!all.length && !allRels.length) return;
+        // 节点按父子层级(父先子后)排序,使 parentLocalId 引用先落地
         const ordered = this.topoSortDrafts(all);
 
         // 落地前快照每个草稿在画布上的实时位置(model 坐标),写回 MOC 让节点停在原处
@@ -832,8 +909,23 @@ export class ZKIndexView extends FileView {
         try {
             const { MermaidParser } = await import('src/utils/mermaidParser');
             MermaidParser.clearCacheForFile(mocFile.path);
-            const localToReal = await this.mocHandler.addDraftTreeToMOC(mocFile, items);
-            new Notice(t('Draft committed').replace('{n}', String(localToReal.size)));
+            // 1) 先落地草稿节点,拿到 draftId → 真实节点 ID 的映射(供关联端点改写)
+            const localToReal = all.length
+                ? await this.mocHandler.addDraftTreeToMOC(mocFile, items)
+                : new Map<string, string>();
+            // 2) 再落地草稿关联:端点若指向草稿节点(draftId)则映射成刚落地的真实 ID
+            if (allRels.length) {
+                MermaidParser.clearCacheForFile(mocFile.path);
+                const relItems = allRels.map(r => ({
+                    source: localToReal.get(r.source) ?? r.source,
+                    target: localToReal.get(r.target) ?? r.target,
+                    label: r.label,
+                }));
+                await this.mocHandler.addRelationsToMOC(mocFile, relItems);
+            }
+            new Notice(allRels.length
+                ? t('Draft committed mixed').replace('{n}', String(localToReal.size)).replace('{r}', String(allRels.length))
+                : t('Draft committed').replace('{n}', String(localToReal.size)));
         } catch (e) {
             console.error('[Draft] commit failed:', e);
             new Notice(t('Draft commit failed'));
@@ -870,12 +962,17 @@ export class ZKIndexView extends FileView {
         return result;
     }
 
-    /** 清空所有草稿(视图刷新/卸载时调用) */
+    /** 清空所有草稿(节点 + 关联;视图刷新/卸载时调用) */
     clearAllDrafts(): void {
         const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
-        const batchIds = new Set(Array.from(this.draftNodes.values()).map(d => d.batchId));
+        const batchIds = new Set<string>([
+            ...Array.from(this.draftNodes.values()).map(d => d.batchId),
+            ...Array.from(this.draftRelations.values()).map(r => r.batchId),
+        ]);
+        // remove-draft-batch 同时回收该批次的草稿节点与草稿关联边
         batchIds.forEach(bid => branchGraphDiv?.dispatchEvent(new CustomEvent('remove-draft-batch', { detail: { batchId: bid } })));
         this.draftNodes.clear();
+        this.draftRelations.clear();
         this.removeDraftBatchBar();
     }
 
@@ -883,8 +980,11 @@ export class ZKIndexView extends FileView {
     private refreshDraftBatchBar(): void {
         this.removeDraftBatchBar();
 
-        const total = this.draftNodes.size;
-        const hasAi = Array.from(this.draftNodes.values()).some(d => d.origin === 'ai');
+        const nodeCount = this.draftNodes.size;
+        const relCount = this.draftRelations.size;
+        const total = nodeCount + relCount;
+        const hasAi = Array.from(this.draftNodes.values()).some(d => d.origin === 'ai')
+            || Array.from(this.draftRelations.values()).some(r => r.origin === 'ai');
         // 无草稿且未开启草稿模式 → 不显示
         if (total === 0 && !this.draftMode) return;
 
@@ -913,7 +1013,11 @@ export class ZKIndexView extends FileView {
         const label = document.createElement('span');
         label.textContent = total === 0
             ? t('Draft mode entered')
-            : t('Draft batch count').replace('{n}', String(total));
+            : (nodeCount > 0 && relCount > 0)
+                ? t('Draft mixed count').replace('{n}', String(nodeCount)).replace('{r}', String(relCount))
+                : relCount > 0
+                    ? t('Draft relation count').replace('{r}', String(relCount))
+                    : t('Draft batch count').replace('{n}', String(nodeCount));
         label.style.cssText = 'font-size: 12px; flex: 1; color: var(--text-normal);';
 
         bar.appendChild(tag);
@@ -2323,7 +2427,7 @@ cy.fit(null, 40);
 
         // 真实重建画布前清空未落地草稿(#20:刷新可丢失);no-op 短路路径上方已 return,故草稿在
         // 纯交互(拖动草稿不触发刷新)期间得以保留,只有真正重建才回收。
-        if (this.draftNodes.size > 0) this.clearAllDrafts();
+        if (this.draftNodes.size > 0 || this.draftRelations.size > 0) this.clearAllDrafts();
 
         // 性能埋点：在控制台执行 `window.__zkPerf = true` 后,每次刷新会打印各阶段耗时,
         // 用于定位大图新增节点变慢的真实瓶颈(parse / convert / build / render)。
@@ -3213,6 +3317,12 @@ cy.fit(null, 40);
             if (this.isMobileReadOnly()) return;
             const { draftId } = event.detail || {};
             if (draftId) this.deleteDraftNode(draftId);
+        });
+
+        this.addTrackedListener(branchGraphDiv, 'draft-relation-delete', (event: any) => {
+            if (this.isMobileReadOnly()) return;
+            const { relKey } = event.detail || {};
+            if (relKey) this.deleteDraftRelation(relKey);
         });
 
         this.addTrackedListener(branchGraphDiv, 'node-remark-edit', async (event: any) => {

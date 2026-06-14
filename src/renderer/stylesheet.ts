@@ -718,6 +718,28 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'z-index': 999
             } as any
         },
+        // 草稿关联(#20):待审批的关联反向连线。虚线 + 草稿配色(紫=ai/灰=manual),
+        // 不被普通 reverse 的降噪 opacity 拖暗,清晰标识"待确认"。
+        {
+            selector: 'edge[?isDraftRelation]',
+            style: {
+                'line-style': 'dashed',
+                'line-dash-pattern': [10, 6],
+                'line-color': (ele: any) => ele.data('draftOrigin') === 'ai' ? '#a855f7' : '#94a3b8',
+                'target-arrow-color': (ele: any) => ele.data('draftOrigin') === 'ai' ? '#a855f7' : '#94a3b8',
+                'width': 2.4,
+                'arrow-scale': 1.35,
+                'opacity': 0.95,
+                'label': 'data(label)',
+                'font-size': '12px',
+                'color': 'var(--text-muted)',
+                'text-background-color': 'var(--background-secondary)',
+                'text-background-opacity': 1,
+                'text-background-shape': 'roundrectangle',
+                'text-background-padding': '3px',
+                'z-index': 1000
+            } as any
+        },
         // 局部概览中的入链/出链边：弱化为虚线，和节点导航实线区分
         {
             selector: 'edge[type="inlink"]',

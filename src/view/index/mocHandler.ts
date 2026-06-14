@@ -258,6 +258,42 @@ export class MOCHandler {
     }
 
     /**
+     * 批量新增「反向连线」(关联箭头边),供 CLI / 脚本调用。在同一次 modifyMOCData 中完成:
+     * 单次读-改-写,只触发一次写入。每条边写入 mocData.reverseRelations(key=`source->target`)。
+     * 与树的父子边不同,这些是任意两节点间的关联边(画布上渲染为虚线箭头,可带文字标签)。
+     * @param items 每项 {source, target, label?};source/target 为已存在节点的 nodeID。
+     * @returns 实际新增的边 key 数组(`source->target`);已存在的同向边会被跳过(不重复)。
+     * @throws 端点节点不存在,或 source===target(自环)时抛错。
+     */
+    async addRelationsToMOC(
+        mocFile: TFile,
+        items: Array<{ source: string; target: string; label?: string }>,
+    ): Promise<string[]> {
+        const addedKeys: string[] = [];
+        await this.modifyMOCData(mocFile, (mocData) => {
+            // 收集全部已存在节点 ID,用于校验端点
+            const allIDs = new Set<string>();
+            const collect = (ns: any[]) => { for (const n of ns) { allIDs.add(String(n.nodeID)); collect(n.children ?? []); } };
+            collect((mocData as any).nodes);
+
+            for (const item of items) {
+                const source = String(item.source ?? '').trim();
+                const target = String(item.target ?? '').trim();
+                if (!source || !target) throw new Error('relation source/target required');
+                if (source === target) throw new Error(`relation cannot be a self-loop: "${source}"`);
+                if (!allIDs.has(source)) throw new Error(`relation source node not found: "${source}"`);
+                if (!allIDs.has(target)) throw new Error(`relation target node not found: "${target}"`);
+
+                const key = `${source}->${target}`;
+                if (mocData.reverseRelations.has(key)) continue; // 已存在同向边,跳过
+                mocData.reverseRelations.set(key, { sourceID: source, targetID: target, relationText: item.label ?? '' });
+                addedKeys.push(key);
+            }
+        });
+        return addedKeys;
+    }
+
+    /**
      * 落地一批草稿节点(#20),支持「同批内部父子树」。在同一次 modifyMOCData 中按序插入,
      * 用 localId→真实ID 映射解析批内父子引用,避免预测 ID。items 须父先子后(拓扑序)。
      * @param items 每项 {localId, title, kind?, parentLocalId?, parentRealId?}

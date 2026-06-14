@@ -45,6 +45,13 @@ export interface ZKNavigationExternalAPI {
     /** 一次性批量追加多个子节点(单次读改写,适合 CLI 一次建整棵树),返回新 ID 数组 */
     addNodes(filePath: string, items: Array<{ parent: string; title: string; kind?: 'text' | 'file' }>): Promise<string[]>;
     /**
+     * 批量新增「反向连线」(关联箭头边):在任意两个已存在节点间建立关联边,
+     * 区别于树的父子边,画布上渲染为虚线箭头,可带文字标签。单次读改写,只写一次文件。
+     * @param items 每项 {source, target, label?},source/target 为已存在节点的 nodeID。
+     * @returns 实际新增的边 key 数组(`source->target`);已存在的同向边被跳过。端点不存在或自环时抛错。
+     */
+    addRelations(filePath: string, items: Array<{ source: string; target: string; label?: string }>): Promise<string[]>;
+    /**
      * 删除指定节点(连同其全部后代),并清理其位置/颜色/备注等元数据。直接写文件。
      * 若该 MOC 正在思维树视图打开,删除后自动刷新画布。nodeID 不存在则静默无操作。
      */
@@ -68,6 +75,18 @@ export interface ZKNavigationExternalAPI {
     addDraftNodes(
         filePath: string,
         items: Array<{ content: string; kind?: 'text' | 'file'; parentRealId?: string; parentLocalId?: string; localId?: string }>,
+        batchId?: string
+    ): Promise<string[]>;
+    /**
+     * 注入一批「草稿关联」(待审批的关联反向连线,#20)到当前打开的思维树视图。纯内存渲染、不写文件,
+     * 用户在画布上审阅后点「确认落地」才经 addRelations 流程写入,或「丢弃」不影响真实数据。
+     * 走本 API(CLI/脚本)的草稿标记为 origin='ai'。filePath 必须是当前已打开的 MOC。
+     * @param items 每项 {source, target, label?};source/target 为已存在真实节点的 nodeID,或同期草稿节点的 draftId。
+     * @returns 实际新增的边 key 数组(`source->target`);端点不存在 / 自环 / 已存在同向草稿边会被跳过;MOC 未打开则返回 []
+     */
+    addDraftRelations(
+        filePath: string,
+        items: Array<{ source: string; target: string; label?: string }>,
         batchId?: string
     ): Promise<string[]>;
     /**
@@ -987,6 +1006,24 @@ export default class ZKNavigationPlugin extends Plugin {
                 const handler = this.cliMocHandler ??= new MOCHandler(this, this.app);
                 return await handler.addNodesToMOC(target, items || []);
             },
+            addRelations: async (filePath: string, items: Array<{ source: string; target: string; label?: string }>) => {
+                const target = this.app.vault.getAbstractFileByPath(filePath);
+                if (!(target instanceof TFile) || !isMocFile(target)) {
+                    throw new Error(t('MOC not a moc file').replace('{path}', filePath));
+                }
+                const handler = this.cliMocHandler ??= new MOCHandler(this, this.app);
+                const { MermaidParser } = await import('src/utils/mermaidParser');
+                MermaidParser.clearCacheForFile(target.path);
+                const keys = await handler.addRelationsToMOC(target, items || []);
+                // 若该 MOC 正在思维树视图打开,刷新画布让新连线即时可见
+                const leaves = this.app.workspace.getLeavesOfType(ZK_INDEX_TYPE);
+                const open = leaves.some((l) => (l.view as any)?.file?.path === filePath);
+                if (open) {
+                    this.RefreshIndexViewFlag = true;
+                    this.app.workspace.trigger('zk-navigation:refresh-index-graph');
+                }
+                return keys;
+            },
             deleteNode: async (filePath: string, nodeID: string) => {
                 const target = this.app.vault.getAbstractFileByPath(filePath);
                 if (!(target instanceof TFile) || !isMocFile(target)) {
@@ -1049,6 +1086,24 @@ export default class ZKNavigationPlugin extends Plugin {
                     throw new Error(t('Draft view not open').replace('{path}', filePath));
                 }
                 return (view as any).injectDraftNodes(items || [], 'ai', batchId) as string[];
+            },
+            addDraftRelations: async (
+                filePath: string,
+                items: Array<{ source: string; target: string; label?: string }>,
+                batchId?: string
+            ) => {
+                const target = this.app.vault.getAbstractFileByPath(filePath);
+                if (!(target instanceof TFile) || !isMocFile(target)) {
+                    throw new Error(t('MOC not a moc file').replace('{path}', filePath));
+                }
+                // 草稿关联是纯内存渲染层能力,必须有一个已打开该 MOC 的思维树视图来承载
+                const leaves = this.app.workspace.getLeavesOfType(ZK_INDEX_TYPE);
+                const leaf = leaves.find((l) => (l.view as any)?.file?.path === filePath) ?? leaves[0];
+                const view = leaf?.view as ZKIndexView | undefined;
+                if (!view || typeof (view as any).injectDraftRelations !== 'function') {
+                    throw new Error(t('Draft view not open').replace('{path}', filePath));
+                }
+                return (view as any).injectDraftRelations(items || [], 'ai', batchId) as string[];
             },
             setDraftMode: async (filePath: string, on: boolean) => {
                 const target = this.app.vault.getAbstractFileByPath(filePath);

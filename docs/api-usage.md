@@ -292,6 +292,8 @@ open "$B?action=add-node&file=animals.moc.md&parent=1&title=鸟类"
 | `createMOC(opts)` | 创建新 `.moc.md`，`opts` 同 URI（`name/folder/title/layout/overwrite/rootId`） | 文件路径 |
 | `addNode(file, parent, title, kind?)` | 向父节点追加一个子节点 | 新节点 ID |
 | `addNodes(file, items)` | **一次性**追加多个子节点（`items=[{parent,title,kind?}]`） | 新 ID 数组 |
+| `addRelations(file, items)` | **一次性**在已有节点间加关联反向连线(虚线箭头),**直接写入**,`items=[{source,target,label?}]`;MOC 已打开则自动刷新画布 | 新增边 key 数组 |
+| `addDraftRelations(file, items, batchId?)` | 注入**待审批草稿关联**(#20):紫色虚线、纯内存,用户确认才经 `addRelations` 落盘;`items=[{source,target,label?}]`;需 MOC 已打开 | 新增边 key 数组 |
 | `deleteNode(file, nodeID)` | 删除节点连同后代,清理其元数据;MOC 已打开则自动刷新画布 | `Promise<void>` |
 | `queryNodes(file, opts?)` | **只读**查询节点(精确 `nodeID` / 模糊 `query` / 整棵树),`opts={nodeID?,query?,recursive?}`;返回项含 `x,y` 坐标 | 精简嵌套节点数组 |
 | `discardDrafts(file, draftId?)` | 丢弃待审批草稿(#20):省略 `draftId`=全部+退出草稿模式,传入=单个;需 MOC 已打开 | `Promise<boolean>` |
