@@ -4855,11 +4855,14 @@ align-items: center;
    这里的 CM 子元素统一用 font-size: inherit + em padding,跟随 overlay 的 font-size
    等比伸缩。CM/vim 在任何 zoom 下都在"自然像素"里工作,fat cursor 不会错位。 */
 
-/* 关键:Obsidian 在 .markdown-source-view 上塞了默认 font-size,会截断继承链。
-   强制所有中间层都 inherit,让 overlay 的 base*zoom 一路传到 cm-editor。 */
+/* 关键:Obsidian 在 .markdown-source-view / .cm-scroller 上塞了默认 font-size
+   (.markdown-source-view.mod-cm6 .cm-scroller 优先级 0,3,0),会截断继承链且压过
+   我们 0,2,0 的 inherit 规则。统一用 !important 越过它,让 overlay 的 base*zoom
+   一路传到 cm-content,保证编辑态字号与展示态一致(否则编辑态被钉死在 16px,
+   缩小白板时字偏大,导致换行比展示态多)。 */
 .zk-text-md-live-edit-host,
 .zk-text-md-live-edit-host .markdown-source-view {
-  font-size: inherit;
+  font-size: inherit !important;
 }
 
 /* 主题感知:覆盖 Obsidian 主题变量,让插件 themeMode 能控制 CodeMirror 配色 */
@@ -4894,20 +4897,30 @@ align-items: center;
 .zk-text-md-live-edit-host .cm-editor {
   height: 100%;
   background: transparent;
-  font-size: inherit;
+  font-size: inherit !important;
   font-weight: 500;
 }
 
 .zk-text-md-live-edit-host .cm-scroller {
   font-family: var(--font-text);
-  font-size: inherit;
+  font-size: inherit !important;
   font-weight: 500;
+  /* CM 内部的 .cm-scroller 是真正的滚动容器(overflow: auto)。内容稍高一点就会
+     冒出竖向滚动条,吃掉约 15px 文字宽度,导致编辑态比展示态(.zk-rough-text-line)
+     多换行。节点高度本就按内容自适应,不需要这根滚动条,抹成 0 宽把宽度还回去。 */
+  scrollbar-width: none;
+}
+
+.zk-text-md-live-edit-host .cm-scroller::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .zk-text-md-live-edit-host .cm-content,
 .zk-text-md-live-edit-host .cm-line,
 .zk-text-md-live-edit-host .cm-editor .cm-line {
-  font-size: inherit;
+  font-size: inherit !important;
   font-weight: 500;
 }
 
@@ -4934,11 +4947,13 @@ align-items: center;
 .zk-text-md-live-edit-host .cm-editor .cm-content {
   padding: 1.2em 1.2em 0.6em 1.2em;
   white-space: break-spaces;
+  overflow-wrap: anywhere;
 }
 
 .zk-text-md-live-edit-host .cm-editor .cm-line {
   padding: 0;
   white-space: break-spaces;
+  overflow-wrap: anywhere;
 }
 
 /* 节点内联编辑框:屏蔽全局开启的 CM chrome(行号 / fold / vim 状态栏 / heading 折叠标记)

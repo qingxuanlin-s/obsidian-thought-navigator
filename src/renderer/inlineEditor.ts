@@ -1411,7 +1411,7 @@ export function startInPlaceTextEdit(this: any, node: any,
             inset: 0;
             box-shadow: inset 0 0 0 2px rgba(91, 143, 217, 0.95);
             border-radius: 12px;
-            overflow: auto;
+            overflow: hidden;
             background: var(--background-primary);
             pointer-events: auto;
             z-index: 2;
