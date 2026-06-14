@@ -248,7 +248,7 @@ export function bindEvents(this: any): void {
 
             // 占位符 / 草稿节点(#20):双击进入同一套内联编辑器(草稿保存只更新内存)
             if (data.isPlaceholder || data.isDraft) {
-                this.showInlineNodeEditor(node);
+                this.showInlineNodeEditor(node, { cursor: 'end' });
                 return;
             }
 
@@ -269,7 +269,7 @@ export function bindEvents(this: any): void {
             }
 
             // 普通节点：双击进入内联编辑
-            this.showInlineNodeEditor(node);
+            this.showInlineNodeEditor(node, { cursor: 'end' });
         });
 
         // 分组节点双击事件（修改分组名）
@@ -2085,7 +2085,7 @@ export function bindKeyboardEvents(this: any): void {
 
                     event.preventDefault();
                     event.stopPropagation();
-                    this.showInlineNodeEditor(node);
+                    this.showInlineNodeEditor(node, { cursor: 'end' });
                     return;
                 }
 

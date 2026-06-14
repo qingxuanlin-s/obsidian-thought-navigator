@@ -365,6 +365,32 @@ export class EmbeddableMarkdownEditor extends Component {
 		}
 	}
 
+	focusEnd(): void {
+		const move = () => {
+			if (this.destroyed) return;
+			const cm = this.cm;
+			const editor = this.editView?.editor;
+			try {
+				const value = this.getValue();
+				const end = cm?.state?.doc?.length ?? value.length;
+				if (editor?.offsetToPos && editor?.setCursor) {
+					editor.setCursor(editor.offsetToPos(end));
+				}
+				if (cm?.dispatch && Number.isFinite(end)) {
+					cm.dispatch({ selection: { anchor: end } });
+				}
+				editor?.focus?.();
+				cm?.focus?.();
+			} catch {
+				/* ignore */
+			}
+		};
+
+		move();
+		requestAnimationFrame(move);
+		window.setTimeout(move, 30);
+	}
+
 	getContentHeight(): number {
 		const contentDom = this.cm?.contentDOM as HTMLElement | undefined;
 		if (contentDom && contentDom.scrollHeight > 0) {

@@ -622,7 +622,7 @@ export function renderEmbedNodePreviews(this: any): void {
                 }
                 e.preventDefault();
                 e.stopPropagation();
-                this.showInlineNodeEditor(node);
+                this.showInlineNodeEditor(node, { cursor: 'end' });
             });
 
             card.addEventListener('mousedown', (e: MouseEvent) => {

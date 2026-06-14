@@ -1700,8 +1700,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
         inlineShowInlineEdgeLabelEditor.call(this, edge);
     }
 
-    private showInlineNodeEditor(node: any): void {
-        inlineShowInlineNodeEditor.call(this, node);
+    private showInlineNodeEditor(node: any, options?: { cursor?: 'select' | 'end' }): void {
+        inlineShowInlineNodeEditor.call(this, node, options);
     }
 
     private startInPlaceTextEdit(
@@ -1715,17 +1715,18 @@ export class CytoscapeRenderer implements IGraphRenderer {
             height: number;
             isPlainText: boolean;
             usedInCycle: boolean;
-        }
+        },
+        options?: { cursor?: 'select' | 'end' }
     ): void {
-        inlineStartInPlaceTextEdit.call(this, node, originalNode, entry);
+        inlineStartInPlaceTextEdit.call(this, node, originalNode, entry, options);
     }
 
-    private startPlaceholderInPlaceEdit(node: any): void {
-        inlineStartPlaceholderInPlaceEdit.call(this, node);
+    private startPlaceholderInPlaceEdit(node: any, options?: { cursor?: 'select' | 'end' }): void {
+        inlineStartPlaceholderInPlaceEdit.call(this, node, options);
     }
 
-    private startPlaceholderTextareaFallback(node: any): void {
-        inlineStartPlaceholderTextareaFallback.call(this, node);
+    private startPlaceholderTextareaFallback(node: any, options?: { cursor?: 'select' | 'end' }): void {
+        inlineStartPlaceholderTextareaFallback.call(this, node, options);
     }
 
     private startInPlaceTextEditLegacy(
@@ -1739,9 +1740,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
             height: number;
             isPlainText: boolean;
             usedInCycle: boolean;
-        }
+        },
+        options?: { cursor?: 'select' | 'end' }
     ): void {
-        inlineStartInPlaceTextEditLegacy.call(this, node, originalNode, entry);
+        inlineStartInPlaceTextEditLegacy.call(this, node, originalNode, entry, options);
     }
 
     private ensureNodeVisibleInViewport(node: any, padding: number = 40): void {

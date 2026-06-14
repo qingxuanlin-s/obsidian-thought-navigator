@@ -866,8 +866,9 @@ export function showInlineEdgeLabelEditor(this: any, edge: any): void {
     /**
      * 显示占位符节点的内联编辑器
      */
-export function showInlineNodeEditor(this: any, node: any): void {
+export function showInlineNodeEditor(this: any, node: any, options?: { cursor?: 'select' | 'end' }): void {
         if (!this.cy || !this.container || this.isReadOnlyMode()) return;
+        const cursorMode = options?.cursor ?? 'end';
 
         const data = node.data();
         const originalNode = data.originalNode;
@@ -886,7 +887,7 @@ export function showInlineNodeEditor(this: any, node: any): void {
 
         // 占位符 / 草稿节点(#20):使用与文本节点一致的 CM6 原地编辑器
         if (isPlaceholder || isDraft) {
-            this.startPlaceholderInPlaceEdit(node);
+            this.startPlaceholderInPlaceEdit(node, { cursor: cursorMode });
             return;
         }
 
@@ -909,7 +910,7 @@ export function showInlineNodeEditor(this: any, node: any): void {
             const cacheKey = `${TEXT_MD_OVERLAY_RENDER_VERSION}||${sourcePath}||${nodeCacheId}||${rawSource}`;
             const cachedEntry = this.textMdOverlayCache.get(cacheKey);
             if (cachedEntry) {
-                this.startInPlaceTextEdit(node, originalNode, cachedEntry);
+                this.startInPlaceTextEdit(node, originalNode, cachedEntry, { cursor: cursorMode });
                 return;
             }
         }
@@ -1063,10 +1064,15 @@ export function showInlineNodeEditor(this: any, node: any): void {
             textarea.style.top = `${renderedPosition.y - targetHeight / 2}px`;
         };
 
-        // 自动聚焦并全选文本（方便删除）
+        // 自动聚焦；默认把光标放到末尾，显式 cursor: 'select' 时保留全选。
         setTimeout(() => {
             textarea.focus();
-            textarea.select();
+            if (cursorMode === 'end') {
+                const end = textarea.value.length;
+                textarea.setSelectionRange(end, end);
+            } else {
+                textarea.select();
+            }
             resizeEditorToContent();
         }, 0);
 
@@ -1363,7 +1369,8 @@ export function startInPlaceTextEdit(this: any, node: any,
             height: number;
             isPlainText: boolean;
             usedInCycle: boolean;
-        }): void {
+        },
+        options?: { cursor?: 'select' | 'end' }): void {
         if (!this.cy || !this.container) return;
 
         // 先卸载只读展示用的 editor，避免与可编辑 editor 冲突
@@ -1667,7 +1674,11 @@ export function startInPlaceTextEdit(this: any, node: any,
                 },
             });
             (editorHost as any)._mdEditor = mdEditor;
-            mdEditor.focus();
+            if (options?.cursor === 'end') {
+                mdEditor.focusEnd();
+            } else {
+                mdEditor.focus();
+            }
             const editorDom = mdEditor.getDom();
             if (editorDom) {
                 selectionToolbar = this.attachContentSelectionToolbar(editorHost, (formatter: (selectedText: string) => string) => {
@@ -1690,7 +1701,7 @@ export function startInPlaceTextEdit(this: any, node: any,
      * 占位符节点原地编辑（CM6 版），与文本节点编辑体验统一。
      * 提交时根据内容路由：[[xxx]] → 文件节点，![[xxx]] → 嵌入节点，其他 → 文本节点。
      */
-export function startPlaceholderInPlaceEdit(this: any, node: any): void {
+export function startPlaceholderInPlaceEdit(this: any, node: any, options?: { cursor?: 'select' | 'end' }): void {
         if (!this.cy || !this.container) return;
 
         const data = node.data();
@@ -1982,7 +1993,11 @@ export function startPlaceholderInPlaceEdit(this: any, node: any): void {
                     if (!isSaved) saveEdit();
                 },
             });
-            mdEditor.focus();
+            if (options?.cursor === 'end') {
+                mdEditor.focusEnd();
+            } else {
+                mdEditor.focus();
+            }
             const editorDom = mdEditor.getDom();
             if (editorDom) {
                 selectionToolbar = this.attachContentSelectionToolbar(editorHost, (formatter: (selectedText: string) => string) => {
@@ -1994,14 +2009,14 @@ export function startPlaceholderInPlaceEdit(this: any, node: any): void {
             console.warn('[ZK] Placeholder live preview unavailable, fallback to textarea', err);
             cleanup();
             // 降级：回退到原有 textarea 方式
-            this.startPlaceholderTextareaFallback(node);
+            this.startPlaceholderTextareaFallback(node, options);
         }
     }
 
     /**
      * 占位符节点 textarea 降级编辑（CM6 不可用时的后备）。
      */
-export function startPlaceholderTextareaFallback(this: any, node: any): void {
+export function startPlaceholderTextareaFallback(this: any, node: any, options?: { cursor?: 'select' | 'end' }): void {
         if (!this.cy || !this.container) return;
         const data = node.data();
 
@@ -2122,7 +2137,14 @@ export function startPlaceholderTextareaFallback(this: any, node: any): void {
         textarea.addEventListener('mousedown', (e) => e.stopPropagation());
         textarea.addEventListener('blur', () => { setTimeout(() => { if (!isSaved) save(); }, 20); });
 
-        setTimeout(() => { textarea.focus(); autoGrow(); }, 0);
+        setTimeout(() => {
+            textarea.focus();
+            if (options?.cursor === 'end') {
+                const end = textarea.value.length;
+                textarea.setSelectionRange(end, end);
+            }
+            autoGrow();
+        }, 0);
     }
 
     /**
@@ -2138,7 +2160,8 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
             height: number;
             isPlainText: boolean;
             usedInCycle: boolean;
-        }): void {
+        },
+        options?: { cursor?: 'select' | 'end' }): void {
         if (!this.cy || !this.container) return;
 
         this.ensureNodeVisibleInViewport(node);
@@ -2227,10 +2250,15 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
         let isSaved = false;
         const suggesterPopoverRef = { value: null as HTMLElement | null };
 
-        // 聚焦 + 全选
+        // 聚焦；双击/空格编辑时可把光标放到末尾。
         setTimeout(() => {
             textarea.focus();
-            textarea.select();
+            if (options?.cursor === 'end') {
+                const end = textarea.value.length;
+                textarea.setSelectionRange(end, end);
+            } else {
+                textarea.select();
+            }
         }, 0);
 
         const restoreOverlay = () => {

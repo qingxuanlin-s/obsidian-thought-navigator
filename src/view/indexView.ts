@@ -321,6 +321,9 @@ export class ZKIndexView extends FileView {
                 return false;
             }
         });
+        this.scope.register([], ' ', (event: KeyboardEvent) => {
+            if (this.handleDetailPanelSpaceEdit(event)) return false;
+        });
         this.mocHandler = new MOCHandler(plugin, (this.app as any), {
             onBeforeModify: ({ filePath, content }) => {
                 if (this.isApplyingUndo) return;
@@ -372,6 +375,22 @@ export class ZKIndexView extends FileView {
 
     getIcon(): string {
         return "tree-pine";
+    }
+
+    private handleDetailPanelSpaceEdit(event: KeyboardEvent): boolean {
+        if (!(event.key === ' ' || event.code === 'Space') || event.repeat || !this.detailPanel?.isOpen) return false;
+        const activeEl = document.activeElement as HTMLElement | null;
+        if (activeEl && (
+            activeEl.tagName === 'INPUT' ||
+            activeEl.tagName === 'TEXTAREA' ||
+            activeEl.isContentEditable
+        )) {
+            return false;
+        }
+        if (!this.detailPanel.editCurrentRemark()) return false;
+        event.preventDefault();
+        event.stopPropagation();
+        return true;
     }
 
     async onLoadFile(file: TFile): Promise<void> {
@@ -1929,6 +1948,8 @@ cy.fit(null, 40);
 
         if (!this.undoShortcutBound) {
             this.addTrackedListener(window, 'keydown', async (event: KeyboardEvent) => {
+                if (this.handleDetailPanelSpaceEdit(event)) return;
+
                 const isCmdZ = event.metaKey && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'z';
                 if (!isCmdZ) return;
 

@@ -172,6 +172,14 @@ export class NodeDetailPanel {
         return this.currentNode?.IDStr ?? null;
     }
 
+    /** 快捷键入口:复用读模式的备注编辑逻辑 */
+    editCurrentRemark(): boolean {
+        if (!this.currentNode || this.isEditing || !this.deps.canEdit()) return false;
+        const node = this.currentNode;
+        this.enterRemarkEdit(node, (this.deps.getRemark(node) || '').trim(), !!node.file && !node.isTextOnly, 'end');
+        return this.isEditing;
+    }
+
     async show(node: ZKNode): Promise<void> {
         if (!node) return;
         this.currentNode = node;
@@ -363,7 +371,7 @@ export class NodeDetailPanel {
             if (canEdit) {
                 remarkEl.addClass("zk-detail-editable");
                 remarkEl.setAttribute("title", t("detail dblclick edit"));
-                remarkEl.addEventListener("dblclick", () => this.enterRemarkEdit(node, remark, isFileNode));
+                remarkEl.addEventListener("dblclick", () => this.enterRemarkEdit(node, remark, isFileNode, 'end'));
             }
             return;
         }
@@ -414,7 +422,7 @@ export class NodeDetailPanel {
     }
 
     /** 备注编辑模式:挂载与画布同款 CM6 编辑器(Enter 保存 / Shift+Enter 换行 / Esc 取消 / 失焦保存) */
-    private enterRemarkEdit(node: ZKNode, initialValue: string, isFileNode: boolean): void {
+    private enterRemarkEdit(node: ZKNode, initialValue: string, isFileNode: boolean, cursor: 'default' | 'end' = 'default'): void {
         if (!this.remarkArea || !this.deps.canEdit()) return;
         this.teardownEditor();
         this.remarkArea.empty();
@@ -455,7 +463,11 @@ export class NodeDetailPanel {
             (formatter) => this.activeEditor?.transformSelection(formatter) ?? false,
             this.root,
         );
-        this.activeEditor.focus();
+        if (cursor === 'end') {
+            this.activeEditor.focusEnd();
+        } else {
+            this.activeEditor.focus();
+        }
     }
 
     private async renderNotePreview(file: TFile, token: number): Promise<void> {
