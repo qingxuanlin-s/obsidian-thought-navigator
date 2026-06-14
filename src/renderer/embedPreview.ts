@@ -150,10 +150,21 @@ const extractSubpathMarkdown = (app: any, sourceFile: any, markdown: string, wik
     return markdown.slice(startOffset, endOffset).trim();
 };
 
-const openPreviewHeaderFile = (app: any, sourceFile: any, wikiLink: string, event: MouseEvent): void => {
+const openPreviewHeaderFile = (
+    app: any,
+    sourceFile: any,
+    wikiLink: string,
+    event: MouseEvent,
+    openFile?: (file: any, wikiLink: string, forceTab: boolean) => void
+): void => {
     // 与文件节点点击保持一致：默认复用当前标签，Cmd/Ctrl 点击新标签页。
     const openInNewLeaf = event.metaKey || event.ctrlKey;
     const rawLink = String(wikiLink || '').trim();
+    if (openFile) {
+        openFile(sourceFile, rawLink, openInNewLeaf);
+        return;
+    }
+
     const hashIdx = rawLink.indexOf('#');
     const subpath = hashIdx >= 0 ? rawLink.substring(hashIdx) : '';
 
@@ -349,7 +360,7 @@ export function renderEmbedNodePreviews(this: any): void {
                     return;
                 }
 
-                openPreviewHeaderFile(app, sourceFile, originalNode?.wikiLink || '', e);
+                openPreviewHeaderFile(app, sourceFile, originalNode?.wikiLink || '', e, this.currentOptions?.openFile);
             });
             headerEl.appendChild(headerLink);
 
@@ -1059,7 +1070,7 @@ export function renderImageNodePreviews(this: any): void {
             headerLink.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                openPreviewHeaderFile(app, file, '', e);
+                openPreviewHeaderFile(app, file, '', e, this.currentOptions?.openFile);
             });
             headerEl.appendChild(headerLink);
             card.appendChild(headerEl);

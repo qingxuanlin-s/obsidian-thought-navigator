@@ -1,7 +1,6 @@
 import { TFile } from "obsidian";
 import { ZKNode } from "src/view/indexView";
 import { GraphData, Edge, GraphMetadata } from "./types";
-import { stripMocSuffix } from "src/utils/utils";
 
 /**
  * 图形数据构建器
@@ -262,102 +261,12 @@ export class GraphDataBuilder {
     }
 
     /**
-     * 构建跨领域关联边（虚线连接）
+     * 跨领域关联不再物化为画布上的虚拟节点 + 虚线边。
+     * 新设计:链接列表通过 metadata.crossDomainLinks(已由 setMetadata 写入)直接挂在
+     * 源节点上,由 badge 层渲染成源节点右下角的「出口角标」(↗),hover 展开链接列表、点击跳转。
+     * 见 renderPipeline.convertNodesToElements(写入 node.data.crossDomainLinks)与 nodeBadges。
      */
-    buildCrossDomainEdges(crossDomainLinks: Record<string, any[]>): this {
-        const nodeMap = new Map<string, ZKNode>();
-        this.nodes.forEach(node => {
-            // 使用 IDStr 作为 key
-            nodeMap.set(node.IDStr, node);
-            // 同时也支持 ID 作为 key（兼容性）
-            nodeMap.set(node.ID, node);
-        });
-
-        // 获取 nodePositions（从元数据中）
-        const nodePositions: Record<string, { x: number; y: number }> = (this.metadata as any).nodePositions || {};
-
-        // 遍历所有跨领域关联
-        for (const [sourceNodeId, links] of Object.entries(crossDomainLinks)) {
-            const sourceNode = nodeMap.get(sourceNodeId);
-            if (!sourceNode) continue;
-
-            for (const link of links) {
-                // 创建跨领域节点（虚拟节点，不在当前 MOC 中）
-                // 使用简短的 ID 格式：cd-节点ID-MOC文件名
-                // 从 mocPath 中提取 MOC 文件【基名】(如 "索引笔记/初中数学.moc.md" -> "初中数学")
-                // 旧实现误用 split('/')[0] 取到目录名(如 "索引笔记"),导致显示错误。
-                const mocFileName = stripMocSuffix(String(link.mocPath || '').split('/').pop() || '');
-                const crossDomainNodeId = `cd-${link.nodeId}-${mocFileName}`;
-
-                // 兜底显示文本:旧数据可能存了 displayText=undefined(保存时读错字段)。
-                // 优先用存的 displayText,否则退回关联笔记文件名,再否则用原节点 ID。
-                const linkFileBasename = link.filePath
-                    ? String(link.filePath).split('/').pop()?.replace(/\.md$/i, '') || ''
-                    : '';
-                const crossDomainDisplayText = link.displayText || linkFileBasename || link.nodeId;
-
-                // 检查是否已经添加过这个跨领域节点
-                let crossDomainNode = this.nodes.find(n => n.ID === crossDomainNodeId);
-
-                if (!crossDomainNode) {
-                    // 从 cross_domain_links 的 position 字段读取保存的位置
-                    const savedPosition = link.position;
-
-                    // 如果没有保存的位置，计算默认位置
-                    let finalPosition = savedPosition;
-                    if (!finalPosition) {
-                        const sourceNodePosition = nodePositions[sourceNodeId];
-                        if (sourceNodePosition) {
-                            // 默认位置：源节点右侧 200px，同一水平线
-                            finalPosition = {
-                                x: sourceNodePosition.x + 200,
-                                y: sourceNodePosition.y
-                            };
-                        }
-                    }
-
-                    crossDomainNode = {
-                        ID: crossDomainNodeId,
-                        IDArr: [crossDomainNodeId],
-                        IDStr: crossDomainNodeId,
-                        position: this.nodes.length,
-                        file: link as any,  // 存储链接信息
-                        title: crossDomainDisplayText,
-                        displayText: crossDomainDisplayText,
-                        relationText: `跨领域: ${link.mocPath}`,
-                        ctime: Date.now(),
-                        randomId: Math.random().toString(36),
-                        nodeSons: 0,
-                        startY: sourceNode.startY,
-                        height: sourceNode.height,
-                        isRoot: false,
-                        fixWidth: sourceNode.fixWidth,
-                        branchName: '',
-                        gitNodePos: 0,
-                        isCrossDomain: true,  // 标记为跨领域节点
-                        crossDomainSourceNodeId: sourceNodeId,  // 保存源节点 ID，用于删除时定位
-                        crossDomainOriginalNodeId: link.nodeId,  // 保存原始节点 ID
-                        // 使用保存的位置或计算的默认位置
-                        savedPosition: finalPosition
-                    };
-                    this.nodes.push(crossDomainNode);
-                }
-
-                // 添加跨领域边（虚线）
-                this.edges.push({
-                    id: `edge-cross-domain-${sourceNodeId}-${link.nodeId}`,
-                    source: sourceNode.ID,
-                    target: crossDomainNode.ID,
-                    type: 'cross-domain' as any,  // 新的边类型
-                    // 关系标签:优先用户自定义(应用/类比/推广…),回退默认"跨领域"
-                    label: (link.relationLabel && String(link.relationLabel).trim()) || '跨领域',
-                    // 存储跨领域链接信息，用于点击跳转 + 标签编辑持久化定位
-                    crossDomainLink: link,
-                    crossDomainSourceNodeId: sourceNodeId
-                });
-            }
-        }
-
+    buildCrossDomainEdges(_crossDomainLinks: Record<string, any[]>): this {
         return this;
     }
 

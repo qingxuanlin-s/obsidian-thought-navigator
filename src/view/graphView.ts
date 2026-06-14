@@ -53,6 +53,42 @@ export class ZKGraphView extends ItemView {
         return "network"
     }
 
+    private isUserFileLeaf(leaf: WorkspaceLeaf): boolean {
+        const view = leaf.view as any;
+        const viewType = view?.getViewType?.();
+        return view instanceof FileView && ![
+            ZK_INDEX_TYPE,
+            ZK_GRAPH_TYPE,
+            'zk-recent-type',
+            'zk-moc-preview',
+        ].includes(viewType);
+    }
+
+    private getFileOpenLeaf(forceTab: boolean): WorkspaceLeaf {
+        const ws = this.app.workspace;
+        const mode = forceTab ? 'tab' : (this.plugin.settings.defaultFileOpenMode || 'replace');
+        const contentLeaves: WorkspaceLeaf[] = [];
+        ws.iterateRootLeaves((leaf) => { if (this.isUserFileLeaf(leaf)) contentLeaves.push(leaf); });
+        const recent = ws.getMostRecentLeaf();
+        const anchor = recent && contentLeaves.includes(recent) ? recent : (contentLeaves[0] ?? null);
+
+        const splitBesideGraph = (before: boolean): WorkspaceLeaf => ws.createLeafBySplit(this.leaf, 'vertical', before);
+        if (mode === 'split-left') return splitBesideGraph(true);
+        if (mode === 'split-right') return splitBesideGraph(false);
+        if (mode === 'tab') {
+            if (anchor) {
+                ws.setActiveLeaf(anchor, { focus: false });
+                return ws.getLeaf('tab');
+            }
+            return splitBesideGraph(false);
+        }
+        return anchor ?? splitBesideGraph(false);
+    }
+
+    private openFileInPreferredLeaf(file: TFile, forceTab: boolean): void {
+        this.getFileOpenLeaf(forceTab).openFile(file);
+    }
+
     onResize() {
 
         if (this.app.workspace.getLeavesOfType(ZK_GRAPH_TYPE).length > 0) {
@@ -419,11 +455,7 @@ export class ZKGraphView extends ItemView {
 
                 nodeGArr[i].addEventListener("click", (event: MouseEvent) => {
                     if (!node.file) return;
-                    if (event.ctrlKey) {
-                        this.app.workspace.openLinkText("", node.file.path, 'tab');
-                    } else {
-                        this.app.workspace.openLinkText("", node.file.path);
-                    }
+                    this.openFileInPreferredLeaf(node.file, event.ctrlKey || event.metaKey);
                 });
 
                 nodeGArr[i].addEventListener("mouseover", (event: MouseEvent) => {
@@ -467,11 +499,7 @@ export class ZKGraphView extends ItemView {
 
             if (targetFile) {
                 nodeGArr[i].addEventListener("click", (event: MouseEvent) => {
-                    if (event.ctrlKey) {
-                        this.app.workspace.openLinkText("", targetFile!.path, 'tab');
-                    } else {
-                        this.app.workspace.openLinkText("", targetFile!.path);
-                    }
+                    this.openFileInPreferredLeaf(targetFile!, event.ctrlKey || event.metaKey);
                 });
 
                 nodeGArr[i].addEventListener("mouseover", (event: MouseEvent) => {
@@ -983,7 +1011,7 @@ export class ZKGraphView extends ItemView {
             return;
         }
 
-        this.app.workspace.openLinkText('', file.path);
+        this.openFileInPreferredLeaf(file, false);
     }
 
     private resolveLocalGraphNode(allNodes: ZKNode[], rawNode: ZKNode | null | undefined): ZKNode | null {
@@ -1117,7 +1145,7 @@ export class ZKGraphView extends ItemView {
                     if (textNodeOnly) return;
 
                     if (ctrlKey || metaKey) {
-                        this.app.workspace.openLinkText("", clicked.file.path, 'tab');
+                        this.openFileInPreferredLeaf(clicked.file, true);
                     } else if (shiftKey) {
                         this.plugin.retrivalforLocaLgraph = {
                             type: '1',
@@ -1137,7 +1165,7 @@ export class ZKGraphView extends ItemView {
                         this.plugin.RefreshIndexViewFlag = true;
                         this.plugin.openIndexView();
                     } else {
-                        this.app.workspace.openLinkText("", clicked.file.path);
+                        this.openFileInPreferredLeaf(clicked.file, false);
                     }
                 };
 
@@ -1361,11 +1389,7 @@ export class ZKGraphView extends ItemView {
         const centerZone = stage.createDiv('zk-focus-center-zone zk-focus-radial-center-zone');
 
         const openFile = (file: TFile, event?: MouseEvent | KeyboardEvent) => {
-            if (event && ('ctrlKey' in event) && (event.ctrlKey || event.metaKey)) {
-                this.app.workspace.openLinkText('', file.path, 'tab');
-            } else {
-                this.app.workspace.openLinkText('', file.path);
-            }
+            this.openFileInPreferredLeaf(file, !!(event && ('ctrlKey' in event) && (event.ctrlKey || event.metaKey)));
         };
 
         const focusNode = async (node: ZKNode) => {
@@ -1552,11 +1576,7 @@ export class ZKGraphView extends ItemView {
                     attr: { title: file.basename },
                 });
                 chip.addEventListener('click', (event: MouseEvent) => {
-                    if (event.ctrlKey || event.metaKey) {
-                        this.app.workspace.openLinkText('', file.path, 'tab');
-                    } else {
-                        this.app.workspace.openLinkText('', file.path);
-                    }
+                    this.openFileInPreferredLeaf(file, event.ctrlKey || event.metaKey);
                 });
                 chip.addEventListener('mouseover', (event: MouseEvent) => {
                     this.app.workspace.trigger('hover-link', {
@@ -1773,7 +1793,7 @@ export class ZKGraphView extends ItemView {
 
             if (ctrlKey) {
                 // Ctrl + 点击：在新标签页打开
-                this.app.workspace.openLinkText("", node.file.path, 'tab');
+                this.openFileInPreferredLeaf(node.file, true);
             } else if (shiftKey) {
                 // Shift + 点击：在图形视图中打开
                 this.plugin.retrivalforLocaLgraph = {
@@ -1796,7 +1816,7 @@ export class ZKGraphView extends ItemView {
                 this.plugin.openIndexView();
             } else {
                 // 普通点击：打开文件
-                this.app.workspace.openLinkText("", node.file.path);
+                this.openFileInPreferredLeaf(node.file, false);
             }
         });
 
@@ -1843,12 +1863,12 @@ export class ZKGraphView extends ItemView {
         // 通用点击处理
         const handleFileClick = (file: TFile, e: MouseEvent) => {
             if (e.ctrlKey || e.metaKey) {
-                this.app.workspace.openLinkText("", file.path, 'tab');
+                this.openFileInPreferredLeaf(file, true);
             } else if (e.shiftKey) {
                 this.plugin.retrivalforLocaLgraph = { type: '1', ID: '', filePath: file.path };
                 this.plugin.openGraphView();
             } else {
-                this.app.workspace.openLinkText("", file.path);
+                this.openFileInPreferredLeaf(file, false);
             }
         };
 

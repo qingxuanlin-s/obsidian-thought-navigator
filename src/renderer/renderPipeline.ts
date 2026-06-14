@@ -96,6 +96,8 @@ export function convertNodesToElements(
 	const nodeColors = data?.metadata.nodeColors || {};
 	const nodeRemarks = data?.metadata.nodeRemarks || {};
 	const nodeAnchors = data?.metadata.nodeAnchors || {};
+	// 跨领域链接:不再物化为虚拟节点,而是挂在源节点上由 badge 层渲染成「出口角标」(↗)
+	const crossDomainLinks = ((data?.metadata as any)?.crossDomainLinks || {}) as Record<string, any[]>;
 	const embedNodeSizes = ((data?.metadata as any)?.embedNodeSizes || {}) as Record<string, { width: number; height: number }>;
 	const resolvedContext = context || buildElementConversionContext(data, options);
 	const vividStyleMap = resolvedContext.nodeStyleMap;
@@ -156,6 +158,8 @@ export function convertNodesToElements(
 				isFreeNode: (node.ID || '').startsWith('free.'),
 				remark: nodeRemarks[node.IDStr] || nodeRemarks[node.ID] || '',
 				hasRemark: !!(nodeRemarks[node.IDStr] || nodeRemarks[node.ID]),
+				crossDomainLinks: crossDomainLinks[node.IDStr] || crossDomainLinks[node.ID] || [],
+				hasCrossDomain: (crossDomainLinks[node.IDStr] || crossDomainLinks[node.ID] || []).length > 0,
 				isAnchor: !!(nodeAnchors[node.IDStr] || nodeAnchors[node.ID]),
 				hasFileIcon: (!node.isTextOnly && node.file) ? true : false,
 				manualWidthModel: manualSize?.width || null,

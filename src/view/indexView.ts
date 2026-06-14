@@ -1303,7 +1303,7 @@ export class ZKIndexView extends FileView {
                 getBranchColor: (n) => this.findCyNodeByIdStr(n.IDStr)?.data('branchNodeBorder') || null,
                 onSaveRemark: (n, text) => this.saveNodeRemarkFromPanel(n, text),
                 canEdit: () => !this.isMobileReadOnly(),
-                onOpenFile: (file) => { this.app.workspace.getLeaf(false).openFile(file); },
+                onOpenFile: (file) => { this.openFileInPreferredLeaf(file, false); },
                 onNavigate: (idStr) => this.selectAndShowDetailByIdStr(idStr),
                 attachSelectionToolbar: (rootEl, applyTransform, hostContainer) =>
                     this.branchRenderer?.attachSelectionToolbarToHost(rootEl, applyTransform, hostContainer) ?? null,
@@ -2608,6 +2608,7 @@ cy.fit(null, 40);
             readOnly: this.isMobileReadOnly(),
             initialCollapsedNodeIds: this.collapsedNodeIds,
             openLink: (linkText, sourcePath, forceTab) => this.openLinkInPreferredLeaf(linkText, sourcePath, forceTab),
+            openFile: (file, wikiLink, forceTab) => this.openFileInPreferredLeaf(file, forceTab, this.getWikiSubpath(wikiLink)),
         };
 
         // 性能优化：复用或创建渲染器，避免每次都销毁重建
@@ -3229,9 +3230,6 @@ cy.fit(null, 40);
             const isMocTarget = isMocPath(targetFile.path);
             // Cmd/Ctrl+点击始终在新标签页打开（MOC 目标仍走当前视图切换逻辑）；否则按设置的默认打开方式。
             const forceTab = !isMocTarget && isMouseEvent && (triggerEvent.metaKey || triggerEvent.ctrlKey);
-            // 是否会“复用/覆盖”已有视图（用于决定是否先查已打开的同路径 leaf）
-            const reuseExisting = !forceTab;
-
             // 带 #heading / #^blockRef 的链接（如 Excalidraw 的 #^group=xxx）：
             // 用 leaf.openFile + eState.subpath 让 ExcalidrawView.setEphemeralState 解析 subpath 并自动 zoomToElementId
             const rawLink = String(node.wikiLink || '').trim();
@@ -3239,37 +3237,11 @@ cy.fit(null, 40);
             const subpath = hashIdx >= 0 ? rawLink.substring(hashIdx) : '';
 
             if (subpath) {
-                // 查已有 leaf；有则直接 setEphemeralState，避免重复 openFile 打断 Excalidraw 状态
-                const existingLeaf = reuseExisting ? this.app.workspace.getLeavesOfType('markdown').concat(
-                    this.app.workspace.getLeavesOfType('excalidraw' as any)
-                ).find(
-                    leaf => (leaf.view as any)?.file?.path === targetFile.path
-                ) : null;
-
-                if (existingLeaf) {
-                    this.app.workspace.setActiveLeaf(existingLeaf, { focus: true });
-                    // 让 Excalidraw view 自己处理 subpath
-                    (existingLeaf.view as any).setEphemeralState?.({ subpath });
-                } else {
-                    this.getFileOpenLeaf(forceTab).openFile(targetFile, {
-                        eState: { subpath },
-                        active: true,
-                    } as any);
-                }
+                this.openFileInPreferredLeaf(targetFile, forceTab, subpath);
                 return;
             }
 
-            // 如果不是强制新开，先查已有 tab
-            if (reuseExisting) {
-                const existingLeaf = this.app.workspace.getLeavesOfType('markdown').find(
-                    leaf => (leaf.view as any)?.file?.path === targetFile.path
-                );
-                if (existingLeaf) {
-                    this.app.workspace.setActiveLeaf(existingLeaf, { focus: true });
-                    return;
-                }
-            }
-            this.getFileOpenLeaf(forceTab).openFile(targetFile);
+            this.openFileInPreferredLeaf(targetFile, forceTab);
         });
 
         // 监听节点悬停事件
@@ -3371,15 +3343,20 @@ cy.fit(null, 40);
             if (relKey) this.deleteDraftRelation(relKey);
         });
 
-        this.addTrackedListener(branchGraphDiv, 'node-remark-edit', async (event: any) => {
-            if (this.isMobileReadOnly()) {
-                return;
-            }
+        // R 角标点击 → 打开/切换详情侧栏(只读态也可查看;再次点同一节点关闭)
+        this.addTrackedListener(branchGraphDiv, 'node-detail-toggle', async (event: any) => {
             const { node } = event.detail;
-            if (!node) {
+            if (!node || !this.detailPanel) {
                 return;
             }
-            await this.editNodeRemark(node);
+            if (this.detailPanel.isOpen && this.detailPanel.nodeIdStr === node.IDStr) {
+                this.detailPanel.close();
+                this.detailPanelLastId = null;
+                return;
+            }
+            this.detailPanel.setSide(this.plugin.settings.detailPanelSide === 'left' ? 'left' : 'right');
+            this.detailPanelLastId = node.IDStr;
+            await this.detailPanel.show(node);
         });
 
         // 监听 .moc 预览节点点击跳转分支视图
@@ -3469,6 +3446,74 @@ cy.fit(null, 40);
             } catch (error) {
                 console.error('Failed to jump to cross-domain MOC:', error);
                 new Notice(`跳转失败: ${error.message}`);
+            }
+        });
+
+        // 跨领域「出口角标」卡片里点击某条链接 → 跳到目标 MOC 并定位该节点
+        this.addTrackedListener(branchGraphDiv, 'cross-domain-jump', async (event: any) => {
+            const { link } = event.detail || {};
+            if (!link?.mocPath) {
+                new Notice('跨领域链接信息无效');
+                return;
+            }
+            const mocFile = this.app.vault.getFileByPath(link.mocPath);
+            if (!mocFile) {
+                new Notice(`未找到 MOC 文件: ${link.mocPath}`);
+                return;
+            }
+            try {
+                if (mocFile.path !== this.plugin.settings.mocCurrentFile) {
+                    this.plugin.settings.mocCurrentFile = mocFile.path;
+                    await this.plugin.saveData(this.plugin.settings);
+                    await this.refreshBranchMermaid();
+                }
+                // 定位目标节点(渲染可能稍滞后,定位失败则单次重试)
+                if (link.nodeId) {
+                    const locate = () => {
+                        const found = this.findCyNodeByIdStr(link.nodeId);
+                        if (found) { this.selectAndShowDetailByIdStr(link.nodeId); return true; }
+                        return false;
+                    };
+                    if (!locate()) window.setTimeout(locate, 160);
+                }
+                new Notice(`已跳转到: ${mocFile.basename}`);
+            } catch (error) {
+                console.error('Failed to jump to cross-domain note:', error);
+                new Notice(`跳转失败: ${error.message}`);
+            }
+        });
+
+        // 跨领域「出口角标」卡片里点击 × → 双向删除该条链接(对侧不存在也不报错,兼容历史单向数据)
+        this.addTrackedListener(branchGraphDiv, 'cross-domain-remove', async (event: any) => {
+            if (this.isMobileReadOnly()) return;
+            const { sourceNodeId, link } = event.detail || {};
+            if (!sourceNodeId || !link?.nodeId) return;
+            const currentMocPath = this.plugin.settings.mocCurrentFile;
+            const mocFile = this.app.vault.getFileByPath(currentMocPath);
+            if (!mocFile) return;
+            try {
+                await this.saveAllNodePositionsBeforeRefresh();
+                // 近端:当前 MOC 的源节点下,删指向 link.nodeId@link.mocPath 的那条
+                const nearRemoved = await this.removeCrossDomainLinkFromExt(
+                    mocFile, sourceNodeId, { nodeId: link.nodeId, mocPath: link.mocPath }
+                );
+                // 远端:目标 MOC 的目标节点下,删反向指回 sourceNodeId@当前 MOC 的那条
+                let farRemoved = false;
+                const targetMocFile = link.mocPath ? this.app.vault.getFileByPath(link.mocPath) : null;
+                if (targetMocFile) {
+                    farRemoved = await this.removeCrossDomainLinkFromExt(
+                        targetMocFile, link.nodeId, { nodeId: sourceNodeId, mocPath: currentMocPath }
+                    );
+                }
+                await this.refreshBranchMermaid();
+                new Notice(
+                    nearRemoved && farRemoved ? '已删除跨领域链接(双向)'
+                    : (nearRemoved || farRemoved) ? '已删除跨领域链接(单向·对侧原本缺失)'
+                    : '未找到要删除的跨领域链接'
+                );
+            } catch (error) {
+                console.error('Failed to remove cross-domain link:', error);
+                new Notice(`删除失败: ${error.message}`);
             }
         });
 
@@ -4506,8 +4551,10 @@ cy.fit(null, 40);
 
     /**
      * 单击选中 → 详情侧栏跟随。
-     * - autoOpen=true:任意选中即展开
-     * - autoOpen=false:首次选中只选中,再次点同一节点(或面板已开)才展开
+     * 详情侧栏现在是「备注专属」面板,多数节点无备注,故单击节点默认【不】自动展开,
+     * 主入口改为点击节点右上角 R 角标(见 node-detail-toggle)。
+     * - 面板已展开/钉住:跟随选中刷新内容(开着就当 inspector 用)
+     * - detailPanelAutoOpen=true(默认 false):退回老行为,任意选中即展开
      */
     private handleDetailPanelSelect(node: ZKNode | null): void {
         if (!this.detailPanel) return;
@@ -4517,11 +4564,9 @@ cy.fit(null, 40);
             return;
         }
         this.detailPanel.setSide(this.plugin.settings.detailPanelSide === 'left' ? 'left' : 'right');
-        const auto = this.plugin.settings.detailPanelAutoOpen !== false;
-        const reClicked = this.detailPanelLastId === node.IDStr;
+        const auto = this.plugin.settings.detailPanelAutoOpen === true;
         this.detailPanelLastId = node.IDStr;
-        // 钉住(常驻)时始终跟随选中刷新内容
-        if (auto || this.detailPanel.isOpen || this.detailPanel.isPinned || reClicked) {
+        if (auto || this.detailPanel.isOpen || this.detailPanel.isPinned) {
             void this.detailPanel.show(node);
         }
     }
@@ -5534,6 +5579,34 @@ cy.fit(null, 40);
         });
     }
 
+    /**
+     * 从某 MOC 的 ext 数据里删除一条跨领域链接(寛容:键/条目不存在直接跳过,不抛错)。
+     * match.mocPath 给定时按 nodeId+mocPath 精确匹配,否则只按 nodeId。返回是否真的删掉了。
+     */
+    private async removeCrossDomainLinkFromExt(
+        mocFile: TFile,
+        sourceKey: string,
+        match: { nodeId: string; mocPath?: string }
+    ): Promise<boolean> {
+        let removed = false;
+        await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
+            const links = mocData.crossDomainLinks?.[sourceKey];
+            if (!links || !links.length) return;
+            const filtered = links.filter((l: any) =>
+                !(l.nodeId === match.nodeId && (!match.mocPath || l.mocPath === match.mocPath))
+            );
+            if (filtered.length !== links.length) {
+                removed = true;
+                if (filtered.length === 0) {
+                    delete mocData.crossDomainLinks![sourceKey];
+                } else {
+                    mocData.crossDomainLinks![sourceKey] = filtered;
+                }
+            }
+        });
+        return removed;
+    }
+
     async toggleNodeAnchor(node: ZKNode) {
         const isAnchor = !!(this.nodeAnchors[node.IDStr] || this.nodeAnchors[node.ID]);
         await this.saveAllNodePositionsBeforeRefresh();
@@ -5919,27 +5992,6 @@ cy.fit(null, 40);
 
     private getNodeRemark(node: ZKNode): string {
         return this.nodeRemarks[node.IDStr] || this.nodeRemarks[node.ID] || '';
-    }
-
-    async editNodeRemark(node: ZKNode) {
-        const currentRemark = this.getNodeRemark(node);
-        const newRemark = await this.showTextNodeContentInputDialog(currentRemark, '编辑备注', true);
-
-        if (newRemark === null || newRemark === currentRemark) {
-            return;
-        }
-
-        try {
-            const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
-            if (mocFile) {
-                await this.mocHandler.updateNodeRemarkInMOC(mocFile, node.IDStr, newRemark);
-                await this.refreshBranchMermaid();
-                new Notice(newRemark.trim() ? '已更新备注' : '已删除备注');
-            }
-        } catch (error) {
-            console.error('Failed to edit node remark:', error);
-            new Notice(`修改备注失败: ${error.message}`);
-        }
     }
 
     /** 详情侧栏内联编辑保存备注(无弹窗,与画布文本编辑体验一致) */
@@ -9557,7 +9609,7 @@ cy.fit(null, 40);
 
         // 主区域里真正的文件视图叶(markdown / excalidraw / pdf / image 等),最近用的优先
         const contentLeaves: WorkspaceLeaf[] = [];
-        ws.iterateRootLeaves(l => { if ((l.view as any) instanceof FileView) contentLeaves.push(l); });
+        ws.iterateRootLeaves(l => { if (this.isUserFileLeaf(l)) contentLeaves.push(l); });
         const recent = ws.getMostRecentLeaf();
         const anchor: WorkspaceLeaf | null =
             (recent && contentLeaves.includes(recent)) ? recent : (contentLeaves[0] ?? null);
@@ -9589,6 +9641,52 @@ cy.fit(null, 40);
         return anchor ?? splitBesideGraph(false);
     }
 
+    private getWikiSubpath(wikiLink: string): string {
+        const raw = String(wikiLink || '').trim();
+        const hashIdx = raw.indexOf('#');
+        return hashIdx >= 0 ? raw.substring(hashIdx) : '';
+    }
+
+    private isUserFileLeaf(leaf: WorkspaceLeaf): boolean {
+        const view = leaf.view as any;
+        const viewType = view?.getViewType?.();
+        return view instanceof FileView && ![
+            ZK_INDEX_TYPE,
+            'zk-graph-type',
+            'zk-recent-type',
+            'zk-moc-preview',
+        ].includes(viewType);
+    }
+
+    private getExistingFileLeaf(file: TFile): WorkspaceLeaf | null {
+        let existingLeaf: WorkspaceLeaf | null = null;
+        this.app.workspace.iterateAllLeaves((leaf) => {
+            if (!existingLeaf && this.isUserFileLeaf(leaf) && (leaf.view as any)?.file?.path === file.path) {
+                existingLeaf = leaf;
+            }
+        });
+        return existingLeaf;
+    }
+
+    private shouldReuseExistingFileLeaf(forceTab: boolean): boolean {
+        return !forceTab && (this.plugin.settings.defaultFileOpenMode || 'replace') === 'replace';
+    }
+
+    private openFileInPreferredLeaf(file: TFile, forceTab: boolean, subpath: string = ''): void {
+        if (this.shouldReuseExistingFileLeaf(forceTab)) {
+            const existingLeaf = this.getExistingFileLeaf(file);
+            if (existingLeaf) {
+                this.app.workspace.setActiveLeaf(existingLeaf, { focus: true });
+                if (subpath) (existingLeaf.view as any).setEphemeralState?.({ subpath });
+                return;
+            }
+        }
+
+        const leaf = this.getFileOpenLeaf(forceTab);
+        if (subpath) leaf.openFile(file, { eState: { subpath }, active: true } as any);
+        else leaf.openFile(file);
+    }
+
     /**
      * 由节点内 wiki 链接(concept/text-only 节点里的 [[..]])点击触发。
      * 解析 linkText → 文件后,按「文件默认打开方式」打开;复用 getFileOpenLeaf,
@@ -9597,8 +9695,8 @@ cy.fit(null, 40);
     private openLinkInPreferredLeaf(linkText: string, sourcePath: string, forceTab: boolean): void {
         const raw = (linkText || '').trim();
         if (!raw) return;
+        const subpath = this.getWikiSubpath(raw);
         const hashIdx = raw.indexOf('#');
-        const subpath = hashIdx >= 0 ? raw.substring(hashIdx) : '';
         const pathPart = (hashIdx >= 0 ? raw.substring(0, hashIdx) : raw).trim();
         const targetFile = this.app.metadataCache.getFirstLinkpathDest(pathPart, sourcePath || '');
         if (!targetFile) {
@@ -9606,20 +9704,7 @@ cy.fit(null, 40);
             this.app.workspace.openLinkText(raw, sourcePath || '', forceTab ? 'tab' : false);
             return;
         }
-        // 非强制新标签时,若已在某个 leaf 打开则直接聚焦,避免重复打开
-        if (!forceTab) {
-            const existingLeaf = this.app.workspace.getLeavesOfType('markdown').concat(
-                this.app.workspace.getLeavesOfType('excalidraw' as any)
-            ).find(leaf => (leaf.view as any)?.file?.path === targetFile.path);
-            if (existingLeaf) {
-                this.app.workspace.setActiveLeaf(existingLeaf, { focus: true });
-                if (subpath) (existingLeaf.view as any).setEphemeralState?.({ subpath });
-                return;
-            }
-        }
-        const leaf = this.getFileOpenLeaf(forceTab);
-        if (subpath) leaf.openFile(targetFile, { eState: { subpath }, active: true } as any);
-        else leaf.openFile(targetFile);
+        this.openFileInPreferredLeaf(targetFile, forceTab, subpath);
     }
 
     private mocFullscreenExitBtn: HTMLElement | null = null;

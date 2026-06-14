@@ -797,13 +797,12 @@ export function renderNodeBadges(this: any): void {
 
             badgeUpdaters.push({ node, fn: updateRemarkPosition });
 
+            // R 角标点击 = 打开/切换该节点的详情侧栏(读+编辑都在面板里完成)。
+            // 只读态也允许点开查看备注,编辑能力由面板内部 canEdit 把关。
             remarkEl.addEventListener('click', (e) => {
-                if (this.isReadOnlyMode()) {
-                    return;
-                }
                 e.stopPropagation();
                 node.select();
-                this.container?.dispatchEvent(new CustomEvent('node-remark-edit', {
+                this.container?.dispatchEvent(new CustomEvent('node-detail-toggle', {
                     detail: {
                         node: node.data('originalNode'),
                         event: e
@@ -944,29 +943,45 @@ export function renderNodeBadges(this: any): void {
             badgeUpdaters.push({ node, fn: updateDraftPos });
         });
 
-        // 跨领域虚拟节点角标 — 左上角紫色 ↗,标识"来自其他 MOC 的客人"(配合虚线描边)
-        const MIN_CD_PX = 16;
+        // 跨领域「出口角标」(↗) — 挂在【源节点右下角】,标识"此节点链向其它 MOC 的笔记"。
+        // 不再把外部笔记物化成画布上的虚拟节点;链接列表 hover 展开成卡片,点击跳转、× 删除。
+        // 与 R 备注角标(右上)分居两角,语义左右分明。
+        const MIN_CD_PX = 18;
         const cdBadgeColor = isLightTheme ? '#7357c6' : '#a08be8';
-        this.cy.nodes('[?isCrossDomain]').forEach((node: any) => {
+        const cdMocBasename = (p: string) =>
+            String(p || '').split('/').pop()?.replace(/\.moc\.md$|\.md$/i, '') || '';
+        const cdLinkTargetText = (link: any) => {
+            const fileBase = link?.filePath
+                ? String(link.filePath).split('/').pop()?.replace(/\.md$/i, '') || ''
+                : '';
+            return link?.displayText || fileBase || link?.nodeId || '未命名';
+        };
+        this.cy.nodes('[?hasCrossDomain]').forEach((node: any) => {
             if (incIds && !incIds.has(node.id())) return;
             if (node.data('isGroup') || node.data('isPlaceholder')) return;
+            const links: any[] = node.data('crossDomainLinks') || [];
+            if (!links.length) return;
+            const sourceNodeId = String(node.data('originalNodeId') || node.id());
 
             const cdEl = document.createElement('div');
             cdEl.className = 'zk-node-cross-domain-badge';
             cdEl.dataset.nodeId = node.id();
-            cdEl.textContent = '↗';
-            const mocName = String(node.data('originalNode')?.file?.mocPath || '')
-                .split('/').pop()?.replace(/\.moc\.md$|\.md$/i, '') || '';
-            cdEl.title = mocName ? `跨领域链接 · 来自《${mocName}》` : '跨领域链接 · 来自其他 MOC';
+            cdEl.textContent = links.length > 1 ? `↗ ${links.length}` : '↗';
+            cdEl.title = links.length > 1
+                ? `${links.length} 个跨领域链接`
+                : `跨领域链接 · ${cdLinkTargetText(links[0])}`;
             cdEl.style.cssText = `
                 position: absolute;
                 display: flex;
                 align-items: center;
                 justify-content: center;
+                gap: 2px;
                 color: #ffffff;
                 font-weight: 700;
                 line-height: 1;
-                pointer-events: none;
+                white-space: nowrap;
+                pointer-events: auto;
+                cursor: pointer;
                 background: ${cdBadgeColor};
                 border: 1.5px solid ${isLightTheme ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.5)'};
                 border-radius: 999px;
@@ -976,6 +991,151 @@ export function renderNodeBadges(this: any): void {
             `;
             badgeContainer.appendChild(cdEl);
 
+            // hover 展开卡片:列出每条链接(关系标签 / 目标笔记 / 来源 MOC / 删除)
+            const cdPanel = document.createElement('div');
+            cdPanel.className = 'zk-node-cross-domain-panel';
+            cdPanel.dataset.nodeId = node.id();
+            cdPanel.style.cssText = `
+                position: absolute;
+                min-width: 200px;
+                max-width: 320px;
+                padding: 6px;
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+                background: ${isLightTheme ? 'rgba(255,255,255,0.98)' : 'rgba(15,23,42,0.97)'};
+                color: ${isLightTheme ? '#1f2937' : '#f1f5f9'};
+                border-radius: 10px;
+                border: 1px solid ${isLightTheme ? 'rgba(115,87,198,0.25)' : 'rgba(160,139,232,0.3)'};
+                box-shadow: 0 8px 24px rgba(0,0,0,0.32);
+                pointer-events: auto;
+                opacity: 0;
+                transform: translateY(4px);
+                transition: opacity 0.12s ease, transform 0.12s ease;
+                z-index: 21;
+            `;
+            cdPanel.style.display = 'none';
+            badgeContainer.appendChild(cdPanel);
+
+            links.forEach((link) => {
+                const row = document.createElement('div');
+                row.className = 'zk-cd-panel-row';
+                row.style.cssText = `
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 6px 8px;
+                    border-radius: 7px;
+                    cursor: pointer;
+                    transition: background 0.1s ease;
+                `;
+                row.addEventListener('mouseenter', () => {
+                    row.style.background = isLightTheme ? 'rgba(115,87,198,0.10)' : 'rgba(160,139,232,0.16)';
+                });
+                row.addEventListener('mouseleave', () => { row.style.background = 'transparent'; });
+
+                const relText = (link?.relationLabel && String(link.relationLabel).trim()) || '跨领域';
+                const chip = document.createElement('span');
+                chip.textContent = relText;
+                chip.style.cssText = `
+                    flex: 0 0 auto;
+                    font-size: 11px;
+                    font-weight: 600;
+                    padding: 1px 6px;
+                    border-radius: 999px;
+                    color: ${cdBadgeColor};
+                    background: ${isLightTheme ? 'rgba(115,87,198,0.12)' : 'rgba(160,139,232,0.18)'};
+                    border: 1px solid ${isLightTheme ? 'rgba(115,87,198,0.3)' : 'rgba(160,139,232,0.35)'};
+                `;
+
+                const textWrap = document.createElement('div');
+                textWrap.style.cssText = 'flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px;';
+                const nameEl = document.createElement('div');
+                nameEl.textContent = cdLinkTargetText(link);
+                nameEl.style.cssText = 'font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+                const mocEl = document.createElement('div');
+                const mocName = cdMocBasename(link?.mocPath);
+                mocEl.textContent = mocName ? `来自《${mocName}》` : '来自其它 MOC';
+                mocEl.style.cssText = `font-size: 11px; opacity: 0.65; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;`;
+                textWrap.appendChild(nameEl);
+                textWrap.appendChild(mocEl);
+
+                row.appendChild(chip);
+                row.appendChild(textWrap);
+
+                // 点击行 → 跳转到目标 MOC 并定位节点
+                row.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.container?.dispatchEvent(new CustomEvent('cross-domain-jump', {
+                        detail: { link }
+                    }));
+                });
+
+                // 删除 ×(只读态隐藏)
+                if (!readOnly) {
+                    const delEl = document.createElement('span');
+                    delEl.textContent = '×';
+                    delEl.title = '删除此跨领域链接';
+                    delEl.style.cssText = `
+                        flex: 0 0 auto;
+                        width: 18px;
+                        height: 18px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-size: 15px;
+                        line-height: 1;
+                        border-radius: 5px;
+                        opacity: 0.5;
+                        cursor: pointer;
+                    `;
+                    delEl.addEventListener('mouseenter', () => {
+                        delEl.style.opacity = '1';
+                        delEl.style.background = isLightTheme ? 'rgba(239,68,68,0.12)' : 'rgba(239,68,68,0.22)';
+                        delEl.style.color = '#ef4444';
+                    });
+                    delEl.addEventListener('mouseleave', () => {
+                        delEl.style.opacity = '0.5';
+                        delEl.style.background = 'transparent';
+                        delEl.style.color = 'inherit';
+                    });
+                    delEl.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.container?.dispatchEvent(new CustomEvent('cross-domain-remove', {
+                            detail: { sourceNodeId, link }
+                        }));
+                    });
+                    row.appendChild(delEl);
+                }
+
+                cdPanel.appendChild(row);
+            });
+
+            // 悬停出入:角标与卡片任一被悬停则保持显示,移出后延时收起(允许鼠标从角标移到卡片上)
+            let cdHideTimer: number | null = null;
+            const showCdPanel = () => {
+                if (cdHideTimer !== null) { window.clearTimeout(cdHideTimer); cdHideTimer = null; }
+                cdPanel.style.display = 'flex';
+                // 触发过渡
+                requestAnimationFrame(() => {
+                    cdPanel.style.opacity = '1';
+                    cdPanel.style.transform = 'translateY(0)';
+                });
+            };
+            const hideCdPanel = () => {
+                if (cdHideTimer !== null) window.clearTimeout(cdHideTimer);
+                cdHideTimer = window.setTimeout(() => {
+                    cdPanel.style.opacity = '0';
+                    cdPanel.style.transform = 'translateY(4px)';
+                    cdPanel.style.display = 'none';
+                    cdHideTimer = null;
+                }, 140);
+            };
+            cdEl.addEventListener('mouseenter', showCdPanel);
+            cdEl.addEventListener('mouseleave', hideCdPanel);
+            cdPanel.addEventListener('mouseenter', showCdPanel);
+            cdPanel.addEventListener('mouseleave', hideCdPanel);
+
             const updateCdPos = () => {
                 if (!this.cy) return;
                 const isHidden =
@@ -983,17 +1143,29 @@ export function renderNodeBadges(this: any): void {
                     node.hasClass('zk-collapsed-hidden') ||
                     node.style('display') === 'none' ||
                     !node.visible();
-                if (isHidden) { cdEl.style.display = 'none'; return; }
+                if (isHidden) {
+                    cdEl.style.display = 'none';
+                    if (cdPanel.style.display !== 'none') hideCdPanel();
+                    return;
+                }
 
                 cdEl.style.display = 'flex';
                 const zoom = this.cy.zoom();
                 const bb = node.renderedBoundingBox();
                 const badgeSize = Math.max(MIN_CD_PX, 22 * zoom);
-                const fontSize = Math.max(10, badgeSize * 0.56);
-                cdEl.style.width = `${badgeSize}px`;
+                const fontSize = Math.max(10, badgeSize * 0.5);
                 cdEl.style.height = `${badgeSize}px`;
+                cdEl.style.minWidth = `${badgeSize}px`;
+                cdEl.style.padding = links.length > 1 ? `0 ${badgeSize * 0.28}px` : '0';
                 cdEl.style.fontSize = `${fontSize}px`;
-                cdEl.style.transform = `translate(${bb.x1 + badgeSize * 0.4}px, ${bb.y1 + badgeSize * 0.4}px) translate(-50%, -50%)`;
+                // 右下角:贴在节点右下角内侧
+                const cx = bb.x2 - badgeSize * 0.4;
+                const cy = bb.y2 - badgeSize * 0.4;
+                cdEl.style.transform = `translate(${cx}px, ${cy}px) translate(-50%, -50%)`;
+                // 卡片定位在角标下方偏左,避免越过容器右边界
+                cdPanel.style.left = `${cx}px`;
+                cdPanel.style.top = `${cy + badgeSize * 0.5 + 6}px`;
+                cdPanel.style.transformOrigin = 'top left';
             };
 
             badgeUpdaters.push({ node, fn: updateCdPos });

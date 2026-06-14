@@ -312,7 +312,7 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     activeScratchpadId: '',
     lastShownChangelogVersion: '',
     detailPanelSide: 'right',
-    detailPanelAutoOpen: true,
+    detailPanelAutoOpen: false,
     detailPanelWidth: 0,
     detailPanelPinned: false,
     defaultFileOpenMode: 'replace',

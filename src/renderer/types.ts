@@ -76,6 +76,8 @@ export interface RenderOptions {
     // 点击节点内 wiki 链接时按「文件默认打开方式」打开;未提供时回退到 openLinkText。
     // forceTab=true(Cmd/Ctrl+点击)始终新标签页。
     openLink?: (linkText: string, sourcePath: string, forceTab: boolean) => void;
+    // 点击已解析文件(如 embed 预览标题)时按「文件默认打开方式」打开。
+    openFile?: (file: TFile, wikiLink: string, forceTab: boolean) => void;
 }
 
 /**
