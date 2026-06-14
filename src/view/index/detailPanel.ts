@@ -338,9 +338,10 @@ export class NodeDetailPanel {
         this.renderRemarkRead(node, (this.deps.getRemark(node) || '').trim(), isFileNode);
 
         // 文件节点:笔记正文预览(只读)
-        if (isFileNode && node.file) {
-            await this.renderNotePreview(node.file, token);
-        }
+        // 暂时注释:文件节点改成与文本节点一致,只渲染备注,不再嵌入笔记正文预览。
+        // if (isFileNode && node.file) {
+        //     await this.renderNotePreview(node.file, token);
+        // }
     }
 
     /** 备注读模式:渲染 markdown;双击进编辑;空备注给「添加」入口 */
