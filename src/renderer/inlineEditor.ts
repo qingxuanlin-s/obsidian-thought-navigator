@@ -1011,7 +1011,20 @@ export function showInlineNodeEditor(this: any, node: any): void {
         const insertTextareaNewline = () => {
             const start = textarea.selectionStart ?? textarea.value.length;
             const end = textarea.selectionEnd ?? start;
-            textarea.setRangeText('\n', start, end, 'end');
+            const lineStart = textarea.value.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+            const line = textarea.value.slice(lineStart, start);
+            const unordered = line.match(/^(\s*)([-*+])\s+(?:\[[ xX]\]\s+)?/);
+            const ordered = line.match(/^(\s*)(\d+)([.)])\s+/);
+            const continuation = unordered
+                ? `${unordered[1]}${unordered[2]} `
+                : (ordered ? `${ordered[1]}${Number(ordered[2]) + 1}${ordered[3]} ` : '');
+            textarea.setRangeText(`\n${continuation}`, start, end, 'end');
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+        const insertTextareaIndent = () => {
+            const start = textarea.selectionStart ?? textarea.value.length;
+            const end = textarea.selectionEnd ?? start;
+            textarea.setRangeText('\t', start, end, 'end');
             textarea.dispatchEvent(new Event('input', { bubbles: true }));
         };
         const selectionToolbar = this.attachInlineTextSelectionToolbar(textarea);
@@ -1211,6 +1224,12 @@ export function showInlineNodeEditor(this: any, node: any): void {
             // 阻止事件冒泡到 Cytoscape，避免被其他事件处理器拦截
             e.stopPropagation();
 
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                insertTextareaIndent();
+                return;
+            }
+
             // 如果 suggester 正在显示，ESC 键关闭 suggester，其他键让 suggester 的键盘处理器处理
             if (suggesterPopoverRef.value && suggesterPopoverRef.value.parentNode) {
                 if (e.key === 'Escape') {
@@ -1391,21 +1410,6 @@ export function startInPlaceTextEdit(this: any, node: any,
             z-index: 2;
         `;
         overlayEl.appendChild(editorHost);
-        const logGlobalEnter = (scope: 'window' | 'document') => (e: KeyboardEvent) => {
-            if (e.key !== 'Enter') return;
-            const activeEl = document.activeElement as HTMLElement | null;
-            const isInThisEditor = !!activeEl && editorHost.contains(activeEl);
-            if (scope === 'window' && isInThisEditor && (e.shiftKey || e.metaKey || e.ctrlKey) && mdEditor) {
-                e.preventDefault();
-                e.stopPropagation();
-                mdEditor.insertLineBreak();
-            }
-        };
-        const onWindowKeyDown = logGlobalEnter('window');
-        const onDocumentKeyDown = logGlobalEnter('document');
-        window.addEventListener('keydown', onWindowKeyDown, true);
-        document.addEventListener('keydown', onDocumentKeyDown, true);
-
         let isSaved = false;
         let mdEditor: EmbeddableMarkdownEditor | null = null;
         let selectionToolbar: { destroy: () => void; containsTarget: (target: Node | null) => boolean } | null = null;
@@ -1487,8 +1491,6 @@ export function startInPlaceTextEdit(this: any, node: any,
                 mdEditor = null;
             }
             (editorHost as any)._mdEditor = null;
-            window.removeEventListener('keydown', onWindowKeyDown, true);
-            document.removeEventListener('keydown', onDocumentKeyDown, true);
             editorHost.removeEventListener('click', openLivePreviewLink, true);
             pointerEventsToStop.forEach((name) => {
                 editorHost.removeEventListener(name, stopPointerPropagationUnlessMedia, true);
@@ -2034,7 +2036,20 @@ export function startPlaceholderTextareaFallback(this: any, node: any): void {
         const insertTextareaNewline = () => {
             const start = textarea.selectionStart ?? textarea.value.length;
             const end = textarea.selectionEnd ?? start;
-            textarea.setRangeText('\n', start, end, 'end');
+            const lineStart = textarea.value.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+            const line = textarea.value.slice(lineStart, start);
+            const unordered = line.match(/^(\s*)([-*+])\s+(?:\[[ xX]\]\s+)?/);
+            const ordered = line.match(/^(\s*)(\d+)([.)])\s+/);
+            const continuation = unordered
+                ? `${unordered[1]}${unordered[2]} `
+                : (ordered ? `${ordered[1]}${Number(ordered[2]) + 1}${ordered[3]} ` : '');
+            textarea.setRangeText(`\n${continuation}`, start, end, 'end');
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+        const insertTextareaIndent = () => {
+            const start = textarea.selectionStart ?? textarea.value.length;
+            const end = textarea.selectionEnd ?? start;
+            textarea.setRangeText('\t', start, end, 'end');
             textarea.dispatchEvent(new Event('input', { bubbles: true }));
         };
 
@@ -2086,6 +2101,11 @@ export function startPlaceholderTextareaFallback(this: any, node: any): void {
         textarea.addEventListener('input', () => autoGrow());
         textarea.addEventListener('keydown', (e: KeyboardEvent) => {
             e.stopPropagation();
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                insertTextareaIndent();
+                return;
+            }
             if (e.key === 'Enter') {
                 if (e.shiftKey || e.metaKey || e.ctrlKey) {
                     e.preventDefault();
@@ -2178,7 +2198,20 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
         const insertTextareaNewline = () => {
             const start = textarea.selectionStart ?? textarea.value.length;
             const end = textarea.selectionEnd ?? start;
-            textarea.setRangeText('\n', start, end, 'end');
+            const lineStart = textarea.value.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+            const line = textarea.value.slice(lineStart, start);
+            const unordered = line.match(/^(\s*)([-*+])\s+(?:\[[ xX]\]\s+)?/);
+            const ordered = line.match(/^(\s*)(\d+)([.)])\s+/);
+            const continuation = unordered
+                ? `${unordered[1]}${unordered[2]} `
+                : (ordered ? `${ordered[1]}${Number(ordered[2]) + 1}${ordered[3]} ` : '');
+            textarea.setRangeText(`\n${continuation}`, start, end, 'end');
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+        const insertTextareaIndent = () => {
+            const start = textarea.selectionStart ?? textarea.value.length;
+            const end = textarea.selectionEnd ?? start;
+            textarea.setRangeText('\t', start, end, 'end');
             textarea.dispatchEvent(new Event('input', { bubbles: true }));
         };
         const prevZoomingEnabled = this.cy?.userZoomingEnabled() ?? true;
@@ -2313,6 +2346,12 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
 
         textarea.addEventListener('keydown', (e: KeyboardEvent) => {
             e.stopPropagation();
+
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                insertTextareaIndent();
+                return;
+            }
 
             if (suggesterPopoverRef.value && suggesterPopoverRef.value.parentNode) {
                 if (e.key === 'Escape') {

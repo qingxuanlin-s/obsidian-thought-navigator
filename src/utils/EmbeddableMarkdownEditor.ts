@@ -101,13 +101,13 @@ export class EmbeddableMarkdownEditor extends Component {
 		return !cm.dom.querySelector('.cm-fat-cursor');
 	}
 
-	private insertNewline(): void {
+	private insertText(text: string): void {
 		const cm = this.cm;
 		if (!cm) return;
 		const editor = this.editView?.editor;
 		if (editor?.replaceSelection) {
 			try {
-				editor.replaceSelection('\n');
+				editor.replaceSelection(text);
 				this.opts.onChange?.(this.getValue());
 				return;
 			} catch {
@@ -117,11 +117,34 @@ export class EmbeddableMarkdownEditor extends Component {
 		const sel = cm.state?.selection?.main;
 		if (sel !== undefined && cm.dispatch) {
 			cm.dispatch({
-				changes: { from: sel.from, to: sel.to, insert: '\n' },
-				selection: { anchor: sel.from + 1 }
+				changes: { from: sel.from, to: sel.to, insert: text },
+				selection: { anchor: sel.from + text.length }
 			});
 			this.opts.onChange?.(this.getValue());
 		}
+	}
+
+	private getMarkdownContinuation(text: string, cursor: number): string {
+		const lineStart = text.lastIndexOf('\n', Math.max(0, cursor - 1)) + 1;
+		const line = text.slice(lineStart, cursor);
+		const unordered = line.match(/^(\s*)([-*+])\s+(?:\[[ xX]\]\s+)?/);
+		if (unordered) return `${unordered[1]}${unordered[2]} `;
+		const ordered = line.match(/^(\s*)(\d+)([.)])\s+/);
+		if (ordered) return `${ordered[1]}${Number(ordered[2]) + 1}${ordered[3]} `;
+		return '';
+	}
+
+	private insertSmartLineBreak(): void {
+		const cm = this.cm;
+		const cursor = cm?.state?.selection?.main?.from;
+		const continuation = Number.isFinite(cursor)
+			? this.getMarkdownContinuation(this.getValue(), cursor as number)
+			: '';
+		this.insertText(`\n${continuation}`);
+	}
+
+	private insertIndent(): void {
+		this.insertText('\t');
 	}
 
 	private mount(): void {
@@ -257,15 +280,28 @@ export class EmbeddableMarkdownEditor extends Component {
 				return;
 			}
 
+			if (e.key === 'Enter' && (e.shiftKey || e.metaKey || e.ctrlKey)) {
+				e.preventDefault();
+				e.stopPropagation();
+				this.insertSmartLineBreak();
+				return;
+			}
+
 			// 阻止冒泡到图级快捷键（方向键/Tab/Enter 等）
 			e.stopPropagation();
+
+			if (e.key === 'Tab') {
+				e.preventDefault();
+				this.insertIndent();
+				return;
+			}
 
 			if (e.key === 'Enter' && this.opts.onEnter) {
 				e.preventDefault();
 				if (!this.opts.onEnter(this.getValue(), e)) {
 					// onEnter 返回 false 表示"允许换行"；这里统一显式插入，
 					// 避免 Shift/Meta/Ctrl + Enter 依赖浏览器/编辑器默认行为而失效
-					this.insertNewline();
+					this.insertSmartLineBreak();
 				}
 				return;
 			}
@@ -356,7 +392,7 @@ export class EmbeddableMarkdownEditor extends Component {
 	}
 
 	insertLineBreak(): void {
-		this.insertNewline();
+		this.insertSmartLineBreak();
 	}
 
 	transformSelection(formatter: (selectedText: string) => string): boolean {
