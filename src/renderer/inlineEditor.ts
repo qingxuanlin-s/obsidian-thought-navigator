@@ -1,4 +1,4 @@
-import { Component, setIcon } from 'obsidian';
+import { Component, Notice, setIcon } from 'obsidian';
 import { ZKNode } from 'src/view/indexView';
 import { EmbeddableMarkdownEditor } from 'src/utils/EmbeddableMarkdownEditor';
 import {
@@ -1419,6 +1419,7 @@ export function startInPlaceTextEdit(this: any, node: any,
         overlayEl.appendChild(editorHost);
         let isSaved = false;
         let mdEditor: EmbeddableMarkdownEditor | null = null;
+        let slashMenu: { onDocChanged: () => void; destroy: () => void } | null = null;
         let selectionToolbar: { destroy: () => void; containsTarget: (target: Node | null) => boolean } | null = null;
         const nodeWasGrabbable = typeof node.grabbable === 'function' ? !!node.grabbable() : true;
         const prevZoomingEnabled = this.cy?.userZoomingEnabled() ?? true;
@@ -1491,6 +1492,8 @@ export function startInPlaceTextEdit(this: any, node: any,
                 cancelAnimationFrame(labelUpdateRaf);
                 labelUpdateRaf = null;
             }
+            slashMenu?.destroy();
+            slashMenu = null;
             selectionToolbar?.destroy();
             selectionToolbar = null;
             if (mdEditor) {
@@ -1662,7 +1665,7 @@ export function startInPlaceTextEdit(this: any, node: any,
                 containerEl: editorHost,
                 initialValue: rawSource,
                 sourcePath,
-                onChange: () => updateLiveEditLabel(),
+                onChange: () => { updateLiveEditLabel(); slashMenu?.onDocChanged(); },
                 onEnter: (_value, evt) => {
                     if (evt.shiftKey || evt.metaKey || evt.ctrlKey) return false; // Shift/Cmd/Ctrl+Enter = 换行
                     saveEdit();
@@ -1674,6 +1677,14 @@ export function startInPlaceTextEdit(this: any, node: any,
                 },
             });
             (editorHost as any)._mdEditor = mdEditor;
+            slashMenu = attachSlashCommandMenu(this.currentOptions?.app, () => mdEditor, editorHost, (cmd) => {
+                // 录音类命令拦截:改用自带录音(不打开文件/不切视图),录完插入当前编辑框
+                const hay = `${cmd.id} ${cmd.name}`.toLowerCase();
+                const isAudio = hay.includes('audio-recorder') || (hay.includes('record') && hay.includes('audio'));
+                if (!isAudio || /stop/.test(hay)) return false; // 仅拦截"开始录音"
+                startNodeAudioRecording(this.currentOptions?.app, () => mdEditor, this.container, sourcePath, originalNode.IDStr);
+                return true;
+            });
             if (options?.cursor === 'end') {
                 mdEditor.focusEnd();
             } else {
@@ -1765,6 +1776,7 @@ export function startPlaceholderInPlaceEdit(this: any, node: any, options?: { cu
 
         let isSaved = false;
         let mdEditor: EmbeddableMarkdownEditor | null = null;
+        let slashMenu: { onDocChanged: () => void; destroy: () => void } | null = null;
         let selectionToolbar: { destroy: () => void; containsTarget: (target: Node | null) => boolean } | null = null;
         const nodeWasGrabbable = typeof node.grabbable === 'function' ? !!node.grabbable() : true;
         const prevZoomingEnabled = this.cy?.userZoomingEnabled() ?? true;
@@ -1843,6 +1855,8 @@ export function startPlaceholderInPlaceEdit(this: any, node: any, options?: { cu
 
         const cleanup = () => {
             this.liveEditCleanupHandlers.delete(cleanup);
+            slashMenu?.destroy();
+            slashMenu = null;
             selectionToolbar?.destroy();
             selectionToolbar = null;
             if (mdEditor) {
@@ -1982,7 +1996,7 @@ export function startPlaceholderInPlaceEdit(this: any, node: any, options?: { cu
                 containerEl: editorHost,
                 initialValue: isDraft ? originalLabel : '',
                 sourcePath,
-                onChange: () => autoGrow(),
+                onChange: () => { autoGrow(); slashMenu?.onDocChanged(); },
                 onEnter: (_value, evt) => {
                     if (evt.shiftKey || evt.metaKey || evt.ctrlKey) return false; // Shift/Cmd/Ctrl+Enter = 换行
                     saveEdit();
@@ -1992,6 +2006,14 @@ export function startPlaceholderInPlaceEdit(this: any, node: any, options?: { cu
                 onBlur: () => {
                     if (!isSaved) saveEdit();
                 },
+            });
+            slashMenu = attachSlashCommandMenu(this.currentOptions?.app, () => mdEditor, editorHost, (cmd) => {
+                // 录音类命令拦截:新建节点尚未落盘,录完直接插入编辑框,随保存一起落地
+                const hay = `${cmd.id} ${cmd.name}`.toLowerCase();
+                const isAudio = hay.includes('audio-recorder') || (hay.includes('record') && hay.includes('audio'));
+                if (!isAudio || /stop/.test(hay)) return false;
+                startNodeAudioRecording(this.currentOptions?.app, () => mdEditor, this.container, sourcePath, '');
+                return true;
             });
             if (options?.cursor === 'end') {
                 mdEditor.focusEnd();
@@ -2790,6 +2812,371 @@ export function showLinkSuggester(this: any, textarea: HTMLTextAreaElement,
             searchInput.setSelectionRange(0, searchInput.value.length);
         };
         requestAnimationFrame(focusSearchInput);
+    }
+
+    /**
+     * 文本编辑框(CM6)内的「/ 斜杠命令」菜单。
+     * 输入 / 触发,列出 Obsidian 全部命令(如 "Audio recorder: Start recording audio"),
+     * 选中后删除 /query 文本并通过 executeCommandById 调起原生命令。仿原生外观。
+     *
+     * 接入方式:CM6 编辑器(EmbeddableMarkdownEditor)在 onChange 里调 onDocChanged(),
+     * 清理时调 destroy()。键盘导航靠 editorHost 捕获阶段拦截(早于 EME 自身的 cm.dom 监听),
+     * 菜单打开时吃掉 ↑↓/Enter/Tab/Esc,避免被编辑器当成换行/保存。
+     */
+export function attachSlashCommandMenu(
+        app: any,
+        getEditor: () => EmbeddableMarkdownEditor | null,
+        editorHost: HTMLElement,
+        onCommand?: (cmd: { id: string; name: string }) => boolean | void
+    ): { onDocChanged: () => void; destroy: () => void } {
+        let popover: HTMLElement | null = null;
+        let items: Array<{ id: string; name: string }> = [];
+        let selectedIndex = 0;
+        let slashFrom = -1; // '/' 在文档中的偏移
+
+        const getAllCommands = (): Array<{ id: string; name: string }> => {
+            const commands = app?.commands;
+            if (!commands) return [];
+            const list = typeof commands.listCommands === 'function'
+                ? commands.listCommands()
+                : Object.values(commands.commands || {});
+            return (list || []).filter((c: any) => c && c.id && c.name);
+        };
+
+        const close = () => {
+            if (popover) { popover.remove(); popover = null; }
+            slashFrom = -1;
+        };
+
+        const highlight = () => {
+            if (!popover) return;
+            popover.querySelectorAll('.zk-slash-item').forEach((el, i) => {
+                const isSel = i === selectedIndex;
+                (el as HTMLElement).style.backgroundColor = isSel ? 'var(--background-modifier-hover)' : '';
+                if (isSel) (el as HTMLElement).scrollIntoView({ block: 'nearest' });
+            });
+        };
+
+        const move = (delta: number) => {
+            if (!items.length) return;
+            selectedIndex = (selectedIndex + delta + items.length) % items.length;
+            highlight();
+        };
+
+        const execute = (cmd: { id: string; name: string }) => {
+            const cm = getEditor()?.getCM?.();
+            const from = slashFrom;
+            close();
+            if (cm && from >= 0) {
+                const pos = cm.state.selection.main.head;
+                try {
+                    cm.dispatch({ changes: { from, to: Math.max(from, pos), insert: '' }, selection: { anchor: from } });
+                } catch { /* ignore */ }
+            }
+            // 调用方可拦截特定命令(返回 true 表示"已自行处理",不再调原生命令)。
+            // 录音命令即走此路:改用自带录音,避免核心插件打开文件覆盖视图。
+            let handled = false;
+            try { handled = onCommand?.(cmd) === true; } catch { /* ignore */ }
+            if (handled) return;
+            // 命令可能抢焦点/弹通知,放到下一拍执行,避免与 dispatch 竞争
+            window.setTimeout(() => {
+                try { app?.commands?.executeCommandById?.(cmd.id); } catch { /* ignore */ }
+            }, 0);
+        };
+
+        const render = (query: string, anchorPos: number) => {
+            const all = getAllCommands();
+            const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+            let filtered: Array<{ id: string; name: string }>;
+            if (tokens.length) {
+                filtered = all.filter((c) => {
+                    const name = c.name.toLowerCase();
+                    return tokens.every((t) => name.includes(t));
+                });
+                filtered.sort((a, b) => {
+                    const ai = a.name.toLowerCase().indexOf(tokens[0]);
+                    const bi = b.name.toLowerCase().indexOf(tokens[0]);
+                    return ai - bi || a.name.localeCompare(b.name);
+                });
+            } else {
+                filtered = [...all].sort((a, b) => a.name.localeCompare(b.name));
+            }
+            items = filtered.slice(0, 50);
+            selectedIndex = 0;
+            if (!items.length) { close(); return; }
+
+            if (!popover) {
+                popover = document.createElement('div');
+                popover.className = 'zk-slash-suggester';
+                popover.style.cssText = `
+                    position: fixed;
+                    max-height: 280px;
+                    width: 340px;
+                    overflow-y: auto;
+                    background-color: var(--background-primary);
+                    border: 1px solid var(--background-modifier-border);
+                    border-radius: 8px;
+                    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+                    z-index: 99999;
+                    padding: 4px 0;
+                `;
+                // 防止点击候选项时编辑器 blur 触发保存
+                popover.addEventListener('mousedown', (e) => e.preventDefault());
+                popover.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
+                document.body.appendChild(popover);
+            }
+
+            popover.innerHTML = '';
+            items.forEach((cmd, index) => {
+                const item = document.createElement('div');
+                item.className = 'zk-slash-item';
+                item.style.cssText = `
+                    padding: 6px 12px;
+                    cursor: pointer;
+                    font-size: 13px;
+                    color: var(--text-normal);
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                `;
+                item.textContent = cmd.name;
+                if (index === selectedIndex) item.style.backgroundColor = 'var(--background-modifier-hover)';
+                item.addEventListener('mouseenter', () => { selectedIndex = index; highlight(); });
+                item.addEventListener('mousedown', (e) => { e.preventDefault(); execute(cmd); });
+                popover!.appendChild(item);
+            });
+
+            // 定位到 '/' 处;拿不到坐标退回 editorHost 下方
+            const cm = getEditor()?.getCM?.();
+            const coords = cm?.coordsAtPos?.(anchorPos);
+            let left: number;
+            let top: number;
+            if (coords) {
+                left = coords.left;
+                top = coords.bottom + 4;
+            } else {
+                const r = editorHost.getBoundingClientRect();
+                left = r.left;
+                top = r.bottom + 4;
+            }
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            if (left + 340 > vw) left = Math.max(8, vw - 348);
+            if (top + 280 > vh) top = Math.max(8, (coords ? coords.top : top) - 284);
+            popover.style.left = `${left}px`;
+            popover.style.top = `${top}px`;
+        };
+
+        const onDocChanged = () => {
+            const cm = getEditor()?.getCM?.();
+            if (!cm) { close(); return; }
+            const pos = cm.state.selection.main.head;
+            const before = cm.state.doc.sliceString(0, pos);
+            // / 需在行首或空白后触发;query 不含空格以外的换行/斜杠,限长 40 防误命中
+            const m = before.match(/(?:^|\s)\/([^\n/]{0,40})$/);
+            if (!m) { close(); return; }
+            const query = m[1];
+            slashFrom = pos - query.length - 1;
+            render(query, slashFrom);
+        };
+
+        const onKeyDownCapture = (e: KeyboardEvent) => {
+            if (!popover) return;
+            switch (e.key) {
+                case 'ArrowDown': e.preventDefault(); e.stopImmediatePropagation(); move(1); break;
+                case 'ArrowUp': e.preventDefault(); e.stopImmediatePropagation(); move(-1); break;
+                case 'Enter':
+                case 'Tab':
+                    e.preventDefault(); e.stopImmediatePropagation();
+                    if (items[selectedIndex]) execute(items[selectedIndex]);
+                    break;
+                case 'Escape': e.preventDefault(); e.stopImmediatePropagation(); close(); break;
+                default: break;
+            }
+        };
+        editorHost.addEventListener('keydown', onKeyDownCapture, { capture: true });
+
+        const destroy = () => {
+            editorHost.removeEventListener('keydown', onKeyDownCapture, { capture: true } as any);
+            close();
+        };
+
+        return { onDocChanged, destroy };
+    }
+
+    // 同一时刻只允许一个录音会话
+    let activeAudioRecording = false;
+
+    /**
+     * 自带录音(Web MediaRecorder),替代核心 Audio Recorder 命令。
+     * 不打开文件、不切视图(规避核心插件覆盖当前视图);停止后:
+     *  - 编辑框仍开着 → 直接把 ![[音频]] 插入光标处,靠正常保存落地(新节点也无需 ID);
+     *  - 编辑框已关 → 退而派发 node-append-embed,按节点 ID 追加(仅对已存在节点有效)。
+     * 录音浮条用 mousedown preventDefault 防止抢焦点导致编辑框 blur 保存关闭。
+     */
+export function startNodeAudioRecording(
+        app: any,
+        getEditor: () => EmbeddableMarkdownEditor | null,
+        container: HTMLElement | null,
+        sourcePath: string,
+        nodeIdStr: string
+    ): void {
+        if (activeAudioRecording) {
+            new Notice('已有录音进行中');
+            return;
+        }
+        if (!navigator?.mediaDevices?.getUserMedia) {
+            new Notice('当前环境不支持录音');
+            return;
+        }
+        activeAudioRecording = true;
+
+        const insertEmbed = (filePath: string) => {
+            const embed = `![[${filePath}]]`;
+            const editor = getEditor();
+            const cm = editor?.getCM?.();
+            if (editor && cm) {
+                // 编辑框仍开:在光标处换行后插入,交给编辑器保存流程
+                const value = editor.getValue();
+                const pos = cm.state.selection.main.head;
+                const needBreak = value.trim().length > 0 && value[pos - 1] !== '\n';
+                editor.insertAtCursor(`${needBreak ? '\n' : ''}${embed}`);
+            } else if (container && nodeIdStr) {
+                container.dispatchEvent(new CustomEvent('node-append-embed', {
+                    detail: { nodeIdStr, embedPath: filePath }
+                }));
+            } else {
+                new Notice(`录音已保存:${filePath}`);
+            }
+        };
+
+        const pickMime = (): { mime: string; ext: string } => {
+            const candidates: Array<{ mime: string; ext: string }> = [
+                { mime: 'audio/webm', ext: 'webm' },
+                { mime: 'audio/ogg', ext: 'ogg' },
+                { mime: 'audio/mp4', ext: 'm4a' },
+            ];
+            for (const c of candidates) {
+                try { if ((window as any).MediaRecorder?.isTypeSupported?.(c.mime)) return c; } catch { /* ignore */ }
+            }
+            return { mime: '', ext: 'webm' };
+        };
+
+        // 录音浮条
+        const bar = document.createElement('div');
+        bar.className = 'zk-audio-recording-bar';
+        bar.style.cssText = `
+            position: fixed;
+            left: 50%;
+            bottom: 28px;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 14px;
+            background: var(--background-secondary);
+            border: 1px solid var(--background-modifier-border);
+            border-radius: 999px;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+            z-index: 99999;
+            font-size: 13px;
+            color: var(--text-normal);
+        `;
+        bar.addEventListener('mousedown', (e) => e.preventDefault()); // 防止编辑框 blur
+        const dot = document.createElement('span');
+        dot.style.cssText = 'width:10px;height:10px;border-radius:50%;background:#e5484d;animation:zk-rec-blink 1s steps(2,start) infinite;';
+        const timeEl = document.createElement('span');
+        timeEl.textContent = '0:00';
+        const stopBtn = document.createElement('button');
+        stopBtn.textContent = '停止';
+        stopBtn.style.cssText = 'padding:3px 12px;border-radius:999px;border:none;background:#e5484d;color:#fff;cursor:pointer;font-size:12px;';
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = '取消';
+        cancelBtn.style.cssText = 'padding:3px 10px;border-radius:999px;border:1px solid var(--background-modifier-border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;';
+        bar.append(dot, timeEl, stopBtn, cancelBtn);
+        // 闪烁动画(仅注入一次)
+        if (!document.getElementById('zk-rec-blink-style')) {
+            const style = document.createElement('style');
+            style.id = 'zk-rec-blink-style';
+            style.textContent = '@keyframes zk-rec-blink{50%{opacity:0.25;}}';
+            document.head.appendChild(style);
+        }
+        document.body.appendChild(bar);
+
+        const startTs = Date.now();
+        const timer = window.setInterval(() => {
+            const s = Math.floor((Date.now() - startTs) / 1000);
+            timeEl.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+        }, 500);
+
+        let recorder: MediaRecorder | null = null;
+        let stream: MediaStream | null = null;
+        let cancelled = false;
+        const chunks: BlobPart[] = [];
+        const { mime, ext } = pickMime();
+
+        const teardown = () => {
+            window.clearInterval(timer);
+            if (bar.parentNode) bar.remove();
+            stream?.getTracks().forEach((t) => t.stop());
+            activeAudioRecording = false;
+        };
+
+        const finalize = async () => {
+            try {
+                if (cancelled || chunks.length === 0) return;
+                const blob = new Blob(chunks, { type: mime || 'audio/webm' });
+                const buf = await blob.arrayBuffer();
+                const mo = (window as any).moment;
+                const ts = typeof mo === 'function' ? mo().format('YYYYMMDD-HHmmss') : String(Date.now());
+                const filename = `Recording ${ts}.${ext}`;
+                let path = filename;
+                try {
+                    if (typeof app?.fileManager?.getAvailablePathForAttachment === 'function') {
+                        path = await app.fileManager.getAvailablePathForAttachment(filename, sourcePath);
+                    }
+                } catch { /* fallback to filename */ }
+                const file = await app.vault.createBinary(path, buf);
+                insertEmbed(file?.path || path);
+            } catch (err) {
+                console.error('[ZK] 录音保存失败', err);
+                new Notice(`录音保存失败: ${(err as any)?.message || err}`);
+            } finally {
+                teardown();
+            }
+        };
+
+        stopBtn.addEventListener('click', () => {
+            try {
+                if (recorder && recorder.state !== 'inactive') recorder.stop();
+                else teardown();
+            } catch { teardown(); }
+        });
+        cancelBtn.addEventListener('click', () => {
+            cancelled = true;
+            try {
+                if (recorder && recorder.state !== 'inactive') recorder.stop();
+                else teardown();
+            } catch { teardown(); }
+        });
+
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then((s) => {
+                stream = s;
+                try {
+                    recorder = mime ? new MediaRecorder(s, { mimeType: mime }) : new MediaRecorder(s);
+                } catch {
+                    recorder = new MediaRecorder(s);
+                }
+                recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+                recorder.onstop = () => { void finalize(); };
+                recorder.start();
+            })
+            .catch((err) => {
+                console.error('[ZK] 麦克风获取失败', err);
+                new Notice('无法访问麦克风,请检查权限');
+                teardown();
+            });
     }
 
     /**

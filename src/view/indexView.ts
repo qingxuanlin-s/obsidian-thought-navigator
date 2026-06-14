@@ -3351,6 +3351,14 @@ cy.fit(null, 40);
             await this.saveNodeContent(node, content, nodeSize, position, relationCount || 0);
         });
 
+        // 录音命令产出的音频文件 → 追加为当前文本节点的嵌入(![[audio]])
+        this.addTrackedListener(branchGraphDiv, 'node-append-embed', async (event: any) => {
+            if (this.isMobileReadOnly()) return;
+            const { nodeIdStr, embedPath } = event.detail || {};
+            if (!nodeIdStr || !embedPath) return;
+            await this.appendEmbedToTextNode(String(nodeIdStr), String(embedPath));
+        });
+
         // 草稿节点(#20):删除键 → 仅从内存与画布移除,不碰 MOC
         this.addTrackedListener(branchGraphDiv, 'draft-node-delete', (event: any) => {
             if (this.isMobileReadOnly()) return;
@@ -4296,6 +4304,13 @@ cy.fit(null, 40);
                     await this.flushAndSaveCurrentPositions();
                     // 删除前解析真实父级(自由节点父子关系只在边里,删除+刷新后丢失)
                     const reflowParentId = this.pickAutoLayoutParentForReflow(nodeIds);
+                    // 删除前收集各节点内嵌附件(删除后内容已没)
+                    const embeddedAttachments: TFile[] = [];
+                    for (const n of nodes) {
+                        if (n.originalNode) {
+                            embeddedAttachments.push(...this.collectNodeEmbeddedAttachments(n.originalNode, mocFile.path));
+                        }
+                    }
                     await this.mocHandler.deleteNodesFromMOC(mocFile, batchNodes);
 
                     // 删除嵌入图片节点对应的图片文件
@@ -4304,6 +4319,9 @@ cy.fit(null, 40);
                             await this.deleteImageFileIfNeeded(n.originalNode);
                         }
                     }
+
+                    // 文本节点内嵌附件:全库已无其它引用则一并回收
+                    await this.deleteOrphanedAttachments(embeddedAttachments);
 
                     await this.refreshBranchMermaid();
 
@@ -5905,6 +5923,9 @@ cy.fit(null, 40);
             const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
             if (!mocFile) return;
 
+            // 删除前收集本节点内嵌的附件(删除后内容就没了),删除后再判断是否成孤儿
+            const embeddedAttachments = this.collectNodeEmbeddedAttachments(node, mocFile.path);
+
             // 删除前解析真实父级(自由节点父子关系只在边里,删除+刷新后丢失)
             const reflowParentId = node.isCrossDomain
                 ? null
@@ -5931,6 +5952,9 @@ cy.fit(null, 40);
 
             // 等待一小段时间确保文件保存完成
             await new Promise(resolve => setTimeout(resolve, 20));
+
+            // 文本节点内嵌的附件(录音/图片等):全库已无其它引用则一并回收
+            await this.deleteOrphanedAttachments(embeddedAttachments);
 
             // 刷新视图
             await this.refreshBranchMermaid();
@@ -6004,6 +6028,43 @@ cy.fit(null, 40);
         } catch (error) {
             console.error('Failed to edit node content:', error);
             new Notice(`修改节点内容失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 把音频(或任意文件)以 ![[path]] 形式追加到指定文本节点末尾。
+     * 录音回填走这条:读当前 MOC 的最新节点内容再追加,避免用编辑期旧快照覆盖。
+     */
+    private async appendEmbedToTextNode(nodeIdStr: string, embedPath: string): Promise<void> {
+        const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+        if (!mocFile) return;
+        const embed = `![[${embedPath}]]`;
+        let isText = true;
+        try {
+            await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
+                const treeNode = this.findNodeInTree(mocData.nodes, nodeIdStr);
+                if (!treeNode) {
+                    throw new Error(`未找到节点: ${nodeIdStr}`);
+                }
+                if (treeNode.nodeType !== 'text') {
+                    isText = false;
+                    return;
+                }
+                const decoded = this.decodeMultilineText(treeNode.target || '');
+                const newContent = decoded.trim() ? `${decoded}\n${embed}` : embed;
+                treeNode.target = this.encodeMultilineText(newContent);
+            });
+            if (!isText) {
+                new Notice(`录音已保存：${embedPath}（当前节点非文本节点，未自动嵌入）`);
+                return;
+            }
+            MermaidParser.clearCacheForFile(mocFile.path);
+            this.lastRenderSignature = null;
+            await this.refreshBranchMermaid();
+            new Notice('录音已嵌入当前节点');
+        } catch (error: any) {
+            console.error('[indexView] appendEmbedToTextNode failed:', error);
+            new Notice(`录音嵌入失败: ${error?.message || error}`);
         }
     }
 
@@ -7773,6 +7834,158 @@ cy.fit(null, 40);
         } catch (error) {
             console.error('Failed to delete image file:', error);
         }
+    }
+
+    /** 从文本中抽出所有嵌入 ![[...]] 的 linkpath(去掉别名 | 与锚点 #) */
+    private extractEmbedLinkpaths(text: string): string[] {
+        const out: string[] = [];
+        const re = /!\[\[([^\]\n]+?)\]\]/g;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(text)) !== null) {
+            const lp = m[1].split('|')[0].split('#')[0].trim();
+            if (lp) out.push(lp);
+        }
+        return out;
+    }
+
+    /** 收集文本节点内容里嵌入的附件文件(非 md / 非 moc)。需在删除前调用(删除后内容已没了)。 */
+    private collectNodeEmbeddedAttachments(node: ZKNode, mocPath: string): TFile[] {
+        if (!node?.isTextOnly) return [];
+        const content = this.decodeMultilineText(node.title || '');
+        const files: TFile[] = [];
+        const seen = new Set<string>();
+        for (const lp of this.extractEmbedLinkpaths(content)) {
+            const dest = this.app.metadataCache.getFirstLinkpathDest(lp, mocPath);
+            if (dest instanceof TFile && !seen.has(dest.path)) {
+                const ext = dest.extension.toLowerCase();
+                if (ext !== 'md' && !isMocPath(dest.path)) {
+                    files.push(dest);
+                    seen.add(dest.path);
+                }
+            }
+        }
+        return files;
+    }
+
+    /**
+     * 判断附件在全库是否仍被引用:
+     *  1) 普通笔记的链接/嵌入走 metadataCache.resolvedLinks;
+     *  2) MOC 的嵌入写在 mermaid 代码块里,metadataCache 不索引,需逐个 MOC 读原文解析。
+     * 调用时机应在目标节点已从 MOC 移除之后,这样不会把"自己"算成引用。
+     */
+    private async isFileReferencedAnywhere(file: TFile): Promise<boolean> {
+        const resolved = (this.app.metadataCache as any).resolvedLinks || {};
+        for (const src of Object.keys(resolved)) {
+            if (resolved[src] && resolved[src][file.path]) return true;
+        }
+        const mocFiles = this.app.vault.getFiles().filter((f) => isMocPath(f.path));
+        for (const moc of mocFiles) {
+            let text: string;
+            try { text = await this.app.vault.cachedRead(moc); } catch { continue; }
+            if (!text.includes('![[')) continue;
+            for (const lp of this.extractEmbedLinkpaths(text)) {
+                const dest = this.app.metadataCache.getFirstLinkpathDest(lp, moc.path);
+                if (dest?.path === file.path) return true;
+            }
+        }
+        return false;
+    }
+
+    /** 删除节点后:全库再无引用的附件,确认后移入回收站(删除前收集、删除后判断)。 */
+    private async deleteOrphanedAttachments(files: TFile[]): Promise<void> {
+        if (!files.length) return;
+        // 去重 + 仅保留仍存在且全库无引用的孤儿
+        const seen = new Set<string>();
+        const orphans: TFile[] = [];
+        for (const file of files) {
+            if (seen.has(file.path)) continue;
+            seen.add(file.path);
+            const cur = this.app.vault.getAbstractFileByPath(file.path);
+            if (!(cur instanceof TFile)) continue;
+            if (await this.isFileReferencedAnywhere(cur)) continue;
+            orphans.push(cur);
+        }
+        if (!orphans.length) return;
+
+        const confirmed = await this.showAttachmentDeleteConfirmDialog(orphans);
+        if (!confirmed) return;
+
+        for (const file of orphans) {
+            try {
+                const fileManager = this.app.fileManager as any;
+                if (typeof fileManager.trashFile === 'function') {
+                    await fileManager.trashFile(file);
+                } else {
+                    await (this.app.vault as any).trash(file, true);
+                }
+            } catch (error) {
+                console.error('Failed to delete orphaned attachment:', file?.path, error);
+            }
+        }
+    }
+
+    /** 孤儿附件回收前的确认弹窗(列出将被移入回收站的文件)。 */
+    private showAttachmentDeleteConfirmDialog(files: TFile[]): Promise<boolean> {
+        return new Promise((resolve) => {
+            const modal = new Modal(this.app);
+            modal.titleEl.setText(t("Confirm delete attachments"));
+
+            const { contentEl } = modal;
+            contentEl.empty();
+            contentEl.style.padding = '20px';
+
+            const desc = contentEl.createDiv({ text: t("These attachments are no longer referenced") });
+            desc.style.color = 'var(--text-muted)';
+            desc.style.marginBottom = '12px';
+
+            const list = contentEl.createEl('ul');
+            list.style.margin = '0 0 8px 0';
+            list.style.paddingLeft = '20px';
+            list.style.maxHeight = '180px';
+            list.style.overflowY = 'auto';
+            files.forEach((file) => {
+                const li = list.createEl('li', { text: file.path });
+                li.style.color = 'var(--text-normal)';
+                li.style.marginBottom = '4px';
+                li.style.wordBreak = 'break-all';
+            });
+
+            const buttonContainer = contentEl.createDiv();
+            buttonContainer.style.display = 'flex';
+            buttonContainer.style.justifyContent = 'flex-end';
+            buttonContainer.style.gap = '10px';
+            buttonContainer.style.marginTop = '20px';
+
+            const cancelButton = buttonContainer.createEl('button', { text: t("Keep attachments") });
+            cancelButton.style.padding = '6px 16px';
+            cancelButton.style.border = '1px solid var(--background-modifier-border)';
+            cancelButton.style.borderRadius = '4px';
+            cancelButton.style.backgroundColor = 'var(--background-primary)';
+            cancelButton.style.color = 'var(--text-normal)';
+            cancelButton.style.cursor = 'pointer';
+            cancelButton.addEventListener('click', () => {
+                modal.close();
+                resolve(false);
+            });
+
+            const confirmButton = buttonContainer.createEl('button', { text: t("Delete attachments") });
+            confirmButton.style.padding = '6px 16px';
+            confirmButton.style.border = 'none';
+            confirmButton.style.borderRadius = '4px';
+            confirmButton.style.backgroundColor = '#ef4444';
+            confirmButton.style.color = '#ffffff';
+            confirmButton.style.cursor = 'pointer';
+            confirmButton.addEventListener('click', () => {
+                modal.close();
+                resolve(true);
+            });
+
+            // 关闭(点遮罩/Esc)= 保留,不删
+            const origOnClose = modal.onClose.bind(modal);
+            modal.onClose = () => { origOnClose(); resolve(false); };
+
+            modal.open();
+        });
     }
 
     /**
@@ -9626,7 +9839,7 @@ cy.fit(null, 40);
      */
     private getFileOpenLeaf(forceTab: boolean): WorkspaceLeaf {
         const ws = this.app.workspace;
-        const mode = forceTab ? 'tab' : (this.plugin.settings.defaultFileOpenMode || 'replace');
+        const mode = forceTab ? 'tab' : (this.plugin.settings.defaultFileOpenMode || 'tab');
 
         // 主区域里真正的文件视图叶(markdown / excalidraw / pdf / image 等),最近用的优先
         const contentLeaves: WorkspaceLeaf[] = [];
@@ -9690,7 +9903,7 @@ cy.fit(null, 40);
     }
 
     private shouldReuseExistingFileLeaf(forceTab: boolean): boolean {
-        return !forceTab && (this.plugin.settings.defaultFileOpenMode || 'replace') === 'replace';
+        return !forceTab && (this.plugin.settings.defaultFileOpenMode || 'tab') === 'replace';
     }
 
     private openFileInPreferredLeaf(file: TFile, forceTab: boolean, subpath: string = ''): void {

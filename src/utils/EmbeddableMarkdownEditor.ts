@@ -421,6 +421,11 @@ export class EmbeddableMarkdownEditor extends Component {
 		this.insertSmartLineBreak();
 	}
 
+	/** 在光标处插入文本(走 insertText,会触发 onChange 让节点实时刷新) */
+	insertAtCursor(text: string): void {
+		this.insertText(text);
+	}
+
 	transformSelection(formatter: (selectedText: string) => string): boolean {
 		const cm = this.cm;
 		if (!cm?.dispatch) return false;

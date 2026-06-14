@@ -315,7 +315,7 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     detailPanelAutoOpen: false,
     detailPanelWidth: 0,
     detailPanelPinned: false,
-    defaultFileOpenMode: 'replace',
+    defaultFileOpenMode: 'tab',
 }
 
 export default class ZKNavigationPlugin extends Plugin {

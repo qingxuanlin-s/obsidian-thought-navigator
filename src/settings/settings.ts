@@ -108,7 +108,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                 .addOption("tab", t("open mode tab"))
                 .addOption("split-left", t("open mode split-left"))
                 .addOption("split-right", t("open mode split-right"))
-	                .setValue(this.plugin.settings.defaultFileOpenMode || "replace")
+	                .setValue(this.plugin.settings.defaultFileOpenMode || "tab")
 	                .onChange((value) => {
 	                    this.plugin.settings.defaultFileOpenMode = value as 'replace' | 'tab' | 'split-left' | 'split-right';
 	                    void this.plugin.saveData(this.plugin.settings);

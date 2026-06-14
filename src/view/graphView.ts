@@ -66,7 +66,7 @@ export class ZKGraphView extends ItemView {
 
     private getFileOpenLeaf(forceTab: boolean): WorkspaceLeaf {
         const ws = this.app.workspace;
-        const mode = forceTab ? 'tab' : (this.plugin.settings.defaultFileOpenMode || 'replace');
+        const mode = forceTab ? 'tab' : (this.plugin.settings.defaultFileOpenMode || 'tab');
         const contentLeaves: WorkspaceLeaf[] = [];
         ws.iterateRootLeaves((leaf) => { if (this.isUserFileLeaf(leaf)) contentLeaves.push(leaf); });
         const recent = ws.getMostRecentLeaf();
