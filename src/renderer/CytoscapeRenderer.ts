@@ -377,8 +377,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     }
                 ],
                 // 没有保存位置时，先用轻量网格打散，避免首帧节点重叠导致边端点无效
+                // preset 也禁用构造期 fit:fit 会触发 boundingBox→求边端点,而此时层级边的
+                // 方向感知控制点还没钳到节点框外(见 refreshDirectionalEdgeCurves),会误报
+                // invalid endpoints。改为渲染落定、控制点钳好后再统一 fit 一次。
                 layout: hasSavedPositions
-                    ? { name: 'preset' }
+                    ? { name: 'preset', fit: false }
                     : { name: 'grid', fit: false, avoidOverlap: true, padding: 30 },
                 // 性能优化选项
                 hideEdgesOnViewport: true,
@@ -727,8 +730,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
             // cy.png({ full:true }) 自己会处理 fit，layout 不需要再 fit。
             const noFit = (options.exportMode || reusedInstance) ? { fit: false } : {};
             if (hasSavedPositions) {
-                // 如果有保存的位置，使用 preset 布局（保持原位置）
-                this.runLayoutSafely({ name: 'preset', ...noFit });
+                // preset 永远不在此处 fit:延后到控制点钳好后再 fit(见下方 deferFit),避免
+                // 在未钳控制点的层级边上求包围盒触发 invalid endpoints 误报。
+                this.runLayoutSafely({ name: 'preset', fit: false });
                 this.resolveExactNodeOverlaps();
             } else {
                 // 如果没有保存位置，根据 layoutType 选择布局算法
@@ -743,6 +747,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
         this.updateActiveFirstLevelBranch();
         // 方向感知 S 形边:布局定稿后按最终坐标重算全部层级边的控制点(覆盖新增边)
         this.refreshDirectionalEdgeCurves();
+        // 控制点钳好后再 fit(saved-positions 路径的初始 fit 被推迟到此),这样唯一一次
+        // 求边端点的包围盒计算发生在控制点合法之后,不再误报 invalid endpoints。
+        if (hasSavedPositions && !options.exportMode && !reusedInstance && this.isCyUsable()) {
+            this.cy?.fit(undefined, 30);
+        }
         __lap('finalize');
         if (__zkPerf) {
             const total = Object.values(__mark).reduce((a, b) => a + b, 0);
@@ -1199,25 +1208,54 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 const tn = edge.target();
                 const s = sn.position();
                 const t = tn.position();
-                // 控制点必须在两端节点框外,否则 Cytoscape 求不到端点交点会丢边。
-                // 沿主轴取两端较大的半尺寸 + 余量作为最小切向距离。
+                // 控制点必须在各自端的节点框外,否则 Cytoscape 求不到端点交点会丢边。
+                // 源端/目标端分别按自身半尺寸取最小切向距离 —— 小源端不再被大目标卡片连累出长肘弯。
                 const margin = 10;
-                const minTangent = horizontal
-                    ? Math.max(sn.width(), tn.width()) / 2 + margin
-                    : Math.max(sn.height(), tn.height()) / 2 + margin;
-                // 近距回退:主轴间距 < 2×minTangent 时 S 形控制点交叉,曲线缩进两节点框
+                const minTangentSource = horizontal
+                    ? sn.width() / 2 + margin
+                    : sn.height() / 2 + margin;
+                const minTangentTarget = horizontal
+                    ? tn.width() / 2 + margin
+                    : tn.height() / 2 + margin;
+                // 近距回退:主轴间距 < 两端切向下限之和时 S 形控制点交叉,曲线缩进两节点框
                 // 之间被盖住(看起来"没有线");贝塞尔在重叠/极近时还可能端点无解直接不画。
                 // 此时整条边降级为直线(zk-near-straight 类切换 curve-style),最稳;拉开自动恢复。
                 const mainSpan = horizontal ? Math.abs(t.x - s.x) : Math.abs(t.y - s.y);
-                if (mainSpan < 2 * minTangent) {
+                if (mainSpan < minTangentSource + minTangentTarget) {
+                    edge.addClass('zk-near-straight');
+                    return;
+                }
+                // 控制点 weight 合法区间:edge-distances='node-position' 下,控制点基点 =
+                // lerp(源中心, 目标中心, weight)。基点必须落在两端节点【外框之外】,否则
+                // Cytoscape 拿"中心→控制点"求交得不到端点 → startX/endX=NaN;而 multibezier
+                // (多控制点)又不会触发 Cytoscape 的 tryToCorrectInvalidPoints 自愈 → 报 invalid endpoints。
+                // 按真实外框沿中心连线求"出框参数",把两端 weight 钳进 [wMin, wMax]。
+                const margin2 = 12;
+                const dx = t.x - s.x;
+                const dy = t.y - s.y;
+                const adx = Math.abs(dx) || 1e-6;
+                const ady = Math.abs(dy) || 1e-6;
+                const tExitSrc = Math.min((sn.outerWidth() / 2 + margin2) / adx, (sn.outerHeight() / 2 + margin2) / ady);
+                const tExitTgt = Math.min((tn.outerWidth() / 2 + margin2) / adx, (tn.outerHeight() / 2 + margin2) / ady);
+                const wMin = tExitSrc;
+                const wMax = 1 - tExitTgt;
+                // 两端外框沿连线吃掉了整段(大卡贴大卡):无处放控制点,降级直线最稳。
+                if (wMin >= wMax) {
                     edge.addClass('zk-near-straight');
                     return;
                 }
                 edge.removeClass('zk-near-straight');
                 if (edge.data('controlPointDistance') !== undefined) return; // 手动控制点优先
-                const cp = computeDirectionalEdgeControlPoints(s.x, s.y, t.x, t.y, direction, 0.5, minTangent);
+                const cp = computeDirectionalEdgeControlPoints(s.x, s.y, t.x, t.y, direction, 0.5, minTangentSource, minTangentTarget);
+                // 钳住首/末控制点 weight(分别决定源/目标端点求交),其余中间控制点不影响端点。
+                const weights = Array.isArray(cp.weights) ? cp.weights.slice() : cp.weights;
+                if (Array.isArray(weights) && weights.length > 0) {
+                    const clamp = (w: number) => Math.min(Math.max(w, wMin), wMax);
+                    weights[0] = clamp(weights[0]);
+                    weights[weights.length - 1] = clamp(weights[weights.length - 1]);
+                }
                 edge.data('autoCpDistances', cp.distances);
-                edge.data('autoCpWeights', cp.weights);
+                edge.data('autoCpWeights', weights);
             });
         });
     }
