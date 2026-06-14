@@ -2153,7 +2153,13 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                 // pan/zoom 交互帧跳过它(沿用上一帧的 overflow 状态),仅在交互结束的空闲帧精确计算。
                 if (!this.overlayScheduler.isInteracting) {
                     const isSelected = node.selected();
-                    const overflowY = (currentEntry.el.scrollHeight - currentEntry.el.clientHeight) > 1;
+                    // overlay 用 font-size * zoom 模拟缩放，但高度直接取渲染像素盒。
+                    // zoom != 1 时缩放后的换行/行高存在亚像素取整误差，可能比 clientHeight
+                    // 多出近一行，导致“内容明明全展开”的节点被误判为溢出而冒出滚动条。
+                    // 容差按 zoom 放大到接近一个缩放行高，吸收这种取整噪声；真正的手动压缩
+                    // 通常溢出多行，仍能超过容差被检出。
+                    const overflowTol = Math.max(2, baseFontSize * zoom);
+                    const overflowY = (currentEntry.el.scrollHeight - currentEntry.el.clientHeight) > overflowTol;
                     currentEntry.el.dataset.overflowing = overflowY ? '1' : '0';
                     currentEntry.el.style.overflowX = 'hidden';
                     currentEntry.el.style.overflowY = (isSelected && overflowY) ? 'auto' : 'hidden';
