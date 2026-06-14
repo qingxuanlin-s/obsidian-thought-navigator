@@ -1,6 +1,6 @@
 ---
 name: thought-navigator-map
-version: 1.8.0
+version: 1.9.0
 description: 把一个主题/大纲生成为 Thought Navigator 插件的知识导图(.moc.md),并在「思维树」视图中打开;也能查询已有导图的节点(精确/模糊/取子树),或注入「待审批草稿节点」(由用户在画布上确认落地/丢弃)。仅在用户显式点名调用本 skill（例如输入 /thought-navigator-map，或明确说"用 thought-navigator-map / 生成思维导图并打开思维树视图 / 查询某个导图节点 / 生成草稿等我审批"）时使用；不要在普通对话中自动触发。
 ---
 
@@ -19,7 +19,8 @@ description: 把一个主题/大纲生成为 Thought Navigator 插件的知识�
 | 在**已有**导图的既有节点下扩展 | **默认走草稿**:`addDraftNodes` 注入待审批,用户画布确认/丢弃 | [`reference/drafts.md`](reference/drafts.md) |
 | 在两个**已有**节点间加**关联反向连线**(虚线箭头) | **默认走草稿**:`addDraftRelations` 注入待审批,用户画布确认/丢弃;明确要直接写才用 `addRelations` | [`reference/relations.md`](reference/relations.md) |
 | 查询已有导图节点(精确/模糊/取子树/坐标) | 跑 `scripts/moc-query.mjs`(纯 node 读 JSON) | [`reference/query.md`](reference/query.md) |
-| 删除节点 / 取消草稿 | `deleteNode` / `discardDrafts` | [`reference/drafts.md`](reference/drafts.md) |
+| 删除节点(删前要人过目) | `deleteNodes`:真实节点逐个弹确认、草稿直接丢弃(需视图已开) | [`reference/drafts.md`](reference/drafts.md) |
+| 删除节点(脚本直删、无确认) / 取消草稿 | `deleteNode` / `discardDrafts` | [`reference/drafts.md`](reference/drafts.md) |
 
 > **正常建图 vs 草稿(关键)**:新建整图 → 直接写;在用户**既有**节点下加 → **默认草稿**,不要直接 `addNodes` 改动既有树。
 
@@ -41,8 +42,9 @@ description: 把一个主题/大纲生成为 Thought Navigator 插件的知识�
 | `addNodes(file, [{parent,title,kind?}])` | **一次性**建整棵树(父先子后) | 新 ID 数组 | build.md |
 | `addRelations(file, [{source,target,label?}])` | 两节点间加关联反向连线(虚线箭头),**直接写入** | 新增边 key 数组 | relations.md |
 | `addDraftRelations(file, [{source,target,label?}], batchId?)` | 注入**待审批草稿关联**(**需视图已开**),用户确认才落地 | 新增边 key 数组 | relations.md |
-| `deleteNode(file, nodeID)` | 删节点连同后代、清元数据;已打开则自动刷新画布 | `void` | drafts.md |
-| `addDraftNodes(file, items, batchId?)` | 注入待审批草稿(**需视图已开**) | draftId 数组 | drafts.md |
+| `deleteNode(file, nodeID)` | **直接**删节点连同后代、清元数据(无确认);已打开则自动刷新画布 | `void` | drafts.md |
+| `deleteNodes(file, [nodeID,...])` | 批量删:草稿节点直接丢弃;**真实节点逐个弹确认**才删(**需视图已开**) | `{deleted,draftsDiscarded,cancelled,notFound}` | drafts.md |
+| `addDraftNodes(file, items, batchId?)` | 注入待审批草稿(**需视图已开**);`items` 每项可带 `position{x,y}`(**自由布局必传**,自算坐标) | draftId 数组 | drafts.md |
 | `setDraftMode(file, on)` | 开/关草稿模式 | `bool` | drafts.md |
 | `discardDrafts(file, draftId?)` | 丢弃草稿(省略=全部+退出草稿模式) | `bool` | drafts.md |
 | `queryNodes(file, opts?)` | 程序化只读查询(async,CLI 不回显→改用脚本) | 节点数组 | query.md |

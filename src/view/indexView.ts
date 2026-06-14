@@ -626,7 +626,11 @@ export class ZKIndexView extends FileView {
         // 锚定在草稿挂载的真实父节点上——父是 auto(自动 MOC)走级联紧凑重排;父是 free(自由 MOC)
         // 则以该父为固定锚点、仅局部摆放其下的 auto 草稿子树(localOnly,不牵动用户手摆的真实节点)。
         // 草稿无文件位置,统一把草稿 id 放进 ignoreSavedPositionsForIds,确保用引擎算出的坐标而非注入落点。
-        const realAnchors = new Set(
+        //
+        // 例外:本批显式传了 position(自由布局让调用方自算坐标)时,跳过预览重排,原样尊重传入坐标——
+        // 否则引擎会按 ignoreSavedPositionsForIds 重算、覆盖掉 caller 算好的位置。
+        const hasExplicitPos = items.some(it => it.position);
+        const realAnchors = hasExplicitPos ? new Set<string>() : new Set(
             items.map(it => it.parentRealId).filter((id): id is string => !!id && !this.draftNodes.has(id))
         );
         if (realAnchors.size > 0) {
@@ -829,6 +833,48 @@ export class ZKIndexView extends FileView {
         branchGraphDiv?.dispatchEvent(new CustomEvent('remove-draft-relation', { detail: { relKey } }));
         if (this.draftNodes.size === 0 && this.draftRelations.size === 0) this.draftMode = false;
         this.refreshDraftBatchBar();
+    }
+
+    /**
+     * 删除一批节点(供 CLI / API,#20)。区分草稿与真实节点:
+     * - 草稿节点:直接丢弃(纯内存,不弹确认)
+     * - 真实节点:逐个弹「删除确认」对话框,用户确认才真删(连同后代,清元数据并刷新画布)
+     * @returns 各类结果的 nodeID 汇总
+     */
+    async requestDeleteNodes(nodeIds: string[]): Promise<{
+        deleted: string[]; draftsDiscarded: string[]; cancelled: string[]; notFound: string[];
+    }> {
+        const deleted: string[] = [];
+        const draftsDiscarded: string[] = [];
+        const cancelled: string[] = [];
+        const notFound: string[] = [];
+        if (this.isMobileReadOnly()) return { deleted, draftsDiscarded, cancelled, notFound };
+
+        for (const raw of nodeIds || []) {
+            const id = String(raw ?? '').trim();
+            if (!id) continue;
+
+            // 草稿节点:随便删(丢弃),不弹确认
+            if (this.draftNodes.has(id)) {
+                this.deleteDraftNode(id);
+                draftsDiscarded.push(id);
+                continue;
+            }
+
+            // 真实节点:先弹确认,确认后才删
+            const cyNode = this.findCyNodeByIdStr(id);
+            const original = cyNode?.data('originalNode') as ZKNode | undefined;
+            if (!cyNode || !original) { notFound.push(id); continue; }
+
+            const relationCount = cyNode.connectedEdges().length;
+            const confirmed = await this.showDeleteConfirmDialog(original, relationCount);
+            if (!confirmed) { cancelled.push(id); continue; }
+
+            // 已确认 → 复用完整删除流程;传 relationCount=0 跳过其内部的二次确认,避免重复弹窗
+            await this.deleteNodeFromGraph(original, 0);
+            deleted.push(id);
+        }
+        return { deleted, draftsDiscarded, cancelled, notFound };
     }
 
     /** 更新草稿节点内容(纯内存):同步 Map 与画布 label */

@@ -57,6 +57,15 @@ export interface ZKNavigationExternalAPI {
      */
     deleteNode(filePath: string, nodeID: string): Promise<void>;
     /**
+     * 批量删除节点(#20),区分草稿与真实:草稿节点直接丢弃(不弹确认);真实节点**逐个弹删除确认对话框**,
+     * 用户确认才真删(连同后代,清元数据并刷新画布)。需该 MOC 已在思维树视图打开(确认框 / 草稿都依赖视图)。
+     * 与 deleteNode(直接删、无确认)不同,本命令面向"删前要人过目"的场景。
+     * @returns {deleted, draftsDiscarded, cancelled, notFound} 各类结果的 nodeID 汇总
+     */
+    deleteNodes(filePath: string, nodeIDs: string[]): Promise<{
+        deleted: string[]; draftsDiscarded: string[]; cancelled: string[]; notFound: string[];
+    }>;
+    /**
      * 只读查询节点(精确 by nodeID / 模糊 by 文本 / 整棵树),返回精简嵌套节点树。
      * opts.nodeID 精确定位单节点(连同后代);opts.query 模糊匹配 nodeID/target/alias;
      * 都不传则返回整棵树;opts.recursive=false 只返回直接子节点。
@@ -66,15 +75,17 @@ export interface ZKNavigationExternalAPI {
      * 注入一批「草稿节点」到当前打开的思维树视图(#20)。纯内存渲染、不写文件,
      * 用户在画布上审阅后点「确认落地」才经正式流程写入,或「丢弃」不影响真实数据。
      * 走本 API(CLI/脚本)的草稿标记为 origin='ai'。filePath 必须是当前已打开的 MOC。
-     * @param items 每项 {content, kind?, parentRealId?, parentLocalId?, localId?}
+     * @param items 每项 {content, kind?, parentRealId?, parentLocalId?, localId?, position?}
      *   - content:节点文本;kind:'text'(默认)/'file'
      *   - parentRealId:挂到某个已存在真实节点(其 nodeID/IDStr)
      *   - localId + parentLocalId:同批草稿内部父子关系(localId 为本批内引用名)
+     *   - position:节点的画布坐标 {x,y}。**自由布局(free layout)MOC 必传**——该类文件无自动排布,
+     *     需调用方自算坐标;传了 position 则跳过预览自动重排,原样落在该坐标。自动布局(auto)可省略。
      * @returns 生成的 draftId 列表;若目标 MOC 未在思维树视图中打开则返回 []
      */
     addDraftNodes(
         filePath: string,
-        items: Array<{ content: string; kind?: 'text' | 'file'; parentRealId?: string; parentLocalId?: string; localId?: string }>,
+        items: Array<{ content: string; kind?: 'text' | 'file'; parentRealId?: string; parentLocalId?: string; localId?: string; position?: { x: number; y: number } }>,
         batchId?: string
     ): Promise<string[]>;
     /**
@@ -1041,6 +1052,24 @@ export default class ZKNavigationPlugin extends Plugin {
                     this.app.workspace.trigger('zk-navigation:refresh-index-graph');
                 }
             },
+            deleteNodes: async (filePath: string, nodeIDs: string[]) => {
+                const target = this.app.vault.getAbstractFileByPath(filePath);
+                if (!(target instanceof TFile) || !isMocFile(target)) {
+                    throw new Error(t('MOC not a moc file').replace('{path}', filePath));
+                }
+                // 真实节点删除要弹确认框、草稿删除依赖视图内存 → 必须有一个已打开该 MOC 的思维树视图
+                const leaves = this.app.workspace.getLeavesOfType(ZK_INDEX_TYPE);
+                const leaf = leaves.find((l) => (l.view as any)?.file?.path === filePath) ?? leaves[0];
+                const view = leaf?.view as ZKIndexView | undefined;
+                if (!view || typeof (view as any).requestDeleteNodes !== 'function') {
+                    throw new Error(t('Draft view not open').replace('{path}', filePath));
+                }
+                const { MermaidParser } = await import('src/utils/mermaidParser');
+                MermaidParser.clearCacheForFile(target.path);
+                return await (view as any).requestDeleteNodes(nodeIDs || []) as {
+                    deleted: string[]; draftsDiscarded: string[]; cancelled: string[]; notFound: string[];
+                };
+            },
             queryNodes: async (filePath: string, opts: MOCQueryOptions = {}) => {
                 const target = this.app.vault.getAbstractFileByPath(filePath);
                 if (!(target instanceof TFile) || !isMocFile(target)) {
@@ -1071,7 +1100,7 @@ export default class ZKNavigationPlugin extends Plugin {
             },
             addDraftNodes: async (
                 filePath: string,
-                items: Array<{ content: string; kind?: 'text' | 'file'; parentRealId?: string; parentLocalId?: string; localId?: string }>,
+                items: Array<{ content: string; kind?: 'text' | 'file'; parentRealId?: string; parentLocalId?: string; localId?: string; position?: { x: number; y: number } }>,
                 batchId?: string
             ) => {
                 const target = this.app.vault.getAbstractFileByPath(filePath);

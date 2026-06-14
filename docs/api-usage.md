@@ -294,7 +294,8 @@ open "$B?action=add-node&file=animals.moc.md&parent=1&title=鸟类"
 | `addNodes(file, items)` | **一次性**追加多个子节点（`items=[{parent,title,kind?}]`） | 新 ID 数组 |
 | `addRelations(file, items)` | **一次性**在已有节点间加关联反向连线(虚线箭头),**直接写入**,`items=[{source,target,label?}]`;MOC 已打开则自动刷新画布 | 新增边 key 数组 |
 | `addDraftRelations(file, items, batchId?)` | 注入**待审批草稿关联**(#20):紫色虚线、纯内存,用户确认才经 `addRelations` 落盘;`items=[{source,target,label?}]`;需 MOC 已打开 | 新增边 key 数组 |
-| `deleteNode(file, nodeID)` | 删除节点连同后代,清理其元数据;MOC 已打开则自动刷新画布 | `Promise<void>` |
+| `deleteNode(file, nodeID)` | **直接**删除节点连同后代(无确认),清理其元数据;MOC 已打开则自动刷新画布 | `Promise<void>` |
+| `deleteNodes(file, nodeIDs)` | 批量删(#20):草稿节点直接丢弃;**真实节点逐个弹确认**才删;需 MOC 已打开 | `{deleted,draftsDiscarded,cancelled,notFound}` |
 | `queryNodes(file, opts?)` | **只读**查询节点(精确 `nodeID` / 模糊 `query` / 整棵树),`opts={nodeID?,query?,recursive?}`;返回项含 `x,y` 坐标 | 精简嵌套节点数组 |
 | `discardDrafts(file, draftId?)` | 丢弃待审批草稿(#20):省略 `draftId`=全部+退出草稿模式,传入=单个;需 MOC 已打开 | `Promise<boolean>` |
 | `version()` | 插件版本 | string |
