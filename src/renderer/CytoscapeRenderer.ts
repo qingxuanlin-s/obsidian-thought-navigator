@@ -601,6 +601,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
                             // 浅比较 ele.data 与现有 data,只有变化时才写入,避免触发不必要的 style/data 事件
                             const currentData = existing.data();
                             let dataChanged = false;
+                            if (
+                                ele.group === 'edges' &&
+                                ele.data.controlPointDistance === undefined &&
+                                (currentData.controlPointDistance !== undefined || currentData.controlPointWeight !== undefined)
+                            ) {
+                                existing.removeData('controlPointDistance');
+                                existing.removeData('controlPointWeight');
+                                dataChanged = true;
+                            }
                             for (const key in ele.data) {
                                 if (currentData[key] !== ele.data[key]) {
                                     dataChanged = true;

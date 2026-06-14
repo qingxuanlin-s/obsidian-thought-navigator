@@ -3922,6 +3922,23 @@ cy.fit(null, 40);
             const menu = new Menu();
 
             menu.addItem((item) => {
+                item.setTitle('恢复自动样式')
+                    .setIcon('refresh-cw')
+                    .onClick(async () => {
+                        try {
+                            const mocFile = getLatestMOCFile();
+                            if (mocFile) {
+                                await this.restoreEdgeAutoStyleInMOC(mocFile, `${source}-${target}`);
+                                await this.refreshBranchMermaid(true);
+                            }
+                        } catch (error) {
+                            console.error('Failed to restore edge auto style:', error);
+                            new Notice(`恢复自动样式失败: ${error.message}`);
+                        }
+                    });
+            });
+
+            menu.addItem((item) => {
                 item.setTitle('删除箭头关系')
                     .setIcon('trash')
                     .onClick(async () => {
@@ -9328,6 +9345,28 @@ cy.fit(null, 40);
         } catch (error) {
             console.error('Failed to save edge curvature:', error);
             new Notice(`保存边弧度失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 删除边的手动弧度，让渲染器重新使用自动曲线样式
+     */
+    private async restoreEdgeAutoStyleInMOC(mocFile: TFile, edgeId: string): Promise<void> {
+        try {
+            const headingTitle = this.plugin.settings.mocHeadingTitle;
+            const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
+            const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
+            this.ensureMOCNodeLayoutStyle(mocData);
+
+            if (mocData.edgeCurvatures && mocData.edgeCurvatures[edgeId]) {
+                delete mocData.edgeCurvatures[edgeId];
+            }
+
+            await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
+
+        } catch (error) {
+            console.error('Failed to restore edge auto style:', error);
+            new Notice(`恢复自动样式失败: ${error.message}`);
         }
     }
 
