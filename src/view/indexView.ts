@@ -3145,6 +3145,9 @@ cy.fit(null, 40);
                     const mocFile = getLatestMOCFile();
                     if (mocFile) {
                         await this.saveEmbedNodeSizeToMOC(mocFile, targetNodeId, size);
+                        if (this.isNodeAutoLayout(targetNodeId) || this.hasAutoLayoutChild(targetNodeId)) {
+                            await this.reflowAutoLayout(targetNodeId);
+                        }
                     }
                 } catch (error) {
                     console.error('Failed to save embed node size:', error);

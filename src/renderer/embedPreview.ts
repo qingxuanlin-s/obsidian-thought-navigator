@@ -672,6 +672,11 @@ export function renderEmbedNodePreviews(this: any): void {
                 document.removeEventListener('mouseup', onMouseUp);
                 const modelSize = cardSizeMap.get(nodeId);
                 if (modelSize) {
+                    node.style({ 'width': modelSize.widthModel, 'height': modelSize.heightModel });
+                    lastSyncedW = modelSize.widthModel;
+                    lastSyncedH = modelSize.heightModel;
+                    outerSizeStale = true;
+                    this.overlayScheduler.immediate();
                     this.container?.dispatchEvent(new CustomEvent('embed-node-size-changed', {
                         detail: {
                             node: data.originalNode,
@@ -1280,6 +1285,10 @@ export function renderImageNodePreviews(this: any): void {
                 document.removeEventListener('mouseup', onMouseUp);
                 const modelSize = cardSizeMap.get(nodeId);
                 if (modelSize) {
+                    node.style({ 'width': modelSize.widthModel, 'height': modelSize.heightModel });
+                    lastSyncedW = modelSize.widthModel;
+                    lastSyncedH = modelSize.heightModel;
+                    this.overlayScheduler.immediate();
                     this.container?.dispatchEvent(new CustomEvent('embed-node-size-changed', {
                         detail: {
                             node: data.originalNode,
