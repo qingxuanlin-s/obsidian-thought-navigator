@@ -1,4 +1,4 @@
-import { Editor, FileView, loadMermaid, MarkdownView, moment, Notice, Plugin, TFile, TFolder, WorkspaceLeaf } from "obsidian";
+import { Editor, FileView, MarkdownView, moment, Notice, Plugin, TFile, TFolder, WorkspaceLeaf } from "obsidian";
 import { t } from "src/lang/helper";
 import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
 import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
@@ -1023,8 +1023,6 @@ export default class ZKNavigationPlugin extends Plugin {
                     throw new Error(t('MOC not a moc file').replace('{path}', filePath));
                 }
                 const handler = this.cliMocHandler ??= new MOCHandler(this, this.app);
-                const { MermaidParser } = await import('src/utils/mermaidParser');
-                MermaidParser.clearCacheForFile(target.path);
                 const keys = await handler.addRelationsToMOC(target, items || []);
                 // 若该 MOC 正在思维树视图打开,刷新画布让新连线即时可见
                 const leaves = this.app.workspace.getLeavesOfType(ZK_INDEX_TYPE);
@@ -1041,8 +1039,6 @@ export default class ZKNavigationPlugin extends Plugin {
                     throw new Error(t('MOC not a moc file').replace('{path}', filePath));
                 }
                 const handler = this.cliMocHandler ??= new MOCHandler(this, this.app);
-                const { MermaidParser } = await import('src/utils/mermaidParser');
-                MermaidParser.clearCacheForFile(target.path);
                 await handler.deleteNodeFromMOC(target, nodeID);
                 // 若该 MOC 正在思维树视图打开,刷新画布让删除即时可见
                 const leaves = this.app.workspace.getLeavesOfType(ZK_INDEX_TYPE);
@@ -1064,8 +1060,6 @@ export default class ZKNavigationPlugin extends Plugin {
                 if (!view || typeof (view as any).requestDeleteNodes !== 'function') {
                     throw new Error(t('Draft view not open').replace('{path}', filePath));
                 }
-                const { MermaidParser } = await import('src/utils/mermaidParser');
-                MermaidParser.clearCacheForFile(target.path);
                 return await (view as any).requestDeleteNodes(nodeIDs || []) as {
                     deleted: string[]; draftsDiscarded: string[]; cancelled: string[]; notFound: string[];
                 };
@@ -1386,86 +1380,73 @@ export default class ZKNavigationPlugin extends Plugin {
 
             // 遍历所有 MOC 文件，更新链接
             for (const mocFile of mocFiles) {
-                let content = await this.app.vault.read(mocFile);
+                const content = await this.app.vault.read(mocFile);
                 let modified = false;
 
-                if (isMocFile(mocFile)) {
-                    let json: any;
-                    try {
-                        json = JSON.parse(content);
-                    } catch {
-                        continue;
-                    }
-
-                    // rename 事件触发时,oldPath 对应的文件已不存在,无法走 metadataCache 解析,
-                    // 只能按原字符串形式直接匹配 node.wikiLink。
-                    const oldName = oldPath.split('/').pop() || '';
-                    const oldPathNoExt = this.getPathWithoutExtension(oldPath);
-                    const newPathNoExt = this.getPathWithoutExtension(file.path);
-
-                    const nextWikiLinkFor = (wl: string): string | null => {
-                        if (wl === oldBasename) return file.basename;
-                        if (wl === oldPath) return file.path;
-                        if (wl === oldPathNoExt) return newPathNoExt;
-                        if (wl === oldName) return file.name;
-                        return null;
-                    };
-
-                    const walkNodes = (nodes: any[]) => {
-                        for (const node of nodes || []) {
-                            if (!node?.isTextOnly && typeof node?.wikiLink === 'string') {
-                                const next = nextWikiLinkFor(node.wikiLink);
-                                if (next !== null && next !== node.wikiLink) {
-                                    // displayText 与 wikiLink 一致时跟随变化;用户自定义别名保留
-                                    if (node.displayText === node.wikiLink) {
-                                        node.displayText = next;
-                                    }
-                                    node.wikiLink = next;
-                                    modified = true;
-                                }
-                            }
-                            if (node?.children?.length) walkNodes(node.children);
-                        }
-                    };
-
-                    walkNodes(json.nodes || []);
-
-                    // 跨域关联存的是完整 filePath,直接按路径比对
-                    if (json.crossDomainLinks && typeof json.crossDomainLinks === 'object') {
-                        for (const links of Object.values(json.crossDomainLinks) as any[]) {
-                            if (!Array.isArray(links)) continue;
-                            for (const link of links) {
-                                if (link?.filePath === oldPath) {
-                                    link.filePath = file.path;
-                                    modified = true;
-                                }
-                            }
-                        }
-                    }
-
-                    if (modified) {
-                        await this.app.vault.modify(mocFile, JSON.stringify(json, null, 2));
-                    }
+                let json: any;
+                try {
+                    json = JSON.parse(content);
+                } catch {
                     continue;
                 }
 
-                // 替换 [[oldName]] 格式的链接
-                const wikiLinkRegex = new RegExp(`\\[\\[${this.escapeRegex(oldBasename)}\\]\\]`, 'g');
-                if (wikiLinkRegex.test(content)) {
-                    content = content.replace(wikiLinkRegex, `[[${newBasename}]]`);
-                    modified = true;
+                // rename 事件触发时,oldPath 对应的文件已不存在,无法走 metadataCache 解析,
+                // 只能按原字符串形式直接匹配 JSON 节点的 target/wikiLink。
+                const oldName = oldPath.split('/').pop() || '';
+                const oldPathNoExt = this.getPathWithoutExtension(oldPath);
+                const newPathNoExt = this.getPathWithoutExtension(file.path);
+
+                const nextWikiLinkFor = (wl: string): string | null => {
+                    if (wl === oldBasename) return file.basename;
+                    if (wl === oldPath) return file.path;
+                    if (wl === oldPathNoExt) return newPathNoExt;
+                    if (wl === oldName) return file.name;
+                    return null;
+                };
+
+                const walkNodes = (nodes: any[]) => {
+                    for (const node of nodes || []) {
+                        const isText = node?.nodeType === 'text' || node?.isTextOnly;
+                        const linkKey = typeof node?.target === 'string'
+                            ? 'target'
+                            : (typeof node?.wikiLink === 'string' ? 'wikiLink' : null);
+                        if (!isText && linkKey) {
+                            const current = node[linkKey];
+                            const next = nextWikiLinkFor(current);
+                            if (next !== null && next !== current) {
+                                // alias/displayText 与原链接一致时跟随变化;用户自定义别名保留
+                                if (linkKey === 'target') {
+                                    if (node.alias === current) {
+                                        node.alias = next;
+                                    }
+                                } else if (node.displayText === current) {
+                                    node.displayText = next;
+                                }
+                                node[linkKey] = next;
+                                modified = true;
+                            }
+                        }
+                        if (node?.children?.length) walkNodes(node.children);
+                    }
+                };
+
+                walkNodes(json.nodes || []);
+
+                // 跨域关联存的是完整 filePath,直接按路径比对
+                if (json.crossDomainLinks && typeof json.crossDomainLinks === 'object') {
+                    for (const links of Object.values(json.crossDomainLinks) as any[]) {
+                        if (!Array.isArray(links)) continue;
+                        for (const link of links) {
+                            if (link?.filePath === oldPath) {
+                                link.filePath = file.path;
+                                modified = true;
+                            }
+                        }
+                    }
                 }
 
-                // 替换 [[oldName|alias]] 格式的链接
-                const wikiLinkWithAliasRegex = new RegExp(`\\[\\[${this.escapeRegex(oldBasename)}\\|([^\\]]+)\\]\\]`, 'g');
-                if (wikiLinkWithAliasRegex.test(content)) {
-                    content = content.replace(wikiLinkWithAliasRegex, `[[${newBasename}|$1]]`);
-                    modified = true;
-                }
-
-                // 如果内容被修改，保存文件
                 if (modified) {
-                    await this.app.vault.modify(mocFile, content);
+                    await this.app.vault.modify(mocFile, JSON.stringify(json, null, 2));
                 }
             }
 
@@ -1473,13 +1454,6 @@ export default class ZKNavigationPlugin extends Plugin {
             console.error('Error updating MOC links after rename:', error);
             new Notice(`更新 MOC 文件链接失败: ${error.message}`);
         }
-    }
-
-    /**
-     * 转义正则表达式特殊字符
-     */
-    private escapeRegex(str: string): string {
-        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
     private getPathBasenameWithoutExtension(path: string): string {

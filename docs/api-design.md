@@ -74,9 +74,9 @@ interface GenerateMOCOptions {
 2. 读取笔记的 outgoing links（[[wikilinks]]）
 3. 读取 backlinks（通过 MOCReverseIndex 或 app.metadataCache）
 4. 按 Luhmann ID 层级构建树结构
-5. 用 MermaidSerializer 序列化为 .moc 格式
+5. 用 JSON codec 序列化为 .moc/.moc.md 格式
   ↓
-输出: Mermaid 格式字符串 → 写入 xxx.moc.md
+输出: JSON 字符串 → 写入 xxx.moc.md
 ```
 
 ### Luhmann ID 提取策略（复用现有 settings）
@@ -95,7 +95,7 @@ CLI eval
   └─→ plugin.api.generateMOCFromNote(notePath)
         └─→ app.metadataCache.getFileCache(file)  // 读取 links
         └─→ MOCReverseIndex.getLocations(notePath) // 读取反向引用
-        └─→ MermaidSerializer.serialize(mocData)   // 序列化
+        └─→ serializeMOCJson(mocData)              // 序列化
         └─→ app.vault.create/modify(mocFile)       // 写入文件
         └─→ return mocFilePath
 ```

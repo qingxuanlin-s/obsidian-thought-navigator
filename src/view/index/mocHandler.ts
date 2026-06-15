@@ -168,7 +168,7 @@ export class MOCHandler {
 
     /**
      * 通用 MOC 数据修改方法
-     * 用于 Mermaid 格式的 MOC 文件，确保所有 metadata 被正确保留
+     * 用于 JSON 格式的 MOC 文件，确保所有 metadata 被正确保留
      * @param mocFile - MOC 文件
      * @param modifyCallback - 修改数据的回调函数
      */
@@ -183,7 +183,7 @@ export class MOCHandler {
                 await this.hooks.onBeforeModify({ filePath: mocFile.path, content: originalContent });
             }
 
-            // 使用 Mermaid 格式：通过 parse/modify/save 流程来保留所有 metadata
+            // 使用 JSON codec：通过 parse/modify/save 流程来保留所有 metadata
             const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
             const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
 
@@ -961,7 +961,7 @@ export class MOCHandler {
     /**
      * 重定向父子边的终点：将 oldTarget 从父节点下移出（变为自由节点），
      * 将 newTarget 从当前位置移入 oldTarget 原来的父节点下（继承 oldTarget 的 ID）。
-     * 所有操作在一次 modifyMOCData 中完成，避免多次写文件时 MermaidParser 缓存失效。
+     * 所有操作在一次 modifyMOCData 中完成，避免多次读写同一文件导致中间状态被覆盖。
      */
     async redirectParentEdgeTarget(mocFile: TFile, oldTarget: string, newTarget: string): Promise<void> {
         await this.modifyMOCData(mocFile, (mocData) => {

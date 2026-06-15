@@ -182,23 +182,16 @@ export async function parseMOCStructure(
     }
 
 
-    // .moc / .moc.md 文件使用 JSON codec，普通 .md 文件使用 Mermaid 解析器
-    if (isMocFile(file)) {
-        // 用 adapter.read 直读磁盘，绕过 vault.read 基于 mtime 的缓存：
-        // 同一秒内连续写入(如脚本/CLI 快速 addNode)mtime 不变会导致 vault.read 返回旧内容，
-        // 造成"读到刚写入前的快照、父节点找不到"的竞态。adapter.read 总是磁盘真实内容。
-        const diskContent = await app.vault.adapter.read(filePath);
-        const { parseMOCJson } = await import('./mocJsonCodec');
-        return parseMOCJson(diskContent, filePath, app);
+    if (!isMocFile(file)) {
+        throw new Error(`Not a JSON MOC file: ${filePath}`);
     }
 
-    const content = await app.vault.read(file);
-
-    const { MermaidParser } = await import('./mermaidParser');
-    const mermaidParser = new MermaidParser(app);
-    const result = await mermaidParser.parse(content, filePath, headingTitle);
-
-    return result;
+    // 用 adapter.read 直读磁盘，绕过 vault.read 基于 mtime 的缓存：
+    // 同一秒内连续写入(如脚本/CLI 快速 addNode)mtime 不变会导致 vault.read 返回旧内容，
+    // 造成"读到刚写入前的快照、父节点找不到"的竞态。adapter.read 总是磁盘真实内容。
+    const diskContent = await app.vault.adapter.read(filePath);
+    const { parseMOCJson } = await import('./mocJsonCodec');
+    return parseMOCJson(diskContent, filePath, app);
 }
 
 // 将 MOC 树结构转换为 ZKNode 数组
@@ -774,49 +767,6 @@ function splitNestedTags(nestTag: string, arr: string[]) {
 }
 
 /**
- * 替换指定标题下的内容
- * @param content - 原始文件内容
- * @param headingTitle - 标题名称
- * @param newContent - 新内容
- * @returns 更新后的文件内容
- */
-function replaceHeadingContent(
-    content: string,
-    headingTitle: string,
-    newContent: string
-): string {
-    const lines = content.split('\n');
-    let startIndex = -1;
-    let endIndex = lines.length;
-
-    // 查找指定的一级标题
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-
-        if (line.startsWith('# ')) {
-            if (line === `# ${headingTitle}` || line.startsWith(`# ${headingTitle}`)) {
-                startIndex = i;
-            } else if (startIndex !== -1) {
-                // 找到下一个一级标题，结束
-                endIndex = i;
-                break;
-            }
-        }
-    }
-
-    if (startIndex === -1) {
-        // 标题不存在，在文件末尾添加
-        return content + '\n\n# ' + headingTitle + '\n\n' + newContent;
-    }
-
-    // 替换标题下的内容
-    const before = lines.slice(0, startIndex + 1).join('\n');
-    const after = endIndex < lines.length ? '\n' + lines.slice(endIndex).join('\n') : '';
-    
-    return before + '\n\n' + newContent + '\n' + after;
-}
-
-/**
  * 保存 MOC 数据到文件
  * @param app - Obsidian App 实例
  * @param filePath - 文件路径
@@ -834,88 +784,22 @@ export async function saveMOCStructure(
         throw new Error(`File not found: ${filePath}`);
     }
 
-    // .moc / .moc.md 文件：直接写 JSON，无需标题替换逻辑
-    if (isMocFile(file)) {
-        const { serializeMOCJson } = await import('./mocJsonCodec');
-        await app.vault.modify(file, serializeMOCJson(data));
-        await new Promise(resolve => setTimeout(resolve, 50));
-        // 与下方 Mermaid 分支一致：写入后清除旧 mtime 的解析缓存,
-        // 避免同一 mtime 粒度内的连续写入读到过期数据
-        const { MermaidParser } = await import('./mermaidParser');
-        MermaidParser.clearCacheForFile(filePath);
-        return;
+    if (!isMocFile(file)) {
+        throw new Error(`Not a JSON MOC file: ${filePath}`);
     }
 
-    const content = await app.vault.read(file);
-
-    // 检查读取到的内容中是否包含 node_colors
-    const nodeColorsInContent = content.match(/"node_colors":\s*{([^}]*)}/);
-
-    // 使用 MermaidSerializer 序列化数据
-    const { MermaidSerializer } = await import('./mermaidSerializer');
-    const serializer = new MermaidSerializer();
-    const mermaidContent = serializer.serialize(data);
-
-    // 替换指定标题下的内容
-    const updatedContent = replaceHeadingContent(
-        content,
-        headingTitle,
-        mermaidContent
-    );
-
-    await app.vault.modify(file, updatedContent);
-
-    // 等待文件系统更新 mtime
+    const { serializeMOCJson } = await import('./mocJsonCodec');
+    await app.vault.modify(file, serializeMOCJson(data));
     await new Promise(resolve => setTimeout(resolve, 50));
-
-    // 写入完成后清除该文件的旧缓存（基于旧 mtime 的缓存）
-    const { MermaidParser } = await import('./mermaidParser');
-    MermaidParser.clearCacheForFile(filePath);
-}
-
-/**
- * 创建 MOC 模板（Mermaid 格式）
- * @returns Mermaid 格式的模板字符串
- */
-export function createMOCTemplate(): string {
-    return `\`\`\`mermaid
-graph LR
-
-%% 1. 定义根节点
-a["[[示例笔记 A]]"]
-
-%% 2. 定义子节点
-a.1["[[示例笔记 A.1]]"]
-a.2["[[示例笔记 A.2]]"]
-
-%% 3. 定义连线关系
-%% 父子关系
-a --> a.1
-a --> a.2
-
-%% 可选：添加带标签的关系
-%% a.1 -->|相关| a.2
-
-%% ext:{"node_positions":{},"groups":[],"edge_curvatures":{},"node_colors":{},"node_style_colors":{}} %%
-\`\`\`
-
-**使用说明：**
-1. 节点格式：\`nodeId["[[笔记标题]]"]\`
-2. 边格式：\`source --> target\` 或 \`source -->|标签| target\`
-3. 节点 ID 使用字母和数字，用点号分隔层级（如 a, a.1, a.1.a）
-4. 拖动节点后位置会自动保存到 ext 注释中
-`;
 }
 
 /**
  * 获取所有 MOC 文件：
  * - .moc / .moc.md 文件全局识别，不限文件夹
- * - 其它 .md 文件限定在指定文件夹内（兼容旧格式）
  */
-export function getMOCFilesInFolder(app: App, folderPath: string): TFile[] {
+export function getMOCFilesInFolder(app: App, _folderPath: string): TFile[] {
     return app.vault.getFiles().filter(f => {
         if (isMocFile(f)) return true;
-        if (f.extension === 'md' && folderPath) return f.path.startsWith(folderPath + '/');
         return false;
     });
 }

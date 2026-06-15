@@ -1,5 +1,5 @@
 import ZKNavigationPlugin from "main";
-import { ExtraButtonComponent, FileView, ItemView, Notice, TFile, WorkspaceLeaf, debounce, loadMermaid, setIcon } from "obsidian";
+import { ExtraButtonComponent, FileView, ItemView, Notice, TFile, WorkspaceLeaf, debounce, setIcon } from "obsidian";
 import { ZKNode, ZK_INDEX_TYPE, ZK_NAVIGATION } from "./indexView";
 import { t } from "src/lang/helper";
 import { convertMOCToZKNodes, getMOCFilesInFolder, isMocFile, parseMOCStructure, ReverseRelation } from "src/utils/utils";
@@ -353,11 +353,7 @@ export class ZKGraphView extends ItemView {
 
     // 检查文件是否是 MOC 文件
     isMOCFile(file: TFile): boolean {
-        if (isMocFile(file)) return true;
-        if (file.extension !== 'md') return false;
-        const mocFolder = this.plugin.settings.mocFolderPath;
-        if (!mocFolder) return false;
-        return file.path.startsWith(mocFolder + '/') || file.path.startsWith(mocFolder);
+        return isMocFile(file);
     }
 
     // MOC 模式下的局部关系视图渲染
@@ -379,9 +375,6 @@ export class ZKGraphView extends ItemView {
         const graphHeight = Math.round(Math.max(isNarrow ? 320 : 420, Math.min(targetGraphHeight, isNarrow ? 540 : 680)));
 
         const headingTitle = this.plugin.settings.mocHeadingTitle;
-        const mermaid = await loadMermaid();
-        const svgPanZoomModule = await import("svg-pan-zoom");
-        const svgPanZoom = (svgPanZoomModule as any).default ?? svgPanZoomModule;
         // ========== 1. MOC 树结构（类似邻近图）==========
         if (this.plugin.settings.FamilyGraphToggle) {
             // 解析 MOC 结构

@@ -291,7 +291,9 @@ export class NodeDetailPanel {
      */
     private async renderTitleRich(el: HTMLElement, input: string, token: number): Promise<void> {
         el.empty();
-        let text = (input || '').replace(/\r\n?/g, '\n').replace(/\n+/g, ' ').trim();
+        // 先解码文本节点的字面量 \n(JSON 存储路径保留编码态,未走 Mermaid 解析器的解码),
+        // 否则 \n 会原样显示、且后面的 \n+→空格 折叠失效。
+        let text = (input || '').replace(/\\n/g, '\n').replace(/\r\n?/g, '\n').replace(/\n+/g, ' ').trim();
         if (!text) { el.setAttribute("title", input || ''); return; }
         // 快路径:无 markdown/HTML 语法 → 纯文本
         if (!/[*~_`=<\[#]/.test(text)) {
@@ -299,8 +301,10 @@ export class NodeDetailPanel {
             el.setAttribute("title", text);
             return;
         }
-        // 转义行首块级标记,避免 "- xxx" / "# xxx" 被解析成列表/标题
-        text = text.replace(/^(\s*)([-*+#]|\d+\.)/, (_m, sp, mk) => `${sp}\\${mk}`);
+        // 转义行首块级标记,避免 "- xxx" / "# xxx" 被解析成列表/标题。
+        // 仅当标记后紧跟空白才转义(真正的列表/标题语法必有空格:"- " / "# " / "1. "),
+        // 否则会误伤行首的 **加粗**(`**` 后无空格)。
+        text = text.replace(/^(\s*)([-*+#]|\d+\.)(?=\s)/, (_m, sp, mk) => `${sp}\\${mk}`);
         const tmp = createDiv();
         await MarkdownRenderer.render(this.app, text, tmp, this.currentNode?.file?.path || '', this.deps.component);
         if (token !== this.renderToken) { tmp.remove(); return; } // 期间切换了节点,丢弃

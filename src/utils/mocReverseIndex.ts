@@ -1,5 +1,4 @@
 import { App, TFile } from "obsidian";
-import { MermaidParser } from "./mermaidParser";
 import { isMocFile } from "./utils";
 
 /**
@@ -49,18 +48,19 @@ export class MOCReverseIndex {
         this.index.clear();
 
         const mocFiles = this.getMOCFiles();
-        const parser = new MermaidParser(this.app);
 
         for (const file of mocFiles) {
-            await this.indexMOCFile(file, parser);
+            await this.indexMOCFile(file);
         }
     }
 
     /**
      * 索引单个 MOC 文件
      */
-    private async indexMOCFile(file: TFile, parser?: MermaidParser): Promise<void> {
+    private async indexMOCFile(file: TFile): Promise<void> {
         try {
+            if (!isMocFile(file)) return;
+
             // 直接读取；仅在失败时做指数回退重试，避免全量重建时为每个文件固定等待
             let fileContent: string | null = null;
             for (let attempt = 0; attempt < 5; attempt++) {
@@ -85,44 +85,26 @@ export class MOCReverseIndex {
                 return linkedFile;
             };
 
-            if (isMocFile(file)) {
-                // JSON 格式：遍历节点树提取 wikilink
-                let json: any;
-                try { json = JSON.parse(content); } catch { return; }
+            // JSON 格式：遍历节点树提取 wikilink
+            let json: any;
+            try { json = JSON.parse(content); } catch { return; }
 
-                const walk = (nodes: any[]) => {
-                    for (const n of nodes) {
-                        // 新 shape: nodeType !== 'text' 且 target 存在
-                        // 旧 shape: !isTextOnly 且 wikiLink 存在
-                        const isText = n.nodeType === 'text' || n.isTextOnly;
-                        const link = n.target ?? n.wikiLink;
-                        if (!isText && link) {
-                            const linkedFile = resolveWikiLink(link);
-                            if (linkedFile) {
-                                this.addToIndex(linkedFile.path, file, n.nodeID);
-                            }
+            const walk = (nodes: any[]) => {
+                for (const n of nodes) {
+                    // 新 shape: nodeType !== 'text' 且 target 存在
+                    // 旧 shape: !isTextOnly 且 wikiLink 存在
+                    const isText = n.nodeType === 'text' || n.isTextOnly;
+                    const link = n.target ?? n.wikiLink;
+                    if (!isText && link) {
+                        const linkedFile = resolveWikiLink(link);
+                        if (linkedFile) {
+                            this.addToIndex(linkedFile.path, file, n.nodeID);
                         }
-                        if (n.children?.length) walk(n.children);
                     }
-                };
-                walk(json.nodes || []);
-            } else {
-                // Mermaid 格式：正则提取 wikilink 节点
-                const p = parser || new MermaidParser(this.app);
-                const mermaidBlock = p.extractMermaidBlock(content);
-                if (!mermaidBlock) return;
-
-                const nodeRegex = /^([a-zA-Z0-9.]+)\["(?:!)?\[\[([^\]|]+)(?:\|[^\]]+)?\]\]"\]$/gm;
-                let match;
-                while ((match = nodeRegex.exec(mermaidBlock)) !== null) {
-                    const nodeId = match[1];
-                    const wikiLink = match[2];
-                    const linkedFile = resolveWikiLink(wikiLink);
-                    if (linkedFile) {
-                        this.addToIndex(linkedFile.path, file, nodeId);
-                    }
+                    if (n.children?.length) walk(n.children);
                 }
-            }
+            };
+            walk(json.nodes || []);
         } catch (error) {
             console.error(`MOCReverseIndex: Failed to index ${file.path}`, error);
         }
@@ -183,12 +165,11 @@ export class MOCReverseIndex {
     }
 
     /**
-     * 获取 MOC 文件夹中的所有 markdown 文件
+     * 获取 vault 中所有 JSON MOC 文件
      */
     private getMOCFiles(): TFile[] {
         return this.app.vault.getFiles().filter(f => {
             if (isMocFile(f)) return true;
-            if (f.extension === 'md' && this.mocFolderPath) return f.path.startsWith(this.mocFolderPath + '/');
             return false;
         });
     }

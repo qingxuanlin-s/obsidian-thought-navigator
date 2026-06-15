@@ -75,12 +75,7 @@ export class MOCFileMonitor {
      * 检查文件是否是 MOC 文件
      */
     isMOCFile(file: TFile): boolean {
-        // 只处理 .md 和 .moc 文件，避免 PNG 等附件误触发
-        if (file.extension !== 'md' && file.extension !== 'moc') return false;
-        if (isMocFile(file)) return true;
-        const mocFolder = this.plugin.settings.mocFolderPath;
-        if (!mocFolder) return false;
-        return file.path.startsWith(mocFolder + '/') || file.path.startsWith(mocFolder);
+        return isMocFile(file);
     }
 
     /**

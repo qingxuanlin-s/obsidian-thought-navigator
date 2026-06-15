@@ -14,7 +14,6 @@ import { NodeDetailPanel } from "src/view/index/detailPanel";
 import { ScratchpadEntry } from "src/scratch/scratchpadManager";
 import { resolveDroppedVaultFiles } from "src/utils/dropFileResolver";
 import { createMOCJsonWithInitialNode } from "src/utils/mocJsonCodec";
-import { MermaidParser } from "src/utils/mermaidParser";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
 import { createSelectionColorPanel } from "src/renderer/colorUtils";
 import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
@@ -972,15 +971,12 @@ export class ZKIndexView extends FileView {
         }));
 
         try {
-            const { MermaidParser } = await import('src/utils/mermaidParser');
-            MermaidParser.clearCacheForFile(mocFile.path);
             // 1) 先落地草稿节点,拿到 draftId → 真实节点 ID 的映射(供关联端点改写)
             const localToReal = all.length
                 ? await this.mocHandler.addDraftTreeToMOC(mocFile, items)
                 : new Map<string, string>();
             // 2) 再落地草稿关联:端点若指向草稿节点(draftId)则映射成刚落地的真实 ID
             if (allRels.length) {
-                MermaidParser.clearCacheForFile(mocFile.path);
                 const relItems = allRels.map(r => ({
                     source: localToReal.get(r.source) ?? r.source,
                     target: localToReal.get(r.target) ?? r.target,
@@ -1150,10 +1146,6 @@ export class ZKIndexView extends FileView {
         this.isApplyingUndo = true;
         try {
             await this.app.vault.modify(mocFile, snapshot.content);
-            // 清理解析缓存，确保读取到最新回退内容
-            const { MermaidParser } = await import('src/utils/mermaidParser');
-            MermaidParser.clearCacheForFile(snapshot.filePath);
-
             await this.refreshBranchMermaid();
             new Notice('已回退 1 步');
         } catch (error) {
@@ -3127,8 +3119,8 @@ cy.fit(null, 40);
             }, DEBOUNCE_DELAY.EDGE_CURVATURE_SAVE);
         });
 
-        // 监听预览节点尺寸变化事件（右下角拖拽后保存到 ext）
-        // 使用 debounce 合并连续 resize 事件，避免高频写入触发 MermaidParser 同秒缓存问题
+        // 监听预览节点尺寸变化事件（右下角拖拽后保存到 JSON）
+        // 使用 debounce 合并连续 resize 事件，避免高频写入。
         this.addTrackedListener(branchGraphDiv, 'embed-node-size-changed', (event: any) => {
             if (this.isMobileReadOnly()) {
                 return;
@@ -3438,7 +3430,6 @@ cy.fit(null, 40);
                     undefined,
                     newIsEmbed
                 );
-                MermaidParser.clearCacheForFile(mocFile.path);
                 this.lastRenderSignature = null;
                 await this.refreshBranchMermaid();
             } catch (error) {
@@ -6061,7 +6052,6 @@ cy.fit(null, 40);
                 new Notice(`录音已保存：${embedPath}（当前节点非文本节点，未自动嵌入）`);
                 return;
             }
-            MermaidParser.clearCacheForFile(mocFile.path);
             this.lastRenderSignature = null;
             await this.refreshBranchMermaid();
             new Notice('录音已嵌入当前节点');
@@ -7634,9 +7624,6 @@ cy.fit(null, 40);
                 isEmbed
             });
 
-            // 清除缓存，确保 moveNodeToParent 能读到刚保存的节点
-            MermaidParser.clearCacheForFile(this.plugin.settings.mocCurrentFile);
-
             // 然后移动到父节点下
             if (mocFile) {
                 if (this.isFreeNodeID(suggestedID) || this.isFreeNodeID(placeholderInfo.parentNodeId)) {
@@ -7659,7 +7646,6 @@ cy.fit(null, 40);
         }
 
         if (placeholderInfo?.childNodeId && mocFile) {
-            MermaidParser.clearCacheForFile(this.plugin.settings.mocCurrentFile);
             if (this.isFreeNodeID(suggestedID) || this.isFreeNodeID(placeholderInfo.childNodeId)) {
                 await this.addArrowRelationToMOC(mocFile, suggestedID, placeholderInfo.childNodeId, '');
             } else {
@@ -7736,9 +7722,6 @@ cy.fit(null, 40);
                 isTextOnly: true  // 标记为纯文字节点
             });
 
-            // 清除缓存，确保 moveNodeToParent 能读到刚保存的节点
-            MermaidParser.clearCacheForFile(this.plugin.settings.mocCurrentFile);
-
             // 然后移动到父节点下
             if (mocFile) {
                 if (this.isFreeNodeID(suggestedID) || this.isFreeNodeID(placeholderInfo.parentNodeId)) {
@@ -7759,7 +7742,6 @@ cy.fit(null, 40);
         }
 
         if (placeholderInfo?.childNodeId && mocFile) {
-            MermaidParser.clearCacheForFile(this.plugin.settings.mocCurrentFile);
             if (this.isFreeNodeID(suggestedID) || this.isFreeNodeID(placeholderInfo.childNodeId)) {
                 await this.addArrowRelationToMOC(mocFile, suggestedID, placeholderInfo.childNodeId, '');
             } else {
@@ -7873,7 +7855,7 @@ cy.fit(null, 40);
     /**
      * 判断附件在全库是否仍被引用:
      *  1) 普通笔记的链接/嵌入走 metadataCache.resolvedLinks;
-     *  2) MOC 的嵌入写在 mermaid 代码块里,metadataCache 不索引,需逐个 MOC 读原文解析。
+     *  2) MOC 的嵌入写在 JSON 节点里,metadataCache 不索引,需逐个 MOC 读原文解析。
      * 调用时机应在目标节点已从 MOC 移除之后,这样不会把"自己"算成引用。
      */
     private async isFileReferencedAnywhere(file: TFile): Promise<boolean> {
@@ -9699,7 +9681,6 @@ cy.fit(null, 40);
 
             delete (mocData as any).embedNodeSizes[nodeID];
             await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
-            MermaidParser.clearCacheForFile(this.plugin.settings.mocCurrentFile);
         } catch (error) {
             console.error('Failed to clear embed node size from MOC:', error);
             new Notice(`清理节点尺寸失败: ${error.message}`);
