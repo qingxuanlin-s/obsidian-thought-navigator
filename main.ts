@@ -11,6 +11,9 @@ import { ensureMOCPreviewPNG } from "src/embed/mocEmbedExporter";
 import { MOCReverseIndex } from "src/utils/mocReverseIndex";
 import { VaultIndex } from "src/index/VaultIndex";
 import { SpaceService } from "src/services/SpaceService";
+import { WorkspaceStore } from "src/workspace/WorkspaceStore";
+import { ensureWorkspaceSeed } from "src/workspace/seed";
+import { ZKWorkspaceView, ZK_WORKSPACE_TYPE } from "src/view/workspaceView";
 import { FolderMountModal } from "src/modal/folderMountModal";
 import { ZKGraphView, ZK_GRAPH_TYPE } from "src/view/graphView";
 import { ZKIndexView, ZKNode, ZK_INDEX_TYPE, ZK_NAVIGATION } from "src/view/indexView";
@@ -344,6 +347,8 @@ export default class ZKNavigationPlugin extends Plugin {
     // 自建 Space 树索引(spaces.json,只虚拟存在,不创建真实文件夹)
     vaultIndex: VaultIndex | null = null;
     spaceService: SpaceService | null = null;
+    // typed-node 工作区数据层(workspace.json),三栏工作区视图的数据源
+    workspaceStore: WorkspaceStore | null = null;
     // 临时工作区(跨 MOC 共享的节点暂存)
     scratchpad: ScratchpadManager | null = null;
     private originalWindowOnError: OnErrorEventHandler | null = null;
@@ -789,6 +794,8 @@ export default class ZKNavigationPlugin extends Plugin {
 
         this.registerView(ZK_RECENT_TYPE, (leaf) => new ZKRecentView(leaf, this));
 
+        this.registerView(ZK_WORKSPACE_TYPE, (leaf) => new ZKWorkspaceView(leaf, this));
+
         // 只前置拦截 .moc / .moc.md 的打开，避免 Obsidian 先渲染成 markdown 再由 file-open 切换造成闪屏。
         const originalOpenFile = WorkspaceLeaf.prototype.openFile;
         const plugin = this;
@@ -827,10 +834,13 @@ export default class ZKNavigationPlugin extends Plugin {
             id: "thought-tree-graph",
             name: t("Open tree graph"),
             callback:async ()=>{
-                
+
                 this.openIndexView();
             }
         });
+
+        // 工作区统一入口:思维树视图工具栏的「工作区」按钮(图谱 ⇄ 工作区 模式切换),
+        // 不再提供独立侧边栏 ribbon / 打开命令。
 
         this.addCommand({
             id: "thought-local-graph",
@@ -905,6 +915,10 @@ export default class ZKNavigationPlugin extends Plugin {
         this.vaultIndex = new VaultIndex(this.app, storePath);
         this.addChild(this.vaultIndex);
         this.spaceService = new SpaceService(this.app, this.vaultIndex);
+        // typed-node 工作区存储(workspace.json)
+        const wsStorePath = `${this.app.vault.configDir}/plugins/${this.manifest.id}/workspace.json`;
+        this.workspaceStore = new WorkspaceStore(this.app, wsStorePath);
+        this.addChild(this.workspaceStore);
         // 临时工作区管理器(跨 MOC 暂存,持久化到 plugin data)
         this.scratchpad = new ScratchpadManager(this);
         // 等 layout-ready 后再构建索引，确保 metadataCache 已初始化
@@ -914,6 +928,10 @@ export default class ZKNavigationPlugin extends Plugin {
                 this.settings.mocHeadingTitle
             );
             await this.vaultIndex?.bootstrap();
+            if (this.workspaceStore) {
+                await this.workspaceStore.bootstrap();
+                await ensureWorkspaceSeed(this.workspaceStore, this.vaultIndex);
+            }
             this.registerNotebookNavigatorFolderMenu();
             this.showChangelogIfNeeded();
         });
@@ -1161,6 +1179,20 @@ export default class ZKNavigationPlugin extends Plugin {
             },
         };
 
+    }
+
+    async openWorkspaceView() {
+        if (this.workspaceStore) {
+            // bootstrap 幂等;命令早于 layout-ready 触发时确保数据已就绪
+            await this.workspaceStore.bootstrap();
+            await ensureWorkspaceSeed(this.workspaceStore, this.vaultIndex);
+        }
+        const leaves = this.app.workspace.getLeavesOfType(ZK_WORKSPACE_TYPE);
+        if (leaves.length === 0) {
+            await this.app.workspace.getLeaf('tab')?.setViewState({ type: ZK_WORKSPACE_TYPE, active: true });
+        }
+        const leaf = this.app.workspace.getLeavesOfType(ZK_WORKSPACE_TYPE)[0];
+        if (leaf) this.app.workspace.revealLeaf(leaf);
     }
 
     async openIndexView() {
@@ -1563,6 +1595,9 @@ export default class ZKNavigationPlugin extends Plugin {
 
     async onunload() {
         await this.detachPluginViews();
+
+        // 移除工作区注入的 <style>,避免热重载后残留旧 CSS
+        document.getElementById('zkw-styles')?.remove();
 
         // 清理 MOC 文件监听器
         if (this.mocFileMonitor) {

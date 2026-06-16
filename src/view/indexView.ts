@@ -9,6 +9,8 @@ import { MOCSelectorModal } from "src/modal/mocSelectorModal";
 import { NoteSearchModal } from "src/modal/noteSearchModal";
 import { convertMOCToZKNodes, createMOCTreeNode, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX, MOCParseResult, MOCTreeNode, NODE_FLAG_SEPARATED, NODE_FLAG_SIDE_PINNED, parseMOCStructure, saveMOCStructure, stripMocSuffix } from "src/utils/utils";
 import { FolderDrawer } from "src/view/folderDrawer";
+import { WorkspacePanel } from "src/view/workspace/WorkspacePanel";
+import { WSMocNode } from "src/types/workspace";
 import { ScratchpadDrawer } from "src/view/scratchpadDrawer";
 import { NodeDetailPanel } from "src/view/index/detailPanel";
 import { ScratchpadEntry } from "src/scratch/scratchpadManager";
@@ -200,6 +202,9 @@ export class ZKIndexView extends FileView {
     // 性能优化：静态 UI 层标记
     private staticUICreated: boolean = false;
     private staticToolbarDiv: HTMLElement | null = null;
+    // 内嵌工作区模式(typed-node 壳):图谱 ⇄ 工作区 在同一视图内切换
+    private workspacePanel: WorkspacePanel | null = null;
+    private workspaceMode = false;
     private folderDrawer: FolderDrawer | null = null;
     private scratchDrawer: ScratchpadDrawer | null = null;
     // 节点详情侧栏(单击节点 → 跟随展示备注/笔记预览)
@@ -402,6 +407,38 @@ export class ZKIndexView extends FileView {
     }
 
     async onUnloadFile(_file: TFile): Promise<void> {
+    }
+
+    /** 图谱 ⇄ 工作区 模式切换(同一视图内整块替换,非蒙层) */
+    private setWorkspaceMode(on: boolean): void {
+        if (!this.workspacePanel) {
+            new Notice(t("ws not ready"));
+            return;
+        }
+        this.workspaceMode = on;
+        this.workspacePanel.setVisible(on);
+        if (on) this.workspacePanel.refresh();
+        // 面板为 position:absolute inset:0,自然覆盖图谱工具栏与画布,无需手动隐藏
+    }
+
+    /** 工作区面板里点了带 .moc.md 的 MOC 节点 → 切回图谱模式并加载该文件 */
+    private openMocFromWorkspace(node: WSMocNode): boolean {
+        const path = node.filePath;
+        if (!path) return false;
+        const file = this.app.vault.getAbstractFileByPath(path);
+        if (!(file instanceof TFile)) {
+            new Notice(t("ws moc not found").replace('{path}', path));
+            return false;
+        }
+        void (async () => {
+            if (this.plugin.settings.mocCurrentFile !== file.path) {
+                this.plugin.settings.mocCurrentFile = file.path;
+                await this.plugin.saveData(this.plugin.settings);
+                await this.refreshBranchMermaid();
+            }
+            this.setWorkspaceMode(false);
+        })();
+        return true;
     }
 
     /**
@@ -1333,6 +1370,18 @@ export class ZKIndexView extends FileView {
                 });
             }
 
+            // 内嵌工作区面板(绝对覆盖整个内容区,默认隐藏;由工具栏「工作区」按钮切换)
+            if (this.plugin.workspaceStore) {
+                this.workspacePanel = new WorkspacePanel(containerEl, {
+                    app: this.app,
+                    store: this.plugin.workspaceStore,
+                    owner: this,
+                    onExitToGraph: () => this.setWorkspaceMode(false),
+                    onOpenMoc: (node: WSMocNode) => this.openMocFromWorkspace(node),
+                });
+                this.workspacePanel.setVisible(false);
+            }
+
             this.staticUICreated = true;
         } else {
             // 已创建过静态 UI，不清空图形容器（由各渲染函数内部增量更新）
@@ -1435,6 +1484,12 @@ export class ZKIndexView extends FileView {
 
         // 创建右侧按钮容器
         const rightBtns = toolbarDiv.createDiv("zk-toolbar-right-buttons");
+
+        const workspaceBtn = new ExtraButtonComponent(rightBtns);
+        workspaceBtn.setIcon("layout-grid").setTooltip(t("ws Workspace"));
+        workspaceBtn.onClick(() => {
+            this.setWorkspaceMode(!this.workspaceMode);
+        });
 
         const folderBtn = new ExtraButtonComponent(rightBtns);
         folderBtn.setIcon("folder-tree").setTooltip(t("Folders"));
@@ -9057,6 +9112,13 @@ cy.fit(null, 40);
         this.scratchDrawer = null;
         this.detailPanel = null;
         this.detailPanelLastId = null;
+
+        // 销毁内嵌工作区面板(含 store 订阅)
+        if (this.workspacePanel) {
+            this.workspacePanel.destroy();
+            this.workspacePanel = null;
+        }
+        this.workspaceMode = false;
 
         // 清理所有防抖定时器
         this.cleanupTimers();
