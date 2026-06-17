@@ -73,7 +73,7 @@ export class WorkspacePanel {
         this.root.remove();
     }
 
-    setVisible(v: boolean) { this.root.style.display = v ? 'flex' : 'none'; }
+    setVisible(v: boolean) { this.root.setCssStyles({ display: v ? 'flex' : 'none' }); }
 
     /** 供宿主在切到工作区模式时刷新一次 */
     refresh() { if (this.tree) { this.renderCenter(); this.tree.render(); } }
@@ -191,17 +191,27 @@ class NewSpaceModal extends Modal {
         titleEl.setText(t('ws new space title'));
 
         const nameField = contentEl.createDiv();
-        nameField.style.cssText = 'margin-bottom:14px;';
-        nameField.createEl('label', { text: t('ws new space name') }).style.cssText = 'display:block;font-size:12px;color:var(--text-muted);margin-bottom:6px;';
+        nameField.setCssStyles({ marginBottom: '14px' });
+        nameField.createEl('label', { text: t('ws new space name') }).setCssStyles({
+            display: 'block',
+            fontSize: '12px',
+            color: 'var(--text-muted)',
+            marginBottom: '6px',
+        });
         const input = nameField.createEl('input', { type: 'text' });
-        input.style.cssText = 'width:100%;';
+        input.setCssStyles({ width: '100%' });
         input.placeholder = t('ws new space name');
 
         const fwField = contentEl.createDiv();
-        fwField.style.cssText = 'margin-bottom:18px;';
-        fwField.createEl('label', { text: t('ws new space framework') }).style.cssText = 'display:block;font-size:12px;color:var(--text-muted);margin-bottom:6px;';
+        fwField.setCssStyles({ marginBottom: '18px' });
+        fwField.createEl('label', { text: t('ws new space framework') }).setCssStyles({
+            display: 'block',
+            fontSize: '12px',
+            color: 'var(--text-muted)',
+            marginBottom: '6px',
+        });
         const sel = fwField.createEl('select');
-        sel.style.cssText = 'width:100%;';
+        sel.setCssStyles({ width: '100%' });
         (['para', 'overview', 'custom'] as FrameworkId[]).forEach(id => {
             sel.createEl('option', { value: id, text: fwLabel(id) });
         });
@@ -209,7 +219,11 @@ class NewSpaceModal extends Modal {
         sel.onchange = () => { this.framework = sel.value as FrameworkId; };
 
         const foot = contentEl.createDiv();
-        foot.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
+        foot.setCssStyles({
+            display: 'flex',
+            gap: '8px',
+            justifyContent: 'flex-end',
+        });
         const cancel = foot.createEl('button', { text: t('ws cancel') });
         cancel.onclick = () => this.close();
         const create = foot.createEl('button', { cls: 'mod-cta', text: t('ws create') });

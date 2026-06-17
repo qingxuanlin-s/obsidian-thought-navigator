@@ -7,10 +7,17 @@ export function promptTitle(app: App, header: string, onSubmit: (value: string) 
         onOpen() {
             this.titleEl.setText(header);
             const input = this.contentEl.createEl('input', { type: 'text' });
-            input.style.cssText = 'width:100%;margin-bottom:14px;';
+            input.setCssStyles({
+                width: '100%',
+                marginBottom: '14px',
+            });
             input.value = initial;
             const foot = this.contentEl.createDiv();
-            foot.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
+            foot.setCssStyles({
+                display: 'flex',
+                gap: '8px',
+                justifyContent: 'flex-end',
+            });
             const cancel = foot.createEl('button', { text: t('ws cancel') });
             cancel.onclick = () => this.close();
             const ok = foot.createEl('button', { cls: 'mod-cta', text: t('ws create') });

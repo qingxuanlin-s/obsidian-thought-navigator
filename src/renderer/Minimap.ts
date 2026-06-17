@@ -58,8 +58,10 @@ export class Minimap {
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
         this.canvas.width = Minimap.W * dpr;
         this.canvas.height = Minimap.H * dpr;
-        this.canvas.style.width = `${Minimap.W}px`;
-        this.canvas.style.height = `${Minimap.H}px`;
+        this.canvas.setCssStyles({
+            width: `${Minimap.W}px`,
+            height: `${Minimap.H}px`,
+        });
         this.ctx = this.canvas.getContext('2d');
         if (this.ctx) this.ctx.scale(dpr, dpr);
 
@@ -279,10 +281,12 @@ export class Minimap {
         const clipW = Math.max(0, right - left);
         const clipH = Math.max(0, bottom - top);
 
-        this.viewport.style.left = `${left}px`;
-        this.viewport.style.top = `${top}px`;
-        this.viewport.style.width = `${clipW}px`;
-        this.viewport.style.height = `${clipH}px`;
+        this.viewport.setCssStyles({
+            left: `${left}px`,
+            top: `${top}px`,
+            width: `${clipW}px`,
+            height: `${clipH}px`,
+        });
     }
 
     /** 外部触发刷新(渲染器复用 cy 实例后) */

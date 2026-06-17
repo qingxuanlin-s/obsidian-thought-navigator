@@ -32,8 +32,11 @@ export class Deck {
         // head
         const top = this.head.createDiv({ cls: 'deck-top' });
         const badge = top.createSpan({ cls: 'deck-badge' });
-        badge.style.cssText = `color:${TYPE_COLOR[node.type]};background:rgba(255,255,255,0.05);`;
-        badge.createSpan({ cls: 'bd' }).style.background = TYPE_COLOR[node.type];
+        badge.setCssStyles({
+            color: `${TYPE_COLOR[node.type]}`,
+            background: 'rgba(255,255,255,0.05)',
+        });
+        badge.createSpan({ cls: 'bd' }).setCssStyles({ background: TYPE_COLOR[node.type] });
         badge.appendText(TYPE_LABEL[node.type] || node.type);
         top.createSpan({ cls: 'sp' });
         const pin = top.createSpan({ cls: 'deck-icon', text: '📌' });
@@ -72,7 +75,7 @@ export class Deck {
                 const cell = meta.createDiv({ cls: 'mi' });
                 cell.createDiv({ cls: 'k', text: k });
                 const val = cell.createDiv({ cls: 'v', text: v });
-                if (color) val.style.color = color;
+                if (color) val.setCssStyles({ color: color });
                 return cell;
             };
             mi(t('ws status'), statusLabel(p.status), STATUS_COLOR[p.status]);
@@ -80,7 +83,10 @@ export class Deck {
             const progCell = mi(t('ws progress'), pct === null ? '—' : `${pct}%`);
             if (pct !== null) {
                 const bar = progCell.createDiv({ cls: 'dbar' });
-                bar.createEl('i').style.cssText = `width:${pct}%;background:${STATUS_COLOR[p.status]};`;
+                bar.createEl('i').setCssStyles({
+                    width: `${pct}%`,
+                    background: `${STATUS_COLOR[p.status]}`,
+                });
             }
             mi(t('ws updated'), relTime(p.updatedAt));
             mi(t('ws next'), p.nextAction || '—');

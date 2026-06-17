@@ -188,18 +188,18 @@ export function getPreviewCardTheme(data: any, options: RenderOptions | null | u
 }
 
 export function applyPreviewHeaderLinkStyle(linkEl: HTMLElement): void {
-	linkEl.style.cssText = `
-		overflow: hidden;
-		text-overflow: ellipsis;
-		cursor: pointer;
-		color: var(--text-muted);
-		transition: color 0.15s ease;
-	`;
+	linkEl.setCssStyles({
+		overflow: 'hidden',
+		textOverflow: 'ellipsis',
+		cursor: 'pointer',
+		color: 'var(--text-muted)',
+		transition: 'color 0.15s ease',
+	});
 	linkEl.addEventListener('mouseenter', () => {
-		linkEl.style.color = 'var(--text-normal)';
+		linkEl.setCssStyles({ color: 'var(--text-normal)' });
 	});
 	linkEl.addEventListener('mouseleave', () => {
-		linkEl.style.color = 'var(--text-muted)';
+		linkEl.setCssStyles({ color: 'var(--text-muted)' });
 	});
 }
 
@@ -260,12 +260,14 @@ export function createInlineColorPicker(
 	const updateUi = () => {
 		const hueRgb = hsvToRgb(h, 1, 1);
 		const hueHex = rgbToHex(hueRgb.r, hueRgb.g, hueRgb.b);
-		svArea.style.backgroundColor = hueHex;
-		hueHandle.style.left = `${(h / 360) * 100}%`;
-		svHandle.style.left = `${s * 100}%`;
-		svHandle.style.top = `${(1 - v) * 100}%`;
+		svArea.setCssStyles({ backgroundColor: hueHex });
+		hueHandle.setCssStyles({ left: `${(h / 360) * 100}%` });
+		svHandle.setCssStyles({
+			left: `${s * 100}%`,
+			top: `${(1 - v) * 100}%`,
+		});
 		const out = hsvToRgb(h, s, v);
-		preview.style.backgroundColor = rgbToHex(out.r, out.g, out.b);
+		preview.setCssStyles({ backgroundColor: rgbToHex(out.r, out.g, out.b) });
 	};
 
 	const currentHex = () => {
@@ -372,7 +374,7 @@ export function createSelectionColorPanel(
 		swatch.type = 'button';
 		swatch.className = `zk-text-selection-color-swatch${extraClass ? ' ' + extraClass : ''}`;
 		swatch.dataset.color = color;
-		swatch.style.backgroundColor = color;
+		swatch.setCssStyles({ backgroundColor: color });
 		swatch.title = title;
 		swatch.addEventListener('mousedown', (e) => {
 			e.preventDefault();

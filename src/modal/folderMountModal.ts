@@ -55,12 +55,18 @@ export class FolderMountModal extends SuggestModal<PickItem> {
     }
 
     renderSuggestion(item: PickItem, el: HTMLElement): void {
-        el.style.display = 'flex';
-        el.style.alignItems = 'center';
-        el.style.gap = '8px';
+        el.setCssStyles({
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+        });
 
         const icon = el.createSpan();
-        icon.style.cssText = 'flex-shrink: 0; width: 16px; text-align: center;';
+        icon.setCssStyles({
+            flexShrink: '0',
+            width: '16px',
+            textAlign: 'center',
+        });
         if (item.node.icon) {
             setIcon(icon, item.node.icon);
         } else {
@@ -68,12 +74,21 @@ export class FolderMountModal extends SuggestModal<PickItem> {
         }
 
         const path = el.createSpan();
-        path.style.cssText = 'flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+        path.setCssStyles({
+            flex: '1',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+        });
         path.setText(this.index.getDisplayPath(item.node.id));
 
         if (item.mounted) {
             const check = el.createSpan();
-            check.style.cssText = 'color: var(--interactive-accent); font-weight: 700; flex-shrink: 0;';
+            check.setCssStyles({
+                color: 'var(--interactive-accent)',
+                fontWeight: '700',
+                flexShrink: '0',
+            });
             check.setText('✓');
         }
     }

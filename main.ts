@@ -473,7 +473,12 @@ export default class ZKNavigationPlugin extends Plugin {
                 img.className = 'zk-moc-embed-img';
                 img.dataset.mocFile = mocFile.path;
                 img.src = this.app.vault.getResourcePath(pngFile);
-                img.style.cssText = 'display:block;width:100%;height:auto;border-radius:6px;';
+                img.setCssStyles({
+                    display: 'block',
+                    width: '100%',
+                    height: 'auto',
+                    borderRadius: '6px',
+                });
                 img.alt = mocFile.basename;
                 img.draggable = false;
                 img.addEventListener('dblclick', async (evt: MouseEvent) => {

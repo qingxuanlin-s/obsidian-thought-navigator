@@ -988,31 +988,35 @@ export class CytoscapeRenderer implements IGraphRenderer {
         const restorePreviewWeight = (card: HTMLElement) => {
             const nodeId = card.dataset.nodeId || '';
             const isSelected = !!nodeId && !!this.cy?.$id(nodeId)?.selected?.();
-            card.style.opacity = isSelected ? '1' : '0.82';
-            card.style.filter = isSelected ? 'brightness(1) saturate(1)' : 'brightness(0.86) saturate(0.92)';
+            card.setCssStyles({
+                opacity: isSelected ? '1' : '0.82',
+                filter: isSelected ? 'brightness(1) saturate(1)' : 'brightness(0.86) saturate(0.92)',
+            });
             delete card.dataset.levelDimmed;
         };
 
         this.container.querySelectorAll<HTMLElement>('.zk-embed-preview-card, .zk-image-preview-card')
             .forEach(card => {
                 if (clearing) {
-                    card.style.display = '';
+                    card.setCssStyles({ display: '' });
                     if (card.dataset.levelDimmed === '1') restorePreviewWeight(card);
                     return;
                 }
 
                 const isVisible = visibleCyIds!.has(card.dataset.nodeId || '');
                 if (visibilityMode === 'dim') {
-                    card.style.display = '';
+                    card.setCssStyles({ display: '' });
                     if (isVisible) {
                         if (card.dataset.levelDimmed === '1') restorePreviewWeight(card);
                     } else {
                         card.dataset.levelDimmed = '1';
-                        card.style.opacity = '0.28';
-                        card.style.filter = 'brightness(0.72) saturate(0.72)';
+                        card.setCssStyles({
+                            opacity: '0.28',
+                            filter: 'brightness(0.72) saturate(0.72)',
+                        });
                     }
                 } else {
-                    card.style.display = isVisible ? '' : 'none';
+                    card.setCssStyles({ display: isVisible ? '' : 'none' });
                     if (card.dataset.levelDimmed === '1') restorePreviewWeight(card);
                 }
             });
@@ -1027,11 +1031,13 @@ export class CytoscapeRenderer implements IGraphRenderer {
         ].join(', '))
             .forEach(el => {
                 if (clearing) {
-                    if (el.dataset.levelHidden === '1') el.style.display = '';
+                    if (el.dataset.levelHidden === '1') el.setCssStyles({ display: '' });
                     if (el.dataset.levelDimmed === '1') {
-                        el.style.opacity = '';
-                        el.style.filter = '';
-                        el.style.pointerEvents = '';
+                        el.setCssStyles({
+                            opacity: '',
+                            filter: '',
+                            pointerEvents: '',
+                        });
                     }
                     delete el.dataset.levelDimmed;
                     delete el.dataset.levelHidden;
@@ -1043,45 +1049,55 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 const isVisible = !!nodeId && visibleCyIds!.has(nodeId);
                 const isDimmed = !!cyNode?.length && cyNode.hasClass('zk-level-dimmed');
                 if (visibilityMode === 'dim') {
-                    if (el.dataset.levelHidden === '1') el.style.display = '';
+                    if (el.dataset.levelHidden === '1') el.setCssStyles({ display: '' });
                     delete el.dataset.levelHidden;
                     if (!isDimmed) {
                         if (el.dataset.levelDimmed === '1') {
-                            el.style.opacity = '';
-                            el.style.filter = '';
-                            el.style.pointerEvents = '';
+                            el.setCssStyles({
+                                opacity: '',
+                                filter: '',
+                                pointerEvents: '',
+                            });
                         }
                         delete el.dataset.levelDimmed;
                     } else {
                         el.dataset.levelDimmed = '1';
                         if (isLightTheme && el.classList.contains('zk-text-md-overlay')) {
-                            el.style.opacity = '0.92';
-                            el.style.filter = 'none';
+                            el.setCssStyles({
+                                opacity: '0.92',
+                                filter: 'none',
+                            });
                         } else {
-                            el.style.opacity = '0.16';
-                            el.style.filter = 'brightness(0.62) saturate(0.58)';
+                            el.setCssStyles({
+                                opacity: '0.16',
+                                filter: 'brightness(0.62) saturate(0.58)',
+                            });
                         }
-                        el.style.pointerEvents = 'none';
+                        el.setCssStyles({ pointerEvents: 'none' });
                     }
                 } else {
                     if (isVisible) {
-                        if (el.dataset.levelHidden === '1') el.style.display = '';
+                        if (el.dataset.levelHidden === '1') el.setCssStyles({ display: '' });
                     } else {
                         el.dataset.levelHidden = '1';
-                        el.style.display = 'none';
+                        el.setCssStyles({ display: 'none' });
                     }
                     if (el.dataset.levelDimmed === '1') {
-                        el.style.opacity = '';
-                        el.style.filter = '';
-                        el.style.pointerEvents = '';
+                        el.setCssStyles({
+                            opacity: '',
+                            filter: '',
+                            pointerEvents: '',
+                        });
                     }
                     delete el.dataset.levelDimmed;
                 }
             });
 
         this.container.querySelectorAll<HTMLElement>('.zk-group-glass-layer').forEach(layer => {
-            layer.style.display = clearing || visibilityMode === 'dim' ? '' : 'none';
-            layer.style.opacity = clearing ? '' : (visibilityMode === 'dim' ? '0.26' : '');
+            layer.setCssStyles({
+                display: clearing || visibilityMode === 'dim' ? '' : 'none',
+                opacity: clearing ? '' : (visibilityMode === 'dim' ? '0.26' : ''),
+            });
         });
     }
 
@@ -1210,7 +1226,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 const t = tn.position();
                 // 控制点必须在各自端的节点框外,否则 Cytoscape 求不到端点交点会丢边。
                 // 源端/目标端分别按自身半尺寸取最小切向距离 —— 小源端不再被大目标卡片连累出长肘弯。
-                const margin = 10;
+                // margin 不能太小:超大节点(如撑到 693px 的根节点)旁的层级边,控制点只比框沿多
+                // 几像素时,Cytoscape 的 multibezier 端点求解仍会失败丢边;给足出框余量更稳。
+                const margin = 24;
                 const minTangentSource = horizontal
                     ? sn.width() / 2 + margin
                     : sn.height() / 2 + margin;
@@ -1230,7 +1248,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 // Cytoscape 拿"中心→控制点"求交得不到端点 → startX/endX=NaN;而 multibezier
                 // (多控制点)又不会触发 Cytoscape 的 tryToCorrectInvalidPoints 自愈 → 报 invalid endpoints。
                 // 按真实外框沿中心连线求"出框参数",把两端 weight 钳进 [wMin, wMax]。
-                const margin2 = 12;
+                const margin2 = 24;
                 const dx = t.x - s.x;
                 const dy = t.y - s.y;
                 const adx = Math.abs(dx) || 1e-6;
@@ -1239,8 +1257,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 const tExitTgt = Math.min((tn.outerWidth() / 2 + margin2) / adx, (tn.outerHeight() / 2 + margin2) / ady);
                 const wMin = tExitSrc;
                 const wMax = 1 - tExitTgt;
-                // 两端外框沿连线吃掉了整段(大卡贴大卡):无处放控制点,降级直线最稳。
-                if (wMin >= wMax) {
+                // 两端外框沿连线吃掉了大半条弦(大节点贴近的短边):留给曲线的弦区间过窄,钳位后
+                // 首/末控制点挤到一起 → bezier 退化、端点无解。此时降级直线最稳(拉开自动恢复)。
+                if (wMax - wMin < 0.12) {
                     edge.addClass('zk-near-straight');
                     return;
                 }
@@ -1258,6 +1277,27 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 edge.data('autoCpWeights', weights);
             });
         });
+
+        // 兜底:前面的几何判据(余量/弦区间)仍是估算,无法 100% 命中 Cytoscape multibezier
+        // 端点求解的所有失败情形。渲染一帧后用真实结果(rscratch 端点是否 NaN)兜底:凡仍无效的
+        // 层级边强制降级直线 —— 节点不重叠时直线必有合法端点,保证「绝不丢边」。几何改善后下次
+        // 全量刷新会 removeClass 重算回曲线,自我纠正。仅全量刷新(无 edges 参数)时跑。
+        if (!edges) {
+            requestAnimationFrame(() => {
+                if (!this.isCyUsable() || !this.cy) return;
+                let fixed = 0;
+                this.cy.edges('[type="parent"], [type="forward"]').forEach((edge: any) => {
+                    if (edge.hasClass('zk-near-straight')) return;
+                    let invalid = false;
+                    try {
+                        const rs = (edge[0] as any)?._private?.rscratch;
+                        invalid = !rs || ![rs.startX, rs.startY, rs.endX, rs.endY].every((v: number) => Number.isFinite(v));
+                    } catch { invalid = true; }
+                    if (invalid) { edge.addClass('zk-near-straight'); fixed++; }
+                });
+                if (fixed > 0) this.cy.style().update();
+            });
+        }
     }
 
     /**
@@ -1399,79 +1439,85 @@ export class CytoscapeRenderer implements IGraphRenderer {
     ): void {
         // 创建遮罩层
         const overlay = document.createElement('div');
-        overlay.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            z-index: 10000;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        `;
+        overlay.setCssStyles({
+            position: 'fixed',
+            top: '0',
+            left: '0',
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            zIndex: '10000',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+        });
 
         // 创建对话框
         const dialog = document.createElement('div');
-        dialog.style.cssText = `
-            background-color: var(--background-primary);
-            border: 1px solid var(--background-modifier-border);
-            border-radius: 8px;
-            padding: 20px;
-            min-width: 350px;
-            max-width: 500px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        `;
+        dialog.setCssStyles({
+            backgroundColor: 'var(--background-primary)',
+            border: '1px solid var(--background-modifier-border)',
+            borderRadius: '8px',
+            padding: '20px',
+            minWidth: '350px',
+            maxWidth: '500px',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+        });
 
         // 标题
         const title = document.createElement('h3');
         title.textContent = '选择操作';
-        title.style.cssText = `
-            margin: 0 0 15px 0;
-            color: var(--text-normal);
-            font-size: 16px;
-        `;
+        title.setCssStyles({
+            margin: '0 0 15px 0',
+            color: 'var(--text-normal)',
+            fontSize: '16px',
+        });
 
         // 提示信息
         const info = document.createElement('p');
         info.textContent = '部分节点已在分组中，请选择操作：';
-        info.style.cssText = `
-            margin: 0 0 15px 0;
-            color: var(--text-muted);
-            font-size: 14px;
-        `;
+        info.setCssStyles({
+            margin: '0 0 15px 0',
+            color: 'var(--text-muted)',
+            fontSize: '14px',
+        });
 
         // 选项容器
         const optionsContainer = document.createElement('div');
-        optionsContainer.style.cssText = `
-            margin-bottom: 20px;
-        `;
+        optionsContainer.setCssStyles({ marginBottom: '20px' });
 
         // 创建新分组选项
         const newGroupOption = document.createElement('div');
-        newGroupOption.style.cssText = `
-            padding: 10px;
-            margin-bottom: 10px;
-            border: 2px solid var(--background-modifier-border);
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.2s;
-        `;
+        newGroupOption.setCssStyles({
+            padding: '10px',
+            marginBottom: '10px',
+            border: '2px solid var(--background-modifier-border)',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+        });
         const newGroupTitle = newGroupOption.createDiv({ text: '创建新分组' });
-        newGroupTitle.style.fontWeight = '600';
-        newGroupTitle.style.color = 'var(--text-normal)';
-        newGroupTitle.style.marginBottom = '4px';
+        newGroupTitle.setCssStyles({
+            fontWeight: '600',
+            color: 'var(--text-normal)',
+            marginBottom: '4px',
+        });
         const newGroupDesc = newGroupOption.createDiv({ text: '将选中的节点创建为新的分组' });
-        newGroupDesc.style.fontSize = '12px';
-        newGroupDesc.style.color = 'var(--text-muted)';
+        newGroupDesc.setCssStyles({
+            fontSize: '12px',
+            color: 'var(--text-muted)',
+        });
         newGroupOption.addEventListener('mouseenter', () => {
-            newGroupOption.style.borderColor = '#5b8fd9';
-            newGroupOption.style.backgroundColor = 'rgba(91, 143, 217, 0.1)';
+            newGroupOption.setCssStyles({
+                borderColor: '#5b8fd9',
+                backgroundColor: 'rgba(91, 143, 217, 0.1)',
+            });
         });
         newGroupOption.addEventListener('mouseleave', () => {
-            newGroupOption.style.borderColor = 'var(--background-modifier-border)';
-            newGroupOption.style.backgroundColor = 'transparent';
+            newGroupOption.setCssStyles({
+                borderColor: 'var(--background-modifier-border)',
+                backgroundColor: 'transparent',
+            });
         });
         newGroupOption.addEventListener('click', () => {
             overlay.remove();
@@ -1483,28 +1529,36 @@ export class CytoscapeRenderer implements IGraphRenderer {
         // 为每个现有分组创建选项
         existingGroups.forEach(group => {
             const groupOption = document.createElement('div');
-            groupOption.style.cssText = `
-                padding: 10px;
-                margin-bottom: 10px;
-                border: 2px solid var(--background-modifier-border);
-                border-radius: 6px;
-                cursor: pointer;
-                transition: all 0.2s;
-            `;
+            groupOption.setCssStyles({
+                padding: '10px',
+                marginBottom: '10px',
+                border: '2px solid var(--background-modifier-border)',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+            });
             const groupTitle = groupOption.createDiv({ text: `添加到「${group.label}」` });
-            groupTitle.style.fontWeight = '600';
-            groupTitle.style.color = 'var(--text-normal)';
-            groupTitle.style.marginBottom = '4px';
+            groupTitle.setCssStyles({
+                fontWeight: '600',
+                color: 'var(--text-normal)',
+                marginBottom: '4px',
+            });
             const groupDesc = groupOption.createDiv({ text: `将新选中的节点添加到此分组（当前 ${group.nodeIds.length} 个节点）` });
-            groupDesc.style.fontSize = '12px';
-            groupDesc.style.color = 'var(--text-muted)';
+            groupDesc.setCssStyles({
+                fontSize: '12px',
+                color: 'var(--text-muted)',
+            });
             groupOption.addEventListener('mouseenter', () => {
-                groupOption.style.borderColor = '#5b8fd9';
-                groupOption.style.backgroundColor = 'rgba(91, 143, 217, 0.1)';
+                groupOption.setCssStyles({
+                    borderColor: '#5b8fd9',
+                    backgroundColor: 'rgba(91, 143, 217, 0.1)',
+                });
             });
             groupOption.addEventListener('mouseleave', () => {
-                groupOption.style.borderColor = 'var(--background-modifier-border)';
-                groupOption.style.backgroundColor = 'transparent';
+                groupOption.setCssStyles({
+                    borderColor: 'var(--background-modifier-border)',
+                    backgroundColor: 'transparent',
+                });
             });
             groupOption.addEventListener('click', () => {
                 overlay.remove();
@@ -1517,16 +1571,16 @@ export class CytoscapeRenderer implements IGraphRenderer {
         // 取消按钮
         const cancelButton = document.createElement('button');
         cancelButton.textContent = '取消';
-        cancelButton.style.cssText = `
-            width: 100%;
-            padding: 8px;
-            border: 1px solid var(--background-modifier-border);
-            border-radius: 4px;
-            background-color: var(--background-primary);
-            color: var(--text-normal);
-            cursor: pointer;
-            font-size: 14px;
-        `;
+        cancelButton.setCssStyles({
+            width: '100%',
+            padding: '8px',
+            border: '1px solid var(--background-modifier-border)',
+            borderRadius: '4px',
+            backgroundColor: 'var(--background-primary)',
+            color: 'var(--text-normal)',
+            cursor: 'pointer',
+            fontSize: '14px',
+        });
         cancelButton.addEventListener('click', () => {
             overlay.remove();
         });
@@ -1546,76 +1600,76 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private showGroupNameDialog(callback: (name: string | null) => void, defaultValue: string = '分组1'): void {
         // 创建遮罩层
         const overlay = document.createElement('div');
-        overlay.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            z-index: 10000;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        `;
+        overlay.setCssStyles({
+            position: 'fixed',
+            top: '0',
+            left: '0',
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            zIndex: '10000',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+        });
 
         // 创建对话框
         const dialog = document.createElement('div');
-        dialog.style.cssText = `
-            background-color: var(--background-primary);
-            border: 1px solid var(--background-modifier-border);
-            border-radius: 8px;
-            padding: 20px;
-            min-width: 300px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        `;
+        dialog.setCssStyles({
+            backgroundColor: 'var(--background-primary)',
+            border: '1px solid var(--background-modifier-border)',
+            borderRadius: '8px',
+            padding: '20px',
+            minWidth: '300px',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+        });
 
         // 标题
         const title = document.createElement('h3');
         title.textContent = '创建分组';
-        title.style.cssText = `
-            margin: 0 0 15px 0;
-            color: var(--text-normal);
-            font-size: 16px;
-        `;
+        title.setCssStyles({
+            margin: '0 0 15px 0',
+            color: 'var(--text-normal)',
+            fontSize: '16px',
+        });
 
         // 输入框
         const input = document.createElement('input');
         input.type = 'text';
         input.placeholder = '请输入分组名称';
         input.value = defaultValue;
-        input.style.cssText = `
-            width: 100%;
-            padding: 8px;
-            margin-bottom: 15px;
-            border: 1px solid var(--background-modifier-border);
-            border-radius: 4px;
-            background-color: var(--background-primary);
-            color: var(--text-normal);
-            font-size: 14px;
-            box-sizing: border-box;
-        `;
+        input.setCssStyles({
+            width: '100%',
+            padding: '8px',
+            marginBottom: '15px',
+            border: '1px solid var(--background-modifier-border)',
+            borderRadius: '4px',
+            backgroundColor: 'var(--background-primary)',
+            color: 'var(--text-normal)',
+            fontSize: '14px',
+            boxSizing: 'border-box',
+        });
 
         // 按钮容器
         const buttonContainer = document.createElement('div');
-        buttonContainer.style.cssText = `
-            display: flex;
-            justify-content: flex-end;
-            gap: 10px;
-        `;
+        buttonContainer.setCssStyles({
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '10px',
+        });
 
         // 取消按钮
         const cancelButton = document.createElement('button');
         cancelButton.textContent = '取消';
-        cancelButton.style.cssText = `
-            padding: 6px 16px;
-            border: 1px solid var(--background-modifier-border);
-            border-radius: 4px;
-            background-color: var(--background-primary);
-            color: var(--text-normal);
-            cursor: pointer;
-            font-size: 14px;
-        `;
+        cancelButton.setCssStyles({
+            padding: '6px 16px',
+            border: '1px solid var(--background-modifier-border)',
+            borderRadius: '4px',
+            backgroundColor: 'var(--background-primary)',
+            color: 'var(--text-normal)',
+            cursor: 'pointer',
+            fontSize: '14px',
+        });
         cancelButton.addEventListener('click', () => {
             overlay.remove();
             callback(null);
@@ -1624,15 +1678,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
         // 确认按钮
         const confirmButton = document.createElement('button');
         confirmButton.textContent = '确认';
-        confirmButton.style.cssText = `
-            padding: 6px 16px;
-            border: none;
-            border-radius: 4px;
-            background-color: #5b8fd9;
-            color: #ffffff;
-            cursor: pointer;
-            font-size: 14px;
-        `;
+        confirmButton.setCssStyles({
+            padding: '6px 16px',
+            border: 'none',
+            borderRadius: '4px',
+            backgroundColor: '#5b8fd9',
+            color: '#ffffff',
+            cursor: 'pointer',
+            fontSize: '14px',
+        });
         confirmButton.addEventListener('click', () => {
             const value = input.value.trim();
             overlay.remove();

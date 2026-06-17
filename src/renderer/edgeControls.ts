@@ -105,15 +105,15 @@ export class EdgeControls {
 
 		const handleContainer = document.createElement('div');
 		handleContainer.className = 'zk-connection-handles';
-		handleContainer.style.cssText = `
-			position: absolute;
-			top: 0;
-			left: 0;
-			width: 100%;
-			height: 100%;
-			pointer-events: none;
-			z-index: 3;
-		`;
+		handleContainer.setCssStyles({
+			position: 'absolute',
+			top: '0',
+			left: '0',
+			width: '100%',
+			height: '100%',
+			pointerEvents: 'none',
+			zIndex: '3',
+		});
 		container.appendChild(handleContainer);
 
 		const handleUpdaters: Array<() => void> = [];
@@ -128,23 +128,21 @@ export class EdgeControls {
 			const handle = document.createElement('div');
 			handle.className = 'zk-connection-handle';
 			const baseHandleSize = 36;
-			handle.style.cssText = `
-				position: absolute;
-				width: ${baseHandleSize}px;
-				height: ${baseHandleSize}px;
-				background: radial-gradient(circle at 50% 34%, #7aa6e6 0%, #5b8fd9 60%, #4a7bc4 100%);
-				border: 1.5px solid rgba(255, 255, 255, 0.55);
-				border-radius: 50%;
-				cursor: crosshair;
-				pointer-events: auto;
-				transform: translate(-50%, -50%);
-				box-shadow: 0 0 10px rgba(91, 143, 217, 0.55),
-					0 1px 3px rgba(0, 0, 0, 0.3),
-					inset 0 1px 0 rgba(255, 255, 255, 0.35);
-				opacity: 0;
-				transition: opacity 0.2s;
-			`;
-			handle.style.display = 'none';
+			handle.setCssStyles({
+				position: 'absolute',
+				width: `${baseHandleSize}px`,
+				height: `${baseHandleSize}px`,
+				background: 'radial-gradient(circle at 50% 34%, #7aa6e6 0%, #5b8fd9 60%, #4a7bc4 100%)',
+				border: '1.5px solid rgba(255, 255, 255, 0.55)',
+				borderRadius: '50%',
+				cursor: 'crosshair',
+				pointerEvents: 'auto',
+				transform: 'translate(-50%, -50%)',
+				boxShadow: '0 0 10px rgba(91, 143, 217, 0.55), 0 1px 3px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.35)',
+				opacity: '0',
+				transition: 'opacity 0.2s',
+			});
+			handle.setCssStyles({ display: 'none' });
 			handleContainer.appendChild(handle);
 
 			const nodeId = node.id();
@@ -156,7 +154,7 @@ export class EdgeControls {
 				const currentContainer = this.deps.getContainer();
 				if (!currentCy || !currentContainer) return;
 				if (handle.style.opacity === '0') {
-					handle.style.display = 'none';
+					handle.setCssStyles({ display: 'none' });
 					return;
 				}
 
@@ -166,7 +164,7 @@ export class EdgeControls {
 					node.style('display') === 'none' ||
 					!node.visible();
 				if (isHidden) {
-					handle.style.display = 'none';
+					handle.setCssStyles({ display: 'none' });
 					return;
 				}
 
@@ -178,7 +176,7 @@ export class EdgeControls {
 				if (curIsImageNode) {
 					const rp = node.renderedPosition();
 					if (!Number.isFinite(rp?.x) || !Number.isFinite(rp?.y)) {
-						handle.style.display = 'none';
+						handle.setCssStyles({ display: 'none' });
 						return;
 					}
 					if (!handleImageCardCache) handleImageCardCache = currentContainer.querySelector(`.zk-image-preview-card[data-node-id="${nodeId}"]`) as HTMLElement ?? null;
@@ -192,7 +190,7 @@ export class EdgeControls {
 				} else if (curIsEmbedNode) {
 					const boundingBox = node.renderedBoundingBox();
 					if (!Number.isFinite(boundingBox?.x1) || !Number.isFinite(boundingBox?.x2) || !Number.isFinite(boundingBox?.y1) || !Number.isFinite(boundingBox?.y2)) {
-						handle.style.display = 'none';
+						handle.setCssStyles({ display: 'none' });
 						return;
 					}
 					if (!handleEmbedCardCache) handleEmbedCardCache = currentContainer.querySelector(`.zk-embed-preview-card[data-node-id="${nodeId}"]`) as HTMLElement ?? null;
@@ -206,7 +204,7 @@ export class EdgeControls {
 				} else {
 					const boundingBox = node.renderedBoundingBox();
 					if (!Number.isFinite(boundingBox?.x2) || !Number.isFinite(boundingBox?.y1) || !Number.isFinite(boundingBox?.y2)) {
-						handle.style.display = 'none';
+						handle.setCssStyles({ display: 'none' });
 						return;
 					}
 					x = boundingBox.x2;
@@ -214,17 +212,21 @@ export class EdgeControls {
 				}
 
 				if (!Number.isFinite(x) || !Number.isFinite(y)) {
-					handle.style.display = 'none';
+					handle.setCssStyles({ display: 'none' });
 					return;
 				}
 
-				handle.style.display = 'block';
-				handle.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
+				handle.setCssStyles({
+					display: 'block',
+					transform: `translate(${x}px, ${y}px) translate(-50%, -50%)`,
+				});
 				if (zoom !== handleLastZoom) {
 					handleLastZoom = zoom;
-					handle.style.width = `${baseHandleSize * zoom}px`;
-					handle.style.height = `${baseHandleSize * zoom}px`;
-					handle.style.borderWidth = `${2 * zoom}px`;
+					handle.setCssStyles({
+						width: `${baseHandleSize * zoom}px`,
+						height: `${baseHandleSize * zoom}px`,
+						borderWidth: `${2 * zoom}px`,
+					});
 				}
 			};
 
@@ -250,15 +252,17 @@ export class EdgeControls {
 			const showHandle = () => {
 				if (this.isEdgeSelected) return;
 				cancelHide();
-				handle.style.opacity = '1';
+				handle.setCssStyles({ opacity: '1' });
 				updateHandlePosition();
 			};
 			const scheduleHide = () => {
 				cancelHide();
 				hideTimer = window.setTimeout(() => {
 					hideTimer = null;
-					handle.style.opacity = '0';
-					handle.style.display = 'none';
+					handle.setCssStyles({
+						opacity: '0',
+						display: 'none',
+					});
 				}, 80);
 			};
 
@@ -300,23 +304,25 @@ export class EdgeControls {
 
 		const controlPointContainer = document.createElement('div');
 		controlPointContainer.className = 'zk-edge-control-points';
-		controlPointContainer.style.cssText = `
-			position: absolute;
-			top: 0;
-			left: 0;
-			width: 100%;
-			height: 100%;
-			pointer-events: none;
-			z-index: 2;
-		`;
+		controlPointContainer.setCssStyles({
+			position: 'absolute',
+			top: '0',
+			left: '0',
+			width: '100%',
+			height: '100%',
+			pointerEvents: 'none',
+			zIndex: '2',
+		});
 		container.appendChild(controlPointContainer);
 
 		this.edgeControlSelectHandler = (evt: any) => {
 			const edge = evt.target;
 			this.isEdgeSelected = true;
 			this.deps.getContainer()?.querySelectorAll('.zk-connection-handle').forEach((h: Element) => {
-				(h as HTMLElement).style.opacity = '0';
-				(h as HTMLElement).style.pointerEvents = 'none';
+				(h as HTMLElement).setCssStyles({
+					opacity: '0',
+					pointerEvents: 'none',
+				});
 			});
 			this.showEdgeControlPoint(edge, controlPointContainer);
 		};
@@ -325,7 +331,7 @@ export class EdgeControls {
 		this.edgeControlUnselectHandler = () => {
 			this.isEdgeSelected = false;
 			this.deps.getContainer()?.querySelectorAll('.zk-connection-handle').forEach((h: Element) => {
-				(h as HTMLElement).style.pointerEvents = 'auto';
+				(h as HTMLElement).setCssStyles({ pointerEvents: 'auto' });
 			});
 			this.hideEdgeControlPoints(controlPointContainer);
 		};
@@ -334,7 +340,7 @@ export class EdgeControls {
 		this.edgeControlRemoveHandler = () => {
 			this.isEdgeSelected = false;
 			this.deps.getContainer()?.querySelectorAll('.zk-connection-handle').forEach((h: Element) => {
-				(h as HTMLElement).style.pointerEvents = 'auto';
+				(h as HTMLElement).setCssStyles({ pointerEvents: 'auto' });
 			});
 			this.hideEdgeControlPoints(controlPointContainer);
 		};
@@ -351,15 +357,15 @@ export class EdgeControls {
 
 		const handleContainer = document.createElement('div');
 		handleContainer.className = 'zk-edge-endpoint-handles';
-		handleContainer.style.cssText = `
-			position: absolute;
-			top: 0;
-			left: 0;
-			width: 100%;
-			height: 100%;
-			pointer-events: none;
-			z-index: 2;
-		`;
+		handleContainer.setCssStyles({
+			position: 'absolute',
+			top: '0',
+			left: '0',
+			width: '100%',
+			height: '100%',
+			pointerEvents: 'none',
+			zIndex: '2',
+		});
 		container.appendChild(handleContainer);
 
 		this.edgeEndpointSelectHandler = (evt: any) => {
@@ -438,17 +444,17 @@ export class EdgeControls {
 			e.stopPropagation();
 
 			isDragging = true;
-			handle.style.opacity = '1';
+			handle.setCssStyles({ opacity: '1' });
 			svgOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-			svgOverlay.style.cssText = `
-				position: absolute;
-				top: 0;
-				left: 0;
-				width: 100%;
-				height: 100%;
-				pointer-events: none;
-				z-index: 2;
-			`;
+			svgOverlay.setCssStyles({
+				position: 'absolute',
+				top: '0',
+				left: '0',
+				width: '100%',
+				height: '100%',
+				pointerEvents: 'none',
+				zIndex: '2',
+			});
 			container.appendChild(svgOverlay);
 
 			dragLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -598,24 +604,24 @@ export class EdgeControls {
 		const weight = data.controlPointWeight !== undefined ? data.controlPointWeight : 0.5;
 		const controlPoint = document.createElement('div');
 		controlPoint.className = 'zk-edge-control-point';
-		controlPoint.style.cssText = `
-			position: absolute;
-			width: 14px;
-			height: 14px;
-			background-color: rgba(148, 163, 184, 0.95);
-			border: 2px solid rgba(255, 255, 255, 0.95);
-			border-radius: 50%;
-			cursor: grab;
-			pointer-events: auto;
-			transform: translate(-50%, -50%);
-			box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-			z-index: 1000;
-		`;
+		controlPoint.setCssStyles({
+			position: 'absolute',
+			width: '14px',
+			height: '14px',
+			backgroundColor: 'rgba(148, 163, 184, 0.95)',
+			border: '2px solid rgba(255, 255, 255, 0.95)',
+			borderRadius: '50%',
+			cursor: 'grab',
+			pointerEvents: 'auto',
+			transform: 'translate(-50%, -50%)',
+			boxShadow: '0 2px 6px rgba(0, 0, 0, 0.35)',
+			zIndex: '1000',
+		});
 		container.appendChild(controlPoint);
 
 		const updateControlPointPosition = () => {
 			if (!this.deps.getCy() || !edge.inside()) {
-				controlPoint.style.display = 'none';
+				controlPoint.setCssStyles({ display: 'none' });
 				return;
 			}
 			let mid: { x: number; y: number } | null = null;
@@ -624,10 +630,12 @@ export class EdgeControls {
 			} catch { /* edge may have been removed */ }
 
 			if (mid && isFinite(mid.x) && isFinite(mid.y)) {
-				controlPoint.style.display = 'block';
-				controlPoint.style.transform = `translate(${mid.x}px, ${mid.y}px) translate(-50%, -50%)`;
+				controlPoint.setCssStyles({
+					display: 'block',
+					transform: `translate(${mid.x}px, ${mid.y}px) translate(-50%, -50%)`,
+				});
 			} else {
-				controlPoint.style.display = 'none';
+				controlPoint.setCssStyles({ display: 'none' });
 			}
 		};
 
@@ -667,7 +675,7 @@ export class EdgeControls {
 			isDragging = true;
 			dragStartDistance = edge.data('controlPointDistance') !== undefined ? edge.data('controlPointDistance') : distance;
 			dragStartProjection = (mouseX - midX) * perpX + (mouseY - midY) * perpY;
-			controlPoint.style.cursor = 'grabbing';
+			controlPoint.setCssStyles({ cursor: 'grabbing' });
 			document.addEventListener('mousemove', handleMouseMove);
 			document.addEventListener('mouseup', handleMouseUp);
 		});
@@ -711,7 +719,7 @@ export class EdgeControls {
 			detachDocListeners();
 			if (isDragging) {
 				isDragging = false;
-				controlPoint.style.cursor = 'grab';
+				controlPoint.setCssStyles({ cursor: 'grab' });
 			}
 		};
 
@@ -770,7 +778,7 @@ export class EdgeControls {
 	private createEndpointHandle(type: 'source' | 'target', node: any, edge: any, container: HTMLElement): HTMLElement {
 		const handle = document.createElement('div');
 		handle.className = `zk-edge-endpoint-handle zk-edge-endpoint-${type}`;
-		handle.style.display = 'none';
+		handle.setCssStyles({ display: 'none' });
 		container.appendChild(handle);
 		this.bindEndpointHandleDrag(handle, type, node, edge, container);
 		return handle;
@@ -778,7 +786,7 @@ export class EdgeControls {
 
 	private updateEndpointHandlePosition(handle: HTMLElement, edge: any, type: 'source' | 'target'): void {
 		if (!this.deps.getCy() || !edge.inside()) {
-			handle.style.display = 'none';
+			handle.setCssStyles({ display: 'none' });
 			return;
 		}
 
@@ -790,10 +798,12 @@ export class EdgeControls {
 		} catch { /* edge may have been removed */ }
 
 		if (endpoint && isFinite(endpoint.x) && isFinite(endpoint.y)) {
-			handle.style.display = 'block';
-			handle.style.transform = `translate(${endpoint.x}px, ${endpoint.y}px) translate(-50%, -50%)`;
+			handle.setCssStyles({
+				display: 'block',
+				transform: `translate(${endpoint.x}px, ${endpoint.y}px) translate(-50%, -50%)`,
+			});
 		} else {
-			handle.style.display = 'none';
+			handle.setCssStyles({ display: 'none' });
 		}
 	}
 
@@ -830,17 +840,17 @@ export class EdgeControls {
 			e.stopPropagation();
 
 			isDragging = true;
-			handle.style.cursor = 'grabbing';
+			handle.setCssStyles({ cursor: 'grabbing' });
 			svgOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-			svgOverlay.style.cssText = `
-				position: absolute;
-				top: 0;
-				left: 0;
-				width: 100%;
-				height: 100%;
-				pointer-events: none;
-				z-index: 2;
-			`;
+			svgOverlay.setCssStyles({
+				position: 'absolute',
+				top: '0',
+				left: '0',
+				width: '100%',
+				height: '100%',
+				pointerEvents: 'none',
+				zIndex: '2',
+			});
 			graphContainer.appendChild(svgOverlay);
 
 			dragLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -913,7 +923,7 @@ export class EdgeControls {
 			}
 			dragLine = null;
 			cy.nodes('.connection-target-hover').removeClass('connection-target-hover');
-			handle.style.cursor = 'grab';
+			handle.setCssStyles({ cursor: 'grab' });
 
 			if (!newTargetNode || newTargetNode === sourceOrTargetNode) return;
 			const edgeData = edge.data();

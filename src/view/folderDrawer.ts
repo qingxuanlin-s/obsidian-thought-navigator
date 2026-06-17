@@ -225,7 +225,7 @@ export class FolderDrawer {
 
     private renderFolderNode(parent: HTMLElement, node: FolderNode): void {
         const row = parent.createDiv("zk-folder-drawer-row zk-folder-drawer-row-folder");
-        row.style.paddingLeft = `${10 + node.depth * 14}px`;
+        row.setCssStyles({ paddingLeft: `${10 + node.depth * 14}px` });
 
         const hasChildren = node.childIds.length > 0;
         const chev = row.createSpan("zk-folder-drawer-chev");
@@ -290,9 +290,9 @@ export class FolderDrawer {
         const isCurrent = this.plugin.settings.mocCurrentFile === filePath;
 
         const row = parent.createDiv("zk-folder-drawer-row zk-folder-drawer-row-moc");
-        row.style.paddingLeft = `${10 + node.depth * 14}px`;
+        row.setCssStyles({ paddingLeft: `${10 + node.depth * 14}px` });
         if (isCurrent) row.addClass("is-current");
-        if (!exists) row.style.opacity = "0.5";
+        if (!exists) row.setCssStyles({ opacity: "0.5" });
 
         const hasChildren = node.childIds.length > 0;
         const chev = row.createSpan("zk-folder-drawer-chev");
@@ -531,7 +531,7 @@ export class FolderDrawer {
     private showNewChildInput(parentNode: FolderNode, parentEl: HTMLElement, anchorRow: HTMLElement): void {
         // 临时输入行插入到当前 row 之后
         const inputRow = parentEl.createDiv("zk-folder-drawer-input-row");
-        inputRow.style.paddingLeft = `${10 + (parentNode.depth + 1) * 14}px`;
+        inputRow.setCssStyles({ paddingLeft: `${10 + (parentNode.depth + 1) * 14}px` });
         anchorRow.after(inputRow);
         const input = inputRow.createEl("input", { type: "text", placeholder: t("New folder name") });
         input.addClass("zk-folder-drawer-input");

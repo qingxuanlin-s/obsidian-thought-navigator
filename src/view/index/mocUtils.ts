@@ -213,12 +213,14 @@ export class ModalUtils {
      * @param isPrimary - 是否为主要按钮
      */
     static applyButtonStyles(button: HTMLElement, isPrimary: boolean = false): void {
-        button.style.padding = '6px 16px';
-        button.style.border = isPrimary ? 'none' : '1px solid var(--background-modifier-border)';
-        button.style.borderRadius = '4px';
-        button.style.backgroundColor = isPrimary ? '#5b8fd9' : 'var(--background-primary)';
-        button.style.color = isPrimary ? '#ffffff' : 'var(--text-normal)';
-        button.style.cursor = 'pointer';
+        button.setCssStyles({
+            padding: '6px 16px',
+            border: isPrimary ? 'none' : '1px solid var(--background-modifier-border)',
+            borderRadius: '4px',
+            backgroundColor: isPrimary ? '#5b8fd9' : 'var(--background-primary)',
+            color: isPrimary ? '#ffffff' : 'var(--text-normal)',
+            cursor: 'pointer',
+        });
     }
 
     /**
@@ -236,26 +238,32 @@ export class ModalUtils {
         icon?: string
     ): HTMLElement {
         const warningDiv = container.createDiv();
-        warningDiv.style.marginBottom = '15px';
-        warningDiv.style.padding = '15px';
-        warningDiv.style.backgroundColor = 'rgba(239, 68, 68, 0.1)';
-        warningDiv.style.border = '1px solid rgba(239, 68, 68, 0.3)';
-        warningDiv.style.borderRadius = '4px';
+        warningDiv.setCssStyles({
+            marginBottom: '15px',
+            padding: '15px',
+            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            borderRadius: '4px',
+        });
 
         if (icon) {
             const iconDiv = warningDiv.createEl('div', { text: icon });
-            iconDiv.style.fontSize = '24px';
-            iconDiv.style.marginBottom = '10px';
+            iconDiv.setCssStyles({
+                fontSize: '24px',
+                marginBottom: '10px',
+            });
         }
 
         const titleDiv = warningDiv.createEl('div');
         titleDiv.createEl('strong', { text: title });
-        titleDiv.style.fontWeight = '600';
-        titleDiv.style.marginBottom = '8px';
+        titleDiv.setCssStyles({
+            fontWeight: '600',
+            marginBottom: '8px',
+        });
 
         const messageDiv = warningDiv.createEl('div');
         messageDiv.setText(message);
-        messageDiv.style.color = 'var(--text-muted)';
+        messageDiv.setCssStyles({ color: 'var(--text-muted)' });
 
         return warningDiv;
     }
@@ -268,16 +276,18 @@ export class ModalUtils {
      */
     static createInfoBox(container: HTMLElement, content: string[]): HTMLElement {
         const infoDiv = container.createDiv();
-        infoDiv.style.marginBottom = '15px';
-        infoDiv.style.padding = '10px';
-        infoDiv.style.backgroundColor = 'var(--background-secondary)';
-        infoDiv.style.borderRadius = '4px';
-        infoDiv.style.color = 'var(--text-muted)';
+        infoDiv.setCssStyles({
+            marginBottom: '15px',
+            padding: '10px',
+            backgroundColor: 'var(--background-secondary)',
+            borderRadius: '4px',
+            color: 'var(--text-muted)',
+        });
 
         content.forEach(line => {
             const lineDiv = infoDiv.createEl('div');
             lineDiv.setText(line);
-            lineDiv.style.marginBottom = line === content[content.length - 1] ? '0' : '5px';
+            lineDiv.setCssStyles({ marginBottom: line === content[content.length - 1] ? '0' : '5px' });
         });
 
         return infoDiv;

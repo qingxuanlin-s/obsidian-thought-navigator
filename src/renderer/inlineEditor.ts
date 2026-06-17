@@ -159,8 +159,10 @@ export function attachInlineTextSelectionToolbar(this: any, inputEl: HTMLInputEl
             const maxX = (this.container.clientWidth || containerRect.width) - toolbarWidth / 2 - 10;
             const clampedX = Math.max(minX, Math.min(maxX, x));
 
-            toolbar.style.left = `${clampedX}px`;
-            toolbar.style.top = `${Math.max(8, y)}px`;
+            toolbar.setCssStyles({
+                left: `${clampedX}px`,
+                top: `${Math.max(8, y)}px`,
+            });
         };
 
         const createToolbarButton = (iconName: string, title: string, handler: () => void): HTMLButtonElement => {
@@ -473,8 +475,10 @@ export function attachContentSelectionToolbar(this: any, rootEl: HTMLElement,
             const maxX = (this.container.clientWidth || containerRect.width) - toolbarWidth / 2 - 10;
             const clampedX = Math.max(minX, Math.min(maxX, x));
 
-            toolbar.style.left = `${clampedX}px`;
-            toolbar.style.top = `${Math.max(8, y)}px`;
+            toolbar.setCssStyles({
+                left: `${clampedX}px`,
+                top: `${Math.max(8, y)}px`,
+            });
         };
 
         const applyAndRefresh = (formatter: (selectedText: string) => string) => {
@@ -733,25 +737,25 @@ export function showInlineEdgeLabelEditor(this: any, edge: any): void {
         input.type = 'text';
         input.value = currentLabel;
         input.className = 'edge-label-editor';
-        input.style.cssText = `
-            position: absolute;
-            left: ${midX}px;
-            top: ${midY}px;
-            transform: translate(-50%, -50%);
-            padding: 6px 14px;
-            border: 2px solid rgba(91, 143, 217, 0.95);
-            border-radius: 12px;
-            background: rgba(15, 23, 42, 0.96);
-            color: var(--text-normal);
-            font-size: 13px;
-            font-weight: 500;
-            z-index: 1000;
-            min-width: 100px;
-            text-align: center;
-            outline: none;
-            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
-            backdrop-filter: blur(8px);
-        `;
+        input.setCssStyles({
+            position: 'absolute',
+            left: `${midX}px`,
+            top: `${midY}px`,
+            transform: 'translate(-50%, -50%)',
+            padding: '6px 14px',
+            border: '2px solid rgba(91, 143, 217, 0.95)',
+            borderRadius: '12px',
+            background: 'rgba(15, 23, 42, 0.96)',
+            color: 'var(--text-normal)',
+            fontSize: '13px',
+            fontWeight: '500',
+            zIndex: '1000',
+            minWidth: '100px',
+            textAlign: 'center',
+            outline: 'none',
+            boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)',
+        });
+        input.setCssProps({ 'backdrop-filter': 'blur(8px)' });
 
         this.container.appendChild(input);
         const selectionToolbar = this.attachInlineTextSelectionToolbar(input);
@@ -841,8 +845,10 @@ export function showInlineEdgeLabelEditor(this: any, edge: any): void {
             const midX = (sourcePos.x + targetPos.x) / 2;
             const midY = (sourcePos.y + targetPos.y) / 2;
             
-            input.style.left = `${midX}px`;
-            input.style.top = `${midY}px`;
+            input.setCssStyles({
+                left: `${midX}px`,
+                top: `${midY}px`,
+            });
         };
 
         this.cy.on('zoom pan', updatePosition);
@@ -985,27 +991,27 @@ export function showInlineNodeEditor(this: any, node: any, options?: { cursor?: 
         // 重要：在编辑时隐藏节点标签，避免重复显示
         node.data('label', '');
 
-        textarea.style.cssText = `
-            position: absolute;
-            left: ${lockedBoxLeft}px;
-            top: ${lockedBoxTop}px;
-            width: ${initialBoxWidth}px;
-            height: ${initialBoxHeight}px;
-            transform: translate(0, 0);
-            padding: ${editorPadding};
-            border-radius: 16px;
-            font-size: ${nodeFontSize};
-            font-family: ${nodeFontFamily};
-            font-weight: ${nodeFontWeight};
-            z-index: 1000;
-            resize: none;
-            overflow: hidden;
-            outline: none;
-            box-sizing: border-box;
-            text-align: ${textAlign};
-            line-height: ${nodeLineHeight};
-            cursor: text;
-        `;
+        textarea.setCssStyles({
+            position: 'absolute',
+            left: `${lockedBoxLeft}px`,
+            top: `${lockedBoxTop}px`,
+            width: `${initialBoxWidth}px`,
+            height: `${initialBoxHeight}px`,
+            transform: 'translate(0, 0)',
+            padding: `${editorPadding}`,
+            borderRadius: '16px',
+            fontSize: `${nodeFontSize}`,
+            fontFamily: `${nodeFontFamily}`,
+            fontWeight: `${nodeFontWeight}`,
+            zIndex: '1000',
+            resize: 'none',
+            overflow: 'hidden',
+            outline: 'none',
+            boxSizing: 'border-box',
+            textAlign: `${textAlign}`,
+            lineHeight: `${nodeLineHeight}`,
+            cursor: 'text',
+        });
 
         this.container.appendChild(textarea);
 
@@ -1056,12 +1062,16 @@ export function showInlineNodeEditor(this: any, node: any, options?: { cursor?: 
             const targetWidth = isRootEdit
                 ? minWidth
                 : Math.min(maxWidth, Math.max(minWidth, Math.ceil(contentWidth)));
-            textarea.style.width = `${targetWidth}px`;
-            textarea.style.height = 'auto';
+            textarea.setCssStyles({
+                width: `${targetWidth}px`,
+                height: 'auto',
+            });
             const targetHeight = Math.min(maxHeight, Math.max(minHeight, textarea.scrollHeight + 4));
-            textarea.style.height = `${targetHeight}px`;
-            textarea.style.left = `${renderedPosition.x - targetWidth / 2}px`;
-            textarea.style.top = `${renderedPosition.y - targetHeight / 2}px`;
+            textarea.setCssStyles({
+                height: `${targetHeight}px`,
+                left: `${renderedPosition.x - targetWidth / 2}px`,
+                top: `${renderedPosition.y - targetHeight / 2}px`,
+            });
         };
 
         // 自动聚焦；默认把光标放到末尾，显式 cursor: 'select' 时保留全选。
@@ -1303,12 +1313,14 @@ export function showInlineNodeEditor(this: any, node: any, options?: { cursor?: 
             const currentRenderedPosition = node.renderedPosition();
             const currentBoxWidth = Math.max(Number(node.renderedWidth?.() || 0), 80);
             const currentBoxHeight = Math.max(Number(node.renderedHeight?.() || 0), 44);
-            textarea.style.left = `${currentRenderedPosition.x - currentBoxWidth / 2}px`;
-            textarea.style.top = `${currentRenderedPosition.y - currentBoxHeight / 2}px`;
-            textarea.style.fontSize = isTextOnlyEdit ? '20px' : getRenderedNodeFontSize();
-            textarea.style.fontFamily = getRenderedNodeFontFamily();
-            textarea.style.fontWeight = isTextOnlyEdit ? '500' : getRenderedNodeFontWeight();
-            textarea.style.lineHeight = isTextOnlyEdit ? '1.35' : getEditorLineHeight();
+            textarea.setCssStyles({
+                left: `${currentRenderedPosition.x - currentBoxWidth / 2}px`,
+                top: `${currentRenderedPosition.y - currentBoxHeight / 2}px`,
+                fontSize: isTextOnlyEdit ? '20px' : getRenderedNodeFontSize(),
+                fontFamily: getRenderedNodeFontFamily(),
+                fontWeight: isTextOnlyEdit ? '500' : getRenderedNodeFontWeight(),
+                lineHeight: isTextOnlyEdit ? '1.35' : getEditorLineHeight(),
+            });
             resizeEditorToContent();
         };
 
@@ -1402,20 +1414,20 @@ export function startInPlaceTextEdit(this: any, node: any,
         overlayEl.textContent = '';
         overlayEl.dataset.editing = '1';
         const prevPointerEvents = overlayEl.style.pointerEvents;
-        overlayEl.style.pointerEvents = 'auto';
+        overlayEl.setCssStyles({ pointerEvents: 'auto' });
 
         const editorHost = document.createElement('div');
         editorHost.className = 'zk-text-md-live-edit-host';
-        editorHost.style.cssText = `
-            position: absolute;
-            inset: 0;
-            box-shadow: inset 0 0 0 2px rgba(91, 143, 217, 0.95);
-            border-radius: 12px;
-            overflow: hidden;
-            background: var(--background-primary);
-            pointer-events: auto;
-            z-index: 2;
-        `;
+        editorHost.setCssStyles({
+            position: 'absolute',
+            inset: '0',
+            boxShadow: 'inset 0 0 0 2px rgba(91, 143, 217, 0.95)',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            background: 'var(--background-primary)',
+            pointerEvents: 'auto',
+            zIndex: '2',
+        });
         overlayEl.appendChild(editorHost);
         let isSaved = false;
         let mdEditor: EmbeddableMarkdownEditor | null = null;
@@ -1515,7 +1527,7 @@ export function startInPlaceTextEdit(this: any, node: any,
             restoreNodeInteractivity();
             restoreSavedOverlay();
             delete overlayEl.dataset.editing;
-            overlayEl.style.pointerEvents = prevPointerEvents || 'none';
+            overlayEl.setCssStyles({ pointerEvents: prevPointerEvents || 'none' });
         };
 
         const cancelEdit = () => {
@@ -1541,14 +1553,16 @@ export function startInPlaceTextEdit(this: any, node: any,
             const bb = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
             if (!bb || bb.w <= 0 || bb.h <= 0) return null;
             const zoom = this.cy.zoom() || 1;
-            overlayEl.style.left = `${bb.x1}px`;
-            overlayEl.style.top = `${bb.y1}px`;
-            overlayEl.style.width = `${bb.w}px`;
-            overlayEl.style.height = `${bb.h}px`;
+            overlayEl.setCssStyles({
+                left: `${bb.x1}px`,
+                top: `${bb.y1}px`,
+                width: `${bb.w}px`,
+                height: `${bb.h}px`,
+            });
             // 编辑态字号与展示态 overlay 同源:根=36/一级=24/普通=20(写在 dataset.baseFontSize)。
             // 此前写死 20px,导致根节点编辑时字号被缩小、与展示态不一致。
             const overlayBaseFontSize = Number(overlayEl.dataset.baseFontSize) || 20;
-            overlayEl.style.fontSize = `${overlayBaseFontSize * zoom}px`;
+            overlayEl.setCssStyles({ fontSize: `${overlayBaseFontSize * zoom}px` });
             entry.width = Number(node.width() || entry.width);
             entry.height = Number(node.height() || entry.height);
             return entry.height;
@@ -1583,7 +1597,7 @@ export function startInPlaceTextEdit(this: any, node: any,
                 isSaved = true;
                 clearLiveEdit();
                 restoreNodeInteractivity();
-                overlayEl.style.pointerEvents = prevPointerEvents || 'none';
+                overlayEl.setCssStyles({ pointerEvents: prevPointerEvents || 'none' });
                 this.container?.dispatchEvent(new CustomEvent('node-inline-edit-save', {
                     detail: { node: originalNode, content: '', relationCount: node.connectedEdges?.().length ?? 0 }
                 }));
@@ -1617,7 +1631,7 @@ export function startInPlaceTextEdit(this: any, node: any,
             isSaved = true;
             clearLiveEdit();
             restoreNodeInteractivity();
-            overlayEl.style.pointerEvents = prevPointerEvents || 'none';
+            overlayEl.setCssStyles({ pointerEvents: prevPointerEvents || 'none' });
 
             const nodePosition = node.position();
             const anchoredPosition = {
@@ -1641,7 +1655,7 @@ export function startInPlaceTextEdit(this: any, node: any,
                 if (overlayEl.isConnected && overlayEl.dataset.editing === '1') {
                     restoreSavedOverlay();
                     delete overlayEl.dataset.editing;
-                    overlayEl.style.pointerEvents = prevPointerEvents || 'none';
+                    overlayEl.setCssStyles({ pointerEvents: prevPointerEvents || 'none' });
                     restoreNodeInteractivity();
                 }
             }, 50);
@@ -1702,7 +1716,7 @@ export function startInPlaceTextEdit(this: any, node: any,
             clearLiveEdit();
             editorHost.remove();
             delete overlayEl.dataset.editing;
-            overlayEl.style.pointerEvents = prevPointerEvents || 'none';
+            overlayEl.setCssStyles({ pointerEvents: prevPointerEvents || 'none' });
             restoreNodeInteractivity();
             this.startInPlaceTextEditLegacy(node, originalNode, entry);
         }
@@ -1730,48 +1744,50 @@ export function startPlaceholderInPlaceEdit(this: any, node: any, options?: { cu
         const overlayEl = document.createElement('div');
         overlayEl.className = 'zk-text-md-overlay zk-placeholder-edit-overlay';
         overlayEl.dataset.baseFontSize = '20';
-        overlayEl.style.cssText = `
-            position: absolute;
-            pointer-events: auto;
-            box-sizing: border-box;
-            z-index: 10;
-            font-family: var(--font-text);
-            font-weight: 500;
-            line-height: 1.35;
-        `;
+        overlayEl.setCssStyles({
+            position: 'absolute',
+            pointerEvents: 'auto',
+            boxSizing: 'border-box',
+            zIndex: '10',
+            fontFamily: 'var(--font-text)',
+            fontWeight: '500',
+            lineHeight: '1.35',
+        });
         this.container.appendChild(overlayEl);
 
         // 同步 overlay 位置到节点(font-size * zoom 缩放,与文本节点 overlay 策略一致)
         const syncOverlayPos = () => {
             if (!this.cy || node.removed()) {
-                overlayEl.style.display = 'none';
+                overlayEl.setCssStyles({ display: 'none' });
                 return;
             }
             const bb = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
-            if (!bb || bb.w <= 0) { overlayEl.style.display = 'none'; return; }
+            if (!bb || bb.w <= 0) { overlayEl.setCssStyles({ display: 'none' }); return; }
             const zoom = this.cy.zoom();
-            overlayEl.style.display = 'block';
-            overlayEl.style.left = `${bb.x1}px`;
-            overlayEl.style.top = `${bb.y1}px`;
-            overlayEl.style.width = `${bb.w}px`;
-            overlayEl.style.height = `${bb.h}px`;
-            overlayEl.style.fontSize = `${20 * zoom}px`;
+            overlayEl.setCssStyles({
+                display: 'block',
+                left: `${bb.x1}px`,
+                top: `${bb.y1}px`,
+                width: `${bb.w}px`,
+                height: `${bb.h}px`,
+                fontSize: `${20 * zoom}px`,
+            });
         };
         syncOverlayPos();
 
         // 创建 CM6 编辑器宿主
         const editorHost = document.createElement('div');
         editorHost.className = 'zk-text-md-live-edit-host';
-        editorHost.style.cssText = `
-            position: absolute;
-            inset: 0;
-            box-shadow: inset 0 0 0 2px rgba(91, 143, 217, 0.95);
-            border-radius: 12px;
-            overflow: auto;
-            background: var(--background-primary);
-            pointer-events: auto;
-            z-index: 2;
-        `;
+        editorHost.setCssStyles({
+            position: 'absolute',
+            inset: '0',
+            boxShadow: 'inset 0 0 0 2px rgba(91, 143, 217, 0.95)',
+            borderRadius: '12px',
+            overflow: 'auto',
+            background: 'var(--background-primary)',
+            pointerEvents: 'auto',
+            zIndex: '2',
+        });
         overlayEl.appendChild(editorHost);
 
         let isSaved = false;
@@ -2050,25 +2066,25 @@ export function startPlaceholderTextareaFallback(this: any, node: any, options?:
         const textarea = document.createElement('textarea');
         textarea.className = 'node-label-editor';
         textarea.value = '';
-        textarea.style.cssText = `
-            position: absolute;
-            left: ${renderedPosition.x - boxW / 2}px;
-            top: ${renderedPosition.y - boxH / 2}px;
-            width: ${boxW}px;
-            height: ${boxH}px;
-            border-radius: 12px;
-            font-size: 20px;
-            font-family: var(--font-text);
-            font-weight: 500;
-            line-height: 1.35;
-            padding: 24px 24px 12px 24px;
-            outline: none;
-            resize: none;
-            overflow: hidden;
-            box-sizing: border-box;
-            z-index: 1000;
-            text-align: left;
-        `;
+        textarea.setCssStyles({
+            position: 'absolute',
+            left: `${renderedPosition.x - boxW / 2}px`,
+            top: `${renderedPosition.y - boxH / 2}px`,
+            width: `${boxW}px`,
+            height: `${boxH}px`,
+            borderRadius: '12px',
+            fontSize: '20px',
+            fontFamily: 'var(--font-text)',
+            fontWeight: '500',
+            lineHeight: '1.35',
+            padding: '24px 24px 12px 24px',
+            outline: 'none',
+            resize: 'none',
+            overflow: 'hidden',
+            boxSizing: 'border-box',
+            zIndex: '1000',
+            textAlign: 'left',
+        });
         this.container.appendChild(textarea);
         const insertTextareaNewline = () => {
             const start = textarea.selectionStart ?? textarea.value.length;
@@ -2095,10 +2111,10 @@ export function startPlaceholderTextareaFallback(this: any, node: any, options?:
         // 动态扩展：根据内容自动撑高编辑框
         const autoGrow = () => {
             if (!this.cy || node.removed()) return;
-            textarea.style.height = 'auto';
+            textarea.setCssStyles({ height: 'auto' });
             const contentH = textarea.scrollHeight + 4;
             const newH = Math.max(boxH, Math.min(contentH, 640));
-            textarea.style.height = `${newH}px`;
+            textarea.setCssStyles({ height: `${newH}px` });
             // 同步 Cytoscape 节点尺寸
             const curNodeH = Number(node.height() || boxH);
             if (newH !== curNodeH) {
@@ -2108,8 +2124,10 @@ export function startPlaceholderTextareaFallback(this: any, node: any, options?:
             }
             // 重新定位居中
             const rp = node.renderedPosition();
-            textarea.style.left = `${rp.x - boxW / 2}px`;
-            textarea.style.top = `${rp.y - newH / 2}px`;
+            textarea.setCssStyles({
+                left: `${rp.x - boxW / 2}px`,
+                top: `${rp.y - newH / 2}px`,
+            });
         };
 
         const save = () => {
@@ -2201,7 +2219,7 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
         overlayEl.dataset.editing = '1';
         // 编辑时允许捕获点击事件（默认 overlay 是 pointer-events: none）
         const prevPointerEvents = overlayEl.style.pointerEvents;
-        overlayEl.style.pointerEvents = 'auto';
+        overlayEl.setCssStyles({ pointerEvents: 'auto' });
 
         const textarea = document.createElement('textarea');
         textarea.className = 'node-label-editor zk-text-md-inline-editor';
@@ -2211,33 +2229,32 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
             || node.data('label')
             || ''
         ).replace(/\\n/g, '\n');
-        textarea.style.cssText = `
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            background: transparent;
-            border: 2px solid rgba(91, 143, 217, 0.95);
-            border-radius: 12px;
-            outline: none;
-            padding: 24px 24px 12px 24px;
-            margin: 0;
-            color: var(--text-normal);
-            font-size: 20px;
-            font-family: var(--font-text);
-            font-weight: 500;
-            line-height: 1.35;
-            text-align: left;
-            resize: none;
-            overflow: auto;
-            box-sizing: border-box;
-            white-space: pre-wrap;
-            white-space: break-spaces;
-            word-wrap: break-word;
-            pointer-events: auto;
-            user-select: text;
-            z-index: 2;
-        `;
+        textarea.setCssStyles({
+            position: 'absolute',
+            inset: '0',
+            width: '100%',
+            height: '100%',
+            background: 'transparent',
+            border: '2px solid rgba(91, 143, 217, 0.95)',
+            borderRadius: '12px',
+            outline: 'none',
+            padding: '24px 24px 12px 24px',
+            margin: '0',
+            color: 'var(--text-normal)',
+            fontSize: '20px',
+            fontFamily: 'var(--font-text)',
+            fontWeight: '500',
+            lineHeight: '1.35',
+            textAlign: 'left',
+            resize: 'none',
+            overflow: 'auto',
+            boxSizing: 'border-box',
+            whiteSpace: 'break-spaces',
+            wordWrap: 'break-word',
+            pointerEvents: 'auto',
+            userSelect: 'text',
+            zIndex: '2',
+        });
         overlayEl.appendChild(textarea);
         const selectionToolbar = this.attachInlineTextSelectionToolbar(textarea);
         const insertTextareaNewline = () => {
@@ -2289,7 +2306,7 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
             selectionToolbar.destroy();
             restoreSavedOverlay();
             delete overlayEl.dataset.editing;
-            overlayEl.style.pointerEvents = prevPointerEvents || 'none';
+            overlayEl.setCssStyles({ pointerEvents: prevPointerEvents || 'none' });
             if (suggesterPopoverRef.value && suggesterPopoverRef.value.parentNode) {
                 suggesterPopoverRef.value.remove();
                 suggesterPopoverRef.value = null;
@@ -2341,7 +2358,7 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
                 suggesterPopoverRef.value = null;
             }
             document.removeEventListener('mousedown', handleOutsidePointerDown, true);
-            overlayEl.style.pointerEvents = prevPointerEvents || 'none';
+            overlayEl.setCssStyles({ pointerEvents: prevPointerEvents || 'none' });
             // 不清除 dataset.editing —— 留到图重建后的 mark-sweep/detach 来清理；
             // 若内容未变化 indexView 会 return，下面的 fallback 会兜底恢复
             const nodePosition = node.position();
@@ -2567,38 +2584,38 @@ export function showLinkSuggester(this: any, textarea: HTMLTextAreaElement,
         // 使用 textarea 的实际位置定位，避免 boundingBox 缺少 y2 或尺寸过期
         const suggesterLeft = textarea.offsetLeft;
         const suggesterTop = textarea.offsetTop + textarea.offsetHeight + 5;
-        popover.style.cssText = `
-            position: absolute;
-            left: ${suggesterLeft}px;
-            top: ${suggesterTop}px;
-            max-height: 240px;
-            width: 320px;
-            background-color: var(--background-primary);
-            border: 1px solid var(--background-modifier-border);
-            border-radius: 6px;
-            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
-            z-index: 1001;
-            overflow-y: auto;
-            padding: 4px 0;
-        `;
+        popover.setCssStyles({
+            position: 'absolute',
+            left: `${suggesterLeft}px`,
+            top: `${suggesterTop}px`,
+            maxHeight: '240px',
+            width: '320px',
+            backgroundColor: 'var(--background-primary)',
+            border: '1px solid var(--background-modifier-border)',
+            borderRadius: '6px',
+            boxShadow: '0 6px 16px rgba(0, 0, 0, 0.35)',
+            zIndex: '1001',
+            overflowY: 'auto',
+            padding: '4px 0',
+        });
 
         // 搜索输入框
         const searchInput = document.createElement('input');
         searchInput.type = 'text';
         searchInput.placeholder = 'Search notes...';
-        searchInput.style.cssText = `
-            width: calc(100% - 16px);
-            margin: 4px 8px;
-            padding: 6px 8px;
-            border: 1px solid var(--background-modifier-border);
-            border-radius: 4px;
-            background-color: var(--background-secondary);
-            color: var(--text-normal);
-            font-size: 12px;
-            position: sticky;
-            top: 0;
-            z-index: 2;
-        `;
+        searchInput.setCssStyles({
+            width: 'calc(100% - 16px)',
+            margin: '4px 8px',
+            padding: '6px 8px',
+            border: '1px solid var(--background-modifier-border)',
+            borderRadius: '4px',
+            backgroundColor: 'var(--background-secondary)',
+            color: 'var(--text-normal)',
+            fontSize: '12px',
+            position: 'sticky',
+            top: '0',
+            zIndex: '2',
+        });
 
         // 存储当前的选中索引和文件列表
         let selectedIndex = 0;
@@ -2628,33 +2645,37 @@ export function showLinkSuggester(this: any, textarea: HTMLTextAreaElement,
                 const item = document.createElement('div');
                 item.className = 'suggester-item';
                 item.dataset.index = index.toString();
-                item.style.cssText = `
-                    padding: 6px 12px;
-                    cursor: pointer;
-                    display: flex;
-                    flex-direction: column;
-                    gap: 2px;
-                `;
+                item.setCssStyles({
+                    padding: '6px 12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '2px',
+                });
 
                 const basenameEl = item.createEl('span', { text: file.basename });
-                basenameEl.style.fontWeight = '500';
-                basenameEl.style.color = 'var(--text-normal)';
+                basenameEl.setCssStyles({
+                    fontWeight: '500',
+                    color: 'var(--text-normal)',
+                });
                 const pathEl = item.createEl('span', { text: file.path });
-                pathEl.style.fontSize = '11px';
-                pathEl.style.color = 'var(--text-muted)';
+                pathEl.setCssStyles({
+                    fontSize: '11px',
+                    color: 'var(--text-muted)',
+                });
 
                 // 高亮选中的项目
                 if (index === selectedIndex) {
-                    item.style.backgroundColor = 'var(--background-modifier-hover)';
+                    item.setCssStyles({ backgroundColor: 'var(--background-modifier-hover)' });
                 }
 
                 item.addEventListener('mouseenter', () => {
                     // 移除所有高亮
                     popover.querySelectorAll('.suggester-item').forEach(i => {
-                        (i as HTMLElement).style.backgroundColor = '';
+                        (i as HTMLElement).setCssStyles({ backgroundColor: '' });
                     });
                     // 高亮当前项
-                    item.style.backgroundColor = 'var(--background-modifier-hover)';
+                    item.setCssStyles({ backgroundColor: 'var(--background-modifier-hover)' });
                     selectedIndex = index;
                 });
 
@@ -2729,11 +2750,11 @@ export function showLinkSuggester(this: any, textarea: HTMLTextAreaElement,
             const items = popover.querySelectorAll('.suggester-item');
             items.forEach((item: any, index: number) => {
                 if (index === selectedIndex) {
-                    item.style.backgroundColor = 'var(--background-modifier-hover)';
+                    item.setCssStyles({ backgroundColor: 'var(--background-modifier-hover)' });
                     // 滚动到可见区域
                     item.scrollIntoView({ block: 'nearest' });
                 } else {
-                    item.style.backgroundColor = '';
+                    item.setCssStyles({ backgroundColor: '' });
                 }
             });
         };
@@ -2852,7 +2873,7 @@ export function attachSlashCommandMenu(
             if (!popover) return;
             popover.querySelectorAll('.zk-slash-item').forEach((el, i) => {
                 const isSel = i === selectedIndex;
-                (el as HTMLElement).style.backgroundColor = isSel ? 'var(--background-modifier-hover)' : '';
+                (el as HTMLElement).setCssStyles({ backgroundColor: isSel ? 'var(--background-modifier-hover)' : '' });
                 if (isSel) (el as HTMLElement).scrollIntoView({ block: 'nearest' });
             });
         };
@@ -2908,18 +2929,18 @@ export function attachSlashCommandMenu(
             if (!popover) {
                 popover = document.createElement('div');
                 popover.className = 'zk-slash-suggester';
-                popover.style.cssText = `
-                    position: fixed;
-                    max-height: 280px;
-                    width: 340px;
-                    overflow-y: auto;
-                    background-color: var(--background-primary);
-                    border: 1px solid var(--background-modifier-border);
-                    border-radius: 8px;
-                    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-                    z-index: 99999;
-                    padding: 4px 0;
-                `;
+                popover.setCssStyles({
+                    position: 'fixed',
+                    maxHeight: '280px',
+                    width: '340px',
+                    overflowY: 'auto',
+                    backgroundColor: 'var(--background-primary)',
+                    border: '1px solid var(--background-modifier-border)',
+                    borderRadius: '8px',
+                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
+                    zIndex: '99999',
+                    padding: '4px 0',
+                });
                 // 防止点击候选项时编辑器 blur 触发保存
                 popover.addEventListener('mousedown', (e) => e.preventDefault());
                 popover.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
@@ -2930,17 +2951,17 @@ export function attachSlashCommandMenu(
             items.forEach((cmd, index) => {
                 const item = document.createElement('div');
                 item.className = 'zk-slash-item';
-                item.style.cssText = `
-                    padding: 6px 12px;
-                    cursor: pointer;
-                    font-size: 13px;
-                    color: var(--text-normal);
-                    white-space: nowrap;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                `;
+                item.setCssStyles({
+                    padding: '6px 12px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    color: 'var(--text-normal)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                });
                 item.textContent = cmd.name;
-                if (index === selectedIndex) item.style.backgroundColor = 'var(--background-modifier-hover)';
+                if (index === selectedIndex) item.setCssStyles({ backgroundColor: 'var(--background-modifier-hover)' });
                 item.addEventListener('mouseenter', () => { selectedIndex = index; highlight(); });
                 item.addEventListener('mousedown', (e) => { e.preventDefault(); execute(cmd); });
                 popover!.appendChild(item);
@@ -2963,8 +2984,10 @@ export function attachSlashCommandMenu(
             const vh = window.innerHeight;
             if (left + 340 > vw) left = Math.max(8, vw - 348);
             if (top + 280 > vh) top = Math.max(8, (coords ? coords.top : top) - 284);
-            popover.style.left = `${left}px`;
-            popover.style.top = `${top}px`;
+            popover.setCssStyles({
+                left: `${left}px`,
+                top: `${top}px`,
+            });
         };
 
         const onDocChanged = () => {
@@ -3065,34 +3088,56 @@ export function startNodeAudioRecording(
         // 录音浮条
         const bar = document.createElement('div');
         bar.className = 'zk-audio-recording-bar';
-        bar.style.cssText = `
-            position: fixed;
-            left: 50%;
-            bottom: 28px;
-            transform: translateX(-50%);
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 8px 14px;
-            background: var(--background-secondary);
-            border: 1px solid var(--background-modifier-border);
-            border-radius: 999px;
-            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
-            z-index: 99999;
-            font-size: 13px;
-            color: var(--text-normal);
-        `;
+        bar.setCssStyles({
+            position: 'fixed',
+            left: '50%',
+            bottom: '28px',
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            padding: '8px 14px',
+            background: 'var(--background-secondary)',
+            border: '1px solid var(--background-modifier-border)',
+            borderRadius: '999px',
+            boxShadow: '0 6px 20px rgba(0, 0, 0, 0.4)',
+            zIndex: '99999',
+            fontSize: '13px',
+            color: 'var(--text-normal)',
+        });
         bar.addEventListener('mousedown', (e) => e.preventDefault()); // 防止编辑框 blur
         const dot = document.createElement('span');
-        dot.style.cssText = 'width:10px;height:10px;border-radius:50%;background:#e5484d;animation:zk-rec-blink 1s steps(2,start) infinite;';
+        dot.setCssStyles({
+            width: '10px',
+            height: '10px',
+            borderRadius: '50%',
+            background: '#e5484d',
+            animation: 'zk-rec-blink 1s steps(2,start) infinite',
+        });
         const timeEl = document.createElement('span');
         timeEl.textContent = '0:00';
         const stopBtn = document.createElement('button');
         stopBtn.textContent = '停止';
-        stopBtn.style.cssText = 'padding:3px 12px;border-radius:999px;border:none;background:#e5484d;color:#fff;cursor:pointer;font-size:12px;';
+        stopBtn.setCssStyles({
+            padding: '3px 12px',
+            borderRadius: '999px',
+            border: 'none',
+            background: '#e5484d',
+            color: '#fff',
+            cursor: 'pointer',
+            fontSize: '12px',
+        });
         const cancelBtn = document.createElement('button');
         cancelBtn.textContent = '取消';
-        cancelBtn.style.cssText = 'padding:3px 10px;border-radius:999px;border:1px solid var(--background-modifier-border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;';
+        cancelBtn.setCssStyles({
+            padding: '3px 10px',
+            borderRadius: '999px',
+            border: '1px solid var(--background-modifier-border)',
+            background: 'transparent',
+            color: 'var(--text-muted)',
+            cursor: 'pointer',
+            fontSize: '12px',
+        });
         bar.append(dot, timeEl, stopBtn, cancelBtn);
         // 闪烁动画(仅注入一次)
         if (!document.getElementById('zk-rec-blink-style')) {

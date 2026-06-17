@@ -284,7 +284,13 @@ export class AddFreeNodeModal extends Modal {
             contentEl.createDiv({
                 text: t("No nodes in current MOC first node will be created"),
                 cls: "mod-info"
-            }).style.cssText = "padding: 10px; margin-bottom: 15px; background: var(--background-secondary); border-radius: 5px; color: var(--text-muted);";
+            }).setCssStyles({
+                padding: '10px',
+                marginBottom: '15px',
+                background: 'var(--background-secondary)',
+                borderRadius: '5px',
+                color: 'var(--text-muted)',
+            });
         }
 
         // Wiki 链接输入（支持搜索）

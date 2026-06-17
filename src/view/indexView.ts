@@ -255,7 +255,7 @@ export class ZKIndexView extends FileView {
         const backBtn = branchGraphDiv.querySelector('.zk-branch-fullscreen-back-btn') as HTMLButtonElement | null;
         if (!backBtn) return;
 
-        backBtn.style.display = this.getFullscreenElement() === branchGraphDiv ? 'inline-flex' : 'none';
+        backBtn.setCssStyles({ display: this.getFullscreenElement() === branchGraphDiv ? 'inline-flex' : 'none' });
     }
 
     private ensureBranchFullscreenBackButton(branchGraphDiv: HTMLElement): void {
@@ -1091,22 +1091,32 @@ export class ZKIndexView extends FileView {
 
         const bar = document.createElement('div');
         bar.className = 'zk-draft-batch-bar';
-        bar.style.cssText = `
-            position: absolute; top: 12px; right: 12px; z-index: 20;
-            display: flex; align-items: center; gap: 8px; max-width: 360px;
-            padding: 8px 10px; border-radius: 10px;
-            background: var(--background-secondary);
-            border: 1px ${total === 0 ? 'dashed' : 'solid'} ${hasAi ? '#a855f7' : '#94a3b8'};
-            box-shadow: 0 4px 12px rgba(0,0,0,0.18);
-        `;
+        bar.setCssStyles({
+            position: 'absolute',
+            top: '12px',
+            right: '12px',
+            zIndex: '20',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            maxWidth: '360px',
+            padding: '8px 10px',
+            borderRadius: '10px',
+            background: 'var(--background-secondary)',
+            border: `1px ${total === 0 ? 'dashed' : 'solid'} ${hasAi ? '#a855f7' : '#94a3b8'}`,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
+        });
 
         const tag = document.createElement('span');
         tag.textContent = hasAi ? t('Draft tag ai') : t('Draft tag manual');
-        tag.style.cssText = `
-            font-size: 11px; font-weight: 700; color: #fff;
-            padding: 2px 6px; border-radius: 6px;
-            background: ${hasAi ? '#a855f7' : '#64748b'};
-        `;
+        tag.setCssStyles({
+            fontSize: '11px',
+            fontWeight: '700',
+            color: '#fff',
+            padding: '2px 6px',
+            borderRadius: '6px',
+            background: `${hasAi ? '#a855f7' : '#64748b'}`,
+        });
 
         const label = document.createElement('span');
         label.textContent = total === 0
@@ -1116,7 +1126,11 @@ export class ZKIndexView extends FileView {
                 : relCount > 0
                     ? t('Draft relation count').replace('{r}', String(relCount))
                     : t('Draft batch count').replace('{n}', String(nodeCount));
-        label.style.cssText = 'font-size: 12px; flex: 1; color: var(--text-normal);';
+        label.setCssStyles({
+            fontSize: '12px',
+            flex: '1',
+            color: 'var(--text-normal)',
+        });
 
         bar.appendChild(tag);
         bar.appendChild(label);
@@ -1124,21 +1138,30 @@ export class ZKIndexView extends FileView {
         if (total > 0) {
             const commitBtn = document.createElement('button');
             commitBtn.textContent = t('Draft confirm');
-            commitBtn.style.cssText = `
-                font-size: 12px; padding: 4px 10px; border-radius: 6px; cursor: pointer;
-                border: none; color: #fff; background: var(--interactive-accent);
-            `;
+            commitBtn.setCssStyles({
+                fontSize: '12px',
+                padding: '4px 10px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                border: 'none',
+                color: '#fff',
+                background: 'var(--interactive-accent)',
+            });
             commitBtn.onclick = () => { void this.commitAllDrafts(); };
             bar.appendChild(commitBtn);
         }
 
         const discardBtn = document.createElement('button');
         discardBtn.textContent = total > 0 ? t('Draft discard') : t('Draft mode exit');
-        discardBtn.style.cssText = `
-            font-size: 12px; padding: 4px 10px; border-radius: 6px; cursor: pointer;
-            border: 1px solid var(--background-modifier-border); background: transparent;
-            color: var(--text-muted);
-        `;
+        discardBtn.setCssStyles({
+            fontSize: '12px',
+            padding: '4px 10px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            border: '1px solid var(--background-modifier-border)',
+            background: 'transparent',
+            color: 'var(--text-muted)',
+        });
         discardBtn.onclick = () => this.discardAllDrafts();
         bar.appendChild(discardBtn);
 
@@ -1262,20 +1285,20 @@ export class ZKIndexView extends FileView {
         const indicator = container.createDiv("zk-loading-indicator");
         indicator.createDiv("zk-spinner");
         indicator.createEl("span", { text: t("Updating...") });
-        indicator.style.cssText = `
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: var(--background-primary);
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            z-index: 1000;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        `;
+        indicator.setCssStyles({
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            background: 'var(--background-primary)',
+            padding: '20px',
+            borderRadius: '8px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+            zIndex: '1000',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+        });
         return indicator;
     }
 
@@ -1473,11 +1496,11 @@ export class ZKIndexView extends FileView {
 
         // 平行宇宙面包屑：选中节点 + MOC 徽章（动态区域）
         this.multiverseContainer = breadcrumbNav.createDiv("zk-multiverse-container");
-        this.multiverseContainer.style.display = "none";
+        this.multiverseContainer.setCssStyles({ display: "none" });
 
         // 层级面包屑：选中节点的 Luhmann 层级路径，点击可暗淡更深层的节点
         this.levelBreadcrumbContainer = breadcrumbNav.createDiv("zk-level-breadcrumb");
-        this.levelBreadcrumbContainer.style.display = "none";
+        this.levelBreadcrumbContainer.setCssStyles({ display: "none" });
 
         // 右侧工具按钮（用 spacer 推到右边）
         const spacer = toolbarDiv.createDiv("zk-toolbar-spacer");
@@ -1544,8 +1567,10 @@ export class ZKIndexView extends FileView {
 
         const btnRect = btnEl.getBoundingClientRect();
         const menu = document.body.createDiv('zk-more-menu');
-        menu.style.position = 'fixed';
-        menu.style.zIndex = '10000';
+        menu.setCssStyles({
+            position: 'fixed',
+            zIndex: '10000',
+        });
 
         // 草稿模式开关(#20):开启后新建节点都先作为草稿,待审批落地
         const draftOption = menu.createDiv('zk-menu-option');
@@ -1629,8 +1654,8 @@ export class ZKIndexView extends FileView {
         });
 
         // 定位菜单：在按钮下方
-        menu.style.top = `${btnRect.bottom + 4}px`;
-        menu.style.right = `${document.documentElement.clientWidth - btnRect.right}px`;
+        menu.setCssStyles({ top: `${btnRect.bottom + 4}px` });
+        menu.setCssStyles({ right: `${document.documentElement.clientWidth - btnRect.right}px` });
 
         // 点击其他地方关闭
         const closeMenu = (e: MouseEvent) => {
@@ -1683,9 +1708,11 @@ export class ZKIndexView extends FileView {
             const fullH = Math.ceil(rawH * exportZoom);
 
             // 临时撑大容器，以 exportZoom 渲染全图
-            graphDiv.style.width = `${fullW}px`;
-            graphDiv.style.height = `${fullH}px`;
-            graphDiv.style.overflow = 'hidden';
+            graphDiv.setCssStyles({
+                width: `${fullW}px`,
+                height: `${fullH}px`,
+                overflow: 'hidden',
+            });
 
             cy.resize();
             cy.viewport({
@@ -1712,10 +1739,12 @@ export class ZKIndexView extends FileView {
             });
 
             // 恢复容器尺寸和视口
-            graphDiv.style.width = savedWidth;
-            graphDiv.style.height = savedHeight;
-            graphDiv.style.position = savedPosition;
-            graphDiv.style.overflow = savedOverflow;
+            graphDiv.setCssStyles({
+                width: savedWidth,
+                height: savedHeight,
+                position: savedPosition,
+                overflow: savedOverflow,
+            });
             cy.resize();
             cy.viewport({ zoom: savedZoom, pan: savedPan });
 
@@ -1733,8 +1762,10 @@ export class ZKIndexView extends FileView {
         } catch (err) {
             console.error('[ZK] export graph as image failed', err);
             // 尝试恢复
-            graphDiv.style.width = '';
-            graphDiv.style.height = '';
+            graphDiv.setCssStyles({
+                width: '',
+                height: '',
+            });
             cy.resize();
             cy.viewport({ zoom: savedZoom, pan: savedPan });
             new Notice(t('export fail'));
@@ -2315,10 +2346,12 @@ cy.fit(null, 40);
                 });
 
             const buttonRow = contentEl.createDiv();
-            buttonRow.style.display = 'flex';
-            buttonRow.style.justifyContent = 'flex-end';
-            buttonRow.style.gap = '8px';
-            buttonRow.style.marginTop = '16px';
+            buttonRow.setCssStyles({
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '8px',
+                marginTop: '16px',
+            });
 
             const cancelBtn = buttonRow.createEl('button', { text: t("Cancel") });
             cancelBtn.onclick = () => {
@@ -2532,7 +2565,7 @@ cy.fit(null, 40);
             if (existingGraphDiv) {
                 const graphHeight = Math.max(220, this.containerEl.offsetHeight - 80);
                 if (existingGraphDiv.style.height !== `${graphHeight}px`) {
-                    existingGraphDiv.style.height = `${graphHeight}px`;
+                    existingGraphDiv.setCssStyles({ height: `${graphHeight}px` });
                     cyInstance.resize();
                 }
                 return;
@@ -2595,24 +2628,30 @@ cy.fit(null, 40);
         }
         // 每次刷新都同步容器尺寸，避免窗口缩放后沿用旧高度
         const graphHeight = Math.max(220, this.containerEl.offsetHeight - 80);
-        branchGraphDiv.style.height = `${graphHeight}px`;
-        branchGraphDiv.style.width = "100%";
+        branchGraphDiv.setCssStyles({
+            height: `${graphHeight}px`,
+            width: "100%",
+        });
 
         if (this.isMobileReadOnly()) {
-            branchGraphDiv.style.border = 'none';
-            branchGraphDiv.style.boxShadow = 'none';
-            branchGraphDiv.style.outline = 'none';
+            branchGraphDiv.setCssStyles({
+                border: 'none',
+                boxShadow: 'none',
+                outline: 'none',
+            });
         } else {
-            branchGraphDiv.style.border = '';
-            branchGraphDiv.style.boxShadow = '';
-            branchGraphDiv.style.outline = '';
+            branchGraphDiv.setCssStyles({
+                border: '',
+                boxShadow: '',
+                outline: '',
+            });
         }
         // Nebula 走透明底(让 CSS 按 dark/light 提供的星云/浅灰径向渐变透出),
         // 否则按 light/dark 给纯色底。注意:这里是 inline 样式,会盖过 CSS,必须显式处理 nebula。
         const isNebulaStyle = this.plugin.settings.themeStyle === 'nebula';
-        branchGraphDiv.style.backgroundColor = isNebulaStyle
+        branchGraphDiv.setCssStyles({ backgroundColor: isNebulaStyle
             ? 'transparent'
-            : (resolveThemeMode(this.plugin.settings.themeMode) === 'light' ? '#f2f5fa' : '#2a2a2a');
+            : (resolveThemeMode(this.plugin.settings.themeMode) === 'light' ? '#f2f5fa' : '#2a2a2a') });
         this.ensureBranchFullscreenBackButton(branchGraphDiv);
 
         // 注意：不再清空 branchGraphDiv，让 CytoscapeRenderer 内部的增量更新逻辑处理
@@ -2770,11 +2809,11 @@ cy.fit(null, 40);
             const setDropHover = (active: boolean) => {
                 branchGraphDiv.classList.toggle('zk-branch-drop-hover', active);
                 if (active) {
-                    branchGraphDiv.style.boxShadow = 'inset 0 0 0 2px rgba(91, 143, 217, 0.9)';
+                    branchGraphDiv.setCssStyles({ boxShadow: 'inset 0 0 0 2px rgba(91, 143, 217, 0.9)' });
                 } else if (this.isMobileReadOnly()) {
-                    branchGraphDiv.style.boxShadow = 'none';
+                    branchGraphDiv.setCssStyles({ boxShadow: 'none' });
                 } else {
-                    branchGraphDiv.style.boxShadow = '';
+                    branchGraphDiv.setCssStyles({ boxShadow: '' });
                 }
             };
             const getLatestMOCFile = () => {
@@ -4449,7 +4488,7 @@ cy.fit(null, 40);
 
         // 清空容器
         this.multiverseContainer.empty();
-        this.multiverseContainer.style.display = "none";
+        this.multiverseContainer.setCssStyles({ display: "none" });
 
         if (!node || !node.file) return;
 
@@ -4462,7 +4501,7 @@ cy.fit(null, 40);
         if (otherMOCs.length === 0) return;
 
         // 显示容器
-        this.multiverseContainer.style.display = "flex";
+        this.multiverseContainer.setCssStyles({ display: "flex" });
 
         // 分隔符
         this.multiverseContainer.createSpan("zk-breadcrumb-sep").setText("\u203A");
@@ -4482,7 +4521,7 @@ cy.fit(null, 40);
 
         // 悬浮面板
         const panel = this.multiverseContainer.createDiv("zk-multiverse-panel");
-        panel.style.display = "none";
+        panel.setCssStyles({ display: "none" });
 
         const panelTitle = panel.createDiv("zk-multiverse-panel-title");
         panelTitle.setText(t("Note also exists in:"));
@@ -4520,13 +4559,13 @@ cy.fit(null, 40);
         // 点击徽章切换面板
         badge.addEventListener("click", (e) => {
             e.stopPropagation();
-            panel.style.display = panel.style.display === "none" ? "block" : "none";
+            panel.setCssStyles({ display: panel.style.display === "none" ? "block" : "none" });
         });
 
         // 点击其他区域关闭面板
         const closePanel = (e: MouseEvent) => {
             if (!panel.contains(e.target as Node) && !badge.contains(e.target as Node)) {
-                panel.style.display = "none";
+                panel.setCssStyles({ display: "none" });
                 document.removeEventListener("click", closePanel);
             }
         };
@@ -4732,11 +4771,11 @@ cy.fit(null, 40);
         this.levelBreadcrumbContainer.empty();
 
         if (this.levelPath.length === 0) {
-            this.levelBreadcrumbContainer.style.display = "none";
+            this.levelBreadcrumbContainer.setCssStyles({ display: "none" });
             return;
         }
 
-        this.levelBreadcrumbContainer.style.display = "flex";
+        this.levelBreadcrumbContainer.setCssStyles({ display: "flex" });
         this.levelBreadcrumbContainer.createSpan("zk-level-divider");
 
         for (let i = 0; i < this.levelPath.length; i++) {
@@ -4875,10 +4914,12 @@ cy.fit(null, 40);
 
         const dropdown = document.body.createDiv('zk-level-dropdown');
         const rect = anchor.getBoundingClientRect();
-        dropdown.style.position = 'fixed';
-        dropdown.style.top = `${rect.bottom + 4}px`;
-        dropdown.style.left = `${rect.left}px`;
-        dropdown.style.zIndex = '10000';
+        dropdown.setCssStyles({
+            position: 'fixed',
+            top: `${rect.bottom + 4}px`,
+            left: `${rect.left}px`,
+            zIndex: '10000',
+        });
 
         for (const node of options) {
             const item = dropdown.createDiv('zk-level-dropdown-item');
@@ -5208,8 +5249,10 @@ cy.fit(null, 40);
         if (existing) existing.remove();
 
         const menu = document.body.createDiv('zk-node-ctx-menu zk-node-context-menu');
-        menu.style.position = 'fixed';
-        menu.style.zIndex = '10000';
+        menu.setCssStyles({
+            position: 'fixed',
+            zIndex: '10000',
+        });
 
         const isAnchor = !!(this.nodeAnchors[node.IDStr] || this.nodeAnchors[node.ID]);
         const nodeId = node.IDStr || node.ID;
@@ -5329,9 +5372,11 @@ cy.fit(null, 40);
         }
 
         // 定位：先在屏幕外渲染以获取尺寸
-        menu.style.visibility = 'hidden';
-        menu.style.left = '0';
-        menu.style.top = '0';
+        menu.setCssStyles({
+            visibility: 'hidden',
+            left: '0',
+            top: '0',
+        });
 
         this.positionContextMenu(menu, mouseEvent);
         setTimeout(() => document.addEventListener('click', closeMenu), 0);
@@ -5345,8 +5390,10 @@ cy.fit(null, 40);
         if (existing) existing.remove();
 
         const menu = document.body.createDiv('zk-node-ctx-menu zk-node-context-menu');
-        menu.style.position = 'fixed';
-        menu.style.zIndex = '10000';
+        menu.setCssStyles({
+            position: 'fixed',
+            zIndex: '10000',
+        });
 
         const closeMenu = (e: MouseEvent) => {
             if (!menu.contains(e.target as Node)) {
@@ -5388,9 +5435,11 @@ cy.fit(null, 40);
      * 在鼠标位置附近定位右键菜单，并保证不溢出视口
      */
     private positionContextMenu(menu: HTMLElement, mouseEvent: MouseEvent) {
-        menu.style.visibility = 'hidden';
-        menu.style.left = '0';
-        menu.style.top = '0';
+        menu.setCssStyles({
+            visibility: 'hidden',
+            left: '0',
+            top: '0',
+        });
         requestAnimationFrame(() => {
             const mw = menu.offsetWidth;
             const mh = menu.offsetHeight;
@@ -5400,9 +5449,11 @@ cy.fit(null, 40);
             let y = mouseEvent.clientY;
             if (x + mw > vw) x = vw - mw - 4;
             if (y + mh > vh) y = vh - mh - 4;
-            menu.style.left = `${x}px`;
-            menu.style.top = `${y}px`;
-            menu.style.visibility = 'visible';
+            menu.setCssStyles({
+                left: `${x}px`,
+                top: `${y}px`,
+                visibility: 'visible',
+            });
         });
     }
 
@@ -5418,11 +5469,13 @@ cy.fit(null, 40);
 
         // 创建菜单容器
         const menu = document.body.createDiv('zk-add-node-menu');
-        menu.style.position = 'fixed';
+        menu.setCssStyles({ position: 'fixed' });
         // 菜单显示在按钮右侧
-        menu.style.left = `${btnRect.right + 10}px`;
-        menu.style.top = `${btnRect.top - 20}px`;
-        menu.style.zIndex = '10000';
+        menu.setCssStyles({
+            left: `${btnRect.right + 10}px`,
+            top: `${btnRect.top - 20}px`,
+            zIndex: '10000',
+        });
 
         // 正向连接选项
         const forwardOption = menu.createDiv('zk-menu-option');
@@ -5826,11 +5879,15 @@ cy.fit(null, 40);
             const selectedValue = selectedRow.createSpan({ cls: 'zk-node-color-value', text: '未选择' });
             const updateSelectedPreview = (color: string) => {
                 if (color) {
-                    selectedPreview.style.backgroundImage = 'none';
-                    selectedPreview.style.backgroundColor = color;
+                    selectedPreview.setCssStyles({
+                        backgroundImage: 'none',
+                        backgroundColor: color,
+                    });
                 } else {
-                    selectedPreview.style.backgroundImage = '';
-                    selectedPreview.style.backgroundColor = 'transparent';
+                    selectedPreview.setCssStyles({
+                        backgroundImage: '',
+                        backgroundColor: 'transparent',
+                    });
                 }
             };
             updateSelectedPreview(initialColor);
@@ -6220,31 +6277,37 @@ cy.fit(null, 40);
 
             const { contentEl } = modal;
             contentEl.empty();
-            contentEl.style.padding = '20px';
+            contentEl.setCssStyles({ padding: '20px' });
 
             const inputContainer = contentEl.createDiv();
-            inputContainer.style.marginBottom = '15px';
+            inputContainer.setCssStyles({ marginBottom: '15px' });
 
             const label = inputContainer.createEl('label', { text: '新的分组名称：' });
-            label.style.display = 'block';
-            label.style.marginBottom = '5px';
-            label.style.color = 'var(--text-normal)';
+            label.setCssStyles({
+                display: 'block',
+                marginBottom: '5px',
+                color: 'var(--text-normal)',
+            });
 
             const input = inputContainer.createEl('input', {
                 type: 'text',
                 value: currentLabel || ''
             });
-            input.style.width = '100%';
-            input.style.padding = '8px';
-            input.style.border = '1px solid var(--background-modifier-border)';
-            input.style.borderRadius = '4px';
-            input.style.backgroundColor = 'var(--background-primary)';
-            input.style.color = 'var(--text-normal)';
+            input.setCssStyles({
+                width: '100%',
+                padding: '8px',
+                border: '1px solid var(--background-modifier-border)',
+                borderRadius: '4px',
+                backgroundColor: 'var(--background-primary)',
+                color: 'var(--text-normal)',
+            });
 
             const buttonContainer = contentEl.createDiv();
-            buttonContainer.style.display = 'flex';
-            buttonContainer.style.justifyContent = 'flex-end';
-            buttonContainer.style.gap = '10px';
+            buttonContainer.setCssStyles({
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '10px',
+            });
 
             const cancelButton = buttonContainer.createEl('button', { text: '取消' });
             cancelButton.addEventListener('click', () => {
@@ -6293,41 +6356,49 @@ cy.fit(null, 40);
 
             const { contentEl } = modal;
             contentEl.empty();
-            contentEl.style.padding = '20px';
+            contentEl.setCssStyles({ padding: '20px' });
 
             const infoDiv = contentEl.createDiv();
-            infoDiv.style.marginBottom = '15px';
-            infoDiv.style.padding = '10px';
-            infoDiv.style.backgroundColor = 'var(--background-secondary)';
-            infoDiv.style.borderRadius = '4px';
-            infoDiv.style.color = 'var(--text-muted)';
+            infoDiv.setCssStyles({
+                marginBottom: '15px',
+                padding: '10px',
+                backgroundColor: 'var(--background-secondary)',
+                borderRadius: '4px',
+                color: 'var(--text-muted)',
+            });
             const currentIdLine = infoDiv.createDiv();
             currentIdLine.appendText('当前分组 ID: ');
             currentIdLine.createEl('strong', { text: currentID });
 
             const inputContainer = contentEl.createDiv();
-            inputContainer.style.marginBottom = '15px';
+            inputContainer.setCssStyles({ marginBottom: '15px' });
 
             const label = inputContainer.createEl('label', { text: '新的分组 ID：' });
-            label.style.display = 'block';
-            label.style.marginBottom = '5px';
-            label.style.color = 'var(--text-normal)';
+            label.setCssStyles({
+                display: 'block',
+                marginBottom: '5px',
+                color: 'var(--text-normal)',
+            });
 
             const input = inputContainer.createEl('input', {
                 type: 'text',
                 value: currentID
             });
-            input.style.width = '100%';
-            input.style.padding = '8px';
-            input.style.border = '1px solid var(--background-modifier-border)';
-            input.style.borderRadius = '4px';
-            input.style.backgroundColor = 'var(--background-primary)';
-            input.style.color = 'var(--text-normal)';
+            input.setCssStyles({
+                width: '100%',
+                padding: '8px',
+                border: '1px solid var(--background-modifier-border)',
+                borderRadius: '4px',
+                backgroundColor: 'var(--background-primary)',
+                color: 'var(--text-normal)',
+            });
 
             const buttonContainer = contentEl.createDiv();
-            buttonContainer.style.display = 'flex';
-            buttonContainer.style.justifyContent = 'flex-end';
-            buttonContainer.style.gap = '10px';
+            buttonContainer.setCssStyles({
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '10px',
+            });
 
             const cancelButton = buttonContainer.createEl('button', { text: '取消' });
             cancelButton.addEventListener('click', () => {
@@ -6389,29 +6460,37 @@ cy.fit(null, 40);
 
             const { contentEl } = modal;
             contentEl.empty();
-            contentEl.style.padding = '20px';
-            contentEl.style.position = 'relative';
+            contentEl.setCssStyles({
+                padding: '20px',
+                position: 'relative',
+            });
 
             const inputContainer = contentEl.createDiv();
-            inputContainer.style.marginBottom = '15px';
-            inputContainer.style.position = 'relative';
+            inputContainer.setCssStyles({
+                marginBottom: '15px',
+                position: 'relative',
+            });
 
             const label = inputContainer.createEl('label', { text: '新内容：' });
-            label.style.display = 'block';
-            label.style.marginBottom = '5px';
-            label.style.color = 'var(--text-normal)';
+            label.setCssStyles({
+                display: 'block',
+                marginBottom: '5px',
+                color: 'var(--text-normal)',
+            });
 
             const input = inputContainer.createEl('textarea');
             input.value = currentContent;
-            input.style.width = '100%';
-            input.style.padding = '8px';
-            input.style.minHeight = '140px';
-            input.style.border = '1px solid var(--background-modifier-border)';
-            input.style.borderRadius = '4px';
-            input.style.backgroundColor = 'var(--background-primary)';
-            input.style.color = 'var(--text-normal)';
-            input.style.resize = 'vertical';
-            input.style.lineHeight = '1.5';
+            input.setCssStyles({
+                width: '100%',
+                padding: '8px',
+                minHeight: '140px',
+                border: '1px solid var(--background-modifier-border)',
+                borderRadius: '4px',
+                backgroundColor: 'var(--background-primary)',
+                color: 'var(--text-normal)',
+                resize: 'vertical',
+                lineHeight: '1.5',
+            });
 
             // [[ 文件候选框状态
             const suggesterState: {
@@ -6465,47 +6544,47 @@ cy.fit(null, 40);
 
                 const popover = document.createElement('div');
                 popover.className = 'node-link-suggester';
-                popover.style.cssText = `
-                    position: fixed;
-                    left: ${inputRect.left}px;
-                    top: ${inputRect.bottom + 6}px;
-                    max-height: ${maxHeight}px;
-                    width: ${Math.min(420, inputRect.width)}px;
-                    background-color: var(--background-primary);
-                    border: 1px solid var(--background-modifier-border);
-                    border-radius: 6px;
-                    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
-                    z-index: 1001;
-                    overflow-y: auto;
-                    padding: 4px 0;
-                `;
+                popover.setCssStyles({
+                    position: 'fixed',
+                    left: `${inputRect.left}px`,
+                    top: `${inputRect.bottom + 6}px`,
+                    maxHeight: `${maxHeight}px`,
+                    width: `${Math.min(420, inputRect.width)}px`,
+                    backgroundColor: 'var(--background-primary)',
+                    border: '1px solid var(--background-modifier-border)',
+                    borderRadius: '6px',
+                    boxShadow: '0 6px 16px rgba(0, 0, 0, 0.35)',
+                    zIndex: '1001',
+                    overflowY: 'auto',
+                    padding: '4px 0',
+                });
 
                 const searchInput = document.createElement('input');
                 searchInput.type = 'text';
                 searchInput.placeholder = 'Search notes...';
-                searchInput.style.cssText = `
-                    width: calc(100% - 16px);
-                    margin: 4px 8px;
-                    padding: 6px 8px;
-                    border: 1px solid var(--background-modifier-border);
-                    border-radius: 4px;
-                    background-color: var(--background-secondary);
-                    color: var(--text-normal);
-                    font-size: 12px;
-                    position: sticky;
-                    top: 0;
-                    z-index: 2;
-                `;
+                searchInput.setCssStyles({
+                    width: 'calc(100% - 16px)',
+                    margin: '4px 8px',
+                    padding: '6px 8px',
+                    border: '1px solid var(--background-modifier-border)',
+                    borderRadius: '4px',
+                    backgroundColor: 'var(--background-secondary)',
+                    color: 'var(--text-normal)',
+                    fontSize: '12px',
+                    position: 'sticky',
+                    top: '0',
+                    zIndex: '2',
+                });
 
                 const updateSelection = () => {
                     if (!suggesterState.popover) return;
                     const items = suggesterState.popover.querySelectorAll('.suggester-item');
                     items.forEach((item: any, index: number) => {
                         if (index === suggesterState.selectedIndex) {
-                            item.style.backgroundColor = 'var(--background-modifier-hover)';
+                            item.setCssStyles({ backgroundColor: 'var(--background-modifier-hover)' });
                             item.scrollIntoView({ block: 'nearest' });
                         } else {
-                            item.style.backgroundColor = '';
+                            item.setCssStyles({ backgroundColor: '' });
                         }
                     });
                 };
@@ -6527,20 +6606,24 @@ cy.fit(null, 40);
                     suggesterState.currentFiles.forEach((file, index) => {
                         const item = document.createElement('div');
                         item.className = 'suggester-item';
-                        item.style.cssText = `
-                            padding: 6px 12px;
-                            cursor: pointer;
-                            display: flex;
-                            flex-direction: column;
-                            gap: 2px;
-                        `;
+                        item.setCssStyles({
+                            padding: '6px 12px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '2px',
+                        });
 
                         const basenameEl = item.createEl('span', { text: file.basename });
-                        basenameEl.style.fontWeight = '500';
-                        basenameEl.style.color = 'var(--text-normal)';
+                        basenameEl.setCssStyles({
+                            fontWeight: '500',
+                            color: 'var(--text-normal)',
+                        });
                         const pathEl = item.createEl('span', { text: file.path });
-                        pathEl.style.fontSize = '11px';
-                        pathEl.style.color = 'var(--text-muted)';
+                        pathEl.setCssStyles({
+                            fontSize: '11px',
+                            color: 'var(--text-muted)',
+                        });
 
                         item.addEventListener('mouseenter', () => {
                             suggesterState.selectedIndex = index;
@@ -6597,17 +6680,21 @@ cy.fit(null, 40);
             };
 
             const buttonContainer = contentEl.createDiv();
-            buttonContainer.style.display = 'flex';
-            buttonContainer.style.justifyContent = 'flex-end';
-            buttonContainer.style.gap = '10px';
+            buttonContainer.setCssStyles({
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '10px',
+            });
 
             const cancelButton = buttonContainer.createEl('button', { text: '取消' });
-            cancelButton.style.padding = '6px 16px';
-            cancelButton.style.border = '1px solid var(--background-modifier-border)';
-            cancelButton.style.borderRadius = '4px';
-            cancelButton.style.backgroundColor = 'var(--background-primary)';
-            cancelButton.style.color = 'var(--text-normal)';
-            cancelButton.style.cursor = 'pointer';
+            cancelButton.setCssStyles({
+                padding: '6px 16px',
+                border: '1px solid var(--background-modifier-border)',
+                borderRadius: '4px',
+                backgroundColor: 'var(--background-primary)',
+                color: 'var(--text-normal)',
+                cursor: 'pointer',
+            });
             cancelButton.addEventListener('click', () => {
                 closeWikiLinkSuggester();
                 resolveOnce(null);
@@ -6615,12 +6702,14 @@ cy.fit(null, 40);
             });
 
             const confirmButton = buttonContainer.createEl('button', { text: '确认' });
-            confirmButton.style.padding = '6px 16px';
-            confirmButton.style.border = 'none';
-            confirmButton.style.borderRadius = '4px';
-            confirmButton.style.backgroundColor = '#5b8fd9';
-            confirmButton.style.color = '#ffffff';
-            confirmButton.style.cursor = 'pointer';
+            confirmButton.setCssStyles({
+                padding: '6px 16px',
+                border: 'none',
+                borderRadius: '4px',
+                backgroundColor: '#5b8fd9',
+                color: '#ffffff',
+                cursor: 'pointer',
+            });
             confirmButton.addEventListener('click', () => {
                 const newContent = input.value.trim();
                 if (!allowEmpty && !newContent) {
@@ -6651,9 +6740,9 @@ cy.fit(null, 40);
                         suggesterState.selectedIndex = next;
                         const items = suggesterState.popover.querySelectorAll('.suggester-item');
                         items.forEach((item: any, index: number) => {
-                            item.style.backgroundColor = index === suggesterState.selectedIndex
+                            item.setCssStyles({ backgroundColor: index === suggesterState.selectedIndex
                                 ? 'var(--background-modifier-hover)'
-                                : '';
+                                : '' });
                         });
                         return;
                     }
@@ -6756,68 +6845,86 @@ cy.fit(null, 40);
             
             const { contentEl } = modal;
             contentEl.empty();
-            contentEl.style.padding = '20px';
+            contentEl.setCssStyles({ padding: '20px' });
             
             const warningDiv = contentEl.createDiv();
-            warningDiv.style.marginBottom = '15px';
-            warningDiv.style.padding = '15px';
-            warningDiv.style.backgroundColor = 'rgba(239, 68, 68, 0.1)';
-            warningDiv.style.border = '1px solid rgba(239, 68, 68, 0.3)';
-            warningDiv.style.borderRadius = '4px';
+            warningDiv.setCssStyles({
+                marginBottom: '15px',
+                padding: '15px',
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                borderRadius: '4px',
+            });
             
             const warningIcon = warningDiv.createEl('div', { text: '⚠️' });
-            warningIcon.style.fontSize = '24px';
-            warningIcon.style.marginBottom = '10px';
+            warningIcon.setCssStyles({
+                fontSize: '24px',
+                marginBottom: '10px',
+            });
             
             const warningText = warningDiv.createEl('div');
             const nodeLine = warningText.createDiv({ text: t("Deleting node").replace("{id}", String(node.ID)) });
-            nodeLine.style.fontWeight = '600';
-            nodeLine.style.marginBottom = '8px';
+            nodeLine.setCssStyles({
+                fontWeight: '600',
+                marginBottom: '8px',
+            });
             const relationLine = warningText.createDiv();
-            relationLine.style.color = 'var(--text-muted)';
+            relationLine.setCssStyles({ color: 'var(--text-muted)' });
             relationLine.appendText(t("This node has"));
             relationLine.createEl('strong', { text: String(relationCount) });
             relationLine.appendText(t("relation connections suffix"));
             const deleteLine = warningText.createDiv({ text: t("Deleting will also remove") });
-            deleteLine.style.color = 'var(--text-muted)';
-            deleteLine.style.marginTop = '8px';
+            deleteLine.setCssStyles({
+                color: 'var(--text-muted)',
+                marginTop: '8px',
+            });
             const list = warningText.createEl('ul');
-            list.style.margin = '8px 0';
-            list.style.paddingLeft = '20px';
-            list.style.color = 'var(--text-muted)';
+            list.setCssStyles({
+                margin: '8px 0',
+                paddingLeft: '20px',
+                color: 'var(--text-muted)',
+            });
             list.createEl('li', { text: t("Node entry in MOC file") });
             list.createEl('li', { text: t("All arrow relations related to node") });
             list.createEl('li', { text: t("Node position information") });
             const irreversibleLine = warningText.createDiv({ text: t("This operation cannot be undone") });
-            irreversibleLine.style.color = 'var(--text-error)';
-            irreversibleLine.style.fontWeight = '600';
-            irreversibleLine.style.marginTop = '8px';
+            irreversibleLine.setCssStyles({
+                color: 'var(--text-error)',
+                fontWeight: '600',
+                marginTop: '8px',
+            });
             
             const buttonContainer = contentEl.createDiv();
-            buttonContainer.style.display = 'flex';
-            buttonContainer.style.justifyContent = 'flex-end';
-            buttonContainer.style.gap = '10px';
-            buttonContainer.style.marginTop = '20px';
+            buttonContainer.setCssStyles({
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '10px',
+                marginTop: '20px',
+            });
             
             const cancelButton = buttonContainer.createEl('button', { text: t("Cancel") });
-            cancelButton.style.padding = '6px 16px';
-            cancelButton.style.border = '1px solid var(--background-modifier-border)';
-            cancelButton.style.borderRadius = '4px';
-            cancelButton.style.backgroundColor = 'var(--background-primary)';
-            cancelButton.style.color = 'var(--text-normal)';
-            cancelButton.style.cursor = 'pointer';
+            cancelButton.setCssStyles({
+                padding: '6px 16px',
+                border: '1px solid var(--background-modifier-border)',
+                borderRadius: '4px',
+                backgroundColor: 'var(--background-primary)',
+                color: 'var(--text-normal)',
+                cursor: 'pointer',
+            });
             cancelButton.addEventListener('click', () => {
                 modal.close();
                 resolve(false);
             });
             
             const confirmButton = buttonContainer.createEl('button', { text: t("Confirm delete") });
-            confirmButton.style.padding = '6px 16px';
-            confirmButton.style.border = 'none';
-            confirmButton.style.borderRadius = '4px';
-            confirmButton.style.backgroundColor = '#ef4444';
-            confirmButton.style.color = '#ffffff';
-            confirmButton.style.cursor = 'pointer';
+            confirmButton.setCssStyles({
+                padding: '6px 16px',
+                border: 'none',
+                borderRadius: '4px',
+                backgroundColor: '#ef4444',
+                color: '#ffffff',
+                cursor: 'pointer',
+            });
             confirmButton.addEventListener('click', () => {
                 modal.close();
                 resolve(true);
@@ -6839,50 +6946,58 @@ cy.fit(null, 40);
         
         const { contentEl } = modal;
         contentEl.empty();
-        contentEl.style.padding = '20px';
+        contentEl.setCssStyles({ padding: '20px' });
         
         // 创建搜索框
         const searchContainer = contentEl.createDiv({ cls: 'zk-node-search-container' });
-        searchContainer.style.marginBottom = '15px';
+        searchContainer.setCssStyles({ marginBottom: '15px' });
         
         const searchInput = searchContainer.createEl('input', {
             type: 'text',
             placeholder: '搜索节点 ID 或标题...'
         });
-        searchInput.style.width = '100%';
-        searchInput.style.padding = '8px';
-        searchInput.style.border = '1px solid var(--background-modifier-border)';
-        searchInput.style.borderRadius = '4px';
-        searchInput.style.backgroundColor = 'var(--background-primary)';
-        searchInput.style.color = 'var(--text-normal)';
+        searchInput.setCssStyles({
+            width: '100%',
+            padding: '8px',
+            border: '1px solid var(--background-modifier-border)',
+            borderRadius: '4px',
+            backgroundColor: 'var(--background-primary)',
+            color: 'var(--text-normal)',
+        });
         
         // 创建节点列表容器
         const nodeListContainer = contentEl.createDiv({ cls: 'zk-node-list-container' });
-        nodeListContainer.style.maxHeight = '400px';
-        nodeListContainer.style.overflowY = 'auto';
-        nodeListContainer.style.border = '1px solid var(--background-modifier-border)';
-        nodeListContainer.style.borderRadius = '4px';
-        nodeListContainer.style.padding = '10px';
+        nodeListContainer.setCssStyles({
+            maxHeight: '400px',
+            overflowY: 'auto',
+            border: '1px solid var(--background-modifier-border)',
+            borderRadius: '4px',
+            padding: '10px',
+        });
         
         // 关系文本输入框
         const relationContainer = contentEl.createDiv({ cls: 'zk-relation-input-container' });
-        relationContainer.style.marginTop = '15px';
+        relationContainer.setCssStyles({ marginTop: '15px' });
         
         const relationLabel = relationContainer.createEl('label', { text: '关系描述（可选）：' });
-        relationLabel.style.display = 'block';
-        relationLabel.style.marginBottom = '5px';
-        relationLabel.style.color = 'var(--text-normal)';
+        relationLabel.setCssStyles({
+            display: 'block',
+            marginBottom: '5px',
+            color: 'var(--text-normal)',
+        });
         
         const relationInput = relationContainer.createEl('input', {
             type: 'text',
             placeholder: '例如：引出、相关、应用等'
         });
-        relationInput.style.width = '100%';
-        relationInput.style.padding = '8px';
-        relationInput.style.border = '1px solid var(--background-modifier-border)';
-        relationInput.style.borderRadius = '4px';
-        relationInput.style.backgroundColor = 'var(--background-primary)';
-        relationInput.style.color = 'var(--text-normal)';
+        relationInput.setCssStyles({
+            width: '100%',
+            padding: '8px',
+            border: '1px solid var(--background-modifier-border)',
+            borderRadius: '4px',
+            backgroundColor: 'var(--background-primary)',
+            color: 'var(--text-normal)',
+        });
         
         let selectedNode: ZKNode | null = null;
         
@@ -6903,51 +7018,63 @@ cy.fit(null, 40);
             
             if (filteredNodes.length === 0) {
                 const emptyHint = nodeListContainer.createDiv({ text: '没有找到匹配的节点' });
-                emptyHint.style.textAlign = 'center';
-                emptyHint.style.padding = '20px';
-                emptyHint.style.color = 'var(--text-muted)';
+                emptyHint.setCssStyles({
+                    textAlign: 'center',
+                    padding: '20px',
+                    color: 'var(--text-muted)',
+                });
                 return;
             }
             
             filteredNodes.forEach(node => {
                 const nodeItem = nodeListContainer.createDiv({ cls: 'zk-node-item' });
-                nodeItem.style.padding = '10px';
-                nodeItem.style.marginBottom = '5px';
-                nodeItem.style.border = '1px solid var(--background-modifier-border)';
-                nodeItem.style.borderRadius = '4px';
-                nodeItem.style.cursor = 'pointer';
-                nodeItem.style.transition = 'background-color 0.2s';
+                nodeItem.setCssStyles({
+                    padding: '10px',
+                    marginBottom: '5px',
+                    border: '1px solid var(--background-modifier-border)',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.2s',
+                });
                 
                 const nodeId = nodeItem.createDiv({ text: node.ID });
-                nodeId.style.fontWeight = '600';
-                nodeId.style.color = 'var(--text-accent)';
-                nodeId.style.marginBottom = '4px';
+                nodeId.setCssStyles({
+                    fontWeight: '600',
+                    color: 'var(--text-accent)',
+                    marginBottom: '4px',
+                });
                 
                 const nodeTitle = nodeItem.createDiv({ text: node.title || node.displayText });
-                nodeTitle.style.fontSize = '0.9em';
-                nodeTitle.style.color = 'var(--text-muted)';
+                nodeTitle.setCssStyles({
+                    fontSize: '0.9em',
+                    color: 'var(--text-muted)',
+                });
                 
                 nodeItem.addEventListener('mouseenter', () => {
-                    nodeItem.style.backgroundColor = 'var(--background-modifier-hover)';
+                    nodeItem.setCssStyles({ backgroundColor: 'var(--background-modifier-hover)' });
                 });
                 
                 nodeItem.addEventListener('mouseleave', () => {
                     if (selectedNode !== node) {
-                        nodeItem.style.backgroundColor = 'transparent';
+                        nodeItem.setCssStyles({ backgroundColor: 'transparent' });
                     }
                 });
                 
                 nodeItem.addEventListener('click', () => {
                     // 取消之前的选中
                     nodeListContainer.querySelectorAll('.zk-node-item').forEach(item => {
-                        (item as HTMLElement).style.backgroundColor = 'transparent';
-                        (item as HTMLElement).style.borderColor = 'var(--background-modifier-border)';
+                        (item as HTMLElement).setCssStyles({
+                            backgroundColor: 'transparent',
+                            borderColor: 'var(--background-modifier-border)',
+                        });
                     });
                     
                     // 选中当前节点
                     selectedNode = node;
-                    nodeItem.style.backgroundColor = 'var(--background-modifier-hover)';
-                    nodeItem.style.borderColor = 'var(--text-accent)';
+                    nodeItem.setCssStyles({
+                        backgroundColor: 'var(--background-modifier-hover)',
+                        borderColor: 'var(--text-accent)',
+                    });
                 });
                 
                 // 双击直接确认
@@ -7006,29 +7133,35 @@ cy.fit(null, 40);
         
         // 按钮容器
         const buttonContainer = contentEl.createDiv({ cls: 'zk-button-container' });
-        buttonContainer.style.marginTop = '20px';
-        buttonContainer.style.display = 'flex';
-        buttonContainer.style.justifyContent = 'flex-end';
-        buttonContainer.style.gap = '10px';
+        buttonContainer.setCssStyles({
+            marginTop: '20px',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '10px',
+        });
         
         // 取消按钮
         const cancelButton = buttonContainer.createEl('button', { text: '取消' });
-        cancelButton.style.padding = '6px 16px';
-        cancelButton.style.border = '1px solid var(--background-modifier-border)';
-        cancelButton.style.borderRadius = '4px';
-        cancelButton.style.backgroundColor = 'var(--background-primary)';
-        cancelButton.style.color = 'var(--text-normal)';
-        cancelButton.style.cursor = 'pointer';
+        cancelButton.setCssStyles({
+            padding: '6px 16px',
+            border: '1px solid var(--background-modifier-border)',
+            borderRadius: '4px',
+            backgroundColor: 'var(--background-primary)',
+            color: 'var(--text-normal)',
+            cursor: 'pointer',
+        });
         cancelButton.addEventListener('click', () => modal.close());
         
         // 确认按钮
         const confirmButton = buttonContainer.createEl('button', { text: '确认' });
-        confirmButton.style.padding = '6px 16px';
-        confirmButton.style.border = 'none';
-        confirmButton.style.borderRadius = '4px';
-        confirmButton.style.backgroundColor = '#5b8fd9';
-        confirmButton.style.color = '#ffffff';
-        confirmButton.style.cursor = 'pointer';
+        confirmButton.setCssStyles({
+            padding: '6px 16px',
+            border: 'none',
+            borderRadius: '4px',
+            backgroundColor: '#5b8fd9',
+            color: '#ffffff',
+            cursor: 'pointer',
+        });
         confirmButton.addEventListener('click', confirmSelection);
         
         // Enter 键确认
@@ -7972,49 +8105,61 @@ cy.fit(null, 40);
 
             const { contentEl } = modal;
             contentEl.empty();
-            contentEl.style.padding = '20px';
+            contentEl.setCssStyles({ padding: '20px' });
 
             const desc = contentEl.createDiv({ text: t("These attachments are no longer referenced") });
-            desc.style.color = 'var(--text-muted)';
-            desc.style.marginBottom = '12px';
+            desc.setCssStyles({
+                color: 'var(--text-muted)',
+                marginBottom: '12px',
+            });
 
             const list = contentEl.createEl('ul');
-            list.style.margin = '0 0 8px 0';
-            list.style.paddingLeft = '20px';
-            list.style.maxHeight = '180px';
-            list.style.overflowY = 'auto';
+            list.setCssStyles({
+                margin: '0 0 8px 0',
+                paddingLeft: '20px',
+                maxHeight: '180px',
+                overflowY: 'auto',
+            });
             files.forEach((file) => {
                 const li = list.createEl('li', { text: file.path });
-                li.style.color = 'var(--text-normal)';
-                li.style.marginBottom = '4px';
-                li.style.wordBreak = 'break-all';
+                li.setCssStyles({
+                    color: 'var(--text-normal)',
+                    marginBottom: '4px',
+                    wordBreak: 'break-all',
+                });
             });
 
             const buttonContainer = contentEl.createDiv();
-            buttonContainer.style.display = 'flex';
-            buttonContainer.style.justifyContent = 'flex-end';
-            buttonContainer.style.gap = '10px';
-            buttonContainer.style.marginTop = '20px';
+            buttonContainer.setCssStyles({
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '10px',
+                marginTop: '20px',
+            });
 
             const cancelButton = buttonContainer.createEl('button', { text: t("Keep attachments") });
-            cancelButton.style.padding = '6px 16px';
-            cancelButton.style.border = '1px solid var(--background-modifier-border)';
-            cancelButton.style.borderRadius = '4px';
-            cancelButton.style.backgroundColor = 'var(--background-primary)';
-            cancelButton.style.color = 'var(--text-normal)';
-            cancelButton.style.cursor = 'pointer';
+            cancelButton.setCssStyles({
+                padding: '6px 16px',
+                border: '1px solid var(--background-modifier-border)',
+                borderRadius: '4px',
+                backgroundColor: 'var(--background-primary)',
+                color: 'var(--text-normal)',
+                cursor: 'pointer',
+            });
             cancelButton.addEventListener('click', () => {
                 modal.close();
                 resolve(false);
             });
 
             const confirmButton = buttonContainer.createEl('button', { text: t("Delete attachments") });
-            confirmButton.style.padding = '6px 16px';
-            confirmButton.style.border = 'none';
-            confirmButton.style.borderRadius = '4px';
-            confirmButton.style.backgroundColor = '#ef4444';
-            confirmButton.style.color = '#ffffff';
-            confirmButton.style.cursor = 'pointer';
+            confirmButton.setCssStyles({
+                padding: '6px 16px',
+                border: 'none',
+                borderRadius: '4px',
+                backgroundColor: '#ef4444',
+                color: '#ffffff',
+                cursor: 'pointer',
+            });
             confirmButton.addEventListener('click', () => {
                 modal.close();
                 resolve(true);
@@ -8495,7 +8640,7 @@ cy.fit(null, 40);
     private refreshProjectBadge(mocPath: string | null | undefined): void {
         if (!this.mocChipProjectBadge) return;
         const mounted = !!(mocPath && this.plugin.vaultIndex?.isMocMounted(mocPath));
-        this.mocChipProjectBadge.style.display = mounted ? "inline-flex" : "none";
+        this.mocChipProjectBadge.setCssStyles({ display: mounted ? "inline-flex" : "none" });
     }
 
     private normalizeNodeLayoutStyle(
@@ -10018,26 +10163,26 @@ cy.fit(null, 40);
             const btn = document.createElement('button');
             btn.className = 'zk-moc-fullscreen-exit';
             setIcon(btn, 'arrow-left');
-            btn.style.cssText = `
-                position: fixed;
-                top: 20px;
-                left: 12px;
-                z-index: 99999;
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                width: 52px;
-                height: 36px;
-                padding: 0;
-                border-radius: 10px;
-                border: 1.5px solid #4a4a6a;
-                background-color: rgba(30, 30, 50, 0.6);
-                color: #c8c8e0;
-                cursor: pointer;
-                pointer-events: auto;
-                touch-action: manipulation;
-                -webkit-tap-highlight-color: transparent;
-            `;
+            btn.setCssStyles({
+                position: 'fixed',
+                top: '20px',
+                left: '12px',
+                zIndex: '99999',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '52px',
+                height: '36px',
+                padding: '0',
+                borderRadius: '10px',
+                border: '1.5px solid #4a4a6a',
+                backgroundColor: 'rgba(30, 30, 50, 0.6)',
+                color: '#c8c8e0',
+                cursor: 'pointer',
+                pointerEvents: 'auto',
+                touchAction: 'manipulation',
+            });
+            btn.setCssProps({ '-webkit-tap-highlight-color': 'transparent' });
             const self = this;
             btn.ontouchstart = function(e) {
                 e.stopPropagation();

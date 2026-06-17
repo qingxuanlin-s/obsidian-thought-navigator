@@ -20,17 +20,17 @@ export class DomTextMeasurer {
 	constructor(parent: HTMLElement) {
 		this.host = document.createElement('div');
 		this.host.className = 'zk-measure-host';
-		this.host.style.cssText = `
-			position: absolute;
-			left: -99999px;
-			top: 0;
-			visibility: hidden;
-			pointer-events: none;
-			white-space: pre-wrap;
-			word-break: break-word;
-			overflow-wrap: anywhere;
-			box-sizing: border-box;
-		`;
+		this.host.setCssStyles({
+			position: 'absolute',
+			left: '-99999px',
+			top: '0',
+			visibility: 'hidden',
+			pointerEvents: 'none',
+			whiteSpace: 'pre-wrap',
+			wordBreak: 'break-word',
+			overflowWrap: 'anywhere',
+			boxSizing: 'border-box',
+		});
 		parent.appendChild(this.host);
 	}
 
@@ -41,25 +41,31 @@ export class DomTextMeasurer {
 		const cached = this.cache.get(key);
 		if (cached) return cached;
 
-		this.host.style.fontSize = `${opts.fontSize}px`;
-		this.host.style.fontWeight = fontWeight;
-		this.host.style.lineHeight = `${lineHeight}px`;
-		this.host.style.fontFamily = 'var(--font-text)';
+		this.host.setCssStyles({
+			fontSize: `${opts.fontSize}px`,
+			fontWeight: fontWeight,
+			lineHeight: `${lineHeight}px`,
+			fontFamily: 'var(--font-text)',
+		});
 		this.host.textContent = text || ' ';
 
-		this.host.style.whiteSpace = 'pre';
-		this.host.style.wordBreak = 'normal';
-		this.host.style.overflowWrap = 'normal';
-		this.host.style.maxWidth = 'none';
-		this.host.style.width = 'max-content';
+		this.host.setCssStyles({
+			whiteSpace: 'pre',
+			wordBreak: 'normal',
+			overflowWrap: 'normal',
+			maxWidth: 'none',
+			width: 'max-content',
+		});
 		const naturalWidth = Math.ceil(this.host.getBoundingClientRect().width);
 		const measuredWidth = Math.min(opts.maxWidth, naturalWidth);
 
-		this.host.style.whiteSpace = 'pre-wrap';
-		this.host.style.wordBreak = 'break-word';
-		this.host.style.overflowWrap = 'anywhere';
-		this.host.style.maxWidth = `${measuredWidth}px`;
-		this.host.style.width = `${measuredWidth}px`;
+		this.host.setCssStyles({
+			whiteSpace: 'pre-wrap',
+			wordBreak: 'break-word',
+			overflowWrap: 'anywhere',
+			maxWidth: `${measuredWidth}px`,
+			width: `${measuredWidth}px`,
+		});
 		const rect = this.host.getBoundingClientRect();
 		const result = {
 			width: measuredWidth,

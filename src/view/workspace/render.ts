@@ -56,6 +56,6 @@ export function relTime(ts: number): string {
 /** CSS 类型字形:<span class="g {glyph}"> 着色为类型色 */
 export function glyph(parent: HTMLElement, type: WSNodeType, color?: string): HTMLElement {
     const g = parent.createSpan({ cls: `g ${GLYPH_CLASS[type]}` });
-    g.style.color = color || TYPE_COLOR[type];
+    g.setCssStyles({ color: color || TYPE_COLOR[type] });
     return g;
 }

@@ -58,7 +58,16 @@ export class MOCSelectorModal extends SuggestModal<MOCItem> {
     renderSuggestion(item: MOCItem, el: HTMLElement): void {
         // 分组标题
         if (item.sectionHeader) {
-            el.style.cssText = 'padding: 6px 12px; font-size: 10.5px; color: var(--text-muted); letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; cursor: default; background: var(--background-secondary);';
+            el.setCssStyles({
+                padding: '6px 12px',
+                fontSize: '10.5px',
+                color: 'var(--text-muted)',
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                fontWeight: '600',
+                cursor: 'default',
+                background: 'var(--background-secondary)',
+            });
             el.setText(item.sectionHeader);
             // 分组项不可选
             el.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); }, true);
@@ -68,29 +77,54 @@ export class MOCSelectorModal extends SuggestModal<MOCItem> {
         const file = item.file;
         if (!file) return;
 
-        el.style.display = 'flex';
-        el.style.justifyContent = 'space-between';
-        el.style.alignItems = 'center';
+        el.setCssStyles({
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+        });
 
         const left = el.createDiv();
-        left.style.cssText = 'display: flex; align-items: baseline; gap: 8px; min-width: 0; flex: 1;';
+        left.setCssStyles({
+            display: 'flex',
+            alignItems: 'baseline',
+            gap: '8px',
+            minWidth: '0',
+            flex: '1',
+        });
 
         const name = left.createSpan();
         name.setText(file.basename);
-        name.style.cssText = 'overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0;';
+        name.setCssStyles({
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            flexShrink: '0',
+        });
 
         // 项目挂载所在的文件夹名(可能多个)
         if (item.isProject && this.vaultIndex) {
             const folders = this.vaultIndex.getFoldersHostingMoc(file.path);
             if (folders.length > 0) {
                 const folderEl = left.createSpan();
-                folderEl.style.cssText = 'overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--text-muted); min-width: 0;';
+                folderEl.setCssStyles({
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    fontSize: '11px',
+                    color: 'var(--text-muted)',
+                    minWidth: '0',
+                });
                 folderEl.setText('· ' + folders.map(f => f.name).join(' / '));
             }
         }
 
         const timeEl = el.createDiv();
-        timeEl.style.cssText = 'font-size: 11px; color: var(--text-muted); flex-shrink: 0; margin-left: 8px;';
+        timeEl.setCssStyles({
+            fontSize: '11px',
+            color: 'var(--text-muted)',
+            flexShrink: '0',
+            marginLeft: '8px',
+        });
         timeEl.setText(formatRelativeTime(file.stat.mtime));
     }
 

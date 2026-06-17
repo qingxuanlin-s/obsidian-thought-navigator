@@ -25,18 +25,20 @@ export class CytoscapeExpandModal extends Modal {
             contentEl.empty();
 
             const header = contentEl.createDiv();
-            header.style.cssText = `
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                padding: 10px 12px 8px;
-            `;
+            header.setCssStyles({
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '10px 12px 8px',
+            });
             header.createEl("div", { text: this.titleText });
 
             this.graphContainer = contentEl.createDiv({ cls: "zk-graph-cytoscape" });
-            this.graphContainer.style.width = "100%";
-            this.graphContainer.style.height = `${Math.max(320, window.innerHeight - 180)}px`;
-            this.graphContainer.style.margin = "0";
+            this.graphContainer.setCssStyles({
+                width: "100%",
+                height: `${Math.max(320, window.innerHeight - 180)}px`,
+                margin: "0",
+            });
 
             this.renderer = new CytoscapeRenderer();
             await this.renderer.render(this.graphContainer, this.graphData, this.renderOptions);

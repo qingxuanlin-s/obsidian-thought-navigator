@@ -669,8 +669,8 @@ export class ScratchpadDrawer {
     }
 
     private autosizeTextarea(textarea: HTMLTextAreaElement): void {
-        textarea.style.height = "auto";
-        textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 108), 260)}px`;
+        textarea.setCssStyles({ height: "auto" });
+        textarea.setCssStyles({ height: `${Math.min(Math.max(textarea.scrollHeight, 108), 260)}px` });
     }
 
     private openFilePicker(): void {
@@ -776,8 +776,10 @@ export class ScratchpadDrawer {
         document.querySelector(".zk-scratch-context-menu")?.remove();
 
         const menu = document.body.createDiv("zk-node-ctx-menu zk-scratch-context-menu");
-        menu.style.position = "fixed";
-        menu.style.zIndex = "10000";
+        menu.setCssStyles({
+            position: "fixed",
+            zIndex: "10000",
+        });
 
         const closeMenu = (evt: MouseEvent) => {
             if (!menu.contains(evt.target as Node)) {
@@ -825,9 +827,11 @@ export class ScratchpadDrawer {
     }
 
     private positionCardMenu(menu: HTMLElement, mouseEvent: MouseEvent): void {
-        menu.style.visibility = "hidden";
-        menu.style.left = "0";
-        menu.style.top = "0";
+        menu.setCssStyles({
+            visibility: "hidden",
+            left: "0",
+            top: "0",
+        });
         requestAnimationFrame(() => {
             const mw = menu.offsetWidth;
             const mh = menu.offsetHeight;
@@ -837,9 +841,11 @@ export class ScratchpadDrawer {
             let y = mouseEvent.clientY;
             if (x + mw > vw) x = vw - mw - 4;
             if (y + mh > vh) y = vh - mh - 4;
-            menu.style.left = `${Math.max(4, x)}px`;
-            menu.style.top = `${Math.max(4, y)}px`;
-            menu.style.visibility = "visible";
+            menu.setCssStyles({
+                left: `${Math.max(4, x)}px`,
+                top: `${Math.max(4, y)}px`,
+                visibility: "visible",
+            });
         });
     }
 

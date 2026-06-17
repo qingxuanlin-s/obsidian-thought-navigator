@@ -76,14 +76,18 @@ export class CrossDomainNodeModal extends FuzzySuggestModal<any> {
         if (promptContainer) {
             const settingContainer = document.createElement('div');
             settingContainer.addClass('cross-domain-setting');
-            settingContainer.style.padding = '10px 20px';
-            settingContainer.style.borderTop = '1px solid var(--background-modifier-border)';
+            settingContainer.setCssStyles({
+                padding: '10px 20px',
+                borderTop: '1px solid var(--background-modifier-border)',
+            });
 
             // 添加标题说明
             const heading = settingContainer.createEl('div');
             heading.textContent = '是否包含子节点';
-            heading.style.fontWeight = 'bold';
-            heading.style.marginBottom = '10px';
+            heading.setCssStyles({
+                fontWeight: 'bold',
+                marginBottom: '10px',
+            });
 
             new Setting(settingContainer)
                 .addToggle((toggle) => {

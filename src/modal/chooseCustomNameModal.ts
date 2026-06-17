@@ -12,7 +12,7 @@ export default class chooseCustomNameModal extends SuggestModal<string> {
 		super(app);
 		this.defaultName = defaultName;
 		this.setPlaceholder(t("Use a custom name"));
-		this.resultContainerEl.style.display = "none";
+		this.resultContainerEl.setCssStyles({ display: "none" });
 
 		this.setInstructions([
 			{
@@ -37,7 +37,7 @@ export default class chooseCustomNameModal extends SuggestModal<string> {
 		const wrapper = createDiv({ cls: "zk-name-input-wrapper" });
 		this.inputEl.parentNode?.insertBefore(wrapper, this.inputEl);
 		wrapper.appendChild(this.inputEl);
-		wrapper.parentElement!.style.display = "block";
+		wrapper.parentElement!.setCssStyles({ display: "block" });
 
 		const btn = createEl("button", { text: t("Save"), cls: "mod-cta" });
 		btn.onclick = (e): void => this.selectSuggestion(this.inputEl.value, e);

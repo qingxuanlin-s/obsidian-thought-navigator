@@ -33,9 +33,11 @@ async function writeTextToSystemClipboard(text: string): Promise<boolean> {
 
     const textarea = document.createElement('textarea');
     textarea.value = text;
-    textarea.style.position = 'fixed';
-    textarea.style.left = '-9999px';
-    textarea.style.top = '0';
+    textarea.setCssStyles({
+        position: 'fixed',
+        left: '-9999px',
+        top: '0',
+    });
     textarea.setAttribute('readonly', 'true');
     document.body.appendChild(textarea);
     textarea.select();
@@ -801,15 +803,15 @@ export function bindEvents(this: any): void {
         const ensureAlignmentOverlay = () => {
             if (alignmentOverlay || !this.container) return;
             alignmentOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            alignmentOverlay.style.cssText = `
-                position: absolute;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                pointer-events: none;
-                z-index: 3;
-            `;
+            alignmentOverlay.setCssStyles({
+                position: 'absolute',
+                top: '0',
+                left: '0',
+                width: '100%',
+                height: '100%',
+                pointerEvents: 'none',
+                zIndex: '3',
+            });
 
             verticalAlignmentLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
             horizontalAlignmentLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -822,7 +824,7 @@ export function bindEvents(this: any): void {
                 line.setAttribute('stroke-width', '1.5');
                 line.setAttribute('stroke-dasharray', '4,4');
                 line.setAttribute('opacity', '0.85');
-                line.style.display = 'none';
+                line.setCssStyles({ display: 'none' });
                 alignmentOverlay!.appendChild(line);
             });
 
@@ -832,7 +834,7 @@ export function bindEvents(this: any): void {
                 line.setAttribute('stroke-width', '1.5');
                 line.setAttribute('stroke-dasharray', '3,3');
                 line.setAttribute('opacity', '0.9');
-                line.style.display = 'none';
+                line.setCssStyles({ display: 'none' });
                 alignmentOverlay!.appendChild(line);
             });
 
@@ -841,30 +843,30 @@ export function bindEvents(this: any): void {
         };
 
         const hideAlignmentGuides = () => {
-            if (verticalAlignmentLine) verticalAlignmentLine.style.display = 'none';
-            if (horizontalAlignmentLine) horizontalAlignmentLine.style.display = 'none';
-            if (spacingGuideLineA) spacingGuideLineA.style.display = 'none';
-            if (spacingGuideLineB) spacingGuideLineB.style.display = 'none';
+            if (verticalAlignmentLine) verticalAlignmentLine.setCssStyles({ display: 'none' });
+            if (horizontalAlignmentLine) horizontalAlignmentLine.setCssStyles({ display: 'none' });
+            if (spacingGuideLineA) spacingGuideLineA.setCssStyles({ display: 'none' });
+            if (spacingGuideLineB) spacingGuideLineB.setCssStyles({ display: 'none' });
         };
 
         const ensureSeparationOverlay = () => {
             if (separationCircle || !this.container) return;
             separationOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            separationOverlay.style.cssText = `
-                position: absolute;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                pointer-events: none;
-                z-index: 3;
-            `;
+            separationOverlay.setCssStyles({
+                position: 'absolute',
+                top: '0',
+                left: '0',
+                width: '100%',
+                height: '100%',
+                pointerEvents: 'none',
+                zIndex: '3',
+            });
             separationCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
             separationCircle.setAttribute('fill', 'none');
             separationCircle.setAttribute('stroke', SEPARATION_STROKE);
             separationCircle.setAttribute('stroke-width', '1.5');
             separationCircle.setAttribute('stroke-dasharray', '6,5');
-            separationCircle.style.display = 'none';
+            separationCircle.setCssStyles({ display: 'none' });
             separationOverlay.appendChild(separationCircle);
             this.container.appendChild(separationOverlay);
             this.activeSeparationOverlay = separationOverlay;
@@ -920,7 +922,7 @@ export function bindEvents(this: any): void {
             separationCircle.setAttribute('cx', String(separationOrbit.cx * zoom + pan.x));
             separationCircle.setAttribute('cy', String(separationOrbit.cy * zoom + pan.y));
             separationCircle.setAttribute('r', String(separationOrbit.radius * zoom));
-            separationCircle.style.display = 'block';
+            separationCircle.setCssStyles({ display: 'block' });
             const np = grabbedNode.position();
             const dist = Math.hypot(np.x - separationOrbit.cx, np.y - separationOrbit.cy);
             const willSeparate = dist > separationOrbit.radius;
@@ -931,7 +933,7 @@ export function bindEvents(this: any): void {
         };
 
         const clearSeparation = () => {
-            if (separationCircle) separationCircle.style.display = 'none';
+            if (separationCircle) separationCircle.setCssStyles({ display: 'none' });
             separationOrbit = null;
             separationWillSeparate = false;
             separationWasSeparated = false;
@@ -1104,9 +1106,9 @@ export function bindEvents(this: any): void {
                 verticalAlignmentLine.setAttribute('y1', `${currentVerticalGuide.y1}`);
                 verticalAlignmentLine.setAttribute('x2', `${currentVerticalGuide.x}`);
                 verticalAlignmentLine.setAttribute('y2', `${currentVerticalGuide.y2}`);
-                verticalAlignmentLine.style.display = 'block';
+                verticalAlignmentLine.setCssStyles({ display: 'block' });
             } else {
-                verticalAlignmentLine.style.display = 'none';
+                verticalAlignmentLine.setCssStyles({ display: 'none' });
             }
 
             if (currentHorizontalGuide) {
@@ -1114,9 +1116,9 @@ export function bindEvents(this: any): void {
                 horizontalAlignmentLine.setAttribute('y1', `${currentHorizontalGuide.y}`);
                 horizontalAlignmentLine.setAttribute('x2', `${currentHorizontalGuide.x2}`);
                 horizontalAlignmentLine.setAttribute('y2', `${currentHorizontalGuide.y}`);
-                horizontalAlignmentLine.style.display = 'block';
+                horizontalAlignmentLine.setCssStyles({ display: 'block' });
             } else {
-                horizontalAlignmentLine.style.display = 'none';
+                horizontalAlignmentLine.setCssStyles({ display: 'none' });
             }
 
             if (horizontalSpacing) {
@@ -1124,28 +1126,28 @@ export function bindEvents(this: any): void {
                 spacingGuideLineA.setAttribute('y1', `${draggedPos.y}`);
                 spacingGuideLineA.setAttribute('x2', `${draggedMetrics.x1}`);
                 spacingGuideLineA.setAttribute('y2', `${draggedPos.y}`);
-                spacingGuideLineA.style.display = 'block';
+                spacingGuideLineA.setCssStyles({ display: 'block' });
 
                 spacingGuideLineB.setAttribute('x1', `${draggedMetrics.x2}`);
                 spacingGuideLineB.setAttribute('y1', `${draggedPos.y}`);
                 spacingGuideLineB.setAttribute('x2', `${horizontalSpacing.right.x1}`);
                 spacingGuideLineB.setAttribute('y2', `${draggedPos.y}`);
-                spacingGuideLineB.style.display = 'block';
+                spacingGuideLineB.setCssStyles({ display: 'block' });
             } else if (verticalSpacing) {
                 spacingGuideLineA.setAttribute('x1', `${draggedPos.x}`);
                 spacingGuideLineA.setAttribute('y1', `${verticalSpacing.top.y2}`);
                 spacingGuideLineA.setAttribute('x2', `${draggedPos.x}`);
                 spacingGuideLineA.setAttribute('y2', `${draggedMetrics.y1}`);
-                spacingGuideLineA.style.display = 'block';
+                spacingGuideLineA.setCssStyles({ display: 'block' });
 
                 spacingGuideLineB.setAttribute('x1', `${draggedPos.x}`);
                 spacingGuideLineB.setAttribute('y1', `${draggedMetrics.y2}`);
                 spacingGuideLineB.setAttribute('x2', `${draggedPos.x}`);
                 spacingGuideLineB.setAttribute('y2', `${verticalSpacing.bottom.y1}`);
-                spacingGuideLineB.style.display = 'block';
+                spacingGuideLineB.setCssStyles({ display: 'block' });
             } else {
-                spacingGuideLineA.style.display = 'none';
-                spacingGuideLineB.style.display = 'none';
+                spacingGuideLineA.setCssStyles({ display: 'none' });
+                spacingGuideLineB.setCssStyles({ display: 'none' });
             }
         };
 
@@ -1186,14 +1188,14 @@ export function bindEvents(this: any): void {
             line.setAttribute('stroke', '#10b981');
             line.setAttribute('stroke-width', '2');
             line.setAttribute('stroke-dasharray', '5,5');
-            line.style.display = 'none';
+            line.setCssStyles({ display: 'none' });
             svgOverlay.appendChild(line);
             tempConnectionLine = line;
             return line;
         };
 
         const hideTempConnectionLine = () => {
-            if (tempConnectionLine) tempConnectionLine.style.display = 'none';
+            if (tempConnectionLine) tempConnectionLine.setCssStyles({ display: 'none' });
         };
 
         // 切换智能连线高亮目标（仅当目标变化时操作 class）
@@ -1335,15 +1337,15 @@ export function bindEvents(this: any): void {
             // 创建 SVG 叠加层用于绘制连线
             if (!svgOverlay && this.container) {
                 svgOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-                svgOverlay.style.cssText = `
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    width: 100%;
-                    height: 100%;
-                    pointer-events: none;
-                    z-index: 2;
-                `;
+                svgOverlay.setCssStyles({
+                    position: 'absolute',
+                    top: '0',
+                    left: '0',
+                    width: '100%',
+                    height: '100%',
+                    pointerEvents: 'none',
+                    zIndex: '2',
+                });
                 this.container.appendChild(svgOverlay);
             }
             ensureTempConnectionLine();
@@ -1456,7 +1458,7 @@ export function bindEvents(this: any): void {
                     line.setAttribute('y1', targetPos.y.toString());
                     line.setAttribute('x2', pos.x.toString());
                     line.setAttribute('y2', pos.y.toString());
-                    line.style.display = 'block';
+                    line.setCssStyles({ display: 'block' });
                 }
                 setSmartHoverTarget(nearestNode.id());
             } else {
@@ -1676,7 +1678,7 @@ export function bindEvents(this: any): void {
             // 注意:不在此清除 separationOrbit。Cytoscape 不保证 free 与 dragfree 的先后,
             // 若 free 先于 dragfree 触发,这里清掉会让 dragfree 读到 null(分离意图丢失)。
             // 清理交给 dragfree 末尾 + 下次 grab 开头。这里仅隐藏可能残留的虚线圆。
-            if (separationCircle) separationCircle.style.display = 'none';
+            if (separationCircle) separationCircle.setCssStyles({ display: 'none' });
 
             // 纯点击（未发生移动）时，dragfree 不触发，在此恢复分组关系
             // 若实际发生了拖动，由 dragfree 负责处理，free 不干预
@@ -1789,7 +1791,7 @@ export function bindEvents(this: any): void {
             if (this.cy) {
                 const container = this.cy.container();
                 if (container) {
-                    container.style.cursor = 'grabbing';
+                    container.setCssStyles({ cursor: 'grabbing' });
                 }
             }
         });
@@ -1798,7 +1800,7 @@ export function bindEvents(this: any): void {
             if (this.cy && this.cy.userPanningEnabled()) {
                 const container = this.cy.container();
                 if (container) {
-                    container.style.cursor = 'grab';
+                    container.setCssStyles({ cursor: 'grab' });
                 }
             }
         });
@@ -2186,15 +2188,15 @@ export function addGroupResizeHandles(this: any): void {
         // 创建手柄容器
         const handleContainer = document.createElement('div');
         handleContainer.className = 'zk-group-resize-handles';
-        handleContainer.style.cssText = `
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 999;
-        `;
+        handleContainer.setCssStyles({
+            position: 'absolute',
+            top: '0',
+            left: '0',
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'none',
+            zIndex: '999',
+        });
         this.container.appendChild(handleContainer);
 
         let currentHandles: HTMLElement[] = [];
@@ -2227,19 +2229,19 @@ export function addGroupResizeHandles(this: any): void {
             positions.forEach(pos => {
                 const handle = document.createElement('div');
                 handle.className = `zk-group-resize-handle zk-group-resize-${pos.name}`;
-                handle.style.cssText = `
-                    position: absolute;
-                    width: 10px;
-                    height: 10px;
-                    background-color: #5b8fd9;
-                    border: 2px solid #ffffff;
-                    border-radius: 2px;
-                    cursor: ${pos.cursor};
-                    pointer-events: auto;
-                    transform: translate(-50%, -50%);
-                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-                    z-index: 1000;
-                `;
+                handle.setCssStyles({
+                    position: 'absolute',
+                    width: '10px',
+                    height: '10px',
+                    backgroundColor: '#5b8fd9',
+                    border: '2px solid #ffffff',
+                    borderRadius: '2px',
+                    cursor: `${pos.cursor}`,
+                    pointerEvents: 'auto',
+                    transform: 'translate(-50%, -50%)',
+                    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+                    zIndex: '1000',
+                });
                 handleContainer.appendChild(handle);
                 currentHandles.push(handle);
 
@@ -2267,7 +2269,7 @@ export function addGroupResizeHandles(this: any): void {
 
 
             currentHandles.forEach((handle, index) => {
-                handle.style.transform = `translate(${positions[index].x}px, ${positions[index].y}px) translate(-50%, -50%)`;
+                handle.setCssStyles({ transform: `translate(${positions[index].x}px, ${positions[index].y}px) translate(-50%, -50%)` });
             });
         };
 
@@ -2316,13 +2318,13 @@ export function bindResizeHandleDrag(this: any, handle: HTMLElement,
             // 创建预览框
             resizePreview = document.createElement('div');
             resizePreview.className = 'zk-group-resize-preview';
-            resizePreview.style.cssText = `
-                position: absolute;
-                border: 2px dashed #5b8fd9;
-                background-color: rgba(91, 143, 217, 0.1);
-                pointer-events: none;
-                z-index: 998;
-            `;
+            resizePreview.setCssStyles({
+                position: 'absolute',
+                border: '2px dashed #5b8fd9',
+                backgroundColor: 'rgba(91, 143, 217, 0.1)',
+                pointerEvents: 'none',
+                zIndex: '998',
+            });
             handleContainer.appendChild(resizePreview);
 
             // 禁用 Cytoscape 的平移
@@ -2352,9 +2354,11 @@ export function bindResizeHandleDrag(this: any, handle: HTMLElement,
                 const minSize = 50;
                 if (newX2 - newX1 < minSize || newY2 - newY1 < minSize) return;
                 if (resizePreview) {
-                    resizePreview.style.transform = `translate(${newX1}px, ${newY1}px)`;
-                    resizePreview.style.width = `${newX2 - newX1}px`;
-                    resizePreview.style.height = `${newY2 - newY1}px`;
+                    resizePreview.setCssStyles({
+                        transform: `translate(${newX1}px, ${newY1}px)`,
+                        width: `${newX2 - newX1}px`,
+                        height: `${newY2 - newY1}px`,
+                    });
                 }
 
                 // 节点遍历和分组更新通过 RAF 节流（重操作）
@@ -2573,18 +2577,18 @@ export function initBoxSelection(this: any): void {
         // 创建选择框元素
         const selectionBox = document.createElement('div');
         selectionBox.className = 'zk-selection-box';
-        selectionBox.style.cssText = `
-            position: absolute;
-            left: 0;
-            top: 0;
-            display: none;
-            border: 2px dashed #5b8fd9;
-            background-color: rgba(91, 143, 217, 0.1);
-            border-radius: 4px;
-            pointer-events: none;
-            z-index: 9999;
-            will-change: transform;
-        `;
+        selectionBox.setCssStyles({
+            position: 'absolute',
+            left: '0',
+            top: '0',
+            display: 'none',
+            border: '2px dashed #5b8fd9',
+            backgroundColor: 'rgba(91, 143, 217, 0.1)',
+            borderRadius: '4px',
+            pointerEvents: 'none',
+            zIndex: '9999',
+            willChange: 'transform',
+        });
         this.container.appendChild(selectionBox);
         this.boxSelectionElement = selectionBox;
 
@@ -2642,10 +2646,12 @@ export function initBoxSelection(this: any): void {
             hasMoved = false;  // 重置移动标记
 
             // 显示选择框
-            selectionBox.style.display = 'block';
-            selectionBox.style.transform = `translate(${startX}px, ${startY}px)`;
-            selectionBox.style.width = '0px';
-            selectionBox.style.height = '0px';
+            selectionBox.setCssStyles({
+                display: 'block',
+                transform: `translate(${startX}px, ${startY}px)`,
+                width: '0px',
+                height: '0px',
+            });
 
             e.preventDefault();
         });
@@ -2670,9 +2676,11 @@ export function initBoxSelection(this: any): void {
             lastBoxHeight = Math.abs(currentY - startY);
 
             // 选择框视觉立即更新
-            selectionBox.style.transform = `translate(${lastBoxLeft}px, ${lastBoxTop}px)`;
-            selectionBox.style.width = `${lastBoxWidth}px`;
-            selectionBox.style.height = `${lastBoxHeight}px`;
+            selectionBox.setCssStyles({
+                transform: `translate(${lastBoxLeft}px, ${lastBoxTop}px)`,
+                width: `${lastBoxWidth}px`,
+                height: `${lastBoxHeight}px`,
+            });
 
             // 节点选择检测通过 RAF 节流
             if (boxSelectRafId !== null) return;
@@ -2689,7 +2697,7 @@ export function initBoxSelection(this: any): void {
             isDragging = false;
 
             // 隐藏选择框
-            selectionBox.style.display = 'none';
+            selectionBox.setCssStyles({ display: 'none' });
 
             // 只有在真正移动了鼠标（框选操作）时才显示批量工具栏
             if (hasMoved) {
@@ -3394,15 +3402,15 @@ export function createPlaceholderConnectionLine(this: any, placeholderNodeId: st
         if (!svgOverlay) {
             svgOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
             svgOverlay.classList.add('placeholder-connections-svg');
-            svgOverlay.style.cssText = `
-                position: absolute;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                pointer-events: none;
-                z-index: 1;
-            `;
+            svgOverlay.setCssStyles({
+                position: 'absolute',
+                top: '0',
+                left: '0',
+                width: '100%',
+                height: '100%',
+                pointerEvents: 'none',
+                zIndex: '1',
+            });
             this.container.appendChild(svgOverlay);
         }
 
@@ -3537,45 +3545,47 @@ export function batchDeleteNodes(this: any): void {
 
         // 创建确认对话框
         const overlay = document.createElement('div');
-        overlay.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 10001;
-        `;
+        overlay.setCssStyles({
+            position: 'fixed',
+            top: '0',
+            left: '0',
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: '10001',
+        });
 
         const dialog = document.createElement('div');
-        dialog.style.cssText = `
-            background-color: var(--background-primary);
-            border: 1px solid var(--background-modifier-border);
-            border-radius: 8px;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-            min-width: 300px;
-        `;
+        dialog.setCssStyles({
+            backgroundColor: 'var(--background-primary)',
+            border: '1px solid var(--background-modifier-border)',
+            borderRadius: '8px',
+            padding: '20px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '15px',
+            minWidth: '300px',
+        });
 
         const title = document.createElement('h3');
         title.textContent = t("Confirm delete");
-        title.style.margin = '0';
+        title.setCssStyles({ margin: '0' });
         dialog.appendChild(title);
 
         const message = document.createElement('p');
         message.textContent = t("Confirm delete nodes").replace("{count}", String(nodeIdsSnapshot.length));
-        message.style.margin = '0';
+        message.setCssStyles({ margin: '0' });
         dialog.appendChild(message);
 
         const buttonContainer = document.createElement('div');
-        buttonContainer.style.display = 'flex';
-        buttonContainer.style.gap = '10px';
-        buttonContainer.style.justifyContent = 'flex-end';
+        buttonContainer.setCssStyles({
+            display: 'flex',
+            gap: '10px',
+            justifyContent: 'flex-end',
+        });
 
         const confirmBtn = document.createElement('button');
         confirmBtn.textContent = t("Confirm");

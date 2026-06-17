@@ -34,7 +34,7 @@ export class SpacesTree {
         this.container.empty();
         const spaces = this.ctx.store.getSpaces();
         if (!spaces.length) {
-            this.container.createDiv({ cls: 'empty', text: t('ws no members') }).style.padding = '10px 14px';
+            this.container.createDiv({ cls: 'empty', text: t('ws no members') }).setCssStyles({ padding: '10px 14px' });
             return;
         }
         for (const space of spaces) this.renderSpace(space);
@@ -100,12 +100,12 @@ export class SpacesTree {
         const open = this.isOpen(nkey);
 
         const row = this.container.createDiv({ cls: 'nrow' + (this.isCurrent(n.id) ? ' sel' : '') });
-        row.style.paddingLeft = `${16 + depth * 14}px`;
+        row.setCssStyles({ paddingLeft: `${16 + depth * 14}px` });
 
         // 嵌套层级的 1px 竖向缩进引导线(桶根节点 depth=2 不画)
         if (depth > 2) {
             const guide = row.createSpan({ cls: 'nguide' });
-            guide.style.left = `${10 + depth * 14}px`;
+            guide.setCssStyles({ left: `${10 + depth * 14}px` });
         }
 
         const caret = row.createSpan({ cls: 'caret' + (open ? ' open' : '') + (kids.length ? '' : ' leaf') });
@@ -122,7 +122,10 @@ export class SpacesTree {
             const pct = projectProgress(p);
             if (pct !== null) {
                 const pg = row.createDiv({ cls: 'npg' });
-                pg.createEl('i').style.cssText = `width:${pct}%;background:${STATUS_COLOR[p.status]};`;
+                pg.createEl('i').setCssStyles({
+                    width: `${pct}%`,
+                    background: `${STATUS_COLOR[p.status]}`,
+                });
             }
         } else if (n.type === 'moc') {
             const agg = this.ctx.store.servedBy(n.id).length;

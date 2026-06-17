@@ -63,7 +63,7 @@ export class NodeDetailPanel {
         this.deps = deps;
 
         this.root = parent.createDiv("zk-detail-panel zk-detail-panel-right");
-        this.root.style.display = 'none';
+        this.root.setCssStyles({ display: 'none' });
 
         // 拖拽调宽把手(贴内边,竖向全高)
         const resizeHandle = this.root.createDiv("zk-detail-resize");
@@ -134,13 +134,13 @@ export class NodeDetailPanel {
     setWidth(px: number): void {
         if (!px || px <= 0) {
             this.widthPx = 0;
-            this.root.style.width = '';
+            this.root.setCssStyles({ width: '' });
             return;
         }
         const parentW = this.root.parentElement?.clientWidth || window.innerWidth;
         const max = Math.max(360, Math.round(parentW * 0.85));
         this.widthPx = Math.round(Math.max(320, Math.min(max, px)));
-        this.root.style.width = `${this.widthPx}px`;
+        this.root.setCssStyles({ width: `${this.widthPx}px` });
     }
 
     /** 钉住=常驻:背景点击 / Esc 不再关闭;persist=true 时回写设置 */
@@ -187,7 +187,7 @@ export class NodeDetailPanel {
 
         // 头部:类型圆点 + 类型标签
         const color = this.deps.getBranchColor(node) || 'var(--interactive-accent)';
-        this.dotEl.style.backgroundColor = color;
+        this.dotEl.setCssStyles({ backgroundColor: color });
         this.kickerTextEl.setText(this.typeLabel(node));
 
         const titleText = (node.title || node.displayText || node.IDStr || '').trim() || node.IDStr;
@@ -197,7 +197,7 @@ export class NodeDetailPanel {
 
         this.renderBreadcrumb(node);
 
-        this.root.style.display = 'flex';
+        this.root.setCssStyles({ display: 'flex' });
         // 强制 reflow 后加 open 类触发滑入动画
         void this.root.offsetWidth;
         this.root.addClass("zk-detail-panel-open");
@@ -215,7 +215,7 @@ export class NodeDetailPanel {
         // 等滑出动画结束再 display:none
         const r = this.root;
         window.setTimeout(() => {
-            if (!r.hasClass("zk-detail-panel-open")) r.style.display = 'none';
+            if (!r.hasClass("zk-detail-panel-open")) r.setCssStyles({ display: 'none' });
         }, 200);
     }
 
@@ -230,15 +230,15 @@ export class NodeDetailPanel {
         this.teardownEditor();
         this.currentNode = null;
         this.renderToken++;
-        this.dotEl.style.backgroundColor = 'var(--zk-text-faint, #6f727c)';
+        this.dotEl.setCssStyles({ backgroundColor: 'var(--zk-text-faint, #6f727c)' });
         this.kickerTextEl.setText('');
         this.titleEl.setText('');
         this.titleEl.removeAttribute("title");
-        this.breadcrumbEl.style.display = 'none';
+        this.breadcrumbEl.setCssStyles({ display: 'none' });
         this.bodyEl.empty();
         const ph = this.bodyEl.createDiv("zk-detail-empty");
         ph.createDiv("zk-detail-empty-text").setText(t("detail placeholder"));
-        this.root.style.display = 'flex';
+        this.root.setCssStyles({ display: 'flex' });
         void this.root.offsetWidth;
         this.root.addClass("zk-detail-panel-open");
     }
@@ -319,10 +319,10 @@ export class NodeDetailPanel {
         this.breadcrumbEl.empty();
         const arr = node.IDArr || [];
         if (arr.length === 0) {
-            this.breadcrumbEl.style.display = 'none';
+            this.breadcrumbEl.setCssStyles({ display: 'none' });
             return;
         }
-        this.breadcrumbEl.style.display = 'block';
+        this.breadcrumbEl.setCssStyles({ display: 'block' });
         arr.forEach((idStr, i) => {
             // IDArr 元素本身即该层的完整 IDStr(累积前缀),直接使用
             const crumb = this.breadcrumbEl.createSpan("zk-detail-crumb");

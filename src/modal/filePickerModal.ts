@@ -42,18 +42,30 @@ export class FilePickerModal extends Modal {
             type: "text",
             placeholder: t("Search files to mount placeholder"),
         });
-        search.style.cssText = "width: 100%; margin-bottom: 8px;";
+        search.setCssStyles({
+            width: '100%',
+            marginBottom: '8px',
+        });
         search.addEventListener("input", () => {
             this.query = search.value.trim().toLowerCase();
             this.renderList();
         });
 
         this.listEl = contentEl.createDiv("zk-file-picker-list");
-        this.listEl.style.cssText =
-            "max-height: 50vh; overflow-y: auto; border: 1px solid var(--background-modifier-border); border-radius: 6px;";
+        this.listEl.setCssStyles({
+            maxHeight: '50vh',
+            overflowY: 'auto',
+            border: '1px solid var(--background-modifier-border)',
+            borderRadius: '6px',
+        });
 
         const footer = contentEl.createDiv("zk-file-picker-footer");
-        footer.style.cssText = "display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px;";
+        footer.setCssStyles({
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '8px',
+            marginTop: '12px',
+        });
         const cancel = footer.createEl("button", { text: t("Cancel") });
         cancel.addEventListener("click", () => this.close());
         this.confirmBtn = footer.createEl("button", { cls: "mod-cta" });
@@ -79,7 +91,11 @@ export class FilePickerModal extends Modal {
 
         if (matched.length === 0) {
             const empty = this.listEl.createDiv();
-            empty.style.cssText = "padding: 16px; text-align: center; color: var(--text-muted);";
+            empty.setCssStyles({
+                padding: '16px',
+                textAlign: 'center',
+                color: 'var(--text-muted)',
+            });
             empty.setText(t("No matching files"));
             return;
         }
@@ -87,27 +103,58 @@ export class FilePickerModal extends Modal {
         for (const file of matched) {
             const mounted = this.mountedPaths.has(file.path);
             const row = this.listEl.createDiv("zk-file-picker-row");
-            row.style.cssText =
-                "display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; border-bottom: 1px solid var(--background-modifier-border-hover);" +
-                (mounted ? " opacity: 0.5; cursor: default;" : "");
+            row.setCssStyles({
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "6px 10px",
+                cursor: mounted ? "default" : "pointer",
+                borderBottom: "1px solid var(--background-modifier-border-hover)",
+                opacity: mounted ? "0.5" : "",
+            });
 
             const box = row.createSpan();
-            box.style.cssText = "flex-shrink: 0; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center;";
+            box.setCssStyles({
+                flexShrink: '0',
+                width: '16px',
+                height: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+            });
             const checked = this.selected.has(file.path);
             setIcon(box, mounted ? "check" : (checked ? "check-square" : "square"));
-            box.style.color = (checked || mounted) ? "var(--interactive-accent)" : "var(--text-muted)";
+            box.setCssStyles({ color: (checked || mounted) ? "var(--interactive-accent)" : "var(--text-muted)" });
 
             const name = row.createSpan();
-            name.style.cssText = "flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;";
+            name.setCssStyles({
+                flex: '1',
+                minWidth: '0',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+            });
             name.setText(file.basename);
 
             const path = row.createSpan();
-            path.style.cssText = "flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--text-muted);";
+            path.setCssStyles({
+                flexShrink: '1',
+                minWidth: '0',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                fontSize: '11px',
+                color: 'var(--text-muted)',
+            });
             path.setText(file.parent && file.parent.path !== "/" ? file.parent.path : "");
 
             if (mounted) {
                 const tag = row.createSpan();
-                tag.style.cssText = "flex-shrink: 0; font-size: 11px; color: var(--text-muted);";
+                tag.setCssStyles({
+                    flexShrink: '0',
+                    fontSize: '11px',
+                    color: 'var(--text-muted)',
+                });
                 tag.setText(t("Already mounted tag"));
                 continue;
             }

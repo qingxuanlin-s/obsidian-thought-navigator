@@ -132,7 +132,14 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
 	// 创建隐藏容器（Cytoscape 需要真实 DOM 才能完成布局/overlay 渲染）
 	// opacity 必须保持 1，否则 html-to-image 截图全透明
 	const hiddenDiv = document.createElement('div');
-	hiddenDiv.style.cssText = 'position:fixed;left:-99999px;top:-99999px;width:900px;height:600px;pointer-events:none;';
+	hiddenDiv.setCssStyles({
+		position: 'fixed',
+		left: '-99999px',
+		top: '-99999px',
+		width: '900px',
+		height: '600px',
+		pointerEvents: 'none',
+	});
 	document.body.appendChild(hiddenDiv);
 
 	const renderer = new CytoscapeRenderer();
@@ -174,8 +181,10 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
 		const fullW = Math.ceil(rawW * exportZoom);
 		const fullH = Math.ceil(rawH * exportZoom);
 
-		hiddenDiv.style.width = `${fullW}px`;
-		hiddenDiv.style.height = `${fullH}px`;
+		hiddenDiv.setCssStyles({
+			width: `${fullW}px`,
+			height: `${fullH}px`,
+		});
 		cy.resize();
 		cy.viewport({
 			zoom: exportZoom,

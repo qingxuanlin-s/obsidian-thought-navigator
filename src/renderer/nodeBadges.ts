@@ -126,7 +126,7 @@ export function renderNodeBadges(this: any): void {
                     delete entry.el.dataset.styleSig;
                 }
                 delete entry.el.dataset.editing;
-                entry.el.style.display = 'block';
+                entry.el.setCssStyles({ display: 'block' });
                 if (entry.el.parentNode) entry.el.parentNode.removeChild(entry.el);
             });
 
@@ -138,30 +138,30 @@ export function renderNodeBadges(this: any): void {
             // 创建分组 glass 层（插到最前，位于 canvas 下方）
             glassLayer = document.createElement('div');
             glassLayer.className = 'zk-group-glass-layer';
-            glassLayer.style.cssText = `
-                position: absolute;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                pointer-events: none;
-                z-index: 0;
-                overflow: hidden;
-            `;
+            glassLayer.setCssStyles({
+                position: 'absolute',
+                top: '0',
+                left: '0',
+                width: '100%',
+                height: '100%',
+                pointerEvents: 'none',
+                zIndex: '0',
+                overflow: 'hidden',
+            });
             this.container.insertBefore(glassLayer, this.container.firstChild);
 
             // 创建徽章容器
             badgeContainer = document.createElement('div');
             badgeContainer.className = 'zk-node-badges';
-            badgeContainer.style.cssText = `
-                position: absolute;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                pointer-events: none;
-                z-index: 3;
-            `;
+            badgeContainer.setCssStyles({
+                position: 'absolute',
+                top: '0',
+                left: '0',
+                width: '100%',
+                height: '100%',
+                pointerEvents: 'none',
+                zIndex: '3',
+            });
             this.container.appendChild(badgeContainer);
         }
 
@@ -180,104 +180,122 @@ export function renderNodeBadges(this: any): void {
             if (incIds) return;
             const glassEl = document.createElement('div');
             glassEl.className = 'zk-group-glass';
-            glassEl.style.position = 'absolute';
-            glassEl.style.left = '0';
-            glassEl.style.top = '0';
-            glassEl.style.borderRadius = '12px';
-            glassEl.style.border = isLightTheme
+            glassEl.setCssStyles({
+                position: 'absolute',
+                left: '0',
+                top: '0',
+                borderRadius: '12px',
+                border: isLightTheme
                 ? '1px solid rgba(180, 195, 220, 0.34)'
-                : '1px solid rgba(255, 255, 255, 0.075)';
-            glassEl.style.background = isLightTheme
+                : '1px solid rgba(255, 255, 255, 0.075)',
+                background: isLightTheme
                 ? 'rgba(255, 255, 255, 0.18)'
-                : 'rgba(255, 255, 255, 0.022)';
+                : 'rgba(255, 255, 255, 0.022)',
+            });
             (glassEl.style as any).backdropFilter = 'blur(6px)';
             (glassEl.style as any).webkitBackdropFilter = 'blur(6px)';
-            glassEl.style.boxShadow = isLightTheme
+            glassEl.setCssStyles({ boxShadow: isLightTheme
                 ? '0 1px 8px rgba(0,0,0,0.035)'
-                : '0 1px 10px rgba(0,0,0,0.16)';
+                : '0 1px 10px rgba(0,0,0,0.16)' });
             glassLayer.appendChild(glassEl);
 
             // 标签下方的遮罩层：用于“切断”被标签覆盖区域的上边框，降低视觉噪声
             const labelMaskEl = document.createElement('div');
             labelMaskEl.className = 'zk-group-glass-label-mask';
-            labelMaskEl.style.position = 'absolute';
-            labelMaskEl.style.top = '0';
-            labelMaskEl.style.left = '0';
-            labelMaskEl.style.transform = 'translate(0, -50%)';
-            labelMaskEl.style.borderRadius = '999px';
-            labelMaskEl.style.pointerEvents = 'none';
-            labelMaskEl.style.zIndex = '1';
+            labelMaskEl.setCssStyles({
+                position: 'absolute',
+                top: '0',
+                left: '0',
+                transform: 'translate(0, -50%)',
+                borderRadius: '999px',
+                pointerEvents: 'none',
+                zIndex: '1',
+            });
             const containerBg = this.container ? getComputedStyle(this.container).backgroundColor : '';
-            labelMaskEl.style.background = containerBg || (isLightTheme ? '#f5f5f5' : '#2a2a2a');
+            labelMaskEl.setCssStyles({ background: containerBg || (isLightTheme ? '#f5f5f5' : '#2a2a2a') });
             glassEl.appendChild(labelMaskEl);
 
             const labelEl = document.createElement('div');
             labelEl.className = 'zk-group-glass-label';
             labelEl.textContent = groupNode.data('label') || '';
-            labelEl.style.position = 'absolute';
-            labelEl.style.fontWeight = '600';
-            labelEl.style.color = isLightTheme ? '#5b6578' : 'rgba(235, 241, 255, 0.78)';
-            labelEl.style.pointerEvents = 'none';
-            labelEl.style.userSelect = 'none';
-            labelEl.style.whiteSpace = 'nowrap';
-            labelEl.style.left = '0';
-            labelEl.style.top = '0';
-            labelEl.style.transform = 'translate(0, -50%)';
-            labelEl.style.display = 'inline-flex';
-            labelEl.style.alignItems = 'center';
-            labelEl.style.justifyContent = 'center';
-            labelEl.style.border = isLightTheme
+            labelEl.setCssStyles({
+                position: 'absolute',
+                fontWeight: '600',
+                color: isLightTheme ? '#5b6578' : 'rgba(235, 241, 255, 0.78)',
+                pointerEvents: 'none',
+                userSelect: 'none',
+                whiteSpace: 'nowrap',
+                left: '0',
+                top: '0',
+                transform: 'translate(0, -50%)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: isLightTheme
                 ? '1px solid rgba(168, 184, 214, 0.54)'
-                : '1px solid rgba(206, 220, 245, 0.30)';
+                : '1px solid rgba(206, 220, 245, 0.30)',
+            });
             // 通过弱化底边制造“标签压在边框上”的半镶嵌感
-            labelEl.style.borderBottomColor = isLightTheme
+            labelEl.setCssStyles({
+                borderBottomColor: isLightTheme
                 ? 'rgba(168, 184, 214, 0.15)'
-                : 'rgba(206, 220, 245, 0.12)';
-            labelEl.style.borderRadius = '999px';
-            labelEl.style.background = isLightTheme
+                : 'rgba(206, 220, 245, 0.12)',
+                borderRadius: '999px',
+                background: isLightTheme
                 ? 'rgba(255, 255, 255, 0.42)'
-                : 'rgba(14, 24, 40, 0.46)';
+                : 'rgba(14, 24, 40, 0.46)',
+            });
             (labelEl.style as any).backdropFilter = 'blur(5px)';
             (labelEl.style as any).webkitBackdropFilter = 'blur(5px)';
-            labelEl.style.boxShadow = isLightTheme
+            labelEl.setCssStyles({
+                boxShadow: isLightTheme
                 ? '0 1px 4px rgba(50, 70, 100, 0.09)'
-                : '0 1px 5px rgba(0, 0, 0, 0.22)';
-            labelEl.style.zIndex = '2';
+                : '0 1px 5px rgba(0, 0, 0, 0.22)',
+                zIndex: '2',
+            });
             glassEl.appendChild(labelEl);
 
             const updateGlassPos = () => {
                 if (!this.cy || groupNode.removed()) {
-                    glassEl.style.display = 'none';
+                    glassEl.setCssStyles({ display: 'none' });
                     return;
                 }
                 const bb = groupNode.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
                 if (!bb || bb.w <= 0 || bb.h <= 0) {
-                    glassEl.style.display = 'none';
+                    glassEl.setCssStyles({ display: 'none' });
                     return;
                 }
-                glassEl.style.display = 'block';
-                glassEl.style.transform = `translate(${bb.x1}px, ${bb.y1}px)`;
-                glassEl.style.width = `${bb.w}px`;
-                glassEl.style.height = `${bb.h}px`;
+                glassEl.setCssStyles({
+                    display: 'block',
+                    transform: `translate(${bb.x1}px, ${bb.y1}px)`,
+                    width: `${bb.w}px`,
+                    height: `${bb.h}px`,
+                });
 
                 // 分组拖拽反馈：拖出原分组或拖入目标分组时高亮边框
                 if (groupNode.hasClass('group-exit-warning') || groupNode.hasClass('group-join-warning')) {
-                    glassEl.style.border = '1.5px dashed rgba(245, 158, 11, 0.85)';
-                    glassEl.style.boxShadow = '0 0 0 2px rgba(245, 158, 11, 0.12), 0 1px 10px rgba(0,0,0,0.16)';
+                    glassEl.setCssStyles({
+                        border: '1.5px dashed rgba(245, 158, 11, 0.85)',
+                        boxShadow: '0 0 0 2px rgba(245, 158, 11, 0.12), 0 1px 10px rgba(0,0,0,0.16)',
+                    });
                 } else {
-                    glassEl.style.border = isLightTheme
+                    glassEl.setCssStyles({
+                        border: isLightTheme
                         ? '1px solid rgba(180, 195, 220, 0.34)'
-                        : '1px solid rgba(255, 255, 255, 0.075)';
-                    glassEl.style.boxShadow = isLightTheme
+                        : '1px solid rgba(255, 255, 255, 0.075)',
+                        boxShadow: isLightTheme
                         ? '0 1px 8px rgba(0,0,0,0.035)'
-                        : '0 1px 10px rgba(0,0,0,0.16)';
+                        : '0 1px 10px rgba(0,0,0,0.16)',
+                    });
                 }
 
                 // 边界标签化：标签压在容器上边框，内部空间不占用
                 const zoom = this.cy.zoom();
-                labelEl.style.left = `${Math.max(10, 14 * zoom)}px`;
-                labelEl.style.fontSize = `${Math.max(11, 13 * zoom)}px`;
-                labelEl.style.padding = `${Math.max(2, 3 * zoom)}px ${Math.max(10, 14 * zoom)}px`;
+                labelEl.setCssStyles({
+                    left: `${Math.max(10, 14 * zoom)}px`,
+                    fontSize: `${Math.max(11, 13 * zoom)}px`,
+                    padding: `${Math.max(2, 3 * zoom)}px ${Math.max(10, 14 * zoom)}px`,
+                });
                 labelEl.textContent = groupNode.data('label') || '';
 
                 // 遮罩尺寸略大于标签，确保边框不会穿透到文字和标签底色
@@ -285,9 +303,11 @@ export function renderNodeBadges(this: any): void {
                 const labelH = labelEl.offsetHeight || 0;
                 const maskPadX = Math.max(4, 6 * zoom);
                 const maskPadY = Math.max(1, 2 * zoom);
-                labelMaskEl.style.left = `${Math.max(10, 14 * zoom) - maskPadX / 2}px`;
-                labelMaskEl.style.width = `${labelW + maskPadX}px`;
-                labelMaskEl.style.height = `${Math.max(4, labelH + maskPadY)}px`;
+                labelMaskEl.setCssStyles({
+                    left: `${Math.max(10, 14 * zoom) - maskPadX / 2}px`,
+                    width: `${labelW + maskPadX}px`,
+                    height: `${Math.max(4, labelH + maskPadY)}px`,
+                });
             };
 
             // 不在此 inline 定位:末尾 overlayScheduler.immediate() 会在同一同步周期内
@@ -305,10 +325,10 @@ export function renderNodeBadges(this: any): void {
 			const underlineGroupEl = document.createElement('div');
 			underlineGroupEl.className = 'zk-node-file-underline-group';
 			underlineGroupEl.dataset.nodeId = node.id();
-			underlineGroupEl.style.cssText = `
-				position: absolute;
-				pointer-events: none;
-			`;
+			underlineGroupEl.setCssStyles({
+				position: 'absolute',
+				pointerEvents: 'none',
+			});
             badgeContainer.appendChild(underlineGroupEl);
 
             // 缓存：label 不变时复用 wrappedLines 和 modelLineWidths，避免每帧 measureText
@@ -487,10 +507,12 @@ export function renderNodeBadges(this: any): void {
                 while (lineElements.length < count) {
                     const hitEl = document.createElement('div');
                     hitEl.className = 'zk-node-file-link-hit';
-                    hitEl.style.position = 'absolute';
-                    hitEl.style.background = 'transparent';
-                    hitEl.style.pointerEvents = 'auto';
-                    hitEl.style.cursor = 'pointer';
+                    hitEl.setCssStyles({
+                        position: 'absolute',
+                        background: 'transparent',
+                        pointerEvents: 'auto',
+                        cursor: 'pointer',
+                    });
                     hitEl.addEventListener('mousedown', (e: MouseEvent) => {
                         if (e.button !== 0) return;
                         // 标记:本次点击落在文件链接区,tap 不应触发选中/detail
@@ -529,10 +551,12 @@ export function renderNodeBadges(this: any): void {
 
                     const underlineEl = document.createElement('div');
                     underlineEl.className = 'zk-node-file-underline';
-                    underlineEl.style.position = 'absolute';
-                    underlineEl.style.background = 'rgba(255, 255, 255, 0.58)';
-                    underlineEl.style.borderRadius = '999px';
-                    underlineEl.style.pointerEvents = 'none';
+                    underlineEl.setCssStyles({
+                        position: 'absolute',
+                        background: 'rgba(255, 255, 255, 0.58)',
+                        borderRadius: '999px',
+                        pointerEvents: 'none',
+                    });
 
                     underlineGroupEl.appendChild(hitEl);
                     underlineGroupEl.appendChild(underlineEl);
@@ -543,7 +567,7 @@ export function renderNodeBadges(this: any): void {
             const updateUnderlinePosition = () => {
                 if (!this.cy) return;
                 if (this.overlayScheduler.isInteracting || this.container?.dataset.zkTextNodeResizing === '1') {
-                    underlineGroupEl.style.display = 'none';
+                    underlineGroupEl.setCssStyles({ display: 'none' });
                     return;
                 }
 
@@ -554,13 +578,13 @@ export function renderNodeBadges(this: any): void {
                     !node.visible();
 
                 if (isHidden) {
-                    underlineGroupEl.style.display = 'none';
+                    underlineGroupEl.setCssStyles({ display: 'none' });
                     return;
                 }
 
                 const label = String(node.data('label') || '').trim();
                 if (!label) {
-                    underlineGroupEl.style.display = 'none';
+                    underlineGroupEl.setCssStyles({ display: 'none' });
                     return;
                 }
 
@@ -576,7 +600,7 @@ export function renderNodeBadges(this: any): void {
                 const zoom = this.cy.zoom();
                 const box = node.renderedBoundingBox();
 
-                underlineGroupEl.style.display = 'block';
+                underlineGroupEl.setCssStyles({ display: 'block' });
 
                 if (cytoscapeLayout) {
                     ensureLineElements(cytoscapeLayout.length);
@@ -584,15 +608,19 @@ export function renderNodeBadges(this: any): void {
                         const { hitEl, underlineEl } = lineElements[i];
                         const layout = cytoscapeLayout[i];
                         const underlineWidth = Math.min(box.w - 24 * zoom, layout.width);
-                        hitEl.style.width = `${underlineWidth}px`;
-                        hitEl.style.height = `${layout.lineHeight}px`;
-                        hitEl.style.left = `${layout.centerX - underlineWidth / 2}px`;
-                        hitEl.style.top = `${layout.baselineY - layout.lineHeight}px`;
+                        hitEl.setCssStyles({
+                            width: `${underlineWidth}px`,
+                            height: `${layout.lineHeight}px`,
+                            left: `${layout.centerX - underlineWidth / 2}px`,
+                            top: `${layout.baselineY - layout.lineHeight}px`,
+                        });
 
-                        underlineEl.style.width = `${underlineWidth}px`;
-                        underlineEl.style.height = `${Math.max(1, 2 * zoom)}px`;
-                        underlineEl.style.left = `${layout.centerX - underlineWidth / 2}px`;
-                        underlineEl.style.top = `${layout.baselineY}px`;
+                        underlineEl.setCssStyles({
+                            width: `${underlineWidth}px`,
+                            height: `${Math.max(1, 2 * zoom)}px`,
+                            left: `${layout.centerX - underlineWidth / 2}px`,
+                            top: `${layout.baselineY}px`,
+                        });
                     }
                     return;
                 }
@@ -618,16 +646,20 @@ export function renderNodeBadges(this: any): void {
                     const hitHeight = Math.max(16 * zoom, lineHeight);
                     const { hitEl, underlineEl } = lineElements[i];
 
-                    hitEl.style.width = `${underlineWidth}px`;
-                    hitEl.style.height = `${hitHeight}px`;
-                    hitEl.style.left = `${centerX - underlineWidth / 2}px`;
-                    hitEl.style.top = `${lineCenterY - hitHeight / 2}px`;
+                    hitEl.setCssStyles({
+                        width: `${underlineWidth}px`,
+                        height: `${hitHeight}px`,
+                        left: `${centerX - underlineWidth / 2}px`,
+                        top: `${lineCenterY - hitHeight / 2}px`,
+                    });
 
                     const underlineY = lineCenterY + (fontPx * 0.58 * zoom);
-                    underlineEl.style.width = `${underlineWidth}px`;
-                    underlineEl.style.height = `${Math.max(1, 2 * zoom)}px`;
-                    underlineEl.style.left = `${centerX - underlineWidth / 2}px`;
-                    underlineEl.style.top = `${underlineY}px`;
+                    underlineEl.setCssStyles({
+                        width: `${underlineWidth}px`,
+                        height: `${Math.max(1, 2 * zoom)}px`,
+                        left: `${centerX - underlineWidth / 2}px`,
+                        top: `${underlineY}px`,
+                    });
                 }
             };
 
@@ -649,28 +681,26 @@ export function renderNodeBadges(this: any): void {
                 const remarkColor = node.data('branchNodeBorder') || '#ef4444';
                 if (remarkColor === lastRemarkColor) return;
                 lastRemarkColor = remarkColor;
-                remarkEl.style.cssText = `
-                position: absolute;
-                transform-origin: top left;
-                width: 28px;
-                height: 28px;
-                background: radial-gradient(circle at 50% 32%, ${remarkColor} 0%, ${remarkColor} 58%, ${remarkColor}d8 100%);
-                color: #ffffff;
-                font-size: 16px;
-                font-weight: 700;
-                border-radius: 999px;
-                border: 1.5px solid rgba(255, 255, 255, 0.5);
-                box-shadow: 0 0 8px ${remarkColor}59,
-                    0 1px 3px rgba(0, 0, 0, 0.35),
-                    inset 0 1px 0 rgba(255, 255, 255, 0.3);
-                text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                pointer-events: auto;
-                cursor: ${readOnly ? 'default' : 'pointer'};
-                user-select: none;
-            `;
+                remarkEl.setCssStyles({
+                    position: 'absolute',
+                    transformOrigin: 'top left',
+                    width: '28px',
+                    height: '28px',
+                    background: `radial-gradient(circle at 50% 32%, ${remarkColor} 0%, ${remarkColor} 58%, ${remarkColor}d8 100%)`,
+                    color: '#ffffff',
+                    fontSize: '16px',
+                    fontWeight: '700',
+                    borderRadius: '999px',
+                    border: '1.5px solid rgba(255, 255, 255, 0.5)',
+                    boxShadow: `0 0 8px ${remarkColor}59, 0 1px 3px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.3)`,
+                    textShadow: '0 1px 1px rgba(0, 0, 0, 0.25)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    pointerEvents: 'auto',
+                    cursor: `${readOnly ? 'default' : 'pointer'}`,
+                    userSelect: 'none',
+                });
             };
             applyRemarkBadgeStyle();
             badgeContainer.appendChild(remarkEl);
@@ -678,25 +708,25 @@ export function renderNodeBadges(this: any): void {
 			const tooltipEl = document.createElement('div');
 			tooltipEl.className = 'zk-node-remark-tooltip markdown-rendered';
 			tooltipEl.dataset.nodeId = node.id();
-			tooltipEl.style.cssText = `
-                position: absolute;
-                max-width: 280px;
-                padding: 8px 10px;
-                background: rgba(15, 23, 42, 0.96);
-                color: #ffffff;
-                font-size: 12px;
-                line-height: 1.45;
-                border-radius: 8px;
-                border: 1px solid rgba(148, 163, 184, 0.28);
-                box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
-                white-space: pre-wrap;
-                word-break: break-word;
-                pointer-events: none;
-                opacity: 0;
-                transform: translateY(4px);
-                transition: opacity 0.12s ease, transform 0.12s ease;
-                z-index: 20;
-            `;
+			tooltipEl.setCssStyles({
+				position: 'absolute',
+				maxWidth: '280px',
+				padding: '8px 10px',
+				background: 'rgba(15, 23, 42, 0.96)',
+				color: '#ffffff',
+				fontSize: '12px',
+				lineHeight: '1.45',
+				borderRadius: '8px',
+				border: '1px solid rgba(148, 163, 184, 0.28)',
+				boxShadow: '0 8px 24px rgba(0, 0, 0, 0.32)',
+				whiteSpace: 'pre-wrap',
+				wordBreak: 'break-word',
+				pointerEvents: 'none',
+				opacity: '0',
+				transform: 'translateY(4px)',
+				transition: 'opacity 0.12s ease, transform 0.12s ease',
+				zIndex: '20',
+			});
             badgeContainer.appendChild(tooltipEl);
 
             // 懒缓存：embed/image 卡片在 addNodeBadges 之后才创建，首次查到后复用
@@ -719,9 +749,11 @@ export function renderNodeBadges(this: any): void {
                 // 快速路径：无 remark 且未选中时直接隐藏，跳过 visibility 检查和 boundingBox 计算
                 if (!remarkText && !isSelected) {
                     if (remarkEl.style.display !== 'none') {
-                        remarkEl.style.display = 'none';
-                        tooltipEl.style.display = 'none';
-                        tooltipEl.style.opacity = '0';
+                        remarkEl.setCssStyles({ display: 'none' });
+                        tooltipEl.setCssStyles({
+                            display: 'none',
+                            opacity: '0',
+                        });
                     }
                     return;
                 }
@@ -736,15 +768,17 @@ export function renderNodeBadges(this: any): void {
                 applyRemarkBadgeStyle();
 
                 if (!shouldShow) {
-                    remarkEl.style.display = 'none';
-                    tooltipEl.style.display = 'none';
-                    tooltipEl.style.opacity = '0';
-                    tooltipEl.style.transform = 'translateY(4px)';
+                    remarkEl.setCssStyles({ display: 'none' });
+                    tooltipEl.setCssStyles({
+                        display: 'none',
+                        opacity: '0',
+                        transform: 'translateY(4px)',
+                    });
                     return;
                 }
 
-                remarkEl.style.display = 'flex';
-                tooltipEl.style.display = 'block';
+                remarkEl.setCssStyles({ display: 'flex' });
+                tooltipEl.setCssStyles({ display: 'block' });
                 const zoom = this.cy.zoom();
                 // 文本节点的 Canvas label 会被 markdown overlay 替换（text-opacity:0），
                 // 但仍会撑大默认 boundingBox。排除 labels 后位置才贴合实际可视卡片。
@@ -787,12 +821,14 @@ export function renderNodeBadges(this: any): void {
                 }
 
                 // 尺寸固定为基准 28px 一档,缩放交给 transform: scale,每帧只写 transform(无重排)。
-                remarkEl.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`;
+                remarkEl.setCssStyles({ transform: `translate(${x}px, ${y}px) scale(${zoom})` });
 
                 const tooltipX = x + size + (8 * zoom);
                 const tooltipY = y - (6 * zoom);
-                tooltipEl.style.left = `${tooltipX}px`;
-                tooltipEl.style.top = `${tooltipY}px`;
+                tooltipEl.setCssStyles({
+                    left: `${tooltipX}px`,
+                    top: `${tooltipY}px`,
+                });
             };
 
             badgeUpdaters.push({ node, fn: updateRemarkPosition });
@@ -814,13 +850,17 @@ export function renderNodeBadges(this: any): void {
                 const remarkText = node.data('remark') || '';
                 if (!remarkText) return;
                 ensureTooltipRendered(); // 首次 hover 才渲染富文本(懒加载)
-                tooltipEl.style.opacity = '1';
-                tooltipEl.style.transform = 'translateY(0)';
+                tooltipEl.setCssStyles({
+                    opacity: '1',
+                    transform: 'translateY(0)',
+                });
             });
 
             remarkEl.addEventListener('mouseleave', () => {
-                tooltipEl.style.opacity = '0';
-                tooltipEl.style.transform = 'translateY(4px)';
+                tooltipEl.setCssStyles({
+                    opacity: '0',
+                    transform: 'translateY(4px)',
+                });
             });
         });
 
@@ -846,23 +886,23 @@ export function renderNodeBadges(this: any): void {
                 ? `0 1px 0 rgba(255, 255, 255, 0.5)`
                 : `0 0 3px rgba(255, 224, 140, 0.5),
                     0 0 7px rgba(255, 206, 100, 0.3)`;
-            starEl.style.cssText = `
-                position: absolute;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                color: ${isLightTheme ? '#b8860b' : '#f0d489'};
-                font-size: 18px;
-                line-height: 1;
-                pointer-events: none;
-                background: ${anchorBadgeBackground};
-                border: 1px solid ${isLightTheme ? 'rgba(204, 155, 22, 0.35)' : 'rgba(255, 234, 154, 0.32)'};
-                border-radius: 999px;
-                box-shadow: ${anchorBadgeShadow};
-                text-shadow: ${anchorBadgeTextShadow};
-                z-index: 8;
-                transform: translate(-50%, -50%);
-            `;
+            starEl.setCssStyles({
+                position: 'absolute',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: `${isLightTheme ? '#b8860b' : '#f0d489'}`,
+                fontSize: '18px',
+                lineHeight: '1',
+                pointerEvents: 'none',
+                background: `${anchorBadgeBackground}`,
+                border: `1px solid ${isLightTheme ? 'rgba(204, 155, 22, 0.35)' : 'rgba(255, 234, 154, 0.32)'}`,
+                borderRadius: '999px',
+                boxShadow: `${anchorBadgeShadow}`,
+                textShadow: `${anchorBadgeTextShadow}`,
+                zIndex: '8',
+                transform: 'translate(-50%, -50%)',
+            });
             badgeContainer.appendChild(starEl);
 
             const updateAnchorPos = () => {
@@ -872,19 +912,21 @@ export function renderNodeBadges(this: any): void {
                     node.hasClass('zk-collapsed-hidden') ||
                     node.style('display') === 'none' ||
                     !node.visible();
-                if (isHidden) { starEl.style.display = 'none'; return; }
+                if (isHidden) { starEl.setCssStyles({ display: 'none' }); return; }
 
-                starEl.style.display = 'block';
+                starEl.setCssStyles({ display: 'block' });
                 const zoom = this.cy.zoom();
                 const bb = node.renderedBoundingBox();
                 const badgeSize = Math.max(MIN_ANCHOR_PX, 26 * zoom);
                 const fontSize = Math.max(14, badgeSize * 0.62);
                 const borderWidth = Math.max(1, badgeSize * 0.045);
-                starEl.style.width = `${badgeSize}px`;
-                starEl.style.height = `${badgeSize}px`;
-                starEl.style.fontSize = `${fontSize}px`;
-                starEl.style.borderWidth = `${borderWidth}px`;
-                starEl.style.transform = `translate(${bb.x1 + badgeSize * 0.48}px, ${bb.y1 + badgeSize * 0.48}px) translate(-50%, -50%)`;
+                starEl.setCssStyles({
+                    width: `${badgeSize}px`,
+                    height: `${badgeSize}px`,
+                    fontSize: `${fontSize}px`,
+                    borderWidth: `${borderWidth}px`,
+                    transform: `translate(${bb.x1 + badgeSize * 0.48}px, ${bb.y1 + badgeSize * 0.48}px) translate(-50%, -50%)`,
+                });
             };
 
             badgeUpdaters.push({ node, fn: updateAnchorPos });
@@ -902,22 +944,22 @@ export function renderNodeBadges(this: any): void {
             draftEl.className = 'zk-node-draft-badge';
             draftEl.dataset.nodeId = node.id();
             draftEl.textContent = badgeText;
-            draftEl.style.cssText = `
-                position: absolute;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                color: #ffffff;
-                font-weight: 700;
-                line-height: 1;
-                pointer-events: none;
-                background: ${badgeColor};
-                border: 1.5px solid ${isLightTheme ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.5)'};
-                border-radius: 999px;
-                box-shadow: 0 2px 6px rgba(0,0,0,0.25);
-                z-index: 8;
-                transform: translate(-50%, -50%);
-            `;
+            draftEl.setCssStyles({
+                position: 'absolute',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#ffffff',
+                fontWeight: '700',
+                lineHeight: '1',
+                pointerEvents: 'none',
+                background: `${badgeColor}`,
+                border: `1.5px solid ${isLightTheme ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.5)'}`,
+                borderRadius: '999px',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
+                zIndex: '8',
+                transform: 'translate(-50%, -50%)',
+            });
             badgeContainer.appendChild(draftEl);
 
             const updateDraftPos = () => {
@@ -927,17 +969,19 @@ export function renderNodeBadges(this: any): void {
                     node.hasClass('zk-collapsed-hidden') ||
                     node.style('display') === 'none' ||
                     !node.visible();
-                if (isHidden) { draftEl.style.display = 'none'; return; }
+                if (isHidden) { draftEl.setCssStyles({ display: 'none' }); return; }
 
-                draftEl.style.display = 'flex';
+                draftEl.setCssStyles({ display: 'flex' });
                 const zoom = this.cy.zoom();
                 const bb = node.renderedBoundingBox();
                 const badgeSize = Math.max(MIN_DRAFT_PX, 22 * zoom);
                 const fontSize = Math.max(9, badgeSize * 0.5);
-                draftEl.style.width = `${badgeSize}px`;
-                draftEl.style.height = `${badgeSize}px`;
-                draftEl.style.fontSize = `${fontSize}px`;
-                draftEl.style.transform = `translate(${bb.x1 + badgeSize * 0.4}px, ${bb.y1 + badgeSize * 0.4}px) translate(-50%, -50%)`;
+                draftEl.setCssStyles({
+                    width: `${badgeSize}px`,
+                    height: `${badgeSize}px`,
+                    fontSize: `${fontSize}px`,
+                    transform: `translate(${bb.x1 + badgeSize * 0.4}px, ${bb.y1 + badgeSize * 0.4}px) translate(-50%, -50%)`,
+                });
             };
 
             badgeUpdaters.push({ node, fn: updateDraftPos });
@@ -970,93 +1014,111 @@ export function renderNodeBadges(this: any): void {
             cdEl.title = links.length > 1
                 ? `${links.length} 个跨领域链接`
                 : `跨领域链接 · ${cdLinkTargetText(links[0])}`;
-            cdEl.style.cssText = `
-                position: absolute;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                gap: 2px;
-                color: #ffffff;
-                font-weight: 700;
-                line-height: 1;
-                white-space: nowrap;
-                pointer-events: auto;
-                cursor: pointer;
-                background: ${cdBadgeColor};
-                border: 1.5px solid ${isLightTheme ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.5)'};
-                border-radius: 999px;
-                box-shadow: 0 2px 6px rgba(0,0,0,0.25);
-                z-index: 8;
-                transform: translate(-50%, -50%);
-            `;
+            cdEl.setCssStyles({
+                position: 'absolute',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '2px',
+                color: '#ffffff',
+                fontWeight: '700',
+                lineHeight: '1',
+                whiteSpace: 'nowrap',
+                pointerEvents: 'auto',
+                cursor: 'pointer',
+                background: `${cdBadgeColor}`,
+                border: `1.5px solid ${isLightTheme ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.5)'}`,
+                borderRadius: '999px',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
+                zIndex: '8',
+                transform: 'translate(-50%, -50%)',
+            });
             badgeContainer.appendChild(cdEl);
 
             // hover 展开卡片:列出每条链接(关系标签 / 目标笔记 / 来源 MOC / 删除)
             const cdPanel = document.createElement('div');
             cdPanel.className = 'zk-node-cross-domain-panel';
             cdPanel.dataset.nodeId = node.id();
-            cdPanel.style.cssText = `
-                position: absolute;
-                min-width: 200px;
-                max-width: 320px;
-                padding: 6px;
-                display: flex;
-                flex-direction: column;
-                gap: 2px;
-                background: ${isLightTheme ? 'rgba(255,255,255,0.98)' : 'rgba(15,23,42,0.97)'};
-                color: ${isLightTheme ? '#1f2937' : '#f1f5f9'};
-                border-radius: 10px;
-                border: 1px solid ${isLightTheme ? 'rgba(115,87,198,0.25)' : 'rgba(160,139,232,0.3)'};
-                box-shadow: 0 8px 24px rgba(0,0,0,0.32);
-                pointer-events: auto;
-                opacity: 0;
-                transform: translateY(4px);
-                transition: opacity 0.12s ease, transform 0.12s ease;
-                z-index: 21;
-            `;
-            cdPanel.style.display = 'none';
+            cdPanel.setCssStyles({
+                position: 'absolute',
+                minWidth: '200px',
+                maxWidth: '320px',
+                padding: '6px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '2px',
+                background: `${isLightTheme ? 'rgba(255,255,255,0.98)' : 'rgba(15,23,42,0.97)'}`,
+                color: `${isLightTheme ? '#1f2937' : '#f1f5f9'}`,
+                borderRadius: '10px',
+                border: `1px solid ${isLightTheme ? 'rgba(115,87,198,0.25)' : 'rgba(160,139,232,0.3)'}`,
+                boxShadow: '0 8px 24px rgba(0,0,0,0.32)',
+                pointerEvents: 'auto',
+                opacity: '0',
+                transform: 'translateY(4px)',
+                transition: 'opacity 0.12s ease, transform 0.12s ease',
+                zIndex: '21',
+            });
+            cdPanel.setCssStyles({ display: 'none' });
             badgeContainer.appendChild(cdPanel);
 
             links.forEach((link) => {
                 const row = document.createElement('div');
                 row.className = 'zk-cd-panel-row';
-                row.style.cssText = `
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    padding: 6px 8px;
-                    border-radius: 7px;
-                    cursor: pointer;
-                    transition: background 0.1s ease;
-                `;
-                row.addEventListener('mouseenter', () => {
-                    row.style.background = isLightTheme ? 'rgba(115,87,198,0.10)' : 'rgba(160,139,232,0.16)';
+                row.setCssStyles({
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '6px 8px',
+                    borderRadius: '7px',
+                    cursor: 'pointer',
+                    transition: 'background 0.1s ease',
                 });
-                row.addEventListener('mouseleave', () => { row.style.background = 'transparent'; });
+                row.addEventListener('mouseenter', () => {
+                    row.setCssStyles({ background: isLightTheme ? 'rgba(115,87,198,0.10)' : 'rgba(160,139,232,0.16)' });
+                });
+                row.addEventListener('mouseleave', () => { row.setCssStyles({ background: 'transparent' }); });
 
                 const relText = (link?.relationLabel && String(link.relationLabel).trim()) || '跨领域';
                 const chip = document.createElement('span');
                 chip.textContent = relText;
-                chip.style.cssText = `
-                    flex: 0 0 auto;
-                    font-size: 11px;
-                    font-weight: 600;
-                    padding: 1px 6px;
-                    border-radius: 999px;
-                    color: ${cdBadgeColor};
-                    background: ${isLightTheme ? 'rgba(115,87,198,0.12)' : 'rgba(160,139,232,0.18)'};
-                    border: 1px solid ${isLightTheme ? 'rgba(115,87,198,0.3)' : 'rgba(160,139,232,0.35)'};
-                `;
+                chip.setCssStyles({
+                    flex: '0 0 auto',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    padding: '1px 6px',
+                    borderRadius: '999px',
+                    color: `${cdBadgeColor}`,
+                    background: `${isLightTheme ? 'rgba(115,87,198,0.12)' : 'rgba(160,139,232,0.18)'}`,
+                    border: `1px solid ${isLightTheme ? 'rgba(115,87,198,0.3)' : 'rgba(160,139,232,0.35)'}`,
+                });
 
                 const textWrap = document.createElement('div');
-                textWrap.style.cssText = 'flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px;';
+                textWrap.setCssStyles({
+                    flex: '1 1 auto',
+                    minWidth: '0',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '1px',
+                });
                 const nameEl = document.createElement('div');
                 nameEl.textContent = cdLinkTargetText(link);
-                nameEl.style.cssText = 'font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+                nameEl.setCssStyles({
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                });
                 const mocEl = document.createElement('div');
                 const mocName = cdMocBasename(link?.mocPath);
                 mocEl.textContent = mocName ? `来自《${mocName}》` : '来自其它 MOC';
-                mocEl.style.cssText = `font-size: 11px; opacity: 0.65; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;`;
+                mocEl.setCssStyles({
+                    fontSize: '11px',
+                    opacity: '0.65',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                });
                 textWrap.appendChild(nameEl);
                 textWrap.appendChild(mocEl);
 
@@ -1076,28 +1138,32 @@ export function renderNodeBadges(this: any): void {
                     const delEl = document.createElement('span');
                     delEl.textContent = '×';
                     delEl.title = '删除此跨领域链接';
-                    delEl.style.cssText = `
-                        flex: 0 0 auto;
-                        width: 18px;
-                        height: 18px;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        font-size: 15px;
-                        line-height: 1;
-                        border-radius: 5px;
-                        opacity: 0.5;
-                        cursor: pointer;
-                    `;
+                    delEl.setCssStyles({
+                        flex: '0 0 auto',
+                        width: '18px',
+                        height: '18px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '15px',
+                        lineHeight: '1',
+                        borderRadius: '5px',
+                        opacity: '0.5',
+                        cursor: 'pointer',
+                    });
                     delEl.addEventListener('mouseenter', () => {
-                        delEl.style.opacity = '1';
-                        delEl.style.background = isLightTheme ? 'rgba(239,68,68,0.12)' : 'rgba(239,68,68,0.22)';
-                        delEl.style.color = '#ef4444';
+                        delEl.setCssStyles({
+                            opacity: '1',
+                            background: isLightTheme ? 'rgba(239,68,68,0.12)' : 'rgba(239,68,68,0.22)',
+                            color: '#ef4444',
+                        });
                     });
                     delEl.addEventListener('mouseleave', () => {
-                        delEl.style.opacity = '0.5';
-                        delEl.style.background = 'transparent';
-                        delEl.style.color = 'inherit';
+                        delEl.setCssStyles({
+                            opacity: '0.5',
+                            background: 'transparent',
+                            color: 'inherit',
+                        });
                     });
                     delEl.addEventListener('click', (e) => {
                         e.stopPropagation();
@@ -1115,19 +1181,23 @@ export function renderNodeBadges(this: any): void {
             let cdHideTimer: number | null = null;
             const showCdPanel = () => {
                 if (cdHideTimer !== null) { window.clearTimeout(cdHideTimer); cdHideTimer = null; }
-                cdPanel.style.display = 'flex';
+                cdPanel.setCssStyles({ display: 'flex' });
                 // 触发过渡
                 requestAnimationFrame(() => {
-                    cdPanel.style.opacity = '1';
-                    cdPanel.style.transform = 'translateY(0)';
+                    cdPanel.setCssStyles({
+                        opacity: '1',
+                        transform: 'translateY(0)',
+                    });
                 });
             };
             const hideCdPanel = () => {
                 if (cdHideTimer !== null) window.clearTimeout(cdHideTimer);
                 cdHideTimer = window.setTimeout(() => {
-                    cdPanel.style.opacity = '0';
-                    cdPanel.style.transform = 'translateY(4px)';
-                    cdPanel.style.display = 'none';
+                    cdPanel.setCssStyles({
+                        opacity: '0',
+                        transform: 'translateY(4px)',
+                        display: 'none',
+                    });
                     cdHideTimer = null;
                 }, 140);
             };
@@ -1144,28 +1214,32 @@ export function renderNodeBadges(this: any): void {
                     node.style('display') === 'none' ||
                     !node.visible();
                 if (isHidden) {
-                    cdEl.style.display = 'none';
+                    cdEl.setCssStyles({ display: 'none' });
                     if (cdPanel.style.display !== 'none') hideCdPanel();
                     return;
                 }
 
-                cdEl.style.display = 'flex';
+                cdEl.setCssStyles({ display: 'flex' });
                 const zoom = this.cy.zoom();
                 const bb = node.renderedBoundingBox();
                 const badgeSize = Math.max(MIN_CD_PX, 22 * zoom);
                 const fontSize = Math.max(10, badgeSize * 0.5);
-                cdEl.style.height = `${badgeSize}px`;
-                cdEl.style.minWidth = `${badgeSize}px`;
-                cdEl.style.padding = links.length > 1 ? `0 ${badgeSize * 0.28}px` : '0';
-                cdEl.style.fontSize = `${fontSize}px`;
+                cdEl.setCssStyles({
+                    height: `${badgeSize}px`,
+                    minWidth: `${badgeSize}px`,
+                    padding: links.length > 1 ? `0 ${badgeSize * 0.28}px` : '0',
+                    fontSize: `${fontSize}px`,
+                });
                 // 右下角:贴在节点右下角内侧
                 const cx = bb.x2 - badgeSize * 0.4;
                 const cy = bb.y2 - badgeSize * 0.4;
-                cdEl.style.transform = `translate(${cx}px, ${cy}px) translate(-50%, -50%)`;
+                cdEl.setCssStyles({ transform: `translate(${cx}px, ${cy}px) translate(-50%, -50%)` });
                 // 卡片定位在角标下方偏左,避免越过容器右边界
-                cdPanel.style.left = `${cx}px`;
-                cdPanel.style.top = `${cy + badgeSize * 0.5 + 6}px`;
-                cdPanel.style.transformOrigin = 'top left';
+                cdPanel.setCssStyles({
+                    left: `${cx}px`,
+                    top: `${cy + badgeSize * 0.5 + 6}px`,
+                    transformOrigin: 'top left',
+                });
             };
 
             badgeUpdaters.push({ node, fn: updateCdPos });
@@ -1183,23 +1257,25 @@ export function renderNodeBadges(this: any): void {
 			const dotEl = document.createElement('div');
 			dotEl.className = 'zk-node-color-dot';
 			dotEl.dataset.nodeId = node.id();
-			dotEl.style.cssText = `
-                position: absolute;
-                pointer-events: none;
-                border-radius: 999px;
-                transform: translate(-50%, -50%);
-            `;
-            dotEl.style.backgroundColor = color;
-            dotEl.style.boxShadow = `0 0 6px 1px ${color}66`;
+			dotEl.setCssStyles({
+				position: 'absolute',
+				pointerEvents: 'none',
+				borderRadius: '999px',
+				transform: 'translate(-50%, -50%)',
+			});
+            dotEl.setCssStyles({
+                backgroundColor: color,
+                boxShadow: `0 0 6px 1px ${color}66`,
+            });
             badgeContainer.appendChild(dotEl);
 
             const updateDotPos = () => {
-                if (!this.cy || node.removed()) { dotEl.style.display = 'none'; return; }
+                if (!this.cy || node.removed()) { dotEl.setCssStyles({ display: 'none' }); return; }
                 const isHidden =
                     node.hasClass('zk-collapsed-hidden') ||
                     node.style('display') === 'none' ||
                     !node.visible();
-                if (isHidden) { dotEl.style.display = 'none'; return; }
+                if (isHidden) { dotEl.setCssStyles({ display: 'none' }); return; }
 
                 const zoom = this.cy.zoom();
                 const dotSize = Math.max(5, 7 * zoom);
@@ -1214,17 +1290,19 @@ export function renderNodeBadges(this: any): void {
                     renderedWidth > 1 &&
                     renderedHeight > 1;
                 if (!hasValidRenderBox) {
-                    dotEl.style.display = 'none';
+                    dotEl.setCssStyles({ display: 'none' });
                     return;
                 }
 
                 const centerY = renderedPos.y;
                 const textStartX = renderedPos.x - renderedWidth / 2 + 20 * zoom;
 
-                dotEl.style.display = 'block';
-                dotEl.style.width = `${dotSize}px`;
-                dotEl.style.height = `${dotSize}px`;
-                dotEl.style.transform = `translate(${textStartX}px, ${centerY}px) translate(-50%, -50%)`;
+                dotEl.setCssStyles({
+                    display: 'block',
+                    width: `${dotSize}px`,
+                    height: `${dotSize}px`,
+                    transform: `translate(${textStartX}px, ${centerY}px) translate(-50%, -50%)`,
+                });
             };
 
             badgeUpdaters.push({ node, fn: updateDotPos });
@@ -1256,21 +1334,21 @@ export function renderNodeBadges(this: any): void {
 			badgeEl.textContent = badge;
             badgeEl.title = badge;
             badgeEl.setAttribute('aria-label', badge);
-            badgeEl.style.cssText = `
-                position: absolute;
-                background-color: ${badgeBackgroundColor};
-                color: ${badgeTextColor};
-                border: 1px solid ${badgeBorderColor};
-                font-size: 9px;
-                font-weight: 600;
-                font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-                padding: 3px 8px;
-                border-radius: 20px;
-                white-space: nowrap;
-                pointer-events: auto;
-                cursor: pointer;
-            `;
-            badgeEl.style.transformOrigin = 'right bottom';
+            badgeEl.setCssStyles({
+                position: 'absolute',
+                backgroundColor: `${badgeBackgroundColor}`,
+                color: `${badgeTextColor}`,
+                border: `1px solid ${badgeBorderColor}`,
+                fontSize: '9px',
+                fontWeight: '600',
+                fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace',
+                padding: '3px 8px',
+                borderRadius: '20px',
+                whiteSpace: 'nowrap',
+                pointerEvents: 'auto',
+                cursor: 'pointer',
+            });
+            badgeEl.setCssStyles({ transformOrigin: 'right bottom' });
             (badgeEl.style as any).webkitTextSizeAdjust = 'none';
             (badgeEl.style as any).textSizeAdjust = 'none';
             badgeContainer.appendChild(badgeEl);
@@ -1289,10 +1367,10 @@ export function renderNodeBadges(this: any): void {
                     node.style('display') === 'none' ||
                     !node.visible();
                 if (isHidden) {
-                    badgeEl.style.display = 'none';
+                    badgeEl.setCssStyles({ display: 'none' });
                     return;
                 }
-                badgeEl.style.display = '';
+                badgeEl.setCssStyles({ display: '' });
 
                 const zoom = this.cy.zoom();
                 const boundingBox = node.renderedBoundingBox();
@@ -1311,7 +1389,7 @@ export function renderNodeBadges(this: any): void {
                     cachedTextKey = key;
                     badgeEl.textContent = middleEllipsizeToWidth(badge, baseMaxTextWidth, badgeMeasureCtx, '600 9px ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace');
                 }
-                badgeEl.style.transform = `translate(${x}px, ${y}px) translate(-100%, -100%) scale(${scale})`;
+                badgeEl.setCssStyles({ transform: `translate(${x}px, ${y}px) translate(-100%, -100%) scale(${scale})` });
             };
 
             badgeUpdaters.push({ node, fn: updateBadgePosition });
@@ -1331,27 +1409,27 @@ export function renderNodeBadges(this: any): void {
 
                 const resizeEl = document.createElement('div');
                 resizeEl.className = 'zk-text-node-resize-handle';
-                resizeEl.style.cssText = `
-                    position: absolute;
-                    width: 18px;
-                    height: 18px;
-                    border-top-left-radius: 6px;
-                    background: rgba(91, 143, 217, 0.9);
-                    color: rgba(255, 255, 255, 0.95);
-                    font-size: 11px;
-                    font-weight: 700;
-                    display: flex;
-                    align-items: flex-end;
-                    justify-content: flex-end;
-                    line-height: 1;
-                    padding-right: 2px;
-                    cursor: nwse-resize;
-                    pointer-events: none;
-                    opacity: 0;
-                    transition: opacity 0.15s ease;
-                    z-index: 10;
-                    user-select: none;
-                `;
+                resizeEl.setCssStyles({
+                    position: 'absolute',
+                    width: '18px',
+                    height: '18px',
+                    borderTopLeftRadius: '6px',
+                    background: 'rgba(91, 143, 217, 0.9)',
+                    color: 'rgba(255, 255, 255, 0.95)',
+                    fontSize: '11px',
+                    fontWeight: '700',
+                    display: 'flex',
+                    alignItems: 'flex-end',
+                    justifyContent: 'flex-end',
+                    lineHeight: '1',
+                    paddingRight: '2px',
+                    cursor: 'nwse-resize',
+                    pointerEvents: 'none',
+                    opacity: '0',
+                    transition: 'opacity 0.15s ease',
+                    zIndex: '10',
+                    userSelect: 'none',
+                });
                 resizeEl.textContent = '\u25e2';
                 badgeContainer.appendChild(resizeEl);
 
@@ -1430,22 +1508,28 @@ export function renderNodeBadges(this: any): void {
                         node.style('display') === 'none' ||
                         !node.visible();
                     if (isHidden || !node.selected()) {
-                        resizeEl.style.display = 'none';
-                        resizeEl.style.pointerEvents = 'none';
+                        resizeEl.setCssStyles({
+                            display: 'none',
+                            pointerEvents: 'none',
+                        });
                         return;
                     }
-                    resizeEl.style.display = 'flex';
-                    resizeEl.style.pointerEvents = 'auto';
-                    resizeEl.style.opacity = '1';
+                    resizeEl.setCssStyles({
+                        display: 'flex',
+                        pointerEvents: 'auto',
+                        opacity: '1',
+                    });
                     const zoom = this.cy.zoom();
                     // 文本节点 Canvas label 透明但仍参与默认 boundingBox 计算，
                     // 大段文本会让句柄飘到节点下方很远 — 用纯形状 box 修正
                     const bb = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
                     const size = Math.max(14, 18 * zoom);
-                    resizeEl.style.width = `${size}px`;
-                    resizeEl.style.height = `${size}px`;
-                    resizeEl.style.fontSize = `${Math.max(8, 11 * zoom)}px`;
-                    resizeEl.style.transform = `translate(${bb.x2 - size}px, ${bb.y2 - size}px)`;
+                    resizeEl.setCssStyles({
+                        width: `${size}px`,
+                        height: `${size}px`,
+                        fontSize: `${Math.max(8, 11 * zoom)}px`,
+                        transform: `translate(${bb.x2 - size}px, ${bb.y2 - size}px)`,
+                    });
                 };
 
                 badgeUpdaters.push({ node, fn: updateResizeHandle });
@@ -1466,26 +1550,28 @@ export function renderNodeBadges(this: any): void {
                 const toggleLabel = isEmbed ? '切换为文件节点' : '切换为 Embed 节点';
                 toggleEl.setAttribute('aria-label', toggleLabel);
                 setIcon(toggleEl, isEmbed ? 'eye-off' : 'eye');
-                toggleEl.style.cssText = `
-                    position: absolute;
-                    cursor: pointer;
-                    pointer-events: auto;
-                    opacity: 0.88;
-                    transition: opacity 0.15s ease, transform 0.15s ease;
-                    user-select: none;
-                    z-index: 10;
-                    width: 24px;
-                    height: 24px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    color: var(--text-normal);
-                `;
+                toggleEl.setCssStyles({
+                    position: 'absolute',
+                    cursor: 'pointer',
+                    pointerEvents: 'auto',
+                    opacity: '0.88',
+                    transition: 'opacity 0.15s ease, transform 0.15s ease',
+                    userSelect: 'none',
+                    zIndex: '10',
+                    width: '24px',
+                    height: '24px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--text-normal)',
+                });
                 const toggleSvg = toggleEl.querySelector('svg') as SVGElement | null;
                 if (toggleSvg) {
-                    toggleSvg.style.width = '95%';
-                    toggleSvg.style.height = '95%';
-                    toggleSvg.style.strokeWidth = '2.2';
+                    toggleSvg.setCssStyles({
+                        width: '95%',
+                        height: '95%',
+                        strokeWidth: '2.2',
+                    });
                 }
                 badgeContainer.appendChild(toggleEl);
                 const swallowTogglePointer = (e: Event) => {
@@ -1515,20 +1601,26 @@ export function renderNodeBadges(this: any): void {
                 const updateTogglePos = () => {
                     if (!this.cy) return;
                     const isHidden = node.removed() || node.hasClass('zk-collapsed-hidden') || node.style('display') === 'none' || !node.visible();
-                    if (isHidden) { toggleEl.style.display = 'none'; return; }
+                    if (isHidden) { toggleEl.setCssStyles({ display: 'none' }); return; }
                     if (!node.selected()) {
-                        toggleEl.style.display = 'none';
-                        toggleEl.style.pointerEvents = 'none';
+                        toggleEl.setCssStyles({
+                            display: 'none',
+                            pointerEvents: 'none',
+                        });
                         return;
                     }
-                    toggleEl.style.display = '';
-                    toggleEl.style.opacity = '1';
-                    toggleEl.style.pointerEvents = 'auto';
+                    toggleEl.setCssStyles({
+                        display: '',
+                        opacity: '1',
+                        pointerEvents: 'auto',
+                    });
                     const zoom = this.cy.zoom();
                     const bb = node.renderedBoundingBox();
                     const size = Math.max(20, 24 * zoom);
-                    toggleEl.style.width = `${size}px`;
-                    toggleEl.style.height = `${size}px`;
+                    toggleEl.setCssStyles({
+                        width: `${size}px`,
+                        height: `${size}px`,
+                    });
                     let x = bb.x1 + bb.w / 2 - size / 2;
                     let y = bb.y2 + 8 * zoom;
 
@@ -1540,7 +1632,7 @@ export function renderNodeBadges(this: any): void {
                         }
                     }
 
-                    toggleEl.style.transform = `translate(${x}px, ${y}px)`;
+                    toggleEl.setCssStyles({ transform: `translate(${x}px, ${y}px)` });
                 };
 
                 badgeUpdaters.push({ node, fn: updateTogglePos });
@@ -1720,36 +1812,38 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                 const styleSig = `${overlayDisplay}|${overlayAlignItems}|${overlayPadding}|${overlayFontSize}|${overlayFontWeight}|${overlayTextAlign}`;
                 if (overlayEl.dataset.styleSig !== styleSig) {
                     overlayEl.dataset.styleSig = styleSig;
-                    overlayEl.style.cssText = `
-                        position: absolute;
-                        left: 0;
-                        top: 0;
-                        display: ${overlayDisplay};
-                        flex-direction: column;
-                        justify-content: center;
-                        align-items: ${overlayAlignItems};
-                        pointer-events: none;
-                        overflow: hidden;
-                        box-sizing: border-box;
-                        padding: ${overlayPadding};
-                        max-width: none;
-                        font-family: var(--font-text);
-                        font-size: ${overlayFontSize}px;
-                        font-weight: ${overlayFontWeight};
-                        line-height: 1.35;
-                        word-wrap: break-word;
-                        overflow-wrap: anywhere;
-                        user-select: none;
-                        text-align: ${overlayTextAlign};
-                    `;
+                    overlayEl.setCssStyles({
+                        position: 'absolute',
+                        left: '0',
+                        top: '0',
+                        display: `${overlayDisplay}`,
+                        flexDirection: 'column',
+                        justifyContent: 'center',
+                        alignItems: `${overlayAlignItems}`,
+                        pointerEvents: 'none',
+                        overflow: 'hidden',
+                        boxSizing: 'border-box',
+                        padding: `${overlayPadding}`,
+                        maxWidth: 'none',
+                        fontFamily: 'var(--font-text)',
+                        fontSize: `${overlayFontSize}px`,
+                        fontWeight: `${overlayFontWeight}`,
+                        lineHeight: '1.35',
+                        wordWrap: 'break-word',
+                        overflowWrap: 'anywhere',
+                        userSelect: 'none',
+                        textAlign: `${overlayTextAlign}`,
+                    });
                 }
                 const isLevelDimmed = node.hasClass?.('zk-level-dimmed') === true;
                 if (isLevelDimmed) {
                     const isLightTheme = this.container?.classList.contains('zk-theme-light')
                         || (!this.container?.classList.contains('zk-theme-dark') && document.body.classList.contains('theme-light'));
                     overlayEl.dataset.levelDimmed = '1';
-                    overlayEl.style.opacity = isLightTheme ? '0.92' : '0.16';
-                    overlayEl.style.filter = isLightTheme ? 'none' : 'brightness(0.62) saturate(0.58)';
+                    overlayEl.setCssStyles({
+                        opacity: isLightTheme ? '0.92' : '0.16',
+                        filter: isLightTheme ? 'none' : 'brightness(0.62) saturate(0.58)',
+                    });
                 } else {
                     delete overlayEl.dataset.levelDimmed;
                 }
@@ -1933,17 +2027,21 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                             const height = sizeMatch[2] !== undefined
                                 ? Math.max(1, Math.min(4096, Number(sizeMatch[2])))
                                 : null;
-                            img.style.width = toOverlayEm(width);
-                            img.style.maxWidth = 'none';
+                            img.setCssStyles({
+                                width: toOverlayEm(width),
+                                maxWidth: 'none',
+                            });
                             if (height !== null) {
-                                img.style.height = toOverlayEm(height);
-                                img.style.maxHeight = 'none';
+                                img.setCssStyles({
+                                    height: toOverlayEm(height),
+                                    maxHeight: 'none',
+                                });
                             }
                         } else {
                             const applyNaturalWidth = () => {
                                 const naturalWidth = Math.max(1, Math.min(4096, img.naturalWidth || 0));
                                 if (naturalWidth > 0) {
-                                    img.style.width = toOverlayEm(naturalWidth);
+                                    img.setCssStyles({ width: toOverlayEm(naturalWidth) });
                                 }
                             };
                             if (img.complete) {
@@ -2007,7 +2105,14 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                             container.appendChild(a);
                         } else if (m[10] !== undefined) {
                             const span = document.createElement('span');
-                            span.style.cssText = m[10].trim();
+                            const spanStyles: Record<string, string> = {};
+                            for (const decl of m[10].split(';')) {
+                                const ci = decl.indexOf(':');
+                                if (ci === -1) continue;
+                                const key = decl.slice(0, ci).trim();
+                                if (key) spanStyles[key] = decl.slice(ci + 1).trim();
+                            }
+                            span.setCssProps(spanStyles);
                             span.textContent = m[11];
                             container.appendChild(span);
                         } else if (m[12] !== undefined) {
@@ -2064,7 +2169,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                             const div = document.createElement('div');
                             div.className = `zk-rough-list-line ${bulletMatch ? 'zk-rough-list-bullet' : 'zk-rough-list-ordered'}`;
                             if (indentLevel > 0) {
-                                div.style.marginLeft = `${indentLevel * 1.2}em`;
+                                div.setCssStyles({ marginLeft: `${indentLevel * 1.2}em` });
                             }
                             const marker = document.createElement('span');
                             marker.className = 'zk-rough-list-marker';
@@ -2124,26 +2229,30 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                 : (isFirstLevelTextNode ? this.FIRST_LEVEL_NODE_FONT_SIZE : 20);
             const updateOverlayPos = () => {
                 if (!this.cy || node.removed()) {
-                    currentEntry.el.style.display = 'none';
+                    currentEntry.el.setCssStyles({ display: 'none' });
                     return;
                 }
                 // 使用 includeLabels:false 获取纯形状边界，避免不可见标签
                 // （text-opacity:0）撑大 boundingBox 导致 overlay 宽于节点形状
                 const bb = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
                 if (!bb || bb.w <= 0) {
-                    currentEntry.el.style.display = 'none';
+                    currentEntry.el.setCssStyles({ display: 'none' });
                     return;
                 }
                 const zoom = this.cy.zoom();
                 const isEditing = currentEntry.el.dataset.editing === '1';
-                currentEntry.el.style.display = 'block';
-                currentEntry.el.style.left = `${bb.x1}px`;
-                currentEntry.el.style.top = `${bb.y1}px`;
+                currentEntry.el.setCssStyles({
+                    display: 'block',
+                    left: `${bb.x1}px`,
+                    top: `${bb.y1}px`,
+                });
                 // 直接按屏幕像素赋尺寸 + 用 font-size * zoom 模拟缩放(替代 transform: scale)。
                 // 内部 padding / heading / cm editor 都用 em,跟随 font-size 等比伸缩。
-                currentEntry.el.style.width = `${bb.w}px`;
-                currentEntry.el.style.height = `${bb.h}px`;
-                currentEntry.el.style.fontSize = `${baseFontSize * zoom}px`;
+                currentEntry.el.setCssStyles({
+                    width: `${bb.w}px`,
+                    height: `${bb.h}px`,
+                    fontSize: `${baseFontSize * zoom}px`,
+                });
                 // 非编辑态缓存 model 尺寸(供手动拉伸等逻辑使用)
                 if (!isEditing) {
                     currentEntry.width = bb.w / zoom;
@@ -2161,9 +2270,11 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                     const overflowTol = Math.max(2, baseFontSize * zoom);
                     const overflowY = (currentEntry.el.scrollHeight - currentEntry.el.clientHeight) > overflowTol;
                     currentEntry.el.dataset.overflowing = overflowY ? '1' : '0';
-                    currentEntry.el.style.overflowX = 'hidden';
-                    currentEntry.el.style.overflowY = (isSelected && overflowY) ? 'auto' : 'hidden';
-                    currentEntry.el.style.pointerEvents = (isSelected && overflowY) ? 'auto' : 'none';
+                    currentEntry.el.setCssStyles({
+                        overflowX: 'hidden',
+                        overflowY: (isSelected && overflowY) ? 'auto' : 'hidden',
+                        pointerEvents: (isSelected && overflowY) ? 'auto' : 'none',
+                    });
                 }
             };
             badgeUpdaters.push({ node, fn: updateOverlayPos });
@@ -2178,17 +2289,21 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
             const base = Number(el.dataset.baseFontSize || '20');
             try {
                 // 以模型坐标测量内容高度(font-size 复位到 base,对应 zoom=1 的自然尺寸)
-                el.style.fontSize = `${base}px`;
-                el.style.width = `${width}px`;
-                el.style.height = 'auto';
+                el.setCssStyles({
+                    fontSize: `${base}px`,
+                    width: `${width}px`,
+                    height: 'auto',
+                });
                 const measured = Math.ceil(Math.max(el.scrollHeight, el.getBoundingClientRect().height)) + 12;
                 return Math.max(32, Math.min(640, measured));
             } catch {
                 return fallbackHeight;
             } finally {
-                el.style.width = prevWidth;
-                el.style.height = prevHeight;
-                el.style.fontSize = prevFontSize;
+                el.setCssStyles({
+                    width: prevWidth,
+                    height: prevHeight,
+                    fontSize: prevFontSize,
+                });
             }
         };
 
@@ -2264,15 +2379,15 @@ function addCollapseToggleHandle(this: any): void {
 
         const handleContainer = document.createElement('div');
         handleContainer.className = 'zk-collapse-toggle-handle';
-        handleContainer.style.cssText = `
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 4;
-        `;
+        handleContainer.setCssStyles({
+            position: 'absolute',
+            top: '0',
+            left: '0',
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'none',
+            zIndex: '4',
+        });
         this.container.appendChild(handleContainer);
         const handleUpdaters: Array<() => void> = [];
         const nodeHoverCleanups: Array<() => void> = [];
@@ -2301,26 +2416,26 @@ function addCollapseToggleHandle(this: any): void {
             if (!hasChildren(originalId)) return;
 
             const handle = document.createElement('div');
-            handle.style.cssText = `
-                position: absolute;
-                width: 24px;
-                height: 24px;
-                border-radius: 12px;
-                background-color: rgba(17, 24, 39, 0.85);
-                border: 1px solid rgba(148, 163, 184, 0.45);
-                color: #e2e8f0;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 14px;
-                font-weight: 700;
-                line-height: 1;
-                cursor: pointer;
-                pointer-events: auto;
-                user-select: none;
-                touch-action: manipulation;
-                z-index: 10;
-            `;
+            handle.setCssStyles({
+                position: 'absolute',
+                width: '24px',
+                height: '24px',
+                borderRadius: '12px',
+                backgroundColor: 'rgba(17, 24, 39, 0.85)',
+                border: '1px solid rgba(148, 163, 184, 0.45)',
+                color: '#e2e8f0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '14px',
+                fontWeight: '700',
+                lineHeight: '1',
+                cursor: 'pointer',
+                pointerEvents: 'auto',
+                userSelect: 'none',
+                touchAction: 'manipulation',
+                zIndex: '10',
+            });
             handleContainer.appendChild(handle);
 
             // hover 节点即显示收起按钮（与右侧连线手柄一致）；已收起/选中时常驻。
@@ -2342,7 +2457,7 @@ function addCollapseToggleHandle(this: any): void {
 
                 const isHidden = node.hasClass('zk-collapsed-hidden') || !node.visible();
                 if (isHidden) {
-                    handle.style.display = 'none';
+                    handle.setCssStyles({ display: 'none' });
                     return;
                 }
 
@@ -2361,18 +2476,20 @@ function addCollapseToggleHandle(this: any): void {
                 const shouldShow = isCollapsed || node.selected() || overNode || overHandle || hideTimer !== null;
 
                 if (!shouldShow) {
-                    handle.style.display = 'none';
+                    handle.setCssStyles({ display: 'none' });
                     return;
                 }
 
                 handle.textContent = isCollapsed ? '▶' : '▼';
                 handle.title = isCollapsed ? '展开子节点' : '收起子节点';
-                handle.style.width = `${size}px`;
-                handle.style.height = `${size}px`;
-                handle.style.borderRadius = `${size / 2}px`;
-                handle.style.transform = `translate(${left}px, ${top}px)`;
-                handle.style.fontSize = '14px';
-                handle.style.display = 'flex';
+                handle.setCssStyles({
+                    width: `${size}px`,
+                    height: `${size}px`,
+                    borderRadius: `${size / 2}px`,
+                    transform: `translate(${left}px, ${top}px)`,
+                    fontSize: '14px',
+                    display: 'flex',
+                });
             };
 
             handleUpdaters.push(updateHandle);

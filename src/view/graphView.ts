@@ -402,15 +402,19 @@ export class ZKGraphView extends ItemView {
                     text: `${t("No tree structure found under heading:")} # ${headingTitle}`,
                     cls: "zk-graph-mermaid"
                 });
-                errorDiv.style.padding = "20px";
-                errorDiv.style.textAlign = "center";
+                errorDiv.setCssStyles({
+                    padding: "20px",
+                    textAlign: "center",
+                });
                 
                 // 显示调试信息
                 if (mocParseResult.metadata.parseTime > 0) {
                     const debugInfo = emptyContainer.createDiv("zk-debug-info");
-                    debugInfo.style.padding = "20px";
-                    debugInfo.style.color = "var(--text-muted)";
-                    debugInfo.style.fontSize = "12px";
+                    debugInfo.setCssStyles({
+                        padding: "20px",
+                        color: "var(--text-muted)",
+                        fontSize: "12px",
+                    });
                     debugInfo.createEl('p', { text: `${t("parse time")}: ${mocParseResult.metadata.parseTime}ms` });
                     debugInfo.createEl('p', { text: `${t("file path")}: ${mocParseResult.metadata.filePath}` });
                     debugInfo.createEl('p', { text: `${t("heading title")}: ${mocParseResult.metadata.headingTitle}` });
@@ -1079,8 +1083,10 @@ export class ZKGraphView extends ItemView {
                     cls: "zk-graph-cytoscape zk-local-cytoscape"
                 });
                 mocNodeTreeDiv.id = "zk-moc-node-tree-cytoscape";
-                mocNodeTreeDiv.style.height = `${graphHeight}px`;
-                mocNodeTreeDiv.style.width = "100%";
+                mocNodeTreeDiv.setCssStyles({
+                    height: `${graphHeight}px`,
+                    width: "100%",
+                });
 
                 const graphData = GraphDataBuilder.fromFamilyNodes(relatedNodes, currentFile);
                 const options: RenderOptions = {
@@ -1374,10 +1380,10 @@ export class ZKGraphView extends ItemView {
         };
 
         const stage = canvas.createDiv('zk-focus-radial-stage');
-        stage.style.setProperty('--zk-focus-scale', String(radialScale));
-        stage.style.setProperty('--zk-focus-card-max-w', `${sideCardMaxW}px`);
-        stage.style.setProperty('--zk-focus-center-min-w', `${centerCardMinW}px`);
-        stage.style.setProperty('--zk-focus-center-max-w', `${centerCardMaxW}px`);
+        stage.setCssProps({ '--zk-focus-scale': String(radialScale) });
+        stage.setCssProps({ '--zk-focus-card-max-w': `${sideCardMaxW}px` });
+        stage.setCssProps({ '--zk-focus-center-min-w': `${centerCardMinW}px` });
+        stage.setCssProps({ '--zk-focus-center-max-w': `${centerCardMaxW}px` });
         const edgeLayer = stage.createEl('div', { cls: 'zk-focus-edge-layer', attr: { 'aria-hidden': 'true' } });
         const centerZone = stage.createDiv('zk-focus-center-zone zk-focus-radial-center-zone');
 
@@ -1407,16 +1413,13 @@ export class ZKGraphView extends ItemView {
             });
             const targetFile = file || node?.file || null;
             if (typeof options.index === 'number') {
-                card.style.setProperty('--i', String(options.index));
+                card.setCssProps({ '--i': String(options.index) });
             }
             if (typeof options.total === 'number') {
-                card.style.setProperty('--n', String(Math.max(1, options.total)));
+                card.setCssProps({ '--n': String(Math.max(1, options.total)) });
             }
             if (typeof options.x === 'number' && typeof options.y === 'number') {
-                card.style.setProperty(
-                    '--focus-card-transform',
-                    `translate(calc(-50% + ${options.x}px), calc(-50% + ${options.y}px))`
-                );
+                card.setCssProps({ '--focus-card-transform': `translate(calc(-50% + ${options.x}px), calc(-50% + ${options.y}px))` });
             }
 
             card.addEventListener('click', async (event: MouseEvent) => {
@@ -1474,10 +1477,12 @@ export class ZKGraphView extends ItemView {
             const length = Math.max(18, distance - startInset - endInset);
             const startX = distance > 0 ? (x / distance) * startInset : 0;
             const startY = distance > 0 ? (y / distance) * startInset : 0;
-            edge.style.left = `calc(50% + ${startX}px)`;
-            edge.style.top = `calc(50% + ${startY}px)`;
-            edge.style.width = `${length}px`;
-            edge.style.transform = `translate(0, -50%) rotate(${angle}deg)`;
+            edge.setCssStyles({
+                left: `calc(50% + ${startX}px)`,
+                top: `calc(50% + ${startY}px)`,
+                width: `${length}px`,
+                transform: `translate(0, -50%) rotate(${angle}deg)`,
+            });
             return card;
         };
 
@@ -1724,9 +1729,11 @@ export class ZKGraphView extends ItemView {
             cls: "zk-graph-cytoscape"
         });
         mocTreeDiv.id = "zk-moc-tree-cytoscape";
-        mocTreeDiv.style.height = `${graphHeight}px`;
-        mocTreeDiv.style.width = "100%";
-        mocTreeDiv.style.backgroundColor = resolveThemeMode(this.plugin.settings.themeMode) === 'light' ? '#f5f5f5' : '#2a2a2a';
+        mocTreeDiv.setCssStyles({
+            height: `${graphHeight}px`,
+            width: "100%",
+            backgroundColor: resolveThemeMode(this.plugin.settings.themeMode) === 'light' ? '#f5f5f5' : '#2a2a2a',
+        });
 
         // 构建图形数据（使用 MOC 树专用方法）
         const graphData = GraphDataBuilder.fromMOCTree(mocNodes, reverseRelations, null);

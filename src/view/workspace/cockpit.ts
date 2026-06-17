@@ -171,7 +171,10 @@ function renderProjectCard(grid: HTMLElement, ctx: RenderCtx, p: WSProjectNode):
     const pct = projectProgress(p);
     if (pct !== null) {
         const bar = card.createDiv({ cls: 'pbar' });
-        bar.createEl('i').style.cssText = `width:${pct}%;background:${STATUS_COLOR[p.status]};`;
+        bar.createEl('i').setCssStyles({
+            width: `${pct}%`,
+            background: `${STATUS_COLOR[p.status]}`,
+        });
     }
 
     const serveLinks = ctx.store.linksFrom(p.id).filter(l => l.type === 'serves');

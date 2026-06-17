@@ -49,7 +49,10 @@ export function renderProjectPage(container: HTMLElement, ctx: RenderCtx, p: WSP
     const cur = projectProgress(p) ?? 0;
     const bar = pc.createDiv({ cls: 'pbar big' });
     const fill = bar.createEl('i');
-    const setFill = (v: number) => { fill.style.cssText = `width:${v}%;background:${STATUS_COLOR[p.status]};`; };
+    const setFill = (v: number) => { fill.setCssStyles({
+        width: `${v}%`,
+        background: `${STATUS_COLOR[p.status]}`,
+    }); };
     setFill(cur);
     const row = pc.createDiv({ cls: 'progrow' });
     const range = row.createEl('input', { type: 'range', cls: 'progslider' });
@@ -69,12 +72,22 @@ export function renderProjectPage(container: HTMLElement, ctx: RenderCtx, p: WSP
         body.createDiv({ cls: 'dsec', text: t('ws checklist') });
         p.checklist.forEach(item => {
             const row = body.createDiv();
-            row.style.cssText = 'display:flex;align-items:center;gap:9px;padding:6px 2px;cursor:pointer;';
+            row.setCssStyles({
+                display: 'flex',
+                alignItems: 'center',
+                gap: '9px',
+                padding: '6px 2px',
+                cursor: 'pointer',
+            });
             const box = row.createEl('input', { type: 'checkbox' });
             box.checked = item.done;
             box.onclick = async (e) => { e.stopPropagation(); await ctx.store.toggleChecklistItem(p.id, item.id); };
             const lbl = row.createSpan({ text: item.text });
-            lbl.style.cssText = `font-size:13.5px;color:${item.done ? 'var(--ink-faint)' : 'var(--ink)'};${item.done ? 'text-decoration:line-through;' : ''}`;
+            lbl.setCssStyles({
+                fontSize: '13.5px',
+                color: item.done ? 'var(--ink-faint)' : 'var(--ink)',
+                textDecoration: item.done ? 'line-through' : '',
+            });
             row.onclick = async () => { await ctx.store.toggleChecklistItem(p.id, item.id); };
         });
     }
@@ -168,7 +181,10 @@ function renderActionRow(wrap: HTMLElement, ctx: RenderCtx, p: WSProjectNode, a:
     const pct = actionPct(a);
     const bar = prog.createDiv({ cls: 'pbar' });
     const fill = bar.createEl('i');
-    const paint = (v: number) => { fill.style.cssText = `width:${v}%;background:${ACTION_COLOR[a.status]};`; };
+    const paint = (v: number) => { fill.setCssStyles({
+        width: `${v}%`,
+        background: `${ACTION_COLOR[a.status]}`,
+    }); };
     paint(pct);
     const range = prog.createEl('input', { type: 'range', cls: 'progslider sm' });
     range.min = '0'; range.max = '100'; range.step = '5'; range.value = String(pct);
@@ -241,7 +257,7 @@ export function renderNotePage(container: HTMLElement, ctx: RenderCtx, n: WSNote
     const partLinks = ctx.store.linksFrom(n.id).filter(l => l.type === 'partOf');
     if (partLinks.length) {
         const chips = h.createDiv({ cls: 'dchips' });
-        chips.style.marginTop = '12px';
+        chips.setCssStyles({ marginTop: '12px' });
         partLinks.forEach(l => {
             const m = ctx.store.getNode(l.to);
             if (!m) return;
