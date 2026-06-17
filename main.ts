@@ -10,11 +10,10 @@ import { MOCFileMonitor } from "src/utils/mocMonitor";
 import { ensureMOCPreviewPNG } from "src/embed/mocEmbedExporter";
 import { MOCReverseIndex } from "src/utils/mocReverseIndex";
 import { VaultIndex } from "src/index/VaultIndex";
-import { SpaceService } from "src/services/SpaceService";
 import { WorkspaceStore } from "src/workspace/WorkspaceStore";
-import { ensureWorkspaceSeed } from "src/workspace/seed";
+import { ensureWorkspaceSeed, reimportFromSpaces } from "src/workspace/seed";
 import { ZKWorkspaceView, ZK_WORKSPACE_TYPE } from "src/view/workspaceView";
-import { FolderMountModal } from "src/modal/folderMountModal";
+import { ContainerMountModal } from "src/modal/containerMountModal";
 import { ZKGraphView, ZK_GRAPH_TYPE } from "src/view/graphView";
 import { ZKIndexView, ZKNode, ZK_INDEX_TYPE, ZK_NAVIGATION } from "src/view/indexView";
 import { ZK_RECENT_TYPE, ZKRecentView } from "src/view/recentView";
@@ -344,9 +343,8 @@ export default class ZKNavigationPlugin extends Plugin {
     cliMocHandler?: MOCHandler;
     // 外部 API(Obsidian CLI eval / 其他插件),onload 末尾注册
     api!: ZKNavigationExternalAPI;
-    // 自建 Space 树索引(spaces.json,只虚拟存在,不创建真实文件夹)
+    // 旧 Space 树索引(spaces.json):现仅作工作区首启/重导入的迁移数据源
     vaultIndex: VaultIndex | null = null;
-    spaceService: SpaceService | null = null;
     // typed-node 工作区数据层(workspace.json),三栏工作区视图的数据源
     workspaceStore: WorkspaceStore | null = null;
     // 临时工作区(跨 MOC 共享的节点暂存)
@@ -902,6 +900,20 @@ export default class ZKNavigationPlugin extends Plugin {
             }
         })
 
+        // 逃生口:显式从 spaces.json 重新导入并【覆盖】工作区数据
+        // (workspace.json 平时是唯一权威,自动迁移只在空库时跑一次)
+        this.addCommand({
+            id: "zk-reimport-workspace-from-spaces",
+            name: t("Reimport workspace from spaces.json (overwrite)"),
+            callback: async () => {
+                if (!this.workspaceStore) return;
+                await this.workspaceStore.bootstrap();
+                const count = await reimportFromSpaces(this.workspaceStore, this.vaultIndex);
+                new Notice(t("Workspace reimported: {n} nodes").replace("{n}", String(count)));
+                this.app.workspace.trigger("zk-navigation:refresh-index-graph");
+            }
+        })
+
         this.registerHoverLinkSource(
         ZK_NAVIGATION,
         {
@@ -915,11 +927,10 @@ export default class ZKNavigationPlugin extends Plugin {
 
         // 初始化 MOC 反向索引（后台构建）
         this.mocReverseIndex = new MOCReverseIndex(this.app);
-        // 初始化自建 Space 树索引(单文件存储,纯虚拟分类)
+        // 旧 spaces.json 索引:仅用于把历史 Space 数据迁移进工作区(只读源)
         const storePath = `${this.app.vault.configDir}/plugins/${this.manifest.id}/spaces.json`;
         this.vaultIndex = new VaultIndex(this.app, storePath);
         this.addChild(this.vaultIndex);
-        this.spaceService = new SpaceService(this.app, this.vaultIndex);
         // typed-node 工作区存储(workspace.json)
         const wsStorePath = `${this.app.vault.configDir}/plugins/${this.manifest.id}/workspace.json`;
         this.workspaceStore = new WorkspaceStore(this.app, wsStorePath);
@@ -1000,20 +1011,18 @@ export default class ZKNavigationPlugin extends Plugin {
                         this.mocReverseIndex.handleNoteRename(oldPath, file.path);
                     }
                     await this.updateMOCLinksAfterRename(file, oldPath);
-                    // MOC 文件改名:同步 spaces.json 里所有 mocRefs
-                    if (isMocFile(file) || isMocPath(oldPath)) {
-                        await this.spaceService?.handleMocRename(oldPath, file.path);
-                    }
+                    // 工作区:任意文件改名都可能命中 note/moc/map 节点的 filePath
+                    await this.workspaceStore?.handleFileRename(oldPath, file.path);
                 }
             })
         );
 
-        // 监听 MOC 文件删除,清理 mocRefs
+        // 监听文件删除,清理挂载/关联
         this.registerEvent(
             this.app.vault.on("delete", async (file) => {
-                if (file instanceof TFile && isMocFile(file)) {
-                    await this.spaceService?.handleMocDelete(file.path);
-                }
+                if (!(file instanceof TFile)) return;
+                // 工作区:任意文件删除都可能命中节点的 filePath
+                await this.workspaceStore?.handleFileDelete(file.path);
             })
         );
 
@@ -1380,22 +1389,22 @@ export default class ZKNavigationPlugin extends Plugin {
     }
 
     /**
-     * 打开"挂载到项目文件夹"选择器,把指定 MOC 加入/移出某个 FolderNode 的 mocRefs
+     * 打开"挂载到容器"选择器,把指定 MOC 加入/移出某个工作区容器(Space/MOC)。
      */
     openFolderMountModal(file: TFile): void {
         if (!isMocFile(file)) {
             new Notice("仅支持 .moc / .moc.md 文件");
             return;
         }
-        if (!this.vaultIndex || !this.spaceService) {
+        if (!this.workspaceStore) {
             new Notice(t("Space index is not ready"));
             return;
         }
-        if (this.vaultIndex.isEmpty()) {
+        if (this.workspaceStore.getContainers().length === 0) {
             new Notice(t("No Spaces yet. Create one in the right drawer first."));
             return;
         }
-        new FolderMountModal(this.app, this.vaultIndex, this.spaceService, file).open();
+        new ContainerMountModal(this.app, this.workspaceStore, file.path).open();
     }
 
     /**

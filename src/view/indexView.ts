@@ -1345,11 +1345,10 @@ export class ZKIndexView extends FileView {
             const indexMermaidDiv = containerEl.createDiv("zk-index-mermaid-container");
             indexMermaidDiv.id = "zk-index-mermaid-container";
 
-            // 文件夹抽屉（绝对定位，覆盖在图上）
-            if (this.plugin.vaultIndex && this.plugin.spaceService) {
+            // 文件夹抽屉（绝对定位，覆盖在图上）——数据源为 WorkspaceStore
+            if (this.plugin.workspaceStore) {
                 this.folderDrawer = new FolderDrawer(
-                    containerEl, this.app, this.plugin,
-                    this.plugin.vaultIndex, this.plugin.spaceService
+                    containerEl, this.app, this.plugin, this.plugin.workspaceStore
                 );
             }
 
@@ -1386,9 +1385,9 @@ export class ZKIndexView extends FileView {
             this.detailPanel.setWidth(this.plugin.settings.detailPanelWidth || 0);
             if (this.plugin.settings.detailPanelPinned) this.detailPanel.setPinned(true);
 
-            // 订阅 VaultIndex 变化,实时刷新项目徽章
-            if (this.plugin.vaultIndex && !this.vaultIndexUnsubscribe) {
-                this.vaultIndexUnsubscribe = this.plugin.vaultIndex.onChange(() => {
+            // 订阅工作区变化,实时刷新项目徽章(挂载状态现以 WorkspaceStore 为准)
+            if (this.plugin.workspaceStore && !this.vaultIndexUnsubscribe) {
+                this.vaultIndexUnsubscribe = this.plugin.workspaceStore.onChange(() => {
                     this.refreshProjectBadge(this.plugin.settings.mocCurrentFile);
                 });
             }
@@ -1587,8 +1586,8 @@ export class ZKIndexView extends FileView {
         const currentPath = this.plugin.settings.mocCurrentFile;
         const currentFile = currentPath ? this.app.vault.getFileByPath(currentPath) : null;
         if (currentFile && isMocFile(currentFile)) {
-            const mountedCount = this.plugin.vaultIndex
-                ?.getFoldersHostingMoc(currentFile.path).length ?? 0;
+            const mountedCount = this.plugin.workspaceStore
+                ?.containersHostingFile(currentFile.path).length ?? 0;
             const mountOption = menu.createDiv('zk-menu-option');
             setIcon(mountOption.createSpan('zk-menu-option-icon'), 'folder-plus');
             const labelText = mountedCount > 0
@@ -5123,7 +5122,7 @@ cy.fit(null, 40);
         }
 
         // 使用 MOCSelectorModal 创建搜索界面
-        new MOCSelectorModal(this.app, mocFiles, this.plugin.vaultIndex, async (item) => {
+        new MOCSelectorModal(this.app, mocFiles, this.plugin.workspaceStore, async (item) => {
             if (item.file) {
                 this.plugin.settings.mocCurrentFile = item.file.path;
                 this.plugin.settings.BranchTab = 0;
@@ -8653,10 +8652,10 @@ cy.fit(null, 40);
         });
     }
 
-    /** 项目徽章:当前 MOC 是否被挂载到任何 FolderNode 下 */
+    /** 项目徽章:当前 MOC 是否已挂载到工作区任一容器下 */
     private refreshProjectBadge(mocPath: string | null | undefined): void {
         if (!this.mocChipProjectBadge) return;
-        const mounted = !!(mocPath && this.plugin.vaultIndex?.isMocMounted(mocPath));
+        const mounted = !!(mocPath && this.plugin.workspaceStore?.isFileMounted(mocPath));
         this.mocChipProjectBadge.setCssStyles({ display: mounted ? "inline-flex" : "none" });
     }
 

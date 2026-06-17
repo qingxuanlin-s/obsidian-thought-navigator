@@ -7,8 +7,10 @@ import { OpenTarget, WorkspaceNode, WSNodeType, ProjectStatus, FrameworkId } fro
 export interface RenderCtx {
     app: App;
     store: WorkspaceStore;
-    /** 在中间视口打开一个目标 */
+    /** 在中间视口打开一个目标(MOC 带图谱时会甩出面板切到图谱模式) */
     open(target: OpenTarget): void;
+    /** 在中间视口打开目标,但始终留在面板内渲染(不甩去图谱) */
+    openInline(target: OpenTarget): void;
     /** 右侧滑出详情 deck */
     openDeck(node: WorkspaceNode): void;
 }

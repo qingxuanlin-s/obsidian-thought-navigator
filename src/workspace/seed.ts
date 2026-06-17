@@ -206,21 +206,31 @@ export function migrateFromVaultIndex(index: VaultIndex): SeedResult | null {
 }
 
 /**
- * 当前迁移逻辑版本。改进 migrateFromVaultIndex / seed 时 +1,
- * 下次加载会自动重新从 spaces.json 迁移并覆盖,无需手动命令。
+ * 当前迁移逻辑版本。仅作记录(写入 workspace.json),便于诊断与「重新导入」命令使用。
+ * 注意:bump 此值【不再】触发自动覆盖——workspace.json 一旦有数据即为唯一权威。
  */
 export const MIGRATION_VERSION = 3;
 
 /**
- * 工作区首启填充 / 自动重迁移:
- * - 空库:从 spaces.json 迁移(迁不出用 seed demo)。
- * - 已有数据但迁移版本落后:自动重新迁移覆盖(版本号 bump 即触发)。
- * - 版本已最新:不动。
+ * 工作区首启填充(一次性):
+ * - 仅当 workspace.json 为空时执行:优先从 spaces.json 迁移,迁不出用 seed demo。
+ * - workspace.json 一旦有数据,它就是权威,本函数永不自动覆盖(避免冲掉用户编辑)。
+ *   需要重新从 spaces.json 导入时走 {@link reimportFromSpaces}(显式覆盖)。
  * 返回是否写入了新数据。
  */
 export async function ensureWorkspaceSeed(store: WorkspaceStore, vaultIndex: VaultIndex | null): Promise<boolean> {
-    if (!store.isEmpty() && store.getMigrationVersion() >= MIGRATION_VERSION) return false;
+    if (!store.isEmpty()) return false;
     const data = (vaultIndex && migrateFromVaultIndex(vaultIndex)) || buildSeed();
     await store.resetTo(data.nodes, data.links, MIGRATION_VERSION);
     return true;
+}
+
+/**
+ * 逃生口:用户显式触发,从 spaces.json 重新迁移并【覆盖】当前工作区数据。
+ * spaces.json 迁不出内容时回退到 seed demo。返回写入的节点数。
+ */
+export async function reimportFromSpaces(store: WorkspaceStore, vaultIndex: VaultIndex | null): Promise<number> {
+    const data = (vaultIndex && migrateFromVaultIndex(vaultIndex)) || buildSeed();
+    await store.resetTo(data.nodes, data.links, MIGRATION_VERSION);
+    return data.nodes.length;
 }

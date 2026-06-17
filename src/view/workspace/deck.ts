@@ -1,7 +1,7 @@
 import { Component, MarkdownRenderer, TFile } from "obsidian";
 import { WorkspaceNode, WSProjectNode, WSMocNode } from "src/types/workspace";
 import { projectProgress } from "src/workspace/WorkspaceStore";
-import { pickVaultFile } from "./notePicker";
+import { FilePickerModal } from "src/modal/filePickerModal";
 import { t } from "src/lang/helper";
 import { RenderCtx, TYPE_COLOR, statusLabel, STATUS_COLOR, relTime } from "./render";
 
@@ -162,12 +162,15 @@ export class Deck {
         }
     }
 
-    /** 从整个 vault 选一篇笔记关联到此 MOC(就地建 note 节点 + partOf 链),完成后刷新面板 */
+    /** 多选 vault 笔记批量关联到此 MOC(就地建 note 节点 + partOf 链),完成后刷新面板 */
     private pickAssoc(moc: WSMocNode) {
-        pickVaultFile(this.ctx.app, async (file) => {
-            await this.ctx.store.associateFileToMoc(moc.id, file);
+        const mounted = this.ctx.store.containerChildren(moc.id)
+            .map(c => (c as any).filePath as string | undefined)
+            .filter((p): p is string => !!p);
+        new FilePickerModal(this.ctx.app, moc.title, mounted, async (paths) => {
+            await this.ctx.store.mountFilesToContainer(moc.id, paths);
             this.open(moc);
-        });
+        }).open();
     }
 
     close() {

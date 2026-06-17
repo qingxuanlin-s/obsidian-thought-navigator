@@ -39,6 +39,8 @@ export interface WSBaseNode {
     updatedAt: number;     // 任何编辑都刷新 —— "最近更新/停滞"全靠它
     icon?: string;         // 可选图标(Lucide 名)
     color?: string;        // 可选主题色
+    collapsed?: boolean;   // 树视图(文件夹抽屉)折叠态,持久化
+    order?: number;        // 同一容器下的手动排序;缺省按 updatedAt 兜底
 }
 
 /** 领域 —— 顶层组织单元,可被打开(打开后显示 cockpit 概览页) */

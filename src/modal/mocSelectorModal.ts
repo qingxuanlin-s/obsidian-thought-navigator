@@ -1,5 +1,5 @@
 import { App, SuggestModal, TFile } from "obsidian";
-import { VaultIndex } from "src/index/VaultIndex";
+import { WorkspaceStore } from "src/workspace/WorkspaceStore";
 
 interface MOCItem {
     type: 'moc' | 'roadmap';
@@ -28,13 +28,13 @@ export class MOCSelectorModal extends SuggestModal<MOCItem> {
     mocFiles: TFile[];
     onSubmit: (item: MOCItem) => void;
     private sortedFiles: TFile[];
-    private vaultIndex: VaultIndex | null;
+    private store: WorkspaceStore | null;
 
-    constructor(app: App, mocFiles: TFile[], vaultIndex: VaultIndex | null, onSubmit: (item: MOCItem) => void) {
+    constructor(app: App, mocFiles: TFile[], store: WorkspaceStore | null, onSubmit: (item: MOCItem) => void) {
         super(app);
         this.mocFiles = mocFiles;
         this.onSubmit = onSubmit;
-        this.vaultIndex = vaultIndex;
+        this.store = store;
         this.setPlaceholder("搜索 MOC 文件...");
 
         // 按 mtime 倒序(编辑时间)
@@ -42,7 +42,7 @@ export class MOCSelectorModal extends SuggestModal<MOCItem> {
     }
 
     private isProjectMoc(file: TFile): boolean {
-        return !!this.vaultIndex?.isMocMounted(file.path);
+        return !!this.store?.isFileMounted(file.path);
     }
 
     getSuggestions(query: string): MOCItem[] {
@@ -101,10 +101,10 @@ export class MOCSelectorModal extends SuggestModal<MOCItem> {
             flexShrink: '0',
         });
 
-        // 项目挂载所在的文件夹名(可能多个)
-        if (item.isProject && this.vaultIndex) {
-            const folders = this.vaultIndex.getFoldersHostingMoc(file.path);
-            if (folders.length > 0) {
+        // 挂载所在的容器名(可能多个)
+        if (item.isProject && this.store) {
+            const containers = this.store.containersHostingFile(file.path);
+            if (containers.length > 0) {
                 const folderEl = left.createSpan();
                 folderEl.setCssStyles({
                     overflow: 'hidden',
@@ -114,7 +114,7 @@ export class MOCSelectorModal extends SuggestModal<MOCItem> {
                     color: 'var(--text-muted)',
                     minWidth: '0',
                 });
-                folderEl.setText('· ' + folders.map(f => f.name).join(' / '));
+                folderEl.setText('· ' + containers.map(c => c.title).join(' / '));
             }
         }
 

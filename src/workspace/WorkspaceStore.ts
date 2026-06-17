@@ -12,6 +12,12 @@ export function genNodeId(): string {
     return `wsn_${rand}${t}`;
 }
 
+/** 取路径 basename 并去掉最后一级扩展名(对齐 Obsidian TFile.basename:`x.moc.md` → `x.moc`) */
+function baseNameNoExt(path: string): string {
+    const base = path.split('/').pop() || path;
+    return base.replace(/\.[^.]+$/, '');
+}
+
 type ChangeListener = () => void;
 
 async function readStore(adapter: DataAdapter, storePath: string): Promise<WorkspaceStoreFile> {
@@ -149,6 +155,104 @@ export class WorkspaceStore extends Component {
             .filter((n): n is WorkspaceNode => !!n);
     }
 
+    // ---------- 容器树(文件夹抽屉:Space/MOC 当容器,Option A)----------
+
+    /** 容器边:childMoc(moc→moc)/ partOf(note,map→moc)/ serves(project→moc)都算"归属于父容器" */
+    private isContainmentLink(l: WSLink): boolean {
+        return l.type === 'childMoc' || l.type === 'partOf' || l.type === 'serves';
+    }
+
+    /** 同层排序:手动 order 升序(缺省排末尾),再按标题 */
+    private cmpOrder = (a: WorkspaceNode, b: WorkspaceNode): number => {
+        const oa = a.order ?? Number.MAX_SAFE_INTEGER;
+        const ob = b.order ?? Number.MAX_SAFE_INTEGER;
+        if (oa !== ob) return oa - ob;
+        return a.title.localeCompare(b.title, 'zh');
+    };
+
+    /** 节点的父容器 id(指向的容器);无容器边时返回其 Space id;Space 自身返回 null */
+    parentContainerOf(nodeId: string): string | null {
+        const n = this.nodes.get(nodeId);
+        if (!n || n.type === 'space') return null;
+        const up = this.linksFrom(nodeId).find(l => this.isContainmentLink(l) && this.nodes.has(l.to));
+        return up ? up.to : n.spaceId;
+    }
+
+    /** 容器(Space 或 MOC)的直接子节点,已排序 */
+    containerChildren(containerId: string): WorkspaceNode[] {
+        const container = this.nodes.get(containerId);
+        if (!container) return [];
+        if (container.type === 'space') {
+            // Space 顶层 = 属于本 space、且不指向本 space 内任何容器的节点
+            const inSpace = this.getAllNodes().filter(n => n.type !== 'space' && n.spaceId === containerId);
+            const idSet = new Set(inSpace.map(n => n.id));
+            return inSpace
+                .filter(n => !this.linksFrom(n.id).some(l => this.isContainmentLink(l) && idSet.has(l.to)))
+                .sort(this.cmpOrder);
+        }
+        const childIds = this.links
+            .filter(l => l.to === containerId && this.isContainmentLink(l))
+            .map(l => l.from);
+        return Array.from(new Set(childIds))
+            .map(id => this.nodes.get(id))
+            .filter((n): n is WorkspaceNode => !!n)
+            .sort(this.cmpOrder);
+    }
+
+    /** 该容器(含其后代容器)下所有节点 id,用于子树删除/防环 */
+    collectSubtreeIds(containerId: string): string[] {
+        const out: string[] = [];
+        const visit = (id: string) => {
+            out.push(id);
+            for (const c of this.containerChildren(id)) visit(c.id);
+        };
+        visit(containerId);
+        return out;
+    }
+
+    /** vault 文件是否已在工作区有节点(= 已"挂载") */
+    isFileMounted(path: string): boolean {
+        return this.getAllNodes().some(n => (n as any).filePath === path);
+    }
+
+    /** 文件是否已挂在指定容器下 */
+    isFileMountedIn(path: string, containerId: string): boolean {
+        return this.containersHostingFile(path).some(c => c.id === containerId);
+    }
+
+    /** 全部容器(Space + MOC),供挂载选择器列出 */
+    getContainers(): WorkspaceNode[] {
+        return this.getAllNodes().filter(n => n.type === 'space' || n.type === 'moc');
+    }
+
+    /** 节点展示路径:从根容器到自身的标题链,用 / 连接 */
+    displayPath(nodeId: string): string {
+        const parts: string[] = [];
+        const seen = new Set<string>();
+        let cur: string | null = nodeId;
+        while (cur && !seen.has(cur)) {
+            seen.add(cur);
+            const n = this.nodes.get(cur);
+            if (!n) break;
+            parts.unshift(n.title);
+            cur = this.parentContainerOf(cur);
+        }
+        return parts.join(' / ');
+    }
+
+    /** 承载某文件的父容器节点(去重) */
+    containersHostingFile(path: string): WorkspaceNode[] {
+        const hosts = new Set<string>();
+        for (const n of this.getAllNodes()) {
+            if ((n as any).filePath !== path) continue;
+            const pid = this.parentContainerOf(n.id);
+            if (pid) hosts.add(pid);
+        }
+        return Array.from(hosts)
+            .map(id => this.nodes.get(id))
+            .filter((n): n is WorkspaceNode => !!n);
+    }
+
     /** 节点 → 默认打开目标 */
     targetFor(node: WorkspaceNode): OpenTarget { return targetFor(node); }
 
@@ -198,6 +302,175 @@ export class WorkspaceStore extends Component {
             }
             ctx.addLink({ from: note.id, to: mocId, type: 'partOf' });
         });
+    }
+
+    /**
+     * vault 文件被重命名:把所有指向 oldPath 的节点 filePath 改到 newPath。
+     * 标题仅在它仍等于旧 basename(即用户没改过名)时跟随更新,避免覆盖自定义标题。
+     */
+    async handleFileRename(oldPath: string, newPath: string): Promise<void> {
+        const affected = this.getAllNodes().filter(n => (n as any).filePath === oldPath);
+        if (affected.length === 0) return;
+        const oldBase = baseNameNoExt(oldPath);
+        const newBase = baseNameNoExt(newPath);
+        await this.commit(ctx => {
+            for (const n of affected) {
+                ctx.update(n.id, x => {
+                    (x as any).filePath = newPath;
+                    if (x.title === oldBase) x.title = newBase;
+                });
+            }
+        });
+    }
+
+    /**
+     * vault 文件被删除:指向它的节点不直接连带删除(可能挂着关联/项目数据)。
+     * - 纯文件指针笔记(note 且无 body)→ 删节点(连带解链),等同 Space 行为。
+     * - 其余节点(moc/map/project/有正文的 note)→ 仅清空 filePath,保留节点与关联。
+     */
+    async handleFileDelete(path: string): Promise<void> {
+        const affected = this.getAllNodes().filter(n => (n as any).filePath === path);
+        if (affected.length === 0) return;
+        await this.commit(ctx => {
+            for (const n of affected) {
+                if (n.type === 'note' && !(n as WSNoteNode).body) {
+                    ctx.remove(n.id);
+                } else {
+                    ctx.update(n.id, x => { delete (x as any).filePath; });
+                }
+            }
+        });
+    }
+
+    // ---------- 容器写操作(文件夹抽屉用,Option A:MOC 当容器)----------
+
+    /**
+     * 把一批 vault 文件挂到容器(MOC 或 Space)下。
+     * - 文件无对应节点 → 就地建 note 节点(归到容器所在 Space)。
+     * - 容器是 MOC → 加 partOf 链(已存在自动去重,支持一个文件多父)。
+     * - 容器是 Space → 仅置 spaceId,作为该 Space 顶层节点(无容器边)。
+     * 返回新建的节点数。
+     */
+    async mountFilesToContainer(containerId: string, paths: string[]): Promise<number> {
+        const container = this.nodes.get(containerId);
+        if (!container) return 0;
+        const spaceId = container.type === 'space' ? container.id : container.spaceId;
+        let added = 0;
+        await this.commit(ctx => {
+            for (const path of paths) {
+                if (!path) continue;
+                let node = this.getNodeByPath(path);
+                if (!node) {
+                    const now = Date.now();
+                    const n: WSNoteNode = {
+                        id: genNodeId(), type: 'note', spaceId,
+                        title: baseNameNoExt(path), filePath: path, createdAt: now, updatedAt: now,
+                    };
+                    ctx.put(n);
+                    node = n;
+                    added++;
+                }
+                if (container.type === 'moc') {
+                    ctx.addLink({ from: node.id, to: containerId, type: 'partOf' });
+                } else {
+                    ctx.updateQuiet(node.id, x => { if (x.type !== 'space') x.spaceId = spaceId; });
+                }
+            }
+        });
+        return added;
+    }
+
+    /** 在容器(MOC/Space)下新建子 MOC(= 文件夹)。容器是 MOC 时加 childMoc 链。 */
+    async createChildMoc(containerId: string, title: string): Promise<WSMocNode | null> {
+        const container = this.nodes.get(containerId);
+        if (!container) return null;
+        const spaceId = container.type === 'space' ? container.id : container.spaceId;
+        const id = genNodeId(); const now = Date.now();
+        const node: WSMocNode = {
+            id, type: 'moc', spaceId, title: title.trim() || '未命名 MOC', createdAt: now, updatedAt: now,
+        };
+        await this.commit(ctx => {
+            ctx.put(node);
+            if (container.type === 'moc') ctx.addLink({ from: id, to: containerId, type: 'childMoc' });
+        });
+        return node;
+    }
+
+    /** 折叠/展开(树视图状态,不刷新 updatedAt) */
+    async setCollapsed(nodeId: string, collapsed: boolean): Promise<void> {
+        const n = this.nodes.get(nodeId);
+        if (!n || !!n.collapsed === collapsed) return;
+        await this.commit(ctx => ctx.updateQuiet(nodeId, x => { x.collapsed = collapsed; }));
+    }
+
+    /** 批量展开(自动展开当前 MOC 祖先链时合并一次 commit) */
+    async expandNodes(nodeIds: string[]): Promise<void> {
+        const targets = nodeIds.filter(id => this.nodes.get(id)?.collapsed);
+        if (targets.length === 0) return;
+        await this.commit(ctx => { for (const id of targets) ctx.updateQuiet(id, x => { x.collapsed = false; }); });
+    }
+
+    /**
+     * 把节点重新挂到新容器下(拖拽重挂)。
+     * - 目标是 Space:解掉容器边,改 spaceId 成为顶层。
+     * - 目标是 MOC:解掉旧容器边,按节点类型加 childMoc/serves/partOf,并同步整棵子树 spaceId。
+     * 防环:不能挂到自身或后代下。返回是否发生移动。
+     */
+    async reparent(nodeId: string, toContainerId: string): Promise<boolean> {
+        const node = this.nodes.get(nodeId);
+        const target = this.nodes.get(toContainerId);
+        if (!node || !target || node.id === target.id || node.type === 'space') return false;
+        if (this.parentContainerOf(nodeId) === toContainerId) return false;
+        const subtree = this.collectSubtreeIds(nodeId);
+        if (subtree.includes(toContainerId)) return false;
+        const outLinks = this.linksFrom(nodeId).filter(l => this.isContainmentLink(l));
+        const newSpaceId = target.type === 'space' ? target.id : target.spaceId;
+        await this.commit(ctx => {
+            for (const l of outLinks) ctx.removeLink(l.from, l.to, l.type);
+            for (const id of subtree) ctx.updateQuiet(id, x => { if (x.type !== 'space') x.spaceId = newSpaceId; });
+            if (target.type === 'moc') {
+                const linkType: LinkType = node.type === 'moc' ? 'childMoc'
+                    : node.type === 'project' ? 'serves' : 'partOf';
+                ctx.addLink({ from: nodeId, to: toContainerId, type: linkType });
+            }
+        });
+        return true;
+    }
+
+    /** 从指定容器解挂某文件:MOC → 删容器链;Space 顶层 → 删裸指针节点。 */
+    async unmountFileFromContainer(path: string, containerId: string): Promise<boolean> {
+        const container = this.nodes.get(containerId);
+        if (!container) return false;
+        const targets = this.getAllNodes()
+            .filter(n => (n as any).filePath === path && this.parentContainerOf(n.id) === containerId);
+        if (targets.length === 0) return false;
+        await this.commit(ctx => {
+            for (const node of targets) {
+                if (container.type === 'moc') {
+                    for (const l of this.linksFrom(node.id)) {
+                        if (this.isContainmentLink(l) && l.to === containerId) ctx.removeLink(l.from, l.to, l.type);
+                    }
+                } else {
+                    ctx.remove(node.id);
+                }
+            }
+        });
+        return true;
+    }
+
+    /** 从当前容器解挂:删掉容器出边,节点浮回所在 Space 顶层(不删节点)。 */
+    async unmountFromContainer(nodeId: string): Promise<boolean> {
+        const outLinks = this.linksFrom(nodeId).filter(l => this.isContainmentLink(l));
+        if (outLinks.length === 0) return false;
+        await this.commit(ctx => { for (const l of outLinks) ctx.removeLink(l.from, l.to, l.type); });
+        return true;
+    }
+
+    /** 删除节点及其容器子树(连带解链) */
+    async deleteSubtree(nodeId: string): Promise<void> {
+        const ids = this.collectSubtreeIds(nodeId);
+        if (ids.length === 0) return;
+        await this.commit(ctx => { for (const id of ids) ctx.remove(id); });
     }
 
     async createProject(spaceId: string, title: string): Promise<WSProjectNode> {
@@ -333,6 +606,13 @@ export class WorkspaceMutation {
         if (!n) return;
         fn(n);
         n.updatedAt = Date.now();
+    }
+
+    /** 改字段但不刷新 updatedAt(折叠/排序/结构搬动等 UI 状态,不算"内容更新") */
+    updateQuiet(id: string, fn: (n: WorkspaceNode) => void): void {
+        const n = this.nodes.get(id);
+        if (!n) return;
+        fn(n);
     }
 
     remove(id: string): void {

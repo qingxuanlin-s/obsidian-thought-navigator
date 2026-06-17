@@ -113,8 +113,14 @@ export class SpacesTree {
         caret.onclick = (e) => { e.stopPropagation(); if (kids.length) this.toggle(nkey); };
 
         glyph(row, n.type);
-        const nm = row.createSpan({ cls: 'nm' + (n.type === 'note' || n.type === 'map' ? ' dim' : '') });
+        // 名字 = 跳转(MOC→图谱 / project→项目页 / note→笔记页 / space→cockpit);行其余 = 开详情 deck
+        const nm = row.createSpan({ cls: 'nm link' + (n.type === 'note' || n.type === 'map' ? ' dim' : '') });
         nm.setText(n.title);
+        // 名字只占文字宽度(否则 flex:1 撑满整行,右侧空白也成了"名字",点了照样跳转)
+        nm.setCssStyles({ cursor: 'pointer', flex: '0 1 auto' });
+        nm.onclick = (e) => { e.stopPropagation(); this.ctx.open(this.ctx.store.targetFor(n)); };
+        // 撑满剩余宽度、与行同高的空白:点它冒泡到 row → 开 deck
+        row.createSpan().setCssStyles({ flex: '1 1 auto', alignSelf: 'stretch' });
 
         if (n.type === 'project') {
             const p = n as WSProjectNode;
@@ -132,7 +138,8 @@ export class SpacesTree {
             if (agg) row.createSpan({ cls: 'mcount', text: String(agg) });
         }
 
-        row.onclick = () => this.ctx.open(this.ctx.store.targetFor(n));
+        // 行空白:开右侧 deck,同时中间主区跟随到该节点自己的页面(留在面板内,不跳图谱)
+        row.onclick = () => { this.ctx.openDeck(n); this.ctx.openInline(this.ctx.store.targetFor(n)); };
 
         if (open && kids.length) kids.forEach(k => this.renderNode(k, depth + 1, childrenOf));
     }

@@ -49,6 +49,7 @@ export class WorkspacePanel {
             app: deps.app,
             store: deps.store,
             open: (t) => this.navigate(t),
+            openInline: (t) => this.navigateInline(t),
             openDeck: (n) => this.deck?.open(n),
         };
 
@@ -130,6 +131,12 @@ export class WorkspacePanel {
                 if (this.deps.onOpenMoc(node as WSMocNode)) return;
             }
         }
+        this.navigateInline(target);
+    }
+
+    /** 面板内导航:更新中间视口 + 侧栏选中,绝不甩去图谱 */
+    private navigateInline(target: OpenTarget) {
+        if (!this.tree) return;
         this.current = target;
         if (target.kind !== 'home') { try { localStorage.setItem(LS_LAST, JSON.stringify(target)); } catch {} }
         try { localStorage.setItem(LS_OPEN, JSON.stringify(target)); } catch {}
@@ -147,7 +154,7 @@ export class WorkspacePanel {
             target = first ? { kind: 'space', id: first.id } : { kind: 'home' };
         }
         // 恢复时不要把图谱 MOC 甩给宿主(避免一进面板就跳走),仅在面板内渲染
-        if (target.kind === 'moc') { this.renderTargetInline(target); this.tree.setCurrent(target); this.tree.render(); this.current = target; }
+        if (target.kind === 'moc') this.navigateInline(target);
         else this.navigate(target);
     }
 
@@ -159,11 +166,6 @@ export class WorkspacePanel {
             if (t.kind === 'home' || !('id' in t)) return null;
             return this.deps.store.getNode(t.id) || null;
         } catch { return null; }
-    }
-
-    private renderTargetInline(target: OpenTarget) {
-        this.current = target;
-        this.renderCenter();
     }
 
     private renderCenter() {
