@@ -3895,7 +3895,13 @@ cy.fit(null, 40);
                 return;
             }
             const { nodeId } = event.detail;
+            // auto 预览重排把兄弟挪开了(未落盘),取消时按文件保存坐标还原,回收占位空缺。
+            const wasAutoPreview = this.placeholderNodes.get(nodeId)?.layoutStyle === 'auto';
             await this.removePlaceholderNode(nodeId);
+            if (wasAutoPreview) {
+                const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+                if (mocFile) await this.restoreSavedNodePositions(mocFile);
+            }
         });
 
         // 监听占位符节点完成事件（从 suggester 选择文件后触发）
@@ -7624,6 +7630,10 @@ cy.fit(null, 40);
                     suggestedNodeId: effectiveSuggestedId
                 }
             }));
+            // auto 布局:占位时就让现有兄弟为占位符让位(预览,不落盘)
+            if (placeholderLayoutStyle === 'auto') {
+                await this.previewReflowForPlaceholder(parentId, tempId, activeNode.IDStr);
+            }
         } else {
             console.error('[indexView] 未找到 branchGraphDiv');
         }
@@ -7772,6 +7782,10 @@ cy.fit(null, 40);
                     suggestedNodeId: suggestedNodeId  // 传递预生成的节点ID
                 }
             }));
+            // auto 布局:占位时就让现有兄弟为占位符让位(预览,不落盘)
+            if (parentNodeId && placeholderLayoutStyle === 'auto') {
+                await this.previewReflowForPlaceholder(parentNodeId, tempId);
+            }
         }
     }
 
@@ -8462,7 +8476,10 @@ cy.fit(null, 40);
 
         let initial: { x: number; y: number };
         if (referencePos && referenceId) {
-            const siblingGap = this.computeSiblingSlotGap(referenceId, stackAxis);
+            // 选中参考(同父)时落在参考与其下一个兄弟"之间"(半槽),使排序正好插在参考之后;
+            // 否则(追加到同向最远兄弟之后)用整槽接到末尾。
+            const siblingGap = this.computeSiblingSlotGap(referenceId, stackAxis)
+                * (sameParentReference ? 0.5 : 1);
             initial = {
                 x: referencePos.x + stackAxis.x * siblingGap,
                 y: referencePos.y + stackAxis.y * siblingGap
@@ -8705,19 +8722,66 @@ cy.fit(null, 40);
             const parent = this.findNodeInTree(mocData.nodes, parentId);
             const siblings = (parent?.children || []).filter((c: any) => c.nodeID !== newNodeId);
             if (siblings.length === 0) return;
-            const last = siblings[siblings.length - 1]; // 数组按创建顺序 → 末尾 = 最大 id
             const pos = mocData.nodePositions || (mocData.nodePositions = {});
             const pp = pos[parentId];
-            const lp = pos[last.nodeID];
-            if (!pp || !lp) return;
-            const leftSide = (lp.x - pp.x) < 0;
+            // 优先用新节点自己的占位坐标(已落在被选中参考节点的槽位旁)定左右侧并保留其 y;
+            // 缺失时回退到末尾兄弟。直接用末尾兄弟会把新节点强行对齐到最底下那一行,
+            // 导致 reflow 按 y 排序时排到末尾(issue:新建兄弟跑到最下面)。
+            const np = pos[newNodeId];
+            const ref = np || pos[siblings[siblings.length - 1].nodeID];
+            if (!pp || !ref) return;
+            const leftSide = (ref.x - pp.x) < 0;
             pos[newNodeId] = {
                 x: Math.round((pp.x + (leftSide ? -315 : 315)) * 100) / 100,
-                y: lp.y,
+                y: ref.y,
             };
             const nn = this.findNodeInTree(mocData.nodes, newNodeId);
             if (nn) nn.extBitMap = ((nn.extBitMap || 0) | NODE_FLAG_SIDE_PINNED) & 0xff;
         });
+    }
+
+    /**
+     * 占位编辑阶段的预览重排:把占位符当成 parentId 的真实子节点跑一遍布局(不落盘),
+     * 现有兄弟即为占位符让出槽位(否则占位符会压在下一个兄弟身上)。
+     * referenceNodeId(被选中的兄弟)用于把占位符染入同一颜色排序组。
+     */
+    private async previewReflowForPlaceholder(
+        parentNodeId: string,
+        placeholderTempId: string,
+        referenceNodeId?: string
+    ): Promise<void> {
+        if (!this.isNodeAutoLayout(parentNodeId) && !this.hasAutoLayoutChild(parentNodeId)) return;
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        if (!cy) return;
+        const ph = cy.$id(placeholderTempId);
+        if (!ph || ph.length === 0) return;
+
+        // 取参考节点(或父的第一个子节点)的分支色,作为占位符的颜色排序键,
+        // 否则占位符落到 __default__ 组会被排到所有同色兄弟之后。
+        let colorKey: string | undefined;
+        const refId = referenceNodeId || this.getChildNodeIds(parentNodeId)[0];
+        if (refId) {
+            const refNode: any = cy.$('node').filter((n: any) => {
+                const o = n.data('originalNode');
+                return o && (o.IDStr === refId || o.ID === refId);
+            }).first();
+            if (refNode && refNode.length > 0) {
+                colorKey = refNode.data('branchNodeBorder') || refNode.data('branchNodeBackground') || undefined;
+            }
+        }
+
+        await this.relayoutAutoLayoutSiblings(parentNodeId, {
+            compactVisibleNodes: true,
+            collapsedNodeIds: this.collapsedNodeIds,
+            rebalanceRootChildren: true,
+            persistPositions: false,
+            includePlaceholder: { id: placeholderTempId, parentId: parentNodeId, colorKey },
+        });
+
+        // 引擎把占位符摆到了干净槽位,同步占位记录的 position,让后续落盘坐标与所见一致。
+        const settled = ph.position();
+        const rec = this.placeholderNodes.get(placeholderTempId);
+        if (rec) rec.position = { x: settled.x, y: settled.y };
     }
 
     /**
@@ -8753,6 +8817,9 @@ cy.fit(null, 40);
             forceResetSeparated?: boolean;
             rebalanceRootChildren?: boolean;
             localOnly?: boolean;
+            // 把一个占位符 cy 节点当成 parentId 的真实子节点塞进布局(预览用,配合 persistPositions:false):
+            // 让现有兄弟为占位符让出槽位。colorKey 用于让占位符归入参考节点的颜色排序组。
+            includePlaceholder?: { id: string; parentId: string; colorKey?: string };
         } = {}
     ): Promise<void> {
         if (!this.branchRenderer) {
@@ -8832,13 +8899,16 @@ cy.fit(null, 40);
             }
             return false;
         };
+        const includePlaceholder = relayoutOptions.includePlaceholder;
         const cyNodeById = new Map<string, any>();
         cy.$('node').forEach((node: any) => {
             const data = node.data();
             const originalNode = data.originalNode;
-            const nodeId = originalNode?.IDStr || originalNode?.ID;
-            // 草稿(#20)作为一等节点参与重排(有 synthetic originalNode);占位符/分组仍排除
-            if (!nodeId || data.isGroup || data.isPlaceholder) return;
+            // 预览场景:指定的占位符也作为一等子节点参与排布,让兄弟为它让位。
+            const isIncludedPlaceholder = !!(includePlaceholder && data.isPlaceholder && data.id === includePlaceholder.id);
+            const nodeId = isIncludedPlaceholder ? data.id : (originalNode?.IDStr || originalNode?.ID);
+            // 草稿(#20)作为一等节点参与重排(有 synthetic originalNode);其余占位符/分组排除
+            if (!nodeId || data.isGroup || (data.isPlaceholder && !isIncludedPlaceholder)) return;
             // 被收起隐藏的节点(display:none)一律不参与布局:量不到真实尺寸(会被钳到
             // 80×44 兜底值),算出的跨度是错的。不依赖 compactVisibleNodes 开关 ——
             // 任何调用方(切换布局风格/preset 等)都不该让隐藏节点参与。
@@ -8848,7 +8918,9 @@ cy.fit(null, 40);
                 id: nodeId,
                 size: getNodeSize(node),
                 position: node.position(),
-                colorKey: getColorKey(node)
+                colorKey: isIncludedPlaceholder
+                    ? (includePlaceholder!.colorKey || getColorKey(node))
+                    : getColorKey(node)
             };
             childrenById[nodeId] = [];
         });
@@ -8869,6 +8941,13 @@ cy.fit(null, 40);
                 childrenById[sourceId].push(targetId);
             }
         });
+
+        // 占位符无 parent 边,手动挂到目标父节点下,使其和真实兄弟一起被排布。
+        if (includePlaceholder && nodes[includePlaceholder.id] && nodes[includePlaceholder.parentId]) {
+            parentById[includePlaceholder.id] = includePlaceholder.parentId;
+            const list = childrenById[includePlaceholder.parentId] || (childrenById[includePlaceholder.parentId] = []);
+            if (!list.includes(includePlaceholder.id)) list.push(includePlaceholder.id);
+        }
 
         const realMocRootIds = new Set<string>(mocData.nodes.map((node) => node.nodeID));
         let relayoutRootId = parentNodeId;
@@ -8930,6 +9009,11 @@ cy.fit(null, 40);
             const id = node.data('originalNode')?.IDStr;
             if (id) { const p = node.position(); draftSavedPositions[id] = { x: p.x, y: p.y }; }
         });
+        // 预览占位符同理:把其 cy 坐标喂进 nodePositions,使引擎按"位置相对父节点"定左右侧,
+        // 否则缺位置会退回 sibling-index 取 pool,把新节点甩到对侧。
+        if (includePlaceholder && nodes[includePlaceholder.id]) {
+            draftSavedPositions[includePlaceholder.id] = { ...nodes[includePlaceholder.id].position };
+        }
 
         const nodePositions = computeAutoLayout({
             relayoutRootId,
@@ -8957,6 +9041,9 @@ cy.fit(null, 40);
                         return true;
                     }));
                     explicit?.forEach((id) => set.add(id));
+                    // 占位符不在 mocNodes(isNodeAutoLayout=false),显式加入忽略集,
+                    // 使其 cy 位置只用于定方向、不被当锚点 → 落到引擎算出的干净槽位。
+                    if (includePlaceholder && nodes[includePlaceholder.id]) set.add(includePlaceholder.id);
                     return set;
                 }
                 return explicit && explicit.length > 0 ? new Set(explicit) : undefined;
