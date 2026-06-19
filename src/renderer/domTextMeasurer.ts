@@ -18,7 +18,7 @@ export class DomTextMeasurer {
 	private readonly maxCacheSize = 200;
 
 	constructor(parent: HTMLElement) {
-		this.host = document.createElement('div');
+		this.host = activeDocument.createElement('div');
 		this.host.className = 'zk-measure-host';
 		this.host.setCssStyles({
 			position: 'absolute',

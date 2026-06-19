@@ -42,7 +42,7 @@ export class OverlayScheduler {
 	schedule(): void {
 		if (this.updateScheduled) return;
 		this.updateScheduled = true;
-		requestAnimationFrame(() => {
+		window.requestAnimationFrame(() => {
 			this.updateScheduled = false;
 			const cy = this.deps.getCy();
 			const container = this.deps.getContainer();
@@ -62,7 +62,7 @@ export class OverlayScheduler {
 	scheduleExtra(): void {
 		if (this.updateScheduled) return;
 		this.updateScheduled = true;
-		requestAnimationFrame(() => {
+		window.requestAnimationFrame(() => {
 			this.updateScheduled = false;
 			const cy = this.deps.getCy();
 			const container = this.deps.getContainer();

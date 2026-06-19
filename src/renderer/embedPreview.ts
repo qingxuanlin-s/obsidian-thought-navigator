@@ -5,7 +5,7 @@ import { applyPreviewHeaderLinkStyle, getPreviewCardTheme } from './colorUtils';
 import { getMocPreviewPngCandidates } from './renderPipeline';
 
 export const wrapForImageToolkit = (img: HTMLElement): HTMLElement => {
-    const wrap = document.createElement('div');
+    const wrap = activeDocument.createElement('div');
     wrap.className = 'modal-content';
     wrap.setCssStyles({ display: 'contents' });
     // .modal-content 在 Obsidian 里带固定 font-size,会把子元素 em 单位锁死,
@@ -62,7 +62,7 @@ export const renderExcalidrawPreview = async (
                     const encoded = encodeURIComponent(svgString)
                         .replace(/'/g, '%27')
                         .replace(/"/g, '%22');
-                    const img = document.createElement('img');
+                    const img = activeDocument.createElement('img');
                     img.src = `data:image/svg+xml;charset=utf-8,${encoded}`;
                     img.draggable = false;
                     img.setCssStyles({
@@ -106,7 +106,7 @@ export const renderExcalidrawPreview = async (
             if (f) { exportedFile = f; break; }
         }
         if (exportedFile) {
-            const img = document.createElement('img');
+            const img = activeDocument.createElement('img');
             img.src = app.vault.getResourcePath(exportedFile);
             img.draggable = false;
             img.setCssStyles({
@@ -256,7 +256,7 @@ export function renderEmbedNodePreviews(this: any): void {
         const app = this.currentOptions?.app;
         if (!app) return;
 
-        const previewContainer = document.createElement('div');
+        const previewContainer = activeDocument.createElement('div');
         previewContainer.className = 'zk-embed-previews';
         previewContainer.setCssStyles({
             position: 'absolute',
@@ -321,7 +321,7 @@ export function renderEmbedNodePreviews(this: any): void {
             const resolvedCardBackground = isExcalidrawFile ? 'transparent' : theme.cardBackground;
             const resolvedCardShadow = isExcalidrawFile && !!data.isFreeNode ? 'none' : theme.cardShadow;
 
-            const card = document.createElement('div');
+            const card = activeDocument.createElement('div');
             card.className = 'zk-embed-preview-card';
             card.dataset.nodeId = nodeId;
             card.setCssStyles({
@@ -341,7 +341,7 @@ export function renderEmbedNodePreviews(this: any): void {
                 willChange: 'transform',
             });
 
-            const headerEl = document.createElement('div');
+            const headerEl = activeDocument.createElement('div');
             headerEl.dataset.role = 'embed-header';
             headerEl.setCssStyles({
                 height: '32px',
@@ -359,7 +359,7 @@ export function renderEmbedNodePreviews(this: any): void {
                 userSelect: 'none',
             });
             // 文件名链接；若节点有 alias（ZKNode.title 与 wikiLink 不同），拼成 "basename|alias"
-            const headerLink = document.createElement('span');
+            const headerLink = activeDocument.createElement('span');
             const aliasCandidate = String(originalNode?.title || '').trim();
             const rawWikiLink = String(originalNode?.wikiLink || '').trim();
             const hasAlias = aliasCandidate && aliasCandidate !== rawWikiLink
@@ -384,7 +384,7 @@ export function renderEmbedNodePreviews(this: any): void {
             });
             headerEl.appendChild(headerLink);
 
-            const contentEl = document.createElement('div');
+            const contentEl = activeDocument.createElement('div');
             contentEl.dataset.role = 'embed-content';
             contentEl.setCssStyles({
                 height: 'calc(100% - 36px)',
@@ -397,7 +397,7 @@ export function renderEmbedNodePreviews(this: any): void {
             });
 
             // 右下角 resize 焦点（仅在选中时可用）
-            const resizeHandle = document.createElement('div');
+            const resizeHandle = activeDocument.createElement('div');
             resizeHandle.setCssStyles({
                 position: 'absolute',
                 right: '0',
@@ -439,7 +439,7 @@ export function renderEmbedNodePreviews(this: any): void {
             card.appendChild(resizeHandle);
             previewContainer.appendChild(card);
 
-            const embedToggleEl = document.createElement('div');
+            const embedToggleEl = activeDocument.createElement('div');
             embedToggleEl.className = 'zk-embed-toggle';
             const embedToggleLabel = '切换为文件节点';
             embedToggleEl.setAttribute('aria-label', embedToggleLabel);
@@ -602,8 +602,8 @@ export function renderEmbedNodePreviews(this: any): void {
                 if (!draggingFromHeader) return;
                 draggingFromHeader = false;
                 setCanvasInteractionSuppressed(false);
-                document.removeEventListener('mousemove', onHeaderMouseMove);
-                document.removeEventListener('mouseup', onHeaderMouseUp);
+                activeDocument.removeEventListener('mousemove', onHeaderMouseMove);
+                activeDocument.removeEventListener('mouseup', onHeaderMouseUp);
                 // 保存拖动后的位置（取最新 data，增量更新可能已替换）
                 const currentData = node.data();
                 const pos = node.position();
@@ -641,8 +641,8 @@ export function renderEmbedNodePreviews(this: any): void {
                     this.activeOverlayDragAborters.delete(ctrl);
                     try { ctrl.abort(); } catch { /* ignore */ }
                 };
-                document.addEventListener('mousemove', onHeaderMouseMove, { signal: ctrl.signal });
-                document.addEventListener('mouseup', () => { onHeaderMouseUp(); finalize(); }, { signal: ctrl.signal });
+                activeDocument.addEventListener('mousemove', onHeaderMouseMove, { signal: ctrl.signal });
+                activeDocument.addEventListener('mouseup', () => { onHeaderMouseUp(); finalize(); }, { signal: ctrl.signal });
             });
 
             headerEl.addEventListener('dblclick', (e: MouseEvent) => {
@@ -699,8 +699,8 @@ export function renderEmbedNodePreviews(this: any): void {
                 if (!resizing) return;
                 resizing = false;
                 setCanvasInteractionSuppressed(false);
-                document.removeEventListener('mousemove', onMouseMove);
-                document.removeEventListener('mouseup', onMouseUp);
+                activeDocument.removeEventListener('mousemove', onMouseMove);
+                activeDocument.removeEventListener('mouseup', onMouseUp);
                 const modelSize = cardSizeMap.get(nodeId);
                 if (modelSize) {
                     node.style({ 'width': modelSize.widthModel, 'height': modelSize.heightModel });
@@ -741,8 +741,8 @@ export function renderEmbedNodePreviews(this: any): void {
                     this.activeOverlayDragAborters.delete(ctrl);
                     try { ctrl.abort(); } catch { /* ignore */ }
                 };
-                document.addEventListener('mousemove', onMouseMove, { signal: ctrl.signal });
-                document.addEventListener('mouseup', () => { onMouseUp(); finalize(); }, { signal: ctrl.signal });
+                activeDocument.addEventListener('mousemove', onMouseMove, { signal: ctrl.signal });
+                activeDocument.addEventListener('mouseup', () => { onMouseUp(); finalize(); }, { signal: ctrl.signal });
             });
 
             const isMOCFile = isMocPath(sourceFile.path);
@@ -785,7 +785,7 @@ export function renderEmbedNodePreviews(this: any): void {
                     }
 
                     if (previewFile) {
-                        const img = document.createElement('img');
+                        const img = activeDocument.createElement('img');
                         img.src = app.vault.getResourcePath(previewFile);
                         img.draggable = false;
                         img.setCssStyles({
@@ -1021,7 +1021,7 @@ export function renderImageNodePreviews(this: any): void {
 
         if (imageNodes.length === 0) return;
 
-        const previewContainer = document.createElement('div');
+        const previewContainer = activeDocument.createElement('div');
         previewContainer.className = 'zk-image-previews';
         previewContainer.setCssStyles({
             position: 'absolute',
@@ -1093,7 +1093,7 @@ export function renderImageNodePreviews(this: any): void {
             });
 
             // 创建卡片容器
-            const card = document.createElement('div');
+            const card = activeDocument.createElement('div');
             card.className = 'zk-image-preview-card';
             card.setCssStyles({
                 position: 'absolute',
@@ -1113,7 +1113,7 @@ export function renderImageNodePreviews(this: any): void {
             card.dataset.nodeId = nodeId;
 
             // 标题栏（文件名 + 点击跳转）
-            const headerEl = document.createElement('div');
+            const headerEl = activeDocument.createElement('div');
             headerEl.dataset.role = 'image-header';
             headerEl.setCssStyles({
                 height: '32px',
@@ -1132,7 +1132,7 @@ export function renderImageNodePreviews(this: any): void {
             });
 
 
-            const headerLink = document.createElement('span');
+            const headerLink = activeDocument.createElement('span');
             headerLink.textContent = (file as any).basename || filePath.split('/').pop() || '';
             applyPreviewHeaderLinkStyle(headerLink);
             headerLink.addEventListener('click', (e) => {
@@ -1169,7 +1169,7 @@ export function renderImageNodePreviews(this: any): void {
             });
 
             // 图片内容区
-            const img = document.createElement('img');
+            const img = activeDocument.createElement('img');
             img.src = resourcePath;
             img.draggable = false;
             img.setCssStyles({
@@ -1199,7 +1199,7 @@ export function renderImageNodePreviews(this: any): void {
             });
 
             // 右下角 resize 手柄（仅选中时可见）
-            const resizeHandle = document.createElement('div');
+            const resizeHandle = activeDocument.createElement('div');
             resizeHandle.setCssStyles({
                 position: 'absolute',
                 right: '0',
@@ -1265,8 +1265,8 @@ export function renderImageNodePreviews(this: any): void {
                 if (!draggingCard) return;
                 draggingCard = false;
                 setCanvasInteractionSuppressed(false);
-                document.removeEventListener('mousemove', onCardMouseMove);
-                document.removeEventListener('mouseup', onCardMouseUp);
+                activeDocument.removeEventListener('mousemove', onCardMouseMove);
+                activeDocument.removeEventListener('mouseup', onCardMouseUp);
                 // 取最新 data，增量更新可能已替换闭包中的旧引用
                 const currentData = node.data();
                 const pos = node.position();
@@ -1322,8 +1322,8 @@ export function renderImageNodePreviews(this: any): void {
                     this.activeOverlayDragAborters.delete(ctrl);
                     try { ctrl.abort(); } catch { /* ignore */ }
                 };
-                document.addEventListener('mousemove', onCardMouseMove, { signal: ctrl.signal });
-                document.addEventListener('mouseup', () => { onCardMouseUp(); finalize(); }, { signal: ctrl.signal });
+                activeDocument.addEventListener('mousemove', onCardMouseMove, { signal: ctrl.signal });
+                activeDocument.addEventListener('mouseup', () => { onCardMouseUp(); finalize(); }, { signal: ctrl.signal });
             });
 
             // 右下角拖拽调整尺寸
@@ -1354,8 +1354,8 @@ export function renderImageNodePreviews(this: any): void {
                 if (!resizing) return;
                 resizing = false;
                 setCanvasInteractionSuppressed(false);
-                document.removeEventListener('mousemove', onMouseMove);
-                document.removeEventListener('mouseup', onMouseUp);
+                activeDocument.removeEventListener('mousemove', onMouseMove);
+                activeDocument.removeEventListener('mouseup', onMouseUp);
                 const modelSize = cardSizeMap.get(nodeId);
                 if (modelSize) {
                     node.style({ 'width': modelSize.widthModel, 'height': modelSize.heightModel });
@@ -1394,8 +1394,8 @@ export function renderImageNodePreviews(this: any): void {
                     this.activeOverlayDragAborters.delete(ctrl);
                     try { ctrl.abort(); } catch { /* ignore */ }
                 };
-                document.addEventListener('mousemove', onMouseMove, { signal: ctrl.signal });
-                document.addEventListener('mouseup', () => { onMouseUp(); finalize(); }, { signal: ctrl.signal });
+                activeDocument.addEventListener('mousemove', onMouseMove, { signal: ctrl.signal });
+                activeDocument.addEventListener('mouseup', () => { onMouseUp(); finalize(); }, { signal: ctrl.signal });
             });
 
             // 缓存上一次同步到 Cytoscape 的尺寸，避免每帧都触发样式重算

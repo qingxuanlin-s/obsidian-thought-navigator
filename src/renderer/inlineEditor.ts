@@ -166,7 +166,7 @@ export function attachInlineTextSelectionToolbar(this: any, inputEl: HTMLInputEl
         };
 
         const createToolbarButton = (iconName: string, title: string, handler: () => void): HTMLButtonElement => {
-            const btn = document.createElement('button');
+            const btn = activeDocument.createElement('button');
             btn.type = 'button';
             btn.className = 'zk-text-selection-btn';
             btn.title = title;
@@ -186,7 +186,7 @@ export function attachInlineTextSelectionToolbar(this: any, inputEl: HTMLInputEl
 
         const ensureToolbar = () => {
             if (toolbar || !this.container) return;
-            toolbar = document.createElement('div');
+            toolbar = activeDocument.createElement('div');
             toolbar.className = 'zk-text-selection-toolbar';
             toolbar.addEventListener('pointerdown', (e) => {
                 e.preventDefault();
@@ -247,7 +247,7 @@ export function attachInlineTextSelectionToolbar(this: any, inputEl: HTMLInputEl
                     return;
                 }
 
-                sizePanel = document.createElement('div');
+                sizePanel = activeDocument.createElement('div');
                 sizePanel.className = 'zk-text-selection-size-panel';
                 sizePanel.addEventListener('pointerdown', (e) => {
                     e.preventDefault();
@@ -259,7 +259,7 @@ export function attachInlineTextSelectionToolbar(this: any, inputEl: HTMLInputEl
                 });
 
                 fontSizeChoices.forEach((size) => {
-                    const sizeBtn = document.createElement('button');
+                    const sizeBtn = activeDocument.createElement('button');
                     sizeBtn.type = 'button';
                     sizeBtn.className = 'zk-text-selection-size-btn';
                     sizeBtn.textContent = `${size}px`;
@@ -276,16 +276,16 @@ export function attachInlineTextSelectionToolbar(this: any, inputEl: HTMLInputEl
                     sizePanel!.appendChild(sizeBtn);
                 });
 
-                const customWrap = document.createElement('div');
+                const customWrap = activeDocument.createElement('div');
                 customWrap.className = 'zk-text-selection-size-custom';
-                const customInput = document.createElement('input');
+                const customInput = activeDocument.createElement('input');
                 customInput.type = 'number';
                 customInput.min = '8';
                 customInput.max = '96';
                 customInput.step = '1';
                 customInput.value = '16';
                 customInput.className = 'zk-text-selection-size-input';
-                const customApply = document.createElement('button');
+                const customApply = activeDocument.createElement('button');
                 customApply.type = 'button';
                 customApply.className = 'zk-text-selection-size-apply';
                 customApply.textContent = '应用';
@@ -330,13 +330,13 @@ export function attachInlineTextSelectionToolbar(this: any, inputEl: HTMLInputEl
         };
 
         const updateToolbarVisibility = () => {
-            const activeEl = document.activeElement as Node | null;
+            const activeEl = activeDocument.activeElement as Node | null;
             if (activeEl && toolbar?.contains(activeEl)) {
                 ensureToolbar();
                 positionToolbar();
                 return;
             }
-            const isFocused = document.activeElement === inputEl;
+            const isFocused = activeDocument.activeElement === inputEl;
             const { length } = getSelectionRange();
             if (!isFocused || length <= 0) {
                 hideToolbar();
@@ -347,9 +347,9 @@ export function attachInlineTextSelectionToolbar(this: any, inputEl: HTMLInputEl
         };
 
         const handleBlur = () => {
-            setTimeout(() => {
-                const activeEl = document.activeElement as Node | null;
-                if (document.activeElement !== inputEl && !(activeEl && toolbar?.contains(activeEl))) {
+            window.setTimeout(() => {
+                const activeEl = activeDocument.activeElement as Node | null;
+                if (activeDocument.activeElement !== inputEl && !(activeEl && toolbar?.contains(activeEl))) {
                     hideToolbar();
                 }
             }, 20);
@@ -487,7 +487,7 @@ export function attachContentSelectionToolbar(this: any, rootEl: HTMLElement,
         };
 
         const createToolbarButton = (iconName: string, title: string, handler: () => void): HTMLButtonElement => {
-            const btn = document.createElement('button');
+            const btn = activeDocument.createElement('button');
             btn.type = 'button';
             btn.className = 'zk-text-selection-btn';
             btn.title = title;
@@ -506,7 +506,7 @@ export function attachContentSelectionToolbar(this: any, rootEl: HTMLElement,
 
         const ensureToolbar = () => {
             if (toolbar || !this.container) return;
-            toolbar = document.createElement('div');
+            toolbar = activeDocument.createElement('div');
             toolbar.className = 'zk-text-selection-toolbar';
             toolbar.addEventListener('pointerdown', (e) => {
                 e.preventDefault();
@@ -567,7 +567,7 @@ export function attachContentSelectionToolbar(this: any, rootEl: HTMLElement,
                     return;
                 }
 
-                sizePanel = document.createElement('div');
+                sizePanel = activeDocument.createElement('div');
                 sizePanel.className = 'zk-text-selection-size-panel';
                 sizePanel.addEventListener('pointerdown', (e) => {
                     e.preventDefault();
@@ -579,7 +579,7 @@ export function attachContentSelectionToolbar(this: any, rootEl: HTMLElement,
                 });
 
                 fontSizeChoices.forEach((size) => {
-                    const sizeBtn = document.createElement('button');
+                    const sizeBtn = activeDocument.createElement('button');
                     sizeBtn.type = 'button';
                     sizeBtn.className = 'zk-text-selection-size-btn';
                     sizeBtn.textContent = `${size}px`;
@@ -596,16 +596,16 @@ export function attachContentSelectionToolbar(this: any, rootEl: HTMLElement,
                     sizePanel!.appendChild(sizeBtn);
                 });
 
-                const customWrap = document.createElement('div');
+                const customWrap = activeDocument.createElement('div');
                 customWrap.className = 'zk-text-selection-size-custom';
-                const customInput = document.createElement('input');
+                const customInput = activeDocument.createElement('input');
                 customInput.type = 'number';
                 customInput.min = '8';
                 customInput.max = '96';
                 customInput.step = '1';
                 customInput.value = '16';
                 customInput.className = 'zk-text-selection-size-input';
-                const customApply = document.createElement('button');
+                const customApply = activeDocument.createElement('button');
                 customApply.type = 'button';
                 customApply.className = 'zk-text-selection-size-apply';
                 customApply.textContent = '应用';
@@ -650,13 +650,13 @@ export function attachContentSelectionToolbar(this: any, rootEl: HTMLElement,
         };
 
         const updateToolbarVisibility = () => {
-            const activeEl = document.activeElement as Node | null;
+            const activeEl = activeDocument.activeElement as Node | null;
             if (activeEl && toolbar?.contains(activeEl)) {
                 ensureToolbar();
                 positionToolbar();
                 return;
             }
-            const isFocused = rootEl.contains(document.activeElement);
+            const isFocused = rootEl.contains(activeDocument.activeElement);
             const hasSelection = !!getSelectionRect();
             if (!isFocused || !hasSelection) {
                 hideToolbar();
@@ -668,15 +668,15 @@ export function attachContentSelectionToolbar(this: any, rootEl: HTMLElement,
 
         const handleSelectionChange = () => updateToolbarVisibility();
         const handleBlur = () => {
-            setTimeout(() => {
-                const activeEl = document.activeElement as Node | null;
-                if (!rootEl.contains(document.activeElement) && !(activeEl && toolbar?.contains(activeEl))) {
+            window.setTimeout(() => {
+                const activeEl = activeDocument.activeElement as Node | null;
+                if (!rootEl.contains(activeDocument.activeElement) && !(activeEl && toolbar?.contains(activeEl))) {
                     hideToolbar();
                 }
             }, 20);
         };
 
-        document.addEventListener('selectionchange', handleSelectionChange);
+        activeDocument.addEventListener('selectionchange', handleSelectionChange);
         rootEl.addEventListener('mouseup', updateToolbarVisibility, true);
         rootEl.addEventListener('keyup', updateToolbarVisibility, true);
         rootEl.addEventListener('scroll', positionToolbar, true);
@@ -685,7 +685,7 @@ export function attachContentSelectionToolbar(this: any, rootEl: HTMLElement,
         this.cy?.on('zoom pan', positionToolbar);
 
         const cleanup = () => {
-            document.removeEventListener('selectionchange', handleSelectionChange);
+            activeDocument.removeEventListener('selectionchange', handleSelectionChange);
             rootEl.removeEventListener('mouseup', updateToolbarVisibility, true);
             rootEl.removeEventListener('keyup', updateToolbarVisibility, true);
             rootEl.removeEventListener('scroll', positionToolbar, true);
@@ -733,7 +733,7 @@ export function showInlineEdgeLabelEditor(this: any, edge: any): void {
         const midY = (sourcePos.y + targetPos.y) / 2;
 
         // 创建输入框
-        const input = document.createElement('input');
+        const input = activeDocument.createElement('input');
         input.type = 'text';
         input.value = currentLabel;
         input.className = 'edge-label-editor';
@@ -760,7 +760,7 @@ export function showInlineEdgeLabelEditor(this: any, edge: any): void {
         const selectionToolbar = this.attachInlineTextSelectionToolbar(input);
 
         // 自动聚焦并选中文本
-        setTimeout(() => {
+        window.setTimeout(() => {
             input.focus();
             input.select();
         }, 0);
@@ -830,7 +830,7 @@ export function showInlineEdgeLabelEditor(this: any, edge: any): void {
         // 失去焦点时保存
         input.addEventListener('blur', () => {
             // 使用 setTimeout 确保在其他事件处理后执行
-            setTimeout(() => {
+            window.setTimeout(() => {
                 saveLabel();
             }, 0);
         });
@@ -928,7 +928,7 @@ export function showInlineNodeEditor(this: any, node: any, options?: { cursor?: 
         const lockedBoxTop = bb.y1;
 
         // 创建 textarea，直接覆盖在节点上
-        const textarea = document.createElement('textarea');
+        const textarea = activeDocument.createElement('textarea');
         const originalDisplayLabel = data.label || '';
         const initialValue = (isPlaceholder || isDraft)
             ? (data.label || '')
@@ -1035,7 +1035,7 @@ export function showInlineNodeEditor(this: any, node: any, options?: { cursor?: 
         };
         const selectionToolbar = this.attachInlineTextSelectionToolbar(textarea);
 
-        const measureCanvas = document.createElement('canvas');
+        const measureCanvas = activeDocument.createElement('canvas');
         const measureContext = measureCanvas.getContext('2d');
         const resizeEditorToContent = () => {
             const minWidth = initialBoxWidth;
@@ -1074,7 +1074,7 @@ export function showInlineNodeEditor(this: any, node: any, options?: { cursor?: 
         };
 
         // 自动聚焦；默认把光标放到末尾，显式 cursor: 'select' 时保留全选。
-        setTimeout(() => {
+        window.setTimeout(() => {
             textarea.focus();
             if (cursorMode === 'end') {
                 const end = textarea.value.length;
@@ -1275,9 +1275,9 @@ export function showInlineNodeEditor(this: any, node: any, options?: { cursor?: 
 
         // 失去焦点时自动保存节点
         textarea.addEventListener('blur', () => {
-            setTimeout(() => {
+            window.setTimeout(() => {
                 // 如果焦点移到了 suggester 上，不保存
-                if (suggesterPopoverRef.value && (suggesterPopoverRef.value as Node).contains(document.activeElement as Node)) {
+                if (suggesterPopoverRef.value && (suggesterPopoverRef.value as Node).contains(activeDocument.activeElement as Node)) {
                     return;
                 }
 
@@ -1303,7 +1303,7 @@ export function showInlineNodeEditor(this: any, node: any, options?: { cursor?: 
             if (suggesterPopoverRef.value && suggesterPopoverRef.value.contains(target)) return;
             saveNode();
         };
-        document.addEventListener('mousedown', handleOutsidePointerDown, true);
+        activeDocument.addEventListener('mousedown', handleOutsidePointerDown, true);
 
         // 监听图形缩放和平移，更新编辑器位置
         const updatePosition = () => {
@@ -1332,7 +1332,7 @@ export function showInlineNodeEditor(this: any, node: any, options?: { cursor?: 
                     if (removedNode === textarea && this.cy) {
                         this.cy.off('zoom pan', updatePosition);
                         selectionToolbar.destroy();
-                        document.removeEventListener('mousedown', handleOutsidePointerDown, true);
+                        activeDocument.removeEventListener('mousedown', handleOutsidePointerDown, true);
                     }
                 });
             });
@@ -1415,7 +1415,7 @@ export function startInPlaceTextEdit(this: any, node: any,
         const prevPointerEvents = overlayEl.style.pointerEvents;
         overlayEl.setCssStyles({ pointerEvents: 'auto' });
 
-        const editorHost = document.createElement('div');
+        const editorHost = activeDocument.createElement('div');
         editorHost.className = 'zk-text-md-live-edit-host';
         editorHost.setCssStyles({
             position: 'absolute',
@@ -1569,7 +1569,7 @@ export function startInPlaceTextEdit(this: any, node: any,
 
         const scheduleOverlaySync = () => {
             if (editRenderRaf !== null) return;
-            editRenderRaf = requestAnimationFrame(() => {
+            editRenderRaf = window.requestAnimationFrame(() => {
                 editRenderRaf = null;
                 syncOverlayPos();
             });
@@ -1585,7 +1585,7 @@ export function startInPlaceTextEdit(this: any, node: any,
         };
         const updateLiveEditLabel = () => {
             if (labelUpdateRaf !== null) return;
-            labelUpdateRaf = requestAnimationFrame(updateLiveEditLabelNow);
+            labelUpdateRaf = window.requestAnimationFrame(updateLiveEditLabelNow);
         };
 
         const saveEdit = () => {
@@ -1650,7 +1650,7 @@ export function startInPlaceTextEdit(this: any, node: any,
                 }
             }));
 
-            setTimeout(() => {
+            window.setTimeout(() => {
                 if (overlayEl.isConnected && overlayEl.dataset.editing === '1') {
                     restoreSavedOverlay();
                     delete overlayEl.dataset.editing;
@@ -1740,7 +1740,7 @@ export function startPlaceholderInPlaceEdit(this: any, node: any, options?: { cu
         node.style({ width: defaultW, height: defaultH });
 
         // 创建临时 overlay，定位到节点位置
-        const overlayEl = document.createElement('div');
+        const overlayEl = activeDocument.createElement('div');
         overlayEl.className = 'zk-text-md-overlay zk-placeholder-edit-overlay';
         overlayEl.dataset.baseFontSize = '20';
         overlayEl.setCssStyles({
@@ -1775,7 +1775,7 @@ export function startPlaceholderInPlaceEdit(this: any, node: any, options?: { cu
         syncOverlayPos();
 
         // 创建 CM6 编辑器宿主
-        const editorHost = document.createElement('div');
+        const editorHost = activeDocument.createElement('div');
         editorHost.className = 'zk-text-md-live-edit-host';
         editorHost.setCssStyles({
             position: 'absolute',
@@ -1862,7 +1862,7 @@ export function startPlaceholderInPlaceEdit(this: any, node: any, options?: { cu
             });
             this.cy.style().update();
             if (syncRaf !== null) return;
-            syncRaf = requestAnimationFrame(() => {
+            syncRaf = window.requestAnimationFrame(() => {
                 syncRaf = null;
                 syncOverlayPos();
             });
@@ -1994,7 +1994,7 @@ export function startPlaceholderInPlaceEdit(this: any, node: any, options?: { cu
 
         const onRender = () => {
             if (syncRaf !== null) return;
-            syncRaf = requestAnimationFrame(() => {
+            syncRaf = window.requestAnimationFrame(() => {
                 syncRaf = null;
                 syncOverlayPos();
             });
@@ -2062,7 +2062,7 @@ export function startPlaceholderTextareaFallback(this: any, node: any, options?:
         const boxH = Math.max(bb?.h || 0, 80);
         const renderedPosition = node.renderedPosition();
 
-        const textarea = document.createElement('textarea');
+        const textarea = activeDocument.createElement('textarea');
         textarea.className = 'node-label-editor';
         textarea.value = '';
         textarea.setCssStyles({
@@ -2174,9 +2174,9 @@ export function startPlaceholderTextareaFallback(this: any, node: any, options?:
         textarea.addEventListener('keypress', (e) => e.stopPropagation());
         textarea.addEventListener('click', (e) => e.stopPropagation());
         textarea.addEventListener('mousedown', (e) => e.stopPropagation());
-        textarea.addEventListener('blur', () => { setTimeout(() => { if (!isSaved) save(); }, 20); });
+        textarea.addEventListener('blur', () => { window.setTimeout(() => { if (!isSaved) save(); }, 20); });
 
-        setTimeout(() => {
+        window.setTimeout(() => {
             textarea.focus();
             if (options?.cursor === 'end') {
                 const end = textarea.value.length;
@@ -2220,7 +2220,7 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
         const prevPointerEvents = overlayEl.style.pointerEvents;
         overlayEl.setCssStyles({ pointerEvents: 'auto' });
 
-        const textarea = document.createElement('textarea');
+        const textarea = activeDocument.createElement('textarea');
         textarea.className = 'node-label-editor zk-text-md-inline-editor';
         textarea.value = String(
             originalNode.title
@@ -2289,7 +2289,7 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
         const suggesterPopoverRef = { value: null as HTMLElement | null };
 
         // 聚焦；双击/空格编辑时可把光标放到末尾。
-        setTimeout(() => {
+        window.setTimeout(() => {
             textarea.focus();
             if (options?.cursor === 'end') {
                 const end = textarea.value.length;
@@ -2320,7 +2320,7 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
                     node.style({ width: savedWidth, height: savedHeight });
                 });
             }
-            document.removeEventListener('mousedown', handleOutsidePointerDown, true);
+            activeDocument.removeEventListener('mousedown', handleOutsidePointerDown, true);
             textarea.removeEventListener('wheel', stopTextareaWheelPropagation, true);
             this.cy?.userZoomingEnabled(prevZoomingEnabled);
         };
@@ -2356,7 +2356,7 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
                 suggesterPopoverRef.value.remove();
                 suggesterPopoverRef.value = null;
             }
-            document.removeEventListener('mousedown', handleOutsidePointerDown, true);
+            activeDocument.removeEventListener('mousedown', handleOutsidePointerDown, true);
             overlayEl.setCssStyles({ pointerEvents: prevPointerEvents || 'none' });
             // 不清除 dataset.editing —— 留到图重建后的 mark-sweep/detach 来清理；
             // 若内容未变化 indexView 会 return，下面的 fallback 会兜底恢复
@@ -2383,7 +2383,7 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
 
             // 兜底：若事件处理不触发重建（内容未变化），需要恢复 overlay 的原 HTML
             // 延迟一帧检查：若 overlayEl 仍存在且仍在 DOM 中且没有被新渲染填充，则恢复
-            setTimeout(() => {
+            window.setTimeout(() => {
                 if (overlayEl.isConnected && overlayEl.dataset.editing === '1') {
                     restoreSavedOverlay();
                     delete overlayEl.dataset.editing;
@@ -2444,8 +2444,8 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
         });
 
         textarea.addEventListener('blur', () => {
-            setTimeout(() => {
-                if (suggesterPopoverRef.value && (suggesterPopoverRef.value as Node).contains(document.activeElement as Node)) {
+            window.setTimeout(() => {
+                if (suggesterPopoverRef.value && (suggesterPopoverRef.value as Node).contains(activeDocument.activeElement as Node)) {
                     return;
                 }
                 if (suggesterPopoverRef.value) {
@@ -2467,7 +2467,7 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
             if (suggesterPopoverRef.value && suggesterPopoverRef.value.contains(target)) return;
             saveEdit();
         };
-        document.addEventListener('mousedown', handleOutsidePointerDown, true);
+        activeDocument.addEventListener('mousedown', handleOutsidePointerDown, true);
 
         // [[ 触发的 wiki link 选择回调
         const handleLinkSelect = (file: any, _embed: boolean) => {
@@ -2578,7 +2578,7 @@ export function showLinkSuggester(this: any, textarea: HTMLTextAreaElement,
         );
 
         // 创建 suggester popover
-        const popover = document.createElement('div');
+        const popover = activeDocument.createElement('div');
         popover.className = 'node-link-suggester';
         // 使用 textarea 的实际位置定位，避免 boundingBox 缺少 y2 或尺寸过期
         const suggesterLeft = textarea.offsetLeft;
@@ -2599,7 +2599,7 @@ export function showLinkSuggester(this: any, textarea: HTMLTextAreaElement,
         });
 
         // 搜索输入框
-        const searchInput = document.createElement('input');
+        const searchInput = activeDocument.createElement('input');
         searchInput.type = 'text';
         searchInput.placeholder = 'Search notes...';
         searchInput.setCssStyles({
@@ -2641,7 +2641,7 @@ export function showLinkSuggester(this: any, textarea: HTMLTextAreaElement,
             selectedIndex = 0;
 
             currentFiles.forEach((file: any, index: number) => {
-                const item = document.createElement('div');
+                const item = activeDocument.createElement('div');
                 item.className = 'suggester-item';
                 item.dataset.index = index.toString();
                 item.setCssStyles({
@@ -2831,7 +2831,7 @@ export function showLinkSuggester(this: any, textarea: HTMLTextAreaElement,
             searchInput.focus();
             searchInput.setSelectionRange(0, searchInput.value.length);
         };
-        requestAnimationFrame(focusSearchInput);
+        window.requestAnimationFrame(focusSearchInput);
     }
 
     /**
@@ -2926,7 +2926,7 @@ export function attachSlashCommandMenu(
             if (!items.length) { close(); return; }
 
             if (!popover) {
-                popover = document.createElement('div');
+                popover = activeDocument.createElement('div');
                 popover.className = 'zk-slash-suggester';
                 popover.setCssStyles({
                     position: 'fixed',
@@ -2943,12 +2943,12 @@ export function attachSlashCommandMenu(
                 // 防止点击候选项时编辑器 blur 触发保存
                 popover.addEventListener('mousedown', (e) => e.preventDefault());
                 popover.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
-                document.body.appendChild(popover);
+                activeDocument.body.appendChild(popover);
             }
 
             popover.empty();
             items.forEach((cmd, index) => {
-                const item = document.createElement('div');
+                const item = activeDocument.createElement('div');
                 item.className = 'zk-slash-item';
                 item.setCssStyles({
                     padding: '6px 12px',
@@ -3085,7 +3085,7 @@ export function startNodeAudioRecording(
         };
 
         // 录音浮条
-        const bar = document.createElement('div');
+        const bar = activeDocument.createElement('div');
         bar.className = 'zk-audio-recording-bar';
         bar.setCssStyles({
             position: 'fixed',
@@ -3105,7 +3105,7 @@ export function startNodeAudioRecording(
             color: 'var(--text-normal)',
         });
         bar.addEventListener('mousedown', (e) => e.preventDefault()); // 防止编辑框 blur
-        const dot = document.createElement('span');
+        const dot = activeDocument.createElement('span');
         dot.setCssStyles({
             width: '10px',
             height: '10px',
@@ -3113,9 +3113,9 @@ export function startNodeAudioRecording(
             background: '#e5484d',
             animation: 'zk-rec-blink 1s steps(2,start) infinite',
         });
-        const timeEl = document.createElement('span');
+        const timeEl = activeDocument.createElement('span');
         timeEl.textContent = '0:00';
-        const stopBtn = document.createElement('button');
+        const stopBtn = activeDocument.createElement('button');
         stopBtn.textContent = '停止';
         stopBtn.setCssStyles({
             padding: '3px 12px',
@@ -3126,7 +3126,7 @@ export function startNodeAudioRecording(
             cursor: 'pointer',
             fontSize: '12px',
         });
-        const cancelBtn = document.createElement('button');
+        const cancelBtn = activeDocument.createElement('button');
         cancelBtn.textContent = '取消';
         cancelBtn.setCssStyles({
             padding: '3px 10px',
@@ -3139,7 +3139,7 @@ export function startNodeAudioRecording(
         });
         bar.append(dot, timeEl, stopBtn, cancelBtn);
         // 闪烁动画 @keyframes zk-rec-blink 已迁移至 styles.css
-        document.body.appendChild(bar);
+        activeDocument.body.appendChild(bar);
 
         const startTs = Date.now();
         const timer = window.setInterval(() => {

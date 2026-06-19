@@ -74,7 +74,7 @@ export class CrossDomainNodeModal extends FuzzySuggestModal<any> {
         // 在模态框底部添加设置区域
         const promptContainer = this.modalEl.querySelector('.prompt');
         if (promptContainer) {
-            const settingContainer = document.createElement('div');
+            const settingContainer = activeDocument.createElement('div');
             settingContainer.addClass('cross-domain-setting');
             settingContainer.setCssStyles({
                 padding: '10px 20px',

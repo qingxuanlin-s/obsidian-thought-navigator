@@ -78,7 +78,7 @@ export class FilePickerModal extends Modal {
 
         this.renderList();
         this.updateConfirm();
-        setTimeout(() => search.focus(), 0);
+        window.setTimeout(() => search.focus(), 0);
     }
 
     private renderList(): void {

@@ -10,7 +10,7 @@ function resolveEmbeddableEditorCtor(app: App): any | null {
 	const embedRegistry = (app as any).embedRegistry;
 	const mdCreator = embedRegistry?.embedByExtension?.md;
 	if (typeof mdCreator === 'function') {
-		const dummy = document.createElement('div');
+		const dummy = activeDocument.createElement('div');
 		let widgetView: any = null;
 		try {
 			widgetView = mdCreator({ app, containerEl: dummy }, null, '');
@@ -181,9 +181,9 @@ export class EmbeddableMarkdownEditor extends Component {
 		// 让 vim fat cursor 的 top/height 贴合实际。
 		if (this.cm?.requestMeasure) {
 			const measure = () => { if (!this.destroyed) this.cm?.requestMeasure?.(); };
-			requestAnimationFrame(() => {
+			window.requestAnimationFrame(() => {
 				measure();
-				requestAnimationFrame(measure);
+				window.requestAnimationFrame(measure);
 			});
 		}
 	}
@@ -311,9 +311,9 @@ export class EmbeddableMarkdownEditor extends Component {
 		}, { capture: true, signal });
 
 		cm.dom.addEventListener('focusout', () => {
-			setTimeout(() => {
+			window.setTimeout(() => {
 				if (this.destroyed) return;
-				if (this.opts.containerEl.contains(document.activeElement)) return;
+				if (this.opts.containerEl.contains(activeDocument.activeElement)) return;
 				this.opts.onBlur?.(this.getValue());
 			}, 50);
 		}, { signal });
@@ -387,7 +387,7 @@ export class EmbeddableMarkdownEditor extends Component {
 		};
 
 		move();
-		requestAnimationFrame(move);
+		window.requestAnimationFrame(move);
 		window.setTimeout(move, 30);
 	}
 

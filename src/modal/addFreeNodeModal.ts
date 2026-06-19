@@ -325,7 +325,7 @@ export class AddFreeNodeModal extends Modal {
                 // 监听文件选择事件
                 text.inputEl.addEventListener('blur', () => {
                     // 延迟执行，确保建议器的选择已完成
-                    setTimeout(() => {
+                    window.setTimeout(() => {
                         if (this.isReverseConnection && this.wikiLink.trim()) {
                             const existingNode = this.findNodeByFileName(this.wikiLink.trim());
                             if (existingNode) {

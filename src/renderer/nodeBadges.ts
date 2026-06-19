@@ -95,7 +95,7 @@ export function renderNodeBadges(this: any): void {
         const repositionAll = this._incrementalRepositionAll === true;
         this._incrementalRepositionAll = false;
 
-        const isLightTheme = this.currentOptions?.themeMode === 'light' || document.body.classList.contains('theme-light');
+        const isLightTheme = this.currentOptions?.themeMode === 'light' || activeDocument.body.classList.contains('theme-light');
 
         const existingBadgeContainer = this.container.querySelector('.zk-node-badges') as HTMLElement | null;
         const existingGlassLayer = this.container.querySelector('.zk-group-glass-layer') as HTMLElement | null;
@@ -136,7 +136,7 @@ export function renderNodeBadges(this: any): void {
             if (existingGlassLayer) existingGlassLayer.remove();
 
             // 创建分组 glass 层（插到最前，位于 canvas 下方）
-            glassLayer = document.createElement('div');
+            glassLayer = activeDocument.createElement('div');
             glassLayer.className = 'zk-group-glass-layer';
             glassLayer.setCssStyles({
                 position: 'absolute',
@@ -151,7 +151,7 @@ export function renderNodeBadges(this: any): void {
             this.container.insertBefore(glassLayer, this.container.firstChild);
 
             // 创建徽章容器
-            badgeContainer = document.createElement('div');
+            badgeContainer = activeDocument.createElement('div');
             badgeContainer.className = 'zk-node-badges';
             badgeContainer.setCssStyles({
                 position: 'absolute',
@@ -168,9 +168,9 @@ export function renderNodeBadges(this: any): void {
         // 存储所有徽章的更新函数
         const badgeUpdaters: BadgeUpdater[] = [];
         const readOnly = this.isReadOnlyMode();
-        const underlineMeasure = document.createElement('canvas');
+        const underlineMeasure = activeDocument.createElement('canvas');
         const underlineMeasureCtx = underlineMeasure.getContext('2d');
-        const badgeMeasure = document.createElement('canvas');
+        const badgeMeasure = activeDocument.createElement('canvas');
         const badgeMeasureCtx = badgeMeasure.getContext('2d');
 
         // 分组 glass overlay
@@ -178,7 +178,7 @@ export function renderNodeBadges(this: any): void {
             // 增量模式跳过分组 glass:组 bbox 由 Cytoscape 复合节点维护,旧 glass updater 仍在
             // scheduler 中,pan/zoom 时会自动把新子节点纳入。
             if (incIds) return;
-            const glassEl = document.createElement('div');
+            const glassEl = activeDocument.createElement('div');
             glassEl.className = 'zk-group-glass';
             glassEl.setCssStyles({
                 position: 'absolute',
@@ -200,7 +200,7 @@ export function renderNodeBadges(this: any): void {
             glassLayer.appendChild(glassEl);
 
             // 标签下方的遮罩层：用于“切断”被标签覆盖区域的上边框，降低视觉噪声
-            const labelMaskEl = document.createElement('div');
+            const labelMaskEl = activeDocument.createElement('div');
             labelMaskEl.className = 'zk-group-glass-label-mask';
             labelMaskEl.setCssStyles({
                 position: 'absolute',
@@ -215,7 +215,7 @@ export function renderNodeBadges(this: any): void {
             labelMaskEl.setCssStyles({ background: containerBg || (isLightTheme ? '#f5f5f5' : '#2a2a2a') });
             glassEl.appendChild(labelMaskEl);
 
-            const labelEl = document.createElement('div');
+            const labelEl = activeDocument.createElement('div');
             labelEl.className = 'zk-group-glass-label';
             labelEl.textContent = groupNode.data('label') || '';
             labelEl.setCssStyles({
@@ -322,7 +322,7 @@ export function renderNodeBadges(this: any): void {
             if (incIds && !incIds.has(node.id())) return;
             // 跳过所有 embed 节点（由预览卡片渲染标题和内容）
             if (node.data('isEmbed')) return;
-			const underlineGroupEl = document.createElement('div');
+			const underlineGroupEl = activeDocument.createElement('div');
 			underlineGroupEl.className = 'zk-node-file-underline-group';
 			underlineGroupEl.dataset.nodeId = node.id();
 			underlineGroupEl.setCssStyles({
@@ -505,7 +505,7 @@ export function renderNodeBadges(this: any): void {
                 }
                 // 补充不足的元素
                 while (lineElements.length < count) {
-                    const hitEl = document.createElement('div');
+                    const hitEl = activeDocument.createElement('div');
                     hitEl.className = 'zk-node-file-link-hit';
                     hitEl.setCssStyles({
                         position: 'absolute',
@@ -549,7 +549,7 @@ export function renderNodeBadges(this: any): void {
                         }));
                     }, { passive: false });
 
-                    const underlineEl = document.createElement('div');
+                    const underlineEl = activeDocument.createElement('div');
                     underlineEl.className = 'zk-node-file-underline';
                     underlineEl.setCssStyles({
                         position: 'absolute',
@@ -672,7 +672,7 @@ export function renderNodeBadges(this: any): void {
                 return;
             }
 
-			const remarkEl = document.createElement('div');
+			const remarkEl = activeDocument.createElement('div');
 			remarkEl.className = 'zk-node-remark-badge';
 			remarkEl.dataset.nodeId = node.id();
 			remarkEl.textContent = 'R';
@@ -705,7 +705,7 @@ export function renderNodeBadges(this: any): void {
             applyRemarkBadgeStyle();
             badgeContainer.appendChild(remarkEl);
 
-			const tooltipEl = document.createElement('div');
+			const tooltipEl = activeDocument.createElement('div');
 			tooltipEl.className = 'zk-node-remark-tooltip markdown-rendered';
 			tooltipEl.dataset.nodeId = node.id();
 			tooltipEl.setCssStyles({
@@ -870,7 +870,7 @@ export function renderNodeBadges(this: any): void {
             if (incIds && !incIds.has(node.id())) return;
             if (node.data('isGroup') || node.data('isPlaceholder')) return;
 
-			const starEl = document.createElement('div');
+			const starEl = activeDocument.createElement('div');
 			starEl.className = 'zk-node-anchor-badge';
 			starEl.dataset.nodeId = node.id();
 			starEl.textContent = '✦';
@@ -940,7 +940,7 @@ export function renderNodeBadges(this: any): void {
             const badgeText = origin === 'ai' ? 'AI' : '草';
             const badgeColor = origin === 'ai' ? '#a855f7' : '#64748b';
 
-            const draftEl = document.createElement('div');
+            const draftEl = activeDocument.createElement('div');
             draftEl.className = 'zk-node-draft-badge';
             draftEl.dataset.nodeId = node.id();
             draftEl.textContent = badgeText;
@@ -1007,7 +1007,7 @@ export function renderNodeBadges(this: any): void {
             if (!links.length) return;
             const sourceNodeId = String(node.data('originalNodeId') || node.id());
 
-            const cdEl = document.createElement('div');
+            const cdEl = activeDocument.createElement('div');
             cdEl.className = 'zk-node-cross-domain-badge';
             cdEl.dataset.nodeId = node.id();
             cdEl.textContent = links.length > 1 ? `↗ ${links.length}` : '↗';
@@ -1036,7 +1036,7 @@ export function renderNodeBadges(this: any): void {
             badgeContainer.appendChild(cdEl);
 
             // hover 展开卡片:列出每条链接(关系标签 / 目标笔记 / 来源 MOC / 删除)
-            const cdPanel = document.createElement('div');
+            const cdPanel = activeDocument.createElement('div');
             cdPanel.className = 'zk-node-cross-domain-panel';
             cdPanel.dataset.nodeId = node.id();
             cdPanel.setCssStyles({
@@ -1062,7 +1062,7 @@ export function renderNodeBadges(this: any): void {
             badgeContainer.appendChild(cdPanel);
 
             links.forEach((link) => {
-                const row = document.createElement('div');
+                const row = activeDocument.createElement('div');
                 row.className = 'zk-cd-panel-row';
                 row.setCssStyles({
                     display: 'flex',
@@ -1079,7 +1079,7 @@ export function renderNodeBadges(this: any): void {
                 row.addEventListener('mouseleave', () => { row.setCssStyles({ background: 'transparent' }); });
 
                 const relText = (link?.relationLabel && String(link.relationLabel).trim()) || '跨领域';
-                const chip = document.createElement('span');
+                const chip = activeDocument.createElement('span');
                 chip.textContent = relText;
                 chip.setCssStyles({
                     flex: '0 0 auto',
@@ -1092,7 +1092,7 @@ export function renderNodeBadges(this: any): void {
                     border: `1px solid ${isLightTheme ? 'rgba(115,87,198,0.3)' : 'rgba(160,139,232,0.35)'}`,
                 });
 
-                const textWrap = document.createElement('div');
+                const textWrap = activeDocument.createElement('div');
                 textWrap.setCssStyles({
                     flex: '1 1 auto',
                     minWidth: '0',
@@ -1100,7 +1100,7 @@ export function renderNodeBadges(this: any): void {
                     flexDirection: 'column',
                     gap: '1px',
                 });
-                const nameEl = document.createElement('div');
+                const nameEl = activeDocument.createElement('div');
                 nameEl.textContent = cdLinkTargetText(link);
                 nameEl.setCssStyles({
                     fontSize: '13px',
@@ -1109,7 +1109,7 @@ export function renderNodeBadges(this: any): void {
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
                 });
-                const mocEl = document.createElement('div');
+                const mocEl = activeDocument.createElement('div');
                 const mocName = cdMocBasename(link?.mocPath);
                 mocEl.textContent = mocName ? `来自《${mocName}》` : '来自其它 MOC';
                 mocEl.setCssStyles({
@@ -1135,7 +1135,7 @@ export function renderNodeBadges(this: any): void {
 
                 // 删除 ×(只读态隐藏)
                 if (!readOnly) {
-                    const delEl = document.createElement('span');
+                    const delEl = activeDocument.createElement('span');
                     delEl.textContent = '×';
                     delEl.title = '删除此跨领域链接';
                     delEl.setCssStyles({
@@ -1183,7 +1183,7 @@ export function renderNodeBadges(this: any): void {
                 if (cdHideTimer !== null) { window.clearTimeout(cdHideTimer); cdHideTimer = null; }
                 cdPanel.setCssStyles({ display: 'flex' });
                 // 触发过渡
-                requestAnimationFrame(() => {
+                window.requestAnimationFrame(() => {
                     cdPanel.setCssStyles({
                         opacity: '1',
                         transform: 'translateY(0)',
@@ -1254,7 +1254,7 @@ export function renderNodeBadges(this: any): void {
             const color = normalizeHexColor(rawColor);
             if (!color) return;
 
-			const dotEl = document.createElement('div');
+			const dotEl = activeDocument.createElement('div');
 			dotEl.className = 'zk-node-color-dot';
 			dotEl.dataset.nodeId = node.id();
 			dotEl.setCssStyles({
@@ -1328,7 +1328,7 @@ export function renderNodeBadges(this: any): void {
                 ? hexToRgba(darkenColor(modernBase, 0.42), 0.38)
                 : 'transparent';
 
-			const badgeEl = document.createElement('div');
+			const badgeEl = activeDocument.createElement('div');
 			badgeEl.className = 'zk-node-badge';
 			badgeEl.dataset.nodeId = node.id();
 			badgeEl.textContent = badge;
@@ -1407,7 +1407,7 @@ export function renderNodeBadges(this: any): void {
                 if (incIds && !incIds.has(node.id())) return;
                 if (node.data('isGroup') || node.data('isPlaceholder') || node.data('isEmbed')) return;
 
-                const resizeEl = document.createElement('div');
+                const resizeEl = activeDocument.createElement('div');
                 resizeEl.className = 'zk-text-node-resize-handle';
                 resizeEl.setCssStyles({
                     position: 'absolute',
@@ -1469,8 +1469,8 @@ export function renderNodeBadges(this: any): void {
                     if (!resizing || !this.cy) return;
                     resizing = false;
                     if (this.container) delete this.container.dataset.zkTextNodeResizing;
-                    document.removeEventListener('mousemove', onMove);
-                    document.removeEventListener('mouseup', onUp);
+                    activeDocument.removeEventListener('mousemove', onMove);
+                    activeDocument.removeEventListener('mouseup', onUp);
                     this.overlayScheduler.immediate();
                     const widthModel = Number(node.width());
                     const heightModel = Number(node.height());
@@ -1496,8 +1496,8 @@ export function renderNodeBadges(this: any): void {
                     const startPos = node.position();
                     startLeftModel = startPos.x - startWModel / 2;
                     startTopModel = startPos.y - startHModel / 2;
-                    document.addEventListener('mousemove', onMove);
-                    document.addEventListener('mouseup', onUp);
+                    activeDocument.addEventListener('mousemove', onMove);
+                    activeDocument.addEventListener('mouseup', onUp);
                 });
 
                 const updateResizeHandle = () => {
@@ -1545,7 +1545,7 @@ export function renderNodeBadges(this: any): void {
                 if (node.data('isCrossDomain')) return;
                 const isEmbed = !!node.data('isEmbed');
                 if (isEmbed) return;
-                const toggleEl = document.createElement('div');
+                const toggleEl = activeDocument.createElement('div');
                 toggleEl.className = 'zk-embed-toggle';
                 const toggleLabel = isEmbed ? '切换为文件节点' : '切换为 Embed 节点';
                 toggleEl.setAttribute('aria-label', toggleLabel);
@@ -1838,7 +1838,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                 const isLevelDimmed = node.hasClass?.('zk-level-dimmed') === true;
                 if (isLevelDimmed) {
                     const isLightTheme = this.container?.classList.contains('zk-theme-light')
-                        || (!this.container?.classList.contains('zk-theme-dark') && document.body.classList.contains('theme-light'));
+                        || (!this.container?.classList.contains('zk-theme-dark') && activeDocument.body.classList.contains('theme-light'));
                     overlayEl.dataset.levelDimmed = '1';
                     overlayEl.setCssStyles({
                         opacity: isLightTheme ? '0.92' : '0.16',
@@ -1865,7 +1865,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                 }
             } else {
                 // 缓存未命中：创建新 overlay
-                const overlayEl = document.createElement('div');
+                const overlayEl = activeDocument.createElement('div');
                 overlayEl.className = 'zk-text-md-overlay markdown-rendered';
                 applyTextOverlayBaseStyle(overlayEl);
                 overlayEl.addEventListener('click', (e: MouseEvent) => {
@@ -1907,7 +1907,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                 const applyRoughInlineMarkdown = (container: HTMLElement, input: string): void => {
                     const toOverlayEm = (px: number): string => `${Number((px / overlayFontSize).toFixed(4))}em`;
                     const createExternalLink = (rawUrl: string, text?: string): HTMLAnchorElement => {
-                        const a = document.createElement('a');
+                        const a = activeDocument.createElement('a');
                         const href = rawUrl.startsWith('www.') ? `https://${rawUrl}` : rawUrl;
                         a.href = href;
                         a.textContent = text || rawUrl;
@@ -1923,7 +1923,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                         const [targetPart, aliasPart] = rawTarget.split('|');
                         const linkText = (targetPart || '').trim();
                         const displayText = (aliasPart || linkText).trim();
-                        const a = document.createElement('a');
+                        const a = activeDocument.createElement('a');
                         a.className = 'internal-link';
                         a.href = linkText;
                         a.dataset.href = linkText;
@@ -1969,7 +1969,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                         if (!file) return createInternalLink(rawTarget);
 
                         if (isExcalidraw) {
-                            const preview = document.createElement('div');
+                            const preview = activeDocument.createElement('div');
                             preview.className = 'zk-text-md-excalidraw-embed';
                             preview.textContent = file.basename || linkText;
                             preview.title = `${file.basename || linkText}\n按住 Cmd/Ctrl 点击打开`;
@@ -1990,7 +1990,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                         }
 
                         if (isAudio) {
-                            const audio = document.createElement('audio');
+                            const audio = activeDocument.createElement('audio');
                             audio.className = 'zk-text-md-embed-audio';
                             audio.src = app.vault.getResourcePath(file);
                             audio.controls = true;
@@ -2015,7 +2015,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                             return audio;
                         }
 
-                        const img = document.createElement('img');
+                        const img = activeDocument.createElement('img');
                         img.className = 'zk-text-md-embed-image';
                         img.src = app.vault.getResourcePath(file);
                         img.alt = linkText;
@@ -2063,7 +2063,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                     // 按内联标记拆分并逐段追加 DOM 节点
                     const renderMathInline = (expr: string, display: boolean): HTMLElement => {
                         mathRendered = true;
-                        const wrap = document.createElement('span');
+                        const wrap = activeDocument.createElement('span');
                         wrap.className = 'zk-text-md-math';
                         try {
                             wrap.appendChild(renderMath(expr, display));
@@ -2077,26 +2077,26 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                     let m: RegExpExecArray | null;
                     while ((m = tokenRe.exec(input)) !== null) {
                         if (m.index > lastIndex) {
-                            container.appendChild(document.createTextNode(input.slice(lastIndex, m.index)));
+                            container.appendChild(activeDocument.createTextNode(input.slice(lastIndex, m.index)));
                         }
                         if (m[1] !== undefined) {
                             container.appendChild(createEmbedNode(m[1]));
                         } else if (m[2] !== undefined) {
                             container.appendChild(createInternalLink(m[2]));
                         } else if (m[3] !== undefined) {
-                            const strong = document.createElement('strong');
+                            const strong = activeDocument.createElement('strong');
                             strong.textContent = m[3];
                             container.appendChild(strong);
                         } else if (m[4] !== undefined) {
-                            const del = document.createElement('del');
+                            const del = activeDocument.createElement('del');
                             del.textContent = m[4];
                             container.appendChild(del);
                         } else if (m[5] !== undefined) {
-                            const u = document.createElement('u');
+                            const u = activeDocument.createElement('u');
                             u.textContent = m[5];
                             container.appendChild(u);
                         } else if (m[6] !== undefined) {
-                            const u = document.createElement('u');
+                            const u = activeDocument.createElement('u');
                             u.textContent = m[6];
                             container.appendChild(u);
                         } else if (m[7] !== undefined) {
@@ -2104,7 +2104,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                             if (m[9]) a.title = m[9];
                             container.appendChild(a);
                         } else if (m[10] !== undefined) {
-                            const span = document.createElement('span');
+                            const span = activeDocument.createElement('span');
                             const spanStyles: Record<string, string> = {};
                             for (const decl of m[10].split(';')) {
                                 const ci = decl.indexOf(':');
@@ -2121,7 +2121,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                             const trailing = rawUrl.slice(trimmedUrl.length);
                             container.appendChild(createExternalLink(trimmedUrl));
                             if (trailing) {
-                                container.appendChild(document.createTextNode(trailing));
+                                container.appendChild(activeDocument.createTextNode(trailing));
                             }
                         } else if (m[13] !== undefined) {
                             container.appendChild(renderMathInline(m[13], true));
@@ -2131,7 +2131,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                         lastIndex = m.index + m[0].length;
                     }
                     if (lastIndex < input.length) {
-                        container.appendChild(document.createTextNode(input.slice(lastIndex)));
+                        container.appendChild(activeDocument.createTextNode(input.slice(lastIndex)));
                     }
                 };
                 // 列表缩进层级：tab 折算 4 空格，每 2 空格算 1 级，封顶 8 级
@@ -2144,7 +2144,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                     for (const line of lines) {
                         const trimmed = line.trim();
                         if (!trimmed) {
-                            const empty = document.createElement('div');
+                            const empty = activeDocument.createElement('div');
                             empty.className = 'zk-rough-empty-line';
                             parent.appendChild(empty);
                             continue;
@@ -2152,7 +2152,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                         const headingMatch = line.match(/^\s*(#{1,6})\s+(.+)$/);
                         if (headingMatch) {
                             const level = Math.min(headingMatch[1].length, 6);
-                            const div = document.createElement('div');
+                            const div = activeDocument.createElement('div');
                             div.className = `zk-rough-heading-line zk-rough-h${level}-line`;
                             applyRoughInlineMarkdown(div, headingMatch[2]);
                             parent.appendChild(div);
@@ -2166,23 +2166,23 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                             const indentWs = (bulletMatch ? bulletMatch[1] : orderedMatch![1]) || '';
                             const indentLevel = computeListIndentLevel(indentWs);
                             const content = bulletMatch ? bulletMatch[3] : orderedMatch![4];
-                            const div = document.createElement('div');
+                            const div = activeDocument.createElement('div');
                             div.className = `zk-rough-list-line ${bulletMatch ? 'zk-rough-list-bullet' : 'zk-rough-list-ordered'}`;
                             if (indentLevel > 0) {
                                 div.setCssStyles({ marginLeft: `${indentLevel * 1.2}em` });
                             }
-                            const marker = document.createElement('span');
+                            const marker = activeDocument.createElement('span');
                             marker.className = 'zk-rough-list-marker';
                             marker.textContent = bulletMatch ? '•' : `${orderedMatch![2]}${orderedMatch![3]}`;
                             div.appendChild(marker);
-                            const body = document.createElement('span');
+                            const body = activeDocument.createElement('span');
                             body.className = 'zk-rough-list-content';
                             applyRoughInlineMarkdown(body, content);
                             div.appendChild(body);
                             parent.appendChild(div);
                             continue;
                         }
-                        const div = document.createElement('div');
+                        const div = activeDocument.createElement('div');
                         div.className = 'zk-rough-text-line';
                         applyRoughInlineMarkdown(div, line);
                         parent.appendChild(div);
@@ -2190,7 +2190,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                 };
                 overlayEl.empty?.();
                 if (isRootTextNode) {
-                    const inner = document.createElement('div');
+                    const inner = activeDocument.createElement('div');
                     inner.className = 'zk-root-text-md-inner';
                     buildRoughLines(inner);
                     overlayEl.appendChild(inner);
@@ -2377,7 +2377,7 @@ function addCollapseToggleHandle(this: any): void {
             this.collapseHandleCleanup = null;
         }
 
-        const handleContainer = document.createElement('div');
+        const handleContainer = activeDocument.createElement('div');
         handleContainer.className = 'zk-collapse-toggle-handle';
         handleContainer.setCssStyles({
             position: 'absolute',
@@ -2415,7 +2415,7 @@ function addCollapseToggleHandle(this: any): void {
             if (!originalId || data?.isGroup || data?.isPlaceholder) return;
             if (!hasChildren(originalId)) return;
 
-            const handle = document.createElement('div');
+            const handle = activeDocument.createElement('div');
             handle.setCssStyles({
                 position: 'absolute',
                 width: '24px',

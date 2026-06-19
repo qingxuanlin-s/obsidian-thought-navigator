@@ -13,7 +13,7 @@ export class MOCFileMonitor {
     private contentHashCache: Map<string, { hash: string; timestamp: number }> = new Map();
     
     // 防抖定时器：文件路径 -> 定时器
-    private debounceTimers: Map<string, NodeJS.Timeout> = new Map();
+    private debounceTimers: Map<string, number> = new Map();
     
     // 缓存大小限制
     private readonly MAX_CACHE_SIZE = 100;
@@ -164,11 +164,11 @@ export class MOCFileMonitor {
         // 清除该文件的旧定时器
         const existingTimer = this.debounceTimers.get(file.path);
         if (existingTimer) {
-            clearTimeout(existingTimer);
+            window.clearTimeout(existingTimer);
         }
         
         // 设置新的防抖定时器
-        const timer = setTimeout(async () => {
+        const timer = window.setTimeout(async () => {
             try {
                 // 检查内容是否真的变化了
                 const hasChanged = await this.hasContentChanged(file);
@@ -217,7 +217,7 @@ export class MOCFileMonitor {
         
         // 清除所有防抖定时器
         for (const timer of this.debounceTimers.values()) {
-            clearTimeout(timer);
+            window.clearTimeout(timer);
         }
         this.debounceTimers.clear();
         

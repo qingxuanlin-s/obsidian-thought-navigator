@@ -68,7 +68,7 @@ export class MOCReverseIndex {
                     fileContent = await this.app.vault.read(file);
                     break;
                 } catch {
-                    await new Promise(resolve => setTimeout(resolve, 75 * (attempt + 1)));
+                    await new Promise(resolve => window.setTimeout(resolve, 75 * (attempt + 1)));
                     if (attempt === 4) return;
                 }
             }

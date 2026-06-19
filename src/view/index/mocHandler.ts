@@ -437,12 +437,12 @@ export class MOCHandler {
         const rootIds: string[] = [];
 
         // 用真实 DOM 测量(与视图同一套字体/算法),使 CLI 产出的尺寸=视图实测尺寸,
-        // 从而布局与手动创建像素级一致。运行环境是 Obsidian 渲染进程,document 可用;
-        // 万一不可用(无 document)则回退到 measureNodeLabel 纯估算。
+        // 从而布局与手动创建像素级一致。运行环境是 Obsidian 渲染进程,activeDocument 可用;
+        // 万一不可用(无 activeDocument)则回退到 measureNodeLabel 纯估算。
         let measurer: DomTextMeasurer | null = null;
-        const hasDom = typeof document !== 'undefined' && !!document.body;
+        const hasDom = typeof activeDocument !== 'undefined' && !!activeDocument.body;
         if (hasDom) {
-            try { measurer = new DomTextMeasurer(document.body); } catch { measurer = null; }
+            try { measurer = new DomTextMeasurer(activeDocument.body); } catch { measurer = null; }
         }
         const domMeasure = measurer ? (text: string, opts: any) => measurer!.measure(text, opts) : null;
         const sizeOf = (label: string, depth: number) => measureTextNodeBox(label, depth, domMeasure);

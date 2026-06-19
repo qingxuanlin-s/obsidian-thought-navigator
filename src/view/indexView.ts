@@ -115,14 +115,14 @@ export class ZKIndexView extends FileView {
     private pendingInitialAutoCenter = false;
 
     // 防抖相关属性
-    resizeTimeout: NodeJS.Timeout | null = null;
-    edgeCurvatureSaveTimeout: NodeJS.Timeout | null = null;
-    nodePositionSaveTimeout: NodeJS.Timeout | null = null;
+    resizeTimeout: number | null = null;
+    edgeCurvatureSaveTimeout: number | null = null;
+    nodePositionSaveTimeout: number | null = null;
     private pendingNodePositionSavePromise: Promise<void> | null = null;
     pendingPositionChanges: Map<string, { node: any; position: { x: number; y: number } }> = new Map();
-    crossDomainPositionSaveTimeout: NodeJS.Timeout | null = null;
-    embedNodeSizeSaveTimeout: NodeJS.Timeout | null = null;
-    private changeRefreshTimer: NodeJS.Timeout | null = null;
+    crossDomainPositionSaveTimeout: number | null = null;
+    embedNodeSizeSaveTimeout: number | null = null;
+    private changeRefreshTimer: number | null = null;
 
     // 事件监听器跟踪（用于清理，防止内存泄漏）
     private registeredEventListeners: Array<{
@@ -227,18 +227,18 @@ export class ZKIndexView extends FileView {
     private pasteListenerBound = false;
 
     private getFullscreenElement(): Element | null {
-        const doc = document as Document & {
+        const doc = activeDocument as Document & {
             webkitFullscreenElement?: Element | null;
         };
-        return document.fullscreenElement || doc.webkitFullscreenElement || null;
+        return activeDocument.fullscreenElement || doc.webkitFullscreenElement || null;
     }
 
     private exitFullscreenCompat(): void {
-        const doc = document as Document & {
+        const doc = activeDocument as Document & {
             webkitExitFullscreen?: () => Promise<void> | void;
         };
-        if (document.exitFullscreen) {
-            void document.exitFullscreen();
+        if (activeDocument.exitFullscreen) {
+            void activeDocument.exitFullscreen();
             return;
         }
         if (doc.webkitExitFullscreen) {
@@ -247,7 +247,7 @@ export class ZKIndexView extends FileView {
     }
 
     private syncBranchFullscreenBackButtonVisibility(): void {
-        const branchGraphDiv = this.currentBranchGraphDiv || document.getElementById('zk-branch-cytoscape');
+        const branchGraphDiv = this.currentBranchGraphDiv || activeDocument.getElementById('zk-branch-cytoscape');
         if (!branchGraphDiv) return;
 
         const backBtn = branchGraphDiv.querySelector('.zk-branch-fullscreen-back-btn') as HTMLButtonElement | null;
@@ -298,7 +298,7 @@ export class ZKIndexView extends FileView {
         this.allowNoFile = true;
         this.scope = new Scope(this.app.scope);
         this.scope.register(['Mod'], 'f', (event: KeyboardEvent) => {
-            const activeEl = document.activeElement as HTMLElement | null;
+            const activeEl = activeDocument.activeElement as HTMLElement | null;
             if (activeEl && (
                 activeEl.tagName === 'INPUT' ||
                 activeEl.tagName === 'TEXTAREA' ||
@@ -335,7 +335,7 @@ export class ZKIndexView extends FileView {
 
         // 临时工作区:Cmd+C/X/V
         const isInputFocused = (): boolean => {
-            const ae = document.activeElement as HTMLElement | null;
+            const ae = activeDocument.activeElement as HTMLElement | null;
             return !!(ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable));
         };
         const isScratchpadOpen = (): boolean => !!this.scratchDrawer?.isVisible();
@@ -381,7 +381,7 @@ export class ZKIndexView extends FileView {
 
     private handleDetailPanelSpaceEdit(event: KeyboardEvent): boolean {
         if (!(event.key === ' ' || event.code === 'Space') || event.repeat || !this.detailPanel?.isOpen) return false;
-        const activeEl = document.activeElement as HTMLElement | null;
+        const activeEl = activeDocument.activeElement as HTMLElement | null;
         if (activeEl && (
             activeEl.tagName === 'INPUT' ||
             activeEl.tagName === 'TEXTAREA' ||
@@ -572,7 +572,7 @@ export class ZKIndexView extends FileView {
         batchId?: string
     ): string[] {
         const cy = this.branchRenderer?.getCytoscapeInstance();
-        const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+        const branchGraphDiv = activeDocument.getElementById("zk-branch-cytoscape");
         if (!cy || !branchGraphDiv || !items?.length) return [];
 
         // 注入草稿即进入草稿模式(AI 自动开启);用户提交/丢弃完所有批次后自动退出。
@@ -818,7 +818,7 @@ export class ZKIndexView extends FileView {
     deleteDraftNode(draftId: string): void {
         if (!this.draftNodes.has(draftId)) return;
         this.draftNodes.delete(draftId);
-        const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+        const branchGraphDiv = activeDocument.getElementById("zk-branch-cytoscape");
         branchGraphDiv?.dispatchEvent(new CustomEvent('remove-draft-node', { detail: { nodeId: draftId } }));
         // 全部草稿(节点+关联)删完则退出草稿模式
         if (this.draftNodes.size === 0 && this.draftRelations.size === 0) this.draftMode = false;
@@ -837,7 +837,7 @@ export class ZKIndexView extends FileView {
         batchId?: string
     ): string[] {
         const cy = this.branchRenderer?.getCytoscapeInstance();
-        const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+        const branchGraphDiv = activeDocument.getElementById("zk-branch-cytoscape");
         if (!cy || !branchGraphDiv || !items?.length) return [];
 
         // 注入草稿关联即进入草稿模式;用户提交/丢弃完所有批次后自动退出。
@@ -882,7 +882,7 @@ export class ZKIndexView extends FileView {
     deleteDraftRelation(relKey: string): void {
         if (!this.draftRelations.has(relKey)) return;
         this.draftRelations.delete(relKey);
-        const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+        const branchGraphDiv = activeDocument.getElementById("zk-branch-cytoscape");
         branchGraphDiv?.dispatchEvent(new CustomEvent('remove-draft-relation', { detail: { relKey } }));
         if (this.draftNodes.size === 0 && this.draftRelations.size === 0) this.draftMode = false;
         this.refreshDraftBatchBar();
@@ -958,7 +958,7 @@ export class ZKIndexView extends FileView {
                 child.parentRealId = parentId;
                 child.parentDraftId = undefined;
             }
-            const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+            const branchGraphDiv = activeDocument.getElementById("zk-branch-cytoscape");
             branchGraphDiv?.dispatchEvent(new CustomEvent('draft-relink', {
                 detail: { childId, parentId }
             }));
@@ -1060,7 +1060,7 @@ export class ZKIndexView extends FileView {
 
     /** 清空所有草稿(节点 + 关联;视图刷新/卸载时调用) */
     clearAllDrafts(): void {
-        const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+        const branchGraphDiv = activeDocument.getElementById("zk-branch-cytoscape");
         const batchIds = new Set<string>([
             ...Array.from(this.draftNodes.values()).map(d => d.batchId),
             ...Array.from(this.draftRelations.values()).map(r => r.batchId),
@@ -1084,10 +1084,10 @@ export class ZKIndexView extends FileView {
         // 无草稿且未开启草稿模式 → 不显示
         if (total === 0 && !this.draftMode) return;
 
-        const host = document.getElementById("zk-branch-cytoscape");
+        const host = activeDocument.getElementById("zk-branch-cytoscape");
         if (!host) return;
 
-        const bar = document.createElement('div');
+        const bar = activeDocument.createElement('div');
         bar.className = 'zk-draft-batch-bar';
         bar.setCssStyles({
             position: 'absolute',
@@ -1105,7 +1105,7 @@ export class ZKIndexView extends FileView {
             boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
         });
 
-        const tag = document.createElement('span');
+        const tag = activeDocument.createElement('span');
         tag.textContent = hasAi ? t('Draft tag ai') : t('Draft tag manual');
         tag.setCssStyles({
             fontSize: '11px',
@@ -1116,7 +1116,7 @@ export class ZKIndexView extends FileView {
             background: `${hasAi ? '#a855f7' : '#64748b'}`,
         });
 
-        const label = document.createElement('span');
+        const label = activeDocument.createElement('span');
         label.textContent = total === 0
             ? t('Draft mode entered')
             : (nodeCount > 0 && relCount > 0)
@@ -1134,7 +1134,7 @@ export class ZKIndexView extends FileView {
         bar.appendChild(label);
 
         if (total > 0) {
-            const commitBtn = document.createElement('button');
+            const commitBtn = activeDocument.createElement('button');
             commitBtn.textContent = t('Draft confirm');
             commitBtn.setCssStyles({
                 fontSize: '12px',
@@ -1149,7 +1149,7 @@ export class ZKIndexView extends FileView {
             bar.appendChild(commitBtn);
         }
 
-        const discardBtn = document.createElement('button');
+        const discardBtn = activeDocument.createElement('button');
         discardBtn.textContent = total > 0 ? t('Draft discard') : t('Draft mode exit');
         discardBtn.setCssStyles({
             fontSize: '12px',
@@ -1171,7 +1171,7 @@ export class ZKIndexView extends FileView {
         if (this.draftBatchBar?.parentNode) this.draftBatchBar.parentNode.removeChild(this.draftBatchBar);
         this.draftBatchBar = null;
         // 兜底清理可能残留的同类节点
-        document.querySelectorAll('.zk-draft-batch-bar').forEach(el => el.remove());
+        activeDocument.querySelectorAll('.zk-draft-batch-bar').forEach(el => el.remove());
     }
 
     private async undoLastMOCChange(): Promise<void> {
@@ -1219,27 +1219,27 @@ export class ZKIndexView extends FileView {
      */
     private cleanupTimers(): void {
         if (this.resizeTimeout) {
-            clearTimeout(this.resizeTimeout);
+            window.clearTimeout(this.resizeTimeout);
             this.resizeTimeout = null;
         }
         if (this.edgeCurvatureSaveTimeout) {
-            clearTimeout(this.edgeCurvatureSaveTimeout);
+            window.clearTimeout(this.edgeCurvatureSaveTimeout);
             this.edgeCurvatureSaveTimeout = null;
         }
         if (this.nodePositionSaveTimeout) {
-            clearTimeout(this.nodePositionSaveTimeout);
+            window.clearTimeout(this.nodePositionSaveTimeout);
             this.nodePositionSaveTimeout = null;
         }
         if (this.crossDomainPositionSaveTimeout) {
-            clearTimeout(this.crossDomainPositionSaveTimeout);
+            window.clearTimeout(this.crossDomainPositionSaveTimeout);
             this.crossDomainPositionSaveTimeout = null;
         }
         if (this.embedNodeSizeSaveTimeout) {
-            clearTimeout(this.embedNodeSizeSaveTimeout);
+            window.clearTimeout(this.embedNodeSizeSaveTimeout);
             this.embedNodeSizeSaveTimeout = null;
         }
         if (this.changeRefreshTimer) {
-            clearTimeout(this.changeRefreshTimer);
+            window.clearTimeout(this.changeRefreshTimer);
             this.changeRefreshTimer = null;
         }
     }
@@ -1253,10 +1253,10 @@ export class ZKIndexView extends FileView {
 
                 // 使用防抖来避免频繁触发刷新
                 if (this.resizeTimeout) {
-                    clearTimeout(this.resizeTimeout);
+                    window.clearTimeout(this.resizeTimeout);
                 }
 
-                this.resizeTimeout = setTimeout(() => {
+                this.resizeTimeout = window.setTimeout(() => {
                     this.app.workspace.trigger("zk-navigation:refresh-index-graph");
                     this.resizeTimeout = null;
                 }, DEBOUNCE_DELAY.RESIZE);
@@ -1512,7 +1512,7 @@ export class ZKIndexView extends FileView {
             this.openBranchSearchBar();
         });
 
-        const sep = document.createElement("span");
+        const sep = activeDocument.createElement("span");
         sep.className = "zk-toolbar-separator";
         rightBtns.appendChild(sep);
 
@@ -1527,7 +1527,7 @@ export class ZKIndexView extends FileView {
         const expandBtn = new ExtraButtonComponent(rightBtns);
         expandBtn.setIcon("expand").setTooltip(t("expand graph"));
         expandBtn.onClick(() => {
-            const div = document.getElementById("zk-branch-cytoscape");
+            const div = activeDocument.getElementById("zk-branch-cytoscape");
             if (div && div.requestFullscreen) {
                 div.requestFullscreen();
             }
@@ -1545,14 +1545,14 @@ export class ZKIndexView extends FileView {
      */
     private showMoreMenu(btnEl: HTMLElement): void {
         // 移除已有菜单
-        const existingMenu = document.querySelector('.zk-more-menu');
+        const existingMenu = activeDocument.querySelector('.zk-more-menu');
         if (existingMenu) {
             existingMenu.remove();
             return; // toggle 行为
         }
 
         const btnRect = btnEl.getBoundingClientRect();
-        const menu = document.body.createDiv('zk-more-menu');
+        const menu = activeDocument.body.createDiv('zk-more-menu');
         menu.setCssStyles({
             position: 'fixed',
             zIndex: '10000',
@@ -1641,17 +1641,17 @@ export class ZKIndexView extends FileView {
 
         // 定位菜单：在按钮下方
         menu.setCssStyles({ top: `${btnRect.bottom + 4}px` });
-        menu.setCssStyles({ right: `${document.documentElement.clientWidth - btnRect.right}px` });
+        menu.setCssStyles({ right: `${activeDocument.documentElement.clientWidth - btnRect.right}px` });
 
         // 点击其他地方关闭
         const closeMenu = (e: MouseEvent) => {
             if (!menu.contains(e.target as Node)) {
                 menu.remove();
-                document.removeEventListener('click', closeMenu);
+                activeDocument.removeEventListener('click', closeMenu);
             }
         };
-        setTimeout(() => {
-            document.addEventListener('click', closeMenu);
+        window.setTimeout(() => {
+            activeDocument.addEventListener('click', closeMenu);
         }, 0);
     }
 
@@ -1660,7 +1660,7 @@ export class ZKIndexView extends FileView {
      */
     private async exportGraphAsImage(scale: number): Promise<void> {
         const cy = this.branchRenderer?.getCytoscapeInstance();
-        const graphDiv = document.getElementById('zk-branch-cytoscape');
+        const graphDiv = activeDocument.getElementById('zk-branch-cytoscape');
         if (!cy || !graphDiv) {
             new Notice(t('export fail'));
             return;
@@ -1707,9 +1707,9 @@ export class ZKIndexView extends FileView {
             });
 
             // 等待 overlay 重新定位
-            await new Promise(r => setTimeout(r, 300));
+            await new Promise(r => window.setTimeout(r, 300));
 
-            const canvasBg = getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || '#1e1e1e';
+            const canvasBg = getComputedStyle(activeDocument.body).getPropertyValue('--background-primary').trim() || '#1e1e1e';
 
             const dataUrl = await toPng(graphDiv, {
                 pixelRatio: scale,
@@ -1735,14 +1735,14 @@ export class ZKIndexView extends FileView {
             cy.viewport({ zoom: savedZoom, pan: savedPan });
 
             // 触发下载
-            const a = document.createElement('a');
+            const a = activeDocument.createElement('a');
             const mocPath = this.plugin.settings.mocCurrentFile || 'graph';
             const baseName = mocPath.replace(/^.*\//, '').replace(/\.[^.]+$/, '');
             a.href = dataUrl;
             a.download = `${baseName}-${Date.now()}.png`;
-            document.body.appendChild(a);
+            activeDocument.body.appendChild(a);
             a.click();
-            document.body.removeChild(a);
+            activeDocument.body.removeChild(a);
 
             new Notice(t('export success'));
         } catch (err) {
@@ -1823,7 +1823,7 @@ export class ZKIndexView extends FileView {
                 });
             });
 
-            const bgColor = getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || '#1e1e1e';
+            const bgColor = getComputedStyle(activeDocument.body).getPropertyValue('--background-primary').trim() || '#1e1e1e';
 
             const html = `<!DOCTYPE html>
 <html lang="en">
@@ -1860,7 +1860,7 @@ body { background: ${bgColor}; overflow: hidden; }
 <script>
 var graphData = ${JSON.stringify({ nodes, edges })};
 var cy = cytoscape({
-  container: document.getElementById('cy'),
+  container: activeDocument.getElementById('cy'),
   elements: graphData.nodes.map(function(n){return{group:'nodes',data:n.data,position:n.position}})
     .concat(graphData.edges.map(function(e){return{group:'edges',data:e.data}})),
   style: [
@@ -1902,14 +1902,14 @@ cy.fit(null, 40);
 
             const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
             const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
+            const a = activeDocument.createElement('a');
             const mocPath = this.plugin.settings.mocCurrentFile || 'graph';
             const baseName = mocPath.replace(/^.*\//, '').replace(/\.[^.]+$/, '');
             a.href = url;
             a.download = `${baseName}-${Date.now()}.html`;
-            document.body.appendChild(a);
+            activeDocument.body.appendChild(a);
             a.click();
-            document.body.removeChild(a);
+            activeDocument.body.removeChild(a);
             URL.revokeObjectURL(url);
 
             new Notice(t('export success'));
@@ -1955,9 +1955,9 @@ cy.fit(null, 40);
             // 如果最后编辑在 2 秒内，说明还在编辑，再延迟 5 秒
             if (timeSinceLastEdit < 2000) {
                 if (this.changeRefreshTimer) {
-                    clearTimeout(this.changeRefreshTimer);
+                    window.clearTimeout(this.changeRefreshTimer);
                 }
-                this.changeRefreshTimer = setTimeout(smartChangeRefresh, 5000);
+                this.changeRefreshTimer = window.setTimeout(smartChangeRefresh, 5000);
             } else {
                 // 超过 2 秒没有编辑，执行刷新
                 this.plugin.RefreshIndexViewFlag = true;
@@ -1973,7 +1973,7 @@ cy.fit(null, 40);
                 
                 // 如果没有定时器在运行，启动一个
                 if (!this.changeRefreshTimer) {                
-                    this.changeRefreshTimer = setTimeout(smartChangeRefresh, 5000);
+                    this.changeRefreshTimer = window.setTimeout(smartChangeRefresh, 5000);
                 }
             }
         }));
@@ -1989,7 +1989,7 @@ cy.fit(null, 40);
         this.registerEvent(this.app.workspace.on("zk-navigation:moc-file-changed", async (mocFile: TFile) => {
             // 只在 MOC 模式下且当前显示的是该 MOC 时才刷新
             if (this.isDisplayingMOC(mocFile)) {
-                const indexMermaidDiv = document.getElementById("zk-index-mermaid-container");
+                const indexMermaidDiv = activeDocument.getElementById("zk-index-mermaid-container");
                 if (indexMermaidDiv) {
                     await this.smoothUpdateView(indexMermaidDiv, async () => {
                         await this.refreshBranchMermaidMOC(indexMermaidDiv);
@@ -2001,10 +2001,10 @@ cy.fit(null, 40);
 
     async onOpen() {
         if (!this.fullscreenBackButtonListenerBound) {
-            this.addTrackedListener(document, 'fullscreenchange', () => {
+            this.addTrackedListener(activeDocument, 'fullscreenchange', () => {
                 this.syncBranchFullscreenBackButtonVisibility();
             });
-            this.addTrackedListener(document as any, 'webkitfullscreenchange', () => {
+            this.addTrackedListener(activeDocument as any, 'webkitfullscreenchange', () => {
                 this.syncBranchFullscreenBackButtonVisibility();
             });
             this.fullscreenBackButtonListenerBound = true;
@@ -2035,7 +2035,7 @@ cy.fit(null, 40);
                 if (activeView !== this) return;
 
                 // 如果焦点在文本输入框内（如 textarea、input），不拦截粘贴
-                const activeEl = document.activeElement;
+                const activeEl = activeDocument.activeElement;
                 if (activeEl && (activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'INPUT' || (activeEl as HTMLElement).isContentEditable)) {
                     return;
                 }
@@ -2058,7 +2058,7 @@ cy.fit(null, 40);
     }
 
     public openBranchSearchBar(): void {
-        const branchGraphDiv = this.currentBranchGraphDiv || document.getElementById('zk-branch-cytoscape');
+        const branchGraphDiv = this.currentBranchGraphDiv || activeDocument.getElementById('zk-branch-cytoscape');
         if (!branchGraphDiv) return;
         branchGraphDiv.dispatchEvent(new CustomEvent('zk-open-search-bar'));
     }
@@ -2133,7 +2133,7 @@ cy.fit(null, 40);
         await this.saveNodePositionToMOC(mocFile, nodeID, position);
         await this.refreshBranchMermaid();
 
-        const branchGraphDiv = this.currentBranchGraphDiv || document.getElementById('zk-branch-cytoscape');
+        const branchGraphDiv = this.currentBranchGraphDiv || activeDocument.getElementById('zk-branch-cytoscape');
         if (branchGraphDiv) {
             branchGraphDiv.dispatchEvent(new CustomEvent('select-node-by-id', {
                 detail: { nodeId: nodeID }
@@ -2229,7 +2229,7 @@ cy.fit(null, 40);
 
         await this.refreshBranchMermaid();
 
-        const branchGraphDiv = this.currentBranchGraphDiv || document.getElementById('zk-branch-cytoscape');
+        const branchGraphDiv = this.currentBranchGraphDiv || activeDocument.getElementById('zk-branch-cytoscape');
         if (branchGraphDiv && createdNodeIds[0]) {
             branchGraphDiv.dispatchEvent(new CustomEvent('select-node-by-id', {
                 detail: { nodeId: createdNodeIds[0] }
@@ -2246,7 +2246,7 @@ cy.fit(null, 40);
     async refreshBranchMermaid(force: boolean = false) {
 
         this.plugin.RefreshIndexViewFlag = false;
-        const indexMermaidDiv = document.getElementById("zk-index-mermaid-container");
+        const indexMermaidDiv = activeDocument.getElementById("zk-index-mermaid-container");
 
         if (!indexMermaidDiv) return;
 
@@ -2547,7 +2547,7 @@ cy.fit(null, 40);
         const renderSignature = this.computeRenderSignature(currentMOCPath, currentMOCFile.stat.mtime);
         const cyInstance = this.branchRenderer?.getCytoscapeInstance();
         if (!force && cyInstance && this.lastRenderedMOCPath === currentMOCPath && this.lastRenderSignature === renderSignature) {
-            const existingGraphDiv = document.getElementById("zk-branch-cytoscape") as HTMLElement | null;
+            const existingGraphDiv = activeDocument.getElementById("zk-branch-cytoscape") as HTMLElement | null;
             if (existingGraphDiv) {
                 const graphHeight = Math.max(220, this.containerEl.offsetHeight - 80);
                 if (existingGraphDiv.style.height !== `${graphHeight}px`) {
@@ -2602,7 +2602,7 @@ cy.fit(null, 40);
         __lap('convertZKNodes');
 
         // 性能优化：复用或创建图形容器（不复用 renderer 内部的 Cytoscape 实例）
-        let branchGraphDiv = document.getElementById("zk-branch-cytoscape") as HTMLElement;
+        let branchGraphDiv = activeDocument.getElementById("zk-branch-cytoscape") as HTMLElement;
 
         if (!branchGraphDiv) {
             // 首次创建：创建容器
@@ -2970,10 +2970,10 @@ cy.fit(null, 40);
 
             // 使用防抖，等所有 dragfree 事件到达后一次性保存
             if (this.nodePositionSaveTimeout) {
-                clearTimeout(this.nodePositionSaveTimeout);
+                window.clearTimeout(this.nodePositionSaveTimeout);
             }
 
-            this.nodePositionSaveTimeout = setTimeout(() => {
+            this.nodePositionSaveTimeout = window.setTimeout(() => {
                 this.nodePositionSaveTimeout = null;
                 const savePromise = (async () => {
                     const changes = new Map(this.pendingPositionChanges);
@@ -3119,10 +3119,10 @@ cy.fit(null, 40);
 
             // 使用防抖，避免拖动时频繁保存
             if (this.crossDomainPositionSaveTimeout) {
-                clearTimeout(this.crossDomainPositionSaveTimeout);
+                window.clearTimeout(this.crossDomainPositionSaveTimeout);
             }
 
-            this.crossDomainPositionSaveTimeout = setTimeout(async () => {
+            this.crossDomainPositionSaveTimeout = window.setTimeout(async () => {
                 // 保存跨领域节点位置到 MOC 文件
                 try {
                     // 监听器可能复用，保存时读取最新当前文件路径，避免写入旧 MOC
@@ -3183,10 +3183,10 @@ cy.fit(null, 40);
 
             // 使用防抖，避免拖动时频繁保存
             if (this.edgeCurvatureSaveTimeout) {
-                clearTimeout(this.edgeCurvatureSaveTimeout);
+                window.clearTimeout(this.edgeCurvatureSaveTimeout);
             }
 
-            this.edgeCurvatureSaveTimeout = setTimeout(async () => {
+            this.edgeCurvatureSaveTimeout = window.setTimeout(async () => {
                 // 保存弧度到 MOC 文件
                 try {
                     const mocFile = getLatestMOCFile();
@@ -3210,9 +3210,9 @@ cy.fit(null, 40);
             if (!targetNodeId || !size) return;
 
             if (this.embedNodeSizeSaveTimeout) {
-                clearTimeout(this.embedNodeSizeSaveTimeout);
+                window.clearTimeout(this.embedNodeSizeSaveTimeout);
             }
-            this.embedNodeSizeSaveTimeout = setTimeout(async () => {
+            this.embedNodeSizeSaveTimeout = window.setTimeout(async () => {
                 try {
                     const mocFile = getLatestMOCFile();
                     if (mocFile) {
@@ -4558,11 +4558,11 @@ cy.fit(null, 40);
         const closePanel = (e: MouseEvent) => {
             if (!panel.contains(e.target as Node) && !badge.contains(e.target as Node)) {
                 panel.setCssStyles({ display: "none" });
-                document.removeEventListener("click", closePanel);
+                activeDocument.removeEventListener("click", closePanel);
             }
         };
         badge.addEventListener("click", () => {
-            setTimeout(() => document.addEventListener("click", closePanel), 0);
+            window.setTimeout(() => activeDocument.addEventListener("click", closePanel), 0);
         });
     }
 
@@ -4902,9 +4902,9 @@ cy.fit(null, 40);
         levelIndex: number,
         isExtension: boolean
     ): void {
-        document.querySelectorAll('.zk-level-dropdown').forEach(el => el.remove());
+        activeDocument.querySelectorAll('.zk-level-dropdown').forEach(el => el.remove());
 
-        const dropdown = document.body.createDiv('zk-level-dropdown');
+        const dropdown = activeDocument.body.createDiv('zk-level-dropdown');
         const rect = anchor.getBoundingClientRect();
         dropdown.setCssStyles({
             position: 'fixed',
@@ -4939,10 +4939,10 @@ cy.fit(null, 40);
         const closeHandler = (ev: MouseEvent) => {
             if (!dropdown.contains(ev.target as Node)) {
                 dropdown.remove();
-                document.removeEventListener('click', closeHandler);
+                activeDocument.removeEventListener('click', closeHandler);
             }
         };
-        setTimeout(() => document.addEventListener('click', closeHandler), 0);
+        window.setTimeout(() => activeDocument.addEventListener('click', closeHandler), 0);
     }
 
     private applyLevelDim(level: number, ancestorId: string): void {
@@ -5170,7 +5170,7 @@ cy.fit(null, 40);
             menu.showAtPosition({ x: rect.left, y: rect.bottom + 8 });
         } else {
             // 备用方案：尝试查找元素
-            const mocSelectorBlock = document.querySelector('.zk-moc-selector-block');
+            const mocSelectorBlock = activeDocument.querySelector('.zk-moc-selector-block');
             if (mocSelectorBlock) {
                 const rect = mocSelectorBlock.getBoundingClientRect();
                 menu.showAtPosition({ x: rect.left, y: rect.bottom + 8 });
@@ -5228,7 +5228,7 @@ cy.fit(null, 40);
         opt.addEventListener('click', async (e) => {
             e.stopPropagation();
             menu.remove();
-            document.removeEventListener('click', closeMenu);
+            activeDocument.removeEventListener('click', closeMenu);
             await action();
         });
     }
@@ -5237,10 +5237,10 @@ cy.fit(null, 40);
      * 显示节点右键菜单
      */
     showNodeContextMenu(mouseEvent: MouseEvent, node: ZKNode) {
-        const existing = document.querySelector('.zk-node-context-menu');
+        const existing = activeDocument.querySelector('.zk-node-context-menu');
         if (existing) existing.remove();
 
-        const menu = document.body.createDiv('zk-node-ctx-menu zk-node-context-menu');
+        const menu = activeDocument.body.createDiv('zk-node-ctx-menu zk-node-context-menu');
         menu.setCssStyles({
             position: 'fixed',
             zIndex: '10000',
@@ -5252,7 +5252,7 @@ cy.fit(null, 40);
         const closeMenu = (e: MouseEvent) => {
             if (!menu.contains(e.target as Node)) {
                 menu.remove();
-                document.removeEventListener('click', closeMenu);
+                activeDocument.removeEventListener('click', closeMenu);
             }
         };
 
@@ -5319,7 +5319,7 @@ cy.fit(null, 40);
             autoItem.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 menu.remove();
-                document.removeEventListener('click', closeMenu);
+                activeDocument.removeEventListener('click', closeMenu);
                 await this.setNodeLayoutStyle(node, 'auto');
             });
         }
@@ -5334,7 +5334,7 @@ cy.fit(null, 40);
             freeItem.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 menu.remove();
-                document.removeEventListener('click', closeMenu);
+                activeDocument.removeEventListener('click', closeMenu);
                 await this.setNodeLayoutStyle(node, 'free');
             });
         }
@@ -5354,7 +5354,7 @@ cy.fit(null, 40);
                 item.addEventListener('click', async (e) => {
                     e.stopPropagation();
                     menu.remove();
-                    document.removeEventListener('click', closeMenu);
+                    activeDocument.removeEventListener('click', closeMenu);
                     await this.setBranchLayoutPreset(nodeId, preset);
                 });
             };
@@ -5371,17 +5371,17 @@ cy.fit(null, 40);
         });
 
         this.positionContextMenu(menu, mouseEvent);
-        setTimeout(() => document.addEventListener('click', closeMenu), 0);
+        window.setTimeout(() => activeDocument.addEventListener('click', closeMenu), 0);
     }
 
     /**
      * 显示分组右键菜单（仅保留分组相关操作）
      */
     private showGroupContextMenu(mouseEvent: MouseEvent, groupId: string, groupLabel: string) {
-        const existing = document.querySelector('.zk-node-context-menu');
+        const existing = activeDocument.querySelector('.zk-node-context-menu');
         if (existing) existing.remove();
 
-        const menu = document.body.createDiv('zk-node-ctx-menu zk-node-context-menu');
+        const menu = activeDocument.body.createDiv('zk-node-ctx-menu zk-node-context-menu');
         menu.setCssStyles({
             position: 'fixed',
             zIndex: '10000',
@@ -5390,7 +5390,7 @@ cy.fit(null, 40);
         const closeMenu = (e: MouseEvent) => {
             if (!menu.contains(e.target as Node)) {
                 menu.remove();
-                document.removeEventListener('click', closeMenu);
+                activeDocument.removeEventListener('click', closeMenu);
             }
         };
 
@@ -5420,7 +5420,7 @@ cy.fit(null, 40);
         });
 
         this.positionContextMenu(menu, mouseEvent);
-        setTimeout(() => document.addEventListener('click', closeMenu), 0);
+        window.setTimeout(() => activeDocument.addEventListener('click', closeMenu), 0);
     }
 
     /**
@@ -5432,7 +5432,7 @@ cy.fit(null, 40);
             left: '0',
             top: '0',
         });
-        requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
             const mw = menu.offsetWidth;
             const mh = menu.offsetHeight;
             const vw = window.innerWidth;
@@ -5454,13 +5454,13 @@ cy.fit(null, 40);
      */
     showAddNodeMenu(btnRect: DOMRect, node: ZKNode, container: HTMLElement) {
         // 移除已存在的菜单
-        const existingMenu = document.querySelector('.zk-add-node-menu');
+        const existingMenu = activeDocument.querySelector('.zk-add-node-menu');
         if (existingMenu) {
             existingMenu.remove();
         }
 
         // 创建菜单容器
-        const menu = document.body.createDiv('zk-add-node-menu');
+        const menu = activeDocument.body.createDiv('zk-add-node-menu');
         menu.setCssStyles({ position: 'fixed' });
         // 菜单显示在按钮右侧
         menu.setCssStyles({
@@ -5491,11 +5491,11 @@ cy.fit(null, 40);
         const closeMenu = (e: MouseEvent) => {
             if (!menu.contains(e.target as Node)) {
                 menu.remove();
-                document.removeEventListener('click', closeMenu);
+                activeDocument.removeEventListener('click', closeMenu);
             }
         };
-        setTimeout(() => {
-            document.addEventListener('click', closeMenu);
+        window.setTimeout(() => {
+            activeDocument.addEventListener('click', closeMenu);
         }, 0);
     }
 
@@ -6049,7 +6049,7 @@ cy.fit(null, 40);
             await this.deleteImageFileIfNeeded(node);
 
             // 等待一小段时间确保文件保存完成
-            await new Promise(resolve => setTimeout(resolve, 20));
+            await new Promise(resolve => window.setTimeout(resolve, 20));
 
             // 文本节点内嵌的附件(录音/图片等):全库已无其它引用则一并回收
             await this.deleteOrphanedAttachments(embeddedAttachments);
@@ -6255,7 +6255,7 @@ cy.fit(null, 40);
             });
             
             modal.open();
-            setTimeout(() => {
+            window.setTimeout(() => {
                 input.focus();
                 input.select();
             }, 0);
@@ -6334,7 +6334,7 @@ cy.fit(null, 40);
             });
 
             modal.open();
-            setTimeout(() => {
+            window.setTimeout(() => {
                 input.focus();
                 input.select();
             }, 0);
@@ -6425,7 +6425,7 @@ cy.fit(null, 40);
             });
 
             modal.open();
-            setTimeout(() => {
+            window.setTimeout(() => {
                 input.focus();
                 input.select();
             }, 0);
@@ -6534,7 +6534,7 @@ cy.fit(null, 40);
                     Math.min(240, window.innerHeight - inputRect.bottom - viewportBottomPadding - 8)
                 );
 
-                const popover = document.createElement('div');
+                const popover = activeDocument.createElement('div');
                 popover.className = 'node-link-suggester';
                 popover.setCssStyles({
                     position: 'fixed',
@@ -6551,7 +6551,7 @@ cy.fit(null, 40);
                     padding: '4px 0',
                 });
 
-                const searchInput = document.createElement('input');
+                const searchInput = activeDocument.createElement('input');
                 searchInput.type = 'text';
                 searchInput.placeholder = 'Search notes...';
                 searchInput.setCssStyles({
@@ -6596,7 +6596,7 @@ cy.fit(null, 40);
                     suggesterState.selectedIndex = 0;
 
                     suggesterState.currentFiles.forEach((file, index) => {
-                        const item = document.createElement('div');
+                        const item = activeDocument.createElement('div');
                         item.className = 'suggester-item';
                         item.setCssStyles({
                             padding: '6px 12px',
@@ -6668,7 +6668,7 @@ cy.fit(null, 40);
                     searchInput.focus();
                     searchInput.setSelectionRange(0, searchInput.value.length);
                 };
-                requestAnimationFrame(focusSearchInput);
+                window.requestAnimationFrame(focusSearchInput);
             };
 
             const buttonContainer = contentEl.createDiv();
@@ -6783,7 +6783,7 @@ cy.fit(null, 40);
             };
 
             modal.open();
-            setTimeout(() => {
+            window.setTimeout(() => {
                 input.focus();
                 input.setSelectionRange(input.value.length, input.value.length);
             }, 0);
@@ -7172,7 +7172,7 @@ cy.fit(null, 40);
         modal.open();
         
         // 自动聚焦搜索框
-        setTimeout(() => searchInput.focus(), 0);
+        window.setTimeout(() => searchInput.focus(), 0);
     }
 
     /**
@@ -7534,7 +7534,7 @@ cy.fit(null, 40);
         const ids = this.injectDraftNodes([{ content: '', parentRealId: parentRef }], di.origin);
         const newId = ids[0];
         if (newId) {
-            const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+            const branchGraphDiv = activeDocument.getElementById("zk-branch-cytoscape");
             branchGraphDiv?.dispatchEvent(new CustomEvent('open-inline-editor-for', { detail: { nodeId: newId } }));
         }
     }
@@ -7605,7 +7605,7 @@ cy.fit(null, 40);
         });
 
         // 通知 Cytoscape 渲染器添加占位符节点
-        const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+        const branchGraphDiv = activeDocument.getElementById("zk-branch-cytoscape");
         if (branchGraphDiv) {
  
             branchGraphDiv.dispatchEvent(new CustomEvent('add-placeholder-node', {
@@ -7657,7 +7657,7 @@ cy.fit(null, 40);
         });
 
         // 通知 Cytoscape 渲染器添加占位符节点
-        const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+        const branchGraphDiv = activeDocument.getElementById("zk-branch-cytoscape");
         if (branchGraphDiv) {
             branchGraphDiv.dispatchEvent(new CustomEvent('add-placeholder-node', {
                 detail: {
@@ -7758,7 +7758,7 @@ cy.fit(null, 40);
 
         // 直接通过事件通知 Cytoscape 渲染器添加占位符节点
         // 注意：要在 branchGraphDiv (zk-graph-cytoscape) 上派发事件，而不是 indexMermaidDiv
-        const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+        const branchGraphDiv = activeDocument.getElementById("zk-branch-cytoscape");
         if (branchGraphDiv) {
             branchGraphDiv.dispatchEvent(new CustomEvent('add-placeholder-node', {
                 detail: {
@@ -7867,7 +7867,7 @@ cy.fit(null, 40);
         }
 
         // 清理所有占位符连接线（因为视图已经刷新，占位符节点已不存在）
-        const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+        const branchGraphDiv = activeDocument.getElementById("zk-branch-cytoscape");
         if (branchGraphDiv) {
             branchGraphDiv.dispatchEvent(new CustomEvent('cleanup-all-placeholder-connections'));
         }
@@ -7969,7 +7969,7 @@ cy.fit(null, 40);
         }
 
         // 清理所有占位符连接线（因为视图已经刷新，占位符节点已不存在）
-        const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+        const branchGraphDiv = activeDocument.getElementById("zk-branch-cytoscape");
         if (branchGraphDiv) {
             branchGraphDiv.dispatchEvent(new CustomEvent('cleanup-all-placeholder-connections'));
         }
@@ -9132,7 +9132,7 @@ cy.fit(null, 40);
      */
     private async removePlaceholderNode(tempId: string): Promise<void> {
         // 通过事件通知 Cytoscape 渲染器移除占位符节点
-        const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+        const branchGraphDiv = activeDocument.getElementById("zk-branch-cytoscape");
         if (branchGraphDiv) {
             branchGraphDiv.dispatchEvent(new CustomEvent('remove-placeholder-node', {
                 detail: {
@@ -9745,7 +9745,7 @@ cy.fit(null, 40);
     private async flushAndSaveCurrentPositions(): Promise<void> {
         // 取消待执行的防抖定时器，丢弃 pending 数据（下面会整体保存）
         if (this.nodePositionSaveTimeout) {
-            clearTimeout(this.nodePositionSaveTimeout);
+            window.clearTimeout(this.nodePositionSaveTimeout);
             this.nodePositionSaveTimeout = null;
         }
         this.pendingPositionChanges.clear();
@@ -10208,7 +10208,7 @@ cy.fit(null, 40);
     private mocFullscreenExitBtn: HTMLElement | null = null;
 
     private toggleMocFullscreen(): void {
-        const isFullscreen = document.querySelectorAll('.zk-hidden').length > 0;
+        const isFullscreen = activeDocument.querySelectorAll('.zk-hidden').length > 0;
 
         const toggleClassList: string[] = [
             '.workspace-ribbon.side-dock-ribbon.mod-left',
@@ -10221,7 +10221,7 @@ cy.fit(null, 40);
         if (isFullscreen) {
             // 退出全屏
             toggleClassList.forEach((cls) => {
-                document.querySelectorAll(cls).forEach((el) => el.removeClass('zk-hidden'));
+                activeDocument.querySelectorAll(cls).forEach((el) => el.removeClass('zk-hidden'));
             });
             if (this.mocFullscreenExitBtn) {
                 this.mocFullscreenExitBtn.remove();
@@ -10230,10 +10230,10 @@ cy.fit(null, 40);
         } else {
             // 进入全屏
             toggleClassList.forEach((cls) => {
-                document.querySelectorAll(cls).forEach((el) => el.addClass('zk-hidden'));
+                activeDocument.querySelectorAll(cls).forEach((el) => el.addClass('zk-hidden'));
             });
-            // 直接挂到 document.body，彻底脱离 Obsidian 视图层级
-            const btn = document.createElement('button');
+            // 直接挂到 activeDocument.body，彻底脱离 Obsidian 视图层级
+            const btn = activeDocument.createElement('button');
             btn.className = 'zk-moc-fullscreen-exit';
             setIcon(btn, 'arrow-left');
             btn.setCssStyles({
@@ -10269,7 +10269,7 @@ cy.fit(null, 40);
                 e.stopPropagation();
                 self.toggleMocFullscreen();
             };
-            document.body.appendChild(btn);
+            activeDocument.body.appendChild(btn);
             this.mocFullscreenExitBtn = btn;
         }
     }
@@ -10339,7 +10339,7 @@ cy.fit(null, 40);
                     for (const id of cutIds) {
                         await this.mocHandler.deleteNodeFromMOC(mocFile, id);
                     }
-                    await new Promise(r => setTimeout(r, 20));
+                    await new Promise(r => window.setTimeout(r, 20));
                     await this.refreshBranchMermaid();
 
                     // 声明式 reflow: scratchpad cut 后整棵树重排
@@ -10459,11 +10459,11 @@ cy.fit(null, 40);
             // 从暂存区移除(粘贴 = 消费)
             await this.plugin.scratchpad?.remove(entry.tempId);
 
-            await new Promise(r => setTimeout(r, 20));
+            await new Promise(r => window.setTimeout(r, 20));
             await this.refreshBranchMermaid();
 
             // 选中新节点
-            const branchGraphDiv = document.getElementById("zk-branch-cytoscape");
+            const branchGraphDiv = activeDocument.getElementById("zk-branch-cytoscape");
             branchGraphDiv?.dispatchEvent(new CustomEvent('select-node-by-id', {
                 detail: { nodeId: newID }
             }));
@@ -10485,6 +10485,6 @@ cy.fit(null, 40);
             const pos = this.getViewportCenterModelPosition();
             void this.materializeScratchpadEntryAt(found.entry, pos);
         };
-        this.addTrackedListener(document, 'scratchpad-paste-center', onPasteCenter as any);
+        this.addTrackedListener(activeDocument, 'scratchpad-paste-center', onPasteCenter as any);
     }
 }

@@ -20,7 +20,7 @@ function getPNGPath(mocFile: TFile): string {
 }
 
 function delay(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
+	return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function waitForImages(root: HTMLElement, timeoutMs = 1800): Promise<void> {
@@ -131,7 +131,7 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
 
 	// 创建隐藏容器（Cytoscape 需要真实 DOM 才能完成布局/overlay 渲染）
 	// opacity 必须保持 1，否则 html-to-image 截图全透明
-	const hiddenDiv = document.createElement('div');
+	const hiddenDiv = activeDocument.createElement('div');
 	hiddenDiv.setCssStyles({
 		position: 'fixed',
 		left: '-99999px',
@@ -140,7 +140,7 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
 		height: '600px',
 		pointerEvents: 'none',
 	});
-	document.body.appendChild(hiddenDiv);
+	activeDocument.body.appendChild(hiddenDiv);
 
 	const renderer = new CytoscapeRenderer();
 	let pngBytes: ArrayBuffer;
@@ -197,7 +197,7 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
 		await waitForPreviewContentReady(hiddenDiv, 6000);
 		await waitForImages(hiddenDiv);
 
-		const canvasBg = getComputedStyle(document.body).getPropertyValue('--background-primary').trim()
+		const canvasBg = getComputedStyle(activeDocument.body).getPropertyValue('--background-primary').trim()
 			|| (resolveThemeMode(plugin.settings.themeMode) === 'light' ? '#ffffff' : '#0f172a');
 
 		// 一次截图同时拿到 cytoscape canvas 和 HTML overlay（含 markdown 富文本）
@@ -221,7 +221,7 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
 		pngBytes = await blob.arrayBuffer();
 	} finally {
 		renderer.destroy();
-		document.body.removeChild(hiddenDiv);
+		activeDocument.body.removeChild(hiddenDiv);
 	}
 
 	// 确保 attachments 目录存在

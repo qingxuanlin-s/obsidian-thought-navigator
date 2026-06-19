@@ -155,7 +155,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         showGroupActionDialog: this.showGroupActionDialog.bind(this),
         showGroupNameDialog: this.showGroupNameDialog.bind(this),
     });
-    // 追踪正在进行中的 overlay 拖拽/缩放操作，确保 destroy() 时能中止挂在 document 上的监听器
+    // 追踪正在进行中的 overlay 拖拽/缩放操作，确保 destroy() 时能中止挂在 activeDocument 上的监听器
     private activeOverlayDragAborters: Set<AbortController> = new Set();
     // 缓存已渲染的预览卡片 DOM，避免重建时 excalidraw/markdown 内容闪烁
     private embedCardCache: Map<string, HTMLElement> = new Map();
@@ -901,7 +901,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             this.minimap = null;
         }
 
-        // 中止所有挂在 document 上、尚未释放的 overlay 拖拽/缩放监听器
+        // 中止所有挂在 activeDocument 上、尚未释放的 overlay 拖拽/缩放监听器
         for (const ctrl of this.activeOverlayDragAborters) {
             try { ctrl.abort(); } catch { /* ignore */ }
         }
@@ -984,7 +984,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         if (!this.container) return;
         const clearing = visibleCyIds === null;
         const isLightTheme = this.container.classList.contains('zk-theme-light')
-            || (!this.container.classList.contains('zk-theme-dark') && document.body.classList.contains('theme-light'));
+            || (!this.container.classList.contains('zk-theme-dark') && activeDocument.body.classList.contains('theme-light'));
         const restorePreviewWeight = (card: HTMLElement) => {
             const nodeId = card.dataset.nodeId || '';
             const isSelected = !!nodeId && !!this.cy?.$id(nodeId)?.selected?.();
@@ -1283,7 +1283,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         // 层级边强制降级直线 —— 节点不重叠时直线必有合法端点,保证「绝不丢边」。几何改善后下次
         // 全量刷新会 removeClass 重算回曲线,自我纠正。仅全量刷新(无 edges 参数)时跑。
         if (!edges) {
-            requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
                 if (!this.isCyUsable() || !this.cy) return;
                 let fixed = 0;
                 this.cy.edges('[type="parent"], [type="forward"]').forEach((edge: any) => {
@@ -1438,7 +1438,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         callback: (action: 'new' | 'add', groupId?: string) => void
     ): void {
         // 创建遮罩层
-        const overlay = document.createElement('div');
+        const overlay = activeDocument.createElement('div');
         overlay.setCssStyles({
             position: 'fixed',
             top: '0',
@@ -1453,7 +1453,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 创建对话框
-        const dialog = document.createElement('div');
+        const dialog = activeDocument.createElement('div');
         dialog.setCssStyles({
             backgroundColor: 'var(--background-primary)',
             border: '1px solid var(--background-modifier-border)',
@@ -1465,7 +1465,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 标题
-        const title = document.createElement('h3');
+        const title = activeDocument.createElement('h3');
         title.textContent = '选择操作';
         title.setCssStyles({
             margin: '0 0 15px 0',
@@ -1474,7 +1474,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 提示信息
-        const info = document.createElement('p');
+        const info = activeDocument.createElement('p');
         info.textContent = '部分节点已在分组中，请选择操作：';
         info.setCssStyles({
             margin: '0 0 15px 0',
@@ -1483,11 +1483,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 选项容器
-        const optionsContainer = document.createElement('div');
+        const optionsContainer = activeDocument.createElement('div');
         optionsContainer.setCssStyles({ marginBottom: '20px' });
 
         // 创建新分组选项
-        const newGroupOption = document.createElement('div');
+        const newGroupOption = activeDocument.createElement('div');
         newGroupOption.setCssStyles({
             padding: '10px',
             marginBottom: '10px',
@@ -1528,7 +1528,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
         // 为每个现有分组创建选项
         existingGroups.forEach(group => {
-            const groupOption = document.createElement('div');
+            const groupOption = activeDocument.createElement('div');
             groupOption.setCssStyles({
                 padding: '10px',
                 marginBottom: '10px',
@@ -1569,7 +1569,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 取消按钮
-        const cancelButton = document.createElement('button');
+        const cancelButton = activeDocument.createElement('button');
         cancelButton.textContent = '取消';
         cancelButton.setCssStyles({
             width: '100%',
@@ -1591,7 +1591,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         dialog.appendChild(optionsContainer);
         dialog.appendChild(cancelButton);
         overlay.appendChild(dialog);
-        document.body.appendChild(overlay);
+        activeDocument.body.appendChild(overlay);
     }
 
     /**
@@ -1599,7 +1599,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
      */
     private showGroupNameDialog(callback: (name: string | null) => void, defaultValue: string = '分组1'): void {
         // 创建遮罩层
-        const overlay = document.createElement('div');
+        const overlay = activeDocument.createElement('div');
         overlay.setCssStyles({
             position: 'fixed',
             top: '0',
@@ -1614,7 +1614,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 创建对话框
-        const dialog = document.createElement('div');
+        const dialog = activeDocument.createElement('div');
         dialog.setCssStyles({
             backgroundColor: 'var(--background-primary)',
             border: '1px solid var(--background-modifier-border)',
@@ -1625,7 +1625,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 标题
-        const title = document.createElement('h3');
+        const title = activeDocument.createElement('h3');
         title.textContent = '创建分组';
         title.setCssStyles({
             margin: '0 0 15px 0',
@@ -1634,7 +1634,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 输入框
-        const input = document.createElement('input');
+        const input = activeDocument.createElement('input');
         input.type = 'text';
         input.placeholder = '请输入分组名称';
         input.value = defaultValue;
@@ -1651,7 +1651,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 按钮容器
-        const buttonContainer = document.createElement('div');
+        const buttonContainer = activeDocument.createElement('div');
         buttonContainer.setCssStyles({
             display: 'flex',
             justifyContent: 'flex-end',
@@ -1659,7 +1659,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 取消按钮
-        const cancelButton = document.createElement('button');
+        const cancelButton = activeDocument.createElement('button');
         cancelButton.textContent = '取消';
         cancelButton.setCssStyles({
             padding: '6px 16px',
@@ -1676,7 +1676,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 确认按钮
-        const confirmButton = document.createElement('button');
+        const confirmButton = activeDocument.createElement('button');
         confirmButton.textContent = '确认';
         confirmButton.setCssStyles({
             padding: '6px 16px',
@@ -1700,10 +1700,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
         dialog.appendChild(input);
         dialog.appendChild(buttonContainer);
         overlay.appendChild(dialog);
-        document.body.appendChild(overlay);
+        activeDocument.body.appendChild(overlay);
 
         // 自动聚焦输入框并选中文本
-        setTimeout(() => {
+        window.setTimeout(() => {
             input.focus();
             input.select();
         }, 0);

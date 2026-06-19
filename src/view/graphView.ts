@@ -30,7 +30,7 @@ export class ZKGraphView extends ItemView {
     countOfGraphs: number = 0;
 
     // 防抖相关属性
-    resizeTimeout: NodeJS.Timeout | null = null;
+    resizeTimeout: number | null = null;
 
     // Cytoscape 渲染器
     private familyGraphRenderer: CytoscapeRenderer | null = null;
@@ -95,10 +95,10 @@ export class ZKGraphView extends ItemView {
 
             // 使用防抖来避免频繁触发刷新
             if (this.resizeTimeout) {
-                clearTimeout(this.resizeTimeout);
+                window.clearTimeout(this.resizeTimeout);
             }
 
-            this.resizeTimeout = setTimeout(() => {
+            this.resizeTimeout = window.setTimeout(() => {
                 this.app.workspace.trigger("zk-navigation:refresh-local-graph");
                 this.resizeTimeout = null;
             }, 300);
@@ -159,7 +159,7 @@ export class ZKGraphView extends ItemView {
 
         // 智能延迟刷新：监听文件内容变化
         let lastEditTime = 0;
-        let changeRefreshTimer: NodeJS.Timeout | null = null;
+        let changeRefreshTimer: number | null = null;
 
         const smartChangeRefresh = () => {
             const now = Date.now();
@@ -168,9 +168,9 @@ export class ZKGraphView extends ItemView {
             // 如果最后编辑在 2 秒内，说明还在编辑，再延迟 5 秒
             if (timeSinceLastEdit < 2000) {
                 if (changeRefreshTimer) {
-                    clearTimeout(changeRefreshTimer);
+                    window.clearTimeout(changeRefreshTimer);
                 }
-                changeRefreshTimer = setTimeout(smartChangeRefresh, 5000);
+                changeRefreshTimer = window.setTimeout(smartChangeRefresh, 5000);
             } else {
                 // 超过 2 秒没有编辑，执行刷新
                 this.refreshLocalGraph();
@@ -194,7 +194,7 @@ export class ZKGraphView extends ItemView {
                 
                 // 如果没有定时器在运行，启动一个
                 if (!changeRefreshTimer) {
-                    changeRefreshTimer = setTimeout(smartChangeRefresh, 5000);
+                    changeRefreshTimer = window.setTimeout(smartChangeRefresh, 5000);
                 }
             }
         }));
@@ -439,7 +439,7 @@ export class ZKGraphView extends ItemView {
         const nodeArr = treeDiv.getElementsByClassName("nodeLabel");
 
         for (let i = 0; i < nodeArr.length; i++) {
-            const link = document.createElement('a');
+            const link = activeDocument.createElement('a');
             link.addClass("internal-link");
             const nodePosStr = nodeGArr[i].id.split('-')[1];
             const node = mocNodes.filter(n => n.position == Number(nodePosStr))[0];
@@ -476,7 +476,7 @@ export class ZKGraphView extends ItemView {
         const nodeArr = treeDiv.getElementsByClassName("nodeLabel");
 
         for (let i = 0; i < nodeArr.length; i++) {
-            const link = document.createElement('a');
+            const link = activeDocument.createElement('a');
             link.addClass("internal-link");
             link.textContent = nodeArr[i].getText();
             nodeArr[i].textContent = "";
@@ -1895,7 +1895,7 @@ export class ZKGraphView extends ItemView {
 
         // 创建节点卡片
         const createNodeCard = (file: TFile, type: 'inlink' | 'outlink'): HTMLElement => {
-            const card = document.createElement('div');
+            const card = activeDocument.createElement('div');
             card.className = `zk-iol-card zk-iol-card-${type}`;
             card.addEventListener('click', (e) => handleFileClick(file, e));
             card.addEventListener('mouseover', (e) => handleFileHover(file, e, inoutlinksContainer));
@@ -1988,10 +1988,10 @@ export class ZKGraphView extends ItemView {
             const escHandler = (e: KeyboardEvent) => {
                 if (e.key === 'Escape') {
                     this.exitFullscreen(container);
-                    document.removeEventListener('keydown', escHandler);
+                    activeDocument.removeEventListener('keydown', escHandler);
                 }
             };
-            document.addEventListener('keydown', escHandler);
+            activeDocument.addEventListener('keydown', escHandler);
             container.dataset.escHandler = 'true';
         } else {
             // 退出全屏

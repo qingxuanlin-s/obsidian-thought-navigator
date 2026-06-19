@@ -49,11 +49,11 @@ export class Minimap {
         this.host = host;
         this.cy = cy;
 
-        this.root = document.createElement('div');
+        this.root = activeDocument.createElement('div');
         this.root.className = 'zk-minimap';
         this.root.title = '缩略导航 · 拖拽视口框 / 点击跳转';
 
-        this.canvas = document.createElement('canvas');
+        this.canvas = activeDocument.createElement('canvas');
         this.canvas.className = 'zk-minimap-canvas';
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
         this.canvas.width = Minimap.W * dpr;
@@ -65,7 +65,7 @@ export class Minimap {
         this.ctx = this.canvas.getContext('2d');
         if (this.ctx) this.ctx.scale(dpr, dpr);
 
-        this.viewport = document.createElement('div');
+        this.viewport = activeDocument.createElement('div');
         this.viewport.className = 'zk-minimap-viewport';
 
         this.root.appendChild(this.canvas);
@@ -169,7 +169,7 @@ export class Minimap {
         if (this.destroyed) return;
         if (this.nodeUpdateScheduled) return;
         this.nodeUpdateScheduled = true;
-        this.nodeUpdateFrame = requestAnimationFrame(() => {
+        this.nodeUpdateFrame = window.requestAnimationFrame(() => {
             this.nodeUpdateFrame = null;
             this.nodeUpdateScheduled = false;
             if (this.destroyed || !this.isCyUsable()) return;
@@ -182,7 +182,7 @@ export class Minimap {
         if (this.destroyed) return;
         if (this.viewportUpdateScheduled) return;
         this.viewportUpdateScheduled = true;
-        this.viewportUpdateFrame = requestAnimationFrame(() => {
+        this.viewportUpdateFrame = window.requestAnimationFrame(() => {
             this.viewportUpdateFrame = null;
             this.viewportUpdateScheduled = false;
             if (this.destroyed || !this.isCyUsable()) return;
@@ -244,7 +244,7 @@ export class Minimap {
 
             const isAnchor = !!node.data('isAnchor');
             const isRoot = !!node.data('isRoot');
-            const isLight = document.body.classList.contains('zk-theme-light');
+            const isLight = activeDocument.body.classList.contains('zk-theme-light');
 
             if (isAnchor) {
                 ctx.fillStyle = isLight ? '#d4a017' : '#f5dc68';

@@ -103,7 +103,7 @@ export class EdgeControls {
 		const oldHandleContainer = container.querySelector('.zk-connection-handles');
 		if (oldHandleContainer) oldHandleContainer.remove();
 
-		const handleContainer = document.createElement('div');
+		const handleContainer = activeDocument.createElement('div');
 		handleContainer.className = 'zk-connection-handles';
 		handleContainer.setCssStyles({
 			position: 'absolute',
@@ -125,7 +125,7 @@ export class EdgeControls {
 				if (oldListeners.mouseover) node.off('mouseover', oldListeners.mouseover);
 				if (oldListeners.mouseout) node.off('mouseout', oldListeners.mouseout);
 			}
-			const handle = document.createElement('div');
+			const handle = activeDocument.createElement('div');
 			handle.className = 'zk-connection-handle';
 			const baseHandleSize = 36;
 			handle.setCssStyles({
@@ -245,7 +245,7 @@ export class EdgeControls {
 			let hideTimer: number | null = null;
 			const cancelHide = () => {
 				if (hideTimer !== null) {
-					clearTimeout(hideTimer);
+					window.clearTimeout(hideTimer);
 					hideTimer = null;
 				}
 			};
@@ -302,7 +302,7 @@ export class EdgeControls {
 		const oldControlPointContainer = container.querySelector('.zk-edge-control-points');
 		if (oldControlPointContainer) oldControlPointContainer.remove();
 
-		const controlPointContainer = document.createElement('div');
+		const controlPointContainer = activeDocument.createElement('div');
 		controlPointContainer.className = 'zk-edge-control-points';
 		controlPointContainer.setCssStyles({
 			position: 'absolute',
@@ -355,7 +355,7 @@ export class EdgeControls {
 		const oldContainer = container.querySelector('.zk-edge-endpoint-handles');
 		if (oldContainer) oldContainer.remove();
 
-		const handleContainer = document.createElement('div');
+		const handleContainer = activeDocument.createElement('div');
 		handleContainer.className = 'zk-edge-endpoint-handles';
 		handleContainer.setCssStyles({
 			position: 'absolute',
@@ -433,8 +433,8 @@ export class EdgeControls {
 		let dragLine: SVGLineElement | null = null;
 		let svgOverlay: SVGSVGElement | null = null;
 		const detachDocListeners = () => {
-			document.removeEventListener('mousemove', handleMouseMove);
-			document.removeEventListener('mouseup', handleMouseUp);
+			activeDocument.removeEventListener('mousemove', handleMouseMove);
+			activeDocument.removeEventListener('mouseup', handleMouseUp);
 		};
 
 		handle.addEventListener('mousedown', (e: MouseEvent) => {
@@ -445,7 +445,7 @@ export class EdgeControls {
 
 			isDragging = true;
 			handle.setCssStyles({ opacity: '1' });
-			svgOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+			svgOverlay = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'svg');
 			svgOverlay.setCssStyles({
 				position: 'absolute',
 				top: '0',
@@ -457,7 +457,7 @@ export class EdgeControls {
 			});
 			container.appendChild(svgOverlay);
 
-			dragLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+			dragLine = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'line');
 			dragLine.setAttribute('stroke', '#10b981');
 			dragLine.setAttribute('stroke-width', '2');
 			dragLine.setAttribute('stroke-dasharray', '5,5');
@@ -470,8 +470,8 @@ export class EdgeControls {
 			dragLine.setAttribute('x2', sourcePos.x.toString());
 			dragLine.setAttribute('y2', sourcePos.y.toString());
 
-			document.addEventListener('mousemove', handleMouseMove);
-			document.addEventListener('mouseup', handleMouseUp);
+			activeDocument.addEventListener('mousemove', handleMouseMove);
+			activeDocument.addEventListener('mouseup', handleMouseUp);
 		});
 
 		let dragMoveRafId: number | null = null;
@@ -490,7 +490,7 @@ export class EdgeControls {
 			dragLine.setAttribute('y2', mouseY.toString());
 
 			if (dragMoveRafId !== null) return;
-			dragMoveRafId = requestAnimationFrame(() => {
+			dragMoveRafId = window.requestAnimationFrame(() => {
 				dragMoveRafId = null;
 				const currentCy = this.deps.getCy();
 				if (!isDragging || !dragLine || !currentCy) return;
@@ -602,7 +602,7 @@ export class EdgeControls {
 
 		const distance = data.controlPointDistance !== undefined ? data.controlPointDistance : 0;
 		const weight = data.controlPointWeight !== undefined ? data.controlPointWeight : 0.5;
-		const controlPoint = document.createElement('div');
+		const controlPoint = activeDocument.createElement('div');
 		controlPoint.className = 'zk-edge-control-point';
 		controlPoint.setCssStyles({
 			position: 'absolute',
@@ -649,8 +649,8 @@ export class EdgeControls {
 		let dragStartProjection = 0;
 		const CURVATURE_DRAG_SENSITIVITY = 1.5;
 		const detachDocListeners = () => {
-			document.removeEventListener('mousemove', handleMouseMove);
-			document.removeEventListener('mouseup', handleMouseUp);
+			activeDocument.removeEventListener('mousemove', handleMouseMove);
+			activeDocument.removeEventListener('mouseup', handleMouseUp);
 		};
 
 		controlPoint.addEventListener('mousedown', (e: MouseEvent) => {
@@ -676,8 +676,8 @@ export class EdgeControls {
 			dragStartDistance = edge.data('controlPointDistance') !== undefined ? edge.data('controlPointDistance') : distance;
 			dragStartProjection = (mouseX - midX) * perpX + (mouseY - midY) * perpY;
 			controlPoint.setCssStyles({ cursor: 'grabbing' });
-			document.addEventListener('mousemove', handleMouseMove);
-			document.addEventListener('mouseup', handleMouseUp);
+			activeDocument.addEventListener('mousemove', handleMouseMove);
+			activeDocument.addEventListener('mouseup', handleMouseUp);
 		});
 
 		const handleMouseMove = (e: MouseEvent) => {
@@ -770,13 +770,13 @@ export class EdgeControls {
 		this.deps.overlayScheduler.updaters.add(endpointUpdater);
 		this.edgeEndpointUpdaters.add(endpointUpdater);
 		endpointUpdater();
-		requestAnimationFrame(() => {
-			requestAnimationFrame(endpointUpdater);
+		window.requestAnimationFrame(() => {
+			window.requestAnimationFrame(endpointUpdater);
 		});
 	}
 
 	private createEndpointHandle(type: 'source' | 'target', node: any, edge: any, container: HTMLElement): HTMLElement {
-		const handle = document.createElement('div');
+		const handle = activeDocument.createElement('div');
 		handle.className = `zk-edge-endpoint-handle zk-edge-endpoint-${type}`;
 		handle.setCssStyles({ display: 'none' });
 		container.appendChild(handle);
@@ -828,8 +828,8 @@ export class EdgeControls {
 		let dragLine: SVGLineElement | null = null;
 		let svgOverlay: SVGSVGElement | null = null;
 		const detachDocListeners = () => {
-			document.removeEventListener('mousemove', handleMouseMove);
-			document.removeEventListener('mouseup', handleMouseUp);
+			activeDocument.removeEventListener('mousemove', handleMouseMove);
+			activeDocument.removeEventListener('mouseup', handleMouseUp);
 		};
 
 		handle.addEventListener('mousedown', (e: MouseEvent) => {
@@ -841,7 +841,7 @@ export class EdgeControls {
 
 			isDragging = true;
 			handle.setCssStyles({ cursor: 'grabbing' });
-			svgOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+			svgOverlay = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'svg');
 			svgOverlay.setCssStyles({
 				position: 'absolute',
 				top: '0',
@@ -853,7 +853,7 @@ export class EdgeControls {
 			});
 			graphContainer.appendChild(svgOverlay);
 
-			dragLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+			dragLine = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'line');
 			dragLine.setAttribute('stroke', 'var(--interactive-accent, #3b82f6)');
 			dragLine.setAttribute('stroke-width', '2');
 			dragLine.setAttribute('stroke-dasharray', '6,4');
@@ -867,8 +867,8 @@ export class EdgeControls {
 			dragLine.setAttribute('y1', startPos.y.toString());
 			dragLine.setAttribute('x2', startPos.x.toString());
 			dragLine.setAttribute('y2', startPos.y.toString());
-			document.addEventListener('mousemove', handleMouseMove);
-			document.addEventListener('mouseup', handleMouseUp);
+			activeDocument.addEventListener('mousemove', handleMouseMove);
+			activeDocument.addEventListener('mouseup', handleMouseUp);
 		});
 
 		let endpointMoveRafId: number | null = null;
@@ -890,7 +890,7 @@ export class EdgeControls {
 			dragLine.setAttribute('y2', mouseY.toString());
 
 			if (endpointMoveRafId !== null) return;
-			endpointMoveRafId = requestAnimationFrame(() => {
+			endpointMoveRafId = window.requestAnimationFrame(() => {
 				endpointMoveRafId = null;
 				const currentCy = this.deps.getCy();
 				if (!isDragging || !dragLine || !currentCy) return;

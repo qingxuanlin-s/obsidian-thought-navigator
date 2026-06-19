@@ -31,7 +31,7 @@ async function writeTextToSystemClipboard(text: string): Promise<boolean> {
         console.warn('[ZK] navigator.clipboard.writeText failed, falling back to execCommand:', error);
     }
 
-    const textarea = document.createElement('textarea');
+    const textarea = activeDocument.createElement('textarea');
     textarea.value = text;
     textarea.setCssStyles({
         position: 'fixed',
@@ -39,11 +39,11 @@ async function writeTextToSystemClipboard(text: string): Promise<boolean> {
         top: '0',
     });
     textarea.setAttribute('readonly', 'true');
-    document.body.appendChild(textarea);
+    activeDocument.body.appendChild(textarea);
     textarea.select();
     let copied = false;
     try {
-        copied = document.execCommand('copy');
+        copied = activeDocument.execCommand('copy');
     } catch (error) {
         console.warn('[ZK] document.execCommand copy failed:', error);
     } finally {
@@ -441,7 +441,7 @@ export function bindEvents(this: any): void {
 
                 // 如果有父节点，创建连接线
                 if (parentNodeId) {
-                    setTimeout(() => {
+                    window.setTimeout(() => {
                         const placeholderNode = this.cy?.$id(nodeId);
                         if (placeholderNode && placeholderNode.length > 0) {
                             this.createPlaceholderConnectionLine(nodeId, parentNodeId);
@@ -450,7 +450,7 @@ export function bindEvents(this: any): void {
                 }
 
                 // 自动选中并打开编辑框
-                setTimeout(() => {
+                window.setTimeout(() => {
                     const node = this.cy?.$id(nodeId);
 
                     if (node && node.length > 0) {
@@ -462,7 +462,7 @@ export function bindEvents(this: any): void {
                         node.select();
 
                         // 延迟打开编辑器，确保选中完成
-                        setTimeout(() => {
+                        window.setTimeout(() => {
                             this.showInlineNodeEditor(node);
                         }, 10);
                     } else {
@@ -638,7 +638,7 @@ export function bindEvents(this: any): void {
         // 打开指定节点的内联编辑器(草稿 Tab/Enter 新建后自动进入编辑)
         this.overlayScheduler.addManagedDomListener(this.container, 'open-inline-editor-for', (event: any) => {
             const { nodeId } = event.detail || {};
-            setTimeout(() => {
+            window.setTimeout(() => {
                 const node = this.cy?.$id(nodeId);
                 if (node && node.length > 0) {
                     this.cy!.$(':selected').unselect();
@@ -670,7 +670,7 @@ export function bindEvents(this: any): void {
             const { nodeId } = event.detail;
 
             // 延迟执行，确保视图刷新完成
-            setTimeout(() => {
+            window.setTimeout(() => {
                 if (!this.cy) return;
 
                 // 查找对应 ID 的节点
@@ -802,7 +802,7 @@ export function bindEvents(this: any): void {
 
         const ensureAlignmentOverlay = () => {
             if (alignmentOverlay || !this.container) return;
-            alignmentOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            alignmentOverlay = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'svg');
             alignmentOverlay.setCssStyles({
                 position: 'absolute',
                 top: '0',
@@ -813,10 +813,10 @@ export function bindEvents(this: any): void {
                 zIndex: '3',
             });
 
-            verticalAlignmentLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            horizontalAlignmentLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            spacingGuideLineA = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            spacingGuideLineB = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            verticalAlignmentLine = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'line');
+            horizontalAlignmentLine = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'line');
+            spacingGuideLineA = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'line');
+            spacingGuideLineB = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'line');
 
             [verticalAlignmentLine, horizontalAlignmentLine].forEach((line) => {
                 if (!line) return;
@@ -851,7 +851,7 @@ export function bindEvents(this: any): void {
 
         const ensureSeparationOverlay = () => {
             if (separationCircle || !this.container) return;
-            separationOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            separationOverlay = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'svg');
             separationOverlay.setCssStyles({
                 position: 'absolute',
                 top: '0',
@@ -861,7 +861,7 @@ export function bindEvents(this: any): void {
                 pointerEvents: 'none',
                 zIndex: '3',
             });
-            separationCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            separationCircle = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'circle');
             separationCircle.setAttribute('fill', 'none');
             separationCircle.setAttribute('stroke', SEPARATION_STROKE);
             separationCircle.setAttribute('stroke-width', '1.5');
@@ -1184,7 +1184,7 @@ export function bindEvents(this: any): void {
             if (tempConnectionLine && tempConnectionLine.parentNode === svgOverlay) {
                 return tempConnectionLine;
             }
-            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            const line = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'line');
             line.setAttribute('stroke', '#10b981');
             line.setAttribute('stroke-width', '2');
             line.setAttribute('stroke-dasharray', '5,5');
@@ -1336,7 +1336,7 @@ export function bindEvents(this: any): void {
 
             // 创建 SVG 叠加层用于绘制连线
             if (!svgOverlay && this.container) {
-                svgOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svgOverlay = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'svg');
                 svgOverlay.setCssStyles({
                     position: 'absolute',
                     top: '0',
@@ -1704,7 +1704,7 @@ export function bindEvents(this: any): void {
             }
 
             // 延迟清理，确保 dragfree 事件已经处理完成
-            setTimeout(() => {
+            window.setTimeout(() => {
                 // 移除 SVG 叠加层（连同复用的 tempConnectionLine 一起清理）
                 if (svgOverlay && this.container) {
                     this.container.removeChild(svgOverlay);
@@ -1813,7 +1813,7 @@ export function bindEvents(this: any): void {
             pendingCurveEdges = pendingCurveEdges.union(edges);
             if (curveRafPending) return;
             curveRafPending = true;
-            requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
                 curveRafPending = false;
                 const eds = pendingCurveEdges;
                 pendingCurveEdges = this.cy ? this.cy.collection() : eds;
@@ -1826,10 +1826,10 @@ export function bindEvents(this: any): void {
 
         // 监听视图状态变化（缩放和平移）
         // 使用防抖避免频繁触发
-        let viewStateTimeout: NodeJS.Timeout | null = null;
+        let viewStateTimeout: number | null = null;
         this.cy.on('zoom pan', () => {
-            if (viewStateTimeout) clearTimeout(viewStateTimeout);
-            viewStateTimeout = setTimeout(() => {
+            if (viewStateTimeout) window.clearTimeout(viewStateTimeout);
+            viewStateTimeout = window.setTimeout(() => {
                 if (!this.cy) return;
                 const zoom = this.cy.zoom();
                 const pan = this.cy.pan();
@@ -2059,7 +2059,7 @@ export function bindKeyboardEvents(this: any): void {
             if ((event.key === ' ' || event.code === 'Space') && !event.repeat) {
                 if (!this.cy || this.isReadOnlyMode()) return;
 
-                const activeElement = document.activeElement as HTMLElement | null;
+                const activeElement = activeDocument.activeElement as HTMLElement | null;
                 const isTypingIntoInput = !!activeElement && (
                     activeElement.tagName === 'INPUT' ||
                     activeElement.tagName === 'TEXTAREA' ||
@@ -2186,7 +2186,7 @@ export function addGroupResizeHandles(this: any): void {
         }
 
         // 创建手柄容器
-        const handleContainer = document.createElement('div');
+        const handleContainer = activeDocument.createElement('div');
         handleContainer.className = 'zk-group-resize-handles';
         handleContainer.setCssStyles({
             position: 'absolute',
@@ -2227,7 +2227,7 @@ export function addGroupResizeHandles(this: any): void {
             ];
 
             positions.forEach(pos => {
-                const handle = document.createElement('div');
+                const handle = activeDocument.createElement('div');
                 handle.className = `zk-group-resize-handle zk-group-resize-${pos.name}`;
                 handle.setCssStyles({
                     position: 'absolute',
@@ -2316,7 +2316,7 @@ export function bindResizeHandleDrag(this: any, handle: HTMLElement,
 
 
             // 创建预览框
-            resizePreview = document.createElement('div');
+            resizePreview = activeDocument.createElement('div');
             resizePreview.className = 'zk-group-resize-preview';
             resizePreview.setCssStyles({
                 position: 'absolute',
@@ -2363,7 +2363,7 @@ export function bindResizeHandleDrag(this: any, handle: HTMLElement,
 
                 // 节点遍历和分组更新通过 RAF 节流（重操作）
                 if (groupResizeRafId !== null) return;
-                groupResizeRafId = requestAnimationFrame(() => {
+                groupResizeRafId = window.requestAnimationFrame(() => {
                     groupResizeRafId = null;
                     if (!isDragging || !startMousePos || !startBoundingBox || !this.cy) return;
 
@@ -2534,12 +2534,12 @@ export function bindResizeHandleDrag(this: any, handle: HTMLElement,
                 }
 
                 // 移除全局监听器
-                document.removeEventListener('mousemove', handleMouseMove);
-                document.removeEventListener('mouseup', handleMouseUp);
+                activeDocument.removeEventListener('mousemove', handleMouseMove);
+                activeDocument.removeEventListener('mouseup', handleMouseUp);
             };
 
-            document.addEventListener('mousemove', handleMouseMove);
-            document.addEventListener('mouseup', handleMouseUp);
+            activeDocument.addEventListener('mousemove', handleMouseMove);
+            activeDocument.addEventListener('mouseup', handleMouseUp);
         });
     }
 
@@ -2575,7 +2575,7 @@ export function initBoxSelection(this: any): void {
         this.boxSelectionElement?.remove();
 
         // 创建选择框元素
-        const selectionBox = document.createElement('div');
+        const selectionBox = activeDocument.createElement('div');
         selectionBox.className = 'zk-selection-box';
         selectionBox.setCssStyles({
             position: 'absolute',
@@ -2684,7 +2684,7 @@ export function initBoxSelection(this: any): void {
 
             // 节点选择检测通过 RAF 节流
             if (boxSelectRafId !== null) return;
-            boxSelectRafId = requestAnimationFrame(() => {
+            boxSelectRafId = window.requestAnimationFrame(() => {
                 boxSelectRafId = null;
                 if (!isDragging) return;
                 this.selectNodesInBox(lastBoxLeft, lastBoxTop, lastBoxWidth, lastBoxHeight);
@@ -2701,14 +2701,14 @@ export function initBoxSelection(this: any): void {
 
             // 只有在真正移动了鼠标（框选操作）时才显示批量工具栏
             if (hasMoved) {
-                setTimeout(() => {
+                window.setTimeout(() => {
                     this.showBatchToolbar();
                 }, 20);
             }
         };
 
-        this.overlayScheduler.addManagedDomListener(document, 'mousemove', handleMouseMove);
-        this.overlayScheduler.addManagedDomListener(document, 'mouseup', handleMouseUp);
+        this.overlayScheduler.addManagedDomListener(activeDocument, 'mousemove', handleMouseMove);
+        this.overlayScheduler.addManagedDomListener(activeDocument, 'mouseup', handleMouseUp);
     }
 
     /**
@@ -2783,51 +2783,51 @@ export function showSearchBar(this: any): void {
         let currentIndex = -1;
         let activeSuggestionIndex = -1;
 
-        const bar = document.createElement('div');
+        const bar = activeDocument.createElement('div');
         bar.className = 'zk-search-bar';
 
         // 阻止事件穿透到画布
         bar.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
         bar.addEventListener('mousedown', (e) => { e.stopPropagation(); });
 
-        const inputWrap = document.createElement('div');
+        const inputWrap = activeDocument.createElement('div');
         inputWrap.className = 'zk-search-bar-input-wrap';
         bar.appendChild(inputWrap);
 
         // 搜索输入框
-        const input = document.createElement('input');
+        const input = activeDocument.createElement('input');
         input.type = 'text';
         input.className = 'zk-search-bar-input';
         input.placeholder = t('search placeholder');
         inputWrap.appendChild(input);
 
         // 候选框
-        const suggestionBox = document.createElement('div');
+        const suggestionBox = activeDocument.createElement('div');
         suggestionBox.className = 'zk-search-suggestions zk-hidden';
         inputWrap.appendChild(suggestionBox);
 
         // 计数
-        const countLabel = document.createElement('span');
+        const countLabel = activeDocument.createElement('span');
         countLabel.className = 'zk-search-bar-count';
         countLabel.textContent = '';
         bar.appendChild(countLabel);
 
         // 上一个
-        const prevBtn = document.createElement('button');
+        const prevBtn = activeDocument.createElement('button');
         prevBtn.className = 'zk-search-bar-btn';
         setIcon(prevBtn, 'chevron-up');
         prevBtn.title = 'Previous';
         bar.appendChild(prevBtn);
 
         // 下一个
-        const nextBtn = document.createElement('button');
+        const nextBtn = activeDocument.createElement('button');
         nextBtn.className = 'zk-search-bar-btn';
         setIcon(nextBtn, 'chevron-down');
         nextBtn.title = 'Next';
         bar.appendChild(nextBtn);
 
         // 关闭
-        const closeBtn = document.createElement('button');
+        const closeBtn = activeDocument.createElement('button');
         closeBtn.className = 'zk-search-bar-btn';
         setIcon(closeBtn, 'x');
         bar.appendChild(closeBtn);
@@ -2894,7 +2894,7 @@ export function showSearchBar(this: any): void {
             const visibleCount = Math.min(filteredNodes.length, 12);
             for (let i = 0; i < visibleCount; i++) {
                 const node = filteredNodes[i];
-                const item = document.createElement('button');
+                const item = activeDocument.createElement('button');
                 item.type = 'button';
                 item.className = 'zk-search-suggestion-item';
                 if (i === activeSuggestionIndex) {
@@ -2988,7 +2988,7 @@ export function showSearchBar(this: any): void {
             suggestionBox.addClass('zk-hidden');
             // 先收起键盘，等视口恢复后再移除搜索栏，避免移动端工具栏上移
             input.blur();
-            setTimeout(() => {
+            window.setTimeout(() => {
                 bar.remove();
             }, 100);
         };
@@ -3033,7 +3033,7 @@ export function showSearchBar(this: any): void {
             }
         });
         input.addEventListener('blur', () => {
-            setTimeout(() => suggestionBox.addClass('zk-hidden'), 120);
+            window.setTimeout(() => suggestionBox.addClass('zk-hidden'), 120);
         });
 
         prevBtn.addEventListener('click', goPrev);
@@ -3046,7 +3046,7 @@ export function showSearchBar(this: any): void {
         closeBtn.addEventListener('touchend', (e) => { e.preventDefault(); closeSearch(); });
 
         // 自动聚焦
-        setTimeout(() => input.focus(), 50);
+        window.setTimeout(() => input.focus(), 50);
     }
 
     /**
@@ -3064,7 +3064,7 @@ export function hideBatchToolbar(this: any): void {
         }, { once: true });
 
         // 兜底：动画未触发时也能移除
-        setTimeout(() => {
+        window.setTimeout(() => {
             if (toolbar.parentNode) {
                 toolbar.remove();
             }
@@ -3075,7 +3075,7 @@ export function hideBatchToolbar(this: any): void {
      * 创建批量操作工具栏
      */
 export function createBatchToolbar(this: any): HTMLElement {
-        const toolbar = document.createElement('div');
+        const toolbar = activeDocument.createElement('div');
         toolbar.className = 'zk-batch-toolbar';
 
         // 防止事件穿透到画布
@@ -3087,13 +3087,13 @@ export function createBatchToolbar(this: any): HTMLElement {
         toolbar.addEventListener('mousedown', stopPropagation);
 
         // 计数徽章
-        const countBadge = document.createElement('span');
+        const countBadge = activeDocument.createElement('span');
         countBadge.className = 'zk-batch-toolbar-count';
         countBadge.textContent = t('batch selected count').replace('{count}', '0');
         toolbar.appendChild(countBadge);
 
         // 分隔线
-        const divider1 = document.createElement('div');
+        const divider1 = activeDocument.createElement('div');
         divider1.className = 'zk-batch-toolbar-divider';
         toolbar.appendChild(divider1);
 
@@ -3107,7 +3107,7 @@ export function createBatchToolbar(this: any): HTMLElement {
         toolbar.appendChild(this.createToolbarButton('palette', t('batch change color'), '', () => this.batchChangeColor()));
 
         // 分隔线
-        const divider2 = document.createElement('div');
+        const divider2 = activeDocument.createElement('div');
         divider2.className = 'zk-batch-toolbar-divider';
         toolbar.appendChild(divider2);
 
@@ -3126,17 +3126,17 @@ export function createBatchToolbar(this: any): HTMLElement {
      * 创建工具栏按钮（带 Lucide 图标）
      */
 export function createToolbarButton(this: any, iconName: string, label: string, extraClass: string, onClick: () => void): HTMLElement {
-        const btn = document.createElement('button');
+        const btn = activeDocument.createElement('button');
         btn.className = `zk-batch-toolbar-btn ${extraClass}`.trim();
 
         // 图标
-        const iconEl = document.createElement('span');
+        const iconEl = activeDocument.createElement('span');
         iconEl.className = 'zk-batch-toolbar-icon';
         setIcon(iconEl, iconName);
         btn.appendChild(iconEl);
 
         // 文字
-        const labelEl = document.createElement('span');
+        const labelEl = activeDocument.createElement('span');
         labelEl.textContent = label;
         btn.appendChild(labelEl);
 
@@ -3395,7 +3395,7 @@ export function createPlaceholderConnectionLine(this: any, placeholderNodeId: st
         // 创建 SVG 叠加层（如果不存在）
         let svgOverlay = this.container.querySelector('.placeholder-connections-svg') as SVGSVGElement;
         if (!svgOverlay) {
-            svgOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svgOverlay = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'svg');
             svgOverlay.classList.add('placeholder-connections-svg');
             svgOverlay.setCssStyles({
                 position: 'absolute',
@@ -3410,7 +3410,7 @@ export function createPlaceholderConnectionLine(this: any, placeholderNodeId: st
         }
 
         // 创建连接线 - 使用绿色虚线（与智能连线一致）
-        const connectionLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        const connectionLine = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'line');
         connectionLine.setAttribute('stroke', '#10b981');  // 淡绿色
         connectionLine.setAttribute('stroke-width', '2');
         connectionLine.setAttribute('stroke-dasharray', '5,5');  // 虚线
@@ -3539,7 +3539,7 @@ export function batchDeleteNodes(this: any): void {
         this.hideBatchToolbar();
 
         // 创建确认对话框
-        const overlay = document.createElement('div');
+        const overlay = activeDocument.createElement('div');
         overlay.setCssStyles({
             position: 'fixed',
             top: '0',
@@ -3553,7 +3553,7 @@ export function batchDeleteNodes(this: any): void {
             zIndex: '10001',
         });
 
-        const dialog = document.createElement('div');
+        const dialog = activeDocument.createElement('div');
         dialog.setCssStyles({
             backgroundColor: 'var(--background-primary)',
             border: '1px solid var(--background-modifier-border)',
@@ -3565,24 +3565,24 @@ export function batchDeleteNodes(this: any): void {
             minWidth: '300px',
         });
 
-        const title = document.createElement('h3');
+        const title = activeDocument.createElement('h3');
         title.textContent = t("Confirm delete");
         title.setCssStyles({ margin: '0' });
         dialog.appendChild(title);
 
-        const message = document.createElement('p');
+        const message = activeDocument.createElement('p');
         message.textContent = t("Confirm delete nodes").replace("{count}", String(nodeIdsSnapshot.length));
         message.setCssStyles({ margin: '0' });
         dialog.appendChild(message);
 
-        const buttonContainer = document.createElement('div');
+        const buttonContainer = activeDocument.createElement('div');
         buttonContainer.setCssStyles({
             display: 'flex',
             gap: '10px',
             justifyContent: 'flex-end',
         });
 
-        const confirmBtn = document.createElement('button');
+        const confirmBtn = activeDocument.createElement('button');
         confirmBtn.textContent = t("Confirm");
         confirmBtn.onclick = () => {
             // 触发批量删除事件
@@ -3603,7 +3603,7 @@ export function batchDeleteNodes(this: any): void {
             this.batchSelectedNodes = [];
         };
 
-        const cancelBtn = document.createElement('button');
+        const cancelBtn = activeDocument.createElement('button');
         cancelBtn.textContent = t("Cancel");
         cancelBtn.onclick = () => {
             overlay.remove();
@@ -3616,7 +3616,7 @@ export function batchDeleteNodes(this: any): void {
         dialog.appendChild(buttonContainer);
 
         overlay.appendChild(dialog);
-        document.body.appendChild(overlay);
+        activeDocument.body.appendChild(overlay);
     }
 
     /**

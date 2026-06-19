@@ -63,7 +63,7 @@ export class TaskModal extends Modal {
         };
         ok.onclick = submit;
         desc.onkeydown = (e) => { if (e.key === 'Enter') submit(); };
-        setTimeout(() => desc.focus(), 0);
+        window.setTimeout(() => desc.focus(), 0);
     }
 
     onClose() { this.contentEl.empty(); }
@@ -92,7 +92,7 @@ export function promptTitle(app: App, header: string, onSubmit: (value: string) 
             const submit = () => { const v = input.value.trim(); if (!v) { input.focus(); return; } onSubmit(v); this.close(); };
             ok.onclick = submit;
             input.onkeydown = (e) => { if (e.key === 'Enter') submit(); };
-            setTimeout(() => input.focus(), 0);
+            window.setTimeout(() => input.focus(), 0);
         }
         onClose() { this.contentEl.empty(); }
     }(app).open();

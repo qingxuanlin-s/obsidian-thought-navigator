@@ -131,7 +131,7 @@ export class ScratchpadDrawer {
 
         // 全局 mousemove 监听:鼠标靠近左边缘时唤醒,远离 3s 后淡出
         this.mouseMoveHandler = (e: MouseEvent) => this.onGlobalMouseMove(e);
-        document.addEventListener("mousemove", this.mouseMoveHandler);
+        activeDocument.addEventListener("mousemove", this.mouseMoveHandler);
 
         this.refreshHandleBadge();
         this.refreshHeaderCount();
@@ -174,9 +174,9 @@ export class ScratchpadDrawer {
     destroy(): void {
         this.unsubscribe?.();
         this.unsubscribe = null;
-        document.querySelector(".zk-scratch-context-menu")?.remove();
+        activeDocument.querySelector(".zk-scratch-context-menu")?.remove();
         if (this.mouseMoveHandler) {
-            document.removeEventListener("mousemove", this.mouseMoveHandler);
+            activeDocument.removeEventListener("mousemove", this.mouseMoveHandler);
             this.mouseMoveHandler = null;
         }
         if (this.idleTimer !== null) {
@@ -504,7 +504,7 @@ export class ScratchpadDrawer {
     private startTextComposer(): void {
         this.isTextComposerOpen = true;
         this.render();
-        requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
             const textarea = this.bodyEl.querySelector(".zk-scratch-composer-textarea") as HTMLTextAreaElement | null;
             textarea?.focus();
         });
@@ -519,7 +519,7 @@ export class ScratchpadDrawer {
         this.textComposerSourceTempIds.clear();
         this.textComposerSourceTempIds.add(entry.tempId);
         this.render();
-        requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
             const textarea = this.bodyEl.querySelector(".zk-scratch-composer-textarea") as HTMLTextAreaElement | null;
             if (!textarea) return;
             textarea.focus();
@@ -570,7 +570,7 @@ export class ScratchpadDrawer {
             this.textComposerSourceTempIds.clear();
             this.textComposerValue = "";
             this.render();
-            requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
                 const nextTextarea = this.bodyEl.querySelector(".zk-scratch-composer-textarea") as HTMLTextAreaElement | null;
                 nextTextarea?.focus();
             });
@@ -665,7 +665,7 @@ export class ScratchpadDrawer {
         composer.addEventListener("dragover", onDragOver);
         composer.addEventListener("dragleave", onDragLeave);
         composer.addEventListener("drop", onDrop);
-        requestAnimationFrame(() => this.autosizeTextarea(textarea));
+        window.requestAnimationFrame(() => this.autosizeTextarea(textarea));
     }
 
     private autosizeTextarea(textarea: HTMLTextAreaElement): void {
@@ -773,9 +773,9 @@ export class ScratchpadDrawer {
     }
 
     private showCardMenu(e: MouseEvent, entry: ScratchpadEntry): void {
-        document.querySelector(".zk-scratch-context-menu")?.remove();
+        activeDocument.querySelector(".zk-scratch-context-menu")?.remove();
 
-        const menu = document.body.createDiv("zk-node-ctx-menu zk-scratch-context-menu");
+        const menu = activeDocument.body.createDiv("zk-node-ctx-menu zk-scratch-context-menu");
         menu.setCssStyles({
             position: "fixed",
             zIndex: "10000",
@@ -784,7 +784,7 @@ export class ScratchpadDrawer {
         const closeMenu = (evt: MouseEvent) => {
             if (!menu.contains(evt.target as Node)) {
                 menu.remove();
-                document.removeEventListener("click", closeMenu);
+                activeDocument.removeEventListener("click", closeMenu);
             }
         };
 
@@ -803,7 +803,7 @@ export class ScratchpadDrawer {
         });
 
         this.positionCardMenu(menu, e);
-        setTimeout(() => document.addEventListener("click", closeMenu), 0);
+        window.setTimeout(() => activeDocument.addEventListener("click", closeMenu), 0);
     }
 
     private addCardMenuItem(
@@ -821,7 +821,7 @@ export class ScratchpadDrawer {
         item.addEventListener("click", (e) => {
             e.stopPropagation();
             menu.remove();
-            document.removeEventListener("click", closeMenu);
+            activeDocument.removeEventListener("click", closeMenu);
             action();
         });
     }
@@ -832,7 +832,7 @@ export class ScratchpadDrawer {
             left: "0",
             top: "0",
         });
-        requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
             const mw = menu.offsetWidth;
             const mh = menu.offsetHeight;
             const vw = window.innerWidth;

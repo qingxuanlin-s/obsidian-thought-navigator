@@ -297,7 +297,7 @@ class NewSpaceModal extends Modal {
         };
         create.onclick = submit;
         input.onkeydown = (e) => { if (e.key === 'Enter') submit(); };
-        setTimeout(() => input.focus(), 0);
+        window.setTimeout(() => input.focus(), 0);
     }
 
     onClose() { this.contentEl.empty(); }

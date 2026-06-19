@@ -30,7 +30,7 @@ export class expandGraphModal extends Modal {
 
     let { svg } = await mermaid.render(`zk-expand-graph-svg`, `${this.mermaidStr}`);
     const parsedSvg = new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement;
-    svgGraph.appendChild(document.importNode(parsedSvg, true));
+    svgGraph.appendChild(activeDocument.importNode(parsedSvg, true));
     svgGraph.children[0].removeAttribute('style');
     svgGraph.children[0].addClass("zk-full-width");
     svgGraph.children[0].setAttribute('height', `${this.modalEl.offsetHeight - 50}px`); 
@@ -50,7 +50,7 @@ export class expandGraphModal extends Modal {
         zoomScaleSensitivity: 0.25,
     })
 
-    let setSvg = document.getElementById(`${svgGraph.id}-svg`);
+    let setSvg = activeDocument.getElementById(`${svgGraph.id}-svg`);
 
     if(setSvg !== null){
         let a = setSvg.children[0].getAttr("style");
@@ -68,7 +68,7 @@ export class expandGraphModal extends Modal {
         let nodeArr = svgGraph.getElementsByClassName("nodeLabel");
 
         for (let i = 0; i < nodeArr.length; i++) {
-            let link = document.createElement('a');
+            let link = activeDocument.createElement('a');
             link.addClass("internal-link");
             let nodePosStr = nodeGArr[i].id.split('-')[1];
             let path:string = '';
@@ -107,7 +107,7 @@ export class expandGraphModal extends Modal {
         gElements[1].textContent = "";
 
         for(let j=0;j<circleNodes.length;j++){
-            let link = document.createElementNS('http://www.w3.org/2000/svg', 'a');
+            let link = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'a');
             link.appendChild(circleNodes[j]);
             gElements[1].appendChild(link);            
             

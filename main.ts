@@ -426,14 +426,14 @@ export default class ZKNavigationPlugin extends Plugin {
 
     applyTheme() {
         // 移除所有主题类
-        document.body.removeClass('zk-theme-dark');
-        document.body.removeClass('zk-theme-light');
+        activeDocument.body.removeClass('zk-theme-dark');
+        activeDocument.body.removeClass('zk-theme-light');
 
         // 根据设置(auto 时跟随 Obsidian)添加对应的主题类
         if (resolveThemeMode(this.settings.themeMode) === 'light') {
-            document.body.addClass('zk-theme-light');
+            activeDocument.body.addClass('zk-theme-light');
         } else {
-            document.body.addClass('zk-theme-dark');
+            activeDocument.body.addClass('zk-theme-dark');
         }
     }
 
@@ -472,7 +472,7 @@ export default class ZKNavigationPlugin extends Plugin {
         const createMOCPreviewImage = async (mocFile: TFile): Promise<HTMLImageElement | null> => {
             try {
                 const pngFile = await ensureMOCPreviewPNG(mocFile, this);
-                const img = document.createElement('img');
+                const img = activeDocument.createElement('img');
                 img.className = 'zk-moc-embed-img';
                 img.dataset.mocFile = mocFile.path;
                 img.src = this.app.vault.getResourcePath(pngFile);
@@ -510,7 +510,7 @@ export default class ZKNavigationPlugin extends Plugin {
         // 不匹配 .markdown-reading-view —— 那是「文件被作为 markdown 直接打开」的容器,不能动
         const findMocEmbedWrapper = (el: HTMLElement): HTMLElement | null => {
             let curr: HTMLElement | null = el;
-            while (curr && curr !== document.body) {
+            while (curr && curr !== activeDocument.body) {
                 if (curr.classList.contains('dataview') ||
                     curr.classList.contains('cm-preview-code-block') ||
                     curr.classList.contains('cm-embed-block')) {
@@ -1597,7 +1597,7 @@ export default class ZKNavigationPlugin extends Plugin {
         await this.detachPluginViews();
 
         // 移除工作区注入的 <style>,避免热重载后残留旧 CSS
-        document.getElementById('zkw-styles')?.remove();
+        activeDocument.getElementById('zkw-styles')?.remove();
 
         // 清理 MOC 文件监听器
         if (this.mocFileMonitor) {

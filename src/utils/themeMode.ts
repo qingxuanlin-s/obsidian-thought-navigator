@@ -9,5 +9,5 @@ export function resolveThemeMode(themeMode: ThemeModeSetting | undefined): Resol
     if (themeMode === 'light' || themeMode === 'dark') {
         return themeMode;
     }
-    return document.body.classList.contains('theme-dark') ? 'dark' : 'light';
+    return activeDocument.body.classList.contains('theme-dark') ? 'dark' : 'light';
 }

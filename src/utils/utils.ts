@@ -627,7 +627,7 @@ export async function addSvgPanZoom(
     let { svg } = await mermaid.render(`${zkGraph.id}-svg`, mermaidStr);
 
     const parsedSvg = new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement;
-    zkGraph.appendChild(document.importNode(parsedSvg, true));
+    zkGraph.appendChild(activeDocument.importNode(parsedSvg, true));
 
     if (plugin.settings.graphType === "roadmap") {
         zkGraph.children[0].removeAttribute('style');
@@ -666,13 +666,13 @@ export async function addSvgPanZoom(
     })
 
     // 将 panZoom 实例存储到 SVG 元素上，方便后续访问
-    const svgElement = document.getElementById(`${zkGraph.id}-svg`);
+    const svgElement = activeDocument.getElementById(`${zkGraph.id}-svg`);
     if (svgElement) {
         // @ts-ignore
         svgElement.panZoomInstance = panZoomTiger;
     }
 
-    const touchSvg = document.getElementById(`${zkGraph.id}-svg`);
+    const touchSvg = activeDocument.getElementById(`${zkGraph.id}-svg`);
 
     if (touchSvg !== null) {
         let startDistance: number = 0;
@@ -701,7 +701,7 @@ export async function addSvgPanZoom(
 
     if (typeof plugin.settings.zoomPanScaleArr[i] === 'undefined') {
 
-        const setSvg = document.getElementById(`${zkGraph.id}-svg`);
+        const setSvg = activeDocument.getElementById(`${zkGraph.id}-svg`);
 
         if (setSvg !== null) {
             let a = setSvg.children[0].getAttr("style");
@@ -790,7 +790,7 @@ export async function saveMOCStructure(
 
     const { serializeMOCJson } = await import('./mocJsonCodec');
     await app.vault.modify(file, serializeMOCJson(data));
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => window.setTimeout(resolve, 50));
 }
 
 /**
