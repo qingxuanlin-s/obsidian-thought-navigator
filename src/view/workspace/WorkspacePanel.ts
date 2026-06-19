@@ -9,6 +9,7 @@ import { renderCockpit } from "./cockpit";
 import { renderProjectPage, renderMocPage, renderNotePage, renderHome } from "./pages";
 import { SpacesTree } from "./spacesTree";
 import { Deck } from "./deck";
+import { confirmModal } from "./modals";
 
 const LS_OPEN = "zkw.open";
 const LS_LAST = "zkw.last";
@@ -28,6 +29,11 @@ export interface WorkspacePanelDeps {
     onOpenMoc?: (node: WSMocNode) => boolean;
     /** 顶栏「图谱」按钮:切回图谱模式。提供则显示该按钮。 */
     onExitToGraph?: () => void;
+    /** 打开文件笔记,交给宿主按「文件默认打开方式」打开(绝不覆盖思维树图谱)。
+     *  不提供则面板退化为在当前 leaf 打开。 */
+    onOpenFile?: (file: TFile, forceTab: boolean) => void;
+    /** 打开 wiki 链接,同样交给宿主按默认方式打开。不提供则退化为 openLinkText。 */
+    onOpenLink?: (linkText: string, sourcePath: string, forceTab: boolean) => void;
 }
 
 /**
@@ -66,7 +72,16 @@ export class WorkspacePanel {
             taskPrefix: deps.taskPrefix,
             open: (t) => this.navigate(t),
             openInline: (t) => this.navigateInline(t),
+            openFile: (file, forceTab = false) => {
+                if (deps.onOpenFile) deps.onOpenFile(file, forceTab);
+                else deps.app.workspace.getLeaf(forceTab).openFile(file);
+            },
+            openLink: (linkText, sourcePath = '', forceTab = false) => {
+                if (deps.onOpenLink) deps.onOpenLink(linkText, sourcePath, forceTab);
+                else deps.app.workspace.openLinkText(linkText, sourcePath, forceTab);
+            },
             openDeck: (n) => this.deck?.open(n),
+            requestDelete: (n) => this.requestDelete(n),
             refresh: () => this.refresh(),
         };
 
@@ -172,6 +187,25 @@ export class WorkspacePanel {
         this.railScrollEl = rail.createDiv({ cls: 'rail-scroll' });
         this.tree = new SpacesTree(this.railScrollEl, this.ctx);
         meta.setText(t('ws spaces count').replace('{n}', String(this.deps.store.getSpaces().length)));
+    }
+
+    /** 删除条目:统计子树规模 → 二次确认 → deleteSubtree;若当前视口/deck 展示的是被删节点则退回首页/关 deck。 */
+    private requestDelete(node: WorkspaceNode) {
+        const ids = this.deps.store.collectSubtreeIds(node.id);
+        const deleted = new Set(ids);
+        const descendants = ids.length - 1;
+        const msg = node.type === 'space'
+            ? t('ws delete space confirm').replace('{title}', node.title).replace('{n}', String(descendants))
+            : descendants > 0
+                ? t('ws delete node confirm children').replace('{title}', node.title).replace('{n}', String(descendants))
+                : t('ws delete node confirm').replace('{title}', node.title);
+        confirmModal(this.deps.app, t('ws delete'), msg, async () => {
+            await this.deps.store.deleteSubtree(node.id);
+            this.deck?.closeIfShowing(deleted);
+            const cur = this.current;
+            // store.onChange 已触发重渲;当前页指向被删节点时改导航到首页
+            if (cur.kind !== 'home' && 'id' in cur && deleted.has(cur.id)) this.navigateInline({ kind: 'home' });
+        });
     }
 
     private openNewSpaceModal() {

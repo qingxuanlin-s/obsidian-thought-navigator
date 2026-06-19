@@ -1,4 +1,4 @@
-import { Component, MarkdownRenderer, Notice, TFile, setIcon } from "obsidian";
+import { Component, MarkdownRenderer, Menu, Notice, TFile, setIcon } from "obsidian";
 import { WSMocNode, WSProjectNode, WSNoteNode, WorkspaceNode } from "src/types/workspace";
 import { nextStatus } from "src/workspace/WorkspaceStore";
 import { MdTask, prependTask, toggleTask, removeTask, insertSubtask, setTaskNote, removeTaskNote, setTaskText, taskMetaSuffix, parseTaskText, buildTaskText, processFile } from "src/workspace/projectTasks";
@@ -14,6 +14,20 @@ function emptyState(parent: HTMLElement, icon: string, title: string, hint: stri
     box.createDiv({ cls: 'et', text: title });
     if (hint) box.createDiv({ cls: 'eh', text: hint });
     return box.createDiv({ cls: 'ebtns' });
+}
+
+/** 页头右上角溢出菜单按钮:删除该条目(走 ctx.requestDelete 二次确认) */
+function heroMenuBtn(titleRow: HTMLElement, ctx: RenderCtx, node: WorkspaceNode): void {
+    const btn = titleRow.createDiv({ cls: 'ck-heromenu' });
+    setIcon(btn, 'more-horizontal');
+    btn.setAttribute('title', t('ws delete'));
+    btn.onclick = (e) => {
+        e.stopPropagation();
+        const menu = new Menu();
+        menu.addItem(i => { (i as any).setWarning?.(true); i.setTitle(t('ws delete')).setIcon('trash-2')
+            .onClick(() => ctx.requestDelete(node)); });
+        menu.showAtMouseEvent(e);
+    };
 }
 
 /** 操作按钮(.createbtn),带 lucide 图标 + 文案 */
@@ -45,6 +59,7 @@ export function renderProjectPage(container: HTMLElement, ctx: RenderCtx, p: WSP
     glyph(bigic, 'project', STATUS_COLOR[p.status]);
     const col = titleRow.createDiv();
     col.createEl('h1', { cls: 'ck-h1', text: p.title });
+    heroMenuBtn(titleRow, ctx, p);
     const tagRow = col.createDiv({ cls: 'ck-tagrow' });
     const stat = tagRow.createSpan({ cls: `pstat ${p.status} click` });
     stat.createSpan({ cls: `sd ${p.status}` });
@@ -131,7 +146,7 @@ function renderActions(body: HTMLElement, ctx: RenderCtx, p: WSProjectNode): voi
     addBtn.onclick = () => openTaskModal(ctx, p, file, { mode: 'new' });
     if (file instanceof TFile) {
         const open = add.createSpan({ cls: 'achip', text: '🗒 ' + t('ws action open note') });
-        open.onclick = () => ctx.app.workspace.getLeaf(false).openFile(file);
+        open.onclick = (e) => ctx.openFile(file, e.ctrlKey || e.metaKey);
     }
 
     // ── 任务列表(排序 → 隐藏已完成过滤)──
@@ -365,6 +380,7 @@ export function renderMocPage(container: HTMLElement, ctx: RenderCtx, m: WSMocNo
     glyph(bigic, 'moc');
     const col = titleRow.createDiv();
     col.createEl('h1', { cls: 'ck-h1', text: m.title });
+    heroMenuBtn(titleRow, ctx, m);
 
     const members = ctx.store.servedBy(m.id);
     const subMocs = ctx.store.containerChildren(m.id).filter(n => n.type === 'moc');
@@ -431,6 +447,7 @@ export function renderNotePage(container: HTMLElement, ctx: RenderCtx, n: WSNote
     const bigic = titleRow.createDiv({ cls: 'ck-bigic space' });
     glyph(bigic, n.type);
     titleRow.createDiv().createEl('h1', { cls: 'ck-h1', text: n.title });
+    heroMenuBtn(titleRow, ctx, n);
 
     const partLinks = ctx.store.linksFrom(n.id).filter(l => l.type === 'partOf');
     if (partLinks.length) {
@@ -451,7 +468,7 @@ export function renderNotePage(container: HTMLElement, ctx: RenderCtx, n: WSNote
     if (file instanceof TFile) {
         // 操作条:在 Obsidian 打开真身
         const bar = ck.createDiv({ cls: 'createbar' });
-        actionBtn(bar, 'external-link', t('ws open file'), false, () => ctx.app.workspace.getLeaf(false).openFile(file));
+        actionBtn(bar, 'external-link', t('ws open file'), false, () => ctx.openFile(file));
         // 正文预览(内嵌渲染真实 markdown,与右侧 deck 一致)
         body.createDiv({ cls: 'dsec', text: t('ws body') });
         const prose = body.createDiv({ cls: 'prose ws-noteprose' });

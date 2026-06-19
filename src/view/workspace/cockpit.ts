@@ -1,3 +1,4 @@
+import { Menu } from "obsidian";
 import { WSSpaceNode, WSMocNode, WSProjectNode, WorkspaceNode, FRAMEWORKS } from "src/types/workspace";
 import { t } from "src/lang/helper";
 import { RenderCtx, relTime, glyph, statusLabel, fwChip, bucketLabel, STATUS_COLOR, progressFor, nextActionText, renderTaskText } from "./render";
@@ -137,6 +138,16 @@ function renderBucketSection(body: HTMLElement, ctx: RenderCtx, bucketId: string
     }
 }
 
+/** 卡片右键菜单:删除该条目(二次确认走 ctx.requestDelete) */
+function cardMenu(e: MouseEvent, ctx: RenderCtx, node: WorkspaceNode): void {
+    e.preventDefault();
+    e.stopPropagation();
+    const menu = new Menu();
+    menu.addItem(i => { (i as any).setWarning?.(true); i.setTitle(t('ws delete')).setIcon('trash-2')
+        .onClick(() => ctx.requestDelete(node)); });
+    menu.showAtMouseEvent(e);
+}
+
 function byStatusThenTime(a: WSProjectNode, b: WSProjectNode): number {
     const rank = (s: WSProjectNode['status']) => ({ blocked: 0, active: 1, todo: 2, done: 3, archived: 4 }[s]);
     return rank(a.status) - rank(b.status) || b.updatedAt - a.updatedAt;
@@ -154,6 +165,7 @@ function renderProjectCard(grid: HTMLElement, ctx: RenderCtx, p: WSProjectNode):
     const card = grid.createDiv({ cls: 'pcard reveal' + (p.status === 'archived' ? ' arch' : '') });
     // 卡片空白区 → 详情面板;名字 → 项目页(含 NEXT ACTION / 关联笔记)
     card.onclick = () => ctx.openDeck(p);
+    card.oncontextmenu = (e) => cardMenu(e, ctx, p);
 
     const top = card.createDiv({ cls: 'ptop' });
     const stat = top.createSpan({ cls: `pstat ${p.status}` });
@@ -197,6 +209,7 @@ function renderMocCard(grid: HTMLElement, ctx: RenderCtx, m: WSMocNode): void {
     const card = grid.createDiv({ cls: 'moccard reveal' });
     // 卡片空白区 → 详情/关联面板;名字 → 跳思维树图谱
     card.onclick = () => ctx.openDeck(m);
+    card.oncontextmenu = (e) => cardMenu(e, ctx, m);
 
     const members = ctx.store.servedBy(m.id);
     card.toggleClass('empty-moc', members.length === 0);
@@ -224,6 +237,7 @@ function renderNoteCard(grid: HTMLElement, ctx: RenderCtx, n: WorkspaceNode): vo
     const card = grid.createDiv({ cls: 'notecard reveal' });
     // 卡片空白区 → 详情面板;名字 → 打开节点
     card.onclick = () => ctx.openDeck(n);
+    card.oncontextmenu = (e) => cardMenu(e, ctx, n);
     glyph(card, n.type);
     const nn = card.createSpan({ cls: 'nn link', text: n.title });
     nn.onclick = (e) => { e.stopPropagation(); ctx.open(ctx.store.targetFor(n)); };

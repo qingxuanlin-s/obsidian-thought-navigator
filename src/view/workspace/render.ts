@@ -1,4 +1,4 @@
-import { App, setIcon } from "obsidian";
+import { App, TFile, setIcon } from "obsidian";
 import { t } from "src/lang/helper";
 import { WorkspaceStore, progressOf } from "src/workspace/WorkspaceStore";
 import { ProjectTaskStore } from "src/workspace/projectTasks";
@@ -20,6 +20,13 @@ export interface RenderCtx {
     openInline(target: OpenTarget): void;
     /** 右侧滑出详情 deck */
     openDeck(node: WorkspaceNode): void;
+    /** 打开一个文件笔记。按宿主的「文件默认打开方式」设置打开,绝不覆盖思维树图谱;
+     *  无宿主(独立工作区视图)时退化为在当前 leaf 打开。forceTab=true 时强制新标签页。 */
+    openFile(file: TFile, forceTab?: boolean): void;
+    /** 打开一个 wiki 链接(任务文本里的 [[..]] 等)。同样走宿主的默认打开方式,绝不覆盖图谱。 */
+    openLink(linkText: string, sourcePath?: string, forceTab?: boolean): void;
+    /** 删除条目(节点 + 容器子树):二次确认 → store.deleteSubtree → 必要时退回首页 */
+    requestDelete(node: WorkspaceNode): void;
     /** 重渲染中间视口 + 侧栏(异步任务加载完成 / 文件外部变动后调用) */
     refresh(): void;
 }
@@ -51,7 +58,7 @@ export function renderTaskText(parent: HTMLElement, ctx: RenderCtx, text: string
         const target = m[1].split('|')[0].trim();
         const shown = (m[1].includes('|') ? m[1].split('|')[1] : m[1]).trim();
         const link = parent.createSpan({ cls: 'ws-tasklink', text: shown });
-        link.onclick = (e) => { e.stopPropagation(); ctx.app.workspace.openLinkText(target, ''); };
+        link.onclick = (e) => { e.stopPropagation(); ctx.openLink(target, '', e.ctrlKey || e.metaKey); };
         last = m.index + m[0].length;
     }
     if (last < text.length) parent.appendText(text.slice(last));

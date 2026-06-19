@@ -377,6 +377,12 @@ align-items: center;
   color: #172033;
 }
 
+/* 上一步/下一步 在历史端点时置灰禁用 */
+.zk-toolbar-right-buttons > .clickable-icon.zk-nav-disabled {
+  opacity: 0.32;
+  pointer-events: none;
+}
+
 .zk-toolbar-separator {
   width: 1px;
   height: 18px;
@@ -6201,6 +6207,9 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 .zkw .ck-crumb .seg:hover { color:var(--ink-dim); }
 .zkw .ck-crumb .s { opacity:0.5; margin:0 5px; }
 .zkw .ck-titlerow { display:flex; align-items:flex-start; gap:16px; }
+.zkw .ck-heromenu { margin-left:auto; flex-shrink:0; width:30px; height:30px; border:1px solid var(--rule-2); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--ink-faint); cursor:pointer; }
+.zkw .ck-heromenu:hover { color:var(--ink); border-color:var(--rule-3); }
+.zkw .ck-heromenu .svg-icon { width:17px; height:17px; }
 .zkw .ck-bigic { width:46px; height:46px; border-radius:12px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
 .zkw .ck-bigic.space { background:rgba(255,255,255,0.06); border:1px solid var(--rule-2); }
 .zkw .ck-bigic .g { width:22px; height:22px; }

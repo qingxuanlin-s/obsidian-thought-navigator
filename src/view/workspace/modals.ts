@@ -69,6 +69,32 @@ export class TaskModal extends Modal {
     onClose() { this.contentEl.empty(); }
 }
 
+/** 确认弹窗:危险操作(删除)前二次确认。确认按钮聚焦,回车即确认。 */
+export function confirmModal(
+    app: App,
+    title: string,
+    body: string,
+    onConfirm: () => void,
+    opts?: { confirmLabel?: string; danger?: boolean },
+): void {
+    new class extends Modal {
+        onOpen() {
+            this.titleEl.setText(title);
+            this.contentEl.createEl('p', { text: body }).setCssStyles({ margin: '0 0 16px', lineHeight: '1.5' });
+            const foot = this.contentEl.createDiv();
+            foot.setCssStyles({ display: 'flex', gap: '8px', justifyContent: 'flex-end' });
+            const cancel = foot.createEl('button', { text: t('ws cancel') });
+            cancel.onclick = () => this.close();
+            const ok = foot.createEl('button', { cls: 'mod-cta' + (opts?.danger ?? true ? ' mod-warning' : ''), text: opts?.confirmLabel ?? t('ws delete') });
+            const run = () => { onConfirm(); this.close(); };
+            ok.onclick = run;
+            this.scope.register([], 'Enter', (e) => { e.preventDefault(); run(); });
+            window.setTimeout(() => ok.focus(), 0);
+        }
+        onClose() { this.contentEl.empty(); }
+    }(app).open();
+}
+
 /** 轻量单行输入弹窗:回车/创建提交,Esc/取消关闭 */
 export function promptTitle(app: App, header: string, onSubmit: (value: string) => void, initial = ''): void {
     new class extends Modal {

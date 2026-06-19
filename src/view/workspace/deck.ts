@@ -57,6 +57,8 @@ export class Deck {
         // foot
         const closeBtn = this.foot.createEl('button', { cls: 'close', text: t('ws close esc') });
         closeBtn.onclick = () => this.close();
+        const del = this.foot.createEl('button', { cls: 'mod-warning', text: t('ws delete') });
+        del.onclick = () => this.ctx.requestDelete(node);
         const filePath = (node as any).filePath as string | undefined;
         if ((node.type === 'moc' || node.type === 'map') && filePath) {
             const openMap = this.foot.createEl('button', { cls: 'open-map', text: t('ws open graph') });
@@ -179,6 +181,11 @@ export class Deck {
         this.currentNode = null;
         this.scrim.removeClass('show');
         this.panel.removeClass('open');
+    }
+
+    /** 当前展示的节点被删除(在给定 id 集合内)→ 关闭 deck */
+    closeIfShowing(deletedIds: Set<string>): void {
+        if (this.isOpen && this.currentNode && deletedIds.has(this.currentNode.id)) this.close();
     }
 
     /** 当前正展示的项目背书笔记被外部改动 → 重渲染 deck */
