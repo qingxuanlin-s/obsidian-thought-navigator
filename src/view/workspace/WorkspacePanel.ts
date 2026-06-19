@@ -1,6 +1,7 @@
-import { App, Component, Modal, setIcon, setTooltip } from "obsidian";
+import { App, Component, EventRef, Modal, TFile, setIcon, setTooltip } from "obsidian";
 import { t } from "src/lang/helper";
 import { WorkspaceStore } from "src/workspace/WorkspaceStore";
+import { ProjectTaskStore } from "src/workspace/projectTasks";
 import { OpenTarget, WorkspaceNode, WSMocNode, FrameworkId } from "src/types/workspace";
 import { fwLabel } from "./render";
 import { ZKW_CSS, ZKW_STYLE_ID } from "./styles";
@@ -12,12 +13,17 @@ import { Deck } from "./deck";
 
 const LS_OPEN = "zkw.open";
 const LS_LAST = "zkw.last";
+const LS_RAIL = "zkw.rail.collapsed";
 
 export interface WorkspacePanelDeps {
     app: App;
     store: WorkspaceStore;
     /** 宿主组件,用于 MarkdownRenderer 生命周期 */
     owner: Component;
+    /** 项目背书笔记(next action 任务)所在文件夹 */
+    projectFolderPath: string;
+    /** 新建任务/子任务自动前缀字符(如 "🎯 ") */
+    taskPrefix: string;
     /** 打开一个带图谱的 MOC/map 节点时,交给宿主(indexView)切到图谱模式并加载文件。
      *  返回 true 表示宿主已接管(面板不再自渲 MOC 页);false / 不提供则面板内渲 MOC 概览页。 */
     onOpenMoc?: (node: WSMocNode) => boolean;
@@ -34,24 +40,49 @@ export class WorkspacePanel {
     private root: HTMLElement;
     private ctx: RenderCtx;
     private centerEl!: HTMLElement;
+    private railEl!: HTMLElement;
     private railScrollEl!: HTMLElement;
+    private railToggleEl: HTMLElement | null = null;
+    private railCollapsed = false;
     private tree!: SpacesTree;
     private deck!: Deck;
     private current: OpenTarget = { kind: 'home' };
     private unsub: (() => void) | null = null;
+    private taskStore: ProjectTaskStore;
+    private modifyRef: EventRef | null = null;
 
     constructor(parent: HTMLElement, deps: WorkspacePanelDeps) {
         this.deps = deps;
         injectStyles();
         this.root = parent.createDiv({ cls: 'zkw' });
+        try { this.railCollapsed = localStorage.getItem(LS_RAIL) === '1'; } catch {}
+
+        this.taskStore = new ProjectTaskStore(deps.app);
+        this.taskStore.onChange = () => this.refresh();
 
         this.ctx = {
             app: deps.app,
             store: deps.store,
+            tasks: this.taskStore,
+            projectFolderPath: deps.projectFolderPath,
+            taskPrefix: deps.taskPrefix,
             open: (t) => this.navigate(t),
             openInline: (t) => this.navigateInline(t),
             openDeck: (n) => this.deck?.open(n),
+            refresh: () => this.refresh(),
         };
+
+        // 项目背书笔记被外部(用户编辑 / Tasks 插件勾选)改动 → 失效缓存并重渲染。
+        // 自写已经 setFromContent 同步过缓存(isCurrent),跳过以免重复刷新导致闪烁。
+        this.modifyRef = deps.app.vault.on('modify', (file) => {
+            if (!(file instanceof TFile)) return;
+            if (this.taskStore.isCurrent(file.path)) return;
+            this.taskStore.invalidate(file.path);
+            if (deps.store.getAllNodes().some(n => n.type === 'project' && (n as any).filePath === file.path)) {
+                this.refresh();
+                this.deck?.refreshIfShowing(file.path);
+            }
+        });
 
         this.buildToolbar(this.root);
         const body = this.root.createDiv({ cls: 'body' });
@@ -65,12 +96,31 @@ export class WorkspacePanel {
         });
 
         this.unsub = deps.store.onChange(() => { if (this.tree) { this.renderCenter(); this.tree.render(); } });
+        this.applyRailCollapsed();
         this.restoreSession();
+    }
+
+    /** 收起/展开整个左侧 rail 面板 */
+    private toggleRail() {
+        this.railCollapsed = !this.railCollapsed;
+        try { localStorage.setItem(LS_RAIL, this.railCollapsed ? '1' : '0'); } catch {}
+        this.applyRailCollapsed();
+    }
+
+    private applyRailCollapsed() {
+        // 用根 class 切换:rail display:none + body 退成单列,避免 center 被塞进空出的 296px 轨道
+        this.root.toggleClass('rail-collapsed', this.railCollapsed);
+        if (this.railToggleEl) {
+            setIcon(this.railToggleEl, this.railCollapsed ? 'panel-left-open' : 'panel-left-close');
+            setTooltip(this.railToggleEl, t(this.railCollapsed ? 'ws show sidebar' : 'ws hide sidebar'));
+        }
     }
 
     destroy() {
         this.unsub?.();
         this.unsub = null;
+        if (this.modifyRef) { this.deps.app.vault.offref(this.modifyRef); this.modifyRef = null; }
+        this.taskStore.dispose();
         this.root.remove();
     }
 
@@ -82,13 +132,19 @@ export class WorkspacePanel {
     // ---------- Toolbar ----------
     private buildToolbar(shell: HTMLElement) {
         const tbar = shell.createDiv({ cls: 'tbar' });
+
+        // 收起/展开整个左侧 rail
+        const railToggle = tbar.createDiv({ cls: 'ticon' });
+        railToggle.onclick = () => this.toggleRail();
+        this.railToggleEl = railToggle;
+
         const brand = tbar.createDiv({ cls: 'brand' });
         brand.createSpan({ cls: 'mk', text: 'ZK' });
-        brand.appendText(t('ws Workspace'));
-        brand.createSpan({ cls: 'sub', text: 'workspace' });
+        brand.createSpan({ cls: 'bt', text: t('ws Workspace') });
 
         const home = tbar.createDiv({ cls: 'home' });
-        home.appendText('⌂ ' + t('ws Today'));
+        setIcon(home.createSpan({ cls: 'hic' }), 'home');
+        home.createSpan({ text: t('ws Today') });
         home.onclick = () => this.navigate({ kind: 'home' });
 
         tbar.createDiv({ cls: 'spacer' });
@@ -103,9 +159,15 @@ export class WorkspacePanel {
     // ---------- 左 rail ----------
     private buildRail(body: HTMLElement) {
         const rail = body.createDiv({ cls: 'rail' });
+        this.railEl = rail;
         const head = rail.createDiv({ cls: 'rail-head' });
         head.createSpan({ cls: 't', text: 'Spaces' });
         const meta = head.createSpan({ cls: 'meta' });
+        // 一键折叠/展开树里所有节点
+        const collapseAll = head.createDiv({ cls: 'add' });
+        setIcon(collapseAll, 'list-collapse');
+        collapseAll.setAttribute('title', t('ws collapse all'));
+        collapseAll.onclick = () => { this.tree.toggleCollapseAll(); };
         const add = head.createDiv({ cls: 'add', text: '+' });
         add.setAttribute('title', t('ws New space'));
         add.onclick = () => this.openNewSpaceModal();

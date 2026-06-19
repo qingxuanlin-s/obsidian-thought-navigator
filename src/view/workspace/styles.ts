@@ -27,23 +27,28 @@ export const ZKW_CSS = `
 
 /* ───────── Toolbar ───────── */
 .zkw .tbar { height:52px; flex-shrink:0; display:flex; align-items:center; gap:14px; padding:0 16px; border-bottom:1px solid var(--rule); background:rgba(8,9,13,0.7); backdrop-filter:blur(12px); z-index:30; }
-.zkw .brand { display:flex; align-items:center; gap:9px; font-weight:700; font-size:14px; letter-spacing:-0.01em; }
-.zkw .brand .mk { width:22px; height:22px; border-radius:6px; background:linear-gradient(135deg,var(--violet),var(--violet-d)); display:flex; align-items:center; justify-content:center; color:#1a1330; font-weight:800; font-size:13px; box-shadow:0 2px 10px rgba(139,109,240,0.4); }
-.zkw .brand .sub { font-family:var(--mono); font-size:10px; color:var(--ink-faint); font-weight:500; margin-left:2px; }
+.zkw .brand { display:flex; align-items:center; gap:9px; }
+.zkw .brand .mk { width:24px; height:24px; border-radius:7px; background:linear-gradient(135deg,var(--violet),var(--violet-d)); display:flex; align-items:center; justify-content:center; color:#1a1330; font-weight:800; font-size:11px; letter-spacing:0.02em; box-shadow:0 2px 10px rgba(139,109,240,0.35); }
+.zkw .brand .bt { font-size:14px; font-weight:700; letter-spacing:-0.01em; color:var(--ink); }
 .zkw .tbar .spacer { flex:1; }
 .zkw .tbar .hint { font-family:var(--mono); font-size:10.5px; color:var(--ink-faint); white-space:nowrap; }
 .zkw .tbar .hint b { color:var(--ink-dim); font-weight:600; }
-.zkw .tbar .home { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:var(--ink-dim); cursor:pointer; padding:6px 12px; border-radius:8px; border:1px solid var(--rule-2); }
-.zkw .tbar .home:hover { color:var(--ink); border-color:var(--rule-3); }
+.zkw .tbar .home { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:var(--ink-dim); cursor:pointer; padding:5px 11px; border-radius:8px; border:1px solid var(--rule); transition:color .14s, border-color .14s, background .14s; }
+.zkw .tbar .home:hover { color:#d8c9ff; border-color:var(--violet); background:rgba(139,109,240,0.1); }
+.zkw .tbar .home .hic { display:inline-flex; }
+.zkw .tbar .home svg { width:14px; height:14px; }
 .zkw .tbar .ticon { width:30px; height:30px; border:1px solid var(--rule-2); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--ink-dim); cursor:pointer; }
 .zkw .tbar .ticon:hover { color:var(--ink); border-color:var(--rule-3); background:var(--panel-2); }
 .zkw .tbar .ticon svg { width:16px; height:16px; }
 
 /* ───────── Body grid ───────── */
 .zkw .body { flex:1; min-height:0; display:grid; grid-template-columns:296px 1fr; position:relative; }
+.zkw.rail-collapsed .rail { display:none; }
+.zkw.rail-collapsed .body { grid-template-columns:1fr; }
 
 /* ───────── Type glyphs ───────── */
 .zkw .g { width:15px; height:15px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; position:relative; }
+.zkw .g svg { width:100%; height:100%; color:inherit; }
 .zkw .g.space::before { content:''; width:11px; height:11px; border-radius:3px; background:currentColor; transform:rotate(45deg); }
 .zkw .g.moc::before { content:''; width:12px; height:12px; border-radius:50%; border:1.6px solid currentColor; }
 .zkw .g.moc::after { content:''; position:absolute; width:4px; height:4px; border-radius:50%; background:currentColor; }
@@ -60,6 +65,7 @@ export const ZKW_CSS = `
 .zkw .rail-head .meta { font-family:var(--mono); font-size:9.5px; color:var(--ink-faint); margin-left:auto; }
 .zkw .rail-head .add { width:22px; height:22px; border:1px solid var(--rule-2); border-radius:6px; display:flex; align-items:center; justify-content:center; color:var(--ink-faint); cursor:pointer; font-size:14px; }
 .zkw .rail-head .add:hover { color:var(--ink); border-color:var(--rule-3); }
+.zkw .rail-head .add svg { width:14px; height:14px; }
 .zkw .rail-scroll { flex:1; min-height:0; overflow-y:auto; padding:2px 0 18px; }
 
 .zkw .srow { display:flex; align-items:center; gap:8px; padding:7px 14px 6px; cursor:pointer; user-select:none; }
@@ -155,6 +161,10 @@ export const ZKW_CSS = `
 .zkw .createbar { display:flex; gap:8px; padding:16px 40px 0; flex-wrap:wrap; }
 .zkw .createbtn { font-size:12px; font-weight:600; padding:6px 12px; border-radius:8px; cursor:pointer; color:var(--ink-dim); background:var(--panel); border:1px solid var(--rule-2); white-space:nowrap; }
 .zkw .createbtn:hover { color:#d8c9ff; border-color:var(--violet); background:rgba(139,109,240,0.12); }
+.zkw .createbtn { display:inline-flex; align-items:center; gap:6px; }
+.zkw .createbtn svg { width:14px; height:14px; }
+.zkw .createbtn.cta { color:#d8c9ff; background:rgba(139,109,240,0.16); border-color:var(--violet); }
+.zkw .createbtn.cta:hover { background:rgba(139,109,240,0.26); }
 
 .zkw .ck-body { padding:24px 40px 0; }
 .zkw .sectitle { display:flex; align-items:center; gap:8px; margin:24px 0 12px; }
@@ -212,6 +222,20 @@ export const ZKW_CSS = `
 
 .zkw .empty { color:var(--ink-faint); font-size:12px; padding:8px 0; }
 
+/* ───────── 居中空态卡(空 MOC / 空笔记) ───────── */
+.zkw .ck-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:46px 24px 50px; border:1px dashed var(--rule-2); border-radius:14px; background:linear-gradient(180deg, var(--panel), var(--bg2)); margin-top:8px; }
+.zkw .ck-empty .ic { width:56px; height:56px; border-radius:16px; background:rgba(183,157,255,0.08); border:1px solid rgba(183,157,255,0.2); display:flex; align-items:center; justify-content:center; color:var(--violet); margin-bottom:16px; }
+.zkw .ck-empty .ic svg { width:26px; height:26px; }
+.zkw .ck-empty .et { font-size:15px; font-weight:700; color:var(--ink); margin-bottom:7px; letter-spacing:-0.01em; }
+.zkw .ck-empty .eh { font-size:12.5px; color:var(--ink-dim); line-height:1.65; max-width:360px; margin-bottom:18px; }
+.zkw .ck-empty .ebtns { display:flex; gap:9px; flex-wrap:wrap; justify-content:center; }
+
+/* ───────── 笔记正文预览(中间页内嵌 markdown) ───────── */
+.zkw .ws-noteprose { background:var(--panel); border:1px solid var(--rule); border-radius:12px; padding:20px 24px; max-width:820px; }
+.zkw .ws-noteprose > :first-child { margin-top:0; }
+.zkw .ws-noteprose > :last-child { margin-bottom:0; }
+.zkw .ws-noteprose img { max-width:100%; border-radius:8px; }
+
 /* ───────── 进度控制(项目页手动可拖) ───────── */
 .zkw .progctl { background:var(--panel); border:1px solid var(--rule-2); border-radius:12px; padding:16px; margin-bottom:8px; }
 .zkw .progctl .pbar { height:8px; border-radius:4px; background:var(--panel-3); overflow:hidden; }
@@ -242,6 +266,11 @@ export const ZKW_CSS = `
 .zkw .action .atext { flex:1; min-width:0; background:transparent; border:none; border-bottom:1px solid transparent; color:var(--ink); font-size:14px; outline:none; font-family:var(--font); padding:2px 0; }
 .zkw .action .atext:focus { border-bottom-color:var(--rule-2); }
 .zkw .action.done .atext { text-decoration:line-through; color:var(--ink-dim); }
+.zkw .action > input[type=checkbox] { margin-top:2px; flex-shrink:0; cursor:pointer; }
+.zkw .atext-view { font-size:14px; color:var(--ink); line-height:1.5; word-break:break-word; }
+.zkw .action.done .atext-view { text-decoration:line-through; color:var(--ink-dim); }
+.zkw .ws-tasklink { color:var(--text-accent); cursor:pointer; }
+.zkw .ws-tasklink:hover { text-decoration:underline; }
 .zkw .alink { flex:1; min-width:0; display:inline-flex; align-items:center; gap:7px; font-size:14px; color:var(--violet); cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .zkw .alink:hover { text-decoration:underline; }
 .zkw .alinkbtn, .zkw .aunlink { flex-shrink:0; width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center; border-radius:6px; font-size:12px; color:var(--ink-faint); cursor:pointer; border:1px solid transparent; }
@@ -260,12 +289,27 @@ export const ZKW_CSS = `
 .zkw .aicon:hover { color:var(--ink); background:var(--panel-2); }
 .zkw .aicon.off { opacity:0.25; pointer-events:none; }
 .zkw .aicon.del:hover { color:var(--rose); }
-.zkw .action-add { display:flex; align-items:center; gap:8px; margin-top:10px; }
+.zkw .action-add { display:flex; align-items:center; gap:8px; margin-top:10px; flex-wrap:wrap; }
+.zkw .action-add .adates { display:flex; align-items:center; gap:6px; flex-shrink:0; }
+.zkw .action-add .adate-ic { font-size:13px; line-height:1; }
+.zkw .action-add .adate { background:var(--panel-2); border:1px solid var(--rule-2); border-radius:8px; color:var(--ink); font-size:12px; font-family:var(--font); padding:6px 8px; outline:none; color-scheme:dark; cursor:pointer; }
+.zkw .action-add .adate:focus { border-color:var(--rule-3); }
+.zkw .action-add .aprio { flex-shrink:0; background:var(--panel-2); border:1px solid var(--rule-2); border-radius:8px; color:var(--ink); font-size:12px; font-family:var(--font); padding:6px 8px; outline:none; cursor:pointer; }
+.zkw .action-add .aprio:focus { border-color:var(--rule-3); }
 .zkw .action-add .atext { flex:1; background:var(--panel-2); border:1px solid var(--rule-2); border-radius:8px; color:var(--ink); font-size:13px; outline:none; font-family:var(--font); padding:8px 12px; }
 .zkw .action-add .atext:focus { border-color:var(--rule-3); }
 .zkw .achip { font-size:12px; font-weight:600; padding:8px 12px; border-radius:8px; cursor:pointer; white-space:nowrap; color:var(--ink-dim); border:1px solid var(--rule-2); }
 .zkw .achip:hover { color:var(--ink); border-color:var(--rule-3); }
 .zkw .achip.cta { color:#d8c9ff; background:rgba(139,109,240,0.18); border-color:var(--violet); }
+.zkw .action .anote { display:flex; align-items:baseline; gap:6px; font-size:12.5px; color:var(--ink-dim); cursor:pointer; line-height:1.45; }
+.zkw .action .anote:hover { color:var(--ink); }
+.zkw .action .anote .anote-mark { color:var(--ink-faint); flex-shrink:0; }
+.zkw .action .anote .adue { font-family:var(--mono); font-size:11px; color:var(--ink-dim); }
+.zkw .action .anote .adue.overdue { color:var(--rose); font-weight:600; }
+.zkw .action.done .anote { color:var(--ink-faint); }
+.zkw .action-inline { margin:8px 0 2px; }
+.zkw .action-inline .atext { width:100%; box-sizing:border-box; background:var(--panel-2); border:1px solid var(--rule-2); border-radius:8px; color:var(--ink); font-size:13px; outline:none; font-family:var(--font); padding:8px 12px; }
+.zkw .action-inline .atext:focus { border-color:var(--rule-3); }
 
 /* ───────── Detail deck ───────── */
 .zkw .scrim { position:absolute; inset:0; background:rgba(4,5,7,0.45); opacity:0; pointer-events:none; transition:opacity .22s; z-index:18; }
@@ -295,6 +339,10 @@ export const ZKW_CSS = `
 .zkw .dsec.row { display:flex; align-items:center; justify-content:space-between; gap:10px; }
 .zkw .dsec-add { font-family:var(--font); font-size:11px; font-weight:600; color:#d8c9ff; background:rgba(139,109,240,0.16); border:1px solid var(--violet); border-radius:7px; padding:4px 10px; cursor:pointer; text-transform:none; letter-spacing:0; }
 .zkw .dsec-add:hover { background:rgba(139,109,240,0.28); }
+.zkw .dsec-add.on { background:rgba(139,109,240,0.34); box-shadow:inset 0 0 0 1px var(--violet); }
+.zkw .dsec .dsec-ctls { display:flex; align-items:center; gap:8px; }
+.zkw .asort { background:var(--panel-2); border:1px solid var(--rule-2); border-radius:7px; color:var(--ink); font-family:var(--font); font-size:11px; padding:4px 8px; outline:none; cursor:pointer; text-transform:none; letter-spacing:0; }
+.zkw .asort:focus { border-color:var(--rule-3); }
 .zkw .dchip-x { color:var(--ink-faint); cursor:pointer; font-size:9px; margin-left:1px; }
 .zkw .dchip-x:hover { color:var(--rose); }
 .zkw .prose { font-size:14px; line-height:1.75; color:var(--ink); }

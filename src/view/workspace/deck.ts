@@ -1,9 +1,8 @@
 import { Component, MarkdownRenderer, TFile } from "obsidian";
 import { WorkspaceNode, WSProjectNode, WSMocNode } from "src/types/workspace";
-import { projectProgress } from "src/workspace/WorkspaceStore";
 import { FilePickerModal } from "src/modal/filePickerModal";
 import { t } from "src/lang/helper";
-import { RenderCtx, TYPE_COLOR, statusLabel, STATUS_COLOR, relTime } from "./render";
+import { RenderCtx, TYPE_COLOR, statusLabel, STATUS_COLOR, relTime, progressFor, nextActionText } from "./render";
 
 const TYPE_LABEL: Record<string, string> = { space: 'SPACE', moc: 'MOC', project: 'PROJECT', note: 'NOTE', map: 'MAP' };
 
@@ -16,6 +15,7 @@ export class Deck {
     private foot: HTMLElement;
     private pinned = false;
     private isOpen = false;
+    private currentNode: WorkspaceNode | null = null;
 
     constructor(parent: HTMLElement, private ctx: RenderCtx, private owner: Component) {
         this.scrim = parent.createDiv({ cls: 'scrim' });
@@ -27,6 +27,7 @@ export class Deck {
     }
 
     open(node: WorkspaceNode) {
+        this.currentNode = node;
         this.head.empty(); this.body.empty(); this.foot.empty();
 
         // head
@@ -79,7 +80,7 @@ export class Deck {
                 return cell;
             };
             mi(t('ws status'), statusLabel(p.status), STATUS_COLOR[p.status]);
-            const pct = projectProgress(p);
+            const pct = progressFor(this.ctx, p);
             const progCell = mi(t('ws progress'), pct === null ? '—' : `${pct}%`);
             if (pct !== null) {
                 const bar = progCell.createDiv({ cls: 'dbar' });
@@ -89,7 +90,7 @@ export class Deck {
                 });
             }
             mi(t('ws updated'), relTime(p.updatedAt));
-            mi(t('ws next'), p.nextAction || '—');
+            mi(t('ws next'), nextActionText(this.ctx, p) || '—');
 
             if (p.checklist?.length) {
                 this.body.createDiv({ cls: 'dsec', text: t('ws checklist') });
@@ -175,8 +176,16 @@ export class Deck {
 
     close() {
         this.isOpen = false;
+        this.currentNode = null;
         this.scrim.removeClass('show');
         this.panel.removeClass('open');
+    }
+
+    /** 当前正展示的项目背书笔记被外部改动 → 重渲染 deck */
+    refreshIfShowing(filePath: string): void {
+        if (this.isOpen && this.currentNode && (this.currentNode as any).filePath === filePath) {
+            this.open(this.currentNode);
+        }
     }
 
     handleEsc(): boolean {

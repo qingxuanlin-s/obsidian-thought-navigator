@@ -8,7 +8,6 @@ import { expandGraphModal } from "src/modal/expandGraphModal";
 import { MOCSelectorModal } from "src/modal/mocSelectorModal";
 import { NoteSearchModal } from "src/modal/noteSearchModal";
 import { convertMOCToZKNodes, createMOCTreeNode, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX, MOCParseResult, MOCTreeNode, NODE_FLAG_SEPARATED, NODE_FLAG_SIDE_PINNED, parseMOCStructure, saveMOCStructure, stripMocSuffix } from "src/utils/utils";
-import { FolderDrawer } from "src/view/folderDrawer";
 import { WorkspacePanel } from "src/view/workspace/WorkspacePanel";
 import { WSMocNode } from "src/types/workspace";
 import { ScratchpadDrawer } from "src/view/scratchpadDrawer";
@@ -205,12 +204,11 @@ export class ZKIndexView extends FileView {
     // 内嵌工作区模式(typed-node 壳):图谱 ⇄ 工作区 在同一视图内切换
     private workspacePanel: WorkspacePanel | null = null;
     private workspaceMode = false;
-    private folderDrawer: FolderDrawer | null = null;
     private scratchDrawer: ScratchpadDrawer | null = null;
     // 节点详情侧栏(单击节点 → 跟随展示备注/笔记预览)
     private detailPanel: NodeDetailPanel | null = null;
     private detailPanelLastId: string | null = null;
-    private vaultIndexUnsubscribe: (() => void) | null = null;
+    private workspaceStoreUnsubscribe: (() => void) | null = null;
 
     // 性能优化：追踪事件监听器初始化状态，避免重复添加
     private branchGraphListenersInitialized: boolean = false;
@@ -1345,13 +1343,6 @@ export class ZKIndexView extends FileView {
             const indexMermaidDiv = containerEl.createDiv("zk-index-mermaid-container");
             indexMermaidDiv.id = "zk-index-mermaid-container";
 
-            // 文件夹抽屉（绝对定位，覆盖在图上）——数据源为 WorkspaceStore
-            if (this.plugin.workspaceStore) {
-                this.folderDrawer = new FolderDrawer(
-                    containerEl, this.app, this.plugin, this.plugin.workspaceStore
-                );
-            }
-
             // 临时工作区抽屉(左侧),跨 MOC 共享的节点暂存
             if (this.plugin.scratchpad) {
                 this.scratchDrawer = new ScratchpadDrawer(
@@ -1386,8 +1377,8 @@ export class ZKIndexView extends FileView {
             if (this.plugin.settings.detailPanelPinned) this.detailPanel.setPinned(true);
 
             // 订阅工作区变化,实时刷新项目徽章(挂载状态现以 WorkspaceStore 为准)
-            if (this.plugin.workspaceStore && !this.vaultIndexUnsubscribe) {
-                this.vaultIndexUnsubscribe = this.plugin.workspaceStore.onChange(() => {
+            if (this.plugin.workspaceStore && !this.workspaceStoreUnsubscribe) {
+                this.workspaceStoreUnsubscribe = this.plugin.workspaceStore.onChange(() => {
                     this.refreshProjectBadge(this.plugin.settings.mocCurrentFile);
                 });
             }
@@ -1398,6 +1389,8 @@ export class ZKIndexView extends FileView {
                     app: this.app,
                     store: this.plugin.workspaceStore,
                     owner: this,
+                    projectFolderPath: this.plugin.settings.projectFolderPath,
+                    taskPrefix: this.plugin.settings.wsTaskPrefix,
                     onExitToGraph: () => this.setWorkspaceMode(false),
                     onOpenMoc: (node: WSMocNode) => this.openMocFromWorkspace(node),
                 });
@@ -1511,12 +1504,6 @@ export class ZKIndexView extends FileView {
         workspaceBtn.setIcon("layout-grid").setTooltip(t("ws Workspace"));
         workspaceBtn.onClick(() => {
             this.setWorkspaceMode(!this.workspaceMode);
-        });
-
-        const folderBtn = new ExtraButtonComponent(rightBtns);
-        folderBtn.setIcon("folder-tree").setTooltip(t("Folders"));
-        folderBtn.onClick(() => {
-            this.folderDrawer?.toggle();
         });
 
         const searchBtn = new ExtraButtonComponent(rightBtns);
@@ -9334,10 +9321,10 @@ cy.fit(null, 40);
         // 保存插件设置
         this.plugin.saveData(this.plugin.settings);
 
-        // 取消 VaultIndex 订阅
-        if (this.vaultIndexUnsubscribe) {
-            this.vaultIndexUnsubscribe();
-            this.vaultIndexUnsubscribe = null;
+        // 取消 WorkspaceStore 订阅
+        if (this.workspaceStoreUnsubscribe) {
+            this.workspaceStoreUnsubscribe();
+            this.workspaceStoreUnsubscribe = null;
         }
 
         this.scratchDrawer = null;

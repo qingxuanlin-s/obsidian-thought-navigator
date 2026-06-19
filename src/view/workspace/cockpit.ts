@@ -1,8 +1,8 @@
 import { WSSpaceNode, WSMocNode, WSProjectNode, WorkspaceNode, FRAMEWORKS } from "src/types/workspace";
-import { projectProgress } from "src/workspace/WorkspaceStore";
 import { t } from "src/lang/helper";
-import { RenderCtx, relTime, glyph, statusLabel, fwChip, bucketLabel, STATUS_COLOR } from "./render";
+import { RenderCtx, relTime, glyph, statusLabel, fwChip, bucketLabel, STATUS_COLOR, progressFor, nextActionText, renderTaskText } from "./render";
 import { promptTitle } from "./modals";
+import { FilePickerModal } from "src/modal/filePickerModal";
 
 const FW_CLASS: Record<string, string> = { para: 'para', overview: 'overview', custom: 'custom' };
 // 桶 → 卡片样式
@@ -44,7 +44,7 @@ export function renderCockpit(container: HTMLElement, ctx: RenderCtx, space: WSS
     // ---------- Lens tabs(可过滤) ----------
     const tabs = ck.createDiv({ cls: 'lenstabs' });
 
-    // ---------- 新建入口(空 Space 也能从零搭起) ----------
+    // ---------- 入口:新建项目(工作区自有) + 挂载已有笔记/MOC(指向真实文件) ----------
     const createbar = ck.createDiv({ cls: 'createbar' });
     const mkCreate = (label: string, fn: () => void) => {
         const b = createbar.createSpan({ cls: 'createbtn', text: '+ ' + label });
@@ -54,14 +54,16 @@ export function renderCockpit(container: HTMLElement, ctx: RenderCtx, space: WSS
         const n = await ctx.store.createProject(space.id, title);
         ctx.open({ kind: 'project', id: n.id });
     }));
-    mkCreate(t('ws new moc'), () => promptTitle(ctx.app, t('ws new moc'), async (title) => {
-        const n = await ctx.store.createMoc(space.id, title);
-        ctx.open({ kind: 'moc', id: n.id });
-    }));
-    mkCreate(t('ws new note'), () => promptTitle(ctx.app, t('ws new note'), async (title) => {
-        const n = await ctx.store.createNote(space.id, title);
-        ctx.open({ kind: 'note', id: n.id });
-    }));
+    // 笔记与 MOC 不再凭空建虚拟节点:挑库里已存在的文件挂进来(`.moc.md` → MOC,其余 → 笔记)
+    mkCreate(t('ws mount existing'), () => {
+        const mounted = ctx.store.containerChildren(space.id)
+            .map(c => (c as any).filePath as string | undefined)
+            .filter((p): p is string => !!p);
+        new FilePickerModal(ctx.app, space.title, mounted, async (paths) => {
+            await ctx.store.mountFilesToContainer(space.id, paths);
+            ctx.refresh();
+        }).open();
+    });
 
     const body = ck.createDiv({ cls: 'ck-body' });
     const validLens = initialLens && (initialLens === 'all' || fw.buckets.some(b => b.id === initialLens));
@@ -162,13 +164,14 @@ function renderProjectCard(grid: HTMLElement, ctx: RenderCtx, p: WSProjectNode):
     const pname = card.createDiv({ cls: 'pname link', text: p.title });
     pname.onclick = (e) => { e.stopPropagation(); ctx.open({ kind: 'project', id: p.id }); };
 
-    if (p.nextAction) {
+    const na = nextActionText(ctx, p);
+    if (na) {
         const next = card.createDiv({ cls: 'pnext' });
         next.createSpan({ cls: 'na', text: 'NEXT' });
-        next.createSpan({ text: p.nextAction });
+        renderTaskText(next.createSpan(), ctx, na);
     }
 
-    const pct = projectProgress(p);
+    const pct = progressFor(ctx, p);
     if (pct !== null) {
         const bar = card.createDiv({ cls: 'pbar' });
         bar.createEl('i').setCssStyles({

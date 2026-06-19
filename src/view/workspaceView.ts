@@ -26,6 +26,8 @@ export class ZKWorkspaceView extends ItemView {
             app: this.app,
             store: this.plugin.workspaceStore!,
             owner: this,
+            projectFolderPath: this.plugin.settings.projectFolderPath,
+            taskPrefix: this.plugin.settings.wsTaskPrefix,
         });
     }
 

@@ -1,7 +1,6 @@
 import { WSSpaceNode, WorkspaceNode, WSProjectNode, FRAMEWORKS, OpenTarget } from "src/types/workspace";
-import { projectProgress } from "src/workspace/WorkspaceStore";
 import { t } from "src/lang/helper";
-import { RenderCtx, glyph, fwChip, bucketLabel, STATUS_COLOR } from "./render";
+import { RenderCtx, glyph, fwChip, bucketLabel, STATUS_COLOR, progressFor } from "./render";
 
 const FW_CLASS: Record<string, string> = { para: 'para', overview: 'overview', custom: 'custom' };
 
@@ -29,6 +28,40 @@ export class SpacesTree {
     private isOpen(key: string) { return !this.collapsed.has(key); }
 
     ensureDefaultExpanded() { /* collapsed 为空 = 全部展开 */ }
+
+    /** 枚举当前所有可折叠的 key(Space / 桶 / 有子节点的节点) */
+    private allCollapsibleKeys(): string[] {
+        const keys: string[] = [];
+        for (const space of this.ctx.store.getSpaces()) {
+            keys.push('space:' + space.id);
+            const nodes = this.ctx.store.nodesInSpace(space.id);
+            const parentMap = this.buildParentMap(space.id);
+            const fw = FRAMEWORKS[space.framework];
+            for (const bucket of fw.buckets) {
+                const roots = nodes.filter(n => bucket.match(n) && parentMap.get(n.id) == null);
+                if (roots.length) keys.push(`bucket:${space.id}:${bucket.id}`);
+            }
+            for (const n of nodes) {
+                if (nodes.some(c => parentMap.get(c.id) === n.id)) keys.push('node:' + n.id);
+            }
+        }
+        return keys;
+    }
+
+    /** 一键:全部已折叠则展开,否则折叠全部 */
+    toggleCollapseAll() {
+        const keys = this.allCollapsibleKeys();
+        const allCollapsed = keys.length > 0 && keys.every(k => this.collapsed.has(k));
+        if (allCollapsed) this.collapsed.clear();
+        else this.collapsed = new Set(keys);
+        this.render();
+    }
+
+    /** 当前是否处于"全部折叠"态(给按钮图标用) */
+    isAllCollapsed(): boolean {
+        const keys = this.allCollapsibleKeys();
+        return keys.length > 0 && keys.every(k => this.collapsed.has(k));
+    }
 
     render() {
         this.container.empty();
@@ -125,7 +158,7 @@ export class SpacesTree {
         if (n.type === 'project') {
             const p = n as WSProjectNode;
             row.createSpan({ cls: `sd ${p.status}` });
-            const pct = projectProgress(p);
+            const pct = progressFor(this.ctx, p);
             if (pct !== null) {
                 const pg = row.createDiv({ cls: 'npg' });
                 pg.createEl('i').setCssStyles({
@@ -138,8 +171,8 @@ export class SpacesTree {
             if (agg) row.createSpan({ cls: 'mcount', text: String(agg) });
         }
 
-        // 行空白:开右侧 deck,同时中间主区跟随到该节点自己的页面(留在面板内,不跳图谱)
-        row.onclick = () => { this.ctx.openDeck(n); this.ctx.openInline(this.ctx.store.targetFor(n)); };
+        // 行空白:面板内预览(中间主区渲染该节点页面 + 侧栏选中),和打开普通 MOC 一致,不跳图谱、不弹 deck
+        row.onclick = () => this.ctx.openInline(this.ctx.store.targetFor(n));
 
         if (open && kids.length) kids.forEach(k => this.renderNode(k, depth + 1, childrenOf));
     }

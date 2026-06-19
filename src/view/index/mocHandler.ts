@@ -231,7 +231,7 @@ export class MOCHandler {
         let newID = '';
         await this.modifyMOCData(mocFile, (mocData) => {
             newID = MOCHandler.insertChildNode(mocData, parentID, title, kind);
-            this.applyHeadlessAutoLayout(mocData);
+            this.applyHeadlessAutoLayout(mocData, [newID]);
         });
         return newID;
     }
@@ -252,7 +252,7 @@ export class MOCHandler {
             for (const item of items) {
                 newIDs.push(MOCHandler.insertChildNode(mocData, item.parent, item.title, item.kind ?? 'text'));
             }
-            this.applyHeadlessAutoLayout(mocData);
+            this.applyHeadlessAutoLayout(mocData, newIDs);
         });
         return newIDs;
     }
@@ -323,7 +323,7 @@ export class MOCHandler {
                     mocData.nodePositions[newId] = { x: item.position.x, y: item.position.y };
                 }
             }
-            this.applyHeadlessAutoLayout(mocData);
+            this.applyHeadlessAutoLayout(mocData, Array.from(localToReal.values()));
         });
         return localToReal;
     }
@@ -395,19 +395,45 @@ export class MOCHandler {
     }
 
     /**
-     * 无头(CLI/脚本)场景下,直接为 auto 文件算好居中坐标写入 nodePositions,
+     * 无头(CLI/脚本)场景下,直接为 auto 节点算好居中坐标写入 nodePositions,
      * 使文件创建时即居中——视图打开无需再 reflow,避免"先歪后居中"的闪动。
      * 节点尺寸用文本长度估算;居中的对称性不依赖精确尺寸,故根节点必然居中。
-     * 仅处理 auto 文件;已分离的节点(NODE_FLAG_SEPARATED)保留其坐标。
+     *
+     * 既处理整库 auto 文件,也处理 free 文件里的 auto 子树岛(nodeLayoutOverrides 把
+     * 某子树标为 auto)——后者以该岛顶点为固定锚点(保留其坐标),只重排其下的 auto 后代,
+     * 与视图 relayoutAutoLayoutSiblings 的"free 父锚点 + auto 子树"语义一致。
+     * 不这么做的话,CLI 往 free 文件的 auto 岛里加节点会完全不布局、和既有兄弟堆叠重叠。
+     *
+     * @param newNodeIds 本次新增的节点 ID(可选)。给定时只重排"含新节点的 auto 岛",
+     *   避免动到用户手动摆好的其它 auto 岛;省略时重排全部 auto 岛。
      */
-    private applyHeadlessAutoLayout(mocData: MOCParseResult): void {
-        if (mocData.nodeLayoutStyle !== 'auto') return;
+    private applyHeadlessAutoLayout(mocData: MOCParseResult, newNodeIds?: string[]): void {
         const tree: any[] = (mocData as any).nodes;
         if (!tree?.length) return;
 
+        const fileDefault: 'auto' | 'free' = mocData.nodeLayoutStyle === 'auto' ? 'auto' : 'free';
+        const overrides: Record<string, 'auto' | 'free'> = (mocData as any).nodeLayoutOverrides || {};
+        const hasAutoOverride = Object.values(overrides).some((v) => v === 'auto');
+        // 整库 free 且无任何 auto 岛 → 没有需要自动排布的节点,直接返回(自由节点坐标由调用方给)。
+        if (fileDefault !== 'auto' && !hasAutoOverride) return;
+
+        // 沿父级链解析有效布局风格(与视图 getEffectiveNodeLayoutStyle 同逻辑)。
+        const effectiveStyle = (nodeId: string): 'auto' | 'free' => {
+            let cur = nodeId;
+            while (cur.length > 0) {
+                const o = overrides[cur];
+                if (o !== undefined) return o;
+                const parts = cur.split('.');
+                if (parts.length <= 1) break;
+                cur = parts.slice(0, -1).join('.');
+            }
+            return fileDefault;
+        };
+        const isAuto = (id: string) => effectiveStyle(id) === 'auto';
+
         const nodes: Record<string, AutoLayoutNodeInput> = {};
         const parentById: Record<string, string | undefined> = {};
-        const childrenById: Record<string, string[]> = {};
+        const childrenById: Record<string, string[]> = {};  // 仅含 auto 子节点(供引擎下行)
         const rootIds: string[] = [];
 
         // 用真实 DOM 测量(与视图同一套字体/算法),使 CLI 产出的尺寸=视图实测尺寸,
@@ -436,9 +462,11 @@ export class MOCHandler {
                 };
                 dirHint[id] = { x: depth * 260, y: order * 150 };
                 parentById[id] = parentId;
-                childrenById[id] = [];
-                if (parentId) childrenById[parentId].push(id);
-                else rootIds.push(id);
+                if (!childrenById[id]) childrenById[id] = [];
+                // 引擎只沿 auto 子链下行:free 子树(包括 auto 文件里被 override 成 free 的)
+                // 不进父节点排布列表,保留其自身坐标。
+                if (parentId && isAuto(id)) (childrenById[parentId] ||= []).push(id);
+                if (!parentId) rootIds.push(id);
                 order++;
                 walk(n.children || [], id, depth + 1);
             }
@@ -446,15 +474,49 @@ export class MOCHandler {
         walk(tree, undefined, 0);
 
         const realMocRootIds = new Set<string>(rootIds);
-        const preset = normalizeLayoutPreset(this.plugin.settings.autoLayoutDefaultGrowthDirection);
-        // 用 dirHint 仅决定方向;ignore 全部非根 → 实际坐标由引擎对称重排(忽略 hint 的位置)
-        const ignore = new Set<string>(Object.keys(nodes).filter((id) => !realMocRootIds.has(id)));
 
+        // 锚点 = 各 auto 子树岛的顶点:岛内最高的 auto 节点(其父非 auto,即 free 或不存在)。
+        // 引擎以锚点为根、保留其坐标,向下重排整岛的 auto 后代。
+        const islandTopOf = (id: string): string => {
+            let cur = id;
+            while (true) {
+                const p = parentById[cur];
+                if (!p || !isAuto(p)) return cur;
+                cur = p;
+            }
+        };
+        // 收集某锚点下的全部 auto 后代(不含锚点自身)→ 放进 ignore 集让引擎重算坐标。
+        const autoDescendantsOf = (anchor: string): string[] => {
+            const out: string[] = [];
+            const stack = [...(childrenById[anchor] || [])];
+            while (stack.length) {
+                const id = stack.pop()!;
+                out.push(id);
+                for (const c of childrenById[id] || []) stack.push(c);
+            }
+            return out;
+        };
+
+        const seedIds = (newNodeIds && newNodeIds.length)
+            ? newNodeIds.filter((id) => nodes[id] && isAuto(id))
+            // 未指定新增节点:重排所有 auto 岛(岛顶点 = 自身 auto 但父非 auto)。
+            : Object.keys(nodes).filter((id) => isAuto(id) && !isAuto(parentById[id] || '__none__'));
+        const anchors = new Set<string>(seedIds.map(islandTopOf));
+        if (anchors.size === 0) { measurer?.destroy(); return; }
+
+        const preset = normalizeLayoutPreset(this.plugin.settings.autoLayoutDefaultGrowthDirection);
         const merged: Record<string, { x: number; y: number }> = {};
-        for (const rootId of rootIds) {
-            nodes[rootId].position = { x: 0, y: 0 };
+        for (const anchor of anchors) {
+            // 锚点用其真实保存坐标作为放置起点(整库 auto 时根可能尚无坐标 → 退回原点);
+            // 引擎按 nodes[anchor].position 放根,围绕它对称重排后代。
+            nodes[anchor].position = mocData.nodePositions?.[anchor]
+                ? { ...mocData.nodePositions[anchor] }
+                : { x: 0, y: 0 };
+            // 岛内 auto 后代全部进 ignore → 用引擎算出的坐标(关闭旧空位、给新兄弟让位),
+            // 而非各自保留旧坐标(那会让新增节点直接堆在既有兄弟上)。
+            const ignore = new Set<string>(autoDescendantsOf(anchor));
             const positions = computeAutoLayout({
-                relayoutRootId: rootId,
+                relayoutRootId: anchor,
                 nodes,
                 parentById,
                 childrenById,

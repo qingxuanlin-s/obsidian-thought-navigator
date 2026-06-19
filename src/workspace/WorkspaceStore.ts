@@ -2,7 +2,7 @@ import { App, Component, DataAdapter, TFile } from "obsidian";
 import {
     WorkspaceNode, WSLink, WSSpaceNode, WSMocNode, WSProjectNode, WSNoteNode,
     WorkspaceStoreFile, FrameworkId, OpenTarget, targetFor, ChecklistItem,
-    ProjectAction, LinkType,
+    LinkType,
 } from "src/types/workspace";
 
 /** id 生成:`wsn_` + 8 位 base36 + 时间戳尾 */
@@ -18,6 +18,11 @@ function baseNameNoExt(path: string): string {
     return base.replace(/\.[^.]+$/, '');
 }
 
+/** 清掉文件名非法字符,作为新建笔记的 basename */
+function sanitizeFileName(title: string): string {
+    return title.replace(/[\\/:*?"<>|#^[\]]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 type ChangeListener = () => void;
 
 async function readStore(adapter: DataAdapter, storePath: string): Promise<WorkspaceStoreFile> {
@@ -30,6 +35,9 @@ async function readStore(adapter: DataAdapter, storePath: string): Promise<Works
             version: 1,
             nodes: parsed.nodes,
             links: Array.isArray(parsed.links) ? parsed.links : [],
+            // 关键:透传已落盘的迁移版本号,否则每次 reload 都被视作 0、
+            // 触发 ensureWorkspaceSeed 重迁并覆盖用户新建数据
+            migrationVersion: typeof parsed.migrationVersion === 'number' ? parsed.migrationVersion : 0,
         };
     } catch (e) {
         console.warn('[zk-navigation] workspace.json 读取失败:', storePath, e);
@@ -41,7 +49,7 @@ async function readStore(adapter: DataAdapter, storePath: string): Promise<Works
  * 工作区 typed-node + link 的内存存储。
  *
  * 持久化:整份数据存在 storePath(插件数据目录下的 workspace.json)。
- * 写路径:caller → store.commit(mutator) → 落盘 → emit。镜像 VaultIndex 约定。
+ * 写路径:caller → store.commit(mutator) → 落盘 → emit。镜像旧 VaultIndex 的提交约定。
  */
 export class WorkspaceStore extends Component {
     private app: App;
@@ -70,7 +78,7 @@ export class WorkspaceStore extends Component {
         this.nodes.clear();
         for (const n of data.nodes) this.nodes.set(n.id, n);
         this.links = data.links.filter(l => this.nodes.has(l.from) && this.nodes.has(l.to));
-        this.migrationVersion = (data as any).migrationVersion ?? 0;
+        this.migrationVersion = data.migrationVersion ?? 0;
         this.emitChange();
     }
 
@@ -96,12 +104,19 @@ export class WorkspaceStore extends Component {
             version: 1,
             nodes: Array.from(this.nodes.values()),
             links: this.links,
+            migrationVersion: this.migrationVersion,
         };
-        (data as any).migrationVersion = this.migrationVersion;
         await this.app.vault.adapter.write(this.storePath, JSON.stringify(data, null, 2));
     }
 
     getMigrationVersion(): number { return this.migrationVersion; }
+
+    /** 仅更新迁移版本号并落盘(不动节点/边),用于"无新数据可迁但要记录已处理过本版本" */
+    async setMigrationVersion(v: number): Promise<void> {
+        if (this.migrationVersion === v) return;
+        this.migrationVersion = v;
+        await this.flush();
+    }
 
     /** 整体替换数据并记录迁移版本号(用于自动重迁移) */
     async resetTo(nodes: WorkspaceNode[], links: WSLink[], migrationVersion: number): Promise<void> {
@@ -345,9 +360,9 @@ export class WorkspaceStore extends Component {
     // ---------- 容器写操作(文件夹抽屉用,Option A:MOC 当容器)----------
 
     /**
-     * 把一批 vault 文件挂到容器(MOC 或 Space)下。
-     * - 文件无对应节点 → 就地建 note 节点(归到容器所在 Space)。
-     * - 容器是 MOC → 加 partOf 链(已存在自动去重,支持一个文件多父)。
+     * 把一批已存在的 vault 文件挂到容器(MOC 或 Space)下。
+     * - 文件无对应节点 → 按扩展名就地建节点:`.moc.md`/`.moc` → moc 节点,其余 → note 节点(都指向真实文件)。
+     * - 容器是 MOC → moc 子节点加 childMoc 链、其余加 partOf 链(去重,支持一个文件多父)。
      * - 容器是 Space → 仅置 spaceId,作为该 Space 顶层节点(无容器边)。
      * 返回新建的节点数。
      */
@@ -355,6 +370,7 @@ export class WorkspaceStore extends Component {
         const container = this.nodes.get(containerId);
         if (!container) return 0;
         const spaceId = container.type === 'space' ? container.id : container.spaceId;
+        const isMocPath = (p: string) => p.endsWith('.moc.md') || p.endsWith('.moc');
         let added = 0;
         await this.commit(ctx => {
             for (const path of paths) {
@@ -362,16 +378,15 @@ export class WorkspaceStore extends Component {
                 let node = this.getNodeByPath(path);
                 if (!node) {
                     const now = Date.now();
-                    const n: WSNoteNode = {
-                        id: genNodeId(), type: 'note', spaceId,
-                        title: baseNameNoExt(path), filePath: path, createdAt: now, updatedAt: now,
-                    };
+                    const n: WorkspaceNode = isMocPath(path)
+                        ? { id: genNodeId(), type: 'moc', spaceId, title: baseNameNoExt(path).replace(/\.moc$/, ''), filePath: path, createdAt: now, updatedAt: now }
+                        : { id: genNodeId(), type: 'note', spaceId, title: baseNameNoExt(path), filePath: path, createdAt: now, updatedAt: now };
                     ctx.put(n);
                     node = n;
                     added++;
                 }
                 if (container.type === 'moc') {
-                    ctx.addLink({ from: node.id, to: containerId, type: 'partOf' });
+                    ctx.addLink({ from: node.id, to: containerId, type: node.type === 'moc' ? 'childMoc' : 'partOf' });
                 } else {
                     ctx.updateQuiet(node.id, x => { if (x.type !== 'space') x.spaceId = spaceId; });
                 }
@@ -483,24 +498,34 @@ export class WorkspaceStore extends Component {
         return node;
     }
 
-    async createMoc(spaceId: string, title: string): Promise<WSMocNode> {
-        const id = genNodeId(); const now = Date.now();
-        const node: WSMocNode = {
-            id, type: 'moc', spaceId, title: title.trim() || '未命名 MOC',
-            createdAt: now, updatedAt: now,
-        };
-        await this.commit(ctx => ctx.put(node));
-        return node;
-    }
+    /**
+     * 确保项目有背书 markdown 笔记(next action 的 `- [ ]` 写在这里)。
+     * 已绑定且文件存在 → 直接返回;否则在 folderPath 下按标题建文件,回写 filePath(不刷 updatedAt)。
+     */
+    async ensureProjectFile(projectId: string, folderPath: string): Promise<TFile | null> {
+        const p = this.nodes.get(projectId);
+        if (!p || p.type !== 'project') return null;
+        const existing = p.filePath ? this.app.vault.getAbstractFileByPath(p.filePath) : null;
+        if (existing instanceof TFile) return existing;
 
-    async createNote(spaceId: string, title: string): Promise<WSNoteNode> {
-        const id = genNodeId(); const now = Date.now();
-        const node: WSNoteNode = {
-            id, type: 'note', spaceId, title: title.trim() || '未命名笔记',
-            createdAt: now, updatedAt: now,
-        };
-        await this.commit(ctx => ctx.put(node));
-        return node;
+        const folder = (folderPath || '').replace(/^\/+|\/+$/g, '');
+        // 逐级建文件夹:config/workspace 这类父级不存在时,一次性 createFolder 在部分版本会失败
+        if (folder) {
+            let cur = '';
+            for (const part of folder.split('/').filter(Boolean)) {
+                cur = cur ? `${cur}/${part}` : part;
+                if (!this.app.vault.getAbstractFileByPath(cur)) {
+                    try { await this.app.vault.createFolder(cur); } catch { /* 并发/已存在,忽略 */ }
+                }
+            }
+        }
+        const base = sanitizeFileName(p.title) || 'project';
+        const dir = folder ? folder + '/' : '';
+        let path = `${dir}${base}.md`;
+        for (let i = 2; this.app.vault.getAbstractFileByPath(path); i++) path = `${dir}${base} ${i}.md`;
+        const file = await this.app.vault.create(path, `# ${p.title}\n\n`);
+        await this.commit(ctx => ctx.updateQuiet(projectId, n => { (n as WSProjectNode).filePath = file.path; }));
+        return file;
     }
 
     async setFramework(spaceId: string, framework: FrameworkId): Promise<void> {
@@ -515,56 +540,12 @@ export class WorkspaceStore extends Component {
         }));
     }
 
-    async setNextAction(id: string, nextAction: string): Promise<void> {
-        await this.commit(ctx => ctx.update(id, n => {
-            if (n.type === 'project') n.nextAction = nextAction;
-        }));
-    }
-
-    /** 手动设进度百分比;传 null 清除手动值,回退到 checklist 推导 */
+    /** 手动设进度百分比;传 null 清除手动值,回退到任务/ checklist 推导 */
     async setProgress(id: string, pct: number | null): Promise<void> {
         await this.commit(ctx => ctx.update(id, n => {
             if (n.type !== 'project') return;
             if (pct === null) delete n.progress;
             else n.progress = Math.max(0, Math.min(100, Math.round(pct)));
-        }));
-    }
-
-    // ---------- NEXT ACTION 动作列表 ----------
-
-    async addAction(projectId: string, init?: { text?: string; noteId?: string; notePath?: string }): Promise<void> {
-        await this.commit(ctx => ctx.update(projectId, n => {
-            if (n.type !== 'project') return;
-            if (!n.actions) n.actions = [];
-            n.actions.push({ id: genNodeId(), text: (init?.text || '').trim(), noteId: init?.noteId, notePath: init?.notePath, status: 'todo' });
-        }));
-    }
-
-    async updateAction(projectId: string, actionId: string, patch: Partial<ProjectAction>): Promise<void> {
-        await this.commit(ctx => ctx.update(projectId, n => {
-            if (n.type !== 'project' || !n.actions) return;
-            const a = n.actions.find(x => x.id === actionId);
-            if (!a) return;
-            Object.assign(a, patch);
-            if (typeof a.progress === 'number') a.progress = Math.max(0, Math.min(100, Math.round(a.progress)));
-        }));
-    }
-
-    async removeAction(projectId: string, actionId: string): Promise<void> {
-        await this.commit(ctx => ctx.update(projectId, n => {
-            if (n.type !== 'project' || !n.actions) return;
-            n.actions = n.actions.filter(a => a.id !== actionId);
-        }));
-    }
-
-    /** 上移/下移动作:dir = -1 上、+1 下 */
-    async moveAction(projectId: string, actionId: string, dir: -1 | 1): Promise<void> {
-        await this.commit(ctx => ctx.update(projectId, n => {
-            if (n.type !== 'project' || !n.actions) return;
-            const i = n.actions.findIndex(a => a.id === actionId);
-            const j = i + dir;
-            if (i < 0 || j < 0 || j >= n.actions.length) return;
-            [n.actions[i], n.actions[j]] = [n.actions[j], n.actions[i]];
         }));
     }
 
@@ -630,39 +611,10 @@ export class WorkspaceMutation {
     }
 }
 
-/** progress 半自动:有 checklist 才算,否则 null(不显示进度条) */
+/** progress 半自动:有 checklist 才算,否则 null(不显示进度条)。任务态进度在 render 层结合背书笔记 `- [ ]` 计算。 */
 export function progressOf(checklist?: ChecklistItem[]): number | null {
     if (!checklist || !checklist.length) return null;
     return Math.round(checklist.filter(i => i.done).length / checklist.length * 100);
-}
-
-/** 单个动作的完成比例:已完成记 100,否则取手动 progress,再否则进行中记 50 */
-export function actionPct(a: ProjectAction): number {
-    if (a.status === 'done') return 100;
-    if (typeof a.progress === 'number') return Math.max(0, Math.min(100, a.progress));
-    return a.status === 'doing' ? 50 : 0;
-}
-
-/** 项目进度:手动 progress 优先 → 动作列表均值 → checklist 推导 */
-export function projectProgress(p: WSProjectNode): number | null {
-    if (typeof p.progress === 'number') return Math.max(0, Math.min(100, p.progress));
-    if (p.actions && p.actions.length) {
-        return Math.round(p.actions.reduce((s, a) => s + actionPct(a), 0) / p.actions.length);
-    }
-    return progressOf(p.checklist);
-}
-
-/** 动作状态机循环:未开始 → 进行中 → 已完成 → 循环 */
-export function nextActionStatus(s: ProjectAction['status']): ProjectAction['status'] {
-    const order: ProjectAction['status'][] = ['todo', 'doing', 'done'];
-    return order[(order.indexOf(s) + 1) % order.length];
-}
-
-/** 动作是否被前序依赖锁定:dependsOnPrev 且前一个动作未完成 */
-export function actionLocked(actions: ProjectAction[], index: number): boolean {
-    if (index <= 0) return false;
-    const a = actions[index];
-    return !!a.dependsOnPrev && actions[index - 1].status !== 'done';
 }
 
 /** 项目状态机循环切换:未开始→进行中→阻塞→已完成→已归档→循环 */

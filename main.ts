@@ -9,9 +9,8 @@ import { MOCHandler, MOCNodeView, MOCQueryOptions } from "src/view/index/mocHand
 import { MOCFileMonitor } from "src/utils/mocMonitor";
 import { ensureMOCPreviewPNG } from "src/embed/mocEmbedExporter";
 import { MOCReverseIndex } from "src/utils/mocReverseIndex";
-import { VaultIndex } from "src/index/VaultIndex";
 import { WorkspaceStore } from "src/workspace/WorkspaceStore";
-import { ensureWorkspaceSeed, reimportFromSpaces } from "src/workspace/seed";
+import { ensureWorkspaceSeed } from "src/workspace/seed";
 import { ZKWorkspaceView, ZK_WORKSPACE_TYPE } from "src/view/workspaceView";
 import { ContainerMountModal } from "src/modal/containerMountModal";
 import { ZKGraphView, ZK_GRAPH_TYPE } from "src/view/graphView";
@@ -212,6 +211,8 @@ interface ZKNavigationSettings {
     // MOC 模式相关设置
     mocModeEnabled: boolean;           // 是否启用 MOC 模式
     mocFolderPath: string;             // MOC 索引笔记所在文件夹
+    projectFolderPath: string;         // 工作区项目背书笔记(next action 任务)所在文件夹
+    wsTaskPrefix: string;              // 新建任务/子任务自动插在 `[ ]` 后的前缀字符(如 "🎯 ")
     mocHeadingTitle: string;           // 要解析的一级标题名称，如 "思维树"
     mocCurrentFile: string;            // 当前选中的 MOC 文件路径
     mocNodePositions: Record<string, Record<string, { x: number; y: number }>>; // MOC 节点位置存储 {mocFilePath: {nodeId: {x, y}}}
@@ -300,6 +301,8 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     // MOC 模式默认值
     mocModeEnabled: true,
     mocFolderPath: '/',
+    projectFolderPath: 'config/workspace',
+    wsTaskPrefix: '',
     mocHeadingTitle: t('default MOC heading title'),
     mocCurrentFile: '',
     mocNodePositions: {}, // MOC 节点位置存储
@@ -343,10 +346,12 @@ export default class ZKNavigationPlugin extends Plugin {
     cliMocHandler?: MOCHandler;
     // 外部 API(Obsidian CLI eval / 其他插件),onload 末尾注册
     api!: ZKNavigationExternalAPI;
-    // 旧 Space 树索引(spaces.json):现仅作工作区首启/重导入的迁移数据源
-    vaultIndex: VaultIndex | null = null;
     // typed-node 工作区数据层(workspace.json),三栏工作区视图的数据源
     workspaceStore: WorkspaceStore | null = null;
+    /** 旧 spaces.json 路径,仅用于工作区首启/升级时的一次性迁移读取 */
+    private get spacesStorePath(): string {
+        return `${this.app.vault.configDir}/plugins/${this.manifest.id}/spaces.json`;
+    }
     // 临时工作区(跨 MOC 共享的节点暂存)
     scratchpad: ScratchpadManager | null = null;
     private originalWindowOnError: OnErrorEventHandler | null = null;
@@ -900,20 +905,6 @@ export default class ZKNavigationPlugin extends Plugin {
             }
         })
 
-        // 逃生口:显式从 spaces.json 重新导入并【覆盖】工作区数据
-        // (workspace.json 平时是唯一权威,自动迁移只在空库时跑一次)
-        this.addCommand({
-            id: "zk-reimport-workspace-from-spaces",
-            name: t("Reimport workspace from spaces.json (overwrite)"),
-            callback: async () => {
-                if (!this.workspaceStore) return;
-                await this.workspaceStore.bootstrap();
-                const count = await reimportFromSpaces(this.workspaceStore, this.vaultIndex);
-                new Notice(t("Workspace reimported: {n} nodes").replace("{n}", String(count)));
-                this.app.workspace.trigger("zk-navigation:refresh-index-graph");
-            }
-        })
-
         this.registerHoverLinkSource(
         ZK_NAVIGATION,
         {
@@ -927,10 +918,6 @@ export default class ZKNavigationPlugin extends Plugin {
 
         // 初始化 MOC 反向索引（后台构建）
         this.mocReverseIndex = new MOCReverseIndex(this.app);
-        // 旧 spaces.json 索引:仅用于把历史 Space 数据迁移进工作区(只读源)
-        const storePath = `${this.app.vault.configDir}/plugins/${this.manifest.id}/spaces.json`;
-        this.vaultIndex = new VaultIndex(this.app, storePath);
-        this.addChild(this.vaultIndex);
         // typed-node 工作区存储(workspace.json)
         const wsStorePath = `${this.app.vault.configDir}/plugins/${this.manifest.id}/workspace.json`;
         this.workspaceStore = new WorkspaceStore(this.app, wsStorePath);
@@ -943,10 +930,9 @@ export default class ZKNavigationPlugin extends Plugin {
                 this.settings.mocFolderPath,
                 this.settings.mocHeadingTitle
             );
-            await this.vaultIndex?.bootstrap();
             if (this.workspaceStore) {
                 await this.workspaceStore.bootstrap();
-                await ensureWorkspaceSeed(this.workspaceStore, this.vaultIndex);
+                await ensureWorkspaceSeed(this.workspaceStore, this.app.vault.adapter, this.spacesStorePath);
             }
             this.registerNotebookNavigatorFolderMenu();
             this.showChangelogIfNeeded();
@@ -1199,7 +1185,7 @@ export default class ZKNavigationPlugin extends Plugin {
         if (this.workspaceStore) {
             // bootstrap 幂等;命令早于 layout-ready 触发时确保数据已就绪
             await this.workspaceStore.bootstrap();
-            await ensureWorkspaceSeed(this.workspaceStore, this.vaultIndex);
+            await ensureWorkspaceSeed(this.workspaceStore, this.app.vault.adapter, this.spacesStorePath);
         }
         const leaves = this.app.workspace.getLeavesOfType(ZK_WORKSPACE_TYPE);
         if (leaves.length === 0) {

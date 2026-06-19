@@ -115,6 +115,35 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
 	                })
 	            );
 
+        // ========== 工作区 (Workspace) ==========
+        containerEl.createEl("h3", { text: t("ws settings section") });
+        const workspaceSection = containerEl.createDiv("zk-setting-card");
+
+        new Setting(workspaceSection)
+            .setName(t("ws project folder"))
+            .setDesc(t("ws project folder desc"))
+            .addSearch((cb) => {
+                new FolderSuggest(this.app, cb.inputEl);
+                cb.setPlaceholder("config/workspace")
+                    .setValue(this.plugin.settings.projectFolderPath)
+                    .onChange((value) => {
+                        this.plugin.settings.projectFolderPath = value.trim();
+                        void this.plugin.saveData(this.plugin.settings);
+                    });
+            });
+
+        new Setting(workspaceSection)
+            .setName(t("ws task prefix"))
+            .setDesc(t("ws task prefix desc"))
+            .addText((cb) => {
+                cb.setPlaceholder(t("ws task prefix placeholder"))
+                    .setValue(this.plugin.settings.wsTaskPrefix)
+                    .onChange((value) => {
+                        this.plugin.settings.wsTaskPrefix = value;
+                        void this.plugin.saveData(this.plugin.settings);
+                    });
+            });
+
         // ========== 局部视图 (Local Graph) ==========
         containerEl.createEl("h3", { text: t("thought-local-graph-view") });
         const localSection = containerEl.createDiv("zk-setting-card");

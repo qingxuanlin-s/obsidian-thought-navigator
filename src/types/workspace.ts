@@ -64,29 +64,16 @@ export interface ChecklistItem {
     done: boolean;
 }
 
-export type ActionStatus = 'todo' | 'doing' | 'done';
-
-/** NEXT ACTION 动作项:可关联现有笔记、记完成比例/状态、可排序、可依赖前序动作 */
-export interface ProjectAction {
-    id: string;
-    text: string;            // 动作描述(关联笔记时可空,回退用笔记标题)
-    noteId?: string;         // 关联的工作区节点 id(旧:现有笔记/图谱节点)
-    notePath?: string;       // 关联的 vault 笔记文件路径(任意 markdown)
-    status: ActionStatus;    // 完成状态
-    progress?: number;       // 完成比例 0-100(status=done 记 100)
-    dependsOnPrev?: boolean; // 是否依赖前一个动作:前序未完成则本项锁定
-}
-
 /** 项目 —— 唯一带"追踪"语义的类型 */
 export interface WSProjectNode extends WSBaseNode {
     type: 'project';
     status: ProjectStatus;  // 手动,见 DESIGN §6.1
-    nextAction?: string;    // 旧:单行 NEXT ACTION(已被 actions 取代,保留向后兼容)
-    actions?: ProjectAction[]; // NEXT ACTION 动作列表(有序,可关联笔记/依赖前序)
-    checklist?: ChecklistItem[]; // progress 从这里算,不存死值
-    progress?: number;      // 手动百分比 0-100;有值时覆盖 actions/checklist 推导
+    // NEXT ACTION 现以背书笔记(filePath)里的 markdown `- [ ]` 任务为唯一事实源,交给 Tasks/Dataview 追踪。
+    nextAction?: string;    // 旧:单行 NEXT ACTION,仅作无任务时的兜底展示(已不再写入)
+    checklist?: ChecklistItem[]; // 轻量子项;progress 从这里算,不存死值
+    progress?: number;      // 手动百分比 0-100;有值时覆盖任务/checklist 推导
     deadline?: number;
-    filePath?: string;
+    filePath?: string;      // 背书 markdown 笔记(next action `- [ ]` 写在这里)
 }
 
 /** 笔记 —— 原子知识单元(= PARA 的 Resource = 局部知识) */
@@ -115,6 +102,8 @@ export interface WorkspaceStoreFile {
     version: 1;
     nodes: WorkspaceNode[];
     links: WSLink[];
+    /** 已应用的迁移逻辑版本(seed.ts MIGRATION_VERSION);缺省视为 0 */
+    migrationVersion?: number;
 }
 
 // ---------- 框架(镜头)定义 ----------
