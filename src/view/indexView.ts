@@ -204,6 +204,13 @@ export class ZKIndexView extends FileView {
     // 内嵌工作区模式(typed-node 壳):图谱 ⇄ 工作区 在同一视图内切换
     private workspacePanel: WorkspacePanel | null = null;
     private workspaceMode = false;
+    // 浏览历史(上一步/下一步):记录有效视图状态(图谱某 MOC / 工作区),供工具栏前进后退
+    private navHistory: Array<{ mode: 'graph' | 'workspace'; mocPath: string | null }> = [];
+    private navIndex = -1;
+    private navApplying = false;
+    private navBackBtn: ExtraButtonComponent | null = null;
+    private navForwardBtn: ExtraButtonComponent | null = null;
+    private readonly MAX_NAV_HISTORY = 50;
     private scratchDrawer: ScratchpadDrawer | null = null;
     // 节点详情侧栏(单击节点 → 跟随展示备注/笔记预览)
     private detailPanel: NodeDetailPanel | null = null;
@@ -326,6 +333,17 @@ export class ZKIndexView extends FileView {
         this.scope.register([], ' ', (event: KeyboardEvent) => {
             if (this.handleDetailPanelSpaceEdit(event)) return false;
         });
+        // 浏览历史:Cmd+[ 上一步 / Cmd+] 下一步(输入框聚焦时让位)
+        const navIfNotTyping = (event: KeyboardEvent, fn: () => void) => {
+            const ae = activeDocument.activeElement as HTMLElement | null;
+            if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            fn();
+            return false;
+        };
+        this.scope.register(['Mod'], '[', (event: KeyboardEvent) => navIfNotTyping(event, () => this.navBack()));
+        this.scope.register(['Mod'], ']', (event: KeyboardEvent) => navIfNotTyping(event, () => this.navForward()));
         this.mocHandler = new MOCHandler(plugin, (this.app as any), {
             onBeforeModify: ({ filePath, content }) => {
                 if (this.isApplyingUndo) return;
@@ -417,6 +435,7 @@ export class ZKIndexView extends FileView {
         this.workspacePanel.setVisible(on);
         if (on) this.workspacePanel.refresh();
         // 面板为 position:absolute inset:0,自然覆盖图谱工具栏与画布,无需手动隐藏
+        this.recordNavState();
     }
 
     /** 工作区面板里点了带 .moc.md 的 MOC 节点 → 切回图谱模式并加载该文件 */
@@ -437,6 +456,77 @@ export class ZKIndexView extends FileView {
             this.setWorkspaceMode(false);
         })();
         return true;
+    }
+
+    // ============ 浏览历史(上一步/下一步) ============
+
+    /** 当前有效视图状态:工作区模式优先,否则为图谱当前 MOC */
+    private currentNavState(): { mode: 'graph' | 'workspace'; mocPath: string | null } {
+        return this.workspaceMode
+            ? { mode: 'workspace', mocPath: null }
+            : { mode: 'graph', mocPath: this.plugin.settings.mocCurrentFile || null };
+    }
+
+    /**
+     * 把当前有效视图状态记入历史。由 refreshBranchMermaid / setWorkspaceMode 末尾调用。
+     * 与栈顶相同则忽略;前进/后退过程中(navApplying)不记录。
+     */
+    private recordNavState(): void {
+        if (this.navApplying) return;
+        const state = this.currentNavState();
+        const top = this.navIndex >= 0 ? this.navHistory[this.navIndex] : null;
+        if (top && top.mode === state.mode && top.mocPath === state.mocPath) return;
+        // 在历史中间时产生新导航 → 截断前进分支
+        if (this.navIndex < this.navHistory.length - 1) {
+            this.navHistory = this.navHistory.slice(0, this.navIndex + 1);
+        }
+        this.navHistory.push(state);
+        if (this.navHistory.length > this.MAX_NAV_HISTORY) {
+            this.navHistory.shift();
+        }
+        this.navIndex = this.navHistory.length - 1;
+        this.updateNavButtons();
+    }
+
+    private navBack(): void { if (this.navIndex > 0) void this.applyNavState(this.navIndex - 1); }
+    private navForward(): void { if (this.navIndex < this.navHistory.length - 1) void this.applyNavState(this.navIndex + 1); }
+
+    /** 跳到历史中的某个位置并还原视图(不记录新历史) */
+    private async applyNavState(index: number): Promise<void> {
+        if (index < 0 || index >= this.navHistory.length) return;
+        const state = this.navHistory[index];
+        this.navApplying = true;
+        try {
+            if (state.mode === 'workspace') {
+                this.setWorkspaceMode(true);
+            } else {
+                if (state.mocPath && this.plugin.settings.mocCurrentFile !== state.mocPath) {
+                    this.plugin.settings.mocCurrentFile = state.mocPath;
+                    await this.plugin.saveData(this.plugin.settings);
+                    await this.refreshBranchMermaid();
+                }
+                this.setWorkspaceMode(false);
+            }
+            this.navIndex = index;
+        } finally {
+            this.navApplying = false;
+        }
+        this.updateNavButtons();
+    }
+
+    /** 同步前进/后退按钮的可用态 */
+    private updateNavButtons(): void {
+        const back = this.navBackBtn, fwd = this.navForwardBtn;
+        if (back) {
+            const can = this.navIndex > 0;
+            back.setDisabled(!can);
+            back.extraSettingsEl?.toggleClass('zk-nav-disabled', !can);
+        }
+        if (fwd) {
+            const can = this.navIndex < this.navHistory.length - 1;
+            fwd.setDisabled(!can);
+            fwd.extraSettingsEl?.toggleClass('zk-nav-disabled', !can);
+        }
     }
 
     /**
@@ -1393,6 +1483,8 @@ export class ZKIndexView extends FileView {
                     taskPrefix: this.plugin.settings.wsTaskPrefix,
                     onExitToGraph: () => this.setWorkspaceMode(false),
                     onOpenMoc: (node: WSMocNode) => this.openMocFromWorkspace(node),
+                    onOpenFile: (file, forceTab) => this.openFileInPreferredLeaf(file, forceTab),
+                    onOpenLink: (linkText, sourcePath, forceTab) => this.openLinkInPreferredLeaf(linkText, sourcePath, forceTab),
                 });
                 this.workspacePanel.setVisible(false);
             }
@@ -1500,11 +1592,20 @@ export class ZKIndexView extends FileView {
         // 创建右侧按钮容器
         const rightBtns = toolbarDiv.createDiv("zk-toolbar-right-buttons");
 
-        const workspaceBtn = new ExtraButtonComponent(rightBtns);
-        workspaceBtn.setIcon("layout-grid").setTooltip(t("ws Workspace"));
-        workspaceBtn.onClick(() => {
-            this.setWorkspaceMode(!this.workspaceMode);
-        });
+        // 上一步 / 下一步(浏览历史:切换 MOC、图谱⇄工作区)
+        const modKey = Platform.isMacOS ? "⌘" : "Ctrl+";
+        this.navBackBtn = new ExtraButtonComponent(rightBtns);
+        this.navBackBtn.setIcon("arrow-left").setTooltip(`${t("nav back")} (${modKey}[)`);
+        this.navBackBtn.onClick(() => this.navBack());
+
+        this.navForwardBtn = new ExtraButtonComponent(rightBtns);
+        this.navForwardBtn.setIcon("arrow-right").setTooltip(`${t("nav forward")} (${modKey}])`);
+        this.navForwardBtn.onClick(() => this.navForward());
+        this.updateNavButtons();
+
+        const navSep = activeDocument.createElement("span");
+        navSep.className = "zk-toolbar-separator";
+        rightBtns.appendChild(navSep);
 
         const searchBtn = new ExtraButtonComponent(rightBtns);
         searchBtn.setIcon("search").setTooltip(t("search placeholder"));
@@ -1537,6 +1638,18 @@ export class ZKIndexView extends FileView {
         moreBtn.setIcon("more-horizontal").setTooltip(t("more options"));
         moreBtn.onClick(() => {
             this.showMoreMenu(moreBtn.extraSettingsEl);
+        });
+
+        // 模式切换键钉在工具栏最末端,与工作区面板的「图谱」键同处右上角,
+        // 形成原地翻面开关(切完再切回时鼠标无需移动)。前置分隔线与普通工具区分。
+        const modeSep = activeDocument.createElement("span");
+        modeSep.className = "zk-toolbar-separator";
+        rightBtns.appendChild(modeSep);
+
+        const workspaceBtn = new ExtraButtonComponent(rightBtns);
+        workspaceBtn.setIcon("layout-grid").setTooltip(t("ws Workspace"));
+        workspaceBtn.onClick(() => {
+            this.setWorkspaceMode(!this.workspaceMode);
         });
     }
 
@@ -2251,6 +2364,8 @@ cy.fit(null, 40);
         if (!indexMermaidDiv) return;
 
         await this.refreshBranchMermaidMOC(indexMermaidDiv, force);
+        // 图谱渲染完成 → 记录当前 MOC 为历史节点(工作区模式下当前态为 workspace,会被去重忽略)
+        this.recordNavState();
     }
 
     /**
@@ -6014,6 +6129,9 @@ cy.fit(null, 40);
             }
         }
 
+        // 删除前先算好"接管选中态"的邻居(自由节点父子关系依赖 cy 当前状态,删除后丢失)
+        const neighborIdAfterDelete = node.isCrossDomain ? null : this.pickNeighborAfterDelete(node);
+
         // 在刷新前保存所有节点的当前位置，并取消尚未落盘的拖拽位置保存
         await this.flushAndSaveCurrentPositions();
 
@@ -6062,11 +6180,51 @@ cy.fit(null, 40);
                 await this.reflowAutoLayout(reflowParentId);
             }
 
+            // 选中态接力:让邻居节点(后一个,没有则前一个,再没有则父节点)接管选中
+            this.selectNeighborAfterDelete(neighborIdAfterDelete);
+
             new Notice(t("Node deleted").replace("{id}", String(node.ID)));
         } catch (error) {
             console.error('Failed to delete node:', error);
             new Notice(t("Delete node failed").replace("{message}", String(error.message)));
         }
+    }
+
+    /**
+     * 删除节点后挑选接管选中态的邻居 IDStr:
+     * 同级里删除项的"后一个",没有则"前一个",都没有则退回父节点(无父则 null)。
+     * 同级顺序按 mocNodes 声明顺序(即文件中的视觉顺序)。
+     * 必须在删除前调用(自由节点父子关系依赖 cy 当前状态)。
+     */
+    private pickNeighborAfterDelete(node: ZKNode): string | null {
+        const targetId = node.IDStr;
+        if (!targetId) return null;
+        const parentId = this.resolveRealParentId(targetId);
+        const siblings = this.mocNodes.filter(
+            (n) => !!n.IDStr && !n.isCrossDomain && this.resolveRealParentId(n.IDStr) === parentId
+        );
+        const idx = siblings.findIndex((n) => n.IDStr === targetId);
+        if (idx === -1) return parentId;
+        const next = siblings[idx + 1];
+        if (next) return next.IDStr;
+        const prev = siblings[idx - 1];
+        if (prev) return prev.IDStr;
+        return parentId;
+    }
+
+    /** 删除后让邻居接管选中态:选中节点并沿用单击选中规则(面包屑/侧栏跟随)。 */
+    private selectNeighborAfterDelete(idStr: string | null): void {
+        if (!idStr) return;
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        const cyNode = this.findCyNodeByIdStr(idStr);
+        if (!cy || !cyNode) return;
+        cy.nodes(':selected').unselect();
+        cyNode.select();
+        const original = cyNode.data('originalNode') as ZKNode | undefined;
+        if (!original) return;
+        this.updateMultiverseBadge(original);
+        this.syncLevelBreadcrumbWithNode(original);
+        this.handleDetailPanelSelect(original);
     }
 
     private async saveNodeContent(

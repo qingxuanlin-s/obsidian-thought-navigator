@@ -1,3 +1,4 @@
+import { Menu } from "obsidian";
 import { WSSpaceNode, WorkspaceNode, WSProjectNode, FRAMEWORKS, OpenTarget } from "src/types/workspace";
 import { t } from "src/lang/helper";
 import { RenderCtx, glyph, fwChip, bucketLabel, STATUS_COLOR, progressFor } from "./render";
@@ -98,6 +99,7 @@ export class SpacesTree {
         srow.createSpan({ cls: `fwchip fw ${FW_CLASS[space.framework]}`, text: fwChip(space.framework) });
         // 点 Space 名 → 打开 cockpit 并确保展开
         srow.onclick = () => { this.collapsed.delete(skey); this.ctx.open({ kind: 'space', id: space.id }); };
+        srow.oncontextmenu = (e) => this.showMenu(e, space);
         if (!open) return;
 
         const nodes = this.ctx.store.nodesInSpace(space.id);
@@ -173,7 +175,27 @@ export class SpacesTree {
 
         // 行空白:面板内预览(中间主区渲染该节点页面 + 侧栏选中),和打开普通 MOC 一致,不跳图谱、不弹 deck
         row.onclick = () => this.ctx.openInline(this.ctx.store.targetFor(n));
+        row.oncontextmenu = (e) => this.showMenu(e, n);
 
         if (open && kids.length) kids.forEach(k => this.renderNode(k, depth + 1, childrenOf));
+    }
+
+    /** 行右键菜单:打开 / (容器内节点)移出容器 / 删除 */
+    private showMenu(e: MouseEvent, n: WorkspaceNode) {
+        e.preventDefault();
+        e.stopPropagation();
+        const menu = new Menu();
+        menu.addItem(i => i.setTitle(t('ws open')).setIcon('panel-right-open')
+            .onClick(() => this.ctx.open(this.ctx.store.targetFor(n))));
+        // 挂在某 MOC 容器下的节点:提供「移出容器」浮回所在 Space 顶层(非删除)
+        if (n.type !== 'space' && this.ctx.store.linksFrom(n.id)
+            .some(l => (l.type === 'partOf' || l.type === 'childMoc' || l.type === 'serves'))) {
+            menu.addItem(i => i.setTitle(t('ws unmount')).setIcon('log-out')
+                .onClick(async () => { await this.ctx.store.unmountFromContainer(n.id); }));
+        }
+        menu.addSeparator();
+        menu.addItem(i => { (i as any).setWarning?.(true); i.setTitle(t('ws delete')).setIcon('trash-2')
+            .onClick(() => this.ctx.requestDelete(n)); });
+        menu.showAtMouseEvent(e);
     }
 }
