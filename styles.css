@@ -6163,7 +6163,7 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 
 .zkw .fwchip { display:inline-flex; align-items:center; gap:5px; font-family:var(--mono); font-size:9px; font-weight:600; padding:2px 7px; border-radius:99px; cursor:pointer; letter-spacing:0.02em; white-space:nowrap; }
 .zkw .fwchip.para { color:var(--violet); background:rgba(183,157,255,0.12); border:1px solid rgba(183,157,255,0.3); }
-.zkw .fwchip.overview { color:var(--cyan); background:rgba(95,208,221,0.12); border:1px solid rgba(95,208,221,0.3); }
+.zkw .fwchip.overview { color:var(--violet); background:transparent; border:1px solid rgba(183,157,255,0.32); }
 .zkw .fwchip.custom { color:var(--ink-dim); background:rgba(255,255,255,0.05); border:1px solid var(--rule-2); }
 .zkw .fwchip:hover { filter:brightness(1.18); }
 
@@ -6193,8 +6193,9 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 /* ───────── Center ───────── */
 .zkw .center { min-height:0; overflow-y:auto; position:relative; }
 
-.zkw .ck { padding:0 0 60px; }
-.zkw .ck-hero { padding:30px 40px 22px; border-bottom:1px solid var(--rule); position:sticky; top:0; background:linear-gradient(180deg, var(--bg) 60%, transparent); z-index:5; }
+/* 内容列:正文限宽并在主视口内居中,留白靠构图而非把短卡横拉满屏 */
+.zkw .ck { padding:0 0 60px; --ck-gut:max(40px, calc((100% - 880px) / 2)); }
+.zkw .ck-hero { padding:30px var(--ck-gut) 22px; border-bottom:1px solid var(--rule); position:sticky; top:0; background:linear-gradient(180deg, var(--bg) 60%, transparent); z-index:5; }
 .zkw .ck-crumb { font-family:var(--mono); font-size:11px; color:var(--ink-faint); margin-bottom:14px; }
 .zkw .ck-crumb .seg { cursor:pointer; }
 .zkw .ck-crumb .seg:hover { color:var(--ink-dim); }
@@ -6219,18 +6220,18 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 .zkw .fwopt:hover { color:var(--ink); }
 .zkw .fwopt.on { color:#fff; }
 .zkw .fwopt.on.para { background:rgba(139,109,240,0.22); border-color:var(--violet); color:#d8c9ff; }
-.zkw .fwopt.on.overview { background:rgba(95,208,221,0.18); border-color:var(--cyan); color:#bff0f5; }
+.zkw .fwopt.on.overview { background:transparent; border-color:var(--violet); color:#d8c9ff; }
 .zkw .fwopt.on.custom { background:var(--panel-3); border-color:var(--rule-3); color:var(--ink); }
 .zkw .fwbar .fwnote { font-size:11px; color:var(--ink-faint); margin-left:auto; }
 .zkw .fwbar .fwnote b { color:var(--violet); }
 
-.zkw .lenstabs { display:flex; gap:4px; padding:16px 40px 0; flex-wrap:wrap; }
+.zkw .lenstabs { display:flex; gap:4px; padding:16px var(--ck-gut) 0; flex-wrap:wrap; }
 .zkw .lenstab { font-size:12px; font-weight:600; padding:7px 14px; border-radius:8px 8px 0 0; cursor:pointer; color:var(--ink-dim); border-bottom:2px solid transparent; display:flex; align-items:center; gap:7px; white-space:nowrap; }
 .zkw .lenstab:hover { color:var(--ink); }
 .zkw .lenstab.on { color:var(--ink); border-bottom-color:var(--violet); background:linear-gradient(180deg, transparent, rgba(139,109,240,0.06)); }
 .zkw .lenstab .c { font-family:var(--mono); font-size:9.5px; color:var(--ink-faint); }
 
-.zkw .createbar { display:flex; gap:8px; padding:16px 40px 0; flex-wrap:wrap; }
+.zkw .createbar { display:flex; gap:8px; padding:16px var(--ck-gut) 0; flex-wrap:wrap; }
 .zkw .createbtn { font-size:12px; font-weight:600; padding:6px 12px; border-radius:8px; cursor:pointer; color:var(--ink-dim); background:var(--panel); border:1px solid var(--rule-2); white-space:nowrap; }
 .zkw .createbtn:hover { color:#d8c9ff; border-color:var(--violet); background:rgba(139,109,240,0.12); }
 .zkw .createbtn { display:inline-flex; align-items:center; gap:6px; }
@@ -6238,7 +6239,7 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 .zkw .createbtn.cta { color:#d8c9ff; background:rgba(139,109,240,0.16); border-color:var(--violet); }
 .zkw .createbtn.cta:hover { background:rgba(139,109,240,0.26); }
 
-.zkw .ck-body { padding:24px 40px 0; }
+.zkw .ck-body { padding:24px var(--ck-gut) 0; }
 .zkw .sectitle { display:flex; align-items:center; gap:8px; margin:24px 0 12px; }
 .zkw .sectitle:first-child { margin-top:8px; }
 .zkw .sectitle .st { font-size:13px; font-weight:700; }

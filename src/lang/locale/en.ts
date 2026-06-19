@@ -568,6 +568,7 @@ export default {
     "ws continue last": "Continue",
     "ws cross todo": "Next · cross-Space todo",
     "ws no active": "No active projects",
+    "ws no active hint": "Set a project's status to “Active” and its next actions will roll up here.",
     "ws body": "Body",
     "ws no detail": "No details",
     "ws status": "Status",

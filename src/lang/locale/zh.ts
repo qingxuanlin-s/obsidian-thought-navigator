@@ -567,6 +567,7 @@ export default {
     "ws continue last": "继续上次",
     "ws cross todo": "下一步 · 跨 Space 待办",
     "ws no active": "没有进行中的项目",
+    "ws no active hint": "把某个项目状态切到「进行中」,它的下一步行动就会汇总到这里。",
     "ws body": "正文",
     "ws no detail": "暂无详情",
     "ws status": "状态",

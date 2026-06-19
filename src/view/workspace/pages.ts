@@ -471,7 +471,7 @@ export function renderNotePage(container: HTMLElement, ctx: RenderCtx, n: WSNote
 export function renderHome(container: HTMLElement, ctx: RenderCtx, lastTarget: WorkspaceNode | null): void {
     const ck = container.createDiv({ cls: 'ck' });
     const h = ck.createDiv({ cls: 'ck-hero' });
-    h.createDiv({ cls: 'ck-crumb', text: t('ws Today') });
+    h.createDiv({ cls: 'ck-crumb', text: t('ws Workspace') });
     h.createDiv({ cls: 'ck-titlerow' }).createDiv().createEl('h1', { cls: 'ck-h1', text: t('ws Today') });
 
     const body = ck.createDiv({ cls: 'ck-body' });
@@ -492,7 +492,7 @@ export function renderHome(container: HTMLElement, ctx: RenderCtx, lastTarget: W
         .sort((a, b) => (a.status === 'blocked' ? 0 : 1) - (b.status === 'blocked' ? 0 : 1) || b.updatedAt - a.updatedAt);
 
     body.createDiv({ cls: 'dsec', text: t('ws cross todo') });
-    if (!projects.length) { body.createDiv({ cls: 'empty', text: t('ws no active') }); return; }
+    if (!projects.length) { emptyState(body, 'target', t('ws no active'), t('ws no active hint')); return; }
     const grid = body.createDiv({ cls: 'pgrid' });
     projects.forEach(p => {
         const space = ctx.store.getNode(p.spaceId);
