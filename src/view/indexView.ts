@@ -10255,7 +10255,6 @@ cy.fit(null, 40);
                 pointerEvents: 'auto',
                 touchAction: 'manipulation',
             });
-            btn.setCssProps({ '-webkit-tap-highlight-color': 'transparent' });
             const self = this;
             btn.ontouchstart = function(e) {
                 e.stopPropagation();

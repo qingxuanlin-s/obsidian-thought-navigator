@@ -755,7 +755,6 @@ export function showInlineEdgeLabelEditor(this: any, edge: any): void {
             outline: 'none',
             boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)',
         });
-        input.setCssProps({ 'backdrop-filter': 'blur(8px)' });
 
         this.container.appendChild(input);
         const selectionToolbar = this.attachInlineTextSelectionToolbar(input);
@@ -2947,7 +2946,7 @@ export function attachSlashCommandMenu(
                 document.body.appendChild(popover);
             }
 
-            popover.innerHTML = '';
+            popover.empty();
             items.forEach((cmd, index) => {
                 const item = document.createElement('div');
                 item.className = 'zk-slash-item';
@@ -3139,13 +3138,7 @@ export function startNodeAudioRecording(
             fontSize: '12px',
         });
         bar.append(dot, timeEl, stopBtn, cancelBtn);
-        // 闪烁动画(仅注入一次)
-        if (!document.getElementById('zk-rec-blink-style')) {
-            const style = document.createElement('style');
-            style.id = 'zk-rec-blink-style';
-            style.textContent = '@keyframes zk-rec-blink{50%{opacity:0.25;}}';
-            document.head.appendChild(style);
-        }
+        // 闪烁动画 @keyframes zk-rec-blink 已迁移至 styles.css
         document.body.appendChild(bar);
 
         const startTs = Date.now();

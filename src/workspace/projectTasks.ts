@@ -178,12 +178,12 @@ const FIELD_RE = {
     due: new RegExp(`(?:📅|📆|🗓)\\s*${DATE}`),
     cancelled: new RegExp(`❌\\s*${DATE}`),
     done: new RegExp(`✅\\s*${DATE}`),
-    recurrence: /🔁\s*([^🔺⏫🔼🔽⏬➕🛫⏳📅❌✅]+)/,
+    recurrence: /🔁\s*([^🔺⏫🔼🔽⏬➕🛫⏳📅❌✅]+)/u,
 };
 
 export function parseTaskText(text: string): ParsedTask {
     const get = (re: RegExp) => { const m = re.exec(text); return m ? m[1].trim() : undefined; };
-    const prio = /[🔺⏫🔼🔽⏬]/.exec(text);
+    const prio = /[🔺⏫🔼🔽⏬]/u.exec(text);
     const parsed: ParsedTask = {
         description: '',
         priority: prio ? prio[0] : '',
@@ -194,8 +194,8 @@ export function parseTaskText(text: string): ParsedTask {
     let d = text;
     for (const k of ['created', 'start', 'scheduled', 'due', 'cancelled', 'done'] as const)
         d = d.replace(new RegExp(FIELD_RE[k].source, 'g'), '');
-    d = d.replace(/🔁\s*[^🔺⏫🔼🔽⏬➕🛫⏳📅❌✅]+/g, '')
-         .replace(/[🔺⏫🔼🔽⏬]/g, '')
+    d = d.replace(/🔁\s*[^🔺⏫🔼🔽⏬➕🛫⏳📅❌✅]+/gu, '')
+         .replace(/[🔺⏫🔼🔽⏬]/gu, '')
          .replace(/\s+/g, ' ').trim();
     parsed.description = d;
     return parsed;

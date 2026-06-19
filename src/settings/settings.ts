@@ -22,10 +22,10 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
         const { containerEl } = this;
         containerEl.empty();
 
-        containerEl.createEl("h1", {text: t("Zettelkasten Navigation")});
+        new Setting(containerEl).setName(t("Zettelkasten Navigation")).setHeading();
 
         // ========== 通用功能 (General) ==========
-        const generalTitle = containerEl.createEl("h3", { text: t("General") });
+        const generalTitle = new Setting(containerEl).setName(t("General")).setHeading().settingEl;
         const generalSection = containerEl.createDiv("zk-setting-card");
 
         // 主题模式设置
@@ -71,7 +71,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
             );
 
         // ========== 分支视图 (Index Graph) ==========
-        containerEl.createEl("h3", { text: t("thought-tree-graph-view") });
+        new Setting(containerEl).setName(t("thought-tree-graph-view")).setHeading();
         const branchSection = containerEl.createDiv("zk-setting-card");
         this.plugin.settings.graphType = "structure";
         const structureSettingDiv = branchSection.createDiv("zk-local-section")
@@ -116,7 +116,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
 	            );
 
         // ========== 工作区 (Workspace) ==========
-        containerEl.createEl("h3", { text: t("ws settings section") });
+        new Setting(containerEl).setName(t("ws settings section")).setHeading();
         const workspaceSection = containerEl.createDiv("zk-setting-card");
 
         new Setting(workspaceSection)
@@ -145,7 +145,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
             });
 
         // ========== 局部视图 (Local Graph) ==========
-        containerEl.createEl("h3", { text: t("thought-local-graph-view") });
+        new Setting(containerEl).setName(t("thought-local-graph-view")).setHeading();
         const localSection = containerEl.createDiv("zk-setting-card");
 
         new Setting(localSection)
@@ -188,7 +188,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
         )
 
         // ========== 隐藏选项（通过通用功能标题快速点击 3 次解锁） ==========
-        const hiddenSectionTitle = containerEl.createEl("h3", { text: "隐藏选项" });
+        const hiddenSectionTitle = new Setting(containerEl).setName("隐藏选项").setHeading().settingEl;
         hiddenSectionTitle.addClass("zk-hidden");
         const hiddenSection = containerEl.createDiv("zk-setting-card");
         hiddenSection.addClass("zk-hidden");
@@ -416,8 +416,8 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
     }
 
     private bindGeneralTitleUnlock(
-        generalTitleEl: HTMLHeadingElement,
-        hiddenTitleEl: HTMLHeadingElement,
+        generalTitleEl: HTMLElement,
+        hiddenTitleEl: HTMLElement,
         hiddenSectionEl: HTMLDivElement
     ) {
         generalTitleEl.addEventListener("click", () => {

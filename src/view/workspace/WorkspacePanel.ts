@@ -4,7 +4,6 @@ import { WorkspaceStore } from "src/workspace/WorkspaceStore";
 import { ProjectTaskStore } from "src/workspace/projectTasks";
 import { OpenTarget, WorkspaceNode, WSMocNode, FrameworkId } from "src/types/workspace";
 import { fwLabel } from "./render";
-import { ZKW_CSS, ZKW_STYLE_ID } from "./styles";
 import { RenderCtx } from "./render";
 import { renderCockpit } from "./cockpit";
 import { renderProjectPage, renderMocPage, renderNotePage, renderHome } from "./pages";
@@ -53,7 +52,6 @@ export class WorkspacePanel {
 
     constructor(parent: HTMLElement, deps: WorkspacePanelDeps) {
         this.deps = deps;
-        injectStyles();
         this.root = parent.createDiv({ cls: 'zkw' });
         try { this.railCollapsed = localStorage.getItem(LS_RAIL) === '1'; } catch {}
 
@@ -305,9 +303,3 @@ class NewSpaceModal extends Modal {
     onClose() { this.contentEl.empty(); }
 }
 
-function injectStyles() {
-    // 总是覆盖 textContent:热重载时旧 <style> 仍留在 head,守卫式跳过会导致新 CSS 永不生效
-    let style = document.getElementById(ZKW_STYLE_ID) as HTMLStyleElement | null;
-    if (!style) style = document.head.createEl('style', { attr: { id: ZKW_STYLE_ID } });
-    style.textContent = ZKW_CSS;
-}

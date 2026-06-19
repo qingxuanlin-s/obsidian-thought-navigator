@@ -395,7 +395,6 @@ export function renderEmbedNodePreviews(this: any): void {
                 lineHeight: '1.6',
                 color: 'var(--text-normal)',
             });
-            contentEl.setCssProps({ 'scrollbar-width': 'thin' });
 
             // 右下角 resize 焦点（仅在选中时可用）
             const resizeHandle = document.createElement('div');

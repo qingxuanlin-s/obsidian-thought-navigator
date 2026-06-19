@@ -66,7 +66,6 @@ export default class ChooseIconModal extends FuzzySuggestModal<string> {
         return item;
     }
 
-    // This will be overriden anyway, but typescript complains if it's not declared
-    // eslint-disable-next-line no-unused-vars, @typescript-eslint/no-empty-function
+    // eslint-disable-next-line no-unused-vars, @typescript-eslint/no-empty-function -- placeholder override required by SuggestModal signature; the real handler is assigned at the call site
     public onChooseItem(_: string, __: MouseEvent | KeyboardEvent): void { }
 }
