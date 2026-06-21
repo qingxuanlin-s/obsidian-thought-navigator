@@ -259,6 +259,12 @@ export function convertEdgesToElements(
  *
  * 切向距离按 source/target 分别给:源端常是小节点、目标端常是大卡片,共用一个值(取两端较大)
  * 会让小源端被迫甩出一段长水平肩再拐弯,呈生硬肘弯。分开后各取自身半尺寸做下限,等尺寸时退化为原行为。
+ *
+ * targetHalfMain:目标节点在主轴上的半尺寸。自动布局把同级子节点按「近端边框」对齐(见
+ * autoLayoutEngine 的 placeChildGroup),宽窄不同的兄弟近端齐、中心 x 却不齐。源端肩长若按
+ * 中心距 |delta|*k 算,各边肩长就随子节点宽度漂移,在父节点旁交叉打结。改用「到目标近端边框」
+ * 的距离 |delta|-targetHalfMain 来算源端肩长:近端对齐的兄弟此值恒等 ⇒ 源端控制点重合 ⇒
+ * 干净的「单干再扇出」。默认 0 时退化为原中心距行为。
  */
 export function computeDirectionalEdgeControlPoints(
 	sx: number,
@@ -268,7 +274,8 @@ export function computeDirectionalEdgeControlPoints(
 	direction: 'LR' | 'RL' | 'TB' | 'BT',
 	k = 0.5,
 	minTangentSource = 12,
-	minTangentTarget = minTangentSource
+	minTangentTarget = minTangentSource,
+	targetHalfMain = 0
 ): { distances: number[]; weights: number[] } {
 	const dx = tx - sx;
 	const dy = ty - sy;
@@ -284,18 +291,20 @@ export function computeDirectionalEdgeControlPoints(
 	//  2) 更关键:Cytoscape 从「最后一个控制点」朝目标中心射线求节点边框交点,控制点一旦落进
 	//     目标节点框内部就找不到交点("invalid endpoints",边消失)。因此下限需 ≥ 该端节点半尺寸,
 	//     由调用方按 source/target 各自尺寸传入,保证控制点始终在节点外。正常间距下 |dx|*k 远大于它。
-	const axisTangent = (delta: number, flow: number, floor: number): number => {
+	// shrink:从主轴跨度里先扣掉的长度(源端扣 targetHalfMain → 用「到目标近端边框」的距离算肩长)。
+	const axisTangent = (delta: number, flow: number, floor: number, shrink = 0): number => {
 		const sign = delta !== 0 ? Math.sign(delta) : flow;
-		return Math.max(Math.abs(delta) * k, floor) * sign;
+		const mag = Math.max(0, Math.abs(delta) - shrink);
+		return Math.max(mag * k, floor) * sign;
 	};
 	let c1x: number, c1y: number, c2x: number, c2y: number;
 	if (horizontal) {
 		const flow = direction === 'RL' ? -1 : 1;
-		c1x = sx + axisTangent(dx, flow, minTangentSource); c1y = sy;
+		c1x = sx + axisTangent(dx, flow, minTangentSource, targetHalfMain); c1y = sy;
 		c2x = tx - axisTangent(dx, flow, minTangentTarget); c2y = ty;
 	} else {
 		const flow = direction === 'BT' ? -1 : 1;
-		c1x = sx; c1y = sy + axisTangent(dy, flow, minTangentSource);
+		c1x = sx; c1y = sy + axisTangent(dy, flow, minTangentSource, targetHalfMain);
 		c2x = tx; c2y = ty - axisTangent(dy, flow, minTangentTarget);
 	}
 	// 绝对坐标 → (weight 沿弦, distance 沿法向 (-dy,dx)/L)
