@@ -1,7 +1,7 @@
 import { Component, MarkdownRenderer, Menu, Notice, TFile, setIcon } from "obsidian";
 import { WSMocNode, WSProjectNode, WSNoteNode, WorkspaceNode } from "src/types/workspace";
 import { nextStatus } from "src/workspace/WorkspaceStore";
-import { MdTask, prependTask, toggleTask, removeTask, insertSubtask, setTaskNote, removeTaskNote, setTaskText, taskMetaSuffix, parseTaskText, buildTaskText, processFile } from "src/workspace/projectTasks";
+import { MdTask, prependTask, toggleTask, removeTask, insertSubtask, setTaskNote, removeTaskNote, setTaskText, taskMetaSuffix, parseTaskText, buildTaskText, moveTask, processFile, addTaskRefs, removeTaskRef } from "src/workspace/projectTasks";
 import { FilePickerModal } from "src/modal/filePickerModal";
 import { t } from "src/lang/helper";
 import { TaskModal } from "./modals";
@@ -49,6 +49,50 @@ function pickMocAssoc(ctx: RenderCtx, moc: WSMocNode): void {
     }).open();
 }
 
+function pickProjectRefs(ctx: RenderCtx, p: WSProjectNode): void {
+    const mounted = ctx.store.linksFrom(p.id)
+        .filter(l => l.type === 'related')
+        .map(l => ctx.store.getNode(l.to))
+        .map(n => (n as any)?.filePath as string | undefined)
+        .filter((path): path is string => !!path);
+    new FilePickerModal(ctx.app, p.title, mounted, async (paths) => {
+        await ctx.store.addProjectFileReferences(p.id, paths);
+        ctx.refresh();
+    }).open();
+}
+
+function renderProjectRefs(body: HTMLElement, ctx: RenderCtx, p: WSProjectNode): void {
+    const links = ctx.store.linksFrom(p.id).filter(l => l.type === 'related');
+    const sec = body.createDiv({ cls: 'dsec row project-refs-head' });
+    sec.appendText(t('ws project refs'));
+    const add = sec.createSpan({ cls: 'dsec-add', text: '+ ' + t('ws project refs add') });
+    add.onclick = () => pickProjectRefs(ctx, p);
+
+    if (!links.length) {
+        body.createDiv({ cls: 'empty project-refs-empty', text: t('ws project refs empty') });
+        return;
+    }
+
+    const refs = body.createDiv({ cls: 'project-refs' });
+    links.forEach(l => {
+        const node = ctx.store.getNode(l.to);
+        if (!node || (node.type !== 'note' && node.type !== 'moc' && node.type !== 'map')) return;
+        const chip = refs.createSpan({ cls: 'project-ref' });
+        setIcon(chip.createSpan({ cls: 'project-ref-ic' }), node.type === 'moc' ? 'git-branch' : node.type === 'map' ? 'git-fork' : 'file-text');
+        chip.createSpan({ cls: 'project-ref-title', text: node.title });
+        chip.setAttribute('title', (node as any).filePath || node.title);
+        chip.onclick = () => ctx.open(ctx.store.targetFor(node));
+        const rm = chip.createSpan({ cls: 'project-ref-remove' });
+        setIcon(rm, 'x');
+        rm.setAttribute('title', t('ws assoc remove'));
+        rm.onclick = async (e) => {
+            e.stopPropagation();
+            await ctx.store.removeRelation(p.id, node.id, 'related');
+            ctx.refresh();
+        };
+    });
+}
+
 /** 项目页:可点状态机 + 进度 + next action(markdown `- [ ]`) */
 export function renderProjectPage(container: HTMLElement, ctx: RenderCtx, p: WSProjectNode): void {
     const ck = container.createDiv({ cls: 'ck' });
@@ -75,6 +119,7 @@ export function renderProjectPage(container: HTMLElement, ctx: RenderCtx, p: WSP
 
     // 下一步:进度条 + 新增 + 任务列表(进度/新增在最上面)
     renderActions(body, ctx, p);
+    renderProjectRefs(body, ctx, p);
 
     if (p.checklist?.length) {
         body.createDiv({ cls: 'dsec', text: t('ws checklist') });
@@ -150,13 +195,13 @@ function renderActions(body: HTMLElement, ctx: RenderCtx, p: WSProjectNode): voi
     }
 
     // ── 任务列表(排序 → 隐藏已完成过滤)──
-    const wrap = body.createDiv({ cls: 'actions' });
+    const wrap = body.createDiv({ cls: 'actions project-actions' });
     if (file instanceof TFile) {
         if (tasks && tasks.length) {
             const sorted = sortMode === 'doc' ? tasks : sortTasks(tasks, sortMode);
             const keep = hideDone ? keepWithUndoneSubtree(sorted) : null;
             const show = keep ? sorted.filter(tk => keep.has(tk)) : sorted;
-            if (show.length) show.forEach(tk => renderTaskRow(wrap, ctx, p, file, tk));
+            if (show.length) show.forEach(tk => renderTaskRow(wrap, ctx, p, file, tk, sortMode === 'doc'));
             else wrap.createDiv({ cls: 'empty', text: t('ws action all done') });
         } else wrap.createDiv({ cls: 'empty', text: t('ws action empty') });
     } else {
@@ -169,6 +214,8 @@ type SortMode = 'doc' | 'due' | 'start';
 const LS_HIDE_DONE = 'zkw.task.hideDone';
 const LS_SORT = 'zkw.task.sort';
 function readLS(k: string): string | null { try { return localStorage.getItem(k); } catch { return null; } }
+/** 当前正在拖动的任务(仅默认顺序下启用,跨行共享) */
+let draggedTask: MdTask | null = null;
 
 /**
  * 弹框驱动的新建/子任务/编辑。落盘:
@@ -312,10 +359,99 @@ function mountInlineInput(
     input.onblur = () => commit();
 }
 
-function renderTaskRow(wrap: HTMLElement, ctx: RenderCtx, p: WSProjectNode, file: TFile, tk: MdTask): void {
+function linkTextForFile(file: TFile): string {
+    return file.extension === 'md' ? file.path.replace(/\.md$/i, '') : file.path;
+}
+
+function resolveTaskRef(ctx: RenderCtx, source: TFile, ref: string): TFile | null {
+    const direct = ctx.app.vault.getAbstractFileByPath(ref);
+    if (direct instanceof TFile) return direct;
+    const withMd = ctx.app.vault.getAbstractFileByPath(ref.endsWith('.md') ? ref : `${ref}.md`);
+    if (withMd instanceof TFile) return withMd;
+    return ctx.app.metadataCache.getFirstLinkpathDest(ref, source.path);
+}
+
+function taskRefMountedPaths(ctx: RenderCtx, source: TFile, tk: MdTask): string[] {
+    return (tk.refs ?? [])
+        .map(ref => resolveTaskRef(ctx, source, ref)?.path)
+        .filter((p): p is string => !!p);
+}
+
+function pickActionRefs(ctx: RenderCtx, p: WSProjectNode, file: TFile, tk: MdTask): void {
+    new FilePickerModal(ctx.app, p.title, taskRefMountedPaths(ctx, file, tk), async (paths) => {
+        const refs = paths.map(path => {
+            const picked = ctx.app.vault.getAbstractFileByPath(path);
+            return picked instanceof TFile ? linkTextForFile(picked) : path;
+        });
+        await writeTasks(ctx, file, c => addTaskRefs(c, tk, refs));
+    }).open();
+}
+
+function renderTaskRefs(main: HTMLElement, ctx: RenderCtx, file: TFile, tk: MdTask): void {
+    if (!tk.refs?.length) return;
+    const refs = main.createDiv({ cls: 'arefs' });
+    tk.refs.forEach(ref => {
+        const chip = refs.createSpan({ cls: 'aref' });
+        const target = resolveTaskRef(ctx, file, ref);
+        setIcon(chip.createSpan({ cls: 'aref-ic' }), target ? 'file-text' : 'link');
+        chip.createSpan({ cls: 'aref-label', text: target?.basename ?? ref.split('/').pop() ?? ref });
+        chip.setAttribute('title', target?.path ?? ref);
+        chip.onclick = (e) => {
+            e.stopPropagation();
+            ctx.openLink(ref, file.path, e.ctrlKey || e.metaKey);
+        };
+        const rm = chip.createSpan({ cls: 'aref-remove' });
+        setIcon(rm, 'x');
+        rm.setAttribute('title', t('ws action refs remove'));
+        rm.onclick = async (e) => {
+            e.stopPropagation();
+            await writeTasks(ctx, file, c => removeTaskRef(c, tk, ref));
+        };
+    });
+}
+
+function renderTaskRow(wrap: HTMLElement, ctx: RenderCtx, p: WSProjectNode, file: TFile, tk: MdTask, draggable: boolean): void {
     const row = wrap.createDiv({ cls: 'action' + (tk.checked ? ' done' : '') });
     const indentPx = tk.depth * 22;
     if (indentPx) row.setCssStyles({ marginLeft: `${indentPx}px` });
+
+    // 拖动手柄(仅默认顺序):按下手柄才激活 draggable,避免误触选区/勾选
+    if (draggable) {
+        const handle = row.createSpan({ cls: 'adrag', text: '⠿' });
+        handle.setAttribute('title', t('ws action drag'));
+        handle.onmousedown = () => row.setAttribute('draggable', 'true');
+        handle.onmouseup = () => row.removeAttribute('draggable');
+        row.addEventListener('dragstart', (e) => {
+            draggedTask = tk;
+            row.addClass('dragging');
+            e.dataTransfer?.setData('text/plain', tk.raw);
+            if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+        });
+        row.addEventListener('dragend', () => {
+            draggedTask = null;
+            row.removeClass('dragging');
+            row.removeAttribute('draggable');
+            wrap.findAll('.action').forEach(el => el.removeClasses(['drop-before', 'drop-after']));
+        });
+        row.addEventListener('dragover', (e) => {
+            if (!draggedTask || draggedTask === tk) return;
+            e.preventDefault();
+            if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+            const r = row.getBoundingClientRect();
+            const after = e.clientY > r.top + r.height / 2;
+            row.toggleClass('drop-after', after);
+            row.toggleClass('drop-before', !after);
+        });
+        row.addEventListener('dragleave', () => row.removeClasses(['drop-before', 'drop-after']));
+        row.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            const moving = draggedTask;
+            const after = row.hasClass('drop-after');
+            row.removeClasses(['drop-before', 'drop-after']);
+            if (!moving || moving === tk) return;
+            await writeTasks(ctx, file, c => moveTask(c, moving, tk, after ? 'after' : 'before'));
+        });
+    }
 
     const box = row.createEl('input', { type: 'checkbox' });
     box.checked = tk.checked;
@@ -327,6 +463,7 @@ function renderTaskRow(wrap: HTMLElement, ctx: RenderCtx, p: WSProjectNode, file
     const main = row.createDiv({ cls: 'amain' });
     const txt = main.createDiv({ cls: 'atext-view' });
     renderTaskText(txt, ctx, tk.text);
+    renderTaskRefs(main, ctx, file, tk);
     if (tk.note !== undefined) {
         const noteEl = main.createDiv({ cls: 'anote' });
         noteEl.createSpan({ cls: 'anote-mark', text: '—' });
@@ -349,6 +486,10 @@ function renderTaskRow(wrap: HTMLElement, ctx: RenderCtx, p: WSProjectNode, file
     const sub = ctl.createSpan({ cls: 'aicon', text: '↳' });
     sub.setAttribute('title', t('ws action subtask'));
     sub.onclick = () => openTaskModal(ctx, p, file, { mode: 'subtask', parent: tk });
+
+    const refs = ctl.createSpan({ cls: 'aicon' + (tk.refs?.length ? ' hasref' : ''), text: tk.refs?.length ? String(tk.refs.length) : '🔗' });
+    refs.setAttribute('title', t('ws action refs add'));
+    refs.onclick = () => pickActionRefs(ctx, p, file, tk);
 
     if (tk.note === undefined) {
         const note = ctl.createSpan({ cls: 'aicon', text: '🗒' });

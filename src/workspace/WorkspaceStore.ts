@@ -395,6 +395,35 @@ export class WorkspaceStore extends Component {
         return added;
     }
 
+    /**
+     * 项目引用资料:把 vault 文件确保为工作区 Note/MOC 节点,再用 related 链接到项目。
+     * 与 MOC 容器挂载不同,这里不改变文件/节点的所属容器。
+     */
+    async addProjectFileReferences(projectId: string, paths: string[]): Promise<number> {
+        const project = this.nodes.get(projectId);
+        if (!project || project.type !== 'project') return 0;
+        const isMocPath = (p: string) => p.endsWith('.moc.md') || p.endsWith('.moc');
+        let added = 0;
+        await this.commit(ctx => {
+            for (const path of paths) {
+                if (!path) continue;
+                let node = this.getNodeByPath(path);
+                if (!node) {
+                    const now = Date.now();
+                    const n: WorkspaceNode = isMocPath(path)
+                        ? { id: genNodeId(), type: 'moc', spaceId: project.spaceId, title: baseNameNoExt(path).replace(/\.moc$/, ''), filePath: path, createdAt: now, updatedAt: now }
+                        : { id: genNodeId(), type: 'note', spaceId: project.spaceId, title: baseNameNoExt(path), filePath: path, createdAt: now, updatedAt: now };
+                    ctx.put(n);
+                    node = n;
+                }
+                const before = ctx.links.length;
+                ctx.addLink({ from: projectId, to: node.id, type: 'related' });
+                if (ctx.links.length > before) added++;
+            }
+        });
+        return added;
+    }
+
     /** 在容器(MOC/Space)下新建子 MOC(= 文件夹)。容器是 MOC 时加 childMoc 链。 */
     async createChildMoc(containerId: string, title: string): Promise<WSMocNode | null> {
         const container = this.nodes.get(containerId);

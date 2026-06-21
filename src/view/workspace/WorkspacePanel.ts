@@ -34,6 +34,11 @@ export interface WorkspacePanelDeps {
     onOpenFile?: (file: TFile, forceTab: boolean) => void;
     /** 打开 wiki 链接,同样交给宿主按默认方式打开。不提供则退化为 openLinkText。 */
     onOpenLink?: (linkText: string, sourcePath: string, forceTab: boolean) => void;
+    /** 内嵌到图谱视图时,工作区内部导航交给宿主记录到同一条浏览历史。 */
+    onNavigateTarget?: (target: OpenTarget) => void;
+    onNavBack?: () => void;
+    onNavForward?: () => void;
+    getNavState?: () => { canBack: boolean; canForward: boolean };
 }
 
 /**
@@ -52,9 +57,15 @@ export class WorkspacePanel {
     private tree!: SpacesTree;
     private deck!: Deck;
     private current: OpenTarget = { kind: 'home' };
+    private navHistory: OpenTarget[] = [];
+    private navIndex = -1;
+    private navApplying = false;
+    private navBackEl: HTMLElement | null = null;
+    private navForwardEl: HTMLElement | null = null;
     private unsub: (() => void) | null = null;
     private taskStore: ProjectTaskStore;
     private modifyRef: EventRef | null = null;
+    private readonly MAX_NAV_HISTORY = 50;
 
     constructor(parent: HTMLElement, deps: WorkspacePanelDeps) {
         this.deps = deps;
@@ -106,6 +117,18 @@ export class WorkspacePanel {
         this.root.tabIndex = 0;
         this.root.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && this.deck.handleEsc()) e.stopPropagation();
+            const activeEl = activeDocument.activeElement as HTMLElement | null;
+            if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable)) return;
+            if ((e.metaKey || e.ctrlKey) && e.key === '[') {
+                e.preventDefault();
+                e.stopPropagation();
+                this.back();
+            }
+            if ((e.metaKey || e.ctrlKey) && e.key === ']') {
+                e.preventDefault();
+                e.stopPropagation();
+                this.forward();
+            }
         });
 
         this.unsub = deps.store.onChange(() => { if (this.tree) { this.renderCenter(); this.tree.render(); } });
@@ -161,6 +184,20 @@ export class WorkspacePanel {
         home.onclick = () => this.navigate({ kind: 'home' });
 
         tbar.createDiv({ cls: 'spacer' });
+
+        const nav = tbar.createDiv({ cls: 'navctl' });
+        const back = nav.createDiv({ cls: 'ticon navbtn' });
+        setIcon(back, 'arrow-left');
+        setTooltip(back, t('nav back'));
+        back.onclick = () => this.back();
+        this.navBackEl = back;
+        const forward = nav.createDiv({ cls: 'ticon navbtn' });
+        setIcon(forward, 'arrow-right');
+        setTooltip(forward, t('nav forward'));
+        forward.onclick = () => this.forward();
+        this.navForwardEl = forward;
+        this.updateNavButtons();
+
         if (this.deps.onExitToGraph) {
             const g = tbar.createDiv({ cls: 'ticon' });
             setIcon(g, 'git-fork');
@@ -237,6 +274,81 @@ export class WorkspacePanel {
         this.tree.setCurrent(target);
         this.renderCenter();
         this.tree.render();
+        if (this.deps.onNavigateTarget) this.deps.onNavigateTarget({ ...target });
+        else this.recordNavState(target);
+        this.updateNavButtons();
+    }
+
+    getCurrentTarget(): OpenTarget { return { ...this.current }; }
+
+    /** 由宿主浏览历史还原 workspace 目标;始终在面板内渲染,不甩回图谱。 */
+    showTarget(target: OpenTarget): void { this.navigateInline(target); }
+
+    private sameTarget(a: OpenTarget | null | undefined, b: OpenTarget): boolean {
+        if (!a || a.kind !== b.kind) return false;
+        if (a.kind === 'home' || b.kind === 'home') return true;
+        if (a.id !== b.id) return false;
+        return (a.kind !== 'space' || b.kind !== 'space' || a.lens === b.lens);
+    }
+
+    private recordNavState(target: OpenTarget) {
+        if (this.navApplying) return;
+        if (this.sameTarget(this.navHistory[this.navIndex], target)) {
+            this.updateNavButtons();
+            return;
+        }
+        if (this.navIndex < this.navHistory.length - 1) {
+            this.navHistory = this.navHistory.slice(0, this.navIndex + 1);
+        }
+        this.navHistory.push({ ...target });
+        if (this.navHistory.length > this.MAX_NAV_HISTORY) this.navHistory.shift();
+        this.navIndex = this.navHistory.length - 1;
+        this.updateNavButtons();
+    }
+
+    private back() {
+        if (this.deps.onNavBack) { this.deps.onNavBack(); return; }
+        this.navBack();
+    }
+
+    private forward() {
+        if (this.deps.onNavForward) { this.deps.onNavForward(); return; }
+        this.navForward();
+    }
+
+    private navBack() {
+        if (this.navIndex <= 0) return;
+        this.applyNavState(this.navIndex - 1);
+    }
+
+    private navForward() {
+        if (this.navIndex >= this.navHistory.length - 1) return;
+        this.applyNavState(this.navIndex + 1);
+    }
+
+    private applyNavState(index: number) {
+        const target = this.navHistory[index];
+        if (!target) return;
+        this.navApplying = true;
+        try {
+            this.navIndex = index;
+            this.navigateInline(target);
+        } finally {
+            this.navApplying = false;
+        }
+        this.updateNavButtons();
+    }
+
+    syncNavButtons(): void { this.updateNavButtons(); }
+
+    private updateNavButtons() {
+        const external = this.deps.getNavState?.();
+        const backEnabled = external ? external.canBack : this.navIndex > 0;
+        const forwardEnabled = external ? external.canForward : this.navIndex >= 0 && this.navIndex < this.navHistory.length - 1;
+        this.navBackEl?.toggleClass('disabled', !backEnabled);
+        this.navForwardEl?.toggleClass('disabled', !forwardEnabled);
+        this.navBackEl?.setAttribute('aria-disabled', String(!backEnabled));
+        this.navForwardEl?.setAttribute('aria-disabled', String(!forwardEnabled));
     }
 
     private restoreSession() {
@@ -336,4 +448,3 @@ class NewSpaceModal extends Modal {
 
     onClose() { this.contentEl.empty(); }
 }
-

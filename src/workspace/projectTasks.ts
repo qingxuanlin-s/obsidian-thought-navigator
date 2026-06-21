@@ -6,6 +6,7 @@ import { App, TFile } from "obsidian";
  *
  * 父子任务用缩进层级表达(`1111` 的子任务 `1111-1` 缩进一级);
  * 任务备注用缩进一级的 `--- 内容` 行挂在任务下方。
+ * 任务引用资料用缩进一级的 `refs:: [[...]] [[...]]` 行挂在任务下方。
  */
 
 export interface MdTask {
@@ -16,6 +17,8 @@ export interface MdTask {
     depth: number;      // 嵌套层级(0 为顶层),按缩进栈推导
     note?: string;      // 任务备注正文(--- 之后的内容),无则缺省
     noteRaw?: string;   // 备注整行原文(用于改写/删除)
+    refs?: string[];    // 任务引用资料的 wikilink linktext
+    refsRaw?: string;   // refs:: 整行原文(用于改写/删除)
 }
 
 /** 派生子任务/备注时使用的一级缩进 */
@@ -24,6 +27,9 @@ const INDENT_UNIT = '    ';
 const TASK_RE = /^(\s*[-*]\s+)\[([ xX])\]\s?(.*)$/;
 /** 缩进的备注行:`    --- 内容`(要求有前导空白,避开 frontmatter/正文分隔线) */
 const NOTE_RE = /^(\s+)---\s?(.*)$/;
+/** 缩进的引用资料行:`    refs:: [[A]] [[B]]` */
+const REFS_RE = /^(\s+)refs::\s?(.*)$/i;
+const WIKILINK_RE = /\[\[([^\]]+)\]\]/g;
 /** 行内首个 checkbox 方括号(bullet 一定在更前,故首个匹配即任务框) */
 const BOX_RE = /\[([ xX])\]/;
 
@@ -47,6 +53,21 @@ function leadingWs(line: string): string {
 /** 文件换行符(回写时保持) */
 function eolOf(content: string): string {
     return content.includes('\r\n') ? '\r\n' : '\n';
+}
+
+function parseRefs(text: string): string[] {
+    const out: string[] = [];
+    let m: RegExpExecArray | null;
+    WIKILINK_RE.lastIndex = 0;
+    while ((m = WIKILINK_RE.exec(text)) !== null) {
+        const ref = m[1].split('|')[0].trim();
+        if (ref && !out.includes(ref)) out.push(ref);
+    }
+    return out;
+}
+
+function refsLine(indent: string, refs: string[]): string {
+    return `${indent}${INDENT_UNIT}refs:: ${refs.map(r => `[[${r}]]`).join(' ')}`;
 }
 
 export function parseTaskLines(content: string): MdTask[] {
@@ -76,6 +97,12 @@ export function parseTaskLines(content: string): MdTask[] {
         if (nm && lastTask && lastTask.note === undefined) {
             lastTask.note = nm[2];
             lastTask.noteRaw = line;
+            continue;
+        }
+        const rm = REFS_RE.exec(line);
+        if (rm && lastTask && lastTask.refs === undefined) {
+            lastTask.refs = parseRefs(rm[2]);
+            lastTask.refsRaw = line;
         }
     }
     return out;
@@ -246,6 +273,36 @@ export function insertSubtask(content: string, parent: MdTask, text: string, pre
     return lines.join(eol);
 }
 
+/** 把一段子树各行整体缩进 delta(空格宽度);空行原样保留。统一输出空格缩进(与 INDENT_UNIT 一致) */
+function reindentBlock(block: string[], delta: number): string[] {
+    if (delta === 0) return block.slice();
+    return block.map(l => {
+        if (l.trim() === '') return l;
+        const w = Math.max(0, indentWidth(l) + delta);
+        return ' '.repeat(w) + l.slice(leadingWs(l).length);
+    });
+}
+
+/**
+ * 把 task 的整棵子树(含子任务/备注)移动到 target 的前面或后面,并把子树根缩进对齐到 target
+ * (即移动后成为 target 的同级)。拖入自身子树时安全放弃(target 落在被移动块内 → 找不到锚点)。
+ */
+export function moveTask(content: string, task: MdTask, target: MdTask, pos: 'before' | 'after'): string {
+    if (task.raw === target.raw) return content;
+    const eol = eolOf(content);
+    const lines = content.split(/\r?\n/);
+    const from = lineIndexOf(lines, task.raw);
+    if (from < 0) return content;
+    const fromEnd = subtreeEnd(lines, from, indentWidth(task.raw));
+    const block = reindentBlock(lines.slice(from, fromEnd), indentWidth(target.raw) - indentWidth(task.raw));
+    lines.splice(from, fromEnd - from);
+    let ti = lineIndexOf(lines, target.raw);
+    if (ti < 0) return content; // target 在被移动子树内,放弃
+    if (pos === 'after') ti = subtreeEnd(lines, ti, indentWidth(target.raw));
+    lines.splice(ti, 0, ...block);
+    return lines.join(eol);
+}
+
 /** 设置/更新任务备注:已有则改写备注行,否则在任务行下方插入 `--- 内容`(缩进一级) */
 export function setTaskNote(content: string, task: MdTask, note: string): string {
     const eol = eolOf(content);
@@ -269,6 +326,43 @@ export function removeTaskNote(content: string, task: MdTask): string {
     const ni = lineIndexOf(lines, task.noteRaw);
     if (ni < 0) return content;
     lines.splice(ni, 1);
+    return lines.join(eol);
+}
+
+/** 设置/更新任务引用资料行;空数组会删除 refs 行 */
+export function setTaskRefs(content: string, task: MdTask, refs: string[]): string {
+    const clean = refs.map(r => r.trim()).filter(Boolean);
+    const deduped = Array.from(new Set(clean));
+    if (deduped.length === 0) return removeTaskRefs(content, task);
+    const eol = eolOf(content);
+    const lines = content.split(/\r?\n/);
+    const line = refsLine(task.indent, deduped);
+    if (task.refsRaw) {
+        const ri = lineIndexOf(lines, task.refsRaw);
+        if (ri >= 0) { lines[ri] = line; return lines.join(eol); }
+    }
+    const idx = lineIndexOf(lines, task.raw);
+    if (idx < 0) return content;
+    const insertAt = task.noteRaw ? lineIndexOf(lines, task.noteRaw) + 1 : idx + 1;
+    lines.splice(Math.max(idx + 1, insertAt), 0, line);
+    return lines.join(eol);
+}
+
+export function addTaskRefs(content: string, task: MdTask, refs: string[]): string {
+    return setTaskRefs(content, task, [...(task.refs ?? []), ...refs]);
+}
+
+export function removeTaskRef(content: string, task: MdTask, ref: string): string {
+    return setTaskRefs(content, task, (task.refs ?? []).filter(r => r !== ref));
+}
+
+export function removeTaskRefs(content: string, task: MdTask): string {
+    if (!task.refsRaw) return content;
+    const eol = eolOf(content);
+    const lines = content.split(/\r?\n/);
+    const ri = lineIndexOf(lines, task.refsRaw);
+    if (ri < 0) return content;
+    lines.splice(ri, 1);
     return lines.join(eol);
 }
 

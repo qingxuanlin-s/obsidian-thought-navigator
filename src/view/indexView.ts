@@ -9,7 +9,7 @@ import { MOCSelectorModal } from "src/modal/mocSelectorModal";
 import { NoteSearchModal } from "src/modal/noteSearchModal";
 import { convertMOCToZKNodes, createMOCTreeNode, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX, MOCParseResult, MOCTreeNode, NODE_FLAG_SEPARATED, NODE_FLAG_SIDE_PINNED, parseMOCStructure, saveMOCStructure, stripMocSuffix } from "src/utils/utils";
 import { WorkspacePanel } from "src/view/workspace/WorkspacePanel";
-import { WSMocNode } from "src/types/workspace";
+import { OpenTarget, WSMocNode } from "src/types/workspace";
 import { ScratchpadDrawer } from "src/view/scratchpadDrawer";
 import { NodeDetailPanel } from "src/view/index/detailPanel";
 import { ScratchpadEntry } from "src/scratch/scratchpadManager";
@@ -33,6 +33,7 @@ import {
 
 export const ZK_INDEX_TYPE: string = "zk-index-type";
 export const ZK_INDEX_VIEW: string = t("thought-tree-graph");
+type IndexNavState = { mode: 'graph'; mocPath: string | null } | { mode: 'workspace'; mocPath: null; workspaceTarget: OpenTarget };
 export const ZK_NAVIGATION: string = "zk-navigation";
 
 export interface ReverseRelation {
@@ -204,8 +205,8 @@ export class ZKIndexView extends FileView {
     // 内嵌工作区模式(typed-node 壳):图谱 ⇄ 工作区 在同一视图内切换
     private workspacePanel: WorkspacePanel | null = null;
     private workspaceMode = false;
-    // 浏览历史(上一步/下一步):记录有效视图状态(图谱某 MOC / 工作区),供工具栏前进后退
-    private navHistory: Array<{ mode: 'graph' | 'workspace'; mocPath: string | null }> = [];
+    // 浏览历史(上一步/下一步):记录有效视图状态(图谱某 MOC / 工作区内某目标),供工具栏前进后退
+    private navHistory: IndexNavState[] = [];
     private navIndex = -1;
     private navApplying = false;
     private navBackBtn: ExtraButtonComponent | null = null;
@@ -461,10 +462,25 @@ export class ZKIndexView extends FileView {
     // ============ 浏览历史(上一步/下一步) ============
 
     /** 当前有效视图状态:工作区模式优先,否则为图谱当前 MOC */
-    private currentNavState(): { mode: 'graph' | 'workspace'; mocPath: string | null } {
+    private currentNavState(): IndexNavState {
         return this.workspaceMode
-            ? { mode: 'workspace', mocPath: null }
+            ? { mode: 'workspace', mocPath: null, workspaceTarget: this.workspacePanel?.getCurrentTarget() ?? { kind: 'home' } }
             : { mode: 'graph', mocPath: this.plugin.settings.mocCurrentFile || null };
+    }
+
+    private sameWorkspaceTarget(a: OpenTarget, b: OpenTarget): boolean {
+        if (a.kind !== b.kind) return false;
+        if (a.kind === 'home' || b.kind === 'home') return true;
+        if (a.id !== b.id) return false;
+        return a.kind !== 'space' || b.kind !== 'space' || a.lens === b.lens;
+    }
+
+    private sameNavState(a: IndexNavState | null, b: IndexNavState): boolean {
+        if (!a || a.mode !== b.mode || a.mocPath !== b.mocPath) return false;
+        if (a.mode === 'workspace' && b.mode === 'workspace') {
+            return this.sameWorkspaceTarget(a.workspaceTarget, b.workspaceTarget);
+        }
+        return true;
     }
 
     /**
@@ -475,7 +491,7 @@ export class ZKIndexView extends FileView {
         if (this.navApplying) return;
         const state = this.currentNavState();
         const top = this.navIndex >= 0 ? this.navHistory[this.navIndex] : null;
-        if (top && top.mode === state.mode && top.mocPath === state.mocPath) return;
+        if (this.sameNavState(top, state)) return;
         // 在历史中间时产生新导航 → 截断前进分支
         if (this.navIndex < this.navHistory.length - 1) {
             this.navHistory = this.navHistory.slice(0, this.navIndex + 1);
@@ -499,6 +515,7 @@ export class ZKIndexView extends FileView {
         try {
             if (state.mode === 'workspace') {
                 this.setWorkspaceMode(true);
+                this.workspacePanel?.showTarget(state.workspaceTarget);
             } else {
                 if (state.mocPath && this.plugin.settings.mocCurrentFile !== state.mocPath) {
                     this.plugin.settings.mocCurrentFile = state.mocPath;
@@ -527,6 +544,7 @@ export class ZKIndexView extends FileView {
             fwd.setDisabled(!can);
             fwd.extraSettingsEl?.toggleClass('zk-nav-disabled', !can);
         }
+        this.workspacePanel?.syncNavButtons();
     }
 
     /**
@@ -1485,6 +1503,15 @@ export class ZKIndexView extends FileView {
                     onOpenMoc: (node: WSMocNode) => this.openMocFromWorkspace(node),
                     onOpenFile: (file, forceTab) => this.openFileInPreferredLeaf(file, forceTab),
                     onOpenLink: (linkText, sourcePath, forceTab) => this.openLinkInPreferredLeaf(linkText, sourcePath, forceTab),
+                    onNavigateTarget: () => {
+                        if (this.workspaceMode) this.recordNavState();
+                    },
+                    onNavBack: () => this.navBack(),
+                    onNavForward: () => this.navForward(),
+                    getNavState: () => ({
+                        canBack: this.navIndex > 0,
+                        canForward: this.navIndex < this.navHistory.length - 1,
+                    }),
                 });
                 this.workspacePanel.setVisible(false);
             }
