@@ -272,6 +272,7 @@ export class WorkspacePanel {
         if (target.kind !== 'home') { try { localStorage.setItem(LS_LAST, JSON.stringify(target)); } catch {} }
         try { localStorage.setItem(LS_OPEN, JSON.stringify(target)); } catch {}
         this.tree.setCurrent(target);
+        this.tree.revealTarget(target);
         this.renderCenter();
         this.tree.render();
         if (this.deps.onNavigateTarget) this.deps.onNavigateTarget({ ...target });

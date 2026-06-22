@@ -1,7 +1,7 @@
 import { Component, MarkdownRenderer, Menu, Notice, TFile, setIcon } from "obsidian";
 import { WSMocNode, WSProjectNode, WSNoteNode, WorkspaceNode } from "src/types/workspace";
 import { nextStatus } from "src/workspace/WorkspaceStore";
-import { MdTask, prependTask, toggleTask, removeTask, insertSubtask, setTaskNote, removeTaskNote, setTaskText, taskMetaSuffix, parseTaskText, buildTaskText, moveTask, processFile, addTaskRefs, removeTaskRef } from "src/workspace/projectTasks";
+import { MdTask, prependTask, toggleTask, removeTask, insertSubtask, setTaskNote, removeTaskNote, setTaskText, taskMetaSuffix, parseTaskText, buildTaskText, moveTask, processFile, addTaskRefs, removeTaskRef, decodeNoteNewlines } from "src/workspace/projectTasks";
 import { FilePickerModal } from "src/modal/filePickerModal";
 import { t } from "src/lang/helper";
 import { TaskModal } from "./modals";
@@ -229,8 +229,8 @@ function openTaskModal(ctx: RenderCtx, p: WSProjectNode, file: TFile | null,
         initial = {
             description: stripPrefix(parsed.description, ctx.taskPrefix),
             priority: parsed.priority,
-            start: (parsed.start ?? '').slice(0, 10),
-            due: (parsed.due ?? '').slice(0, 10),
+            start: parsed.start ?? '',
+            due: parsed.due ?? '',
         };
     }
     const header = t(opts.mode === 'edit' ? 'ws task modal edit' : opts.mode === 'subtask' ? 'ws task modal subtask' : 'ws task modal new');
@@ -331,18 +331,26 @@ function todayLocal(): string {
     return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
-/** 在 afterEl 之后挂一个临时行内输入框,Enter 提交 / Esc / 失焦取消 */
+/**
+ * 在 afterEl 之后挂一个临时行内输入框,Enter 提交 / Esc / 失焦取消。
+ * multiline=true 时改用自适应高度的 textarea:Enter 提交、Shift+Enter 换行(用于多行备注)。
+ */
 function mountInlineInput(
     afterEl: HTMLElement, indentPx: number, placeholder: string,
     initial: string, onCommit: (v: string) => void | Promise<void>,
+    multiline = false,
 ): void {
     const box = createDiv({ cls: 'action-inline' });
     if (indentPx) box.setCssStyles({ marginLeft: `${indentPx}px` });
-    const input = box.createEl('input', { type: 'text', cls: 'atext' });
+    const input = multiline
+        ? box.createEl('textarea', { cls: 'atext atext-multi' })
+        : box.createEl('input', { type: 'text', cls: 'atext' });
     input.placeholder = placeholder;
     input.value = initial;
     afterEl.insertAdjacentElement('afterend', box);
+    const autosize = () => { if (multiline) { input.style.height = 'auto'; input.style.height = input.scrollHeight + 'px'; } };
     input.focus();
+    autosize();
     let committed = false;
     const commit = () => {
         if (committed) return;
@@ -353,9 +361,10 @@ function mountInlineInput(
     };
     const cancel = () => { committed = true; box.remove(); };
     input.onkeydown = (e) => {
-        if (e.key === 'Enter') { e.preventDefault(); commit(); }
+        if (e.key === 'Enter' && !(multiline && e.shiftKey)) { e.preventDefault(); commit(); }
         else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
     };
+    if (multiline) input.oninput = autosize;
     input.onblur = () => commit();
 }
 
@@ -467,10 +476,10 @@ function renderTaskRow(wrap: HTMLElement, ctx: RenderCtx, p: WSProjectNode, file
     if (tk.note !== undefined) {
         const noteEl = main.createDiv({ cls: 'anote' });
         noteEl.createSpan({ cls: 'anote-mark', text: '—' });
-        renderTaskText(noteEl.createSpan({ cls: 'anote-text' }), ctx, tk.note);
+        renderTaskText(noteEl.createSpan({ cls: 'anote-text' }), ctx, decodeNoteNewlines(tk.note));
         noteEl.setAttribute('title', t('ws action note'));
-        noteEl.onclick = () => mountInlineInput(row, indentPx, t('ws action note placeholder'), tk.note ?? '', (v) =>
-            writeTasks(ctx, file, c => setTaskNote(c, tk, v)));
+        noteEl.onclick = () => mountInlineInput(row, indentPx, t('ws action note placeholder'), decodeNoteNewlines(tk.note ?? ''), (v) =>
+            writeTasks(ctx, file, c => setTaskNote(c, tk, v)), true);
     }
 
     const ctl = row.createDiv({ cls: 'actl' });
@@ -495,7 +504,7 @@ function renderTaskRow(wrap: HTMLElement, ctx: RenderCtx, p: WSProjectNode, file
         const note = ctl.createSpan({ cls: 'aicon', text: '🗒' });
         note.setAttribute('title', t('ws action note'));
         note.onclick = () => mountInlineInput(row, indentPx, t('ws action note placeholder'), '', (v) =>
-            writeTasks(ctx, file, c => setTaskNote(c, tk, v)));
+            writeTasks(ctx, file, c => setTaskNote(c, tk, v)), true);
     } else {
         const noteDel = ctl.createSpan({ cls: 'aicon del', text: '🗑' });
         noteDel.setAttribute('title', t('ws action note delete'));
@@ -671,10 +680,10 @@ export function renderHome(container: HTMLElement, ctx: RenderCtx, lastTarget: W
     });
 }
 
-/** 今天 / 逾期:跨项目 未完成 且 截止 ≤ 今天 的任务,逾期标红;勾选直接回写背书笔记 */
+/** 今天 / 逾期:跨项目 未完成 且(截止 ≤ 今天 或 今天落在 [开始, 截止] 区间内)的任务,逾期标红;勾选直接回写背书笔记 */
 function renderTodayDue(body: HTMLElement, ctx: RenderCtx): void {
     const today = todayLocal();
-    interface DueItem { project: WSProjectNode; task: MdTask; due: string; }
+    interface DueItem { project: WSProjectNode; task: MdTask; label: string; overdue: boolean; sortKey: string; }
     const items: DueItem[] = [];
     ctx.store.getAllNodes()
         .filter((n): n is WSProjectNode => n.type === 'project' && n.status !== 'archived')
@@ -684,31 +693,71 @@ function renderTodayDue(body: HTMLElement, ctx: RenderCtx): void {
             if (!tks) return;
             for (const tk of tks) {
                 if (tk.checked) continue;
-                const due = (parseTaskText(tk.text).due ?? '').slice(0, 10);
-                if (due && due <= today) items.push({ project: pr, task: tk, due });
+                const parsed = parseTaskText(tk.text);
+                const start = (parsed.start ?? '').slice(0, 10);
+                const due = (parsed.due ?? '').slice(0, 10);
+                const dueByToday = !!due && due <= today;                          // 今天到期或逾期
+                const inInterval = !!start && start <= today && (!due || today <= due); // 已开始且未过截止
+                if (!dueByToday && !inInterval) continue;
+                const overdue = !!due && due < today;
+                const label = overdue ? '⚠ ' + due : due ? '📅 ' + due : '🛫 ' + start;
+                items.push({ project: pr, task: tk, label, overdue, sortKey: due || start });
             }
         });
-    items.sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : 0));
+    items.sort((a, b) => (a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0));
 
     body.createDiv({ cls: 'dsec', text: t('ws today due') });
     if (!items.length) { body.createDiv({ cls: 'empty', text: t('ws today due empty') }); return; }
     const list = body.createDiv({ cls: 'actions' });
     items.forEach(it => {
+        const tk = it.task;
+        const projFile = () => { const f = ctx.app.vault.getAbstractFileByPath(it.project.filePath!); return f instanceof TFile ? f : null; };
         const row = list.createDiv({ cls: 'action' });
         const box = row.createEl('input', { type: 'checkbox' });
         box.onclick = async (e) => {
             e.stopPropagation();
-            const f = ctx.app.vault.getAbstractFileByPath(it.project.filePath!);
-            if (!(f instanceof TFile)) return;
-            await writeTasks(ctx, f, c => toggleTask(c, it.task.raw, today));
+            const f = projFile(); if (!f) return;
+            await writeTasks(ctx, f, c => toggleTask(c, tk.raw, today));
         };
         const main = row.createDiv({ cls: 'amain' });
-        renderTaskText(main.createDiv({ cls: 'atext-view' }), ctx, it.task.text);
+        renderTaskText(main.createDiv({ cls: 'atext-view' }), ctx, tk.text);
         const meta = main.createDiv({ cls: 'anote' });
-        const overdue = it.due < today;
-        meta.createSpan({ cls: 'adue' + (overdue ? ' overdue' : '') }).setText((overdue ? '⚠ ' : '📅 ') + it.due);
+        meta.createSpan({ cls: 'adue' + (it.overdue ? ' overdue' : '') }).setText(it.label);
         meta.createSpan({ cls: 'anote-mark', text: '·' });
         meta.createSpan({ text: it.project.title });
+        if (tk.note !== undefined) {
+            const noteEl = main.createDiv({ cls: 'anote' });
+            noteEl.createSpan({ cls: 'anote-mark', text: '—' });
+            renderTaskText(noteEl.createSpan({ cls: 'anote-text' }), ctx, decodeNoteNewlines(tk.note));
+            noteEl.setAttribute('title', t('ws action note'));
+            noteEl.onclick = (e) => {
+                e.stopPropagation();
+                const f = projFile(); if (!f) return;
+                mountInlineInput(row, 0, t('ws action note placeholder'), decodeNoteNewlines(tk.note ?? ''), (v) =>
+                    writeTasks(ctx, f, c => setTaskNote(c, tk, v)), true);
+            };
+        }
+
+        const ctl = row.createDiv({ cls: 'actl' });
+        if (tk.note === undefined) {
+            const note = ctl.createSpan({ cls: 'aicon', text: '🗒' });
+            note.setAttribute('title', t('ws action note'));
+            note.onclick = (e) => {
+                e.stopPropagation();
+                const f = projFile(); if (!f) return;
+                mountInlineInput(row, 0, t('ws action note placeholder'), '', (v) =>
+                    writeTasks(ctx, f, c => setTaskNote(c, tk, v)), true);
+            };
+        } else {
+            const noteDel = ctl.createSpan({ cls: 'aicon del', text: '🗑' });
+            noteDel.setAttribute('title', t('ws action note delete'));
+            noteDel.onclick = async (e) => {
+                e.stopPropagation();
+                const f = projFile(); if (!f) return;
+                await writeTasks(ctx, f, c => removeTaskNote(c, tk));
+            };
+        }
+
         row.onclick = () => ctx.open({ kind: 'project', id: it.project.id });
     });
 }

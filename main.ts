@@ -18,10 +18,11 @@ import { ZKIndexView, ZKNode, ZK_INDEX_TYPE, ZK_NAVIGATION } from "src/view/inde
 import { ZK_RECENT_TYPE, ZKRecentView } from "src/view/recentView";
 import { MOCPreviewView, MOC_PREVIEW_VIEW_TYPE } from "src/view/mocPreviewView";
 import { LayoutPreset, normalizeLayoutPreset } from "src/utils/growthDirection";
-import { Scratchpad, ScratchpadEntry, ScratchpadManager } from "src/scratch/scratchpadManager";
+import { ScratchpadManager } from "src/scratch/scratchpadManager";
 import { resolveThemeMode } from "src/utils/themeMode";
 import { ChangelogModal } from "src/modal/changelogModal";
 import { getUnreadEntries } from "src/utils/changelog";
+import { GettingStartedModal } from "src/modal/gettingStartedModal";
 
 interface Point {
     x: number;
@@ -223,9 +224,8 @@ interface ZKNavigationSettings {
     nodeLayoutStyle: 'free' | 'auto';  // 节点布局风格（自由/自动）
     autoLayoutDefaultGrowthDirection: LayoutPreset; // 自动布局默认生长方向
     showNoteIdInBranchView: boolean;   // 分支视图是否显示笔记编号
-    scratchpads: Scratchpad[];          // 临时工作区:跨 MOC 共享的节点暂存(支持多 pad)
-    activeScratchpadId: string;         // 当前激活的暂存区 id
     lastShownChangelogVersion: string;  // 上次已展示更新公告的版本号(用于避免重复弹窗)
+    hasSeenFirstUseTutorial: boolean;    // 是否已看过首次使用教程
     detailPanelSide: 'left' | 'right';  // 节点详情侧栏停靠侧
     detailPanelAutoOpen: boolean;       // 单击选中是否自动展开详情侧栏(false = 再点一下才展开)
     detailPanelWidth: number;           // 侧栏宽度(px,可拖拽调整),0 = CSS 默认
@@ -313,9 +313,8 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     nodeLayoutStyle: 'auto', // 默认自动节点布局
     autoLayoutDefaultGrowthDirection: 'bidirectional',
     showNoteIdInBranchView: true,
-    scratchpads: [],
-    activeScratchpadId: '',
     lastShownChangelogVersion: '',
+    hasSeenFirstUseTutorial: false,
     detailPanelSide: 'right',
     detailPanelAutoOpen: false,
     detailPanelWidth: 0,
@@ -359,17 +358,20 @@ export default class ZKNavigationPlugin extends Plugin {
     private nnFolderMenuDispose: (() => void) | null = null;
 
     async loadSettings() {
+        const loadedData = await this.loadData() ?? {};
+        const hasExistingData = Object.keys(loadedData).length > 0;
         this.settings = Object.assign(
             {},
             DEFAULT_SETTINGS,
-            await this.loadData()
+            loadedData
         )
+        if (typeof (loadedData as Partial<ZKNavigationSettings>).hasSeenFirstUseTutorial !== 'boolean') {
+            this.settings.hasSeenFirstUseTutorial = hasExistingData;
+        }
         const localizedDefaultMOCHeading = t('default MOC heading title');
         if (localizedDefaultMOCHeading !== '思维树' && this.settings.mocHeadingTitle === '思维树') {
             this.settings.mocHeadingTitle = localizedDefaultMOCHeading;
         }
-        const localizedDefaultScratchpadName = t('scratch default pad name');
-        const shouldLocalizeLegacyScratchpadName = localizedDefaultScratchpadName !== '未命名';
         if ((this.settings as any).themeStyle === 'vivid') {
             this.settings.themeStyle = 'modern';
         }
@@ -388,40 +390,6 @@ export default class ZKNavigationPlugin extends Plugin {
         this.settings.autoLayoutDefaultGrowthDirection = normalizeLayoutPreset(
             this.settings.autoLayoutDefaultGrowthDirection
         );
-        if (!Array.isArray(this.settings.scratchpads)) {
-            this.settings.scratchpads = [];
-        }
-        // 旧版 scratchpadItems(单一暂存区)迁移为单 pad
-        const legacyItems = (this.settings as any).scratchpadItems;
-        if (Array.isArray(legacyItems) && legacyItems.length > 0 && this.settings.scratchpads.length === 0) {
-            this.settings.scratchpads.push({
-                id: `pad-legacy-${Date.now().toString(36)}`,
-                name: localizedDefaultScratchpadName,
-                items: legacyItems as ScratchpadEntry[],
-                createdAt: Date.now(),
-            });
-        }
-        delete (this.settings as any).scratchpadItems;
-        if (shouldLocalizeLegacyScratchpadName) {
-            this.settings.scratchpads.forEach((pad) => {
-                if (pad.name === '默认') {
-                    pad.name = localizedDefaultScratchpadName;
-                }
-            });
-        }
-        // 至少保证有一个 pad
-        if (this.settings.scratchpads.length === 0) {
-            this.settings.scratchpads.push({
-                id: `pad-default-${Date.now().toString(36)}`,
-                name: localizedDefaultScratchpadName,
-                items: [],
-                createdAt: Date.now(),
-            });
-        }
-        // active id 必须指向已有 pad
-        if (!this.settings.scratchpads.some((p) => p.id === this.settings.activeScratchpadId)) {
-            this.settings.activeScratchpadId = this.settings.scratchpads[0].id;
-        }
     }
 
     applyTheme() {
@@ -922,8 +890,9 @@ export default class ZKNavigationPlugin extends Plugin {
         const wsStorePath = `${this.app.vault.configDir}/plugins/${this.manifest.id}/workspace.json`;
         this.workspaceStore = new WorkspaceStore(this.app, wsStorePath);
         this.addChild(this.workspaceStore);
-        // 临时工作区管理器(跨 MOC 暂存,持久化到 plugin data)
+        // 临时工作区管理器(跨 MOC 暂存,持久化到独立的 scratchpads.json)
         this.scratchpad = new ScratchpadManager(this);
+        await this.scratchpad.load();
         // 等 layout-ready 后再构建索引，确保 metadataCache 已初始化
         this.app.workspace.onLayoutReady(async () => {
             await this.mocReverseIndex?.initialize(
@@ -935,6 +904,7 @@ export default class ZKNavigationPlugin extends Plugin {
                 await ensureWorkspaceSeed(this.workspaceStore, this.app.vault.adapter, this.spacesStorePath);
             }
             this.registerNotebookNavigatorFolderMenu();
+            if (this.showFirstUseTutorialIfNeeded()) return;
             this.showChangelogIfNeeded();
         });
 
@@ -1569,6 +1539,23 @@ export default class ZKNavigationPlugin extends Plugin {
             this.settings.lastShownChangelogVersion = currentVersion;
             void this.saveData(this.settings);
         }).open();
+    }
+
+    /**
+     * 首次安装时弹出操作教程。已有配置数据的老用户升级时不弹,避免误判为第一次使用。
+     * 新用户看完教程后同时标记当前版本更新公告已读,避免连续弹两个启动弹窗。
+     */
+    private showFirstUseTutorialIfNeeded(): boolean {
+        if (this.settings.hasSeenFirstUseTutorial) return false;
+
+        new GettingStartedModal(this.app, () => {
+            this.settings.hasSeenFirstUseTutorial = true;
+            if (!this.settings.lastShownChangelogVersion) {
+                this.settings.lastShownChangelogVersion = this.manifest.version;
+            }
+            void this.saveData(this.settings);
+        }).open();
+        return true;
     }
 
     private registerNotebookNavigatorFolderMenu() {

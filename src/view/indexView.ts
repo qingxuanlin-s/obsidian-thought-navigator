@@ -5442,6 +5442,11 @@ cy.fit(null, 40);
         this.addContextMenuItem(row, menu, closeMenu, 'fingerprint', t('ctx rename id'), () => this.renameNodeID(node));
         this.addContextMenuItem(row, menu, closeMenu, 'palette', t('ctx change color'), () => this.changeNodeColor(node));
 
+        // 自由节点：成为根节点(分配一个 3 位随机 ID,脱离 free.* 命名)
+        if (this.isFreeNodeID(nodeId) && !node.isCrossDomain && !node.isPlaceholder) {
+            this.addContextMenuItem(menu, menu, closeMenu, 'flag', t('ctx make root'), () => this.makeFreeNodeRoot(node));
+        }
+
         // 节点布局风格
         menu.createDiv('zk-node-ctx-sep');
         const effectiveLayout = this.getEffectiveNodeLayoutStyle(nodeId);
@@ -6121,6 +6126,41 @@ cy.fit(null, 40);
         } catch (error) {
             console.error('Failed to rename node ID:', error);
             new Notice(`修改节点 ID 失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 自由节点转为根节点:生成一个 3 位随机 ID(无 "."→ 视为根),复用 rename ID 流程改写。
+     */
+    async makeFreeNodeRoot(node: ZKNode) {
+        if (!this.isFreeNodeID(node.IDStr)) return;
+
+        // 生成一个不与现有节点冲突的 3 位随机 ID(小写字母 + 数字)
+        const charset = 'abcdefghijklmnopqrstuvwxyz0123456789';
+        const genId = () => Array.from({ length: 3 }, () => charset[Math.floor(Math.random() * charset.length)]).join('');
+        const existingIds = new Set(this.mocNodes.map(n => n.IDStr));
+        let newID = genId();
+        for (let i = 0; i < 50 && existingIds.has(newID); i++) {
+            newID = genId();
+        }
+        if (existingIds.has(newID)) {
+            new Notice('生成根节点 ID 失败,请重试');
+            return;
+        }
+
+        // 在刷新前保存所有节点的当前位置
+        await this.saveAllNodePositionsBeforeRefresh();
+
+        try {
+            const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+            if (mocFile) {
+                await this.mocHandler.updateNodeIDInMOC(mocFile, node.IDStr, newID);
+                await this.refreshBranchMermaid();
+                new Notice(`已将自由节点 "${node.IDStr}" 转为根节点 "${newID}"`);
+            }
+        } catch (error) {
+            console.error('Failed to make free node root:', error);
+            new Notice(`转为根节点失败: ${error.message}`);
         }
     }
 

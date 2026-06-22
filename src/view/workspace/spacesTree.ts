@@ -18,6 +18,45 @@ export class SpacesTree {
 
     setCurrent(t: OpenTarget | null) { this.current = t; }
 
+    /** 展开到目标:沿 Space → 桶 → 结构父链逐级展开,使目标节点在树里可见(只展开不折叠) */
+    revealTarget(t: OpenTarget | null) {
+        if (!t || t.kind === 'home' || !('id' in t)) return;
+        if (t.kind === 'space') { this.collapsed.delete('space:' + t.id); return; }
+        const node = this.ctx.store.getNode(t.id);
+        if (!node || node.type === 'space') return;
+        const spaceId = node.spaceId;
+        this.collapsed.delete('space:' + spaceId);
+
+        // 沿结构父链(partOf/childMoc,限本 Space 内)向上,展开每个有子节点的祖先
+        const inSpace = new Set(this.ctx.store.nodesInSpace(spaceId).map(n => n.id));
+        const parentOf = (id: string): string | null => {
+            const link = this.ctx.store.linksFrom(id)
+                .find(l => (l.type === 'partOf' || l.type === 'childMoc') && inSpace.has(l.to));
+            return link ? link.to : null;
+        };
+        let cur: string | null = node.id;
+        let root = node.id;
+        const guard = new Set<string>();
+        while (cur && !guard.has(cur)) {
+            guard.add(cur);
+            root = cur;
+            const p = parentOf(cur);
+            if (p) this.collapsed.delete('node:' + p);
+            cur = p;
+        }
+
+        // 根节点所属的框架桶
+        const space = this.ctx.store.getNode(spaceId);
+        if (space && space.type === 'space') {
+            const rootNode = this.ctx.store.getNode(root);
+            const fw = FRAMEWORKS[(space as WSSpaceNode).framework];
+            if (rootNode) {
+                const bucket = fw.buckets.find(b => b.match(rootNode));
+                if (bucket) this.collapsed.delete(`bucket:${spaceId}:${bucket.id}`);
+            }
+        }
+    }
+
     private isCurrent(id: string): boolean {
         return !!this.current && 'id' in this.current && this.current.id === id;
     }

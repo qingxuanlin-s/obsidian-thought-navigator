@@ -175,7 +175,7 @@ export function removeTask(content: string, task: MdTask): string {
  * 任务行尾的元数据段(Tasks 插件 emoji 格式,Gantt Calendar 据此解析)。
  * 顺序对齐 Tasks 规范:优先级 → ➕创建 → 🛫开始 → 📅截止。
  * - priority 传 emoji 本身(🔺最高/⏫高/🔼中/🔽低/⏬最低),空=普通无 emoji
- * - 日期为 `YYYY-MM-DD`(可带 ` HH:mm`),空值跳过
+ * - 日期为 `YYYY-MM-DD`(可带 ` HH:mm` 或 ` HH:mm:ss`),空值跳过
  */
 export function taskMetaSuffix(opts: { priority?: string; created?: string; start?: string; due?: string }): string {
     let s = '';
@@ -197,7 +197,7 @@ export interface ParsedTask {
     cancelled?: string; done?: string; recurrence?: string;
 }
 
-const DATE = '(\\d{4}-\\d{2}-\\d{2}(?: \\d{2}:\\d{2})?)';
+const DATE = '(\\d{4}-\\d{2}-\\d{2}(?: \\d{2}:\\d{2}(?::\\d{2})?)?)';
 const FIELD_RE = {
     created: new RegExp(`➕\\s*${DATE}`),
     start: new RegExp(`🛫\\s*${DATE}`),
@@ -303,11 +303,15 @@ export function moveTask(content: string, task: MdTask, target: MdTask, pos: 'be
     return lines.join(eol);
 }
 
-/** 设置/更新任务备注:已有则改写备注行,否则在任务行下方插入 `--- 内容`(缩进一级) */
+/** 备注换行编解码:单行存储用字面量 `\n`,展示/编辑还原成真实换行 */
+export function encodeNoteNewlines(s: string): string { return s.replace(/\r?\n/g, '\\n'); }
+export function decodeNoteNewlines(s: string): string { return s.replace(/\\n/g, '\n'); }
+
+/** 设置/更新任务备注:已有则改写备注行,否则在任务行下方插入 `--- 内容`(缩进一级)。换行以字面量 `\n` 存储 */
 export function setTaskNote(content: string, task: MdTask, note: string): string {
     const eol = eolOf(content);
     const lines = content.split(/\r?\n/);
-    const noteLine = `${task.indent}${INDENT_UNIT}--- ${note}`;
+    const noteLine = `${task.indent}${INDENT_UNIT}--- ${encodeNoteNewlines(note)}`;
     if (task.noteRaw) {
         const ni = lineIndexOf(lines, task.noteRaw);
         if (ni >= 0) { lines[ni] = noteLine; return lines.join(eol); }

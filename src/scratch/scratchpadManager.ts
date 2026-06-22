@@ -131,19 +131,132 @@ function entryToMergedText(entry: ScratchpadEntry): string {
     return entry.kind === "embed" ? `![[${link}]]` : `[[${link}]]`;
 }
 
+interface ScratchpadStore {
+    scratchpads: Scratchpad[];
+    activeScratchpadId: string;
+}
+
+const STORE_FILENAME = "scratchpads.json";
+
 export class ScratchpadManager {
     private plugin: ZKNavigationPlugin;
+    private store: ScratchpadStore = { scratchpads: [], activeScratchpadId: "" };
+    private storePath: string;
     private listeners: Set<() => void> = new Set();
     private saveTimer: number | null = null;
 
     constructor(plugin: ZKNavigationPlugin) {
         this.plugin = plugin;
+        this.storePath = `${plugin.app.vault.configDir}/plugins/${plugin.manifest.id}/${STORE_FILENAME}`;
+    }
+
+    // ---------- 持久化(独立文件 scratchpads.json,不与 plugin data.json 混存) ----------
+
+    /**
+     * 从独立的 scratchpads.json 读取;文件不存在时,从旧版 plugin data.json(settings)迁移过来,
+     * 迁移后清掉 data.json 里的旧字段,避免双写。
+     */
+    async load(): Promise<void> {
+        const adapter = this.plugin.app.vault.adapter;
+        let loaded: ScratchpadStore | null = null;
+
+        try {
+            if (await adapter.exists(this.storePath)) {
+                const parsed = JSON.parse(await adapter.read(this.storePath));
+                if (parsed && Array.isArray(parsed.scratchpads)) {
+                    loaded = {
+                        scratchpads: parsed.scratchpads as Scratchpad[],
+                        activeScratchpadId: typeof parsed.activeScratchpadId === "string" ? parsed.activeScratchpadId : "",
+                    };
+                }
+            }
+        } catch (e) {
+            console.warn("[scratchpad] scratchpads.json 读取失败", this.storePath, e);
+        }
+
+        let migratedFromSettings = false;
+        if (!loaded) {
+            // 旧版本:暂存数据存在 plugin data.json 的 settings 里,迁移到独立文件
+            const settings = this.plugin.settings as any;
+            loaded = {
+                scratchpads: Array.isArray(settings.scratchpads) ? settings.scratchpads as Scratchpad[] : [],
+                activeScratchpadId: typeof settings.activeScratchpadId === "string" ? settings.activeScratchpadId : "",
+            };
+            migratedFromSettings = true;
+        }
+
+        this.store = loaded;
+        this.normalize();
+
+        if (migratedFromSettings) {
+            // 清掉 data.json 里的旧字段,避免与 scratchpads.json 双写
+            const settings = this.plugin.settings as any;
+            delete settings.scratchpads;
+            delete settings.activeScratchpadId;
+            delete settings.scratchpadItems;
+            try { await this.plugin.saveData(this.plugin.settings); } catch (e) { console.warn("[scratchpad] 清理旧 data.json 字段失败", e); }
+        }
+
+        // 落盘一次,确保新文件存在并保存规范化结果
+        await this.flush();
+    }
+
+    /** 规范化:旧 scratchpadItems 迁移 / 默认名本地化 / 至少一个 pad / active 指向有效 pad */
+    private normalize(): void {
+        const localizedDefaultName = t("scratch default pad name");
+        const shouldLocalizeLegacy = localizedDefaultName !== "未命名";
+
+        if (!Array.isArray(this.store.scratchpads)) {
+            this.store.scratchpads = [];
+        }
+
+        // 旧版 scratchpadItems(单一暂存区)迁移为单 pad
+        const legacyItems = (this.plugin.settings as any).scratchpadItems;
+        if (Array.isArray(legacyItems) && legacyItems.length > 0 && this.store.scratchpads.length === 0) {
+            this.store.scratchpads.push({
+                id: `pad-legacy-${Date.now().toString(36)}`,
+                name: localizedDefaultName,
+                items: legacyItems as ScratchpadEntry[],
+                createdAt: Date.now(),
+            });
+        }
+
+        if (shouldLocalizeLegacy) {
+            this.store.scratchpads.forEach((pad) => {
+                if (pad.name === "默认") {
+                    pad.name = localizedDefaultName;
+                }
+            });
+        }
+
+        // 至少保证有一个 pad
+        if (this.store.scratchpads.length === 0) {
+            this.store.scratchpads.push({
+                id: `pad-default-${Date.now().toString(36)}`,
+                name: localizedDefaultName,
+                items: [],
+                createdAt: Date.now(),
+            });
+        }
+
+        // active id 必须指向已有 pad
+        if (!this.store.scratchpads.some((p) => p.id === this.store.activeScratchpadId)) {
+            this.store.activeScratchpadId = this.store.scratchpads[0].id;
+        }
+    }
+
+    private async flush(): Promise<void> {
+        try {
+            await this.plugin.app.vault.adapter.write(this.storePath, JSON.stringify(this.store, null, 2));
+        } catch (e) {
+            console.error("[scratchpad] save failed", e);
+        }
     }
 
     // ---------- pad 管理 ----------
 
     listPads(): Scratchpad[] {
-        return this.plugin.settings.scratchpads ?? [];
+        return this.store.scratchpads;
     }
 
     listPadsForMOC(mocPath: string): Scratchpad[] {
@@ -166,7 +279,7 @@ export class ScratchpadManager {
     }
 
     activePadId(): string {
-        return this.plugin.settings.activeScratchpadId || "";
+        return this.store.activeScratchpadId || "";
     }
 
     activePad(): Scratchpad | null {
@@ -179,7 +292,7 @@ export class ScratchpadManager {
     setActivePad(id: string): void {
         const pad = this.listPads().find((p) => p.id === id);
         if (!pad) return;
-        this.plugin.settings.activeScratchpadId = pad.id;
+        this.store.activeScratchpadId = pad.id;
         this.scheduleSave();
         this.notify();
     }
@@ -188,11 +301,8 @@ export class ScratchpadManager {
         const trimmed = (name || "").trim() || "新工作区";
         const id = genPadId();
         const pad: Scratchpad = { id, name: trimmed, items: [], createdAt: Date.now() };
-        if (!Array.isArray(this.plugin.settings.scratchpads)) {
-            this.plugin.settings.scratchpads = [];
-        }
-        this.plugin.settings.scratchpads.push(pad);
-        this.plugin.settings.activeScratchpadId = id;
+        this.store.scratchpads.push(pad);
+        this.store.activeScratchpadId = id;
         this.scheduleSave();
         this.notify();
         return pad;
@@ -261,9 +371,9 @@ export class ScratchpadManager {
                 createdAt: Date.now(),
             };
             pads.push(fresh);
-            this.plugin.settings.activeScratchpadId = fresh.id;
-        } else if (this.plugin.settings.activeScratchpadId === id) {
-            this.plugin.settings.activeScratchpadId = pads[Math.max(0, idx - 1)].id;
+            this.store.activeScratchpadId = fresh.id;
+        } else if (this.store.activeScratchpadId === id) {
+            this.store.activeScratchpadId = pads[Math.max(0, idx - 1)].id;
         }
         this.scheduleSave();
         this.notify();
@@ -332,11 +442,7 @@ export class ScratchpadManager {
         if (this.saveTimer !== null) return;
         this.saveTimer = window.setTimeout(async () => {
             this.saveTimer = null;
-            try {
-                await this.plugin.saveData(this.plugin.settings);
-            } catch (e) {
-                console.error("[scratchpad] save failed", e);
-            }
+            await this.flush();
         }, 80);
     }
 

@@ -5740,6 +5740,93 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
   justify-content: flex-end;
 }
 
+/* First-use tutorial modal */
+.zk-getting-started-modal {
+  padding: 4px 8px 0;
+}
+.zk-getting-started-modal .zk-getting-started-header {
+  margin-bottom: 14px;
+}
+.zk-getting-started-modal .zk-getting-started-header h2 {
+  margin: 0 0 4px;
+}
+.zk-getting-started-modal .zk-getting-started-subtitle {
+  max-width: 68ch;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.zk-getting-started-modal .zk-getting-started-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 44vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.zk-getting-started-modal .zk-getting-started-step {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+}
+.zk-getting-started-modal .zk-getting-started-step-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+.zk-getting-started-modal .zk-getting-started-step-copy {
+  min-width: 0;
+}
+.zk-getting-started-modal .zk-getting-started-step-copy h3 {
+  margin: 1px 0 4px;
+  font-size: 14px;
+  line-height: 1.35;
+}
+.zk-getting-started-modal .zk-getting-started-step-copy p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.zk-getting-started-modal .zk-getting-started-tips {
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--background-primary-alt);
+}
+.zk-getting-started-modal .zk-getting-started-tip-title {
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.zk-getting-started-modal .zk-getting-started-tips ul {
+  margin: 0;
+  padding-left: 20px;
+}
+.zk-getting-started-modal .zk-getting-started-tips li {
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.zk-getting-started-modal .zk-getting-started-footer {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* ============================================================
    节点详情侧栏 (NodeDetailPanel)
    单击节点 → 跟随展示备注 / 笔记预览。图1 视觉系统。
@@ -6418,12 +6505,14 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 .zkw .action .anote { display:flex; align-items:baseline; gap:6px; font-size:12.5px; color:var(--ink-dim); cursor:pointer; line-height:1.45; }
 .zkw .action .anote:hover { color:var(--ink); }
 .zkw .action .anote .anote-mark { color:var(--ink-faint); flex-shrink:0; }
+.zkw .action .anote .anote-text { white-space:pre-wrap; word-break:break-word; min-width:0; }
 .zkw .action .anote .adue { font-family:var(--mono); font-size:11px; color:var(--ink-dim); }
 .zkw .action .anote .adue.overdue { color:var(--rose); font-weight:600; }
 .zkw .action.done .anote { color:var(--ink-faint); }
 .zkw .action-inline { margin:8px 0 2px; }
 .zkw .action-inline .atext { width:100%; box-sizing:border-box; background:var(--panel-2); border:1px solid var(--rule-2); border-radius:8px; color:var(--ink); font-size:13px; outline:none; font-family:var(--font); padding:8px 12px; }
 .zkw .action-inline .atext:focus { border-color:var(--rule-3); }
+.zkw .action-inline .atext-multi { resize:none; overflow:hidden; min-height:36px; line-height:1.5; }
 
 /* ───────── Detail deck ───────── */
 .zkw .scrim { position:absolute; inset:0; background:rgba(4,5,7,0.45); opacity:0; pointer-events:none; transition:opacity .22s; z-index:18; }

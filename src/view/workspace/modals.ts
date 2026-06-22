@@ -1,6 +1,26 @@
 import { App, Modal } from "obsidian";
 import { t } from "src/lang/helper";
 
+/** 本地当前时刻 `YYYY-MM-DDTHH:mm:ss`(datetime-local 控件值格式) */
+function nowInputVal(): string {
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+/** 存盘格式(`YYYY-MM-DD[ HH:mm[:ss]]`)→ datetime-local 控件值。仅日期时补零点,空值返回 '' */
+function toInputVal(s?: string): string {
+    if (!s) return '';
+    const v = s.trim().replace(' ', 'T');
+    return v.length === 10 ? `${v}T00:00:00` : v;
+}
+
+/** datetime-local 控件值 → 存盘格式(把 `T` 还原为空格)。空值返回 undefined */
+function toStoreVal(v: string): string | undefined {
+    const s = v.trim();
+    return s ? s.replace('T', ' ') : undefined;
+}
+
 export interface TaskModalInit { description?: string; priority?: string; start?: string; due?: string; }
 export interface TaskModalResult { description: string; priority: string; start?: string; due?: string; }
 
@@ -42,9 +62,13 @@ export class TaskModal extends Modal {
             const col = dateRow.createDiv();
             col.setCssStyles({ flex: '1' });
             col.createEl('div', { text: label }).setCssStyles({ fontSize: '12px', color: 'var(--text-muted)', margin: '6px 0 4px' });
-            const inp = col.createEl('input', { type: 'date' });
+            const inp = col.createEl('input', { type: 'datetime-local' });
+            inp.step = '1'; // 精确到秒
             inp.setCssStyles({ width: '100%' });
-            if (val) inp.value = val;
+            const iv = toInputVal(val);
+            if (iv) inp.value = iv;
+            // 点击空白控件时默认填入当前年月日时分秒,免去手动逐位输入
+            inp.addEventListener('focus', () => { if (!inp.value) inp.value = nowInputVal(); });
             return inp;
         };
         const start = mkDate(t('ws action start'), init.start);
@@ -58,7 +82,7 @@ export class TaskModal extends Modal {
         const submit = () => {
             const v = desc.value.trim();
             if (!v) { desc.focus(); return; }
-            this.opts.onSubmit({ description: v, priority: prio.value, start: start.value || undefined, due: due.value || undefined });
+            this.opts.onSubmit({ description: v, priority: prio.value, start: toStoreVal(start.value), due: toStoreVal(due.value) });
             this.close();
         };
         ok.onclick = submit;
