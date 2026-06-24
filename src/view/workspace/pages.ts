@@ -348,7 +348,12 @@ function mountInlineInput(
     input.placeholder = placeholder;
     input.value = initial;
     afterEl.insertAdjacentElement('afterend', box);
-    const autosize = () => { if (multiline) { input.style.height = 'auto'; input.style.height = input.scrollHeight + 'px'; } };
+    const autosize = () => {
+        if (multiline) {
+            input.setCssStyles({ height: 'auto' });
+            input.setCssStyles({ height: `${input.scrollHeight}px` });
+        }
+    };
     input.focus();
     autosize();
     let committed = false;
