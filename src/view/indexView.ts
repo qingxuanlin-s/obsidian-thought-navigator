@@ -4013,7 +4013,7 @@ cy.fit(null, 40);
                 // 情况 1：检测到 wiki link/嵌入 link → 创建文件节点
                 const aliasToSave = parsed.displayText && parsed.displayText !== parsed.wikiLink
                     ? parsed.displayText : undefined;
-                await this.finalizeFileNode(nodeId, parsed.wikiLink, label, position, parsed.isEmbed, aliasToSave);
+                await this.finalizeFileNode(nodeId, parsed.wikiLink, label, position, parsed.isEmbed, aliasToSave, nodeSize);
             } else if (label.trim()) {
                 // 情况 2：无 wiki link → 创建纯文字节点（保留编辑时的可视尺寸）
                 await this.finalizeTextOnlyNode(nodeId, label.trim(), position, nodeSize);
@@ -4057,6 +4057,9 @@ cy.fit(null, 40);
 
             // 优先使用预生成的节点 ID，否则生成新的自由节点 ID
             const suggestedID = placeholderInfo.suggestedNodeId || this.generateNextFreeNodeID();
+
+            // 提交前对兄弟做预览让位快照,减小刷新→reflow 的弹动(suggester 选文件无实测尺寸,仅快照)
+            await this.persistPreviewSiblingLayout(placeholderInfo.parentNodeId, nodeId);
 
             // 检查是否有智能连线确定的父节点
             if (placeholderInfo.parentNodeId) {
@@ -4142,6 +4145,9 @@ cy.fit(null, 40);
 
             // 优先使用预生成的节点 ID，否则生成新的自由节点 ID
             const suggestedID = placeholderInfo.suggestedNodeId || this.generateNextFreeNodeID();
+
+            // 提交前对兄弟做预览让位快照,减小刷新→reflow 的弹动(suggester 选文件无实测尺寸,仅快照)
+            await this.persistPreviewSiblingLayout(placeholderInfo.parentNodeId, nodeId);
 
             // 检查是否有智能连线确定的父节点
             if (placeholderInfo.parentNodeId) {
@@ -8028,13 +8034,17 @@ cy.fit(null, 40);
         label: string,
         position: { x: number; y: number },
         isEmbed: boolean = false,
-        alias?: string
+        alias?: string,
+        nodeSize?: { width: number; height: number }
     ): Promise<void> {
         // 获取占位符信息
         const placeholderInfo = this.placeholderNodes.get(tempId);
 
         // 优先使用预生成的节点 ID，否则生成新的自由节点 ID
         const suggestedID = placeholderInfo?.suggestedNodeId || this.generateNextFreeNodeID();
+
+        // 提交前用编辑框实测尺寸再预览让位 + 快照落盘,使刷新即最终布局、提交不再弹动(见方法注释)
+        await this.persistPreviewSiblingLayout(placeholderInfo?.parentNodeId, tempId, nodeSize);
 
         // 查找文件：剥离 #heading / #^blockRef，只用文件路径部分解析
         const hashIdx = wikiLink.indexOf('#');
