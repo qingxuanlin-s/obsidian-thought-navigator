@@ -631,8 +631,6 @@ export default {
     "ws bucket action": "Action·Projects",
     "ws bucket all": "All",
     "ws open command": "Open workspace",
-    "ws load demo": "Workspace: load demo data (overwrite workspace.json)",
-    "ws demo loaded": "Workspace demo data loaded",
     "ws not ready": "Workspace data not ready",
     "ws moc not found": "MOC file not found: {path}",
     "Getting started title": "Thought Navigator tutorial",

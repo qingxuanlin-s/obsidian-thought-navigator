@@ -630,8 +630,6 @@ export default {
     "ws bucket action": "行动·项目",
     "ws bucket all": "全部",
     "ws open command": "打开工作区",
-    "ws load demo": "工作区:载入演示数据(覆盖 workspace.json)",
-    "ws demo loaded": "已载入工作区演示数据",
     "ws not ready": "工作区数据未就绪",
     "ws moc not found": "未找到 MOC 文件:{path}",
     "Getting started title": "Thought Navigator 操作教程",
