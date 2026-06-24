@@ -6,7 +6,15 @@ Thought Navigator is an Obsidian plugin for building visual, navigable thought t
 
 Note: This plugin is a complete reconstruction built on parts of the ideas and source code foundation of [Zettelkasten-navigation](https://pkmer.cn/Pkmer-Docs/10-obsidian/obsidian%E7%A4%BE%E5%8C%BA%E6%8F%92%E4%BB%B6/zettelkasten-navigation/). If you are interested, take a look at the original project. Thanks to the original author for the generous contribution.
 
-![Thought Navigator screenshot](attachments/screenshot-20260516-170244.png)
+## Preview
+
+![Thought Navigator workspace screenshot](attachments/screenshot-20260621-182627.png)
+
+![Thought Navigator graph screenshot](attachments/screenshot-20260621-182737.png)
+
+![Thought Navigator local graph screenshot](attachments/screenshot-20260621-182533.png)
+
+![Thought Navigator map screenshot](attachments/screenshot-20260621-182507.png)
 
 ## Features
 
@@ -16,12 +24,12 @@ Note: This plugin is a complete reconstruction built on parts of the ideas and s
 - Local graph view for parent, sibling, child, inlink, and outlink context.
 - Cross-domain links between different MOC files.
 - Scratchpad for copying, cutting, and moving nodes across MOCs.
-- Project Space drawer for organizing MOCs with virtual folders.
+- Workspace view for organizing notes, MOCs, maps, and containers in one place.
 - Search inside the tree and reveal the current note in the graph.
 - Paste images directly into the graph as embedded nodes.
 - MOC embed preview images in Markdown reading mode.
 - Theme mode, theme style, edge style, node text, and layout settings.
-- Obsidian URI support for opening graph views from links.
+- Obsidian URI and plugin API support for automation, CLI workflows, and LLM agents.
 
 ## Demo
 
@@ -41,10 +49,11 @@ https://github.com/user-attachments/assets/5dfd1339-3dd6-4449-9d18-c35daafe46e9
 
 Thought Navigator works best with MOC files. A MOC file is a `.moc` file that stores a visual thought tree: nodes, relations, groups, layout state, and display metadata.
 
-The plugin has two main views:
+The plugin has three main views:
 
 - **Thought Tree View**: the main canvas for editing and navigating a MOC.
 - **Local Graph View**: a contextual graph for the current note, including nearby tree relations and backlinks/outlinks.
+- **Workspace View**: a higher-level workspace for collecting notes, MOCs, maps, and folders into one navigable structure.
 
 ## Quick Start
 
@@ -62,7 +71,7 @@ The plugin has two main views:
 | `Open local graph` | Open the local graph view. |
 | `Reveal current file in tree graph` | Locate the active file in the thought tree. |
 | `New MOC file` | Create a new `.moc` thought tree file. |
-| `添加当前 MOC 到项目文件夹` | Mount the current MOC into a Project Space folder. |
+| `添加当前 MOC 到项目文件夹` | Mount the current MOC into a workspace container. |
 
 ## Typical Workflow
 
@@ -100,16 +109,42 @@ The local graph view can show:
 
 You can configure file extension filtering, graph direction, and display behavior in the plugin settings.
 
-## Project Spaces
+## Workspace
 
-Project Spaces are virtual folders stored by the plugin. They let you organize MOC files without changing your vault's real folder structure.
+Workspace is a plugin-managed navigation layer for organizing your knowledge work without changing your vault's real folder structure. It can collect notes, MOC files, maps, and containers into a single workspace that is easier to browse than a flat file tree.
 
 You can:
 
-- Create Spaces and folders.
-- Mount or unmount MOCs.
-- Move MOCs between virtual folders.
-- Keep MOC references updated when files are renamed or deleted.
+- Create containers and folders for different projects or knowledge areas.
+- Mount or unmount MOCs in the workspace.
+- Mix notes, MOCs, and maps in the same workspace structure.
+- Keep workspace references updated when files are renamed or deleted.
+
+## Skill and CLI Support
+
+Thought Navigator is designed to work with LLM agents and command-line driven workflows. The plugin exposes automation entry points that can create and update `.moc` files while Obsidian is running.
+
+- Use `obsidian://zk-navigation?action=create` to create a new MOC from scripts, launchers, or external tools.
+- Use `obsidian://zk-navigation?action=add-node` to append nodes to an existing MOC.
+- Use the plugin API from Obsidian CLI `eval` or other plugins: `createMOC`, `addNode`, `addNodes`, `addRelations`, `deleteNode`, `deleteNodes`, `queryNodes`, and draft-node helpers.
+- Use these APIs from Codex, Claude Code, or custom Obsidian skills to turn generated outlines, research plans, or wiki structures into editable thought maps.
+
+Example URI:
+
+```text
+obsidian://zk-navigation?action=create&name=research-map&folder=MOC&title=Research%20Map&layout=auto
+```
+
+Example Obsidian CLI eval:
+
+```javascript
+await app.plugins.plugins["thought-navigator"].api.createMOC({
+	name: "research-map",
+	folderPath: "MOC",
+	title: "Research Map",
+	layout: "auto"
+});
+```
 
 ## Settings
 
@@ -133,12 +168,10 @@ Thought Navigator runs locally inside Obsidian.
 - It does not require an account.
 - It does not display ads.
 - It reads notes, links, metadata, and `.moc` files from your vault to build graph views.
-- It writes `.moc` files, plugin settings, Project Space data, and generated preview or attachment files when you use the related features.
+- It writes `.moc` files, plugin settings, workspace data, and generated preview or attachment files when you use the related features.
 - It may create, modify, or remove vault files when you explicitly use commands such as creating MOC files, editing graph nodes, pasting images, or deleting embedded files from the graph.
 
-## Installation
-
-### From Obsidian Community Plugins
+## From Obsidian Community Plugins
 
 After the plugin is accepted into the community plugin marketplace:
 
@@ -147,7 +180,7 @@ After the plugin is accepted into the community plugin marketplace:
 3. Search for `Thought Navigator`.
 4. Install and enable the plugin.
 
-### Manual Installation
+## Manual Setup
 
 1. Download the release assets:
    - `main.js`
