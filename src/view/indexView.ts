@@ -3063,6 +3063,12 @@ cy.fit(null, 40);
                 // 刷新视图
                 await this.refreshBranchMermaid(true);
 
+                // 节点成为 auto 父节点的子节点后,重排兄弟腾位(issue #68)
+                if (this.isNodeAutoLayout(newChildID)) {
+                    await this.applyNewSiblingSide(newChildID);
+                    await this.reflowAutoLayout(newChildID);
+                }
+
                 new Notice(t("Parent-child relation created")
                     .replace("{parent}", String(parentNode.displayText))
                     .replace("{child}", String(childNode.displayText)));
@@ -4338,6 +4344,10 @@ cy.fit(null, 40);
                     const newChildID = this.generateChildNodeID(newSource);
                     await this.mocHandler.moveNodeToParent(mocFile, target, newSource, newChildID);
                     await this.refreshBranchMermaid();
+                    // 换父后整树重排:旧父兄弟补位、新父让出槽位,避免节点停在原处斜拉连线(issue #68)
+                    if (this.isNodeAutoLayout(newChildID)) {
+                        await this.reflowAutoLayout(newChildID);
+                    }
                     new Notice(`已修改父节点: ${target} 从 ${oldSource} → ${newSource} (新ID: ${newChildID})`);
                 } else {
                     // 箭头关系边：修改关系起点
@@ -4367,6 +4377,10 @@ cy.fit(null, 40);
                     await this.saveAllNodePositionsBeforeRefresh();
                     await this.mocHandler.redirectParentEdgeTarget(mocFile, oldTarget, newTarget);
                     await this.refreshBranchMermaid();
+                    // 换子后整树重排(issue #68):以稳定的父节点为锚,reflow 会上溯到根重排整树
+                    if (this.isNodeAutoLayout(source)) {
+                        await this.reflowAutoLayout(source);
+                    }
                     new Notice(`已修改边终点: ${oldTarget} → ${newTarget}`);
                 } else {
                     // 箭头关系边
@@ -4421,6 +4435,11 @@ cy.fit(null, 40);
                         const newChildID = this.generateChildNodeID(finalSourceId);
                         await this.mocHandler.moveNodeToParent(mocFile, finalTargetId, finalSourceId, newChildID);
                         await this.refreshBranchMermaid();
+                        // 节点成为 auto 父节点的子节点后,重排兄弟腾位(issue #68)
+                        if (this.isNodeAutoLayout(newChildID)) {
+                            await this.applyNewSiblingSide(newChildID);
+                            await this.reflowAutoLayout(newChildID);
+                        }
                         new Notice(`已将自由节点挂载为子节点: ${finalTargetId} → ${newChildID}`);
                         return;
                     }
@@ -8124,6 +8143,9 @@ cy.fit(null, 40);
 
         const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
 
+        // 提交前用编辑框实测尺寸再预览让位 + 快照落盘,使刷新即最终布局、提交不再弹动(见方法注释)
+        await this.persistPreviewSiblingLayout(placeholderInfo?.parentNodeId, tempId, nodeSize);
+
         // 检查是否有智能连线确定的父节点
         if (placeholderInfo && placeholderInfo.parentNodeId) {
             // 先创建为自由节点，然后移动到父节点下
@@ -8959,7 +8981,8 @@ cy.fit(null, 40);
     private async previewReflowForPlaceholder(
         parentNodeId: string,
         placeholderTempId: string,
-        referenceNodeId?: string
+        referenceNodeId?: string,
+        placeholderSize?: { width: number; height: number }
     ): Promise<void> {
         if (!this.isNodeAutoLayout(parentNodeId) && !this.hasAutoLayoutChild(parentNodeId)) return;
         const cy = this.branchRenderer?.getCytoscapeInstance();
@@ -8986,7 +9009,7 @@ cy.fit(null, 40);
             collapsedNodeIds: this.collapsedNodeIds,
             rebalanceRootChildren: true,
             persistPositions: false,
-            includePlaceholder: { id: placeholderTempId, parentId: parentNodeId, colorKey },
+            includePlaceholder: { id: placeholderTempId, parentId: parentNodeId, colorKey, size: placeholderSize },
         });
 
         // 引擎把占位符摆到了干净槽位,同步占位记录的 position,让后续落盘坐标与所见一致。
@@ -9030,7 +9053,9 @@ cy.fit(null, 40);
             localOnly?: boolean;
             // 把一个占位符 cy 节点当成 parentId 的真实子节点塞进布局(预览用,配合 persistPositions:false):
             // 让现有兄弟为占位符让出槽位。colorKey 用于让占位符归入参考节点的颜色排序组。
-            includePlaceholder?: { id: string; parentId: string; colorKey?: string };
+            // size:用真实(编辑框实测)尺寸覆盖占位符的空 cy 尺寸,使预览让位间距=提交后最终间距,
+            //      消除"提交时按真实尺寸再排一次"的弹动(占位符 label 为空,cy 量到的是兜底小尺寸)。
+            includePlaceholder?: { id: string; parentId: string; colorKey?: string; size?: { width: number; height: number } };
         } = {}
     ): Promise<void> {
         if (!this.branchRenderer) {
@@ -9127,7 +9152,11 @@ cy.fit(null, 40);
             cyNodeById.set(nodeId, node);
             nodes[nodeId] = {
                 id: nodeId,
-                size: getNodeSize(node),
+                // 预览占位符优先用调用方给的真实尺寸(编辑框实测),避免空 label 量到兜底小尺寸,
+                // 使预览让位间距与提交后真实尺寸的最终间距一致 → 不再弹动。
+                size: (isIncludedPlaceholder && includePlaceholder!.size)
+                    ? includePlaceholder!.size
+                    : getNodeSize(node),
                 position: node.position(),
                 colorKey: isIncludedPlaceholder
                     ? (includePlaceholder!.colorKey || getColorKey(node))
@@ -10063,6 +10092,27 @@ cy.fit(null, 40);
         } catch (error) {
             console.error('[saveAllNodePositions] Failed to save:', error);
         }
+    }
+
+    /**
+     * 提交新节点前调用:若挂到 auto 父节点下,先用编辑框【实测尺寸】把占位符再跑一遍预览让位
+     * (使兄弟间距=提交后真实尺寸的最终间距),再把当前 cy 坐标快照落盘。
+     * 这样随后的 refresh 直接渲染最终布局,提交后的 reflow 变成幂等,消除
+     * "预览(空占位尺寸)→ 提交(真实尺寸)再排一次" 的弹动。
+     * 须在新节点写入文件【之前】调用:此时占位符仍在 cy、真实节点尚未加入,
+     * 快照只覆盖既有兄弟,新节点位置由后续 save/reflow 决定。
+     */
+    private async persistPreviewSiblingLayout(
+        parentNodeId?: string,
+        placeholderTempId?: string,
+        placeholderSize?: { width: number; height: number }
+    ): Promise<void> {
+        if (!parentNodeId || !this.isNodeAutoLayout(parentNodeId)) return;
+        // 用真实尺寸重排一次预览让位(占位符仍在 cy 时才有意义)
+        if (placeholderTempId && placeholderSize) {
+            await this.previewReflowForPlaceholder(parentNodeId, placeholderTempId, undefined, placeholderSize);
+        }
+        await this.saveAllNodePositionsBeforeRefresh();
     }
 
     /**

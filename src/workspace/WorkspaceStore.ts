@@ -364,9 +364,11 @@ export class WorkspaceStore extends Component {
      * - 文件无对应节点 → 按扩展名就地建节点:`.moc.md`/`.moc` → moc 节点,其余 → note 节点(都指向真实文件)。
      * - 容器是 MOC → moc 子节点加 childMoc 链、其余加 partOf 链(去重,支持一个文件多父)。
      * - 容器是 Space → 仅置 spaceId,作为该 Space 顶层节点(无容器边)。
+     * - opts.mocIsTop:挂到 Space 顶层时,按当前镜头决定 MOC 落「总览」(true)还是「主题」(false);
+     *   undefined 表示不指定(沿用默认/既有值)。见 issue #71。
      * 返回新建的节点数。
      */
-    async mountFilesToContainer(containerId: string, paths: string[]): Promise<number> {
+    async mountFilesToContainer(containerId: string, paths: string[], opts?: { mocIsTop?: boolean }): Promise<number> {
         const container = this.nodes.get(containerId);
         if (!container) return 0;
         const spaceId = container.type === 'space' ? container.id : container.spaceId;
@@ -379,7 +381,7 @@ export class WorkspaceStore extends Component {
                 if (!node) {
                     const now = Date.now();
                     const n: WorkspaceNode = isMocPath(path)
-                        ? { id: genNodeId(), type: 'moc', spaceId, title: baseNameNoExt(path).replace(/\.moc$/, ''), filePath: path, createdAt: now, updatedAt: now }
+                        ? { id: genNodeId(), type: 'moc', spaceId, title: baseNameNoExt(path).replace(/\.moc$/, ''), filePath: path, createdAt: now, updatedAt: now, ...(opts?.mocIsTop !== undefined ? { isTop: opts.mocIsTop } : {}) }
                         : { id: genNodeId(), type: 'note', spaceId, title: baseNameNoExt(path), filePath: path, createdAt: now, updatedAt: now };
                     ctx.put(n);
                     node = n;
@@ -388,7 +390,12 @@ export class WorkspaceStore extends Component {
                 if (container.type === 'moc') {
                     ctx.addLink({ from: node.id, to: containerId, type: node.type === 'moc' ? 'childMoc' : 'partOf' });
                 } else {
-                    ctx.updateQuiet(node.id, x => { if (x.type !== 'space') x.spaceId = spaceId; });
+                    ctx.updateQuiet(node.id, x => {
+                        if (x.type === 'space') return;
+                        x.spaceId = spaceId;
+                        // 挂到 Space 顶层的 MOC:按镜头落总览/主题(既有节点也跟随,使其出现在期望桶里)
+                        if (x.type === 'moc' && opts?.mocIsTop !== undefined) x.isTop = opts.mocIsTop;
+                    });
                 }
             }
         });

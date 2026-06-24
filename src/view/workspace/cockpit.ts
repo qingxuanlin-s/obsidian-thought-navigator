@@ -45,6 +45,9 @@ export function renderCockpit(container: HTMLElement, ctx: RenderCtx, space: WSS
     // ---------- Lens tabs(可过滤) ----------
     const tabs = ck.createDiv({ cls: 'lenstabs' });
 
+    const validLens = initialLens && (initialLens === 'all' || fw.buckets.some(b => b.id === initialLens));
+    let activeLens = validLens ? initialLens! : 'all';
+
     // ---------- 入口:新建项目(工作区自有) + 挂载已有笔记/MOC(指向真实文件) ----------
     const createbar = ck.createDiv({ cls: 'createbar' });
     const mkCreate = (label: string, fn: () => void) => {
@@ -61,14 +64,14 @@ export function renderCockpit(container: HTMLElement, ctx: RenderCtx, space: WSS
             .map(c => (c as any).filePath as string | undefined)
             .filter((p): p is string => !!p);
         new FilePickerModal(ctx.app, space.title, mounted, async (paths) => {
-            await ctx.store.mountFilesToContainer(space.id, paths);
+            // 按当前镜头决定挂进来的 MOC 落「总览」还是「主题」(issue #71);非这两个镜头不指定
+            const mocIsTop = activeLens === 'overview' ? true : activeLens === 'theme' ? false : undefined;
+            await ctx.store.mountFilesToContainer(space.id, paths, { mocIsTop });
             ctx.refresh();
         }).open();
     });
 
     const body = ck.createDiv({ cls: 'ck-body' });
-    const validLens = initialLens && (initialLens === 'all' || fw.buckets.some(b => b.id === initialLens));
-    let activeLens = validLens ? initialLens! : 'all';
 
     const mkTab = (id: string, label: string, count: number) => {
         const tab = tabs.createDiv({ cls: 'lenstab' + (id === activeLens ? ' on' : ''), text: label });
