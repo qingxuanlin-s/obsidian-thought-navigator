@@ -845,8 +845,7 @@ export default class ZKNavigationPlugin extends Plugin {
                     const folder = activeFile.parent;
                     const newFile = await this.createMOCFile({ folderPath: folder?.path ?? '' });
                     editor.replaceSelection('![[' + newFile.name + ']]');
-                    this.settings.mocCurrentFile = newFile.path;
-                    await this.saveData(this.settings);
+                    await this.openCreatedMOC(newFile);
                     this.app.workspace.trigger('zk-navigation:refresh-index-graph');
                 } catch (e) {
                     new Notice('新建失败: ' + e.message);
@@ -1469,6 +1468,22 @@ export default class ZKNavigationPlugin extends Plugin {
         return extIndex > path.lastIndexOf('/') ? path.slice(0, extIndex) : path;
     }
 
+    private async openCreatedMOC(file: TFile): Promise<void> {
+        this.settings.mocCurrentFile = file.path;
+        await this.saveData(this.settings);
+        this.settings.lastRetrival = {
+            type: 'index',
+            ID: '',
+            displayText: '',
+            filePath: file.path,
+            openTime: '',
+        };
+        this.settings.zoomPanScaleArr = [];
+        this.settings.BranchTab = 0;
+        this.RefreshIndexViewFlag = true;
+        await this.openIndexView();
+    }
+
     /**
      * 共享创建逻辑:校验目录 → 文件名安全化 → 已存在策略 → 写入合法 .moc.md。
      * 三处入口(右键文件夹 / zk-new-moc-embed / URI create)共用,消除行为漂移。
@@ -1510,7 +1525,9 @@ export default class ZKNavigationPlugin extends Plugin {
 
     private async createMOCInFolder(folder: TFolder): Promise<TFile | null> {
         try {
-            return await this.createMOCFile({ folderPath: folder.path });
+            const file = await this.createMOCFile({ folderPath: folder.path });
+            await this.openCreatedMOC(file);
+            return file;
         } catch (e) {
             console.error('[zk-navigation] 新建思维树失败', e);
             new Notice(`新建失败: ${e.message}`);
