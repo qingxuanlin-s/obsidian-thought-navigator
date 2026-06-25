@@ -29,6 +29,27 @@ interface Point {
     y: number;
 }
 
+interface NotebookNavigatorMenuItem {
+    setTitle(title: string): NotebookNavigatorMenuItem;
+    setIcon(icon: string): NotebookNavigatorMenuItem;
+    onClick(callback: () => void | Promise<void>): NotebookNavigatorMenuItem;
+}
+
+interface NotebookNavigatorMenuContext {
+    addItem(callback: (item: NotebookNavigatorMenuItem) => void): void;
+    folder: TFolder;
+}
+
+interface NotebookNavigatorApi {
+    menus?: {
+        registerFolderMenu?: (handler: (context: NotebookNavigatorMenuContext) => void) => (() => void) | void;
+    };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
 export interface CreateMOCOptions {
     folderPath?: string;       // 不含文件名,'' 或省略 = vault 根
     name?: string;             // 不含后缀,省略 = 默认前缀+时间戳
@@ -358,21 +379,21 @@ export default class ZKNavigationPlugin extends Plugin {
     private nnFolderMenuDispose: (() => void) | null = null;
 
     async loadSettings() {
-        const loadedData = await this.loadData() ?? {};
+        const rawSettings = (await this.loadData()) as unknown;
+        const loadedData = isRecord(rawSettings) ? rawSettings as Partial<ZKNavigationSettings> : {};
         const hasExistingData = Object.keys(loadedData).length > 0;
-        this.settings = Object.assign(
-            {},
-            DEFAULT_SETTINGS,
-            loadedData
-        )
-        if (typeof (loadedData as Partial<ZKNavigationSettings>).hasSeenFirstUseTutorial !== 'boolean') {
+        this.settings = {
+            ...DEFAULT_SETTINGS,
+            ...loadedData,
+        };
+        if (typeof loadedData.hasSeenFirstUseTutorial !== 'boolean') {
             this.settings.hasSeenFirstUseTutorial = hasExistingData;
         }
         const localizedDefaultMOCHeading = t('default MOC heading title');
         if (localizedDefaultMOCHeading !== '思维树' && this.settings.mocHeadingTitle === '思维树') {
             this.settings.mocHeadingTitle = localizedDefaultMOCHeading;
         }
-        if ((this.settings as any).themeStyle === 'vivid') {
+        if (typeof (loadedData as { themeStyle?: unknown }).themeStyle === 'string' && (loadedData as { themeStyle?: unknown }).themeStyle === 'vivid') {
             this.settings.themeStyle = 'modern';
         }
         const legacyFileIcon = String.fromCodePoint(0x1F4C4);
@@ -775,18 +796,18 @@ export default class ZKNavigationPlugin extends Plugin {
         // 只前置拦截 .moc / .moc.md 的打开，避免 Obsidian 先渲染成 markdown 再由 file-open 切换造成闪屏。
         const originalOpenFile = WorkspaceLeaf.prototype.openFile;
         const plugin = this;
-        const openMocFile = async function (this: WorkspaceLeaf, file: TFile, ...rest: any[]) {
-            if (file instanceof TFile && isMocFile(file)) {
-                const openState = rest[0] ?? {};
-                plugin.settings.mocCurrentFile = file.path;
-                await plugin.saveData(plugin.settings);
-                await this.setViewState({
-                    type: ZK_INDEX_TYPE,
-                    state: { file: file.path },
-                    active: openState.active ?? true,
-                });
-                if (openState.active !== false) {
-                    plugin.app.workspace.revealLeaf(this);
+            const openMocFile = async function (this: WorkspaceLeaf, file: TFile, ...rest: unknown[]) {
+                if (file instanceof TFile && isMocFile(file)) {
+                    const openState = isRecord(rest[0]) ? rest[0] : {};
+                    plugin.settings.mocCurrentFile = file.path;
+                    await plugin.saveData(plugin.settings);
+                    await this.setViewState({
+                        type: ZK_INDEX_TYPE,
+                        state: { file: file.path },
+                        active: typeof openState.active === 'boolean' ? openState.active : true,
+                    });
+                    if (openState.active !== false) {
+                        plugin.app.workspace.revealLeaf(this);
                 }
                 plugin.app.workspace.trigger('zk-navigation:refresh-index-graph');
                 return;
@@ -968,6 +989,15 @@ export default class ZKNavigationPlugin extends Plugin {
                     await this.updateMOCLinksAfterRename(file, oldPath);
                     // 工作区:任意文件改名都可能命中 note/moc/map 节点的 filePath
                     await this.workspaceStore?.handleFileRename(oldPath, file.path);
+                    if (isMocFile(file) && this.settings.mocCurrentFile === oldPath) {
+                        this.settings.mocCurrentFile = file.path;
+                        if (this.settings.lastRetrival.filePath === oldPath) {
+                            this.settings.lastRetrival.filePath = file.path;
+                        }
+                        await this.saveData(this.settings);
+                        this.RefreshIndexViewFlag = true;
+                        await this.openIndexView();
+                    }
                 }
             })
         );
@@ -1384,12 +1414,19 @@ export default class ZKNavigationPlugin extends Plugin {
                 const content = await this.app.vault.read(mocFile);
                 let modified = false;
 
-                let json: any;
+                let parsedJson: unknown;
                 try {
-                    json = JSON.parse(content);
+                    parsedJson = JSON.parse(content);
                 } catch {
                     continue;
                 }
+                if (!isRecord(parsedJson)) {
+                    continue;
+                }
+                const json = parsedJson as {
+                    nodes?: unknown[];
+                    crossDomainLinks?: Record<string, unknown>;
+                };
 
                 // rename 事件触发时,oldPath 对应的文件已不存在,无法走 metadataCache 解析,
                 // 只能按原字符串形式直接匹配 JSON 节点的 target/wikiLink。
@@ -1397,7 +1434,8 @@ export default class ZKNavigationPlugin extends Plugin {
                 const oldPathNoExt = this.getPathWithoutExtension(oldPath);
                 const newPathNoExt = this.getPathWithoutExtension(file.path);
 
-                const nextWikiLinkFor = (wl: string): string | null => {
+                const nextWikiLinkFor = (wl: unknown): string | null => {
+                    if (typeof wl !== 'string') return null;
                     if (wl === oldBasename) return file.basename;
                     if (wl === oldPath) return file.path;
                     if (wl === oldPathNoExt) return newPathNoExt;
@@ -1405,12 +1443,13 @@ export default class ZKNavigationPlugin extends Plugin {
                     return null;
                 };
 
-                const walkNodes = (nodes: any[]) => {
+                const walkNodes = (nodes: unknown[]) => {
                     for (const node of nodes || []) {
-                        const isText = node?.nodeType === 'text' || node?.isTextOnly;
-                        const linkKey = typeof node?.target === 'string'
+                        if (!isRecord(node)) continue;
+                        const isText = node.nodeType === 'text' || node.isTextOnly === true;
+                        const linkKey = typeof node.target === 'string'
                             ? 'target'
-                            : (typeof node?.wikiLink === 'string' ? 'wikiLink' : null);
+                            : (typeof node.wikiLink === 'string' ? 'wikiLink' : null);
                         if (!isText && linkKey) {
                             const current = node[linkKey];
                             const next = nextWikiLinkFor(current);
@@ -1427,18 +1466,20 @@ export default class ZKNavigationPlugin extends Plugin {
                                 modified = true;
                             }
                         }
-                        if (node?.children?.length) walkNodes(node.children);
+                        if (Array.isArray(node.children) && node.children.length > 0) {
+                            walkNodes(node.children);
+                        }
                     }
                 };
 
-                walkNodes(json.nodes || []);
+                walkNodes(Array.isArray(json.nodes) ? json.nodes : []);
 
                 // 跨域关联存的是完整 filePath,直接按路径比对
-                if (json.crossDomainLinks && typeof json.crossDomainLinks === 'object') {
-                    for (const links of Object.values(json.crossDomainLinks) as any[]) {
+                if (isRecord(json.crossDomainLinks)) {
+                    for (const links of Object.values(json.crossDomainLinks)) {
                         if (!Array.isArray(links)) continue;
                         for (const link of links) {
-                            if (link?.filePath === oldPath) {
+                            if (isRecord(link) && link.filePath === oldPath) {
                                 link.filePath = file.path;
                                 modified = true;
                             }
@@ -1451,9 +1492,9 @@ export default class ZKNavigationPlugin extends Plugin {
                 }
             }
 
-        } catch (error) {
+        } catch (error: unknown) {
             console.error('Error updating MOC links after rename:', error);
-            new Notice(`更新 MOC 文件链接失败: ${error.message}`);
+            new Notice(`更新 MOC 文件链接失败: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
 
@@ -1576,14 +1617,15 @@ export default class ZKNavigationPlugin extends Plugin {
     }
 
     private registerNotebookNavigatorFolderMenu() {
-        const nn = (this.app as any).plugins?.plugins?.['notebook-navigator']?.api;
+        const nnPlugin = (this.app as any).plugins?.plugins?.['notebook-navigator'] as { api?: NotebookNavigatorApi } | undefined;
+        const nn = nnPlugin?.api;
         const register = nn?.menus?.registerFolderMenu;
         if (typeof register !== 'function') return;
         try {
             this.nnFolderMenuDispose = register.call(
-                nn.menus,
-                ({ addItem, folder }: { addItem: (cb: (item: any) => void) => void; folder: TFolder }) => {
-                    addItem((item: any) => {
+                nn?.menus,
+                ({ addItem, folder }: NotebookNavigatorMenuContext) => {
+                    addItem((item: NotebookNavigatorMenuItem) => {
                         item.setTitle(t('New MOC file'))
                             .setIcon('git-branch')
                             .onClick(async () => {
@@ -1592,7 +1634,7 @@ export default class ZKNavigationPlugin extends Plugin {
                     });
                 }
             );
-        } catch (e) {
+        } catch (e: unknown) {
             console.error('[zk-navigation] 注册 notebook-navigator 文件夹菜单失败', e);
         }
     }
