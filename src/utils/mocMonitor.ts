@@ -1,4 +1,4 @@
-import { TFile, debounce, Notice } from "obsidian";
+import { TFile, Notice } from "obsidian";
 import ZKNavigationPlugin from "main";
 import { isMocFile } from "src/utils/utils";
 

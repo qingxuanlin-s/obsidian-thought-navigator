@@ -198,7 +198,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
     private clipboardNodes: Array<{ originalNode: any; position: { x: number; y: number } }> = [];
     // Cmd+C 时同步写入系统剪贴板的文本快照;Cmd+V 时跟系统剪贴板比对,
     // 若不一致则说明用户从外部复制了新内容,优先走系统剪贴板路径
-    private lastCopiedSystemText: string = '';
+    private lastCopiedSystemText = '';
 
     // SimpleMind 风格布局常量
     private readonly VERTICAL_GAP = 80;       // 垂直间距
@@ -976,7 +976,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         return event_handlePasteShortcut.call(this);
     }
 
-    applyFocusOverlayState(visibleCyIds: Set<string> | null, visibilityMode: 'hide' | 'dim' = 'hide', persistState: boolean = true): void {
+    applyFocusOverlayState(visibleCyIds: Set<string> | null, visibilityMode: 'hide' | 'dim' = 'hide', persistState = true): void {
         if (persistState) {
             this.focusOverlayVisibleCyIds = visibleCyIds ? new Set(visibleCyIds) : null;
             this.focusOverlayVisibilityMode = visibilityMode;
@@ -1599,7 +1599,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
     /**
      * 显示分组名称输入对话框
      */
-    private showGroupNameDialog(callback: (name: string | null) => void, defaultValue: string = '分组1'): void {
+    private showGroupNameDialog(callback: (name: string | null) => void, defaultValue = '分组1'): void {
         // 创建遮罩层
         const overlay = activeDocument.createElement('div');
         overlay.setCssStyles({
@@ -1756,7 +1756,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         const text = String(source || '');
         if (!text) return;
         // 快路径:无 markdown/HTML 语法
-        if (!/[<*_~`\[\]#>]|==|!\[/.test(text)) {
+        if (!/[<*_~`[\]#>]|==|!\[/.test(text)) {
             el.textContent = text;
             return;
         }
@@ -1840,7 +1840,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         inlineStartInPlaceTextEditLegacy.call(this, node, originalNode, entry, options);
     }
 
-    private ensureNodeVisibleInViewport(node: any, padding: number = 40): void {
+    private ensureNodeVisibleInViewport(node: any, padding = 40): void {
         inlineEnsureNodeVisibleInViewport.call(this, node, padding);
     }
 
@@ -1859,7 +1859,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         node: any,
         boundingBox: any,
         suggesterPopoverRef: { value: HTMLElement | null },
-        isEmbed: boolean = false,
+        isEmbed = false,
         onSelectFile?: (file: any, isEmbed: boolean) => void
     ): void {
         inlineShowLinkSuggester.call(this, textarea, node, boundingBox, suggesterPopoverRef, isEmbed, onSelectFile);

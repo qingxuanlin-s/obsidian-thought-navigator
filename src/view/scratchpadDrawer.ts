@@ -51,9 +51,9 @@ export class ScratchpadDrawer {
     private tabsEl: HTMLElement;
     private bodyEl: HTMLElement;
     private countBadge: HTMLElement;
-    private isOpen: boolean = false;
-    private isTextComposerOpen: boolean = false;
-    private textComposerValue: string = "";
+    private isOpen = false;
+    private isTextComposerOpen = false;
+    private textComposerValue = "";
     private textComposerSourceTempIds: Set<string> = new Set();
     private draggingScratchTempId: string | null = null;
     private unsubscribe: (() => void) | null = null;

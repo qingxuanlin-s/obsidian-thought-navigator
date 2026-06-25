@@ -1,5 +1,4 @@
 import { Notice } from "obsidian";
-import ZKNavigationPlugin from "main";
 
 /**
  * MOC 文件范围信息
@@ -212,7 +211,7 @@ export class ModalUtils {
      * @param button - 按钮元素
      * @param isPrimary - 是否为主要按钮
      */
-    static applyButtonStyles(button: HTMLElement, isPrimary: boolean = false): void {
+    static applyButtonStyles(button: HTMLElement, isPrimary = false): void {
         button.setCssStyles({
             padding: '6px 16px',
             border: isPrimary ? 'none' : '1px solid var(--background-modifier-border)',

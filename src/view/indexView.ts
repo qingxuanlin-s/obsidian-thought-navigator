@@ -1,10 +1,9 @@
 import { toPng } from "html-to-image";
 import ZKNavigationPlugin from "main";
-import { ExtraButtonComponent, FileView, FuzzySuggestModal, Menu, Modal, Notice, Platform, Scope, Setting, TFile, WorkspaceLeaf, debounce, moment, setIcon, setTooltip } from "obsidian";
+import { ExtraButtonComponent, FileView, Menu, Modal, Notice, Platform, Scope, Setting, TFile, WorkspaceLeaf, debounce, moment, setIcon, setTooltip } from "obsidian";
 import { t } from "src/lang/helper";
 import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
 import { AddFreeNodeModal } from "src/modal/addFreeNodeModal";
-import { expandGraphModal } from "src/modal/expandGraphModal";
 import { MOCSelectorModal } from "src/modal/mocSelectorModal";
 import { NoteSearchModal } from "src/modal/noteSearchModal";
 import { convertMOCToZKNodes, createMOCTreeNode, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX, MOCParseResult, MOCTreeNode, NODE_FLAG_SEPARATED, NODE_FLAG_SIDE_PINNED, parseMOCStructure, saveMOCStructure, stripMocSuffix } from "src/utils/utils";
@@ -25,16 +24,12 @@ import { resolveThemeMode } from "src/utils/themeMode";
 import { DEFAULT_LAYOUT_PRESET, DIR_VECTORS, GrowthDirection, LayoutPreset, PRESET_POOL, normalizeLayoutPreset, quantizeToPool, stackAxisOf } from "src/utils/growthDirection";
 import {
     DEBOUNCE_DELAY,
-    ERROR_MESSAGES,
-    SUCCESS_MESSAGES,
-    KEYBOARD,
-    MODAL_BUTTONS
 } from "src/view/index/constants";
 
-export const ZK_INDEX_TYPE: string = "zk-index-type";
+export const ZK_INDEX_TYPE = "zk-index-type";
 export const ZK_INDEX_VIEW: string = t("thought-tree-graph");
 type IndexNavState = { mode: 'graph'; mocPath: string | null } | { mode: 'workspace'; mocPath: null; workspaceTarget: OpenTarget };
-export const ZK_NAVIGATION: string = "zk-navigation";
+export const ZK_NAVIGATION = "zk-navigation";
 
 export interface ReverseRelation {
     sourceID: string;
@@ -183,7 +178,7 @@ export class ZKIndexView extends FileView {
     }> = new Map();
     private draftBatchBar: HTMLElement | null = null;
     // 草稿模式:开启后新建的节点都先作为草稿(待审批);AI 注入会自动开启,批次清空后自动关闭。
-    private draftMode: boolean = false;
+    private draftMode = false;
 
     // MOC 芯片标签引用（用于更新显示）
     private mocChipLabel: HTMLElement | null = null;
@@ -196,11 +191,11 @@ export class ZKIndexView extends FileView {
     private focusVisibilityMode: 'hide' | 'dim' = 'hide';
 
     // 性能优化：防止重复刷新的标志位
-    private isRefreshing: boolean = false;
-    private pendingRefresh: boolean = false;
+    private isRefreshing = false;
+    private pendingRefresh = false;
 
     // 性能优化：静态 UI 层标记
-    private staticUICreated: boolean = false;
+    private staticUICreated = false;
     private staticToolbarDiv: HTMLElement | null = null;
     // 内嵌工作区模式(typed-node 壳):图谱 ⇄ 工作区 在同一视图内切换
     private workspacePanel: WorkspacePanel | null = null;
@@ -219,10 +214,10 @@ export class ZKIndexView extends FileView {
     private workspaceStoreUnsubscribe: (() => void) | null = null;
 
     // 性能优化：追踪事件监听器初始化状态，避免重复添加
-    private branchGraphListenersInitialized: boolean = false;
+    private branchGraphListenersInitialized = false;
     private currentBranchGraphDiv: HTMLElement | null = null;
-    private isCreateMOCPromptOpen: boolean = false;
-    private fullscreenBackButtonListenerBound: boolean = false;
+    private isCreateMOCPromptOpen = false;
+    private fullscreenBackButtonListenerBound = false;
     private lastHoverPreviewPath: string | null = null;
     private lastHoverPreviewAt = 0;
     // 分屏打开模式下复用的内容叶,避免每次点击都新建一个分屏
@@ -1426,7 +1421,7 @@ export class ZKIndexView extends FileView {
     }
 
     async IndexViewInterfaceInit() {
-        let { containerEl } = this;
+        const { containerEl } = this;
 
         // 主题类(每次都要重设,否则切主题不生效)
         // Nebula 跟随 themeMode:暗色=深空黑底霓虹,浅色=浅灰冷底白卡柔影
@@ -1614,7 +1609,7 @@ export class ZKIndexView extends FileView {
         this.levelBreadcrumbContainer.setCssStyles({ display: "none" });
 
         // 右侧工具按钮（用 spacer 推到右边）
-        const spacer = toolbarDiv.createDiv("zk-toolbar-spacer");
+        toolbarDiv.createDiv("zk-toolbar-spacer");
 
         // 创建右侧按钮容器
         const rightBtns = toolbarDiv.createDiv("zk-toolbar-right-buttons");
@@ -1971,7 +1966,7 @@ export class ZKIndexView extends FileView {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Mind Map Export</title>
-<script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"><\/script>
+<script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { background: ${bgColor}; overflow: hidden; }
@@ -2036,7 +2031,7 @@ var cy = cytoscape({
   maxZoom: 3
 });
 cy.fit(null, 40);
-<\/script>
+</script>
 </body>
 </html>`;
 
@@ -2383,7 +2378,7 @@ cy.fit(null, 40);
 
     }
 
-    async refreshBranchMermaid(force: boolean = false) {
+    async refreshBranchMermaid(force = false) {
 
         this.plugin.RefreshIndexViewFlag = false;
         const indexMermaidDiv = activeDocument.getElementById("zk-index-mermaid-container");
@@ -2646,7 +2641,7 @@ cy.fit(null, 40);
 
     // MOC 模式专用的刷新方法
     // MOC 模式专用的刷新方法 - 使用 Cytoscape 渲染
-    async refreshBranchMermaidMOC(indexMermaidDiv: HTMLElement, force: boolean = false) {
+    async refreshBranchMermaidMOC(indexMermaidDiv: HTMLElement, force = false) {
         // 仅在 MOC 文件真正切换时才冲刷保存旧画面位置，避免同文件刷新覆盖刚写入的位置
         const incomingMOCPath = this.plugin.settings.mocCurrentFile;
         this.prunePlaceholderNodes(incomingMOCPath);
@@ -3081,8 +3076,8 @@ cy.fit(null, 40);
         // 监听节点位置变化事件（拖动后保存到 MOC 文件）
         // 多节点拖动时 dragfree 会对每个节点触发，先累积到 pendingPositionChanges，防抖后批量保存
         let pendingMOCPath: string | null = null; // 事件发生时的 MOC 路径
-        let pendingGroupLeaves: Array<{ nodeId: string; groupId: string }> = [];
-        let pendingGroupJoins: Array<{ nodeId: string; groupId: string }> = [];
+        const pendingGroupLeaves: Array<{ nodeId: string; groupId: string }> = [];
+        const pendingGroupJoins: Array<{ nodeId: string; groupId: string }> = [];
         // auto 布局分离意图:nodeKey → {父节点, 拖出/拖回, 拖动前是否已分离}
         let pendingSeparations: Map<string, { parentId: string; willSeparate: boolean; wasSeparated: boolean }> = new Map();
         this.addTrackedListener(branchGraphDiv, 'node-position-changed', async (event: any) => {
@@ -3293,7 +3288,6 @@ cy.fit(null, 40);
             const collapsedNodeIds = Array.isArray(event.detail?.collapsedNodeIds)
                 ? event.detail.collapsedNodeIds.map((id: unknown) => String(id)).filter(Boolean)
                 : [];
-            const collapsed = event.detail?.collapsed === true;
             if (!nodeId) return;
 
             try {
@@ -3327,7 +3321,7 @@ cy.fit(null, 40);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { edgeId, source, target, distance, weight } = event.detail;
+            const { edgeId, distance, weight } = event.detail;
 
             // 使用防抖，避免拖动时频繁保存
             if (this.edgeCurvatureSaveTimeout) {
@@ -3399,7 +3393,7 @@ cy.fit(null, 40);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { groupId, oldLabel, newLabel } = event.detail;
+            const { groupId, newLabel } = event.detail;
 
             try {
                 const mocFile = getLatestMOCFile();
@@ -3418,7 +3412,7 @@ cy.fit(null, 40);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { groupId, groupLabel, nodeIds } = event.detail;
+            const { groupId, nodeIds } = event.detail;
 
             try {
                 const mocFile = getLatestMOCFile();
@@ -3957,7 +3951,7 @@ cy.fit(null, 40);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { node, event: mouseEvent, position } = event.detail;
+            const { node, event: mouseEvent } = event.detail;
             
             // 检查节点是否有效（允许纯文字节点，即 file 为 null 的节点）
             if (!node) {
@@ -4216,7 +4210,6 @@ cy.fit(null, 40);
 
         // 监听边点击事件
         this.addTrackedListener(branchGraphDiv, 'edge-click', (event: any) => {
-            const { edgeId, source, target, type, label } = event.detail;
             // 可以在这里添加边的高亮或其他交互
         });
 
@@ -4225,7 +4218,7 @@ cy.fit(null, 40);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { edgeId, source, target, type, label, position, targetNodeSons } = event.detail;
+            const { source, target, type, position, targetNodeSons } = event.detail;
             // 创建右键菜单
             const menu = new Menu();
 
@@ -4272,7 +4265,7 @@ cy.fit(null, 40);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { groupId, groupLabel } = event.detail;
+            const { groupId } = event.detail;
 
             try {
                 const mocFile = getLatestMOCFile();
@@ -4292,7 +4285,7 @@ cy.fit(null, 40);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { edgeId, source, target, type, label, targetNodeSons } = event.detail;
+            const { source, target, type, targetNodeSons } = event.detail;
 
             try {
                 const mocFile = getLatestMOCFile();
@@ -4312,7 +4305,7 @@ cy.fit(null, 40);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { edgeId, source, target, oldLabel, newLabel, edgeType, crossDomainLink, crossDomainSourceNodeId } = event.detail;
+            const { source, target, newLabel, edgeType, crossDomainLink, crossDomainSourceNodeId } = event.detail;
 
             try {
                 const mocFile = getLatestMOCFile();
@@ -4425,7 +4418,7 @@ cy.fit(null, 40);
             // 涉及自由节点时，只创建虚线关系，不做父子挂载
             const sourceIsFree = this.isFreeNodeID(finalSourceId);
             const targetIsFree = this.isFreeNodeID(finalTargetId);
-            let relationText = '';
+            const relationText = '';
 
             // 在刷新前保存所有节点的当前位置
             await this.saveAllNodePositionsBeforeRefresh();
@@ -6212,7 +6205,7 @@ cy.fit(null, 40);
      * 删除节点(从画布与 MOC),复用删除键的完整流程:
      * 关系数 > 2 时二次确认 → 落盘当前位置 → 区分跨领域/普通节点删除 → 清理图片 → 刷新 → reflow。
      */
-    private async deleteNodeFromGraph(node: ZKNode, relationCount: number = 0) {
+    private async deleteNodeFromGraph(node: ZKNode, relationCount = 0) {
         // 关系数量超过2个，删除前需要二次确认(空内容删除与删除键共用此护栏)
         if (relationCount > 2) {
             const confirmed = await this.showDeleteConfirmDialog(node, relationCount);
@@ -6324,7 +6317,7 @@ cy.fit(null, 40);
         newContent: string,
         nodeSize?: { widthModel: number; heightModel: number },
         position?: { x: number; y: number },
-        relationCount: number = 0
+        relationCount = 0
     ) {
         const currentContent = node.isTextOnly
             ? this.decodeMultilineText(node.title || '')
@@ -6459,7 +6452,7 @@ cy.fit(null, 40);
             const inputContainer = contentEl.createDiv();
             inputContainer.addClass('zk-node-edit-field');
             
-            const label = inputContainer.createEl('label', { text: '新的节点 ID：' });
+            inputContainer.createEl('label', { text: '新的节点 ID：' });
             
             const input = inputContainer.createEl('input', {
                 type: 'text',
@@ -6687,8 +6680,8 @@ cy.fit(null, 40);
      */
     private showTextNodeContentInputDialog(
         currentContent: string,
-        title: string = '修改文本节点内容',
-        allowEmpty: boolean = false
+        title = '修改文本节点内容',
+        allowEmpty = false
     ): Promise<string | null> {
         return new Promise((resolve) => {
             const modal = new Modal(this.app);
@@ -7244,7 +7237,7 @@ cy.fit(null, 40);
         let selectedNode: ZKNode | null = null;
         
         // 渲染节点列表
-        const renderNodeList = (filterText: string = '') => {
+        const renderNodeList = (filterText = '') => {
             nodeListContainer.empty();
             
             const filteredNodes = this.mocNodes.filter(node => {
@@ -8033,7 +8026,7 @@ cy.fit(null, 40);
         wikiLink: string,
         label: string,
         position: { x: number; y: number },
-        isEmbed: boolean = false,
+        isEmbed = false,
         alias?: string,
         nodeSize?: { width: number; height: number }
     ): Promise<void> {
@@ -8097,7 +8090,6 @@ cy.fit(null, 40);
         }
 
         // 保存位置
-        const mocFilePath = this.plugin.settings.mocCurrentFile;
         if (mocFile) {
             const finalPosition = placeholderInfo?.position || position;
             await this.savePlaceholderLayoutPositions(
@@ -8196,7 +8188,6 @@ cy.fit(null, 40);
         }
 
         // 保存位置
-        const mocFilePath = this.plugin.settings.mocCurrentFile;
         if (mocFile) {
             const finalPosition = placeholderInfo?.position || position;
             await this.savePlaceholderLayoutPositions(
@@ -9813,7 +9804,7 @@ cy.fit(null, 40);
     /**
      * 添加箭头关系到 MOC 文件
      */
-    private async addArrowRelationToMOC(mocFile: TFile, sourceID: string, targetID: string, relationText: string = ''): Promise<void> {
+    private async addArrowRelationToMOC(mocFile: TFile, sourceID: string, targetID: string, relationText = ''): Promise<void> {
         try {
             await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
                 // 检查是否已存在相同的箭头关系
@@ -10455,7 +10446,7 @@ cy.fit(null, 40);
         return !forceTab && (this.plugin.settings.defaultFileOpenMode || 'tab') === 'replace';
     }
 
-    private openFileInPreferredLeaf(file: TFile, forceTab: boolean, subpath: string = ''): void {
+    private openFileInPreferredLeaf(file: TFile, forceTab: boolean, subpath = ''): void {
         if (this.shouldReuseExistingFileLeaf(forceTab)) {
             const existingLeaf = this.getExistingFileLeaf(file);
             if (existingLeaf) {

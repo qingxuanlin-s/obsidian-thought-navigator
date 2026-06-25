@@ -59,12 +59,12 @@ export class AddFreeNodeModal extends Modal {
         };
     }) => void;
 
-    wikiLink: string = "";
-    nodeID: string = "";
-    relationText: string = "";
-    connectToNodeID: string = "";
-    connectionRelation: string = "";
-    isReverseConnection: boolean = false; // 是否为反向连接
+    wikiLink = "";
+    nodeID = "";
+    relationText = "";
+    connectToNodeID = "";
+    connectionRelation = "";
+    isReverseConnection = false; // 是否为反向连接
 
     // UI 元素引用
     nodeIDSetting: Setting | null = null;
@@ -320,7 +320,7 @@ export class AddFreeNodeModal extends Modal {
                     });
 
                 // 添加文件建议器
-                const fileSuggest = new MarkdownFileSuggest(this.app, text.inputEl);
+                new MarkdownFileSuggest(this.app, text.inputEl);
                 
                 // 监听文件选择事件
                 text.inputEl.addEventListener('blur', () => {
@@ -372,7 +372,7 @@ export class AddFreeNodeModal extends Modal {
         }
 
         // 按钮
-        const createButton = new Setting(contentEl)
+        new Setting(contentEl)
             .addButton((btn) =>
                 btn
                     .setButtonText(t("Create"))
@@ -440,7 +440,7 @@ export class AddFreeNodeModal extends Modal {
         }
 
         // 查找或创建文件
-        let file = this.app.metadataCache.getFirstLinkpathDest(
+        const file = this.app.metadataCache.getFirstLinkpathDest(
             this.wikiLink,
             ""
         );

@@ -19,7 +19,7 @@ export const renderExcalidrawPreview = async (
     app: any,
     contentEl: HTMLElement,
     sourceFile: any,
-    wikiLink: string = ''
+    wikiLink = ''
 ): Promise<boolean> => {
     let rendered = false;
 

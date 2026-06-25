@@ -1,4 +1,4 @@
-import { App, FuzzySuggestModal, TFile, Notice, Setting } from "obsidian";
+import { App, FuzzySuggestModal, TFile, Setting } from "obsidian";
 
 /**
  * 跨领域节点选择器
@@ -49,7 +49,7 @@ export class CrossDomainNodeModal extends FuzzySuggestModal<any> {
     sourceMOCPath: string;
     targetMOCFile: TFile;
     onSubmit: (sourceNode: any, sourceMOCPath: string, targetNodes: any[], targetMOCFile: TFile) => void;
-    includeChildren: boolean = false; // 是否包含子节点
+    includeChildren = false; // 是否包含子节点
 
     constructor(
         app: App,
@@ -104,7 +104,7 @@ export class CrossDomainNodeModal extends FuzzySuggestModal<any> {
     getItems(): any[] {
         // 展开所有节点，包括子节点
         const flatNodes: any[] = [];
-        const flattenNodes = (nodes: any[], level: number = 0) => {
+        const flattenNodes = (nodes: any[], level = 0) => {
             for (const node of nodes) {
                 // 添加缩进级别到节点对象
                 node._level = level;

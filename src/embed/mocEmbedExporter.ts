@@ -1,4 +1,4 @@
-import { App, TFile } from "obsidian";
+import { TFile } from "obsidian";
 import { toBlob } from "html-to-image";
 import ZKNavigationPlugin from "main";
 import { parseMOCJson } from "src/utils/mocJsonCodec";

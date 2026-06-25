@@ -11,7 +11,7 @@ export class TagSuggest extends AbstractInputSuggest<string> {
     getSuggestions(inputStr: string): string[] {
         // @ts-expect-error
         const allTags = Object.keys(this.app.metadataCache.getTags());
-        let tags: string[] = [];
+        const tags: string[] = [];
         const lowerCaseInputStr = inputStr.toLowerCase();
 
         allTags.forEach((tag: string) => {

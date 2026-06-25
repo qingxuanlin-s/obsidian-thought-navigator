@@ -601,7 +601,6 @@ export class EdgeControls {
 		if (!sourceNode.length || !targetNode.length) return;
 
 		const distance = data.controlPointDistance !== undefined ? data.controlPointDistance : 0;
-		const weight = data.controlPointWeight !== undefined ? data.controlPointWeight : 0.5;
 		const controlPoint = activeDocument.createElement('div');
 		controlPoint.className = 'zk-edge-control-point';
 		controlPoint.setCssStyles({

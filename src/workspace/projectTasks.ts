@@ -31,7 +31,6 @@ const NOTE_RE = /^(\s+)---\s?(.*)$/;
 const REFS_RE = /^(\s+)refs::\s?(.*)$/i;
 const WIKILINK_RE = /\[\[([^\]]+)\]\]/g;
 /** 行内首个 checkbox 方括号(bullet 一定在更前,故首个匹配即任务框) */
-const BOX_RE = /\[([ xX])\]/;
 
 /** 行首缩进的视觉宽度(tab 记 4,空格记 1) */
 function indentWidth(line: string): number {
@@ -108,10 +107,6 @@ export function parseTaskLines(content: string): MdTask[] {
     return out;
 }
 
-/** 翻转整行的勾选态(不动其余内容) */
-function flipLine(line: string): string {
-    return line.replace(BOX_RE, (s) => (s === '[ ]' ? '[x]' : '[ ]'));
-}
 
 /** 把一行任务的正文换成 newText(保留 bullet 前缀与勾选态) */
 function retextLine(line: string, newText: string): string {

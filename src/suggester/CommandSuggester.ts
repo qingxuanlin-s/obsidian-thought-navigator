@@ -11,7 +11,7 @@ export class CommanderSuggester extends AbstractInputSuggest<Command> {
 
     getSuggestions(inputStr: string): Command[] {
         const allCommands = Object.values(this.app.commands.commands);
-        let commands: Command[] = [];
+        const commands: Command[] = [];
         const lowerCaseInputStr = inputStr.toLowerCase();
 
         allCommands.forEach((command: Command) => {

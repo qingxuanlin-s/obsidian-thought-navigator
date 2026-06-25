@@ -1,9 +1,9 @@
 import ZKNavigationPlugin from "main";
-import { debounce,  ExtraButtonComponent,  IconName, ItemView, moment, Notice, WorkspaceLeaf } from "obsidian"
+import { debounce,  ExtraButtonComponent,  IconName, ItemView, moment, WorkspaceLeaf } from "obsidian"
 import { t } from "src/lang/helper"
 import { ZK_NAVIGATION } from "./indexView";
 
-export const ZK_RECENT_TYPE: string = "zk-recent-type"
+export const ZK_RECENT_TYPE = "zk-recent-type"
 export const ZK_RECENT_VIEW: string = t("History List")
 
 export class ZKRecentView extends ItemView {
@@ -40,14 +40,14 @@ export class ZKRecentView extends ItemView {
 
     refreshRecentView = async ()=>{
         
-        let { containerEl } = this;
+        const { containerEl } = this;
         containerEl.empty();
         const historyListDiv = this.containerEl.createDiv("view-content node-insert-event");
         
         for(let i=0;i<this.plugin.settings.HistoryList.length;i++){
 
-            let item = this.plugin.settings.HistoryList[i]
-            let line = historyListDiv.createEl('div', {text: `${i+1}. ${item.displayText}`, cls:"vertical-tab-nav-item recent-item"});
+            const item = this.plugin.settings.HistoryList[i]
+            const line = historyListDiv.createEl('div', {text: `${i+1}. ${item.displayText}`, cls:"vertical-tab-nav-item recent-item"});
             
             line.addEventListener(`mousemove`, (event:MouseEvent)=>{
                 this.app.workspace.trigger(`hover-link`, {

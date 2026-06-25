@@ -296,7 +296,7 @@ export class NodeDetailPanel {
         let text = (input || '').replace(/\\n/g, '\n').replace(/\r\n?/g, '\n').replace(/\n+/g, ' ').trim();
         if (!text) { el.setAttribute("title", input || ''); return; }
         // 快路径:无 markdown/HTML 语法 → 纯文本
-        if (!/[*~_`=<\[#]/.test(text)) {
+        if (!/[*~_`=<[#]/.test(text)) {
             el.textContent = text;
             el.setAttribute("title", text);
             return;

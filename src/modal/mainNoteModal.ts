@@ -1,5 +1,5 @@
 import ZKNavigationPlugin from "main";
-import { App, FuzzySuggestModal, Notice, SuggestModal, renderMatches } from "obsidian";
+import { App, FuzzySuggestModal, SuggestModal, renderMatches } from "obsidian";
 import { t } from "src/lang/helper";
 import { ZKNode } from "src/view/indexView";
 
@@ -29,7 +29,7 @@ export class mainNoteModal extends SuggestModal<ZKNode>{
     }
 
     renderSuggestion(node: ZKNode, el:HTMLElement) {
-      let displayText = `${node.ID}: ${node.title}`;
+      const displayText = `${node.ID}: ${node.title}`;
       renderMatches(el, displayText, [[0, this.query.length]], this.getPosition(node));
     }
 
@@ -39,7 +39,7 @@ export class mainNoteModal extends SuggestModal<ZKNode>{
     }
 
     getPosition(node:ZKNode){
-      let position:number = 0;
+      let position = 0;
       if(node.ID.toLocaleLowerCase().startsWith(this.query.toLocaleLowerCase())){
         position = 0
       }else{

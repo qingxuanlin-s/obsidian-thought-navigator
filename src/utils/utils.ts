@@ -1,5 +1,5 @@
 import ZKNavigationPlugin, { ZoomPanScale } from "main";
-import { App, loadMermaid, moment, Notice, TFile } from "obsidian";
+import { App, loadMermaid, moment, TFile } from "obsidian";
 import { LayoutPreset } from "src/utils/growthDirection";
 import { ZKNode } from "src/view/indexView";
 
@@ -331,10 +331,10 @@ function getDisplayText(plugin: ZKNavigationPlugin, mocNode: MOCTreeNode): strin
 // formatting Luhmann style IDs
 export async function ID_formatting(id: string, arr: string[], siblingsOrder: string): Promise<string[]> {
     if (/^[0-9]$/.test(id[0])) {
-        let numStr = id.match(/\d+/g);
+        const numStr = id.match(/\d+/g);
         if (numStr && numStr.length > 0) {
             arr.push(numStr[0].padStart(4, "0"));
-            let len = numStr[0].length;
+            const len = numStr[0].length;
             if (len < id.length) {
                 return await ID_formatting(id.slice(len), arr, siblingsOrder);
             } else {
@@ -383,9 +383,9 @@ export async function mainNoteInit(plugin: ZKNavigationPlugin) {
 
     if (plugin.settings.FolderList.length > 0) {
 
-        let validFolders = [...new Set(plugin.settings.FolderList)].filter(folder => folder !== "");
+        const validFolders = [...new Set(plugin.settings.FolderList)].filter(folder => folder !== "");
 
-        let tempMainNoteFiles: TFile[] = [];
+        const tempMainNoteFiles: TFile[] = [];
 
         for (let i = 0; i < validFolders.length; i++) {
 
@@ -419,10 +419,10 @@ export async function mainNoteInit(plugin: ZKNavigationPlugin) {
 
     plugin.MainNotes = [];
 
-    for (let note of mainNoteFiles) {
-        let IDArr: string[] = [];
+    for (const note of mainNoteFiles) {
+        const IDArr: string[] = [];
 
-        let node: ZKNode = {
+        const node: ZKNode = {
             ID: '',
             IDArr: IDArr,
             IDStr: '',
@@ -442,7 +442,7 @@ export async function mainNoteInit(plugin: ZKNavigationPlugin) {
             gitNodePos: 0,
         }
 
-        let nodeCache = app.metadataCache.getFileCache(note);
+        const nodeCache = app.metadataCache.getFileCache(note);
 
         switch (plugin.settings.IDFieldOption) {
             case "1":
@@ -455,7 +455,7 @@ export async function mainNoteInit(plugin: ZKNavigationPlugin) {
                 if (nodeCache !== null && node.file?.extension == 'md') {
                     if (typeof nodeCache.frontmatter !== 'undefined' && plugin.settings.TitleField !== "") {
 
-                        let title = nodeCache.frontmatter[plugin.settings.TitleField]?.toString();
+                        const title = nodeCache.frontmatter[plugin.settings.TitleField]?.toString();
                         if (typeof title == "string" && title.length > 0) {
                             node.title = title;
                         }
@@ -467,7 +467,7 @@ export async function mainNoteInit(plugin: ZKNavigationPlugin) {
                 if (node.file?.extension == 'md') {
                     if (nodeCache !== null) {
                         if (typeof nodeCache.frontmatter !== 'undefined' && plugin.settings.IDField !== "") {
-                            let id = nodeCache.frontmatter[plugin.settings.IDField];
+                            const id = nodeCache.frontmatter[plugin.settings.IDField];
                             if (Array.isArray(id)) {
                                 if (id[0] === null) {
                                     continue;
@@ -494,14 +494,12 @@ export async function mainNoteInit(plugin: ZKNavigationPlugin) {
                     }
                 }
                 break;
-            case "3":
-                let temLen: number = 1;
+            case "3": {
                 let parts: string[] = [];
 
                 // 根据配置的分隔符分割文件名
                 if (plugin.settings.Separator === "other") {
                     parts = note.basename.split(plugin.settings.OtherSeparator);
-                    temLen = plugin.settings.OtherSeparator.length;
                 } else {
                     parts = note.basename.split(plugin.settings.Separator);
                 }
@@ -516,16 +514,17 @@ export async function mainNoteInit(plugin: ZKNavigationPlugin) {
                 node.IDArr = await ID_formatting(node.ID, node.IDArr, plugin.settings.siblingsOrder);
                 node.IDStr = IDArr.toString();
                 break;
+            }
             default:
             // do nothing
         }
 
         if (plugin.settings.CustomCreatedTime.length > 0 && node.file?.extension == 'md') {
 
-            let ctime = nodeCache?.frontmatter?.[plugin.settings.CustomCreatedTime];
+            const ctime = nodeCache?.frontmatter?.[plugin.settings.CustomCreatedTime];
 
             if (ctime) {
-                let time = moment(ctime);
+                const time = moment(ctime);
                 if (time.isValid()) {
                     node.ctime = time.valueOf();
                 }
@@ -544,7 +543,7 @@ export async function mainNoteInit(plugin: ZKNavigationPlugin) {
     plugin.MainNotes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
 
     for (let i = 0; i < plugin.MainNotes.length; i++) {
-        let node = plugin.MainNotes[i];
+        const node = plugin.MainNotes[i];
         node.position = i;
         if (!plugin.MainNotes.find(n => n.IDArr.toString() == node.IDArr.slice(0, -1).toString())) {
             node.isRoot = true;
@@ -571,27 +570,13 @@ export async function mainNoteInit(plugin: ZKNavigationPlugin) {
 }
 
 export const random = (e: number) => {
-    let t = [];
+    const t = [];
     for (let n = 0; n < e; n++) {
         t.push((16 * Math.random() | 0).toString(16));
     }
     return t.join("");
 };
 
-
-function uniqueByZKNote(arr: ZKNode[]) {
-    const map = new Map();
-    const result = [];
-    for (const item of arr) {
-        const filePath = item.file?.path || 'text-only';
-        const compoundKey = item.ID + '_' + filePath;
-        if (!map.has(compoundKey)) {
-            map.set(compoundKey, true);
-            result.push(item);
-        }
-    }
-    return result;
-}
 
 function uniqueByTFile(arr: TFile[]) {
     const map = new Map();
@@ -624,7 +609,7 @@ export async function addSvgPanZoom(
     mermaidStr: string, height: number) {
 
     const mermaid = await loadMermaid();
-    let { svg } = await mermaid.render(`${zkGraph.id}-svg`, mermaidStr);
+    const { svg } = await mermaid.render(`${zkGraph.id}-svg`, mermaidStr);
 
     const parsedSvg = new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement;
     zkGraph.appendChild(activeDocument.importNode(parsedSvg, true));
@@ -641,7 +626,7 @@ export async function addSvgPanZoom(
 
     const svgPanZoomModule = await import("svg-pan-zoom");
     const svgPanZoom = (svgPanZoomModule as any).default ?? svgPanZoomModule;
-    let panZoomTiger = await svgPanZoom(`#${zkGraph.id}-svg`, {
+    const panZoomTiger = await svgPanZoom(`#${zkGraph.id}-svg`, {
         zoomEnabled: true,
         controlIconsEnabled: false,
         fit: true,
@@ -675,24 +660,24 @@ export async function addSvgPanZoom(
     const touchSvg = activeDocument.getElementById(`${zkGraph.id}-svg`);
 
     if (touchSvg !== null) {
-        let startDistance: number = 0;
+        let startDistance = 0;
         let scale = panZoomTiger.getZoom();
-        let lastScale = scale;
+        const lastScale = scale;
 
         touchSvg.addEventListener('touchstart', (event) => {
             if (event.touches.length === 2) {
-                let touch1 = event.touches[0];
-                let touch2 = event.touches[1];
+                const touch1 = event.touches[0];
+                const touch2 = event.touches[1];
                 startDistance = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY);
             }
         })
 
         touchSvg.addEventListener('touchmove', (event) => {
             if (event.touches.length === 2) {
-                let touch1 = event.touches[0];
-                let touch2 = event.touches[1];
-                let currentDistance = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY);
-                let newScale = currentDistance / startDistance;
+                const touch1 = event.touches[0];
+                const touch2 = event.touches[1];
+                const currentDistance = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY);
+                const newScale = currentDistance / startDistance;
                 scale = scale * newScale / lastScale;
                 panZoomTiger.zoom(scale);
             }
@@ -704,14 +689,14 @@ export async function addSvgPanZoom(
         const setSvg = activeDocument.getElementById(`${zkGraph.id}-svg`);
 
         if (setSvg !== null) {
-            let a = setSvg.children[0].getAttr("style");
+            const a = setSvg.children[0].getAttr("style");
             if (a) {
-                let b = a.match(/\d([^\,]+)\d/g)
+                const b = a.match(/\d([^,]+)\d/g)
                 if (b !== null && Number(b[0]) > 1) {
                     panZoomTiger.zoom(1 / Number(b[0]))
                 }
             }
-            let zoomPanScale: ZoomPanScale = {
+            const zoomPanScale: ZoomPanScale = {
                 graphID: zkGraph.id,
                 zoomScale: panZoomTiger.getZoom(),
                 pan: panZoomTiger.getPan(),
@@ -728,26 +713,25 @@ export async function addSvgPanZoom(
 }
 
 function getfileTags(app: App, file: TFile) {
-    let fileTags: string[] = [];
-    let fmTags = app.metadataCache.getFileCache(file)?.frontmatter?.tags;
+    const fileTags: string[] = [];
+    const fmTags = app.metadataCache.getFileCache(file)?.frontmatter?.tags;
     if (fmTags) {
         if (Array.isArray(fmTags)) {
 
-            for (let tag of fmTags) {
+            for (const tag of fmTags) {
                 splitNestedTags("#" + tag, fileTags);
             }
 
         } else if (typeof fmTags == "string") {
             splitNestedTags("#" + fmTags, fileTags);
-        } else {
         }
     }
 
-    let tags = app.metadataCache.getFileCache(file)?.tags
+    const tags = app.metadataCache.getFileCache(file)?.tags
 
     if (tags && Array.isArray(tags)) {
 
-        for (let tag of tags) {
+        for (const tag of tags) {
             splitNestedTags(tag.tag, fileTags);
         }
     }
@@ -756,9 +740,9 @@ function getfileTags(app: App, file: TFile) {
 }
 
 function splitNestedTags(nestTag: string, arr: string[]) {
-    let words = nestTag.split("/");
+    const words = nestTag.split("/");
     let tagStr = "";
-    for (let word of words) {
+    for (const word of words) {
         tagStr = tagStr.concat(word);
         arr.push(tagStr);
         tagStr = tagStr.concat("/");

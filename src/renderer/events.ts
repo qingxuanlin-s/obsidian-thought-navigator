@@ -2477,7 +2477,6 @@ export function bindResizeHandleDrag(this: any, handle: HTMLElement,
                         nodesInBounds.forEach(node => {
                             const currentParent = node.data('parent');
                             const isGroup = node.data('isGroup');
-                            const nodeId = node.data('originalNode')?.ID || node.id();
                     
                             // 分组节点不能作为子节点
                             if (isGroup) {
@@ -3239,7 +3238,7 @@ export function getAxisSpan(this: any, size: { width: number; height: number }, 
         return layoutAdapter.getAxisSpan(size, dir);
     }
 
-export function getDirectionalDistance(this: any, referenceNode: any, dir: { x: number; y: number }, extraGap: number = 48): number {
+export function getDirectionalDistance(this: any, referenceNode: any, dir: { x: number; y: number }, extraGap = 48): number {
         return layoutAdapter.getDirectionalDistance(referenceNode, dir, extraGap);
     }
 
@@ -3254,7 +3253,7 @@ export function resolveShortcutPosition(this: any, basePosition: { x: number; y:
         primaryAxis: { x: number; y: number },
         step: number,
         secondaryAxis?: { x: number; y: number },
-        maxAttempts: number = 7): { x: number; y: number } {
+        maxAttempts = 7): { x: number; y: number } {
         if (!this.cy) return basePosition;
         return layoutAdapter.resolveShortcutPosition(
             this.cy,
@@ -3314,7 +3313,6 @@ export function handleCreateSiblingNode(this: any): void {
 
         const nodeData = activeNode.data();
         const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
-        const nodePos = activeNode.position();
         const parent = activeNode.incomers('edge').sources();
         if (parent.length === 0) return;
 

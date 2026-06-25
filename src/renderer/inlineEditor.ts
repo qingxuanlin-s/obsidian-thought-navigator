@@ -1961,7 +1961,6 @@ export function startPlaceholderInPlaceEdit(this: any, node: any, options?: { cu
             const match = wikiMatch || fullWidthMatch;
 
             if (match) {
-                const isEmbed = !!match[1];
                 const wikiLink = (match[2] || '').trim();
                 if (wikiLink) {
                     // 文件/嵌入节点
@@ -2495,7 +2494,7 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
         };
     }
 
-export function ensureNodeVisibleInViewport(this: any, node: any, padding: number = 40): void {
+export function ensureNodeVisibleInViewport(this: any, node: any, padding = 40): void {
         if (!this.cy || !this.container || !node || node.length === 0) return;
 
         // 文本节点用 markdown overlay 渲染，Canvas label 透明但仍参与默认 boundingBox。
@@ -2567,7 +2566,7 @@ export function showLinkSuggester(this: any, textarea: HTMLTextAreaElement,
         node: any,
         boundingBox: any,
         suggesterPopoverRef: { value: HTMLElement | null },
-        isEmbed: boolean = false,
+        isEmbed = false,
         onSelectFile?: (file: any, isEmbed: boolean) => void
     ): void {
         // 获取所有 markdown + moc 文件

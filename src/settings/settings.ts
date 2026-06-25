@@ -108,12 +108,12 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                 .addOption("tab", t("open mode tab"))
                 .addOption("split-left", t("open mode split-left"))
                 .addOption("split-right", t("open mode split-right"))
-	                .setValue(this.plugin.settings.defaultFileOpenMode || "tab")
-	                .onChange((value) => {
-	                    this.plugin.settings.defaultFileOpenMode = value as 'replace' | 'tab' | 'split-left' | 'split-right';
-	                    void this.plugin.saveData(this.plugin.settings);
-	                })
-	            );
+                .setValue(this.plugin.settings.defaultFileOpenMode || "tab")
+                .onChange((value) => {
+                    this.plugin.settings.defaultFileOpenMode = value as 'replace' | 'tab' | 'split-left' | 'split-right';
+                    void this.plugin.saveData(this.plugin.settings);
+                })
+            );
 
         // ========== 工作区 (Workspace) ==========
         new Setting(containerEl).setName(t("ws settings section")).setHeading();
@@ -215,8 +215,8 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
         folderListDiv.empty();
 
         for(let i=0;i<this.plugin.settings.FolderList.length;i++){
-            let folder = this.plugin.settings.FolderList[i];
-            let folderDiv = folderListDiv.createEl('div');
+            const folder = this.plugin.settings.FolderList[i];
+            const folderDiv = folderListDiv.createEl('div');
             new Setting(folderDiv)
             .addSearch((cb) => {
                 new FolderSuggest(this.app, cb.inputEl);

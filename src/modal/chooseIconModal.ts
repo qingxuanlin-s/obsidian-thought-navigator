@@ -58,7 +58,7 @@ export default class ChooseIconModal extends FuzzySuggestModal<string> {
     }
 
     public getItems(): string[] {
-        let iconIds = getIconIds().map(iconId => iconId.replace(/^lucide-/, ''));
+        const iconIds = getIconIds().map(iconId => iconId.replace(/^lucide-/, ''));
         return iconIds;
     }
 

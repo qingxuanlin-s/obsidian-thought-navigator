@@ -1197,7 +1197,6 @@ export class MOCHandler {
             // 1. 找到并移除节点（可能在根节点，也可能在某个父节点的 children 中）
             let nodeToMove: any = null;
             let foundInRoot = false;
-            let foundInParent = null;
             let foundIndex = -1;
 
             // 先在根节点中查找
@@ -1218,7 +1217,6 @@ export class MOCHandler {
                             const childIndex = node.children.findIndex((child: any) => child.nodeID === freeNodeID);
                             if (childIndex !== -1) {
                                 nodeToMove = node.children.splice(childIndex, 1)[0];
-                                foundInParent = node;
                                 return true;
                             }
                             // 递归查找

@@ -17,9 +17,9 @@ export interface MOCLocation {
 export class MOCReverseIndex {
     private app: App;
     private index: Map<string, MOCLocation[]> = new Map();
-    private mocFolderPath: string = '';
-    private headingTitle: string = '';
-    private initialized: boolean = false;
+    private mocFolderPath = '';
+    private headingTitle = '';
+    private initialized = false;
 
     constructor(app: App) {
         this.app = app;
@@ -211,7 +211,7 @@ export class MOCReverseIndex {
      * @param query 搜索关键词
      * @param limit 最大返回数量
      */
-    fuzzySearch(query: string, limit: number = 50): Array<{ notePath: string; noteBasename: string; locations: MOCLocation[] }> {
+    fuzzySearch(query: string, limit = 50): Array<{ notePath: string; noteBasename: string; locations: MOCLocation[] }> {
         if (!query.trim()) {
             // 无关键词时返回所有条目
             const results: Array<{ notePath: string; noteBasename: string; locations: MOCLocation[] }> = [];

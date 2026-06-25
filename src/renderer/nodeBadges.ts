@@ -1,6 +1,5 @@
-import { Component, MarkdownRenderer, Platform, finishRenderMath, renderMath, setIcon } from 'obsidian';
+import { Component, Platform, finishRenderMath, renderMath, setIcon } from 'obsidian';
 import { ZKNode } from 'src/view/indexView';
-import { EmbeddableMarkdownEditor } from 'src/utils/EmbeddableMarkdownEditor';
 import { darkenColor, hexToRgba, isModernThemeStyle, normalizeHexColor } from './colorUtils';
 import { estimateWrappedLines } from './renderPipeline';
 import { renderExcalidrawPreview, wrapForImageToolkit } from './embedPreview';
@@ -317,7 +316,6 @@ export function renderNodeBadges(this: any): void {
             badgeUpdaters.push({ node: null, fn: updateGlassPos });
         });
 
-        const IMAGE_EXTS_BADGE = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
         this.cy.nodes('[?hasFileIcon]').forEach((node: any) => {
             if (incIds && !incIds.has(node.id())) return;
             // 跳过所有 embed 节点（由预览卡片渲染标题和内容）
@@ -338,7 +336,7 @@ export function renderNodeBadges(this: any): void {
             let cachedIsRoot = false;
             let cachedIsFirstLevel = false;
             // DOM 元素池：创建一次，后续只更新位置
-            let lineElements: Array<{ hitEl: HTMLElement; underlineEl: HTMLElement }> = [];
+            const lineElements: Array<{ hitEl: HTMLElement; underlineEl: HTMLElement }> = [];
 
             const rebuildWrappedLinesCache = (label: string, isRoot: boolean, isFirstLevel: boolean) => {
                 cachedLabel = label;

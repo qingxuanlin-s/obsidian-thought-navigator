@@ -396,7 +396,7 @@ export function getAxisSpan(size: { width: number; height: number }, dir: { x: n
 export function getDirectionalDistance(
     referenceNode: any,
     dir: { x: number; y: number },
-    extraGap: number = 48
+    extraGap = 48
 ): number {
     const referenceSize = estimateCollisionBox(referenceNode);
     const estimatedNewSize = referenceSize;
@@ -550,7 +550,7 @@ export function resolveShortcutPosition(
     primaryAxis: { x: number; y: number },
     step: number,
     secondaryAxis?: { x: number; y: number },
-    maxAttempts: number = 7
+    maxAttempts = 7
 ): { x: number; y: number } {
     const size = estimateCollisionBox(referenceNode);
     const excludeNodeIds = [referenceNode.id()];

@@ -1,5 +1,5 @@
 import ZKNavigationPlugin from "main";
-import { App, Modal, Notice, TFile, loadMermaid } from "obsidian";
+import { App, Modal, TFile, loadMermaid } from "obsidian";
 import { ZKNode, ZK_NAVIGATION } from "src/view/indexView";
 
 export class expandGraphModal extends Modal {
@@ -10,7 +10,7 @@ export class expandGraphModal extends Modal {
   files:TFile[]
   graphType:string;
 
-  constructor(app: App, plugin:ZKNavigationPlugin, mainNotes:ZKNode[], files:TFile[], mermaidStr:string, graphType:string='flowchart') {
+  constructor(app: App, plugin:ZKNavigationPlugin, mainNotes:ZKNode[], files:TFile[], mermaidStr:string, graphType='flowchart') {
     super(app);
     this.plugin = plugin;
     this.mainNotes = mainNotes;
@@ -20,7 +20,7 @@ export class expandGraphModal extends Modal {
   }
 
   async onOpen() {
-    let { contentEl } = this;
+    const { contentEl } = this;
     this.containerEl.addClass("zk-modal-container");
     this.modalEl.addClass("zk-expand-modal");
     const mermaid = await loadMermaid();
@@ -28,7 +28,7 @@ export class expandGraphModal extends Modal {
     const svgGraph = contentEl.createEl("div", {cls: "zk-expand-graph"});
     svgGraph.id = "zk-expand-graph";
 
-    let { svg } = await mermaid.render(`zk-expand-graph-svg`, `${this.mermaidStr}`);
+    const { svg } = await mermaid.render(`zk-expand-graph-svg`, `${this.mermaidStr}`);
     const parsedSvg = new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement;
     svgGraph.appendChild(activeDocument.importNode(parsedSvg, true));
     svgGraph.children[0].removeAttribute('style');
@@ -39,7 +39,7 @@ export class expandGraphModal extends Modal {
 
     const svgPanZoomModule = await import("svg-pan-zoom");
     const svgPanZoom = (svgPanZoomModule as any).default ?? svgPanZoomModule;
-    let panZoomTiger = svgPanZoom(`#zk-expand-graph-svg`, {
+    const panZoomTiger = svgPanZoom(`#zk-expand-graph-svg`, {
         zoomEnabled: true,
         controlIconsEnabled: false,
         fit: false,                    
@@ -50,12 +50,12 @@ export class expandGraphModal extends Modal {
         zoomScaleSensitivity: 0.25,
     })
 
-    let setSvg = activeDocument.getElementById(`${svgGraph.id}-svg`);
+    const setSvg = activeDocument.getElementById(`${svgGraph.id}-svg`);
 
     if(setSvg !== null){
-        let a = setSvg.children[0].getAttr("style");
+        const a = setSvg.children[0].getAttr("style");
         if(typeof a == 'string'){
-            let b = a.match(/\d([^\,]+)\d/g)
+            const b = a.match(/\d([^,]+)\d/g)
             if(b !== null && Number(b[0]) > 1){
                 panZoomTiger.zoom(1/Number(b[0]))
             }                        
@@ -64,14 +64,14 @@ export class expandGraphModal extends Modal {
 
     if(this.graphType==='flowchart'){
 
-        let nodeGArr = svgGraph.querySelectorAll("[id^='flowchart-']");
-        let nodeArr = svgGraph.getElementsByClassName("nodeLabel");
+        const nodeGArr = svgGraph.querySelectorAll("[id^='flowchart-']");
+        const nodeArr = svgGraph.getElementsByClassName("nodeLabel");
 
         for (let i = 0; i < nodeArr.length; i++) {
-            let link = activeDocument.createElement('a');
+            const link = activeDocument.createElement('a');
             link.addClass("internal-link");
-            let nodePosStr = nodeGArr[i].id.split('-')[1];
-            let path:string = '';
+            const nodePosStr = nodeGArr[i].id.split('-')[1];
+            let path = '';
             if(this.files.length == 0){
                 const node = this.mainNotes.filter(n=>n.position == Number(nodePosStr))[0];
                 if (!node.file) continue; // Skip text-only nodes
@@ -107,14 +107,14 @@ export class expandGraphModal extends Modal {
         gElements[1].textContent = "";
 
         for(let j=0;j<circleNodes.length;j++){
-            let link = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'a');
+            const link = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'a');
             link.appendChild(circleNodes[j]);
             gElements[1].appendChild(link);            
             
-            let nodeArr = this.mainNotes.filter(n=>n.gitNodePos === j);
+            const nodeArr = this.mainNotes.filter(n=>n.gitNodePos === j);
             
             if(nodeArr.length > 0){
-                let node = nodeArr[0];
+                const node = nodeArr[0];
                 if (!node.file) continue; // Skip text-only nodes
 
                 // Capture file path to avoid null issues in event handlers
@@ -141,7 +141,7 @@ export class expandGraphModal extends Modal {
   }
 
   onClose() {
-    let { contentEl } = this;
+    const { contentEl } = this;
     contentEl.empty();
   }
   

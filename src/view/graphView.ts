@@ -10,7 +10,7 @@ import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
 import { RenderOptions } from "src/renderer/types";
 import { resolveThemeMode } from "src/utils/themeMode";
 
-export const ZK_GRAPH_TYPE: string = "zk-graph-type"
+export const ZK_GRAPH_TYPE = "zk-graph-type"
 export const ZK_GRAPH_VIEW: string = t("thought-local-graph")
 
 type LocalGraphMode = 'overview' | 'navigation';
@@ -26,8 +26,8 @@ export class ZKGraphView extends ItemView {
 
     plugin: ZKNavigationPlugin;
     familyNodeArr: ZKNode[] = [];
-    graphHeight: number = 0;
-    countOfGraphs: number = 0;
+    graphHeight = 0;
+    countOfGraphs = 0;
 
     // 防抖相关属性
     resizeTimeout: number | null = null;
@@ -254,7 +254,7 @@ export class ZKGraphView extends ItemView {
     refreshLocalGraph = async () => {
         if (this.isIndexViewActive()) return;
 
-        let { containerEl } = this;
+        const { containerEl } = this;
         containerEl.empty();
         this.applyLocalGraphTheme(containerEl);
 
@@ -289,14 +289,14 @@ export class ZKGraphView extends ItemView {
     }
     async getInlinks(currentFile: TFile) {
 
-        let inlinkArr: TFile[] = [];
+        const inlinkArr: TFile[] = [];
         const resolvedLinks = this.app.metadataCache.resolvedLinks;
 
-        for (let src of Object.keys(resolvedLinks)) {
-            let link = resolvedLinks[src];
-            for (let dest of Object.keys(link)) {
+        for (const src of Object.keys(resolvedLinks)) {
+            const link = resolvedLinks[src];
+            for (const dest of Object.keys(link)) {
                 if (dest === currentFile.path) {
-                    let inlinkFile = this.app.vault.getFileByPath(src);
+                    const inlinkFile = this.app.vault.getFileByPath(src);
                     if (inlinkFile !== null) {
                         inlinkArr.push(inlinkFile);
                     }
@@ -312,7 +312,7 @@ export class ZKGraphView extends ItemView {
     async getOutlinks(currentFile: TFile) {
 
 
-        let outlinkArr: TFile[] = [];
+        const outlinkArr: TFile[] = [];
         const resolvedLinks = this.app.metadataCache.resolvedLinks;
 
         // 安全检查：确保 resolvedLinks 中有当前文件的条目
@@ -327,8 +327,8 @@ export class ZKGraphView extends ItemView {
             outlinks = outlinks.filter(link => link.endsWith(".md"))
         }
 
-        for (let outlink of outlinks) {
-            let outlinkFile = this.app.vault.getFileByPath(outlink);
+        for (const outlink of outlinks) {
+            const outlinkFile = this.app.vault.getFileByPath(outlink);
             if (outlinkFile !== null) {
                 outlinkArr.push(outlinkFile);
             }
@@ -542,7 +542,7 @@ export class ZKGraphView extends ItemView {
         reverseRelations: Map<string, ReverseRelation>, highlightFile?: TFile): Promise<string> {
     const reverseRelationsMap = new Map<string, ReverseRelation[]>();
     
-    for (const [_, relation] of reverseRelations) {
+    for (const [, relation] of reverseRelations) {
         // 将关系添加到 sourceID 下
         if (reverseRelationsMap.has(relation.sourceID)) {
             reverseRelationsMap.get(relation.sourceID)!.push(relation);
@@ -755,7 +755,7 @@ export class ZKGraphView extends ItemView {
     }
 
     // 获取相关节点（上级、当前级、下级，默认3级）
-    getRelatedNodes(allNodes: ZKNode[], currentNode: ZKNode, levels: number = 3): ZKNode[] {
+    getRelatedNodes(allNodes: ZKNode[], currentNode: ZKNode, levels = 3): ZKNode[] {
         const currentDepth = currentNode.IDArr.length;
         const relatedNodes: ZKNode[] = [];
 
@@ -1126,7 +1126,7 @@ export class ZKGraphView extends ItemView {
                 }
                 this.familyGraphRenderer.fitAndCenter();
 
-                const handleLocalNodeClick = async (event: any, textNodeOnly: boolean = false) => {
+                const handleLocalNodeClick = async (event: any, textNodeOnly = false) => {
                     const detail = event.detail || {};
                     const triggerEvent = detail.event as MouseEvent | undefined;
                     const ctrlKey = detail.ctrlKey || triggerEvent?.ctrlKey;

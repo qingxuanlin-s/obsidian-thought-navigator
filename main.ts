@@ -1,4 +1,4 @@
-import { Editor, FileView, MarkdownView, moment, Notice, Plugin, TFile, TFolder, WorkspaceLeaf } from "obsidian";
+import { FileView, MarkdownView, moment, Notice, Plugin, TFile, TFolder, WorkspaceLeaf } from "obsidian";
 import { t } from "src/lang/helper";
 import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
 import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
@@ -331,11 +331,11 @@ export default class ZKNavigationPlugin extends Plugin {
         ID: '',
         filePath: '',
     };
-    indexViewOffsetWidth: number = 0;
-    indexViewOffsetHeight: number = 0;
-    RefreshIndexViewFlag: boolean = false;
-    mainNoteModal: boolean = false;
-    indexModal: boolean = false;
+    indexViewOffsetWidth = 0;
+    indexViewOffsetHeight = 0;
+    RefreshIndexViewFlag = false;
+    mainNoteModal = false;
+    indexModal = false;
     
     // MOC 文件监听器
     mocFileMonitor: MOCFileMonitor | null = null;
@@ -658,7 +658,7 @@ export default class ZKNavigationPlugin extends Plugin {
 
             if(para.file){
                 
-                let file = this.app.vault.getFileByPath(para.file);
+                const file = this.app.vault.getFileByPath(para.file);
 
                 if(!file){
                     new Notice(`zk-navigation: file "${para.file}" can't be found!`);
@@ -680,7 +680,7 @@ export default class ZKNavigationPlugin extends Plugin {
                     this.settings.graphType = para.type;
                 }
 
-                let indexFlag:boolean = false;
+                let indexFlag = false;
                 
                 if(this.settings.FolderOfIndexes !== ""){
                     if(para.file.startsWith(this.settings.FolderOfIndexes)){
@@ -1294,18 +1294,18 @@ export default class ZKNavigationPlugin extends Plugin {
     
     }
 
-    async clearShowingSettings(BranchTab:number=0){
+    async clearShowingSettings(BranchTab=0){
         this.settings.zoomPanScaleArr = [];
         this.settings.BranchTab = BranchTab;
     }
 
     async revealFileInIndexView(){
         
-        let filePath = this.app.workspace.getActiveViewOfType(FileView)?.file?.path
+        const filePath = this.app.workspace.getActiveViewOfType(FileView)?.file?.path
 
         if(filePath){
 
-            let indexFlag:boolean = false;
+            let indexFlag = false;
 
             if(this.settings.FolderOfIndexes !== "" && filePath.endsWith(".md")){
                 if(filePath.startsWith(this.settings.FolderOfIndexes)){

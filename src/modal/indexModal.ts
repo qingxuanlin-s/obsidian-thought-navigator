@@ -48,19 +48,19 @@ export class indexModal extends SuggestModal<ZKIndex> {
       // Get outlinks from index
       const resolvedLinks = this.app.metadataCache.resolvedLinks;
 
-      for (let file of indexFiles) {
-        let frontLinks: string[] = Object.keys(resolvedLinks[file.path])
+      for (const file of indexFiles) {
+        const frontLinks: string[] = Object.keys(resolvedLinks[file.path])
           .filter(l => l.endsWith("md"));
 
-        let outlinks:string[] = [];
+        const outlinks:string[] = [];
 
         if (frontLinks.length > 0) {
-          for (let link of frontLinks) {
-           let file = this.app.vault.getFileByPath(link);
+          for (const link of frontLinks) {
+           const file = this.app.vault.getFileByPath(link);
            if(file !== null){              
-              let outlink = this.MainNotes.find(n=>n.file === file);
+              const outlink = this.MainNotes.find(n=>n.file === file);
               if(typeof outlink !== 'undefined'){
-                let count = this.MainNotes.filter(n=>n.IDStr.startsWith(outlink!.IDStr)).length
+                const count = this.MainNotes.filter(n=>n.IDStr.startsWith(outlink!.IDStr)).length
                 outlinks.push(outlink.ID+` (${count.toString()})`);
               }else{
                 outlinks.push(file.basename);
@@ -132,20 +132,20 @@ export class indexFuzzyModal extends FuzzySuggestModal<ZKIndex> {
       // Get outlinks from index
       const resolvedLinks = this.app.metadataCache.resolvedLinks;
 
-      for (let file of indexFiles) {
-        let frontLinks: string[] = Object.keys(resolvedLinks[file.path])
+      for (const file of indexFiles) {
+        const frontLinks: string[] = Object.keys(resolvedLinks[file.path])
           .filter(l => l.endsWith("md"));
 
-        let outlinks:string[] = [];
+        const outlinks:string[] = [];
         
         if (frontLinks.length > 0) {
-          for (let link of frontLinks) {
-           let file = this.app.vault.getFileByPath(link);
+          for (const link of frontLinks) {
+           const file = this.app.vault.getFileByPath(link);
            if(file !== null){              
-              let outlinkArr = this.MainNotes.filter(n=>n.file === file);
+              const outlinkArr = this.MainNotes.filter(n=>n.file === file);
               if(outlinkArr.length > 0){
-                for(let outlink of outlinkArr){
-                  let count = this.MainNotes.filter(n=>n.IDStr.startsWith(outlink!.IDStr)).length;
+                for(const outlink of outlinkArr){
+                  const count = this.MainNotes.filter(n=>n.IDStr.startsWith(outlink!.IDStr)).length;
                   outlinks.push(outlink.ID+` (${count.toString()})`);
                 }
               }else{
