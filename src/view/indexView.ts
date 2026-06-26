@@ -1958,7 +1958,16 @@ export class ZKIndexView extends FileView {
                 });
             });
 
+            if (nodes.length === 0) {
+                new Notice(t('export fail'));
+                return;
+            }
+
             const bgColor = getComputedStyle(activeDocument.body).getPropertyValue('--background-primary').trim() || '#1e1e1e';
+            const graphJson = JSON.stringify({ nodes, edges })
+                .replace(/</g, '\\u003c')
+                .replace(/\u2028/g, '\\u2028')
+                .replace(/\u2029/g, '\\u2029');
 
             const html = `<!DOCTYPE html>
 <html lang="en">
@@ -1966,11 +1975,37 @@ export class ZKIndexView extends FileView {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Mind Map Export</title>
-<script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: ${bgColor}; overflow: hidden; }
-#cy { width: 100vw; height: 100vh; }
+body { background: ${bgColor}; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+#stage {
+  position: fixed; inset: 0; overflow: hidden; cursor: grab; user-select: none;
+}
+#stage.dragging { cursor: grabbing; }
+#world {
+  position: absolute; left: 0; top: 0; transform-origin: 0 0;
+}
+#edges {
+  position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none;
+}
+#nodes {
+  position: absolute; left: 0; top: 0;
+}
+.node {
+  position: absolute; display: flex; align-items: center; justify-content: center;
+  white-space: pre-wrap; overflow-wrap: anywhere; text-align: center;
+  border-style: solid; box-shadow: 0 10px 28px rgba(0,0,0,0.14);
+  cursor: grab; line-height: 1.32;
+}
+.node.dragging { cursor: grabbing; }
+.node.group {
+  justify-content: flex-start; align-items: flex-start; padding: 10px 14px;
+  background: rgba(255,255,255,0.04); box-shadow: none;
+}
+.edge-label {
+  font-size: 12px; fill: rgba(220,220,220,0.82); paint-order: stroke;
+  stroke: rgba(0,0,0,0.48); stroke-width: 3px; stroke-linejoin: round;
+}
 #toolbar {
   position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
   background: rgba(30,30,30,0.85); border-radius: 8px; padding: 6px 12px;
@@ -1986,51 +2021,192 @@ body { background: ${bgColor}; overflow: hidden; }
 </style>
 </head>
 <body>
-<div id="cy"></div>
+<div id="stage">
+  <div id="world">
+    <svg id="edges"></svg>
+    <div id="nodes"></div>
+  </div>
+</div>
 <div id="toolbar">
-  <button onclick="cy.fit(null,40)">Fit</button>
-  <button onclick="cy.zoom({level:cy.zoom()*1.3,renderedPosition:{x:innerWidth/2,y:innerHeight/2}})">Zoom +</button>
-  <button onclick="cy.zoom({level:cy.zoom()/1.3,renderedPosition:{x:innerWidth/2,y:innerHeight/2}})">Zoom −</button>
+  <button onclick="fitGraph()">Fit</button>
+  <button onclick="zoomAt(state.scale*1.3,innerWidth/2,innerHeight/2)">Zoom +</button>
+  <button onclick="zoomAt(state.scale/1.3,innerWidth/2,innerHeight/2)">Zoom −</button>
 </div>
 <script>
-var graphData = ${JSON.stringify({ nodes, edges })};
-var cy = cytoscape({
-  container: activeDocument.getElementById('cy'),
-  elements: graphData.nodes.map(function(n){return{group:'nodes',data:n.data,position:n.position}})
-    .concat(graphData.edges.map(function(e){return{group:'edges',data:e.data}})),
-  style: [
-    { selector: 'node', style: {
-      'label': 'data(label)', 'text-valign': 'center', 'text-halign': 'center',
-      'text-wrap': 'wrap', 'text-max-width': '260px', 'font-size': '18px',
-      'font-weight': '500', 'shape': 'round-rectangle', 'corner-radius': '20px',
-      'border-width': '2px', 'border-opacity': 0.72, 'padding': '18px',
-      'text-overflow-wrap': 'anywhere',
-    }},
-    { selector: 'edge', style: {
-      'curve-style': 'unbundled-bezier', 'control-point-distances': 60,
-      'control-point-weights': 0.5, 'target-arrow-shape': 'triangle',
-      'arrow-scale': 1.2,
-    }},
-  ].concat(
-    graphData.nodes.map(function(n){
-      var s = {}; for(var k in n.style){ if(n.style[k] != null) s[k] = n.style[k]; }
-      return { selector: 'node[id="'+n.data.id+'"]', style: s };
-    })
-  ).concat(
-    graphData.edges.map(function(e){
-      var s = {}; for(var k in e.style){ if(e.style[k] != null) s[k] = e.style[k]; }
-      return { selector: 'edge[id="'+e.data.id+'"]', style: s };
-    })
-  ),
-  layout: { name: 'preset' },
-  userZoomingEnabled: true,
-  userPanningEnabled: true,
-  boxSelectionEnabled: false,
-  autoungrabify: false,
-  minZoom: 0.05,
-  maxZoom: 3
-});
-cy.fit(null, 40);
+var graphData = ${graphJson};
+var stage = document.getElementById('stage');
+var world = document.getElementById('world');
+var edgeSvg = document.getElementById('edges');
+var nodesEl = document.getElementById('nodes');
+var state = { scale: 1, tx: 0, ty: 0 };
+var padding = 120;
+var nodeById = {};
+var bounds = graphData.nodes.reduce(function(acc, node) {
+  var w = numberValue(node.style.width, 160);
+  var h = numberValue(node.style.height, 72);
+  acc.x1 = Math.min(acc.x1, node.position.x - w / 2);
+  acc.y1 = Math.min(acc.y1, node.position.y - h / 2);
+  acc.x2 = Math.max(acc.x2, node.position.x + w / 2);
+  acc.y2 = Math.max(acc.y2, node.position.y + h / 2);
+  return acc;
+}, { x1: Infinity, y1: Infinity, x2: -Infinity, y2: -Infinity });
+
+var worldWidth = Math.max(1, bounds.x2 - bounds.x1 + padding * 2);
+var worldHeight = Math.max(1, bounds.y2 - bounds.y1 + padding * 2);
+edgeSvg.setAttribute('width', String(worldWidth));
+edgeSvg.setAttribute('height', String(worldHeight));
+world.style.width = worldWidth + 'px';
+world.style.height = worldHeight + 'px';
+
+function numberValue(value, fallback) {
+  var parsed = typeof value === 'number' ? value : parseFloat(String(value || ''));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function localPosition(pos) {
+  return {
+    x: pos.x - bounds.x1 + padding,
+    y: pos.y - bounds.y1 + padding
+  };
+}
+
+function cssColor(value, fallback) {
+  return value && value !== 'undefined' ? String(value) : fallback;
+}
+
+function renderNodes() {
+  graphData.nodes.forEach(function(node) {
+    var p = localPosition(node.position);
+    var w = numberValue(node.style.width, 160);
+    var h = numberValue(node.style.height, 72);
+    var el = document.createElement('div');
+    el.className = 'node' + (node.data.isGroup ? ' group' : '');
+    el.dataset.id = node.data.id;
+    el.textContent = node.data.label || '';
+    el.style.left = (p.x - w / 2) + 'px';
+    el.style.top = (p.y - h / 2) + 'px';
+    el.style.width = w + 'px';
+    el.style.minHeight = h + 'px';
+    el.style.color = cssColor(node.style.color, '#e8e8e8');
+    el.style.background = Number(node.style['background-opacity']) === 0 ? 'transparent' : cssColor(node.style['background-color'], 'rgba(80,120,200,0.22)');
+    el.style.borderWidth = numberValue(node.style['border-width'], node.data.isGroup ? 1 : 2) + 'px';
+    el.style.borderColor = cssColor(node.style['border-color'], 'rgba(255,255,255,0.28)');
+    el.style.borderRadius = node.style.shape === 'ellipse' ? '999px' : '14px';
+    el.style.fontSize = numberValue(node.style['font-size'], 18) + 'px';
+    el.style.fontWeight = String(node.style['font-weight'] || 500);
+    el.style.opacity = String(node.style.opacity || 1);
+    nodesEl.appendChild(el);
+    nodeById[node.data.id] = { model: node, el: el, width: w, height: h };
+    bindNodeDrag(el, node);
+  });
+}
+
+function renderEdges() {
+  while (edgeSvg.firstChild) edgeSvg.removeChild(edgeSvg.firstChild);
+  var defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+  defs.innerHTML = '<marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(180,190,205,0.72)"></path></marker>';
+  edgeSvg.appendChild(defs);
+  graphData.edges.forEach(function(edge) {
+    var source = nodeById[edge.data.source];
+    var target = nodeById[edge.data.target];
+    if (!source || !target) return;
+    var sp = localPosition(source.model.position);
+    var tp = localPosition(target.model.position);
+    var dx = tp.x - sp.x;
+    var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M ' + sp.x + ' ' + sp.y + ' C ' + (sp.x + dx * 0.42) + ' ' + sp.y + ', ' + (tp.x - dx * 0.42) + ' ' + tp.y + ', ' + tp.x + ' ' + tp.y);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', cssColor(edge.style['line-color'], 'rgba(180,190,205,0.72)'));
+    path.setAttribute('stroke-width', String(numberValue(edge.style.width, 2)));
+    path.setAttribute('stroke-linecap', 'round');
+    path.setAttribute('marker-end', 'url(#arrow)');
+    edgeSvg.appendChild(path);
+    if (edge.data.label) {
+      var label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      label.setAttribute('x', String((sp.x + tp.x) / 2));
+      label.setAttribute('y', String((sp.y + tp.y) / 2 - 8));
+      label.setAttribute('text-anchor', 'middle');
+      label.setAttribute('class', 'edge-label');
+      label.textContent = edge.data.label;
+      edgeSvg.appendChild(label);
+    }
+  });
+}
+
+function applyTransform() {
+  world.style.transform = 'translate(' + state.tx + 'px,' + state.ty + 'px) scale(' + state.scale + ')';
+}
+
+function fitGraph() {
+  var scale = Math.min(window.innerWidth / worldWidth, window.innerHeight / worldHeight) * 0.92;
+  state.scale = Math.max(0.05, Math.min(3, scale));
+  state.tx = (window.innerWidth - worldWidth * state.scale) / 2;
+  state.ty = (window.innerHeight - worldHeight * state.scale) / 2;
+  applyTransform();
+}
+
+function zoomAt(nextScale, clientX, clientY) {
+  nextScale = Math.max(0.05, Math.min(3, nextScale));
+  var worldX = (clientX - state.tx) / state.scale;
+  var worldY = (clientY - state.ty) / state.scale;
+  state.scale = nextScale;
+  state.tx = clientX - worldX * state.scale;
+  state.ty = clientY - worldY * state.scale;
+  applyTransform();
+}
+
+function bindStagePan() {
+  var start = null;
+  stage.addEventListener('mousedown', function(event) {
+    if (event.button !== 0 || event.target.closest('.node') || event.target.closest('#toolbar')) return;
+    start = { x: event.clientX, y: event.clientY, tx: state.tx, ty: state.ty };
+    stage.classList.add('dragging');
+  });
+  window.addEventListener('mousemove', function(event) {
+    if (!start) return;
+    state.tx = start.tx + event.clientX - start.x;
+    state.ty = start.ty + event.clientY - start.y;
+    applyTransform();
+  });
+  window.addEventListener('mouseup', function() {
+    start = null;
+    stage.classList.remove('dragging');
+  });
+  stage.addEventListener('wheel', function(event) {
+    event.preventDefault();
+    zoomAt(state.scale * (event.deltaY < 0 ? 1.12 : 0.89), event.clientX, event.clientY);
+  }, { passive: false });
+}
+
+function bindNodeDrag(el, node) {
+  var start = null;
+  el.addEventListener('mousedown', function(event) {
+    if (event.button !== 0) return;
+    event.stopPropagation();
+    start = { x: event.clientX, y: event.clientY, px: node.position.x, py: node.position.y };
+    el.classList.add('dragging');
+  });
+  window.addEventListener('mousemove', function(event) {
+    if (!start) return;
+    node.position.x = start.px + (event.clientX - start.x) / state.scale;
+    node.position.y = start.py + (event.clientY - start.y) / state.scale;
+    var p = localPosition(node.position);
+    var entry = nodeById[node.data.id];
+    el.style.left = (p.x - entry.width / 2) + 'px';
+    el.style.top = (p.y - entry.height / 2) + 'px';
+    renderEdges();
+  });
+  window.addEventListener('mouseup', function() {
+    start = null;
+    el.classList.remove('dragging');
+  });
+}
+
+renderNodes();
+renderEdges();
+bindStagePan();
+fitGraph();
+window.addEventListener('resize', fitGraph);
 </script>
 </body>
 </html>`;

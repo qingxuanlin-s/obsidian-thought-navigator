@@ -3,7 +3,7 @@ import * as dagreNamespace from 'cytoscape-dagre';
 import * as coseBilkentNamespace from 'cytoscape-cose-bilkent';
 import { IGraphRenderer, GraphData, RenderOptions, GraphChanges, ViewState } from './types';
 import { ZKNode } from 'src/view/indexView';
-import { Component, MarkdownRenderer, Platform } from 'obsidian';
+import { Component, MarkdownRenderer, Platform, TFile } from 'obsidian';
 import { EmbeddableMarkdownEditor } from 'src/utils/EmbeddableMarkdownEditor';
 import { Minimap } from './Minimap';
 import { buildStylesheet } from './stylesheet';
