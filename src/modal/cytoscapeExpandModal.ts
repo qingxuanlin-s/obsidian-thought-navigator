@@ -69,7 +69,7 @@ export class CytoscapeExpandModal extends Modal {
         const detail = (event as CustomEvent).detail;
         const node = detail?.node;
         if (!node?.file?.path) return;
-        this.app.workspace.openLinkText("", node.file.path, 'tab');
+        void this.app.workspace.openLinkText("", node.file.path, 'tab');
     };
 
     private handleNodeHover = (event: Event): void => {

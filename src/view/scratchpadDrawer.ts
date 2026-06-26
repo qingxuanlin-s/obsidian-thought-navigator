@@ -94,12 +94,12 @@ export class ScratchpadDrawer {
         const clearBtn = header.createDiv("zk-scratch-drawer-action");
         setIcon(clearBtn, "trash-2");
         setTooltip(clearBtn, t("scratch clear all"));
-        clearBtn.addEventListener("click", async (e) => {
+        clearBtn.addEventListener("click", (e) => { void (async () => {
             e.stopPropagation();
             const active = this.manager.activePad();
             if (!active || active.items.length === 0) return;
             await this.manager.clear();
-        });
+        })(); });
 
         this.tabsEl = this.panel.createDiv("zk-scratch-tabs");
         this.bodyEl = this.panel.createDiv("zk-scratch-drawer-body");
@@ -213,7 +213,7 @@ export class ScratchpadDrawer {
             this.panel.removeClass("is-drop-target");
         });
 
-        this.panel.addEventListener("drop", async (e: DragEvent) => {
+        this.panel.addEventListener("drop", (e: DragEvent) => { void (async () => {
             this.panel.removeClass("is-drop-target");
             if (isScratchCardDrag(e)) return;
 
@@ -229,7 +229,7 @@ export class ScratchpadDrawer {
                 await this.manager.add(entry);
             }
             new Notice(t("scratch added file count").replace("{n}", String(files.length)));
-        });
+        })(); });
     }
 
     // ---------- handle / idle ----------
@@ -376,14 +376,14 @@ export class ScratchpadDrawer {
         tab.addEventListener("dragleave", () => {
             tab.removeClass("is-drop-target");
         });
-        tab.addEventListener("drop", async (e) => {
+        tab.addEventListener("drop", (e) => { void (async () => {
             tab.removeClass("is-drop-target");
             const tempId = e.dataTransfer?.getData("application/x-zk-scratch");
             if (!tempId) return;
             e.preventDefault();
             e.stopPropagation();
             await this.movePadItem(tempId, pad.id);
-        });
+        })(); });
     }
 
     private startCreatePad(): void {
@@ -674,12 +674,12 @@ export class ScratchpadDrawer {
     }
 
     private openFilePicker(): void {
-        const modal = new ScratchpadFileSuggestModal(this.app, async (file) => {
+        const modal = new ScratchpadFileSuggestModal(this.app, (file) => { void (async () => {
             const moc = this.getCurrentMOC();
             const entry = this.manager.buildEntryFromFile(file, moc.path || "", moc.name || "");
             await this.manager.add(entry);
             new Notice(t("scratch added file count").replace("{n}", "1"));
-        });
+        })(); });
         modal.open();
     }
 
@@ -716,10 +716,10 @@ export class ScratchpadDrawer {
         const delBtn = card.createDiv("zk-scratch-card-del");
         setIcon(delBtn, "x");
         setTooltip(delBtn, t("scratch remove"));
-        delBtn.addEventListener("click", async (e) => {
+        delBtn.addEventListener("click", (e) => { void (async () => {
             e.stopPropagation();
             await this.manager.remove(entry.tempId);
-        });
+        })(); });
 
         card.addEventListener("dragstart", (e) => {
             if (!e.dataTransfer) return;

@@ -6,6 +6,7 @@ import { convertMOCToZKNodes } from "src/utils/utils";
 import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
 import { RenderOptions } from "src/renderer/types";
+import type * as cytoscape from "cytoscape";
 import { resolveThemeMode } from "src/utils/themeMode";
 
 const PNG_SUFFIX = '.png';
@@ -42,8 +43,8 @@ function waitForImages(root: HTMLElement, timeoutMs = 1800): Promise<void> {
 	]);
 }
 
-function getVisibleExportBoundingBox(cy: any): { x1: number; y1: number; w: number; h: number } {
-	const visibleElements = cy.elements().filter((ele: any) => {
+function getVisibleExportBoundingBox(cy: cytoscape.Core): { x1: number; y1: number; w: number; h: number } {
+	const visibleElements = cy.elements().filter((ele: cytoscape.SingularElementArgument) => {
 		if (ele.removed?.()) return false;
 		if (ele.hasClass?.('zk-collapsed-hidden')) return false;
 		if (ele.style?.('display') === 'none') return false;
@@ -147,10 +148,10 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
 
 	try {
 		const options: RenderOptions = {
-			direction: (plugin.settings.DirectionOfBranchGraph || 'LR') as any,
+			direction: (plugin.settings.DirectionOfBranchGraph || 'LR') as RenderOptions['direction'],
 			layoutType: 'dagre',
 			animate: false,
-			nodeText: (plugin.settings.NodeText || 'both') as any,
+			nodeText: (plugin.settings.NodeText || 'both') as RenderOptions['nodeText'],
 			themeMode: resolveThemeMode(plugin.settings.themeMode),
 			themeStyle: plugin.settings.themeStyle || 'modern',
 			edgeStyle: plugin.settings.edgeStyle || 'bezier',

@@ -24,7 +24,7 @@ function heroMenuBtn(titleRow: HTMLElement, ctx: RenderCtx, node: WorkspaceNode)
     btn.onclick = (e) => {
         e.stopPropagation();
         const menu = new Menu();
-        menu.addItem(i => { (i as any).setWarning?.(true); i.setTitle(t('ws delete')).setIcon('trash-2')
+        menu.addItem(i => { (i as { setWarning?(warning: boolean): void }).setWarning?.(true); i.setTitle(t('ws delete')).setIcon('trash-2')
             .onClick(() => ctx.requestDelete(node)); });
         menu.showAtMouseEvent(e);
     };
@@ -41,24 +41,24 @@ function actionBtn(parent: HTMLElement, icon: string, label: string, cta: boolea
 /** 多选 vault 笔记批量关联到此 MOC(就地建节点 + partOf/childMoc 链)*/
 function pickMocAssoc(ctx: RenderCtx, moc: WSMocNode): void {
     const mounted = ctx.store.containerChildren(moc.id)
-        .map(c => (c as any).filePath as string | undefined)
+        .map(c => (c as { filePath?: string }).filePath)
         .filter((p): p is string => !!p);
-    new FilePickerModal(ctx.app, moc.title, mounted, async (paths) => {
+    new FilePickerModal(ctx.app, moc.title, mounted, (paths) => { void (async () => {
         await ctx.store.mountFilesToContainer(moc.id, paths);
         ctx.refresh();
-    }).open();
+    })(); }).open();
 }
 
 function pickProjectRefs(ctx: RenderCtx, p: WSProjectNode): void {
     const mounted = ctx.store.linksFrom(p.id)
         .filter(l => l.type === 'related')
         .map(l => ctx.store.getNode(l.to))
-        .map(n => (n as any)?.filePath as string | undefined)
+        .map(n => (n as { filePath?: string } | undefined)?.filePath)
         .filter((path): path is string => !!path);
-    new FilePickerModal(ctx.app, p.title, mounted, async (paths) => {
+    new FilePickerModal(ctx.app, p.title, mounted, (paths) => { void (async () => {
         await ctx.store.addProjectFileReferences(p.id, paths);
         ctx.refresh();
-    }).open();
+    })(); }).open();
 }
 
 function renderProjectRefs(body: HTMLElement, ctx: RenderCtx, p: WSProjectNode): void {
@@ -80,7 +80,7 @@ function renderProjectRefs(body: HTMLElement, ctx: RenderCtx, p: WSProjectNode):
         const chip = refs.createSpan({ cls: 'project-ref' });
         setIcon(chip.createSpan({ cls: 'project-ref-ic' }), node.type === 'moc' ? 'git-branch' : node.type === 'map' ? 'git-fork' : 'file-text');
         chip.createSpan({ cls: 'project-ref-title', text: node.title });
-        chip.setAttribute('title', (node as any).filePath || node.title);
+        chip.setAttribute('title', (node as { filePath?: string }).filePath || node.title);
         chip.onclick = () => ctx.open(ctx.store.targetFor(node));
         const rm = chip.createSpan({ cls: 'project-ref-remove' });
         setIcon(rm, 'x');
@@ -238,7 +238,7 @@ function openTaskModal(ctx: RenderCtx, p: WSProjectNode, file: TFile | null,
         header,
         submitLabel: t(opts.mode === 'edit' ? 'ws save' : 'ws create'),
         initial,
-        onSubmit: async (r) => {
+        onSubmit: (r) => { void (async () => {
             try {
                 const f = file instanceof TFile ? file : await ctx.store.ensureProjectFile(p.id, ctx.projectFolderPath);
                 if (!(f instanceof TFile)) { new Notice(t('ws action add failed')); return; }
@@ -263,7 +263,7 @@ function openTaskModal(ctx: RenderCtx, p: WSProjectNode, file: TFile | null,
                 console.error('[zk-navigation] 保存任务失败', e);
                 new Notice(t('ws action add failed') + ': ' + ((e as Error)?.message ?? e));
             }
-        },
+        })(); },
     }).open();
 }
 
@@ -392,13 +392,13 @@ function taskRefMountedPaths(ctx: RenderCtx, source: TFile, tk: MdTask): string[
 }
 
 function pickActionRefs(ctx: RenderCtx, p: WSProjectNode, file: TFile, tk: MdTask): void {
-    new FilePickerModal(ctx.app, p.title, taskRefMountedPaths(ctx, file, tk), async (paths) => {
+    new FilePickerModal(ctx.app, p.title, taskRefMountedPaths(ctx, file, tk), (paths) => { void (async () => {
         const refs = paths.map(path => {
             const picked = ctx.app.vault.getAbstractFileByPath(path);
             return picked instanceof TFile ? linkTextForFile(picked) : path;
         });
         await writeTasks(ctx, file, c => addTaskRefs(c, tk, refs));
-    }).open();
+    })(); }).open();
 }
 
 function renderTaskRefs(main: HTMLElement, ctx: RenderCtx, file: TFile, tk: MdTask): void {
@@ -457,14 +457,14 @@ function renderTaskRow(wrap: HTMLElement, ctx: RenderCtx, p: WSProjectNode, file
             row.toggleClass('drop-before', !after);
         });
         row.addEventListener('dragleave', () => row.removeClasses(['drop-before', 'drop-after']));
-        row.addEventListener('drop', async (e) => {
+        row.addEventListener('drop', (e) => { void (async () => {
             e.preventDefault();
             const moving = draggedTask;
             const after = row.hasClass('drop-after');
             row.removeClasses(['drop-before', 'drop-after']);
             if (!moving || moving === tk) return;
             await writeTasks(ctx, file, c => moveTask(c, moving, tk, after ? 'after' : 'before'));
-        });
+        })(); });
     }
 
     const box = row.createEl('input', { type: 'checkbox' });
@@ -627,13 +627,13 @@ export function renderNotePage(container: HTMLElement, ctx: RenderCtx, n: WSNote
         // 正文预览(内嵌渲染真实 markdown,与右侧 deck 一致)
         body.createDiv({ cls: 'dsec', text: t('ws body') });
         const prose = body.createDiv({ cls: 'prose ws-noteprose' });
-        ctx.app.vault.cachedRead(file).then(md => {
+        void ctx.app.vault.cachedRead(file).then(md => {
             if (!md.trim()) { prose.empty(); prose.createDiv({ cls: 'empty', text: t('ws empty note') }); return; }
-            MarkdownRenderer.render(ctx.app, md, prose, file.path, owner);
+            void MarkdownRenderer.render(ctx.app, md, prose, file.path, owner);
         });
     } else if (n.body) {
         body.createDiv({ cls: 'dsec', text: t('ws body') });
-        MarkdownRenderer.render(ctx.app, n.body, body.createDiv({ cls: 'prose ws-noteprose' }), '', owner);
+        void MarkdownRenderer.render(ctx.app, n.body, body.createDiv({ cls: 'prose ws-noteprose' }), '', owner);
     } else {
         emptyState(body, 'file-text', t('ws empty note'), '');
     }

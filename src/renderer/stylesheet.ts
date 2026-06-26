@@ -1,5 +1,9 @@
 import { RenderOptions } from './types';
 import { getGraphTheme } from './theme';
+import type * as cytoscape from 'cytoscape';
+
+/** cytoscape 样式条目(style 用 Record 容纳映射函数+自定义属性,绕过严格 Css 类型) */
+export type StyleEntry = { selector: string; style: Record<string, unknown> };
 
 export interface StylesheetDeps {
     FIRST_LEVEL_NODE_FONT_SIZE: number;
@@ -41,7 +45,7 @@ export interface StylesheetDeps {
     }) => { width: number; height: number; lineCount: number };
 }
 
-export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): any[] {
+export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): StyleEntry[] {
     const theme = getGraphTheme(options);
     const isLight = theme.isLight;
     const isModern = (options.themeStyle || 'modern') === 'modern';
@@ -80,7 +84,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
             .replace(/^\s*#{1,6}\s+/gm, '')
             .replace(/<[^>]+>/g, '');
     };
-    const getTextMeasureLabel = (ele: any): string => getVisibleTextForMeasure(ele.data('label') || '');
+    const getTextMeasureLabel = (ele: cytoscape.NodeSingular): string => getVisibleTextForMeasure(ele.data('label') || '');
 
     const measureSingleLineFileNode = (label: string, opts: {
         fontSize: number;
@@ -178,14 +182,14 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'text-wrap': 'wrap',
                 'text-max-width': '280px',
                 'text-overflow-wrap': 'anywhere',
-                'background-color': (ele: any) => {
+                'background-color': (ele: cytoscape.NodeSingular) => {
                     const fillColor = ele.data('customFillColor');
                     if (fillColor && !ele.data('isEmbed') && !ele.data('isGroup')) {
                         return fillColor;
                     }
                     return colors.nodeBackground;
                 },
-                'color': (ele: any) => {
+                'color': (ele: cytoscape.NodeSingular) => {
                     const fillTextColor = ele.data('customFillTextColor');
                     if (fillTextColor && !ele.data('isEmbed') && !ele.data('isGroup')) {
                         return fillTextColor;
@@ -194,7 +198,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 },
                 'font-size': `${deps.FIRST_LEVEL_NODE_FONT_SIZE - 4}px`,
                 'font-weight': '500',
-                'width': (ele: any) => {
+                'width': (ele: cytoscape.NodeSingular) => {
                     const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
                     if (manualWidthModel > 0 && ele.data('isTextOnly')) {
                         return manualWidthModel;
@@ -212,7 +216,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                         paddingY: FILE_NODE_PADDING_Y
                     }).width;
                 },
-                'height': (ele: any) => {
+                'height': (ele: cytoscape.NodeSingular) => {
                     const manualHeightModel = Number(ele.data('manualHeightModel') || 0);
                     if (ele.data('isTextOnly')) {
                         const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
@@ -239,7 +243,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'corner-radius': '10px',
                 'border-width': '2px',
                 'border-opacity': 0.72,
-                'border-color': (ele: any) => {
+                'border-color': (ele: cytoscape.NodeSingular) => {
                     if (isModern && ele.data('branchNodeBorder') && !ele.data('isRoot') && !ele.data('isFreeNode')) {
                         return ele.data('branchNodeBorder');
                     }
@@ -247,21 +251,21 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 },
                 'transition-property': 'background-color, border-color',
                 'transition-duration': '0.2s'
-            } as any
+            }
         },
         // 现代风格：边框增强（无 shadow-*，避免 Cytoscape 样式告警）
         ...(isModern ? [{
             selector: 'node[!isRoot][!isEmbed][!isStandaloneText]',
             style: {
                 'border-width': '2.5px',
-            } as any
+            }
         }] : []),
         // 带 ID 徽标的文件节点：主标题略上移，为右下角徽标预留空间
         {
             selector: 'node[badge][!isTextOnly][!isEmbed][!isGroup]',
             style: {
                 'text-margin-y': -8
-            } as any
+            }
         },
         // 嵌入节点：由 HTML 预览卡片承载内容，隐藏 Cytoscape 默认卡片外观
         {
@@ -273,27 +277,27 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
 				'border-width': 0,
 				'overlay-opacity': 0,
 				'padding': '0px'
-			} as any
+			}
 		},
         // 纯文本节点：文字换行宽度跟随节点宽度（支持手动拉伸后自适应）
         {
             selector: 'node[?isTextOnly]',
             style: {
-                'text-max-width': (ele: any) => {
+                'text-max-width': (ele: cytoscape.NodeSingular) => {
                     const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
                     const w = Number(ele.width() || 0);
                     if (manualWidthModel > 0) return Math.max(120, manualWidthModel - 48);
                     if (w > 0) return Math.max(120, w - 48);
                     return computeAutoTextMetrics(getTextMeasureLabel(ele)).wrapWidth;
                 }
-            } as any
+            }
         },
         // 具有 Markdown 渲染 overlay 的文本节点：隐藏 Canvas 文字（由 HTML 层渲染）
         {
             selector: 'node[?isTextOnly][?hasMarkdownOverlay]',
             style: {
                 'text-opacity': 0
-            } as any
+            }
         },
         // 自由文本节点（无父子关系）：纯文本样式（透明边框与背景）
         {
@@ -303,20 +307,20 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'border-width': 0,
                 'shape': 'round-rectangle',
                 'padding': '0px'
-            } as any
+            }
         },
         // 普通节点（文本/文件）：与自由文本节点尺寸对齐（免去外扩 padding），保留卡片背景与边框
         {
             selector: 'node[!isStandaloneText][!isEmbed][!isRoot]',
             style: {
                 'padding': '0px'
-            } as any
+            }
         },
         // 1 级节点：只突出根节点的直接子节点，建立主干层级
         {
             selector: 'node[?isFirstLevelNode][!isRoot][!isFreeNode][!isEmbed][!isStandaloneText]',
             style: {
-                'background-color': (ele: any) => {
+                'background-color': (ele: cytoscape.NodeSingular) => {
                     const branchColor = deps.normalizeHexColor(ele.data('branchNodeBorder') || '');
                     if (theme.isLight) {
                         return branchColor
@@ -328,7 +332,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                         : theme.node.firstLevelFallback;
                 },
                 'background-opacity': theme.effects.firstLevelBackgroundOpacity,
-                'border-color': (ele: any) => ele.data('branchNodeBorder') || '#5da6ff',
+                'border-color': (ele: cytoscape.NodeSingular) => ele.data('branchNodeBorder') || '#5da6ff',
                 'border-width': '2.6px',
                 'border-opacity': 0.92,
                 'z-index': 1000,
@@ -336,7 +340,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'text-outline-width': 0,
                 'font-size': `${deps.FIRST_LEVEL_NODE_FONT_SIZE}px`,
                 'font-weight': 'bold',
-                'text-max-width': (ele: any) => {
+                'text-max-width': (ele: cytoscape.NodeSingular) => {
                     if (ele.data('isTextOnly')) {
                         const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
                         const widthModel = manualWidthModel > 0 ? manualWidthModel : Number(ele.width() || 340);
@@ -344,7 +348,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     }
                     return computeFirstLevelMetrics(ele.data('label') || '').wrapWidth;
                 },
-                'width': (ele: any) => {
+                'width': (ele: cytoscape.NodeSingular) => {
                     const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
                     if (manualWidthModel > 0 && ele.data('isTextOnly')) {
                         return manualWidthModel;
@@ -363,7 +367,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     const label = ele.data('label') || '';
                     return computeFirstLevelMetrics(label).nodeWidth;
                 },
-                'height': (ele: any) => {
+                'height': (ele: cytoscape.NodeSingular) => {
                     const manualHeightModel = Number(ele.data('manualHeightModel') || 0);
                     if (ele.data('isTextOnly')) {
                         const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
@@ -382,13 +386,13 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     const auto = Math.max(computeFirstLevelMetrics(label).nodeHeight, 80);
                     return manualHeightModel > 0 ? Math.max(manualHeightModel, auto) : auto;
                 }
-            } as any
+            }
         },
         // 当前激活的 1 级分支：只有这一支使用实心填充
         {
             selector: 'node.zk-active-first-level-branch[?isFirstLevelNode][!isRoot][!isFreeNode][!isEmbed][!isStandaloneText]',
             style: {
-                'background-color': (ele: any) => {
+                'background-color': (ele: cytoscape.NodeSingular) => {
                     const branchColor = deps.normalizeHexColor(ele.data('branchNodeBorder') || '');
                     if (theme.isLight) {
                         return branchColor
@@ -398,7 +402,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     return ele.data('branchNodeBackground') || theme.node.activeFirstLevelFallback;
                 },
                 'background-opacity': theme.effects.activeFirstLevelBackgroundOpacity,
-                'border-color': (ele: any) => {
+                'border-color': (ele: cytoscape.NodeSingular) => {
                     const branchColor = deps.normalizeHexColor(ele.data('branchNodeBorder') || '');
                     if (theme.isLight) return branchColor || theme.node.borderSelected;
                     return branchColor ? deps.lightenColor(branchColor, 0.30) : '#9ed0ff';
@@ -409,7 +413,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'text-outline-color': theme.node.activeFirstLevelOutline,
                 'text-outline-width': theme.effects.activeFirstLevelOutlineWidth,
                 'z-index': 1001
-            } as any
+            }
         },
         // 2级及以下节点降饱和：保留关系线索，不和根/1级争抢
         {
@@ -419,7 +423,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'border-width': '1.4px',
                 'border-opacity': 0.58,
                 'color': theme.node.textMuted
-            } as any
+            }
         },
         // 根节点样式：当前图谱焦点
         {
@@ -433,7 +437,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'color': theme.node.textSelected,
                 'font-size': `${deps.ROOT_NODE_FONT_SIZE}px`,
                 'font-weight': 'bold',
-                'text-max-width': (ele: any) => {
+                'text-max-width': (ele: cytoscape.NodeSingular) => {
                     if (ele.data('isTextOnly')) {
                         const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
                         const widthModel = manualWidthModel > 0 ? manualWidthModel : Number(ele.width() || 560);
@@ -449,7 +453,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                         lineHeight: 42
                     }).wrapWidth;
                 },
-                'width': (ele: any) => {
+                'width': (ele: cytoscape.NodeSingular) => {
                     const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
                     if (manualWidthModel > 0 && ele.data('isTextOnly')) {
                         return manualWidthModel;
@@ -476,7 +480,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                         paddingY: 38
                     }).width;
                 },
-                'height': (ele: any) => {
+                'height': (ele: cytoscape.NodeSingular) => {
                     const manualHeightModel = Number(ele.data('manualHeightModel') || 0);
                     if (manualHeightModel > 0 && ele.data('isTextOnly')) {
                         return manualHeightModel;
@@ -504,7 +508,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     }).height;
                 },
                 'border-width': '4.5px'
-            } as any
+            }
         },
         {
             selector: 'node[?isRoot][!isFreeNode]:selected',
@@ -513,7 +517,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'border-color': theme.node.rootSelectedBorder,
                 'border-width': '5px',
                 'color': theme.node.textSelected
-            } as any
+            }
         },
         // 分组节点样式 - 完全透明（由 CSS glass overlay 层实现视觉效果）
         {
@@ -525,20 +529,20 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'shape': 'round-rectangle',
                 'label': '',
                 'padding': '20px'
-            } as any
+            }
         },
         // 占位符节点样式 - 虚线边框，半透明
         {
             selector: 'node[?isPlaceholder]',
             style: {
-                'width': (ele: any) => Math.max(240, computeAutoTextMetrics(ele.data('label') || '').width),
-                'height': (ele: any) => Math.max(80, computeAutoTextMetrics(ele.data('label') || '').height),
+                'width': (ele: cytoscape.NodeSingular) => Math.max(240, computeAutoTextMetrics(ele.data('label') || '').width),
+                'height': (ele: cytoscape.NodeSingular) => Math.max(80, computeAutoTextMetrics(ele.data('label') || '').height),
                 'opacity': 0.7,
                 'border-style': 'dashed',
                 'border-width': '2px',
                 'border-color': colors.nodeBorderSelected,
                 'background-color': colors.nodeBackground
-            } as any
+            }
         },
         // 占位符节点选中状态 - 更明显的视觉反馈
         {
@@ -552,7 +556,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'overlay-color': colors.nodeBorderSelected,
                 'overlay-padding': '4px',
                 'overlay-opacity': 0.3
-            } as any
+            }
         },
         // 草稿节点(#20):与普通节点同款渲染(尺寸/背景/文字都走通用规则),仅边框不同——
         // 虚线 + origin 配色(ai=紫,manual=灰),标识"待审批"。不覆盖 width/height/background。
@@ -561,23 +565,23 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
             style: {
                 'border-style': 'dashed',
                 'border-width': '2px',
-                'border-color': (ele: any) => ele.data('draftOrigin') === 'ai' ? '#a855f7' : '#94a3b8',
+                'border-color': (ele: cytoscape.NodeSingular) => ele.data('draftOrigin') === 'ai' ? '#a855f7' : '#94a3b8',
                 // 草稿走 Cytoscape 原生 label(无 Markdown overlay 兜底文字),text-max-width 必须从
                 // label 直接量取,与 width mapper 同源——否则 isTextOnly 规则里基于 ele.width() 的换行宽度
                 // 会在样式解析时读到瞬时/过期宽度,造成"未选中换行、选中(强制重算)又变一行"的抖动。
-                'text-max-width': (ele: any) => computeAutoTextMetrics(getTextMeasureLabel(ele)).wrapWidth
-            } as any
+                'text-max-width': (ele: cytoscape.NodeSingular) => computeAutoTextMetrics(getTextMeasureLabel(ele)).wrapWidth
+            }
         },
         {
             selector: 'node[?isDraft]:selected',
             style: {
                 'border-style': 'dashed',
                 'border-width': '3px',
-                'border-color': (ele: any) => ele.data('draftOrigin') === 'ai' ? '#a855f7' : '#64748b',
-                'overlay-color': (ele: any) => ele.data('draftOrigin') === 'ai' ? '#a855f7' : '#64748b',
+                'border-color': (ele: cytoscape.NodeSingular) => ele.data('draftOrigin') === 'ai' ? '#a855f7' : '#64748b',
+                'overlay-color': (ele: cytoscape.NodeSingular) => ele.data('draftOrigin') === 'ai' ? '#a855f7' : '#64748b',
                 'overlay-padding': '4px',
                 'overlay-opacity': 0.2
-            } as any
+            }
         },
         // 跨领域虚拟节点(cd- 前缀):从别的 MOC 拉进来的"客人"。
         // 紫色虚线描边把它和本图原生节点区分开,配合左上角 ↗ 角标(见 nodeBadges)。
@@ -588,7 +592,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'border-width': '2px',
                 'border-color': theme.edge.crossDomain,
                 'border-opacity': 0.85
-            } as any
+            }
         },
         {
             selector: 'node[?isCrossDomain]:selected',
@@ -600,20 +604,20 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'overlay-color': theme.edge.crossDomain,
                 'overlay-padding': '4px',
                 'overlay-opacity': 0.2
-            } as any
+            }
         },
         // 折叠隐藏的子节点/连线
         {
             selector: 'node.zk-collapsed-hidden',
             style: {
                 'display': 'none'
-            } as any
+            }
         },
         {
             selector: 'edge.zk-collapsed-hidden',
             style: {
                 'display': 'none'
-            } as any
+            }
         },
         {
             selector: 'node.zk-level-dimmed',
@@ -621,20 +625,20 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'opacity': theme.effects.dimmedNodeOpacity,
                 'text-opacity': theme.effects.dimmedTextOpacity,
                 'z-index': 1
-            } as any
+            }
         },
         {
             selector: 'edge.zk-level-dimmed',
             style: {
                 'opacity': theme.effects.dimmedEdgeOpacity,
                 'z-index': 1
-            } as any
+            }
         },
         // 默认边样式 - 使用 unbundled-bezier 支持自定义控制点
         {
             selector: 'edge',
             style: {
-                'width': (ele: any) => {
+                'width': (ele: cytoscape.NodeSingular) => {
                     const hierarchyEdgeWidth = ele.data('hierarchyEdgeWidth');
                     if (typeof hierarchyEdgeWidth === 'number') {
                         return hierarchyEdgeWidth;
@@ -652,7 +656,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 // 控制点基准取节点中心,与 computeDirectionalEdgeControlPoints 的 S 形换算一致
                 'edge-distances': 'node-position',
                 // 优先级:用户手动拖动的控制点 > 方向感知 S 形(autoCp*) > 兜底单弧
-                'control-point-distances': (ele: any) => {
+                'control-point-distances': (ele: cytoscape.NodeSingular) => {
                     if (edgeStyle !== 'bezier') return 0;
                     const distance = ele.data('controlPointDistance');
                     if (distance !== undefined) return distance;
@@ -660,7 +664,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     if (auto) return auto;
                     return 60;
                 },
-                'control-point-weights': (ele: any) => {
+                'control-point-weights': (ele: cytoscape.NodeSingular) => {
                     if (edgeStyle !== 'bezier') return 0.5;
                     const weight = ele.data('controlPointWeight');
                     if (weight !== undefined) return weight;
@@ -676,14 +680,14 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'text-border-opacity': 0,
                 'z-index-compare': 'manual',
                 'z-index': 999
-            } as any
+            }
         },
         // 近距回退:两节点过近时贝塞尔会缩进节点框下/端点无解,按边降级为直线(拉开自动恢复)
         {
             selector: 'edge.zk-near-straight',
             style: {
                 'curve-style': 'straight'
-            } as any
+            }
         },
         // 普通父子边降噪，让根 -> 1级主干成为第一眼路径
         {
@@ -692,7 +696,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'opacity': deps.SECONDARY_PARENT_EDGE_OPACITY,
                 'arrow-scale': 1.18,
                 'z-index': 997
-            } as any
+            }
         },
         // 正向边
         {
@@ -702,7 +706,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'target-arrow-color': colors.edgeForward,
                 'width': 2.5,
                 'z-index': 999
-            } as any
+            }
         },
         // 反向边（虚线）- 降噪设计
         {
@@ -716,7 +720,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'arrow-scale': 1.35,
                 'opacity': 0.38,
                 'z-index': 999
-            } as any
+            }
         },
         // 草稿关联(#20):待审批的关联反向连线。虚线 + 草稿配色(紫=ai/灰=manual),
         // 不被普通 reverse 的降噪 opacity 拖暗,清晰标识"待确认"。
@@ -725,8 +729,8 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
             style: {
                 'line-style': 'dashed',
                 'line-dash-pattern': [10, 6],
-                'line-color': (ele: any) => ele.data('draftOrigin') === 'ai' ? '#a855f7' : '#94a3b8',
-                'target-arrow-color': (ele: any) => ele.data('draftOrigin') === 'ai' ? '#a855f7' : '#94a3b8',
+                'line-color': (ele: cytoscape.NodeSingular) => ele.data('draftOrigin') === 'ai' ? '#a855f7' : '#94a3b8',
+                'target-arrow-color': (ele: cytoscape.NodeSingular) => ele.data('draftOrigin') === 'ai' ? '#a855f7' : '#94a3b8',
                 'width': 2.4,
                 'arrow-scale': 1.35,
                 'opacity': 0.95,
@@ -738,7 +742,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'text-background-shape': 'roundrectangle',
                 'text-background-padding': '3px',
                 'z-index': 1000
-            } as any
+            }
         },
         // 局部概览中的入链/出链边：弱化为虚线，和节点导航实线区分
         {
@@ -755,7 +759,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'arrow-scale': 0.95,
                 'opacity': 0.42,
                 'z-index': 998
-            } as any
+            }
         },
         {
             selector: 'edge[type="outlink"]',
@@ -771,7 +775,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'arrow-scale': 0.95,
                 'opacity': 0.42,
                 'z-index': 998
-            } as any
+            }
         },
         // 跨领域边（虚线连接 + 特殊样式）
         // 线本身降噪(line-opacity)，但标签用 text-opacity:1 + 药丸底保持清晰可读，
@@ -800,7 +804,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'text-border-opacity': 0.9,
                 'text-margin-y': -1,
                 'z-index': 998
-            } as any
+            }
         },
         // 根节点 -> 1级节点：主干连线突出，但不过度抢占画布
         {
@@ -812,7 +816,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'target-arrow-color': theme.edge.rootToFirstLevel,
                 'arrow-scale': 1.45,
                 'z-index': 1001
-            } as any
+            }
         },
         // 当前选中分支的主干边:渐变高光 + 微发光,作为视觉锚点
         {
@@ -828,7 +832,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'overlay-opacity': 0.10,
                 'overlay-padding': 4,
                 'z-index': 1002
-            } as any
+            }
         },
         // 边选中状态
         {
@@ -839,7 +843,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'width': 3,
                 'opacity': 1,
                 'z-index': 1002
-            } as any
+            }
         },
         // 锚点节点 —— 金光从节点本体散发出来,不再仅靠角标贴纸
         {
@@ -851,7 +855,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'underlay-shape': 'round-rectangle',
                 'border-color': 'rgba(216, 197, 119, 0.78)',
                 'border-opacity': 0.95
-            } as any
+            }
         },
         // 节点悬停状态
         {
@@ -860,7 +864,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'background-color': colors.nodeBackgroundHover,
                 'border-color': colors.nodeBorderSelected,
                 'overlay-opacity': 0.15
-            } as any
+            }
         },
         // 节点选中状态
         {
@@ -871,7 +875,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'border-width': '2.5px',
                 'border-opacity': 0.90,
                 'color': theme.node.textSelected
-            } as any
+            }
         },
         // 根节点选中态需要压过通用 node:selected
         {
@@ -883,7 +887,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'border-opacity': 1,
                 'z-index': 1003,
                 'color': theme.node.textSelected
-            } as any
+            }
         },
         // 自由节点：微底色晕染
         {
@@ -896,7 +900,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'border-opacity': 0,
                 'border-color': 'transparent',
                 'corner-radius': '10px',
-            } as any
+            }
         },
         // 自由节点选中态：与普通节点保持一致
         {
@@ -907,14 +911,14 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'border-color': colors.nodeBorderSelected,
                 'border-width': '3px',
                 'color': theme.node.textSelected
-            } as any
+            }
         },
         // 兼容旧语义：仅有 legacy customColor 的节点保留文字左侧色点留白
         {
             selector: 'node[?hasCustomColor][!isEmbed][!isGroup]',
             style: {
                 'text-margin-x': 8,
-            } as any
+            }
         },
         // 嵌入节点选中态：保持隐藏（由 HTML 预览卡片处理选中视觉）
         {
@@ -923,14 +927,14 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'background-opacity': 0,
                 'border-width': 0,
                 'overlay-opacity': 0
-            } as any
+            }
         },
         // 嵌入节点激活态：保持隐藏
         {
             selector: 'node[?isEmbed]:active',
             style: {
                 'overlay-opacity': 0
-            } as any
+            }
         },
         // 图片节点：始终隐藏（由 HTML 图片卡片处理视觉）
         {
@@ -939,13 +943,13 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'background-opacity': 0,
                 'border-width': 0,
                 'overlay-opacity': 0
-            } as any
+            }
         },
         {
             selector: 'node[?isImageNode]:active',
             style: {
                 'overlay-opacity': 0
-            } as any
+            }
         },
         // 当前文件节点（与分支视图根节点颜色一致）
         {
@@ -957,7 +961,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'background-opacity': theme.effects.currentBackgroundOpacity,
                 'color': theme.node.textSelected,
                 'font-weight': '600'
-            } as any
+            }
         },
         // 出链节点样式（蓝色）
         {
@@ -971,7 +975,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'font-size': '15px',
                 'font-weight': '500',
                 'text-max-width': '190px',
-                'width': (ele: any) => deps.measureNodeLabel(ele.data('label') || '', {
+                'width': (ele: cytoscape.NodeSingular) => deps.measureNodeLabel(ele.data('label') || '', {
                     baseWidth: 88,
                     minHeight: 34,
                     maxWidth: 220,
@@ -980,7 +984,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     paddingX: 30,
                     paddingY: 12
                 }).width,
-                'height': (ele: any) => deps.measureNodeLabel(ele.data('label') || '', {
+                'height': (ele: cytoscape.NodeSingular) => deps.measureNodeLabel(ele.data('label') || '', {
                     baseWidth: 88,
                     minHeight: 34,
                     maxWidth: 220,
@@ -989,7 +993,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     paddingX: 30,
                     paddingY: 12
                 }).height,
-            } as any
+            }
         },
         // 入链节点样式（黄色）
         {
@@ -1003,7 +1007,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'font-size': '15px',
                 'font-weight': '500',
                 'text-max-width': '190px',
-                'width': (ele: any) => deps.measureNodeLabel(ele.data('label') || '', {
+                'width': (ele: cytoscape.NodeSingular) => deps.measureNodeLabel(ele.data('label') || '', {
                     baseWidth: 88,
                     minHeight: 34,
                     maxWidth: 220,
@@ -1012,7 +1016,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     paddingX: 30,
                     paddingY: 12
                 }).width,
-                'height': (ele: any) => deps.measureNodeLabel(ele.data('label') || '', {
+                'height': (ele: cytoscape.NodeSingular) => deps.measureNodeLabel(ele.data('label') || '', {
                     baseWidth: 88,
                     minHeight: 34,
                     maxWidth: 220,
@@ -1021,7 +1025,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     paddingX: 30,
                     paddingY: 12
                 }).height,
-            } as any
+            }
         },
         // 连接目标悬停状态
         {
@@ -1030,7 +1034,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'border-color': '#10b981',
                 'border-width': '3px',
                 'background-color': 'rgba(16, 185, 129, 0.1)'
-            } as any
+            }
         },
         // 自动布局父节点拖动时，跟随移动的后代节点
         {
@@ -1040,7 +1044,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'border-width': '2.5px',
                 'border-style': 'dashed',
                 'border-opacity': 0.9
-            } as any
+            }
         },
         {
             selector: 'edge.auto-hierarchy-descendant-edge',
@@ -1051,7 +1055,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'width': 2,
                 'opacity': 0.85,
                 'line-style': 'dashed'
-            } as any
+            }
         },
         // 高亮子节点箭头
         {
@@ -1062,7 +1066,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'width': 2.5,
                 'opacity': 0.8,
                 'z-index': 1000
-            } as any
+            }
         },
         // 祖先链高亮:点击/选中节点时,其到 root 的路径恢复亮色;沿途的边稍微加粗加亮。
         // 放在 level-2+ muted 规则之后,在 level-dimmed 之前 —— 这样 muted 被覆盖,但若有
@@ -1074,7 +1078,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'background-opacity': 1,
                 'border-opacity': 0.92,
                 'z-index': 1005
-            } as any
+            }
         },
         {
             selector: 'edge.zk-ancestor-active',
@@ -1082,7 +1086,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'width': 3.2,
                 'opacity': 0.95,
                 'z-index': 1004
-            } as any
+            }
         },
         // ===== Nebula 风格专属层 =====
         // 放在所有常规节点/边状态之后、dimmed 之前:既能压过 muted/firstLevel/selected 的底色,
@@ -1094,7 +1098,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
             {
                 selector: 'node[!isGroup][!isEmbed][!isImageNode][!isPlaceholder][!isAnchor][!isStandaloneText]',
                 style: {
-                    'underlay-color': (ele: any) => {
+                    'underlay-color': (ele: cytoscape.NodeSingular) => {
                         if (isLight) return '#5b6678';
                         return ele.data('branchNodeBorder')
                             || (ele.data('isRoot') ? theme.node.rootBorder : theme.node.borderSelected);
@@ -1102,7 +1106,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     'underlay-opacity': isLight ? 0.08 : 0.12,
                     'underlay-padding': isLight ? 8 : 7,
                     'underlay-shape': 'round-rectangle',
-                } as any
+                }
             },
             // 左侧色条:概念节点(2 级及以下,非根/非 1 级/非特殊节点)左缘一道分支色亮条,
             // 用 to-right 线性渐变实现(前 ~4% 为色条,其余为卡片底色)。仅未选中态启用,
@@ -1115,7 +1119,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     'background-gradient-direction': 'to-right',
                     // stop-colors 必须是空格分隔的纯色 token,内部不能含空格/逗号
                     // (rgba(r, g, b, a) 会被 Cytoscape 解析器拆错),故一律用 hex。
-                    'background-gradient-stop-colors': (ele: any) => {
+                    'background-gradient-stop-colors': (ele: cytoscape.NodeSingular) => {
                         const accent = deps.normalizeHexColor(ele.data('branchNodeBorder'))
                             || (isLight ? '#3fae72' : '#5fd3c6');
                         const fill = deps.normalizeHexColor(ele.data('customFillColor')) || theme.node.background;
@@ -1123,14 +1127,14 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     },
                     // 色条按固定模型像素宽(~6px)而非节点宽度的百分比:
                     // 大尺寸节点等比放大后,百分比色条会变得很宽并盖住文字,故按宽度反算 stop 百分比。
-                    'background-gradient-stop-positions': (ele: any) => {
+                    'background-gradient-stop-positions': (ele: cytoscape.NodeSingular) => {
                         const w = Number(ele.width()) || 0;
                         const pct = w > 0 ? Math.min(18, (6 / w) * 100) : 4;
                         return `0 ${pct} ${pct} 100`;
                     },
                     'border-opacity': 0.5,
                     'color': theme.node.text,
-                } as any
+                }
             },
             // 1 级节点:卡片左缘同样加一道更亮的分支色条(未选中态)。
             {
@@ -1140,7 +1144,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     'background-gradient-direction': 'to-right',
                     // 同上:stop-colors 仅用 hex,避免 rgba() 内的空格/逗号破坏解析。
                     // 暗色压暗分支色作卡底;浅色提亮分支色作淡彩卡底。
-                    'background-gradient-stop-colors': (ele: any) => {
+                    'background-gradient-stop-colors': (ele: cytoscape.NodeSingular) => {
                         const branch = deps.normalizeHexColor(ele.data('branchNodeBorder') || '');
                         const accent = branch || theme.node.borderSelected;
                         const fill = branch
@@ -1149,12 +1153,12 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                         return `${accent} ${accent} ${fill} ${fill}`;
                     },
                     // 同上:1 级卡片色条也按固定模型像素宽(~8px,略粗以突出主干)反算百分比。
-                    'background-gradient-stop-positions': (ele: any) => {
+                    'background-gradient-stop-positions': (ele: cytoscape.NodeSingular) => {
                         const w = Number(ele.width()) || 0;
                         const pct = w > 0 ? Math.min(18, (8 / w) * 100) : 5;
                         return `0 ${pct} ${pct} 100`;
                     },
-                } as any
+                }
             },
             // 语义/反向边:紫色虚线,提高可见度(默认反向边偏灰且很淡)。
             {
@@ -1165,7 +1169,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     'line-dash-pattern': [10, 7],
                     'width': 2.2,
                     'opacity': isLight ? 0.82 : 0.72,
-                } as any
+                }
             },
             // 带标签的边:药丸式标签底(圆角 + 紫色细描边),漂在连线之上清晰可读。
             // 暗色深底浅字;浅色淡紫底紫字。
@@ -1182,7 +1186,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     'text-border-color': isLight ? 'rgba(124, 111, 224, 0.45)' : 'rgba(155, 107, 255, 0.55)',
                     'text-border-width': 1,
                     'text-border-opacity': 0.85,
-                } as any
+                }
             },
         ] : []),
         // 弱化无关分支的节点需要放在所有节点状态之后，避免被选中/当前文件/自定义状态覆盖。
@@ -1196,7 +1200,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'overlay-opacity': 0,
                 'underlay-opacity': 0,
                 'z-index': 1
-            } as any
+            }
         },
         {
             selector: 'node.zk-level-dimmed[!isRoot][!isFirstLevelNode][!isFreeNode][!isEmbed][!isStandaloneText][!isCurrentFile]',
@@ -1204,7 +1208,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'background-opacity': theme.isLight ? 0.38 : 0.12,
                 'border-opacity': theme.isLight ? 0.34 : 0.18,
                 'color': theme.node.textMuted
-            } as any
+            }
         },
         // 弱化无关分支的边需要放在所有边样式之后，避免被 root->1级主干/高亮边 opacity 覆盖。
         {
@@ -1213,14 +1217,14 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'opacity': theme.effects.lateDimmedEdgeOpacity,
                 'overlay-opacity': 0,
                 'z-index': 1
-            } as any
+            }
         },
         ...(isLight ? [
             // 浅色主题最终文字兜底：放在所有节点状态之后，避免 root/current/selected/dimmed 叠加后标题发白。
             {
                 selector: 'node[!isEmbed][!isImageNode][!hasMarkdownOverlay]',
                 style: {
-                    'color': (ele: any) => {
+                    'color': (ele: cytoscape.NodeSingular) => {
                         const fillColor = ele.data('customFillColor');
                         const fillTextColor = ele.data('customFillTextColor');
                         return fillColor && fillTextColor ? fillTextColor : theme.node.text;
@@ -1229,7 +1233,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     'text-outline-width': 0,
                     'text-background-opacity': 0,
                     'text-border-opacity': 0
-                } as any
+                }
             },
             {
                 selector: 'node.zk-level-dimmed[!isEmbed][!isImageNode][!hasMarkdownOverlay]',
@@ -1237,7 +1241,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                     'color': theme.node.text,
                     'opacity': 0.9,
                     'text-opacity': 1
-                } as any
+                }
             }
         ] : []),
         // 搜索高亮
@@ -1248,7 +1252,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): a
                 'border-color': '#00a8ff',
                 'border-opacity': 1,
                 'z-index': 9999
-            } as any
+            }
         }
     ];
 }

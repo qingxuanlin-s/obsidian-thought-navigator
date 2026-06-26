@@ -54,21 +54,21 @@ export function renderCockpit(container: HTMLElement, ctx: RenderCtx, space: WSS
         const b = createbar.createSpan({ cls: 'createbtn', text: '+ ' + label });
         b.onclick = fn;
     };
-    mkCreate(t('ws new project'), () => promptTitle(ctx.app, t('ws new project'), async (title) => {
+    mkCreate(t('ws new project'), () => promptTitle(ctx.app, t('ws new project'), (title) => { void (async () => {
         const n = await ctx.store.createProject(space.id, title);
         ctx.open({ kind: 'project', id: n.id });
-    }));
+    })(); }));
     // 笔记与 MOC 不再凭空建虚拟节点:挑库里已存在的文件挂进来(`.moc.md` → MOC,其余 → 笔记)
     mkCreate(t('ws mount existing'), () => {
         const mounted = ctx.store.containerChildren(space.id)
-            .map(c => (c as any).filePath as string | undefined)
+            .map(c => (c as { filePath?: string }).filePath)
             .filter((p): p is string => !!p);
-        new FilePickerModal(ctx.app, space.title, mounted, async (paths) => {
+        new FilePickerModal(ctx.app, space.title, mounted, (paths) => { void (async () => {
             // 按当前镜头决定挂进来的 MOC 落「总览」还是「主题」(issue #71);非这两个镜头不指定
             const mocIsTop = activeLens === 'overview' ? true : activeLens === 'theme' ? false : undefined;
             await ctx.store.mountFilesToContainer(space.id, paths, { mocIsTop });
             ctx.refresh();
-        }).open();
+        })(); }).open();
     });
 
     const body = ck.createDiv({ cls: 'ck-body' });
@@ -146,7 +146,7 @@ function cardMenu(e: MouseEvent, ctx: RenderCtx, node: WorkspaceNode): void {
     e.preventDefault();
     e.stopPropagation();
     const menu = new Menu();
-    menu.addItem(i => { (i as any).setWarning?.(true); i.setTitle(t('ws delete')).setIcon('trash-2')
+    menu.addItem(i => { (i as { setWarning?(warning: boolean): void }).setWarning?.(true); i.setTitle(t('ws delete')).setIcon('trash-2')
         .onClick(() => ctx.requestDelete(node)); });
     menu.showAtMouseEvent(e);
 }

@@ -73,7 +73,7 @@ export class MOCPreviewView extends TextFileView {
             img.src = this.app.vault.getResourcePath(pngFile);
             img.alt = this.file.basename;
             img.draggable = false;
-        } catch (e: any) {
+        } catch (e) {
             if (token !== this.renderToken) return;
             this.contentEl.empty();
             this.contentEl.createDiv('zk-moc-preview-error')
@@ -91,6 +91,6 @@ export class MOCPreviewView extends TextFileView {
                 file: this.file?.path,
                 isSwitchToMarkdownViewFromMocView: true,
             },
-        } as any);
+        });
     }
 }

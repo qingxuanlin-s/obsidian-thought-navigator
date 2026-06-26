@@ -34,7 +34,7 @@ export class ZKRecentView extends ItemView {
     }
     
     async onOpen() {
-        this.refreshRecentView()
+        void this.refreshRecentView()
 
     }
 
@@ -60,7 +60,7 @@ export class ZKRecentView extends ItemView {
                 })
             })
             
-            line.addEventListener('click', async ()=>{
+            line.addEventListener('click', ()=>{
                 
                 this.plugin.settings.lastRetrival = item;
                 this.plugin.settings.lastRetrival.openTime = moment().format("YYYY-MM-DD HH:mm:ss");
@@ -72,7 +72,7 @@ export class ZKRecentView extends ItemView {
                 this.plugin.settings.BranchTab = 0;
                 this.app.workspace.trigger("zk-navigation:refresh-recent-view");
                 this.plugin.RefreshIndexViewFlag = true;
-                this.plugin.openIndexView();
+                void this.plugin.openIndexView();
 
             })
 

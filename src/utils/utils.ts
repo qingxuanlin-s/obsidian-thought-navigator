@@ -137,6 +137,7 @@ export interface CrossDomainLink {
     displayText: string;        // 节点显示文本
     filePath: string;           // 节点文件路径
     position?: { x: number; y: number };  // 虚拟跨领域节点的位置
+    relationLabel?: string;     // 跨领域边的关系描述（可选）
 }
 
 // 分组信息
@@ -625,7 +626,7 @@ export async function addSvgPanZoom(
     indexMermaidDiv.appendChild(zkGraph);
 
     const svgPanZoomModule = await import("svg-pan-zoom");
-    const svgPanZoom = (svgPanZoomModule as any).default ?? svgPanZoomModule;
+    const svgPanZoom = svgPanZoomModule;
     const panZoomTiger = await svgPanZoom(`#${zkGraph.id}-svg`, {
         zoomEnabled: true,
         controlIconsEnabled: false,

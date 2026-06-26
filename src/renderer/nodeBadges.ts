@@ -1,14 +1,17 @@
 import { Component, Platform, finishRenderMath, renderMath, setIcon } from 'obsidian';
+import type * as cytoscape from 'cytoscape';
 import { ZKNode } from 'src/view/indexView';
+import { CrossDomainLink } from 'src/utils/utils';
 import { darkenColor, hexToRgba, isModernThemeStyle, normalizeHexColor } from './colorUtils';
 import { estimateWrappedLines } from './renderPipeline';
 import { renderExcalidrawPreview, wrapForImageToolkit } from './embedPreview';
+import type { TextMdOverlayEntry } from './CytoscapeRenderer';
 
 export const TEXT_MD_OVERLAY_RENDER_VERSION = 3;
 
 // overlay 定位 updater + 其所属 Cytoscape 节点(用于视口剔除)。
 // node 为 null 表示该 updater 不绑定单一节点(始终执行,不参与剔除)。
-type BadgeUpdater = { node: any | null; fn: () => void };
+type BadgeUpdater = { node: cytoscape.NodeSingular | null; fn: () => void };
 
 // 交互(pan/zoom/drag)期视口剔除的安全外扩边距(rendered px):
 // 节点中心在 [视口 - M, 视口 + M] 外才剔除,覆盖节点自身尺寸 + 单帧快速 pan 的位移,
@@ -61,7 +64,7 @@ function measureVisibleTextWidth(ctx: CanvasRenderingContext2D, text: string, fa
 		: fallbackWidth;
 }
 
-function getRscratchValue(rscratch: any, propName: string): unknown {
+function getRscratchValue(rscratch: Record<string, unknown> | null | undefined, propName: string): unknown {
 	return rscratch ? rscratch[propName] : undefined;
 }
 
@@ -73,7 +76,7 @@ export function renderNodeBadges(this: any): void {
         if (!this.cy || !this.container) return;
 
         // 性能埋点(window.__zkPerf=true):细分 renderNodeBadges 内部各子系统耗时
-        const __zkPerf = (window as any).__zkPerf === true;
+        const __zkPerf = (window as unknown as { __zkPerf?: boolean }).__zkPerf === true;
         const __bMark: Record<string, number> = {};
         let __bPrev = __zkPerf ? performance.now() : 0;
         const __bLap = (name: string) => {
@@ -116,7 +119,7 @@ export function renderNodeBadges(this: any): void {
             this.cleanupBadgeInteractionBindings();
 
             // 先从旧 badgeContainer 中摘下缓存的 MD overlay（保持 DOM 节点存活，便于下面复用）
-            this.textMdOverlayCache.forEach((entry: any) => {
+            this.textMdOverlayCache.forEach((entry: TextMdOverlayEntry) => {
                 entry.usedInCycle = false;
                 // 防御性清理：清除可能遗留的编辑标记和隐藏样式，避免下次复用时继续不显示
                 if (entry.el.dataset.editing === '1') {
@@ -173,7 +176,7 @@ export function renderNodeBadges(this: any): void {
         const badgeMeasureCtx = badgeMeasure.getContext('2d');
 
         // 分组 glass overlay
-        this.cy.nodes('.group-node').forEach((groupNode: any) => {
+        this.cy.nodes('.group-node').forEach((groupNode: cytoscape.NodeSingular) => {
             // 增量模式跳过分组 glass:组 bbox 由 Cytoscape 复合节点维护,旧 glass updater 仍在
             // scheduler 中,pan/zoom 时会自动把新子节点纳入。
             if (incIds) return;
@@ -191,8 +194,8 @@ export function renderNodeBadges(this: any): void {
                 ? 'rgba(255, 255, 255, 0.18)'
                 : 'rgba(255, 255, 255, 0.022)',
             });
-            (glassEl.style as any).backdropFilter = 'blur(6px)';
-            (glassEl.style as any).webkitBackdropFilter = 'blur(6px)';
+            glassEl.style.setProperty('backdrop-filter', 'blur(6px)');
+            glassEl.style.setProperty('-webkit-backdrop-filter', 'blur(6px)');
             glassEl.setCssStyles({ boxShadow: isLightTheme
                 ? '0 1px 8px rgba(0,0,0,0.035)'
                 : '0 1px 10px rgba(0,0,0,0.16)' });
@@ -244,8 +247,8 @@ export function renderNodeBadges(this: any): void {
                 ? 'rgba(255, 255, 255, 0.42)'
                 : 'rgba(14, 24, 40, 0.46)',
             });
-            (labelEl.style as any).backdropFilter = 'blur(5px)';
-            (labelEl.style as any).webkitBackdropFilter = 'blur(5px)';
+            labelEl.style.setProperty('backdrop-filter', 'blur(5px)');
+            labelEl.style.setProperty('-webkit-backdrop-filter', 'blur(5px)');
             labelEl.setCssStyles({
                 boxShadow: isLightTheme
                 ? '0 1px 4px rgba(50, 70, 100, 0.09)'
@@ -316,7 +319,7 @@ export function renderNodeBadges(this: any): void {
             badgeUpdaters.push({ node: null, fn: updateGlassPos });
         });
 
-        this.cy.nodes('[?hasFileIcon]').forEach((node: any) => {
+        this.cy.nodes('[?hasFileIcon]').forEach((node: cytoscape.NodeSingular) => {
             if (incIds && !incIds.has(node.id())) return;
             // 跳过所有 embed 节点（由预览卡片渲染标题和内容）
             if (node.data('isEmbed')) return;
@@ -404,7 +407,7 @@ export function renderNodeBadges(this: any): void {
             const getCytoscapeLabelLayout = (): Array<{ centerX: number; baselineY: number; width: number; lineHeight: number }> | null => {
                 if (!this.cy || !underlineMeasureCtx) return null;
 
-                const rscratch = node?.[0]?._private?.rscratch;
+                const rscratch = (node?.[0] as unknown as { _private?: { rscratch?: Record<string, unknown> } } | undefined)?._private?.rscratch;
                 if (!rscratch) return null;
 
                 const rawLines = getRscratchValue(rscratch, 'labelWrapCachedLines');
@@ -664,7 +667,7 @@ export function renderNodeBadges(this: any): void {
             badgeUpdaters.push({ node, fn: updateUnderlinePosition });
         });
 
-        this.cy.nodes().forEach((node: any) => {
+        this.cy.nodes().forEach((node: cytoscape.NodeSingular) => {
             if (incIds && !incIds.has(node.id())) return;
             if (node.data('isGroup') || node.data('isPlaceholder') || node.data('isEmbed')) {
                 return;
@@ -864,7 +867,7 @@ export function renderNodeBadges(this: any): void {
 
         // 锚点星星 badge — 金色圆环 + 深色底 + 发光星标
         const MIN_ANCHOR_PX = 20;
-        this.cy.nodes('[?isAnchor]').forEach((node: any) => {
+        this.cy.nodes('[?isAnchor]').forEach((node: cytoscape.NodeSingular) => {
             if (incIds && !incIds.has(node.id())) return;
             if (node.data('isGroup') || node.data('isPlaceholder')) return;
 
@@ -932,7 +935,7 @@ export function renderNodeBadges(this: any): void {
 
         // 草稿节点角标 — 左上角小药丸,AI=紫/人工=灰,标识待审批节点(#20)
         const MIN_DRAFT_PX = 16;
-        this.cy.nodes('[?isDraft]').forEach((node: any) => {
+        this.cy.nodes('[?isDraft]').forEach((node: cytoscape.NodeSingular) => {
             if (incIds && !incIds.has(node.id())) return;
             const origin = node.data('draftOrigin') === 'ai' ? 'ai' : 'manual';
             const badgeText = origin === 'ai' ? 'AI' : '草';
@@ -992,16 +995,16 @@ export function renderNodeBadges(this: any): void {
         const cdBadgeColor = isLightTheme ? '#7357c6' : '#a08be8';
         const cdMocBasename = (p: string) =>
             String(p || '').split('/').pop()?.replace(/\.moc\.md$|\.md$/i, '') || '';
-        const cdLinkTargetText = (link: any) => {
+        const cdLinkTargetText = (link: CrossDomainLink) => {
             const fileBase = link?.filePath
                 ? String(link.filePath).split('/').pop()?.replace(/\.md$/i, '') || ''
                 : '';
             return link?.displayText || fileBase || link?.nodeId || '未命名';
         };
-        this.cy.nodes('[?hasCrossDomain]').forEach((node: any) => {
+        this.cy.nodes('[?hasCrossDomain]').forEach((node: cytoscape.NodeSingular) => {
             if (incIds && !incIds.has(node.id())) return;
             if (node.data('isGroup') || node.data('isPlaceholder')) return;
-            const links: any[] = node.data('crossDomainLinks') || [];
+            const links: CrossDomainLink[] = node.data('crossDomainLinks') || [];
             if (!links.length) return;
             const sourceNodeId = String(node.data('originalNodeId') || node.id());
 
@@ -1244,7 +1247,7 @@ export function renderNodeBadges(this: any): void {
         });
 
         // 兼容旧语义：文字前小色点（legacy customColor）
-        this.cy.nodes('[customColor]').forEach((node: any) => {
+        this.cy.nodes('[customColor]').forEach((node: cytoscape.NodeSingular) => {
             if (incIds && !incIds.has(node.id())) return;
             if (node.data('isGroup') || node.data('isEmbed')) return;
             const rawColor = String(node.data('customColor') || '');
@@ -1307,7 +1310,7 @@ export function renderNodeBadges(this: any): void {
         });
 
         // 为每个有 badge 的节点创建徽章元素（跳过 embed 节点，由预览卡片展示）
-        this.cy.nodes('[badge]').forEach((node: any) => {
+        this.cy.nodes('[badge]').forEach((node: cytoscape.NodeSingular) => {
             if (incIds && !incIds.has(node.id())) return;
             const badge = String(node.data('badge') || '');
             if (!badge || node.data('isEmbed')) return;
@@ -1347,8 +1350,8 @@ export function renderNodeBadges(this: any): void {
                 cursor: 'pointer',
             });
             badgeEl.setCssStyles({ transformOrigin: 'right bottom' });
-            (badgeEl.style as any).webkitTextSizeAdjust = 'none';
-            (badgeEl.style as any).textSizeAdjust = 'none';
+            badgeEl.style.setProperty('-webkit-text-size-adjust', 'none');
+            badgeEl.style.setProperty('text-size-adjust', 'none');
             badgeContainer.appendChild(badgeEl);
 
             // 徽章文本按"模型宽度"截断并缓存:zoom/pan 不改变模型宽度,故截断结果在缩放过程中不变。
@@ -1401,7 +1404,7 @@ export function renderNodeBadges(this: any): void {
 
         // 文本节点右下角拉伸手柄（仅选中时可见）
         if (!readOnly) {
-            this.cy.nodes('[?isTextOnly]').forEach((node: any) => {
+            this.cy.nodes('[?isTextOnly]').forEach((node: cytoscape.NodeSingular) => {
                 if (incIds && !incIds.has(node.id())) return;
                 if (node.data('isGroup') || node.data('isPlaceholder') || node.data('isEmbed')) return;
 
@@ -1536,7 +1539,7 @@ export function renderNodeBadges(this: any): void {
 
         // embed toggle 按钮（睁眼/闭眼，文件节点⟷预览节点互转）
         if (!readOnly) {
-            this.cy.nodes().forEach((node: any) => {
+            this.cy.nodes().forEach((node: cytoscape.NodeSingular) => {
                 if (incIds && !incIds.has(node.id())) return;
                 if (node.data('isRoot') || node.data('isPlaceholder') || node.data('isGroup') || node.data('isStandaloneText')) return;
                 if (node.data('isTextOnly')) return;
@@ -1735,10 +1738,10 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
         if (!app) return;
         const sourcePath = this.currentData?.metadata?.currentFile || '';
 
-        const measureAndSizePending: Array<{ node: any; entry: { el: HTMLElement; width: number; height: number } }> = [];
+        const measureAndSizePending: Array<{ node: cytoscape.NodeSingular; entry: { el: HTMLElement; width: number; height: number } }> = [];
         const renderPromises: Promise<void>[] = [];
 
-        this.cy.nodes('[?isTextOnly]').forEach((node: any) => {
+        this.cy.nodes('[?isTextOnly]').forEach((node: cytoscape.NodeSingular) => {
             if (incIds && !incIds.has(node.id())) return;
             const data = node.data();
             if (data.isPlaceholder) return;
@@ -2217,7 +2220,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
             // 标记节点已有 overlay（供样式层判断是否隐藏 Canvas 文字）
             node.data('hasMarkdownOverlay', true);
             // 挂载 overlay 引用到节点，便于编辑期查找
-            (node.scratch as any) && node.scratch('_zkMdOverlay', entry.el);
+            node.scratch('_zkMdOverlay', entry.el);
 
             // 位置同步 updater
 			const currentEntry = entry;
@@ -2339,7 +2342,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
 
         // 异步 MD 渲染完成后批量写入（不阻塞后续 addNodeBadges 流程）
         if (renderPromises.length > 0) {
-            Promise.all(renderPromises).then(() => {
+            void Promise.all(renderPromises).then(() => {
                 applySizes(measureAndSizePending.splice(0));
             });
         }
@@ -2348,7 +2351,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
         // 其余缓存项的 usedInCycle 没被置位,若清理会误删仍在用的 overlay。
         const toEvict: string[] = [];
         if (!incIds) {
-            this.textMdOverlayCache.forEach((e: any, key: string) => {
+            this.textMdOverlayCache.forEach((e: TextMdOverlayEntry, key: string) => {
                 if (!e.usedInCycle) {
                     toEvict.push(key);
                 }
@@ -2395,7 +2398,7 @@ function addCollapseToggleHandle(this: any): void {
         // 一个 id 的"严格点号前缀"(段数更少且 id.startsWith(prefix + '.'))恰好等价于原
         // childId.startsWith(`${originalId}.`) 的判定,故二者结果完全一致。
         const parentIdsWithChildren = new Set<string>();
-        this.cy.nodes().forEach((n: any) => {
+        this.cy.nodes().forEach((n: cytoscape.NodeSingular) => {
             const id = n.data()?.originalNode?.IDStr;
             if (typeof id !== 'string' || !id) return;
             const parts = id.split('.');
@@ -2407,7 +2410,7 @@ function addCollapseToggleHandle(this: any): void {
         });
         const hasChildren = (originalId: string): boolean => parentIdsWithChildren.has(originalId);
 
-        this.cy.nodes().forEach((node: any) => {
+        this.cy.nodes().forEach((node: cytoscape.NodeSingular) => {
             const data = node.data();
             const originalId = data?.originalNode?.IDStr;
             if (!originalId || data?.isGroup || data?.isPlaceholder) return;
@@ -2530,8 +2533,8 @@ function addCollapseToggleHandle(this: any): void {
             handle.addEventListener('mouseleave', onHandleLeave);
             nodeHoverCleanups.push(() => {
                 clearHideTimer();
-                node.off('mouseover', onNodeOver);
-                node.off('mouseout', onNodeOut);
+                node.off('mouseover', undefined, onNodeOver);
+                node.off('mouseout', undefined, onNodeOut);
             });
         });
 

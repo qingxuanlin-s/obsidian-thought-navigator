@@ -85,11 +85,11 @@ export class WorkspacePanel {
             openInline: (t) => this.navigateInline(t),
             openFile: (file, forceTab = false) => {
                 if (deps.onOpenFile) deps.onOpenFile(file, forceTab);
-                else deps.app.workspace.getLeaf(forceTab).openFile(file);
+                else void deps.app.workspace.getLeaf(forceTab).openFile(file);
             },
             openLink: (linkText, sourcePath = '', forceTab = false) => {
                 if (deps.onOpenLink) deps.onOpenLink(linkText, sourcePath, forceTab);
-                else deps.app.workspace.openLinkText(linkText, sourcePath, forceTab);
+                else void deps.app.workspace.openLinkText(linkText, sourcePath, forceTab);
             },
             openDeck: (n) => this.deck?.open(n),
             requestDelete: (n) => this.requestDelete(n),
@@ -102,7 +102,7 @@ export class WorkspacePanel {
             if (!(file instanceof TFile)) return;
             if (this.taskStore.isCurrent(file.path)) return;
             this.taskStore.invalidate(file.path);
-            if (deps.store.getAllNodes().some(n => n.type === 'project' && (n as any).filePath === file.path)) {
+            if (deps.store.getAllNodes().some(n => n.type === 'project' && n.filePath === file.path)) {
                 this.refresh();
                 this.deck?.refreshIfShowing(file.path);
             }
@@ -236,20 +236,20 @@ export class WorkspacePanel {
             : descendants > 0
                 ? t('ws delete node confirm children').replace('{title}', node.title).replace('{n}', String(descendants))
                 : t('ws delete node confirm').replace('{title}', node.title);
-        confirmModal(this.deps.app, t('ws delete'), msg, async () => {
+        confirmModal(this.deps.app, t('ws delete'), msg, () => { void (async () => {
             await this.deps.store.deleteSubtree(node.id);
             this.deck?.closeIfShowing(deleted);
             const cur = this.current;
             // store.onChange 已触发重渲;当前页指向被删节点时改导航到首页
             if (cur.kind !== 'home' && 'id' in cur && deleted.has(cur.id)) this.navigateInline({ kind: 'home' });
-        });
+        })(); });
     }
 
     private openNewSpaceModal() {
-        new NewSpaceModal(this.deps.app, async (title, framework) => {
+        new NewSpaceModal(this.deps.app, (title, framework) => { void (async () => {
             const space = await this.deps.store.createSpace(title, { framework });
             this.navigate({ kind: 'space', id: space.id });
-        }).open();
+        })(); }).open();
     }
 
     // ---------- 路由 ----------

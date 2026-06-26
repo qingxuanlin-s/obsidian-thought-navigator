@@ -1,6 +1,13 @@
-import { Component, Notice, setIcon } from 'obsidian';
+import { App, Component, Notice, TFile, moment, setIcon } from 'obsidian';
+import type * as cytoscape from 'cytoscape';
 import { ZKNode } from 'src/view/indexView';
 import { EmbeddableMarkdownEditor } from 'src/utils/EmbeddableMarkdownEditor';
+
+/** App 未公开的内部命令表(slash 命令菜单用) */
+interface AppCommandsInternal {
+    listCommands?(): Array<{ id: string; name: string }>;
+    commands?: Record<string, { id: string; name: string }>;
+}
 import {
     DEFAULT_SELECTION_BG_COLOR,
     DEFAULT_SELECTION_TEXT_COLOR,
@@ -709,7 +716,7 @@ export function attachContentSelectionToolbar(this: any, rootEl: HTMLElement,
     /**
      * 显示内联边标签编辑器
      */
-export function showInlineEdgeLabelEditor(this: any, edge: any): void {
+export function showInlineEdgeLabelEditor(this: any, edge: cytoscape.EdgeSingular): void {
         if (!this.cy || !this.container || this.isReadOnlyMode()) return;
 
         const data = edge.data();
@@ -871,7 +878,7 @@ export function showInlineEdgeLabelEditor(this: any, edge: any): void {
     /**
      * 显示占位符节点的内联编辑器
      */
-export function showInlineNodeEditor(this: any, node: any, options?: { cursor?: 'select' | 'end' }): void {
+export function showInlineNodeEditor(this: any, node: cytoscape.NodeSingular, options?: { cursor?: 'select' | 'end' }): void {
         if (!this.cy || !this.container || this.isReadOnlyMode()) return;
         const cursorMode = options?.cursor ?? 'end';
 
@@ -1089,7 +1096,7 @@ export function showInlineNodeEditor(this: any, node: any, options?: { cursor?: 
         let isSaved = false;
         const suggesterPopoverRef = { value: null as HTMLElement | null };
 
-        const insertWikiLinkAtCursor = (file: any, embed: boolean) => {
+        const insertWikiLinkAtCursor = (file: TFile, embed: boolean) => {
             const cursorPos = textarea.selectionStart ?? textarea.value.length;
             const value = textarea.value;
             const triggerPatterns = ['![[', '！【【', '[[', '【【'];
@@ -1140,8 +1147,8 @@ export function showInlineNodeEditor(this: any, node: any, options?: { cursor?: 
             if (isSaved) return;
             isSaved = true;
             // 恢复节点自动尺寸
-            node.removeCss('width');
-            node.removeCss('height');
+            node.removeStyle('width');
+            node.removeStyle('height');
             node.data('label', originalDisplayLabel);
 
             // 获取节点的实际位置（使用 position() 而不是 boundingBox）
@@ -1191,8 +1198,8 @@ export function showInlineNodeEditor(this: any, node: any, options?: { cursor?: 
             if (isSaved) return;
             isSaved = true;
             // 恢复节点自动尺寸
-            node.removeCss('width');
-            node.removeCss('height');
+            node.removeStyle('width');
+            node.removeStyle('height');
             node.data('label', isPlaceholder ? '' : originalDisplayLabel);
             if (isPlaceholder) {
                 this.container?.dispatchEvent(new CustomEvent('placeholder-node-cancel', {
@@ -1264,7 +1271,7 @@ export function showInlineNodeEditor(this: any, node: any, options?: { cursor?: 
                     return;
                 }
                 e.preventDefault();
-                saveNode(); // Enter = 保存
+                void saveNode(); // Enter = 保存
             } else if (e.key === 'Escape') {
                 // 取消编辑
                 e.preventDefault();
@@ -1288,7 +1295,7 @@ export function showInlineNodeEditor(this: any, node: any, options?: { cursor?: 
                 }
 
                 if (!isSaved) {
-                    saveNode();
+                    void saveNode();
                 }
             }, 20);
         });
@@ -1301,7 +1308,7 @@ export function showInlineNodeEditor(this: any, node: any, options?: { cursor?: 
             if (textarea.contains(target)) return;
             if (selectionToolbar.containsTarget(target)) return;
             if (suggesterPopoverRef.value && suggesterPopoverRef.value.contains(target)) return;
-            saveNode();
+            void saveNode();
         };
         activeDocument.addEventListener('mousedown', handleOutsidePointerDown, true);
 
@@ -1340,7 +1347,7 @@ export function showInlineNodeEditor(this: any, node: any, options?: { cursor?: 
 
         observer.observe(this.container, { childList: true });
 
-        const handleLinkSelect = (file: any, embed: boolean) => {
+        const handleLinkSelect = (file: TFile, embed: boolean) => {
             if (isPlaceholder) {
                 isSaved = true;
                 if (textarea.parentNode) {
@@ -1362,7 +1369,7 @@ export function showInlineNodeEditor(this: any, node: any, options?: { cursor?: 
             }
 
             insertWikiLinkAtCursor(file, embed);
-            saveNode();
+            void saveNode();
         };
     }
 
@@ -1370,7 +1377,7 @@ export function showInlineNodeEditor(this: any, node: any, options?: { cursor?: 
      * 文本节点原地编辑（Live Preview 版）。
      * 若内部 API 反射失败，自动降级到 legacy textarea 实现。
      */
-export function startInPlaceTextEdit(this: any, node: any,
+export function startInPlaceTextEdit(this: any, node: cytoscape.NodeSingular,
         originalNode: ZKNode,
         entry: {
             el: HTMLElement;
@@ -1435,7 +1442,7 @@ export function startInPlaceTextEdit(this: any, node: any,
         const nodeWasGrabbable = typeof node.grabbable === 'function' ? !!node.grabbable() : true;
         const prevZoomingEnabled = this.cy?.userZoomingEnabled() ?? true;
         if (typeof node.grabbable === 'function') {
-            node.grabbable(false);
+            node.ungrabify();
         }
         this.cy?.userZoomingEnabled(false);
 
@@ -1489,7 +1496,7 @@ export function startInPlaceTextEdit(this: any, node: any,
 
         const restoreNodeInteractivity = () => {
             if (this.cy && !node.removed() && typeof node.grabbable === 'function') {
-                node.grabbable(nodeWasGrabbable);
+                if (nodeWasGrabbable) node.grabify(); else node.ungrabify();
             }
             this.cy?.userZoomingEnabled(prevZoomingEnabled);
         };
@@ -1511,7 +1518,7 @@ export function startInPlaceTextEdit(this: any, node: any,
                 mdEditor.unload();
                 mdEditor = null;
             }
-            (editorHost as any)._mdEditor = null;
+            (editorHost as HTMLElement & { _mdEditor?: EmbeddableMarkdownEditor | null })._mdEditor = null;
             editorHost.removeEventListener('click', openLivePreviewLink, true);
             pointerEventsToStop.forEach((name) => {
                 editorHost.removeEventListener(name, stopPointerPropagationUnlessMedia, true);
@@ -1612,7 +1619,7 @@ export function startInPlaceTextEdit(this: any, node: any,
             // 宽度保持用户已锁定的值不动。
             const widthLockedByUser = Number(node.data('manualWidthModel') || 0) > 0;
             const heightLockedByUser = Number(node.data('manualHeightModel') || 0) > 0;
-            try { (node as any).removeStyle?.('height'); } catch { /* ignore */ }
+            try { node.removeStyle('height'); } catch { /* ignore */ }
             if (heightLockedByUser) {
                 node.removeData('manualHeightModel');
             }
@@ -1689,7 +1696,7 @@ export function startInPlaceTextEdit(this: any, node: any,
                     if (!isSaved) saveEdit();
                 },
             });
-            (editorHost as any)._mdEditor = mdEditor;
+            (editorHost as HTMLElement & { _mdEditor?: EmbeddableMarkdownEditor | null })._mdEditor = mdEditor;
             slashMenu = attachSlashCommandMenu(this.currentOptions?.app, () => mdEditor, editorHost, (cmd) => {
                 // 录音类命令拦截:改用自带录音(不打开文件/不切视图),录完插入当前编辑框
                 const hay = `${cmd.id} ${cmd.name}`.toLowerCase();
@@ -1725,7 +1732,7 @@ export function startInPlaceTextEdit(this: any, node: any,
      * 占位符节点原地编辑（CM6 版），与文本节点编辑体验统一。
      * 提交时根据内容路由：[[xxx]] → 文件节点，![[xxx]] → 嵌入节点，其他 → 文本节点。
      */
-export function startPlaceholderInPlaceEdit(this: any, node: any, options?: { cursor?: 'select' | 'end' }): void {
+export function startPlaceholderInPlaceEdit(this: any, node: cytoscape.NodeSingular, options?: { cursor?: 'select' | 'end' }): void {
         if (!this.cy || !this.container) return;
 
         const data = node.data();
@@ -1796,7 +1803,7 @@ export function startPlaceholderInPlaceEdit(this: any, node: any, options?: { cu
         const nodeWasGrabbable = typeof node.grabbable === 'function' ? !!node.grabbable() : true;
         const prevZoomingEnabled = this.cy?.userZoomingEnabled() ?? true;
         if (typeof node.grabbable === 'function') {
-            node.grabbable(false);
+            node.ungrabify();
         }
         this.cy?.userZoomingEnabled(false);
 
@@ -1845,7 +1852,7 @@ export function startPlaceholderInPlaceEdit(this: any, node: any, options?: { cu
 
         const restoreNodeInteractivity = () => {
             if (this.cy && !node.removed() && typeof node.grabbable === 'function') {
-                node.grabbable(nodeWasGrabbable);
+                if (nodeWasGrabbable) node.grabify(); else node.ungrabify();
             }
             this.cy?.userZoomingEnabled(prevZoomingEnabled);
         };
@@ -2052,7 +2059,7 @@ export function startPlaceholderInPlaceEdit(this: any, node: any, options?: { cu
     /**
      * 占位符节点 textarea 降级编辑（CM6 不可用时的后备）。
      */
-export function startPlaceholderTextareaFallback(this: any, node: any, options?: { cursor?: 'select' | 'end' }): void {
+export function startPlaceholderTextareaFallback(this: any, node: cytoscape.NodeSingular, options?: { cursor?: 'select' | 'end' }): void {
         if (!this.cy || !this.container) return;
         const data = node.data();
 
@@ -2188,7 +2195,7 @@ export function startPlaceholderTextareaFallback(this: any, node: any, options?:
     /**
      * 文本节点原地编辑（legacy textarea fallback）。
      */
-export function startInPlaceTextEditLegacy(this: any, node: any,
+export function startInPlaceTextEditLegacy(this: any, node: cytoscape.NodeSingular,
         originalNode: ZKNode,
         entry: {
             el: HTMLElement;
@@ -2363,7 +2370,7 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
             // 内容变化时让高度回归"按新内容自动适配":
             // 清掉旧的高度锁定（含 inline style 与 data），避免把旧内容的高度延续到新内容。
             const widthLockedByUser = Number(node.data('manualWidthModel') || 0) > 0;
-            try { (node as any).removeStyle?.('height'); } catch { /* ignore */ }
+            try { node.removeStyle('height'); } catch { /* ignore */ }
             node.removeData('manualHeightModel');
             this.cy?.style().update();
             const shouldPersistManualSize = widthLockedByUser;
@@ -2469,7 +2476,7 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
         activeDocument.addEventListener('mousedown', handleOutsidePointerDown, true);
 
         // [[ 触发的 wiki link 选择回调
-        const handleLinkSelect = (file: any, _embed: boolean) => {
+        const handleLinkSelect = (file: TFile, _embed: boolean) => {
             const cursorPos = textarea.selectionStart ?? textarea.value.length;
             const value = textarea.value;
             const triggerPatterns = ['![[', '！【【', '[[', '【【'];
@@ -2494,7 +2501,7 @@ export function startInPlaceTextEditLegacy(this: any, node: any,
         };
     }
 
-export function ensureNodeVisibleInViewport(this: any, node: any, padding = 40): void {
+export function ensureNodeVisibleInViewport(this: any, node: cytoscape.NodeSingular, padding = 40): void {
         if (!this.cy || !this.container || !node || node.length === 0) return;
 
         // 文本节点用 markdown overlay 渲染，Canvas label 透明但仍参与默认 boundingBox。
@@ -2533,10 +2540,10 @@ export function ensureNodeVisibleInViewport(this: any, node: any, padding = 40):
      * 检查 [[ 链接模式
      */
 export function checkForLinkPattern(this: any, textarea: HTMLTextAreaElement,
-        node: any,
-        boundingBox: any,
+        node: cytoscape.NodeSingular,
+        boundingBox: cytoscape.BoundingBox12 & cytoscape.BoundingBoxWH,
         suggesterPopoverRef: { value: HTMLElement | null },
-        onSelectFile?: (file: any, isEmbed: boolean) => void
+        onSelectFile?: (file: TFile, isEmbed: boolean) => void
     ): void {
         const value = textarea.value;
         const cursorPos = textarea.selectionStart;
@@ -2563,16 +2570,16 @@ export function checkForLinkPattern(this: any, textarea: HTMLTextAreaElement,
      * 显示链接建议器
      */
 export function showLinkSuggester(this: any, textarea: HTMLTextAreaElement,
-        node: any,
-        boundingBox: any,
+        node: cytoscape.NodeSingular,
+        boundingBox: cytoscape.BoundingBox12 & cytoscape.BoundingBoxWH,
         suggesterPopoverRef: { value: HTMLElement | null },
         isEmbed = false,
-        onSelectFile?: (file: any, isEmbed: boolean) => void
+        onSelectFile?: (file: TFile, isEmbed: boolean) => void
     ): void {
         // 获取所有 markdown + moc 文件
         const app = this.currentOptions?.app;
         if (!app) return;
-        const files = app.vault.getAllLoadedFiles().filter((f: any) =>
+        const files = app.vault.getAllLoadedFiles().filter((f: TFile) =>
             f.path.endsWith('.md') || f.path.endsWith('.moc')
         );
 
@@ -2617,7 +2624,7 @@ export function showLinkSuggester(this: any, textarea: HTMLTextAreaElement,
 
         // 存储当前的选中索引和文件列表
         let selectedIndex = 0;
-        let currentFiles: any[] = [];
+        let currentFiles: TFile[] = [];
 
         // 过滤文件（显示前 10 个）
         let searchTerm = '';
@@ -2628,7 +2635,7 @@ export function showLinkSuggester(this: any, textarea: HTMLTextAreaElement,
 
             // 过滤并显示文件
             currentFiles = files
-                .filter((file: any) => {
+                .filter((file: TFile) => {
                     const lowerPath = file.path.toLowerCase();
                     const lowerName = file.basename.toLowerCase();
                     return lowerName.includes(searchTerm.toLowerCase()) ||
@@ -2639,7 +2646,7 @@ export function showLinkSuggester(this: any, textarea: HTMLTextAreaElement,
             // 重置选中索引
             selectedIndex = 0;
 
-            currentFiles.forEach((file: any, index: number) => {
+            currentFiles.forEach((file: TFile, index: number) => {
                 const item = activeDocument.createElement('div');
                 item.className = 'suggester-item';
                 item.dataset.index = index.toString();
@@ -2686,7 +2693,7 @@ export function showLinkSuggester(this: any, textarea: HTMLTextAreaElement,
         };
 
         // 选择文件并创建节点
-        const selectFile = (file: any) => {
+        const selectFile = (file: TFile) => {
             // 移除 suggester
             popover.remove();
             if (onSelectFile) {
@@ -2745,8 +2752,8 @@ export function showLinkSuggester(this: any, textarea: HTMLTextAreaElement,
 
         // 更新选中高亮
         const updateSelection = () => {
-            const items = popover.querySelectorAll('.suggester-item');
-            items.forEach((item: any, index: number) => {
+            const items = popover.querySelectorAll<HTMLElement>('.suggester-item');
+            items.forEach((item, index: number) => {
                 if (index === selectedIndex) {
                     item.setCssStyles({ backgroundColor: 'var(--background-modifier-hover)' });
                     // 滚动到可见区域
@@ -2843,7 +2850,7 @@ export function showLinkSuggester(this: any, textarea: HTMLTextAreaElement,
      * 菜单打开时吃掉 ↑↓/Enter/Tab/Esc,避免被编辑器当成换行/保存。
      */
 export function attachSlashCommandMenu(
-        app: any,
+        app: App,
         getEditor: () => EmbeddableMarkdownEditor | null,
         editorHost: HTMLElement,
         onCommand?: (cmd: { id: string; name: string }) => boolean | void
@@ -2854,12 +2861,12 @@ export function attachSlashCommandMenu(
         let slashFrom = -1; // '/' 在文档中的偏移
 
         const getAllCommands = (): Array<{ id: string; name: string }> => {
-            const commands = app?.commands;
+            const commands = (app as App & { commands?: AppCommandsInternal }).commands;
             if (!commands) return [];
-            const list = typeof commands.listCommands === 'function'
+            const list: Array<{ id: string; name: string }> = typeof commands.listCommands === 'function'
                 ? commands.listCommands()
                 : Object.values(commands.commands || {});
-            return (list || []).filter((c: any) => c && c.id && c.name);
+            return list.filter((c): c is { id: string; name: string } => !!(c && c.id && c.name));
         };
 
         const close = () => {
@@ -3018,7 +3025,7 @@ export function attachSlashCommandMenu(
         editorHost.addEventListener('keydown', onKeyDownCapture, { capture: true });
 
         const destroy = () => {
-            editorHost.removeEventListener('keydown', onKeyDownCapture, { capture: true } as any);
+            editorHost.removeEventListener('keydown', onKeyDownCapture, { capture: true });
             close();
         };
 
@@ -3036,7 +3043,7 @@ export function attachSlashCommandMenu(
      * 录音浮条用 mousedown preventDefault 防止抢焦点导致编辑框 blur 保存关闭。
      */
 export function startNodeAudioRecording(
-        app: any,
+        app: App,
         getEditor: () => EmbeddableMarkdownEditor | null,
         container: HTMLElement | null,
         sourcePath: string,
@@ -3078,7 +3085,7 @@ export function startNodeAudioRecording(
                 { mime: 'audio/mp4', ext: 'm4a' },
             ];
             for (const c of candidates) {
-                try { if ((window as any).MediaRecorder?.isTypeSupported?.(c.mime)) return c; } catch { /* ignore */ }
+                try { if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(c.mime)) return c; } catch { /* ignore */ }
             }
             return { mime: '', ext: 'webm' };
         };
@@ -3164,8 +3171,7 @@ export function startNodeAudioRecording(
                 if (cancelled || chunks.length === 0) return;
                 const blob = new Blob(chunks, { type: mime || 'audio/webm' });
                 const buf = await blob.arrayBuffer();
-                const mo = (window as any).moment;
-                const ts = typeof mo === 'function' ? mo().format('YYYYMMDD-HHmmss') : String(Date.now());
+                const ts = moment().format('YYYYMMDD-HHmmss');
                 const filename = `Recording ${ts}.${ext}`;
                 let path = filename;
                 try {
@@ -3177,7 +3183,7 @@ export function startNodeAudioRecording(
                 insertEmbed(file?.path || path);
             } catch (err) {
                 console.error('[ZK] 录音保存失败', err);
-                new Notice(`录音保存失败: ${(err as any)?.message || err}`);
+                new Notice(`录音保存失败: ${(err as Error)?.message || err}`);
             } finally {
                 teardown();
             }

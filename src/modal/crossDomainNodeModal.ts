@@ -1,21 +1,28 @@
 import { App, FuzzySuggestModal, TFile, Setting } from "obsidian";
 
+/** 兼容 MOCTreeNode 与 ZKNode 的跨领域选择项(可被两者赋值,也可赋给 CrossDomainNodeLike) */
+export type CrossDomainModalNode = {
+    nodeID?: string; IDStr?: string; ID?: string;
+    title?: string; displayText?: string; alias?: string; target?: string;
+    children?: CrossDomainModalNode[]; _level?: number;
+};
+
 /**
  * 跨领域节点选择器
  * 第一步：选择 MOC 文件
  */
 export class CrossDomainMOCModal extends FuzzySuggestModal<TFile> {
     mocFiles: TFile[];
-    currentNode: any;
+    currentNode: CrossDomainModalNode;
     currentMOCPath: string;
-    onSubmit: (mocFile: TFile, currentNode: any, currentMOCPath: string) => void;
+    onSubmit: (mocFile: TFile, currentNode: CrossDomainModalNode, currentMOCPath: string) => void;
 
     constructor(
         app: App,
         mocFiles: TFile[],
-        currentNode: any,
+        currentNode: CrossDomainModalNode,
         currentMOCPath: string,
-        onSubmit: (mocFile: TFile, currentNode: any, currentMOCPath: string) => void
+        onSubmit: (mocFile: TFile, currentNode: CrossDomainModalNode, currentMOCPath: string) => void
     ) {
         super(app);
         this.mocFiles = mocFiles;
@@ -43,21 +50,21 @@ export class CrossDomainMOCModal extends FuzzySuggestModal<TFile> {
  * 跨领域节点选择器
  * 第二步：选择 MOC 文件中的节点，并选择是否包含子节点
  */
-export class CrossDomainNodeModal extends FuzzySuggestModal<any> {
-    nodes: any[];
-    sourceNode: any;
+export class CrossDomainNodeModal extends FuzzySuggestModal<CrossDomainModalNode> {
+    nodes: CrossDomainModalNode[];
+    sourceNode: CrossDomainModalNode;
     sourceMOCPath: string;
     targetMOCFile: TFile;
-    onSubmit: (sourceNode: any, sourceMOCPath: string, targetNodes: any[], targetMOCFile: TFile) => void;
+    onSubmit: (sourceNode: CrossDomainModalNode, sourceMOCPath: string, targetNodes: CrossDomainModalNode[], targetMOCFile: TFile) => void;
     includeChildren = false; // 是否包含子节点
 
     constructor(
         app: App,
-        nodes: any[],
-        sourceNode: any,
+        nodes: CrossDomainModalNode[],
+        sourceNode: CrossDomainModalNode,
         sourceMOCPath: string,
         targetMOCFile: TFile,
-        onSubmit: (sourceNode: any, sourceMOCPath: string, targetNodes: any[], targetMOCFile: TFile) => void
+        onSubmit: (sourceNode: CrossDomainModalNode, sourceMOCPath: string, targetNodes: CrossDomainModalNode[], targetMOCFile: TFile) => void
     ) {
         super(app);
         this.nodes = nodes;
@@ -101,10 +108,10 @@ export class CrossDomainNodeModal extends FuzzySuggestModal<any> {
         }
     }
 
-    getItems(): any[] {
+    getItems(): CrossDomainModalNode[] {
         // 展开所有节点，包括子节点
-        const flatNodes: any[] = [];
-        const flattenNodes = (nodes: any[], level = 0) => {
+        const flatNodes: CrossDomainModalNode[] = [];
+        const flattenNodes = (nodes: CrossDomainModalNode[], level = 0) => {
             for (const node of nodes) {
                 // 添加缩进级别到节点对象
                 node._level = level;
@@ -119,7 +126,7 @@ export class CrossDomainNodeModal extends FuzzySuggestModal<any> {
         return flatNodes;
     }
 
-    getItemText(item: any): string {
+    getItemText(item: CrossDomainModalNode): string {
         // 兼容 MOCTreeNode 和 ZKNode 两种类型
         // MOCTreeNode: nodeID + (alias ?? target)；ZKNode: ID/IDStr + title/displayText
         const nodeId = item.nodeID || item.IDStr || item.ID;
@@ -127,12 +134,12 @@ export class CrossDomainNodeModal extends FuzzySuggestModal<any> {
 
         // 根据层级添加缩进
         const indent = '  '.repeat(item._level || 0);
-        const prefix = item._level > 0 ? '└' : '';
+        const prefix = (item._level ?? 0) > 0 ? '└' : '';
 
         return `${indent}${prefix} ${nodeId} - ${title}`;
     }
 
-    onChooseItem(item: any, evt: MouseEvent | KeyboardEvent) {
+    onChooseItem(item: CrossDomainModalNode, evt: MouseEvent | KeyboardEvent) {
         // 根据选择决定返回的节点列表
         const targetNodes = this.includeChildren && item.children
             ? [item, ...this.getAllDescendants(item)]
@@ -144,8 +151,8 @@ export class CrossDomainNodeModal extends FuzzySuggestModal<any> {
     /**
      * 递归获取所有子孙节点
      */
-    private getAllDescendants(node: any): any[] {
-        const descendants: any[] = [];
+    private getAllDescendants(node: CrossDomainModalNode): CrossDomainModalNode[] {
+        const descendants: CrossDomainModalNode[] = [];
         if (node.children && node.children.length > 0) {
             for (const child of node.children) {
                 descendants.push(child);

@@ -1,4 +1,4 @@
-import { App } from "obsidian";
+import { App, TFile } from "obsidian";
 import { MOCParseResult, MOCTreeNode, MOCNodeType, ReverseRelation, GroupInfo, CrossDomainLink, createMOCTreeNode } from "./utils";
 import { LayoutPreset, normalizeLayoutPreset, normalizeNodeLayoutPresets } from "src/utils/growthDirection";
 
@@ -28,8 +28,8 @@ interface LegacyJsonNodeData {
     isEmbed?: boolean;
 }
 
-function isLegacyNode(data: any): data is LegacyJsonNodeData {
-    return data && typeof data === 'object' && 'wikiLink' in data && !('nodeType' in data);
+function isLegacyNode(data: unknown): data is LegacyJsonNodeData {
+    return typeof data === 'object' && data !== null && 'wikiLink' in data && !('nodeType' in data);
 }
 
 // 旧 shape → 新 shape
@@ -54,7 +54,7 @@ function migrateLegacyNode(legacy: LegacyJsonNodeData): JsonNodeData {
     return data;
 }
 
-function normalizeNode(data: any): JsonNodeData {
+function normalizeNode(data: JsonNodeData | LegacyJsonNodeData): JsonNodeData {
     if (isLegacyNode(data)) return migrateLegacyNode(data);
     // 已是新 shape，递归规范化子节点
     return {
@@ -92,8 +92,8 @@ interface MOCJsonSchema {
 
 // ---- 内部转换工具 ----
 
-function resolveJsonNode(app: App, data: JsonNodeData, basePath: string, resolvedFileCache: Map<string, any>): MOCTreeNode {
-    let file: any = null;
+function resolveJsonNode(app: App, data: JsonNodeData, basePath: string, resolvedFileCache: Map<string, TFile | null>): MOCTreeNode {
+    let file: TFile | null = null;
     if (data.nodeType !== 'text' && data.target) {
         if (resolvedFileCache.has(data.target)) {
             file = resolvedFileCache.get(data.target) ?? null;
@@ -105,8 +105,8 @@ function resolveJsonNode(app: App, data: JsonNodeData, basePath: string, resolve
             file = app.metadataCache.getFirstLinkpathDest(pathOnly, basePath) ?? null;
             // metadataCache 解析失败时，回退到 vault 路径查找（兼容图片/excalidraw/.moc）
             if (!file) {
-                file = app.vault.getAbstractFileByPath(pathOnly)
-                    || app.vault.getAbstractFileByPath(basePath ? `${basePath}/${pathOnly}` : pathOnly)
+                file = app.vault.getFileByPath(pathOnly)
+                    || app.vault.getFileByPath(basePath ? `/` : pathOnly)
                     || null;
             }
             resolvedFileCache.set(data.target, file);
@@ -177,13 +177,13 @@ export function parseMOCJson(content: string, filePath: string, app: App): MOCPa
         };
     }
 
-    const resolvedFileCache = new Map<string, any>();
+    const resolvedFileCache = new Map<string, TFile | null>();
     // 兼容读取：旧 shape (wikiLink/displayText/isTextOnly/isEmbed) 自动迁移到新 shape
     const normalized = (json.nodes || []).map(normalizeNode);
     const nodes = normalized.map(n => resolveJsonNode(app, n, basePath, resolvedFileCache));
 
     // 兼容读取：旧版顶层 nodeExtBitMap 映射 → 注入到每个节点的 extBitMap
-    const legacyBitMap = (json as any).nodeExtBitMap as Record<string, number> | undefined;
+    const legacyBitMap = (json as { nodeExtBitMap?: Record<string, number> }).nodeExtBitMap;
     if (legacyBitMap && Object.keys(legacyBitMap).length > 0) {
         const apply = (ns: MOCTreeNode[]) => {
             for (const n of ns) {
@@ -251,12 +251,12 @@ export function serializeMOCJson(data: MOCParseResult): string {
         groups: data.groups || [],
         edgeCurvatures: data.edgeCurvatures || {},
         nodeColors: data.nodeColors || {},
-        nodeStyleColors: (data as any).nodeStyleColors || {},
-        crossDomainLinks: (data as any).crossDomainLinks || {},
-        embedNodeSizes: (data as any).embedNodeSizes || {},
-        nodeRemarks: (data as any).nodeRemarks || {},
-        nodeAnchors: (data as any).nodeAnchors || {},
-        collapsedNodeIds: (data as any).collapsedNodeIds || [],
+        nodeStyleColors: data.nodeStyleColors || {},
+        crossDomainLinks: data.crossDomainLinks || {},
+        embedNodeSizes: data.embedNodeSizes || {},
+        nodeRemarks: data.nodeRemarks || {},
+        nodeAnchors: data.nodeAnchors || {},
+        collapsedNodeIds: data.collapsedNodeIds || [],
     };
     if (data.nodeLayoutStyle) {
         json.nodeLayoutStyle = data.nodeLayoutStyle;

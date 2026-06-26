@@ -233,7 +233,7 @@ export class SpacesTree {
                 .onClick(async () => { await this.ctx.store.unmountFromContainer(n.id); }));
         }
         menu.addSeparator();
-        menu.addItem(i => { (i as any).setWarning?.(true); i.setTitle(t('ws delete')).setIcon('trash-2')
+        menu.addItem(i => { (i as { setWarning?(warning: boolean): void }).setWarning?.(true); i.setTitle(t('ws delete')).setIcon('trash-2')
             .onClick(() => this.ctx.requestDelete(n)); });
         menu.showAtMouseEvent(e);
     }
