@@ -1,5 +1,6 @@
 import { RenderOptions } from './types';
 import { getGraphTheme } from './theme';
+import { dataStr, dataNum, dataAs } from './cyData';
 import type * as cytoscape from 'cytoscape';
 
 /** cytoscape 样式条目(style 用 Record 容纳映射函数+自定义属性,绕过严格 Css 类型) */
@@ -84,7 +85,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
             .replace(/^\s*#{1,6}\s+/gm, '')
             .replace(/<[^>]+>/g, '');
     };
-    const getTextMeasureLabel = (ele: cytoscape.NodeSingular): string => getVisibleTextForMeasure(ele.data('label') || '');
+    const getTextMeasureLabel = (ele: cytoscape.NodeSingular): string => getVisibleTextForMeasure(dataStr(ele, 'label'));
 
     const measureSingleLineFileNode = (label: string, opts: {
         fontSize: number;
@@ -183,14 +184,14 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                 'text-max-width': '280px',
                 'text-overflow-wrap': 'anywhere',
                 'background-color': (ele: cytoscape.NodeSingular) => {
-                    const fillColor = ele.data('customFillColor');
+                    const fillColor = dataStr(ele, 'customFillColor');
                     if (fillColor && !ele.data('isEmbed') && !ele.data('isGroup')) {
                         return fillColor;
                     }
                     return colors.nodeBackground;
                 },
                 'color': (ele: cytoscape.NodeSingular) => {
-                    const fillTextColor = ele.data('customFillTextColor');
+                    const fillTextColor = dataStr(ele, 'customFillTextColor');
                     if (fillTextColor && !ele.data('isEmbed') && !ele.data('isGroup')) {
                         return fillTextColor;
                     }
@@ -206,7 +207,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                     if (ele.data('isTextOnly')) {
                         return computeAutoTextMetrics(getTextMeasureLabel(ele)).width;
                     }
-                    const label = ele.data('label') || '';
+                    const label = dataStr(ele, 'label');
                     return measureSingleLineFileNode(label, {
                         fontSize: deps.FIRST_LEVEL_NODE_FONT_SIZE - 4,
                         fontWeight: '500',
@@ -228,7 +229,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                         const auto = computeAutoTextMetrics(getTextMeasureLabel(ele), opts).height;
                         return manualHeightModel > 0 ? Math.max(manualHeightModel, auto) : auto;
                     }
-                    const label = ele.data('label') || '';
+                    const label = dataStr(ele, 'label');
                     return measureSingleLineFileNode(label, {
                         fontSize: deps.FIRST_LEVEL_NODE_FONT_SIZE - 4,
                         fontWeight: '500',
@@ -245,7 +246,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                 'border-opacity': 0.72,
                 'border-color': (ele: cytoscape.NodeSingular) => {
                     if (isModern && ele.data('branchNodeBorder') && !ele.data('isRoot') && !ele.data('isFreeNode')) {
-                        return ele.data('branchNodeBorder');
+                        return dataStr(ele, 'branchNodeBorder');
                     }
                     return colors.nodeBorder;
                 },
@@ -321,7 +322,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
             selector: 'node[?isFirstLevelNode][!isRoot][!isFreeNode][!isEmbed][!isStandaloneText]',
             style: {
                 'background-color': (ele: cytoscape.NodeSingular) => {
-                    const branchColor = deps.normalizeHexColor(ele.data('branchNodeBorder') || '');
+                    const branchColor = deps.normalizeHexColor(dataStr(ele, 'branchNodeBorder'));
                     if (theme.isLight) {
                         return branchColor
                             ? deps.hexToRgba(deps.lightenColor(branchColor, 0.72), 0.86)
@@ -332,7 +333,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                         : theme.node.firstLevelFallback;
                 },
                 'background-opacity': theme.effects.firstLevelBackgroundOpacity,
-                'border-color': (ele: cytoscape.NodeSingular) => ele.data('branchNodeBorder') || '#5da6ff',
+                'border-color': (ele: cytoscape.NodeSingular) => dataStr(ele, 'branchNodeBorder') || '#5da6ff',
                 'border-width': '2.6px',
                 'border-opacity': 0.92,
                 'z-index': 1000,
@@ -346,7 +347,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                         const widthModel = manualWidthModel > 0 ? manualWidthModel : Number(ele.width() || 340);
                         return Math.max(160, widthModel - 52);
                     }
-                    return computeFirstLevelMetrics(ele.data('label') || '').wrapWidth;
+                    return computeFirstLevelMetrics(dataStr(ele, 'label')).wrapWidth;
                 },
                 'width': (ele: cytoscape.NodeSingular) => {
                     const manualWidthModel = Number(ele.data('manualWidthModel') || 0);
@@ -364,7 +365,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                             paddingY: 34
                         }).width;
                     }
-                    const label = ele.data('label') || '';
+                    const label = dataStr(ele, 'label');
                     return computeFirstLevelMetrics(label).nodeWidth;
                 },
                 'height': (ele: cytoscape.NodeSingular) => {
@@ -382,7 +383,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                         }).height;
                         return manualHeightModel > 0 ? Math.max(manualHeightModel, auto) : auto;
                     }
-                    const label = ele.data('label') || '';
+                    const label = dataStr(ele, 'label');
                     const auto = Math.max(computeFirstLevelMetrics(label).nodeHeight, 80);
                     return manualHeightModel > 0 ? Math.max(manualHeightModel, auto) : auto;
                 }
@@ -393,17 +394,17 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
             selector: 'node.zk-active-first-level-branch[?isFirstLevelNode][!isRoot][!isFreeNode][!isEmbed][!isStandaloneText]',
             style: {
                 'background-color': (ele: cytoscape.NodeSingular) => {
-                    const branchColor = deps.normalizeHexColor(ele.data('branchNodeBorder') || '');
+                    const branchColor = deps.normalizeHexColor(dataStr(ele, 'branchNodeBorder'));
                     if (theme.isLight) {
                         return branchColor
                             ? deps.hexToRgba(deps.lightenColor(branchColor, 0.74), 0.92)
                             : theme.node.activeFirstLevelFallback;
                     }
-                    return ele.data('branchNodeBackground') || theme.node.activeFirstLevelFallback;
+                    return dataStr(ele, 'branchNodeBackground') || theme.node.activeFirstLevelFallback;
                 },
                 'background-opacity': theme.effects.activeFirstLevelBackgroundOpacity,
                 'border-color': (ele: cytoscape.NodeSingular) => {
-                    const branchColor = deps.normalizeHexColor(ele.data('branchNodeBorder') || '');
+                    const branchColor = deps.normalizeHexColor(dataStr(ele, 'branchNodeBorder'));
                     if (theme.isLight) return branchColor || theme.node.borderSelected;
                     return branchColor ? deps.lightenColor(branchColor, 0.30) : '#9ed0ff';
                 },
@@ -443,7 +444,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                         const widthModel = manualWidthModel > 0 ? manualWidthModel : Number(ele.width() || 560);
                         return Math.max(220, widthModel - 76);
                     }
-                    return measureSingleLineFileNode(ele.data('label') || '', {
+                    return measureSingleLineFileNode(dataStr(ele, 'label'), {
                         fontSize: deps.ROOT_NODE_FONT_SIZE,
                         fontWeight: 'bold',
                         baseWidth: 210,
@@ -458,7 +459,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                     if (manualWidthModel > 0 && ele.data('isTextOnly')) {
                         return manualWidthModel;
                     }
-                    const label = ele.data('isTextOnly') ? getTextMeasureLabel(ele) : (ele.data('label') || '');
+                    const label = ele.data('isTextOnly') ? getTextMeasureLabel(ele) : dataStr(ele, 'label');
                     if (!ele.data('isTextOnly')) {
                         return measureSingleLineFileNode(label, {
                             fontSize: deps.ROOT_NODE_FONT_SIZE,
@@ -485,7 +486,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                     if (manualHeightModel > 0 && ele.data('isTextOnly')) {
                         return manualHeightModel;
                     }
-                    const label = ele.data('isTextOnly') ? getTextMeasureLabel(ele) : (ele.data('label') || '');
+                    const label = ele.data('isTextOnly') ? getTextMeasureLabel(ele) : dataStr(ele, 'label');
                     if (!ele.data('isTextOnly')) {
                         return measureSingleLineFileNode(label, {
                             fontSize: deps.ROOT_NODE_FONT_SIZE,
@@ -535,8 +536,8 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
         {
             selector: 'node[?isPlaceholder]',
             style: {
-                'width': (ele: cytoscape.NodeSingular) => Math.max(240, computeAutoTextMetrics(ele.data('label') || '').width),
-                'height': (ele: cytoscape.NodeSingular) => Math.max(80, computeAutoTextMetrics(ele.data('label') || '').height),
+                'width': (ele: cytoscape.NodeSingular) => Math.max(240, computeAutoTextMetrics(dataStr(ele, 'label')).width),
+                'height': (ele: cytoscape.NodeSingular) => Math.max(80, computeAutoTextMetrics(dataStr(ele, 'label')).height),
                 'opacity': 0.7,
                 'border-style': 'dashed',
                 'border-width': '2px',
@@ -639,8 +640,8 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
             selector: 'edge',
             style: {
                 'width': (ele: cytoscape.NodeSingular) => {
-                    const hierarchyEdgeWidth = ele.data('hierarchyEdgeWidth');
-                    if (typeof hierarchyEdgeWidth === 'number') {
+                    const hierarchyEdgeWidth = dataNum(ele, 'hierarchyEdgeWidth');
+                    if (hierarchyEdgeWidth !== undefined) {
                         return hierarchyEdgeWidth;
                     }
                     return 2;
@@ -658,17 +659,17 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                 // 优先级:用户手动拖动的控制点 > 方向感知 S 形(autoCp*) > 兜底单弧
                 'control-point-distances': (ele: cytoscape.NodeSingular) => {
                     if (edgeStyle !== 'bezier') return 0;
-                    const distance = ele.data('controlPointDistance');
+                    const distance = dataAs<number | number[] | undefined>(ele, 'controlPointDistance');
                     if (distance !== undefined) return distance;
-                    const auto = ele.data('autoCpDistances');
+                    const auto = dataAs<number | number[] | undefined>(ele, 'autoCpDistances');
                     if (auto) return auto;
                     return 60;
                 },
                 'control-point-weights': (ele: cytoscape.NodeSingular) => {
                     if (edgeStyle !== 'bezier') return 0.5;
-                    const weight = ele.data('controlPointWeight');
+                    const weight = dataAs<number | number[] | undefined>(ele, 'controlPointWeight');
                     if (weight !== undefined) return weight;
-                    const auto = ele.data('autoCpWeights');
+                    const auto = dataAs<number | number[] | undefined>(ele, 'autoCpWeights');
                     if (auto) return auto;
                     return 0.5;
                 },
@@ -975,7 +976,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                 'font-size': '15px',
                 'font-weight': '500',
                 'text-max-width': '190px',
-                'width': (ele: cytoscape.NodeSingular) => deps.measureNodeLabel(ele.data('label') || '', {
+                'width': (ele: cytoscape.NodeSingular) => deps.measureNodeLabel(dataStr(ele, 'label'), {
                     baseWidth: 88,
                     minHeight: 34,
                     maxWidth: 220,
@@ -984,7 +985,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                     paddingX: 30,
                     paddingY: 12
                 }).width,
-                'height': (ele: cytoscape.NodeSingular) => deps.measureNodeLabel(ele.data('label') || '', {
+                'height': (ele: cytoscape.NodeSingular) => deps.measureNodeLabel(dataStr(ele, 'label'), {
                     baseWidth: 88,
                     minHeight: 34,
                     maxWidth: 220,
@@ -1007,7 +1008,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                 'font-size': '15px',
                 'font-weight': '500',
                 'text-max-width': '190px',
-                'width': (ele: cytoscape.NodeSingular) => deps.measureNodeLabel(ele.data('label') || '', {
+                'width': (ele: cytoscape.NodeSingular) => deps.measureNodeLabel(dataStr(ele, 'label'), {
                     baseWidth: 88,
                     minHeight: 34,
                     maxWidth: 220,
@@ -1016,7 +1017,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                     paddingX: 30,
                     paddingY: 12
                 }).width,
-                'height': (ele: cytoscape.NodeSingular) => deps.measureNodeLabel(ele.data('label') || '', {
+                'height': (ele: cytoscape.NodeSingular) => deps.measureNodeLabel(dataStr(ele, 'label'), {
                     baseWidth: 88,
                     minHeight: 34,
                     maxWidth: 220,
@@ -1100,7 +1101,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                 style: {
                     'underlay-color': (ele: cytoscape.NodeSingular) => {
                         if (isLight) return '#5b6678';
-                        return ele.data('branchNodeBorder')
+                        return dataStr(ele, 'branchNodeBorder')
                             || (ele.data('isRoot') ? theme.node.rootBorder : theme.node.borderSelected);
                     },
                     'underlay-opacity': isLight ? 0.08 : 0.12,
@@ -1120,9 +1121,9 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                     // stop-colors 必须是空格分隔的纯色 token,内部不能含空格/逗号
                     // (rgba(r, g, b, a) 会被 Cytoscape 解析器拆错),故一律用 hex。
                     'background-gradient-stop-colors': (ele: cytoscape.NodeSingular) => {
-                        const accent = deps.normalizeHexColor(ele.data('branchNodeBorder'))
+                        const accent = deps.normalizeHexColor(dataStr(ele, 'branchNodeBorder'))
                             || (isLight ? '#3fae72' : '#5fd3c6');
-                        const fill = deps.normalizeHexColor(ele.data('customFillColor')) || theme.node.background;
+                        const fill = deps.normalizeHexColor(dataStr(ele, 'customFillColor')) || theme.node.background;
                         return `${accent} ${accent} ${fill} ${fill}`;
                     },
                     // 色条按固定模型像素宽(~6px)而非节点宽度的百分比:
@@ -1145,7 +1146,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                     // 同上:stop-colors 仅用 hex,避免 rgba() 内的空格/逗号破坏解析。
                     // 暗色压暗分支色作卡底;浅色提亮分支色作淡彩卡底。
                     'background-gradient-stop-colors': (ele: cytoscape.NodeSingular) => {
-                        const branch = deps.normalizeHexColor(ele.data('branchNodeBorder') || '');
+                        const branch = deps.normalizeHexColor(dataStr(ele, 'branchNodeBorder'));
                         const accent = branch || theme.node.borderSelected;
                         const fill = branch
                             ? (isLight ? deps.lightenColor(branch, 0.82) : deps.darkenColor(branch, 0.62))
@@ -1225,8 +1226,8 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                 selector: 'node[!isEmbed][!isImageNode][!hasMarkdownOverlay]',
                 style: {
                     'color': (ele: cytoscape.NodeSingular) => {
-                        const fillColor = ele.data('customFillColor');
-                        const fillTextColor = ele.data('customFillTextColor');
+                        const fillColor = dataStr(ele, 'customFillColor');
+                        const fillTextColor = dataStr(ele, 'customFillTextColor');
                         return fillColor && fillTextColor ? fillTextColor : theme.node.text;
                     },
                     'text-opacity': 1,
