@@ -194,8 +194,10 @@ export function renderNodeBadges(this: any): void {
                 ? 'rgba(255, 255, 255, 0.18)'
                 : 'rgba(255, 255, 255, 0.022)',
             });
-            glassEl.style.setProperty('backdrop-filter', 'blur(6px)');
-            glassEl.style.setProperty('-webkit-backdrop-filter', 'blur(6px)');
+            glassEl.setCssProps({
+                'backdrop-filter': 'blur(6px)',
+                '-webkit-backdrop-filter': 'blur(6px)',
+            });
             glassEl.setCssStyles({ boxShadow: isLightTheme
                 ? '0 1px 8px rgba(0,0,0,0.035)'
                 : '0 1px 10px rgba(0,0,0,0.16)' });
@@ -247,8 +249,10 @@ export function renderNodeBadges(this: any): void {
                 ? 'rgba(255, 255, 255, 0.42)'
                 : 'rgba(14, 24, 40, 0.46)',
             });
-            labelEl.style.setProperty('backdrop-filter', 'blur(5px)');
-            labelEl.style.setProperty('-webkit-backdrop-filter', 'blur(5px)');
+            labelEl.setCssProps({
+                'backdrop-filter': 'blur(5px)',
+                '-webkit-backdrop-filter': 'blur(5px)',
+            });
             labelEl.setCssStyles({
                 boxShadow: isLightTheme
                 ? '0 1px 4px rgba(50, 70, 100, 0.09)'
@@ -1350,8 +1354,10 @@ export function renderNodeBadges(this: any): void {
                 cursor: 'pointer',
             });
             badgeEl.setCssStyles({ transformOrigin: 'right bottom' });
-            badgeEl.style.setProperty('-webkit-text-size-adjust', 'none');
-            badgeEl.style.setProperty('text-size-adjust', 'none');
+            badgeEl.setCssProps({
+                '-webkit-text-size-adjust': 'none',
+                'text-size-adjust': 'none',
+            });
             badgeContainer.appendChild(badgeEl);
 
             // 徽章文本按"模型宽度"截断并缓存:zoom/pan 不改变模型宽度,故截断结果在缩放过程中不变。
