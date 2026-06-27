@@ -19,7 +19,8 @@ import { createMOCJsonWithInitialNode } from "src/utils/mocJsonCodec";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
 import { createSelectionColorPanel } from "src/renderer/colorUtils";
 import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
-import { RenderOptions } from "src/renderer/types";
+import { RenderOptions, CyData } from "src/renderer/types";
+import { dataStr, dataAs } from "src/renderer/cyData";
 import { MOCHandler } from "src/view/index/mocHandler";
 import { computeAutoLayout, AutoLayoutNodeInput } from "src/utils/autoLayoutEngine";
 import { resolveThemeMode } from "src/utils/themeMode";
@@ -622,7 +623,7 @@ export class ZKIndexView extends FileView {
         }
 
         while (this.mocViewStates.size > this.MAX_MOC_VIEW_STATES) {
-            const oldestKey = this.mocViewStates.keys().next().value;
+            const oldestKey = this.mocViewStates.keys().next().value as string | undefined;
             if (!oldestKey) break;
             this.mocViewStates.delete(oldestKey);
         }
@@ -1471,7 +1472,7 @@ export class ZKIndexView extends FileView {
             this.detailPanel = new NodeDetailPanel(containerEl, this.app, {
                 getRemark: (n) => this.getNodeRemark(n),
                 getLabel: (idStr) => this.getNodeLabelByIdStr(idStr),
-                getBranchColor: (n) => this.findCyNodeByIdStr(n.IDStr)?.data('branchNodeBorder') || null,
+                getBranchColor: (n) => { const cyNode = this.findCyNodeByIdStr(n.IDStr); return cyNode ? (dataStr(cyNode, 'branchNodeBorder') || null) : null; },
                 onSaveRemark: (n, text) => this.saveNodeRemarkFromPanel(n, text),
                 canEdit: () => !this.isMobileReadOnly(),
                 onOpenFile: (file) => { this.openFileInPreferredLeaf(file, false); },
@@ -3189,7 +3190,7 @@ window.addEventListener('resize', fitGraph);
 
             // 监听视图状态变化事件（缩放和平移）
             this.addTrackedListener(branchGraphDiv, 'viewStateChanged', async (event: CustomEvent) => {
-                const { zoom, pan } = event.detail;
+                const { zoom, pan } = event.detail as { zoom: number; pan: { x: number; y: number } };
                 // 监听器可能复用，保存时读取最新当前文件路径，避免写入旧 MOC 的视图状态
                 const latestMOCPath = this.plugin.settings.mocCurrentFile;
                 if (!latestMOCPath) return;
@@ -3204,7 +3205,7 @@ window.addEventListener('resize', fitGraph);
             if (!this.plugin.settings.smartConnection) {
                 return;
             }
-            const { childNodeId, parentNodeId, position } = event.detail;
+            const { childNodeId, parentNodeId, position } = event.detail as { childNodeId: string; parentNodeId: string; position: { x: number; y: number } };
 
             // 查找子节点和父节点
             const childNode = this.mocNodes.find(n => n.ID === childNodeId || n.IDStr === childNodeId);
@@ -3267,7 +3268,13 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { node, position, leftGroup, joinedGroup, separation } = event.detail;
+            const { node, position, leftGroup, joinedGroup, separation } = event.detail as {
+                node?: ZKNode & { filePath?: string };
+                position: { x: number; y: number };
+                leftGroup?: { nodeId: string; groupId: string };
+                joinedGroup?: { nodeId: string; groupId: string };
+                separation?: { parentId: string; willSeparate: boolean; wasSeparated: boolean };
+            };
             const nodeKey = node?.IDStr || node?.ID;
 
             // 检查节点是否有效
@@ -3436,7 +3443,12 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { node, position, crossDomainLink, sourceNodeId } = event.detail;
+            const { node, position, crossDomainLink, sourceNodeId } = event.detail as {
+                node?: unknown;
+                position: { x: number; y: number };
+                crossDomainLink: CrossDomainLink;
+                sourceNodeId: string;
+            };
 
             // 检查是否有效
             if (!node || !crossDomainLink || !sourceNodeId) {
@@ -3467,9 +3479,10 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const nodeId = String(event.detail?.nodeId || '').trim();
-            const collapsedNodeIds = Array.isArray(event.detail?.collapsedNodeIds)
-                ? event.detail.collapsedNodeIds.map((id: unknown) => String(id)).filter(Boolean)
+            const detail = event.detail as { nodeId?: unknown; collapsedNodeIds?: unknown };
+            const nodeId = String(detail.nodeId ?? '').trim();
+            const collapsedNodeIds = Array.isArray(detail.collapsedNodeIds)
+                ? detail.collapsedNodeIds.map((id: unknown) => String(id)).filter(Boolean)
                 : [];
             if (!nodeId) return;
 
@@ -3504,7 +3517,7 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { edgeId, distance, weight } = event.detail;
+            const { edgeId, distance, weight } = event.detail as { edgeId: string; distance: number; weight: number };
 
             // 使用防抖，避免拖动时频繁保存
             if (this.edgeCurvatureSaveTimeout) {
@@ -3530,7 +3543,7 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { node, nodeId, size } = event.detail || {};
+            const { node, nodeId, size } = (event.detail || {}) as { node?: ZKNode; nodeId?: string; size?: { widthModel: number; heightModel: number } };
             const targetNodeId = String(nodeId || node?.ID || node?.IDStr || '').trim();
             if (!targetNodeId || !size) return;
 
@@ -3557,7 +3570,7 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { groupId, groupLabel, nodeIds } = event.detail;
+            const { groupId, groupLabel, nodeIds } = event.detail as { groupId: string; groupLabel: string; nodeIds: string[] };
             
             try {
                 const mocFile = getLatestMOCFile();
@@ -3576,7 +3589,7 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { groupId, newLabel } = event.detail;
+            const { groupId, newLabel } = event.detail as { groupId: string; newLabel: string };
 
             try {
                 const mocFile = getLatestMOCFile();
@@ -3595,7 +3608,7 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { groupId, nodeIds } = event.detail;
+            const { groupId, nodeIds } = event.detail as { groupId: string; nodeIds: string[] };
 
             try {
                 const mocFile = getLatestMOCFile();
@@ -3615,13 +3628,13 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { groupId, groupLabel, event: mouseEvent } = event.detail;
+            const { groupId, groupLabel, event: mouseEvent } = event.detail as { groupId: string; groupLabel: string; event: MouseEvent };
             this.showGroupContextMenu(mouseEvent, groupId, groupLabel);
         });
 
         // 监听节点点击事件
         this.addTrackedListener(branchGraphDiv, 'node-click', (event: CustomEvent) => {
-            const { node, event: triggerEvent } = event.detail || {};
+            const { node, event: triggerEvent } = (event.detail || {}) as { node?: ZKNode; event?: MouseEvent };
 
             // 检查节点是否有效
             if (!node) {
@@ -3631,8 +3644,9 @@ window.addEventListener('resize', fitGraph);
 
             // 优先使用已解析文件；否则回退到 wikiLink/显示文本解析，避免转换后 file 暂时为空导致无法打开
             let targetFile = node.file ?? null;
-            if (!targetFile && node.file?.path) {
-                targetFile = this.app.vault.getFileByPath(node.file.path);
+            const nodeFilePath = node.file?.path;
+            if (!targetFile && nodeFilePath) {
+                targetFile = this.app.vault.getFileByPath(nodeFilePath);
             }
             if (!targetFile) {
                 const mocPath = this.plugin.settings.mocCurrentFile || '';
@@ -3650,7 +3664,7 @@ window.addEventListener('resize', fitGraph);
             const isMouseEvent = triggerEvent instanceof MouseEvent;
             const isMocTarget = isMocPath(targetFile.path);
             // Cmd/Ctrl+点击始终在新标签页打开（MOC 目标仍走当前视图切换逻辑）；否则按设置的默认打开方式。
-            const forceTab = !isMocTarget && isMouseEvent && (triggerEvent.metaKey || triggerEvent.ctrlKey);
+            const forceTab = !isMocTarget && isMouseEvent && (triggerEvent?.metaKey || triggerEvent?.ctrlKey);
             // 带 #heading / #^blockRef 的链接（如 Excalidraw 的 #^group=xxx）：
             // 用 leaf.openFile + eState.subpath 让 ExcalidrawView.setEphemeralState 解析 subpath 并自动 zoomToElementId
             const rawLink = String(node.wikiLink || '').trim();
@@ -3667,7 +3681,7 @@ window.addEventListener('resize', fitGraph);
 
         // 监听节点悬停事件
         this.addTrackedListener(branchGraphDiv, 'node-hover', (event: CustomEvent) => {
-            const { node, event: mouseEvent } = event.detail;
+            const { node, event: mouseEvent } = event.detail as { node?: ZKNode; event?: MouseEvent };
 
             // 检查节点是否有效
             if (!node || !node.file) {
@@ -3698,7 +3712,7 @@ window.addEventListener('resize', fitGraph);
 
         // 监听节点选中事件（单击）— 更新平行宇宙面包屑 + 同步层级面包屑到该节点的路径
         this.addTrackedListener(branchGraphDiv, 'node-select', (event: CustomEvent) => {
-            const { node } = event.detail;
+            const { node } = event.detail as { node: ZKNode | null };
             this.updateMultiverseBadge(node);
             this.syncLevelBreadcrumbWithNode(node);
             this.handleDetailPanelSelect(node);
@@ -3721,7 +3735,7 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { node } = event.detail;
+            const { node } = event.detail as { node?: ZKNode };
 
             if (!node) {
                 return;
@@ -3734,7 +3748,15 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { node, content, position, nodeSize, nodeId, isDraft, relationCount } = event.detail;
+            const { node, content, position, nodeSize, nodeId, isDraft, relationCount } = event.detail as {
+                node?: ZKNode;
+                content: string;
+                position?: { x: number; y: number };
+                nodeSize?: { widthModel: number; heightModel: number };
+                nodeId?: string;
+                isDraft?: boolean;
+                relationCount?: number;
+            };
             // 草稿节点(#20):复用同一内联文本框,保存只更新内存,不写 MOC
             if (isDraft && nodeId && this.draftNodes.has(nodeId)) {
                 // 空内容 = 删除该草稿
@@ -3762,19 +3784,19 @@ window.addEventListener('resize', fitGraph);
         // 草稿节点(#20):删除键 → 仅从内存与画布移除,不碰 MOC
         this.addTrackedListener(branchGraphDiv, 'draft-node-delete', (event: CustomEvent) => {
             if (this.isMobileReadOnly()) return;
-            const { draftId } = event.detail || {};
+            const { draftId } = (event.detail || {}) as { draftId?: string };
             if (draftId) this.deleteDraftNode(draftId);
         });
 
         this.addTrackedListener(branchGraphDiv, 'draft-relation-delete', (event: CustomEvent) => {
             if (this.isMobileReadOnly()) return;
-            const { relKey } = event.detail || {};
+            const { relKey } = (event.detail || {}) as { relKey?: string };
             if (relKey) this.deleteDraftRelation(relKey);
         });
 
         // R 角标点击 → 打开/切换详情侧栏(只读态也可查看;再次点同一节点关闭)
         this.addTrackedListener(branchGraphDiv, 'node-detail-toggle', async (event: CustomEvent) => {
-            const { node } = event.detail;
+            const { node } = event.detail as { node?: ZKNode };
             if (!node || !this.detailPanel) {
                 return;
             }
@@ -3790,7 +3812,7 @@ window.addEventListener('resize', fitGraph);
 
         // 监听 .moc 预览节点点击跳转分支视图
         this.addTrackedListener(branchGraphDiv, 'open-moc-in-index-view', async (event: CustomEvent) => {
-            const { filePath } = event.detail;
+            const { filePath } = event.detail as { filePath?: string };
             if (!filePath) return;
             this.plugin.settings.mocCurrentFile = filePath;
             await this.plugin.saveData(this.plugin.settings);
@@ -3800,7 +3822,15 @@ window.addEventListener('resize', fitGraph);
         // 监听文件节点⟷预览节点切换
         this.addTrackedListener(branchGraphDiv, 'toggle-embed-node', async (event: CustomEvent) => {
             if (this.isMobileReadOnly()) return;
-            const { node, nodeId: detailNodeId, wikiLink: detailWikiLink, filePath: detailFilePath, displayText: detailDisplayText, title: detailTitle, currentIsEmbed } = event.detail;
+            const { node, nodeId: detailNodeId, wikiLink: detailWikiLink, filePath: detailFilePath, displayText: detailDisplayText, title: detailTitle, currentIsEmbed } = event.detail as {
+                node?: ZKNode & { nodeID?: string };
+                nodeId?: string;
+                wikiLink?: string;
+                filePath?: string;
+                displayText?: string;
+                title?: string;
+                currentIsEmbed?: boolean;
+            };
             const mocFilePath = this.plugin.settings.mocCurrentFile;
             if (!mocFilePath) return;
             const mocFile = this.app.vault.getFileByPath(mocFilePath);
@@ -3845,7 +3875,7 @@ window.addEventListener('resize', fitGraph);
 
         // 监听跨领域节点点击事件（跳转到关联的 MOC 文件）
         this.addTrackedListener(branchGraphDiv, 'cross-domain-node-click', async (event: CustomEvent) => {
-            const { node } = event.detail;
+            const { node } = event.detail as { node: { file?: { mocPath?: string } | null } };
 
             // 获取跨领域链接信息
             const crossDomainLink = node.file;  // 跨领域节点的 file 字段存储了链接信息
@@ -3879,7 +3909,7 @@ window.addEventListener('resize', fitGraph);
 
         // 跨领域「出口角标」卡片里点击某条链接 → 跳到目标 MOC 并定位该节点
         this.addTrackedListener(branchGraphDiv, 'cross-domain-jump', async (event: CustomEvent) => {
-            const { link } = event.detail || {};
+            const { link } = (event.detail || {}) as { link?: { mocPath?: string; nodeId?: string } };
             if (!link?.mocPath) {
                 new Notice('跨领域链接信息无效');
                 return;
@@ -3896,10 +3926,11 @@ window.addEventListener('resize', fitGraph);
                     await this.refreshBranchMermaid();
                 }
                 // 定位目标节点(渲染可能稍滞后,定位失败则单次重试)
-                if (link.nodeId) {
+                const targetNodeId = link.nodeId;
+                if (targetNodeId) {
                     const locate = () => {
-                        const found = this.findCyNodeByIdStr(link.nodeId);
-                        if (found) { this.selectAndShowDetailByIdStr(link.nodeId); return true; }
+                        const found = this.findCyNodeByIdStr(targetNodeId);
+                        if (found) { this.selectAndShowDetailByIdStr(targetNodeId); return true; }
                         return false;
                     };
                     if (!locate()) window.setTimeout(locate, 160);
@@ -3914,7 +3945,7 @@ window.addEventListener('resize', fitGraph);
         // 跨领域「出口角标」卡片里点击 × → 双向删除该条链接(对侧不存在也不报错,兼容历史单向数据)
         this.addTrackedListener(branchGraphDiv, 'cross-domain-remove', async (event: CustomEvent) => {
             if (this.isMobileReadOnly()) return;
-            const { sourceNodeId, link } = event.detail || {};
+            const { sourceNodeId, link } = (event.detail || {}) as { sourceNodeId?: string; link?: { mocPath?: string; nodeId?: string } };
             if (!sourceNodeId || !link?.nodeId) return;
             const currentMocPath = this.plugin.settings.mocCurrentFile;
             const mocFile = this.app.vault.getFileByPath(currentMocPath);
@@ -3947,7 +3978,7 @@ window.addEventListener('resize', fitGraph);
 
         // 监听节点复制事件（Cmd+C）
         this.addTrackedListener(branchGraphDiv, 'node-copy', (event: CustomEvent) => {
-            const { count } = event.detail;
+            const { count } = event.detail as { count: number };
             new Notice(t("Copied nodes").replace("{count}", String(count)));
         });
 
@@ -4090,7 +4121,7 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { node, relationCount } = event.detail;
+            const { node, relationCount } = event.detail as { node?: ZKNode; relationCount?: number };
 
             if (!node || !node.ID) {
                 console.warn('Invalid node for deletion:', node);
@@ -4102,7 +4133,7 @@ window.addEventListener('resize', fitGraph);
 
         // 监听跨领域节点右键菜单事件
         this.addTrackedListener(branchGraphDiv, 'cross-domain-contextmenu', async (event: CustomEvent) => {
-            const { node, event: mouseEvent } = event.detail;
+            const { node, event: mouseEvent } = event.detail as { node?: { file?: { mocPath?: string } | null }; event: MouseEvent };
 
             // 获取跨领域链接信息
             const crossDomainLink = node?.file;
@@ -4134,8 +4165,8 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { node, event: mouseEvent } = event.detail;
-            
+            const { node, event: mouseEvent } = event.detail as { node?: ZKNode; event: MouseEvent };
+
             // 检查节点是否有效（允许纯文字节点，即 file 为 null 的节点）
             if (!node) {
                 console.warn('Invalid node for context menu:', node);
@@ -4154,7 +4185,7 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { position } = event.detail;
+            const { position } = event.detail as { position: { x: number; y: number } };
 
             // 草稿模式(#20):仍走常规占位符文本框,只是完成时存为草稿(见 placeholder-node-edit)
             await this.createPlaceholderNode(position);
@@ -4165,7 +4196,13 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { nodeId, label, position, suggestedNodeId, nodeSize } = event.detail;
+            const { nodeId, label, position, suggestedNodeId, nodeSize } = event.detail as {
+                nodeId: string;
+                label: string;
+                position: { x: number; y: number };
+                suggestedNodeId?: string;
+                nodeSize?: { width: number; height: number };
+            };
 
             // 草稿模式(#20):占位符内容转存为草稿,不写 MOC
             if (this.draftMode) {
@@ -4205,7 +4242,7 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { nodeId } = event.detail;
+            const { nodeId } = event.detail as { nodeId: string };
             // auto 预览重排把兄弟挪开了(未落盘),取消时按文件保存坐标还原,回收占位空缺。
             const wasAutoPreview = this.placeholderNodes.get(nodeId)?.layoutStyle === 'auto';
             await this.removePlaceholderNode(nodeId);
@@ -4220,7 +4257,7 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { nodeId, wikiLink, file, isEmbed } = event.detail;
+            const { nodeId, wikiLink, file, isEmbed } = event.detail as { nodeId: string; wikiLink: string; file: TFile | null; isEmbed?: boolean };
 
             // 草稿模式(#20):选中的文件也转存为草稿(以 wiki 链接文本形式),不写 MOC
             if (this.draftMode) {
@@ -4308,7 +4345,7 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { nodeId, wikiLink, file, isEmbed } = event.detail;
+            const { nodeId, wikiLink, file, isEmbed } = event.detail as { nodeId: string; wikiLink: string; file: TFile | null; isEmbed?: boolean };
 
             // 草稿模式(#20):选中的文件也转存为草稿(以 wiki 链接文本形式),不写 MOC
             if (this.draftMode) {
@@ -4401,7 +4438,7 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { source, target, type, position, targetNodeSons } = event.detail;
+            const { source, target, type, position, targetNodeSons } = event.detail as { source: string; target: string; type?: string; position: { x: number; y: number }; targetNodeSons?: number };
             // 创建右键菜单
             const menu = new Menu();
 
@@ -4448,7 +4485,7 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { groupId } = event.detail;
+            const { groupId } = event.detail as { groupId: string };
 
             try {
                 const mocFile = getLatestMOCFile();
@@ -4468,7 +4505,7 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { source, target, type, targetNodeSons } = event.detail;
+            const { source, target, type, targetNodeSons } = event.detail as { source: string; target: string; type?: string; targetNodeSons?: number };
 
             try {
                 const mocFile = getLatestMOCFile();
@@ -4488,7 +4525,14 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { source, target, newLabel, edgeType, crossDomainLink, crossDomainSourceNodeId } = event.detail;
+            const { source, target, newLabel, edgeType, crossDomainLink, crossDomainSourceNodeId } = event.detail as {
+                source: string;
+                target: string;
+                newLabel: string;
+                edgeType?: string;
+                crossDomainLink?: CrossDomainLink;
+                crossDomainSourceNodeId?: string;
+            };
 
             try {
                 const mocFile = getLatestMOCFile();
@@ -4514,7 +4558,7 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { edgeType, oldSource, newSource, target, label } = event.detail;
+            const { edgeType, oldSource, newSource, target, label } = event.detail as { edgeType?: string; oldSource: string; newSource: string; target: string; label?: string };
 
             try {
                 const mocFile = getLatestMOCFile();
@@ -4533,7 +4577,7 @@ window.addEventListener('resize', fitGraph);
                     new Notice(`已修改父节点: ${target} 从 ${oldSource} → ${newSource} (新ID: ${newChildID})`);
                 } else {
                     // 箭头关系边：修改关系起点
-                    await this.updateEdgeSourceInMOC(mocFile, oldSource, newSource, target, label);
+                    await this.updateEdgeSourceInMOC(mocFile, oldSource, newSource, target, label ?? '');
                     await this.refreshBranchMermaid();
                     new Notice(`已修改边起点: ${oldSource} → ${newSource}`);
                 }
@@ -4548,7 +4592,7 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { edgeType, source, oldTarget, newTarget, label } = event.detail;
+            const { edgeType, source, oldTarget, newTarget, label } = event.detail as { edgeType?: string; source: string; oldTarget: string; newTarget: string; label?: string };
 
             try {
                 const mocFile = getLatestMOCFile();
@@ -4566,7 +4610,7 @@ window.addEventListener('resize', fitGraph);
                     new Notice(`已修改边终点: ${oldTarget} → ${newTarget}`);
                 } else {
                     // 箭头关系边
-                    await this.updateEdgeTargetInMOC(mocFile, source, oldTarget, newTarget, label);
+                    await this.updateEdgeTargetInMOC(mocFile, source, oldTarget, newTarget, label ?? '');
                     await this.refreshBranchMermaid();
                     new Notice(`已修改边终点: ${oldTarget} → ${newTarget}`);
                 }
@@ -4581,7 +4625,7 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { sourceNode, targetNode, sourceId, targetId } = event.detail;
+            const { sourceNode, targetNode, sourceId, targetId } = event.detail as { sourceNode?: ZKNode; targetNode?: ZKNode; sourceId?: string; targetId?: string };
 
             const finalSourceId = sourceId || sourceNode?.IDStr;
             const finalTargetId = targetId || targetNode?.IDStr;
@@ -4650,7 +4694,7 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { parentNode, position } = event.detail;
+            const { parentNode, position } = event.detail as { parentNode?: ZKNode; position: { x: number; y: number } };
 
             if (!parentNode) {
                 console.warn('Invalid parent node for child creation:', parentNode);
@@ -4666,7 +4710,7 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { activeNodeId, position } = event.detail;
+            const { activeNodeId, position } = event.detail as { activeNodeId: string; position: { x: number; y: number } };
             await this.createChildNodeFromActive(activeNodeId, position);
         });
 
@@ -4675,7 +4719,7 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { activeNodeId, position } = event.detail;
+            const { activeNodeId, position } = event.detail as { activeNodeId: string; position: { x: number; y: number } };
             await this.createSiblingNodeFromActive(activeNodeId, position);
         });
 
@@ -4684,7 +4728,7 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { activeNodeId, position } = event.detail;
+            const { activeNodeId, position } = event.detail as { activeNodeId: string; position: { x: number; y: number } };
             await this.createParentNodeFromActive(activeNodeId, position);
         });
 
@@ -4693,7 +4737,7 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { nodeIds, groupName } = event.detail;
+            const { nodeIds, groupName } = event.detail as { nodeIds: string[]; groupName: string };
 
             try {
                 const mocFile = getLatestMOCFile();
@@ -4715,7 +4759,7 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { nodeIds, nodes } = event.detail;
+            const { nodeIds, nodes } = event.detail as { nodeIds: string[]; nodes: Array<ZKNode & { originalNode?: ZKNode }> };
 
             try {
                 const mocFile = getLatestMOCFile();
@@ -4766,7 +4810,7 @@ window.addEventListener('resize', fitGraph);
             if (this.isMobileReadOnly()) {
                 return;
             }
-            const { nodeIds } = event.detail;
+            const { nodeIds } = event.detail as { nodeIds: string[] };
             await this.batchChangeNodeColor(nodeIds);
         });
 
@@ -8735,8 +8779,8 @@ window.addEventListener('resize', fitGraph);
         const cy = this.branchRenderer?.getCytoscapeInstance();
         if (cy) {
             const cyNode= cy.$('node').filter((node: cytoscape.NodeSingular) => {
-                const originalNode = node.data('originalNode');
-                return originalNode && (originalNode.IDStr === nodeId || originalNode.ID === nodeId);
+                const originalNode = dataAs<ZKNode | undefined>(node, 'originalNode');
+                return !!originalNode && (originalNode.IDStr === nodeId || originalNode.ID === nodeId);
             }).first() as cytoscape.NodeSingular;
             if (cyNode && cyNode.length > 0) {
                 const pos = cyNode.position();
@@ -8752,8 +8796,8 @@ window.addEventListener('resize', fitGraph);
         const cy = this.branchRenderer?.getCytoscapeInstance();
         if (cy) {
             const cyNode= cy.$('node').filter((node: cytoscape.NodeSingular) => {
-                const originalNode = node.data('originalNode');
-                return originalNode && (originalNode.IDStr === nodeId || originalNode.ID === nodeId);
+                const originalNode = dataAs<ZKNode | undefined>(node, 'originalNode');
+                return !!originalNode && (originalNode.IDStr === nodeId || originalNode.ID === nodeId);
             }).first() as cytoscape.NodeSingular;
             if (cyNode && cyNode.length > 0) {
                 return { width: cyNode.outerWidth(), height: cyNode.outerHeight() };
@@ -8933,7 +8977,7 @@ window.addEventListener('resize', fitGraph);
 
         const obstacles: Array<{ x: number; y: number; w: number; h: number }> = [];
         cy.$('node').forEach((node: cytoscape.NodeSingular) => {
-            const data = node.data();
+            const data = node.data() as CyData;
             if (data?.isGroup || data?.isPlaceholder) return;
             const original = data?.originalNode;
             const nid = original?.IDStr || original?.ID;
@@ -9170,8 +9214,8 @@ window.addEventListener('resize', fitGraph);
         const refId = referenceNodeId || this.getChildNodeIds(parentNodeId)[0];
         if (refId) {
             const refNode= cy.$('node').filter((n: cytoscape.NodeSingular) => {
-                const o = n.data('originalNode');
-                return o && (o.IDStr === refId || o.ID === refId);
+                const o = dataAs<ZKNode | undefined>(n, 'originalNode');
+                return !!o && (o.IDStr === refId || o.ID === refId);
             }).first() as cytoscape.NodeSingular;
             if (refNode && refNode.length > 0) {
                 colorKey = refNode.data('branchNodeBorder') || refNode.data('branchNodeBackground') || undefined;
@@ -9249,8 +9293,8 @@ window.addEventListener('resize', fitGraph);
         }
 
         const startNode= cy.$('node').filter((node: cytoscape.NodeSingular) => {
-            const originalNode = node.data('originalNode');
-            return originalNode && (originalNode.IDStr === parentNodeId || originalNode.ID === parentNodeId);
+            const originalNode = dataAs<ZKNode | undefined>(node, 'originalNode');
+            return !!originalNode && (originalNode.IDStr === parentNodeId || originalNode.ID === parentNodeId);
         }).first() as cytoscape.NodeSingular;
 
         if (!startNode || startNode.length === 0) {
@@ -9269,8 +9313,8 @@ window.addEventListener('resize', fitGraph);
         });
 
         const getColorKey = (node: cytoscape.NodeSingular): string => {
-            return node?.data?.('branchNodeBorder')
-                || node?.data?.('branchNodeBackground')
+            return dataStr(node, 'branchNodeBorder')
+                || dataStr(node, 'branchNodeBackground')
                 || '__default__';
         };
 
@@ -9312,7 +9356,7 @@ window.addEventListener('resize', fitGraph);
         const includePlaceholder = relayoutOptions.includePlaceholder;
         const cyNodeById = new Map<string, cytoscape.NodeSingular>();
         cy.$('node').forEach((node: cytoscape.NodeSingular) => {
-            const data = node.data();
+            const data = node.data() as CyData;
             const originalNode = data.originalNode;
             // 预览场景:指定的占位符也作为一等子节点参与排布,让兄弟为它让位。
             const isIncludedPlaceholder = !!(includePlaceholder && data.isPlaceholder && data.id === includePlaceholder.id);
@@ -9342,8 +9386,8 @@ window.addEventListener('resize', fitGraph);
         cy.$('edge').filter((edge: cytoscape.EdgeSingular) => edge.data('type') === 'parent').forEach((edge: cytoscape.EdgeSingular) => {
             const source = edge.source();
             const target = edge.target();
-            const sourceOriginal = source.data('originalNode');
-            const targetOriginal = target.data('originalNode');
+            const sourceOriginal = dataAs<ZKNode | undefined>(source, 'originalNode');
+            const targetOriginal = dataAs<ZKNode | undefined>(target, 'originalNode');
             const sourceId = sourceOriginal?.IDStr || sourceOriginal?.ID;
             const targetId = targetOriginal?.IDStr || targetOriginal?.ID;
             if (!sourceId || !targetId || !nodes[sourceId] || !nodes[targetId]) return;
@@ -9543,7 +9587,7 @@ window.addEventListener('resize', fitGraph);
         const savedPositions = mocData.nodePositions || {};
         const cyNodeById = new Map<string, cytoscape.NodeSingular>();
         cy.$('node').forEach((node: cytoscape.NodeSingular) => {
-            const originalNode = node.data('originalNode');
+            const originalNode = dataAs<ZKNode | undefined>(node, 'originalNode');
             if (!originalNode) return;
             if (originalNode.IDStr && !cyNodeById.has(originalNode.IDStr)) cyNodeById.set(originalNode.IDStr, node);
             if (originalNode.ID && !cyNodeById.has(originalNode.ID)) cyNodeById.set(originalNode.ID, node);
@@ -9995,8 +10039,9 @@ window.addEventListener('resize', fitGraph);
             });
         } catch (error) {
             console.error('Failed to add arrow relation:', error);
-            if (error.message.includes('已存在')) {
-                new Notice(error.message);
+            const errMsg = error instanceof Error ? error.message : String(error);
+            if (errMsg.includes('已存在')) {
+                new Notice(errMsg);
             } else {
                 throw error;
             }
@@ -10214,7 +10259,7 @@ window.addEventListener('resize', fitGraph);
         const positions: Record<string, { x: number; y: number }> = {};
 
         cy.nodes('[!isGroup]').forEach((node: cytoscape.NodeSingular) => {
-            const data = node.data();
+            const data = node.data() as CyData;
             const originalNode = data.originalNode;
             const nodeId = originalNode?.IDStr || originalNode?.ID;
             if (originalNode && nodeId) {
@@ -10927,7 +10972,7 @@ window.addEventListener('resize', fitGraph);
      */
     private registerScratchpadDocumentListeners(): void {
         const onPasteCenter = (e: CustomEvent) => {
-            const tempId = e?.detail?.tempId;
+            const tempId = (e?.detail as { tempId?: string } | undefined)?.tempId;
             if (!tempId) return;
             const found = this.plugin.scratchpad?.get(tempId);
             if (!found) return;
