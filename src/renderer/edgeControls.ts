@@ -1,6 +1,6 @@
 import * as cytoscape from 'cytoscape';
 import { Notice } from 'obsidian';
-import type { GraphData } from './types';
+import type { GraphData, CyData } from './types';
 import { OverlayScheduler } from './overlayScheduler';
 
 type GroupInfo = { id: string; label: string; nodeIds: string[] };
@@ -61,10 +61,10 @@ export class EdgeControls {
 			this.edgeEndpointRemoveHandler = null;
 		}
 		cy.nodes().forEach((node: cytoscape.NodeSingular) => {
-			const listeners = node.scratch('_zkConnectionHandleListeners');
+			const listeners = node.scratch('_zkConnectionHandleListeners') as { mouseover?: cytoscape.EventHandler; mouseout?: cytoscape.EventHandler } | undefined;
 			if (!listeners) return;
-			if (listeners.mouseover) node.off('mouseover', listeners.mouseover);
-			if (listeners.mouseout) node.off('mouseout', listeners.mouseout);
+			if (listeners.mouseover) node.off('mouseover', undefined, listeners.mouseover);
+			if (listeners.mouseout) node.off('mouseout', undefined, listeners.mouseout);
 			node.removeScratch('_zkConnectionHandleListeners');
 		});
 		this.clearTransientUpdaters();
@@ -120,10 +120,10 @@ export class EdgeControls {
 
 		cy.nodes('[!isPlaceholder]').forEach((node: cytoscape.NodeSingular) => {
 			// 自幂等:解绑该节点上一次的 hover 监听(独立调用时无 cleanupBindings 兜底),避免重复绑定。
-			const oldListeners = node.scratch('_zkConnectionHandleListeners');
+			const oldListeners = node.scratch('_zkConnectionHandleListeners') as { mouseover?: cytoscape.EventHandler; mouseout?: cytoscape.EventHandler } | undefined;
 			if (oldListeners) {
-				if (oldListeners.mouseover) node.off('mouseover', oldListeners.mouseover);
-				if (oldListeners.mouseout) node.off('mouseout', oldListeners.mouseout);
+				if (oldListeners.mouseover) node.off('mouseover', undefined, oldListeners.mouseover);
+				if (oldListeners.mouseout) node.off('mouseout', undefined, oldListeners.mouseout);
 			}
 			const handle = activeDocument.createElement('div');
 			handle.className = 'zk-connection-handle';
@@ -316,7 +316,7 @@ export class EdgeControls {
 		container.appendChild(controlPointContainer);
 
 		this.edgeControlSelectHandler = (evt: cytoscape.EventObject) => {
-			const edge = evt.target;
+			const edge = evt.target as cytoscape.EdgeSingular;
 			this.isEdgeSelected = true;
 			this.deps.getContainer()?.querySelectorAll('.zk-connection-handle').forEach((h: Element) => {
 				(h as HTMLElement).setCssStyles({
@@ -369,7 +369,7 @@ export class EdgeControls {
 		container.appendChild(handleContainer);
 
 		this.edgeEndpointSelectHandler = (evt: cytoscape.EventObject) => {
-			const edge = evt.target;
+			const edge = evt.target as cytoscape.EdgeSingular;
 			this.showEdgeEndpointHandles(edge, handleContainer);
 		};
 		cy.on('select', 'edge', this.edgeEndpointSelectHandler);
@@ -389,12 +389,12 @@ export class EdgeControls {
 		if (nodes.length === 0) return;
 
 		const validNodes = nodes.filter(node => {
-			const data = node.data();
-			return !data.isPlaceholder && !data.isGroup && data.originalNode;
+			const data = node.data() as CyData;
+			return !data.isPlaceholder && !data.isGroup && !!data.originalNode;
 		});
 		if (validNodes.length === 0) return;
 
-		const nodeIds = validNodes.map(node => node.data('originalNode').ID);
+		const nodeIds = validNodes.map(node => (node.data() as CyData).originalNode?.ID ?? '');
 		const existingGroups = this.findGroupsContainingNodes(nodeIds);
 		const container = this.deps.getContainer();
 
@@ -595,12 +595,12 @@ export class EdgeControls {
 		if (!cy || !graphContainer) return;
 
 		this.hideEdgeControlPoints(container);
-		const data = edge.data();
-		const sourceNode = cy.$id(data.source);
-		const targetNode = cy.$id(data.target);
+		const data = edge.data() as CyData;
+		const sourceNode = cy.$id(data.source ?? '');
+		const targetNode = cy.$id(data.target ?? '');
 		if (!sourceNode.length || !targetNode.length) return;
 
-		const distance = data.controlPointDistance !== undefined ? data.controlPointDistance : 0;
+		const distance = (data as CyData & { controlPointDistance?: number }).controlPointDistance ?? 0;
 		const controlPoint = activeDocument.createElement('div');
 		controlPoint.className = 'zk-edge-control-point';
 		controlPoint.setCssStyles({
@@ -749,9 +749,9 @@ export class EdgeControls {
 		if (!cy) return;
 		this.hideEdgeEndpointHandles(container);
 
-		const data = edge.data();
-		const sourceNode = cy.$id(data.source);
-		const targetNode = cy.$id(data.target);
+		const data = edge.data() as CyData;
+		const sourceNode = cy.$id(data.source ?? '');
+		const targetNode = cy.$id(data.target ?? '');
 		if (!sourceNode.length || !targetNode.length) return;
 
 		const originalTargetNode = targetNode.data().originalNode;
@@ -858,10 +858,10 @@ export class EdgeControls {
 			dragLine.setAttribute('stroke-dasharray', '6,4');
 			svgOverlay.appendChild(dragLine);
 
-			const edgeData = edge.data();
+			const edgeData = edge.data() as CyData;
 			const startPos = type === 'source'
-				? cy.$id(edgeData.target).renderedPosition()
-				: cy.$id(edgeData.source).renderedPosition();
+				? cy.$id(edgeData.target ?? '').renderedPosition()
+				: cy.$id(edgeData.source ?? '').renderedPosition();
 			dragLine.setAttribute('x1', startPos.x.toString());
 			dragLine.setAttribute('y1', startPos.y.toString());
 			dragLine.setAttribute('x2', startPos.x.toString());
@@ -879,10 +879,10 @@ export class EdgeControls {
 			const containerRect = graphContainer.getBoundingClientRect();
 			const mouseX = e.clientX - containerRect.left;
 			const mouseY = e.clientY - containerRect.top;
-			const edgeData = edge.data();
+			const edgeData = edge.data() as CyData;
 			const startPos = type === 'source'
-				? cy.$id(edgeData.target).renderedPosition()
-				: cy.$id(edgeData.source).renderedPosition();
+				? cy.$id(edgeData.target ?? '').renderedPosition()
+				: cy.$id(edgeData.source ?? '').renderedPosition();
 			dragLine.setAttribute('x1', startPos.x.toString());
 			dragLine.setAttribute('y1', startPos.y.toString());
 			dragLine.setAttribute('x2', mouseX.toString());
@@ -925,7 +925,7 @@ export class EdgeControls {
 			handle.setCssStyles({ cursor: 'grab' });
 
 			if (!newTargetNode || newTargetNode === sourceOrTargetNode) return;
-			const edgeData = edge.data();
+			const edgeData = edge.data() as CyData;
 			if (type === 'source') {
 				graphContainer.dispatchEvent(new CustomEvent('edge-source-changed', {
 					detail: {
@@ -946,7 +946,7 @@ export class EdgeControls {
 				new Notice('无法连接到有子节点的节点');
 				return;
 			}
-			const originalTargetNode = cy.$id(edgeData.target);
+			const originalTargetNode = cy.$id(edgeData.target ?? '');
 			const oldTargetID = originalTargetNode.data().originalNode.IDStr;
 			const newTargetID = newTargetData.originalNode.IDStr;
 			graphContainer.dispatchEvent(new CustomEvent('edge-target-changed', {
