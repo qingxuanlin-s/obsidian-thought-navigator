@@ -4,7 +4,6 @@ import { App, SuggestModal } from "obsidian";
 import { t } from "src/lang/helper";
 
 export default class chooseCustomNameModal extends SuggestModal<string> {
-	// eslint-disable-next-line no-unused-vars -- assigned by the constructor and read in onOpen; eslint cannot track the cross-method use
 	defaultName:string;
 
 	public constructor(app:App, defaultName: string) {
@@ -57,10 +56,8 @@ export default class chooseCustomNameModal extends SuggestModal<string> {
 		return [query];
 	}
 
-	// eslint-disable-next-line no-unused-vars, @typescript-eslint/no-empty-function -- intentionally empty: a plain text field with no suggestion rendering is wanted
 	public renderSuggestion(value: string, el: HTMLElement): void {}
 
-	// eslint-disable-next-line no-unused-vars, @typescript-eslint/no-empty-function -- placeholder override; the real handler is assigned in awaitSelection
 	public onChooseSuggestion(
 		item: string,
 		evt: MouseEvent | KeyboardEvent

@@ -1308,7 +1308,7 @@ export function bindEvents(this: any): void {
                         const bb = groupNode.boundingBox({ includeLabels: false, includeOverlays: false });
                         draggedNodeOriginalGroup = groupNode;
                         draggedNodeOriginalGroupModelBounds = { x1: bb.x1, y1: bb.y1, x2: bb.x2, y2: bb.y2 };
-                        try { node.move({ parent: null }); } catch (e) {}
+                        try { node.move({ parent: null }); } catch {}
                     }
                 }
             }
@@ -1535,7 +1535,7 @@ export function bindEvents(this: any): void {
                     // 记录脱组信息，合并到 node-position-changed 里原子保存，避免并发写竞态
                     pendingGroupLeave = { nodeId, groupId: sourceGroupId };
                 } else {
-                    try { node.move({ parent: draggedNodeOriginalGroup.id() }); } catch (e) {}
+                    try { node.move({ parent: draggedNodeOriginalGroup.id() }); } catch {}
                 }
 
                 draggedNodeOriginalGroup = null;
@@ -1642,7 +1642,7 @@ export function bindEvents(this: any): void {
                         if (!currentIds.includes(nodeId)) {
                             targetGroup.data('nodeIds', [...currentIds, nodeId]);
                         }
-                        try { node.move({ parent: targetGroupId }); } catch (e) {}
+                        try { node.move({ parent: targetGroupId }); } catch {}
                         pendingGroupJoin = { nodeId, groupId: targetGroupId };
                     }
                 }
@@ -1683,7 +1683,7 @@ export function bindEvents(this: any): void {
             // 纯点击（未发生移动）时，dragfree 不触发，在此恢复分组关系
             // 若实际发生了拖动，由 dragfree 负责处理，free 不干预
             if (draggedNodeOriginalGroup && !groupDragNodeActuallyMoved) {
-                try { node.move({ parent: draggedNodeOriginalGroup.id() }); } catch (e) {}
+                try { node.move({ parent: draggedNodeOriginalGroup.id() }); } catch {}
                 draggedNodeOriginalGroup.removeClass('group-exit-warning');
                 setGroupJoinPreview(null);
                 draggedNodeOriginalGroup = null;

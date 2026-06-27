@@ -25,7 +25,7 @@ export function resolveDroppedVaultFiles(app: App, event: DragEvent): TFile[] {
     for (const type of Array.from(dt.types || [])) {
         try {
             addCandidate(dt.getData(type));
-        } catch (_) {
+        } catch {
             // 某些类型不可读，忽略即可
         }
     }
@@ -48,7 +48,7 @@ export function resolveDroppedVaultFiles(app: App, event: DragEvent): TFile[] {
                         .replace(/^obsidian:\/\/open\?file=/, '')
                         .replace(/^obsidian:\/\/advanced-uri\?.*?file=/, '');
                 }
-            } catch (_) {
+            } catch {
                 normalized = normalized
                     .replace(/^obsidian:\/\/open\?file=/, '')
                     .replace(/^obsidian:\/\/advanced-uri\?.*?file=/, '');
@@ -109,7 +109,7 @@ export function resolveDroppedVaultFiles(app: App, event: DragEvent): TFile[] {
                 const pathLike = parsed.path || parsed.file || parsed.filePath || parsed.sourcePath;
                 if (typeof pathLike === 'string') stringCandidates.push(pathLike);
             }
-        } catch (_) {
+        } catch {
             // 非 JSON,忽略
         }
     }

@@ -6165,6 +6165,18 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 
 /* === 迁移自代码内联样式(obsidianmd/no-static-styles-assignment 合规) === */
 .edge-label-editor { backdrop-filter: blur(8px); }
+.zk-group-glass {
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.zk-group-glass-label {
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+.zk-node-badge {
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+}
 .zk-moc-fullscreen-exit { -webkit-tap-highlight-color: transparent; }
 [data-role="embed-content"] { scrollbar-width: thin; }
 @keyframes zk-rec-blink { 50% { opacity: 0.25; } }

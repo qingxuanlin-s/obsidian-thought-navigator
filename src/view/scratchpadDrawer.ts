@@ -138,7 +138,10 @@ export class ScratchpadDrawer {
         this.scheduleIdle();
     }
 
-    toggle(): void { this.isOpen ? this.close() : this.open(); }
+    toggle(): void {
+        if (this.isOpen) this.close();
+        else this.open();
+    }
 
     open(): void {
         if (this.isOpen) return;

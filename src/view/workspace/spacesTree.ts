@@ -62,7 +62,8 @@ export class SpacesTree {
     }
 
     private toggle(key: string) {
-        this.collapsed.has(key) ? this.collapsed.delete(key) : this.collapsed.add(key);
+        if (this.collapsed.has(key)) this.collapsed.delete(key);
+        else this.collapsed.add(key);
         this.render();
     }
     private isOpen(key: string) { return !this.collapsed.has(key); }
