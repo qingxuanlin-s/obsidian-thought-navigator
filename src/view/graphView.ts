@@ -1,6 +1,6 @@
 import ZKNavigationPlugin from "main";
 import { ExtraButtonComponent, FileView, ItemView, Notice, TFile, WorkspaceLeaf, debounce, setIcon } from "obsidian";
-import { ZKNode, ZK_INDEX_TYPE, ZK_NAVIGATION } from "./indexView";
+import { ZKIndexView, ZKNode, ZK_INDEX_TYPE, ZK_NAVIGATION } from "./indexView";
 import { t } from "src/lang/helper";
 import { convertMOCToZKNodes, getMOCFilesInFolder, isMocFile, parseMOCStructure, ReverseRelation } from "src/utils/utils";
 
@@ -106,7 +106,7 @@ export class ZKGraphView extends ItemView {
     }
 
     private isIndexViewActive(): boolean {
-        return this.app.workspace.activeLeaf?.view.getViewType() === ZK_INDEX_TYPE;
+        return this.app.workspace.getActiveViewOfType(ZKIndexView) !== null;
     }
 
     async onOpen() {

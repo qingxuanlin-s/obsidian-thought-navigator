@@ -1,4 +1,5 @@
-import { Component, Platform, finishRenderMath, renderMath, setIcon } from 'obsidian';
+import type { CytoscapeRenderer } from './CytoscapeRenderer';
+import { Component, Platform, TFile, finishRenderMath, renderMath, setIcon } from 'obsidian';
 import type * as cytoscape from 'cytoscape';
 import { ZKNode } from 'src/view/indexView';
 import { CrossDomainLink } from 'src/utils/utils';
@@ -72,7 +73,7 @@ function modelToRendered(value: number, zoom: number, panValue: number): number 
 	return value * zoom + panValue;
 }
 
-export function renderNodeBadges(this: any): void {
+export function renderNodeBadges(this: CytoscapeRenderer): void {
         if (!this.cy || !this.container) return;
 
         // 性能埋点(window.__zkPerf=true):细分 renderNodeBadges 内部各子系统耗时
@@ -1726,7 +1727,7 @@ export function renderNodeBadges(this: any): void {
      *   2) 快路径检测 —— 无 MD 语法时跳过 MarkdownRenderer，直接 textContent
      *   3) 批量尺寸回写 —— Promise.all 完成后 cy.batch 一次性刷新节点宽高
      */
-function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badgeUpdaters: BadgeUpdater[], incIds: Set<string> | null = null): void {
+function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTMLElement, badgeUpdaters: BadgeUpdater[], incIds: Set<string> | null = null): void {
         if (!this.cy) return;
         const app = this.currentOptions?.app;
         if (!app) return;
@@ -1934,7 +1935,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                             const forceTab = e.ctrlKey || e.metaKey;
                             const openLink = this.currentOptions?.openLink;
                             if (openLink) openLink(linkText, sourcePath, forceTab);
-                            else app?.workspace?.openLinkText?.(linkText, sourcePath, forceTab ? 'tab' : undefined);
+                            else void app?.workspace?.openLinkText?.(linkText, sourcePath, forceTab ? 'tab' : undefined);
                         });
                         a.addEventListener('mouseover', (e: MouseEvent) => {
                             if (!linkText) return;
@@ -1961,7 +1962,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
 
                         const file = app?.metadataCache?.getFirstLinkpathDest?.(linkText, sourcePath)
                             || app?.vault?.getAbstractFileByPath?.(pathWithoutSubpath);
-                        if (!file) return createInternalLink(rawTarget);
+                        if (!(file instanceof TFile)) return createInternalLink(rawTarget);
 
                         if (isExcalidraw) {
                             const preview = activeDocument.createElement('div');
@@ -1972,7 +1973,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                                 if (!(e.ctrlKey || e.metaKey)) return;
                                 e.preventDefault();
                                 e.stopPropagation();
-                                app?.workspace?.openLinkText?.(linkText, sourcePath, 'tab');
+                                void app?.workspace?.openLinkText?.(linkText, sourcePath, 'tab');
                             };
                             preview.addEventListener('mousedown', openExcalidraw);
                             preview.addEventListener('click', openExcalidraw);
@@ -2005,7 +2006,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                             audio.addEventListener('mousedown', (e: MouseEvent) => {
                                 if (!(e.ctrlKey || e.metaKey)) return;
                                 e.preventDefault();
-                                app?.workspace?.openLinkText?.(linkText, sourcePath, 'tab');
+                                void app?.workspace?.openLinkText?.(linkText, sourcePath, 'tab');
                             });
                             return audio;
                         }
@@ -2049,7 +2050,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                             if (!(e.ctrlKey || e.metaKey)) return;
                             e.preventDefault();
                             e.stopPropagation();
-                            app?.workspace?.openLinkText?.(linkText, sourcePath, 'tab');
+                            void app?.workspace?.openLinkText?.(linkText, sourcePath, 'tab');
                         };
                         img.addEventListener('mousedown', openImage);
                         img.addEventListener('click', openImage);
@@ -2364,7 +2365,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
         });
     }
 
-function addCollapseToggleHandle(this: any): void {
+function addCollapseToggleHandle(this: CytoscapeRenderer): void {
         if (!this.cy || !this.container) return;
 
         if (this.collapseHandleCleanup) {
@@ -2463,7 +2464,7 @@ function addCollapseToggleHandle(this: any): void {
                 const rawLeft = bb.x1 - size - gap;
                 const left = rawLeft < 4 ? bb.x1 + 4 : rawLeft;
                 const rawTop = bb.y1 + (bb.h - size) / 2;
-                const maxTop = Math.max(4, this.container.clientHeight - size - 4);
+                const maxTop = Math.max(4, (this.container?.clientHeight ?? 0) - size - 4);
                 const top = Math.min(Math.max(rawTop, 4), maxTop);
                 const isCollapsed = this.collapsedNodeIds.has(originalId);
                 // 宽限期内(hideTimer 未到期)保持显示:手柄在节点框左外侧,鼠标从节点移到手柄

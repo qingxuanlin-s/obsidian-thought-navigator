@@ -1,3 +1,4 @@
+import type { CytoscapeRenderer } from './CytoscapeRenderer';
 import { App, Component, Notice, TFile, moment, setIcon } from 'obsidian';
 import type * as cytoscape from 'cytoscape';
 import { ZKNode } from 'src/view/indexView';
@@ -65,7 +66,7 @@ function getLivePreviewLinkText(target: EventTarget | null): string {
     return raw.trim();
 }
 
-export function attachInlineTextSelectionToolbar(this: any, inputEl: HTMLInputElement | HTMLTextAreaElement): {
+export function attachInlineTextSelectionToolbar(this: CytoscapeRenderer, inputEl: HTMLInputElement | HTMLTextAreaElement): {
         destroy: () => void;
         containsTarget: (target: Node | null) => boolean;
     } {
@@ -394,7 +395,7 @@ export function attachInlineTextSelectionToolbar(this: any, inputEl: HTMLInputEl
         };
     }
 
-export function attachContentSelectionToolbar(this: any, rootEl: HTMLElement,
+export function attachContentSelectionToolbar(this: CytoscapeRenderer, rootEl: HTMLElement,
         applyTransform: (formatter: (selectedText: string) => string) => boolean
     ): {
         destroy: () => void;
@@ -716,7 +717,7 @@ export function attachContentSelectionToolbar(this: any, rootEl: HTMLElement,
     /**
      * 显示内联边标签编辑器
      */
-export function showInlineEdgeLabelEditor(this: any, edge: cytoscape.EdgeSingular): void {
+export function showInlineEdgeLabelEditor(this: CytoscapeRenderer, edge: cytoscape.EdgeSingular): void {
         if (!this.cy || !this.container || this.isReadOnlyMode()) return;
 
         const data = edge.data();
@@ -878,7 +879,7 @@ export function showInlineEdgeLabelEditor(this: any, edge: cytoscape.EdgeSingula
     /**
      * 显示占位符节点的内联编辑器
      */
-export function showInlineNodeEditor(this: any, node: cytoscape.NodeSingular, options?: { cursor?: 'select' | 'end' }): void {
+export function showInlineNodeEditor(this: CytoscapeRenderer, node: cytoscape.NodeSingular, options?: { cursor?: 'select' | 'end' }): void {
         if (!this.cy || !this.container || this.isReadOnlyMode()) return;
         const cursorMode = options?.cursor ?? 'end';
 
@@ -1377,7 +1378,7 @@ export function showInlineNodeEditor(this: any, node: cytoscape.NodeSingular, op
      * 文本节点原地编辑（Live Preview 版）。
      * 若内部 API 反射失败，自动降级到 legacy textarea 实现。
      */
-export function startInPlaceTextEdit(this: any, node: cytoscape.NodeSingular,
+export function startInPlaceTextEdit(this: CytoscapeRenderer, node: cytoscape.NodeSingular,
         originalNode: ZKNode,
         entry: {
             el: HTMLElement;
@@ -1479,7 +1480,7 @@ export function startInPlaceTextEdit(this: any, node: cytoscape.NodeSingular,
                 window.open(linkText, '_blank');
                 return;
             }
-            this.currentOptions?.app?.workspace?.openLinkText?.(linkText, sourcePath, 'tab');
+            void this.currentOptions?.app?.workspace?.openLinkText?.(linkText, sourcePath, 'tab');
         };
         const pointerEventsToStop = [
             'mousedown', 'mousemove', 'mouseup',
@@ -1679,9 +1680,11 @@ export function startInPlaceTextEdit(this: any, node: cytoscape.NodeSingular,
             this.cy?.off('render zoom pan', onRender);
         };
 
+        const app = this.currentOptions?.app;
+        if (!app) return;
         try {
             mdEditor = new EmbeddableMarkdownEditor({
-                app: this.currentOptions?.app,
+                app: app,
                 containerEl: editorHost,
                 initialValue: rawSource,
                 sourcePath,
@@ -1697,12 +1700,12 @@ export function startInPlaceTextEdit(this: any, node: cytoscape.NodeSingular,
                 },
             });
             (editorHost as HTMLElement & { _mdEditor?: EmbeddableMarkdownEditor | null })._mdEditor = mdEditor;
-            slashMenu = attachSlashCommandMenu(this.currentOptions?.app, () => mdEditor, editorHost, (cmd) => {
+            slashMenu = attachSlashCommandMenu(app, () => mdEditor, editorHost, (cmd) => {
                 // 录音类命令拦截:改用自带录音(不打开文件/不切视图),录完插入当前编辑框
                 const hay = `${cmd.id} ${cmd.name}`.toLowerCase();
                 const isAudio = hay.includes('audio-recorder') || (hay.includes('record') && hay.includes('audio'));
                 if (!isAudio || /stop/.test(hay)) return false; // 仅拦截"开始录音"
-                startNodeAudioRecording(this.currentOptions?.app, () => mdEditor, this.container, sourcePath, originalNode.IDStr);
+                startNodeAudioRecording(app, () => mdEditor, this.container, sourcePath, originalNode.IDStr);
                 return true;
             });
             if (options?.cursor === 'end') {
@@ -1732,7 +1735,7 @@ export function startInPlaceTextEdit(this: any, node: cytoscape.NodeSingular,
      * 占位符节点原地编辑（CM6 版），与文本节点编辑体验统一。
      * 提交时根据内容路由：[[xxx]] → 文件节点，![[xxx]] → 嵌入节点，其他 → 文本节点。
      */
-export function startPlaceholderInPlaceEdit(this: any, node: cytoscape.NodeSingular, options?: { cursor?: 'select' | 'end' }): void {
+export function startPlaceholderInPlaceEdit(this: CytoscapeRenderer, node: cytoscape.NodeSingular, options?: { cursor?: 'select' | 'end' }): void {
         if (!this.cy || !this.container) return;
 
         const data = node.data();
@@ -1835,7 +1838,7 @@ export function startPlaceholderInPlaceEdit(this: any, node: cytoscape.NodeSingu
                 window.open(linkText, '_blank');
                 return;
             }
-            this.currentOptions?.app?.workspace?.openLinkText?.(linkText, sourcePath, 'tab');
+            void this.currentOptions?.app?.workspace?.openLinkText?.(linkText, sourcePath, 'tab');
         };
         const pointerEventsToStop = [
             'mousedown', 'mousemove', 'mouseup',
@@ -2011,9 +2014,11 @@ export function startPlaceholderInPlaceEdit(this: any, node: cytoscape.NodeSingu
 
         const sourcePath = this.currentData?.metadata?.currentFile || '';
 
+        const app = this.currentOptions?.app;
+        if (!app) return;
         try {
             mdEditor = new EmbeddableMarkdownEditor({
-                app: this.currentOptions?.app,
+                app: app,
                 containerEl: editorHost,
                 initialValue: isDraft ? originalLabel : '',
                 sourcePath,
@@ -2028,12 +2033,12 @@ export function startPlaceholderInPlaceEdit(this: any, node: cytoscape.NodeSingu
                     if (!isSaved) saveEdit();
                 },
             });
-            slashMenu = attachSlashCommandMenu(this.currentOptions?.app, () => mdEditor, editorHost, (cmd) => {
+            slashMenu = attachSlashCommandMenu(app, () => mdEditor, editorHost, (cmd) => {
                 // 录音类命令拦截:新建节点尚未落盘,录完直接插入编辑框,随保存一起落地
                 const hay = `${cmd.id} ${cmd.name}`.toLowerCase();
                 const isAudio = hay.includes('audio-recorder') || (hay.includes('record') && hay.includes('audio'));
                 if (!isAudio || /stop/.test(hay)) return false;
-                startNodeAudioRecording(this.currentOptions?.app, () => mdEditor, this.container, sourcePath, '');
+                startNodeAudioRecording(app, () => mdEditor, this.container, sourcePath, '');
                 return true;
             });
             if (options?.cursor === 'end') {
@@ -2059,7 +2064,7 @@ export function startPlaceholderInPlaceEdit(this: any, node: cytoscape.NodeSingu
     /**
      * 占位符节点 textarea 降级编辑（CM6 不可用时的后备）。
      */
-export function startPlaceholderTextareaFallback(this: any, node: cytoscape.NodeSingular, options?: { cursor?: 'select' | 'end' }): void {
+export function startPlaceholderTextareaFallback(this: CytoscapeRenderer, node: cytoscape.NodeSingular, options?: { cursor?: 'select' | 'end' }): void {
         if (!this.cy || !this.container) return;
         const data = node.data();
 
@@ -2195,7 +2200,7 @@ export function startPlaceholderTextareaFallback(this: any, node: cytoscape.Node
     /**
      * 文本节点原地编辑（legacy textarea fallback）。
      */
-export function startInPlaceTextEditLegacy(this: any, node: cytoscape.NodeSingular,
+export function startInPlaceTextEditLegacy(this: CytoscapeRenderer, node: cytoscape.NodeSingular,
         originalNode: ZKNode,
         entry: {
             el: HTMLElement;
@@ -2501,7 +2506,7 @@ export function startInPlaceTextEditLegacy(this: any, node: cytoscape.NodeSingul
         };
     }
 
-export function ensureNodeVisibleInViewport(this: any, node: cytoscape.NodeSingular, padding = 40): void {
+export function ensureNodeVisibleInViewport(this: CytoscapeRenderer, node: cytoscape.NodeSingular, padding = 40): void {
         if (!this.cy || !this.container || !node || node.length === 0) return;
 
         // 文本节点用 markdown overlay 渲染，Canvas label 透明但仍参与默认 boundingBox。
@@ -2539,7 +2544,7 @@ export function ensureNodeVisibleInViewport(this: any, node: cytoscape.NodeSingu
     /**
      * 检查 [[ 链接模式
      */
-export function checkForLinkPattern(this: any, textarea: HTMLTextAreaElement,
+export function checkForLinkPattern(this: CytoscapeRenderer, textarea: HTMLTextAreaElement,
         node: cytoscape.NodeSingular,
         boundingBox: cytoscape.BoundingBox12 & cytoscape.BoundingBoxWH,
         suggesterPopoverRef: { value: HTMLElement | null },
@@ -2569,7 +2574,7 @@ export function checkForLinkPattern(this: any, textarea: HTMLTextAreaElement,
     /**
      * 显示链接建议器
      */
-export function showLinkSuggester(this: any, textarea: HTMLTextAreaElement,
+export function showLinkSuggester(this: CytoscapeRenderer, textarea: HTMLTextAreaElement,
         node: cytoscape.NodeSingular,
         boundingBox: cytoscape.BoundingBox12 & cytoscape.BoundingBoxWH,
         suggesterPopoverRef: { value: HTMLElement | null },
@@ -2579,8 +2584,8 @@ export function showLinkSuggester(this: any, textarea: HTMLTextAreaElement,
         // 获取所有 markdown + moc 文件
         const app = this.currentOptions?.app;
         if (!app) return;
-        const files = app.vault.getAllLoadedFiles().filter((f: TFile) =>
-            f.path.endsWith('.md') || f.path.endsWith('.moc')
+        const files = app.vault.getAllLoadedFiles().filter((f): f is TFile =>
+            f instanceof TFile && (f.path.endsWith('.md') || f.path.endsWith('.moc'))
         );
 
         // 创建 suggester popover

@@ -70,7 +70,7 @@ export class WorkspacePanel {
     constructor(parent: HTMLElement, deps: WorkspacePanelDeps) {
         this.deps = deps;
         this.root = parent.createDiv({ cls: 'zkw' });
-        try { this.railCollapsed = localStorage.getItem(LS_RAIL) === '1'; } catch {}
+        try { this.railCollapsed = deps.app.loadLocalStorage(LS_RAIL) === '1'; } catch {}
 
         this.taskStore = new ProjectTaskStore(deps.app);
         this.taskStore.onChange = () => this.refresh();
@@ -139,7 +139,7 @@ export class WorkspacePanel {
     /** 收起/展开整个左侧 rail 面板 */
     private toggleRail() {
         this.railCollapsed = !this.railCollapsed;
-        try { localStorage.setItem(LS_RAIL, this.railCollapsed ? '1' : '0'); } catch {}
+        try { this.deps.app.saveLocalStorage(LS_RAIL, this.railCollapsed ? '1' : '0'); } catch {}
         this.applyRailCollapsed();
     }
 
@@ -269,8 +269,8 @@ export class WorkspacePanel {
     private navigateInline(target: OpenTarget) {
         if (!this.tree) return;
         this.current = target;
-        if (target.kind !== 'home') { try { localStorage.setItem(LS_LAST, JSON.stringify(target)); } catch {} }
-        try { localStorage.setItem(LS_OPEN, JSON.stringify(target)); } catch {}
+        if (target.kind !== 'home') { try { this.deps.app.saveLocalStorage(LS_LAST, JSON.stringify(target)); } catch {} }
+        try { this.deps.app.saveLocalStorage(LS_OPEN, JSON.stringify(target)); } catch {}
         this.tree.setCurrent(target);
         this.tree.revealTarget(target);
         this.renderCenter();
@@ -354,7 +354,7 @@ export class WorkspacePanel {
 
     private restoreSession() {
         let target: OpenTarget | null = null;
-        try { const raw = localStorage.getItem(LS_OPEN); if (raw) target = JSON.parse(raw); } catch {}
+        try { const raw = this.deps.app.loadLocalStorage(LS_OPEN); if (raw) target = JSON.parse(raw); } catch {}
         if (target && target.kind !== 'home' && 'id' in target && !this.deps.store.getNode(target.id)) target = null;
         if (!target) {
             const first = this.deps.store.getSpaces()[0];
@@ -367,7 +367,7 @@ export class WorkspacePanel {
 
     private lastTargetNode(): WorkspaceNode | null {
         try {
-            const raw = localStorage.getItem(LS_LAST);
+            const raw = this.deps.app.loadLocalStorage(LS_LAST);
             if (!raw) return null;
             const t = JSON.parse(raw) as OpenTarget;
             if (t.kind === 'home' || !('id' in t)) return null;

@@ -17,6 +17,9 @@ export default tseslint.config(
 		languageOptions: {
 			parserOptions: {
 				sourceType: 'module',
+				// 类型感知 lint:no-unsafe-* / no-floating-promises 需要类型信息才生效
+				projectService: true,
+				tsconfigRootDir: import.meta.dirname,
 			},
 		},
 		plugins: {
@@ -32,14 +35,15 @@ export default tseslint.config(
 			'no-constant-condition': ['error', { checkLoops: false }],
 			'@typescript-eslint/no-this-alias': 'off',
 
-			'@typescript-eslint/no-explicit-any': 'off',
-			'@typescript-eslint/no-unsafe-assignment': 'off',
-			'@typescript-eslint/no-unsafe-member-access': 'off',
-			'@typescript-eslint/no-unsafe-argument': 'off',
-			'@typescript-eslint/no-unsafe-call': 'off',
-			'@typescript-eslint/no-unsafe-return': 'off',
+			// campaign:逐处清理中,设 warn 让 npm run lint 列出全部待清点而不阻断构建
+			'@typescript-eslint/no-explicit-any': 'warn',
+			'@typescript-eslint/no-unsafe-assignment': 'warn',
+			'@typescript-eslint/no-unsafe-member-access': 'warn',
+			'@typescript-eslint/no-unsafe-argument': 'warn',
+			'@typescript-eslint/no-unsafe-call': 'warn',
+			'@typescript-eslint/no-unsafe-return': 'warn',
 			'@typescript-eslint/no-misused-promises': 'off',
-			'@typescript-eslint/no-floating-promises': 'off',
+			'@typescript-eslint/no-floating-promises': 'warn',
 			'@typescript-eslint/await-thenable': 'off',
 			'@typescript-eslint/no-unnecessary-type-assertion': 'off',
 			'@typescript-eslint/no-non-null-assertion': 'off',

@@ -1,4 +1,4 @@
-import { Component, MarkdownRenderer, Menu, Notice, TFile, setIcon } from "obsidian";
+import { App, Component, MarkdownRenderer, Menu, Notice, TFile, setIcon } from "obsidian";
 import { WSMocNode, WSProjectNode, WSNoteNode, WorkspaceNode } from "src/types/workspace";
 import { nextStatus } from "src/workspace/WorkspaceStore";
 import { MdTask, prependTask, toggleTask, removeTask, insertSubtask, setTaskNote, removeTaskNote, setTaskText, taskMetaSuffix, parseTaskText, buildTaskText, moveTask, processFile, addTaskRefs, removeTaskRef, decodeNoteNewlines } from "src/workspace/projectTasks";
@@ -168,8 +168,8 @@ function renderActions(body: HTMLElement, ctx: RenderCtx, p: WSProjectNode): voi
     const abs = p.filePath ? ctx.app.vault.getAbstractFileByPath(p.filePath) : null;
     const file: TFile | null = abs instanceof TFile ? abs : null;
     const tasks = file ? ctx.tasks.get(p.filePath) : null;
-    const hideDone = readLS(LS_HIDE_DONE) === '1';
-    const sortMode = (readLS(LS_SORT) as SortMode) || 'doc';
+    const hideDone = readLS(ctx.app, LS_HIDE_DONE) === '1';
+    const sortMode = (readLS(ctx.app, LS_SORT) as SortMode) || 'doc';
 
     // ── 标题行:排序下拉 + 隐藏已完成开关 ──
     const sec = body.createDiv({ cls: 'dsec row' });
@@ -180,9 +180,9 @@ function renderActions(body: HTMLElement, ctx: RenderCtx, p: WSProjectNode): voi
         sortSel.setAttribute('title', t('ws sort by'));
         ([['doc', t('ws sort doc')], ['due', t('ws sort due')], ['start', t('ws sort start')]] as [SortMode, string][])
             .forEach(([v, l]) => { const o = sortSel.createEl('option', { value: v, text: l }); if (v === sortMode) o.selected = true; });
-        sortSel.onchange = () => { try { localStorage.setItem(LS_SORT, sortSel.value); } catch {} ctx.refresh(); };
+        sortSel.onchange = () => { try { ctx.app.saveLocalStorage(LS_SORT, sortSel.value); } catch {} ctx.refresh(); };
         const toggle = ctls.createSpan({ cls: 'dsec-add' + (hideDone ? ' on' : ''), text: t(hideDone ? 'ws action show done' : 'ws action hide done') });
-        toggle.onclick = () => { try { localStorage.setItem(LS_HIDE_DONE, hideDone ? '0' : '1'); } catch {} ctx.refresh(); };
+        toggle.onclick = () => { try { ctx.app.saveLocalStorage(LS_HIDE_DONE, hideDone ? '0' : '1'); } catch {} ctx.refresh(); };
     }
 
     // ── 新增任务(弹框)+ 打开笔记(置顶)──
@@ -213,7 +213,7 @@ type SortMode = 'doc' | 'due' | 'start';
 /** NEXT ACTION 的 UI 偏好(全局,跨项目/重载留存) */
 const LS_HIDE_DONE = 'zkw.task.hideDone';
 const LS_SORT = 'zkw.task.sort';
-function readLS(k: string): string | null { try { return localStorage.getItem(k); } catch { return null; } }
+function readLS(app: App, k: string): string | null { try { return app.loadLocalStorage(k); } catch { return null; } }
 /** 当前正在拖动的任务(仅默认顺序下启用,跨行共享) */
 let draggedTask: MdTask | null = null;
 

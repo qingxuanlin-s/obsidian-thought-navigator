@@ -2,7 +2,7 @@ import { toPng } from "html-to-image";
 import type * as cytoscape from 'cytoscape';
 type CrossDomainNodeLike = { IDStr?: string; nodeID?: string; displayText?: string; title?: string; alias?: string; target?: string; file?: TFile | null; filePath?: string };
 import ZKNavigationPlugin from "main";
-import { ExtraButtonComponent, FileView, Menu, Modal, Notice, Platform, Scope, Setting, TAbstractFile, TFile, WorkspaceLeaf, debounce, moment, setIcon, setTooltip } from "obsidian";
+import { ExtraButtonComponent, FileView, Menu, Modal, Notice, Platform, Scope, Setting, TFile, WorkspaceLeaf, debounce, moment, setIcon, setTooltip } from "obsidian";
 import { t } from "src/lang/helper";
 import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
 import { AddFreeNodeModal } from "src/modal/addFreeNodeModal";
@@ -3423,7 +3423,7 @@ window.addEventListener('resize', fitGraph);
                     }
                 })();
                 this.pendingNodePositionSavePromise = savePromise;
-                savePromise.finally(() => {
+                void savePromise.finally(() => {
                     if (this.pendingNodePositionSavePromise === savePromise) {
                         this.pendingNodePositionSavePromise = null;
                     }
@@ -8428,12 +8428,7 @@ window.addEventListener('resize', fitGraph);
         try {
             const file = this.app.vault.getAbstractFileByPath(node.file.path);
             if (file) {
-                const fileManager = this.app.fileManager as { trashFile?(file: TAbstractFile): Promise<void> };
-                if (typeof fileManager.trashFile === 'function') {
-                    await fileManager.trashFile(file);
-                } else {
-                    await this.app.vault.trash(file, true);
-                }
+                await this.app.fileManager.trashFile(file);
             }
         } catch (error) {
             console.error('Failed to delete image file:', error);
@@ -8516,12 +8511,7 @@ window.addEventListener('resize', fitGraph);
 
         for (const file of orphans) {
             try {
-                const fileManager = this.app.fileManager as { trashFile?(file: TAbstractFile): Promise<void> };
-                if (typeof fileManager.trashFile === 'function') {
-                    await fileManager.trashFile(file);
-                } else {
-                    await this.app.vault.trash(file, true);
-                }
+                await this.app.fileManager.trashFile(file);
             } catch (error) {
                 console.error('Failed to delete orphaned attachment:', file?.path, error);
             }
@@ -8682,7 +8672,7 @@ window.addEventListener('resize', fitGraph);
                 wikiLink: savedFile.path,
                 nodeID: nodeID,
                 relationText: '',
-                file: savedFile as TFile,
+                file: savedFile,
                 isTextOnly: false,
                 isEmbed: true
             });

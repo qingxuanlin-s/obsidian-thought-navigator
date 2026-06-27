@@ -77,7 +77,7 @@ export class CrossDomainNodeModal extends FuzzySuggestModal<CrossDomainModalNode
     }
 
     onOpen() {
-        super.onOpen();
+        void super.onOpen();
         // 在模态框底部添加设置区域
         const promptContainer = this.modalEl.querySelector('.prompt');
         if (promptContainer) {

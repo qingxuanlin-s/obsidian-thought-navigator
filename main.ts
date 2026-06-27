@@ -807,7 +807,7 @@ export default class ZKNavigationPlugin extends Plugin {
                         active: typeof openState.active === 'boolean' ? openState.active : true,
                     });
                     if (openState.active !== false) {
-                        plugin.app.workspace.revealLeaf(this);
+                        void plugin.app.workspace.revealLeaf(this);
                 }
                 plugin.app.workspace.trigger('zk-navigation:refresh-index-graph');
                 return;
@@ -955,7 +955,7 @@ export default class ZKNavigationPlugin extends Plugin {
                         state: { file: file.path },
                         active: true,
                     });
-                    this.app.workspace.revealLeaf(reuseLeaf);
+                    void this.app.workspace.revealLeaf(reuseLeaf);
                     // 已经把焦点切到现有思维树视图后，再关闭刚被 Obsidian 打开的 .moc markdown 标签
                     if (activeLeaf?.view?.getViewType() === 'markdown') {
                         activeLeaf.detach();
@@ -969,7 +969,7 @@ export default class ZKNavigationPlugin extends Plugin {
                         state: { file: file.path },
                         active: true,
                     });
-                    this.app.workspace.revealLeaf(activeLeaf);
+                    void this.app.workspace.revealLeaf(activeLeaf);
                 } else {
                     await this.openIndexView();
                 }
@@ -1191,7 +1191,7 @@ export default class ZKNavigationPlugin extends Plugin {
             await this.app.workspace.getLeaf('tab')?.setViewState({ type: ZK_WORKSPACE_TYPE, active: true });
         }
         const leaf = this.app.workspace.getLeavesOfType(ZK_WORKSPACE_TYPE)[0];
-        if (leaf) this.app.workspace.revealLeaf(leaf);
+        if (leaf) void this.app.workspace.revealLeaf(leaf);
     }
 
     async openIndexView() {
@@ -1215,7 +1215,7 @@ export default class ZKNavigationPlugin extends Plugin {
             await indexLeaves[0].setViewState(viewState);
         }
         
-        this.app.workspace.revealLeaf(
+        void this.app.workspace.revealLeaf(
          this.app.workspace.getLeavesOfType(ZK_INDEX_TYPE)[0]
          
         );
@@ -1303,7 +1303,7 @@ export default class ZKNavigationPlugin extends Plugin {
         });
         
        }
-       this.app.workspace.revealLeaf(
+       void this.app.workspace.revealLeaf(
         this.app.workspace.getLeavesOfType(ZK_GRAPH_TYPE)[0]
        );
        this.app.workspace.trigger("zk-navigation:refresh-local-graph");
@@ -1316,7 +1316,7 @@ export default class ZKNavigationPlugin extends Plugin {
              active:true,
          });
         }
-        this.app.workspace.revealLeaf(
+        void this.app.workspace.revealLeaf(
          this.app.workspace.getLeavesOfType(ZK_RECENT_TYPE)[0]
         );
         this.app.workspace.trigger("zk-navigation:refresh-recent-view");

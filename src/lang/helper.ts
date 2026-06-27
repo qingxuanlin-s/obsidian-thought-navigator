@@ -1,3 +1,4 @@
+import { getLanguage } from "obsidian";
 import zh from "./locale/zh";
 import en from "./locale/en";
 
@@ -17,7 +18,7 @@ function normalizeLanguage(lang: unknown): keyof typeof localeMap | null {
 }
 
 function getLocale(): Partial<typeof en> {
-    const lang = normalizeLanguage(window.localStorage.getItem("language"))
+    const lang = normalizeLanguage(getLanguage())
         || normalizeLanguage(navigator.language)
         || "en";
     return localeMap[lang] || en;

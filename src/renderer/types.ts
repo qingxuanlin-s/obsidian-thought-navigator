@@ -21,6 +21,37 @@ export interface Edge {
     crossDomainSourceNodeId?: string;  // 跨领域边的源节点 ID（= ext metadata 中 cross_domain_links 的键，用于标签持久化定位）
 }
 
+/**
+ * cytoscape 元素 data() 的形状(节点与边合用一个结构,字段随元素种类而异故多为可选)。
+ * 用于把 `node.data()` / `edge.data()` 的 any 收成结构化类型。
+ */
+export interface CyData {
+    id: string;
+    label?: string;
+    title?: string;
+    displayText?: string;
+    originalNode?: ZKNode;
+    isGroup?: boolean;
+    isPlaceholder?: boolean;
+    isCrossDomain?: boolean;
+    isDraft?: boolean;
+    isDraftEdge?: boolean;
+    isDraftRelation?: boolean;
+    isFreeNode?: boolean;
+    parent?: string;
+    nodeIds?: string[];
+    draftBatchId?: string;
+    relKey?: string;
+    // 边字段
+    source?: string;
+    target?: string;
+    type?: string;
+    originalSource?: string;
+    originalTarget?: string;
+    crossDomainLink?: CrossDomainLink;
+    crossDomainSourceNodeId?: string;
+}
+
 export interface GraphMetadata {
     currentFile: string;
     timestamp: number;

@@ -143,22 +143,23 @@ export interface TextMdOverlayEntry {
  * 提供高性能的图形可视化和增量更新支持
  */
 export class CytoscapeRenderer implements IGraphRenderer {
-    private cy: cytoscape.Core | null = null;
-    private container: HTMLElement | null = null;
-    private currentData: GraphData | null = null;
-    private currentOptions: RenderOptions | null = null;
-    private edgeControlPoints: Map<string, { distance: number; weight: number }> = new Map();
-    private batchSelectedNodeIds: string[] = []; // 保存批量选中的节点ID
-    private batchSelectedNodes: ZKNode[] = []; // 保存批量选中的完整节点数据（包含 isCrossDomain 等信息）
-    private isMetaPressed = false; // 标记 Command 键是否被按下（框选模式）
-    private embedPreviewCleanup: (() => void) | null = null;
-    private imagePreviewCleanup: (() => void) | null = null;
-    private minimap: Minimap | null = null;
-    private overlayScheduler = new OverlayScheduler({
+    cy: cytoscape.Core | null = null;
+    container: HTMLElement | null = null;
+    currentData: GraphData | null = null;
+    currentOptions: RenderOptions | null = null;
+    edgeControlPoints: Map<string, { distance: number; weight: number }> = new Map();
+    batchSelectedNodeIds: string[] = []; // 保存批量选中的节点ID
+    batchSelectedNodes: { IDStr: string; isCrossDomain: boolean; originalNode: ZKNode }[] = []; // 保存批量选中的完整节点数据（包含 isCrossDomain 等信息）
+    isMetaPressed = false; // 标记 Command 键是否被按下（框选模式）
+    suppressTapSelectAt = 0; // 角标/徽章 mousedown 后短暂抑制 canvas tap 选中的时间戳
+    embedPreviewCleanup: (() => void) | null = null;
+    imagePreviewCleanup: (() => void) | null = null;
+    minimap: Minimap | null = null;
+    overlayScheduler = new OverlayScheduler({
         getCy: () => this.cy,
         getContainer: () => this.container,
     });
-    private edgeControls = new EdgeControls({
+    edgeControls = new EdgeControls({
         getCy: () => this.cy,
         getContainer: () => this.container,
         getCurrentData: () => this.currentData,
@@ -167,74 +168,74 @@ export class CytoscapeRenderer implements IGraphRenderer {
         showGroupNameDialog: this.showGroupNameDialog.bind(this),
     });
     // 追踪正在进行中的 overlay 拖拽/缩放操作，确保 destroy() 时能中止挂在 activeDocument 上的监听器
-    private activeOverlayDragAborters: Set<AbortController> = new Set();
+    activeOverlayDragAborters: Set<AbortController> = new Set();
     // 缓存已渲染的预览卡片 DOM，避免重建时 excalidraw/markdown 内容闪烁
-    private embedCardCache: Map<string, HTMLElement> = new Map();
-    private embedRendererComponents: Set<Component> = new Set();
+    embedCardCache: Map<string, HTMLElement> = new Map();
+    embedRendererComponents: Set<Component> = new Set();
     // 备注 tooltip 富文本渲染共享生命周期组件(懒建,destroy 时 unload)
-    private remarkTooltipComponent: Component | null = null;
-    private activeAlignmentOverlay: SVGSVGElement | null = null;
-    private activeSeparationOverlay: SVGSVGElement | null = null;
-    private boxSelectionElement: HTMLElement | null = null;
-    private liveEditCleanupHandlers: Set<() => void> = new Set();
-    private collapseHandleCleanup: (() => void) | null = null;
+    remarkTooltipComponent: Component | null = null;
+    activeAlignmentOverlay: SVGSVGElement | null = null;
+    activeSeparationOverlay: SVGSVGElement | null = null;
+    boxSelectionElement: HTMLElement | null = null;
+    liveEditCleanupHandlers: Set<() => void> = new Set();
+    collapseHandleCleanup: (() => void) | null = null;
     // #43 增量新增标记:由 render() 在"复用实例+纯新增+已有节点未变"路径上置为新节点 id 集合,
     // renderNodeBadges 读到后只为这些新节点构建+定位 overlay(一次性消费)。
-    private _incrementalAddIds: Set<string> | null = null;
+    _incrementalAddIds: Set<string> | null = null;
     // 与 _incrementalAddIds 配套:增量新增时若已有节点被推开(仅位置变化),置 true,
     // renderNodeBadges 在增量末尾改用 scheduler.immediate() 重定位全部 overlay(一次性消费)。
-    private _incrementalRepositionAll = false;
-    private domTextMeasurer: DomTextMeasurer | null = null;
-    private collapsedNodeIds: Set<string> = new Set();
-    private focusOverlayVisibleCyIds: Set<string> | null = null;
-    private focusOverlayVisibilityMode: 'hide' | 'dim' = 'hide';
-    private activeTextSelectionToolbarCleanup: (() => void) | null = null;
+    _incrementalRepositionAll = false;
+    domTextMeasurer: DomTextMeasurer | null = null;
+    collapsedNodeIds: Set<string> = new Set();
+    focusOverlayVisibleCyIds: Set<string> | null = null;
+    focusOverlayVisibilityMode: 'hide' | 'dim' = 'hide';
+    activeTextSelectionToolbarCleanup: (() => void) | null = null;
     // 记住用户上一次在文本选区工具条里选择的颜色，跨选区保持
-    private lastPickedTextColor: string | null = null;
-    private lastPickedBgColor: string | null = null;
+    lastPickedTextColor: string | null = null;
+    lastPickedBgColor: string | null = null;
 
     // 文本节点 Markdown 渲染缓存：跨 addNodeBadges 重建复用已渲染的 overlay DOM + Component
     // key = `${sourcePath}||${rawSource}`
-    private textMdOverlayCache: Map<string, TextMdOverlayEntry> = new Map();
+    textMdOverlayCache: Map<string, TextMdOverlayEntry> = new Map();
 
     // 节点剪贴板（Cmd+C/V 复制粘贴）
-    private clipboardNodes: Array<{ originalNode: ZKNode; position: { x: number; y: number } }> = [];
+    clipboardNodes: Array<{ originalNode: ZKNode; position: { x: number; y: number } }> = [];
     // Cmd+C 时同步写入系统剪贴板的文本快照;Cmd+V 时跟系统剪贴板比对,
     // 若不一致则说明用户从外部复制了新内容,优先走系统剪贴板路径
-    private lastCopiedSystemText = '';
+    lastCopiedSystemText = '';
 
     // SimpleMind 风格布局常量
-    private readonly VERTICAL_GAP = 80;       // 垂直间距
-    private readonly HORIZONTAL_GAP = 200;    // 水平间距
-    private readonly SIBLING_GAP = 100;       // 兄弟节点间距
-    private readonly ROOT_NODE_FONT_SIZE = 36;
-    private readonly ROOT_NODE_FONT_WEIGHT = 700;
-    private readonly FIRST_LEVEL_NODE_FONT_SIZE = 24;
-    private readonly FIRST_LEVEL_NODE_FONT_WEIGHT = 650;
-    private readonly ROOT_TO_FIRST_LEVEL_EDGE_WIDTH = 3.6;
-    private readonly ROOT_TO_FIRST_LEVEL_EDGE_OPACITY = 0.78;
-    private readonly ACTIVE_ROOT_TO_FIRST_LEVEL_EDGE_OPACITY = 0.85;
-    private readonly SECONDARY_PARENT_EDGE_OPACITY = 0.7;
+    readonly VERTICAL_GAP = 80;       // 垂直间距
+    readonly HORIZONTAL_GAP = 200;    // 水平间距
+    readonly SIBLING_GAP = 100;       // 兄弟节点间距
+    readonly ROOT_NODE_FONT_SIZE = 36;
+    readonly ROOT_NODE_FONT_WEIGHT = 700;
+    readonly FIRST_LEVEL_NODE_FONT_SIZE = 24;
+    readonly FIRST_LEVEL_NODE_FONT_WEIGHT = 650;
+    readonly ROOT_TO_FIRST_LEVEL_EDGE_WIDTH = 3.6;
+    readonly ROOT_TO_FIRST_LEVEL_EDGE_OPACITY = 0.78;
+    readonly ACTIVE_ROOT_TO_FIRST_LEVEL_EDGE_OPACITY = 0.85;
+    readonly SECONDARY_PARENT_EDGE_OPACITY = 0.7;
 
-    private isReadOnlyMode(): boolean {
+    isReadOnlyMode(): boolean {
         return this.currentOptions?.readOnly === true || Platform.isMobile;
     }
 
-    private shouldShowMinimap(options: RenderOptions): boolean {
+    shouldShowMinimap(options: RenderOptions): boolean {
         return options.exportMode !== true && options.showMinimap !== false;
     }
 
-    private isCyUsable(cy: cytoscape.Core | null = this.cy): cy is cytoscape.Core {
+    isCyUsable(cy: cytoscape.Core | null = this.cy): cy is cytoscape.Core {
         return !!cy && !!(cy as unknown as { _private?: unknown })._private;
     }
 
-    private clearActiveTextSelectionToolbar(): void {
+    clearActiveTextSelectionToolbar(): void {
         if (!this.activeTextSelectionToolbarCleanup) return;
         this.activeTextSelectionToolbarCleanup();
         this.activeTextSelectionToolbarCleanup = null;
     }
 
-    private stripInlineTextFormatting(text: string): string {
+    stripInlineTextFormatting(text: string): string {
         let result = text;
         const unwrapPatterns: Array<[RegExp, string]> = [
             [/\*\*([\s\S]*?)\*\*/g, '$1'],
@@ -258,28 +259,28 @@ export class CytoscapeRenderer implements IGraphRenderer {
         return result.replace(/<\/?[^>]+>/g, '');
     }
 
-    private unloadEmbedRendererComponents(): void {
+    unloadEmbedRendererComponents(): void {
         this.embedRendererComponents.forEach((component) => {
             try { component.unload(); } catch { /* ignore */ }
         });
         this.embedRendererComponents.clear();
     }
 
-    private cleanupLiveEditHandlers(): void {
+    cleanupLiveEditHandlers(): void {
         this.liveEditCleanupHandlers.forEach((cleanup) => {
             try { cleanup(); } catch { /* ignore */ }
         });
         this.liveEditCleanupHandlers.clear();
     }
 
-    private cleanupInlineEditingDom(): void {
+    cleanupInlineEditingDom(): void {
         this.clearActiveTextSelectionToolbar();
         this.container?.querySelectorAll(
             '.node-label-editor, .edge-label-editor, .node-link-suggester, .zk-placeholder-edit-overlay'
         ).forEach((el) => el.remove());
     }
 
-    private cleanupBadgeInteractionBindings(): void {
+    cleanupBadgeInteractionBindings(): void {
         this.edgeControls.cleanupBindings();
     }
 
@@ -769,11 +770,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 轻微打散完全重叠的节点，避免边端点重合导致 "invalid endpoints" 警告。
      * 仅处理非分组节点，且只在坐标几乎完全一致时生效。
      */
-    private resolveExactNodeOverlaps(): void {
+    resolveExactNodeOverlaps(): void {
         layoutAdapter.resolveExactNodeOverlaps(this.cy);
     }
 
-    private updateActiveFirstLevelBranch(): void {
+    updateActiveFirstLevelBranch(): void {
         if (!this.cy) return;
 
         this.cy.nodes('.zk-active-first-level-branch').removeClass('zk-active-first-level-branch');
@@ -804,7 +805,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * - 主要用于规避少数数据情况下 cose/cose-bilkent 内部报错导致整图不可用
      * - 首次布局失败时自动回退到 breadthfirst
      */
-    private runLayoutSafely(layoutConfig: layoutAdapter.LayoutConfig): void {
+    runLayoutSafely(layoutConfig: layoutAdapter.LayoutConfig): void {
         layoutAdapter.runLayoutSafely(this.cy, layoutConfig);
     }
 
@@ -1104,7 +1105,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
     }
 
-    private reapplyFocusOverlayState(): void {
+    reapplyFocusOverlayState(): void {
         if (this.focusOverlayVisibleCyIds === null) return;
         this.applyFocusOverlayState(this.focusOverlayVisibleCyIds, this.focusOverlayVisibilityMode, false);
     }
@@ -1352,7 +1353,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 为出入链节点预设网格位置（在 Cytoscape 初始化前调用）
      * 直接设置 savedPosition，避免节点堆叠在原点导致 edge 无法绘制
      */
-    private presetInOutLinksPositions(data: GraphData): void {
+    presetInOutLinksPositions(data: GraphData): void {
         layoutAdapter.presetInOutLinksPositions(data);
     }
 
@@ -1360,18 +1361,18 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 根据 layoutType 获取布局配置
      * 用于局部关系视图的出入链图等需要自动布局的场景
      */
-    private getLayoutConfig(options: RenderOptions): layoutAdapter.LayoutConfig {
+    getLayoutConfig(options: RenderOptions): layoutAdapter.LayoutConfig {
         return layoutAdapter.getLayoutConfig(options);
     }
 
     /**
      * 将方向字符串转换为 dagre 的 rankDir 格式
      */
-    private directionToRankDir(direction: string): string {
+    directionToRankDir(direction: string): string {
         return layoutAdapter.directionToRankDir(direction);
     }
 
-    private getStylesheet(options: RenderOptions): StyleEntry[] {
+    getStylesheet(options: RenderOptions): StyleEntry[] {
         return buildStylesheet(options, {
             FIRST_LEVEL_NODE_FONT_SIZE: this.FIRST_LEVEL_NODE_FONT_SIZE,
             ROOT_NODE_FONT_SIZE: this.ROOT_NODE_FONT_SIZE,
@@ -1408,29 +1409,29 @@ export class CytoscapeRenderer implements IGraphRenderer {
     /**
      * 为 ![[...]] 节点添加常驻预览卡片（类似 Canvas 笔记卡）
      */
-    private addEmbedNodePreviews(): void {
+    addEmbedNodePreviews(): void {
         renderEmbedNodePreviews.call(this);
     }
 
-    private addImageNodePreviews(): void {
+    addImageNodePreviews(): void {
         renderImageNodePreviews.call(this);
     }
 
     /**
      * 获取布局配置
      */
-    private getLayout(options: RenderOptions): layoutAdapter.LayoutConfig {
+    getLayout(options: RenderOptions): layoutAdapter.LayoutConfig {
         return layoutAdapter.getLayout(options);
     }
 
     /**
      * 添加节点徽章（HTML 叠加层）
      */
-    private addNodeBadges(): void {
+    addNodeBadges(): void {
         renderNodeBadges.call(this);
     }
 
-    private applyCollapsedState(): void {
+    applyCollapsedState(): void {
         if (!this.cy) return;
         this.collapsedNodeIds = layoutAdapter.applyCollapsedState(this.cy, this.collapsedNodeIds);
     }
@@ -1438,7 +1439,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
     /**
      * 显示分组操作选择对话框
      */
-    private showGroupActionDialog(
+    showGroupActionDialog(
         existingGroups: Array<{ id: string; label: string; nodeIds: string[] }>,
         callback: (action: 'new' | 'add', groupId?: string) => void
     ): void {
@@ -1602,7 +1603,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
     /**
      * 显示分组名称输入对话框
      */
-    private showGroupNameDialog(callback: (name: string | null) => void, defaultValue = '分组1'): void {
+    showGroupNameDialog(callback: (name: string | null) => void, defaultValue = '分组1'): void {
         // 创建遮罩层
         const overlay = activeDocument.createElement('div');
         overlay.setCssStyles({
@@ -1732,14 +1733,14 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
 
 
-    private attachInlineTextSelectionToolbar(inputEl: HTMLInputElement | HTMLTextAreaElement): {
+    attachInlineTextSelectionToolbar(inputEl: HTMLInputElement | HTMLTextAreaElement): {
         destroy: () => void;
         containsTarget: (target: Node | null) => boolean;
     } {
         return inlineAttachInlineTextSelectionToolbar.call(this, inputEl);
     }
 
-    private attachContentSelectionToolbar(
+    attachContentSelectionToolbar(
         rootEl: HTMLElement,
         applyTransform: (formatter: (selectedText: string) => string) => boolean
     ): {
@@ -1754,7 +1755,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 纯文本走快路径直接 textContent;含 markdown/HTML 语法才走 MarkdownRenderer。
      * 仅在源文本变化时被调用(调用方做 diff),避免每帧渲染。
      */
-    private renderRemarkTooltipContent(el: HTMLElement, source: string): void {
+    renderRemarkTooltipContent(el: HTMLElement, source: string): void {
         el.empty();
         const text = String(source || '');
         if (!text) return;
@@ -1793,15 +1794,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
         return inlineAttachContentSelectionToolbar.call(ctx, rootEl, applyTransform);
     }
 
-    private showInlineEdgeLabelEditor(edge: cytoscape.EdgeSingular): void {
+    showInlineEdgeLabelEditor(edge: cytoscape.EdgeSingular): void {
         inlineShowInlineEdgeLabelEditor.call(this, edge);
     }
 
-    private showInlineNodeEditor(node: cytoscape.NodeSingular, options?: { cursor?: 'select' | 'end' }): void {
+    showInlineNodeEditor(node: cytoscape.NodeSingular, options?: { cursor?: 'select' | 'end' }): void {
         inlineShowInlineNodeEditor.call(this, node, options);
     }
 
-    private startInPlaceTextEdit(
+    startInPlaceTextEdit(
         node: cytoscape.NodeSingular,
         originalNode: ZKNode,
         entry: {
@@ -1818,15 +1819,15 @@ export class CytoscapeRenderer implements IGraphRenderer {
         inlineStartInPlaceTextEdit.call(this, node, originalNode, entry, options);
     }
 
-    private startPlaceholderInPlaceEdit(node: cytoscape.NodeSingular, options?: { cursor?: 'select' | 'end' }): void {
+    startPlaceholderInPlaceEdit(node: cytoscape.NodeSingular, options?: { cursor?: 'select' | 'end' }): void {
         inlineStartPlaceholderInPlaceEdit.call(this, node, options);
     }
 
-    private startPlaceholderTextareaFallback(node: cytoscape.NodeSingular, options?: { cursor?: 'select' | 'end' }): void {
+    startPlaceholderTextareaFallback(node: cytoscape.NodeSingular, options?: { cursor?: 'select' | 'end' }): void {
         inlineStartPlaceholderTextareaFallback.call(this, node, options);
     }
 
-    private startInPlaceTextEditLegacy(
+    startInPlaceTextEditLegacy(
         node: cytoscape.NodeSingular,
         originalNode: ZKNode,
         entry: {
@@ -1843,11 +1844,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
         inlineStartInPlaceTextEditLegacy.call(this, node, originalNode, entry, options);
     }
 
-    private ensureNodeVisibleInViewport(node: cytoscape.NodeSingular, padding = 40): void {
+    ensureNodeVisibleInViewport(node: cytoscape.NodeSingular, padding = 40): void {
         inlineEnsureNodeVisibleInViewport.call(this, node, padding);
     }
 
-    private checkForLinkPattern(
+    checkForLinkPattern(
         textarea: HTMLTextAreaElement,
         node: cytoscape.NodeSingular,
         boundingBox: cytoscape.BoundingBox12 & cytoscape.BoundingBoxWH,
@@ -1857,7 +1858,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         inlineCheckForLinkPattern.call(this, textarea, node, boundingBox, suggesterPopoverRef, onSelectFile);
     }
 
-    private showLinkSuggester(
+    showLinkSuggester(
         textarea: HTMLTextAreaElement,
         node: cytoscape.NodeSingular,
         boundingBox: cytoscape.BoundingBox12 & cytoscape.BoundingBoxWH,
@@ -1868,167 +1869,167 @@ export class CytoscapeRenderer implements IGraphRenderer {
         inlineShowLinkSuggester.call(this, textarea, node, boundingBox, suggesterPopoverRef, isEmbed, onSelectFile);
     }
 
-    private bindEvents(...args: any[]): any {
+    bindEvents(...args: any[]): any {
         return event_bindEvents.call(this, ...args);
     }
 
-    private bindKeyboardEvents(...args: any[]): any {
+    bindKeyboardEvents(...args: any[]): any {
         return event_bindKeyboardEvents.call(this, ...args);
     }
 
-    private shouldRelayout(...args: any[]): any {
+    shouldRelayout(...args: any[]): any {
         return event_shouldRelayout.call(this, ...args);
     }
 
-    private addGroupResizeHandles(...args: any[]): any {
+    addGroupResizeHandles(...args: any[]): any {
         return event_addGroupResizeHandles.call(this, ...args);
     }
 
-    private bindResizeHandleDrag(...args: any[]): any {
+    bindResizeHandleDrag(...args: any[]): any {
         return event_bindResizeHandleDrag.call(this, ...args);
     }
 
-    private selectNodesInBox(...args: any[]): any {
+    selectNodesInBox(...args: any[]): any {
         return event_selectNodesInBox.call(this, ...args);
     }
 
-    private initBoxSelection(...args: any[]): any {
+    initBoxSelection(...args: any[]): any {
         return event_initBoxSelection.call(this, ...args);
     }
 
-    private showBatchToolbar(...args: any[]): any {
+    showBatchToolbar(...args: any[]): any {
         return event_showBatchToolbar.call(this, ...args);
     }
 
-    private showSearchBar(...args: any[]): any {
+    showSearchBar(...args: any[]): any {
         return event_showSearchBar.call(this, ...args);
     }
 
-    private hideBatchToolbar(...args: any[]): any {
+    hideBatchToolbar(...args: any[]): any {
         return event_hideBatchToolbar.call(this, ...args);
     }
 
-    private createBatchToolbar(...args: any[]): any {
+    createBatchToolbar(...args: any[]): any {
         return event_createBatchToolbar.call(this, ...args);
     }
 
-    private createToolbarButton(...args: any[]): any {
+    createToolbarButton(...args: any[]): any {
         return event_createToolbarButton.call(this, ...args);
     }
 
-    private batchCreateGroup(...args: any[]): any {
+    batchCreateGroup(...args: any[]): any {
         return event_batchCreateGroup.call(this, ...args);
     }
 
-    private getActiveNode(...args: any[]): any {
+    getActiveNode(...args: any[]): any {
         return event_getActiveNode.call(this, ...args);
     }
 
-    private normalizeVector(...args: any[]): any {
+    normalizeVector(...args: any[]): any {
         return event_normalizeVector.call(this, ...args);
     }
 
-    private getBranchDirection(...args: any[]): any {
+    getBranchDirection(...args: any[]): any {
         return event_getBranchDirection.call(this, ...args);
     }
 
-    private getAutoLayoutDirection(...args: any[]): any {
+    getAutoLayoutDirection(...args: any[]): any {
         return event_getAutoLayoutDirection.call(this, ...args);
     }
 
-    private getPerpendicular(...args: any[]): any {
+    getPerpendicular(...args: any[]): any {
         return event_getPerpendicular.call(this, ...args);
     }
 
-    private getAutoLayoutStackDirection(...args: any[]): any {
+    getAutoLayoutStackDirection(...args: any[]): any {
         return event_getAutoLayoutStackDirection.call(this, ...args);
     }
 
-    private nextOffsetByProjection(...args: any[]): any {
+    nextOffsetByProjection(...args: any[]): any {
         return event_nextOffsetByProjection.call(this, ...args);
     }
 
-    private isAutoNodeLayoutStyle(...args: any[]): any {
+    isAutoNodeLayoutStyle(...args: any[]): any {
         return event_isAutoNodeLayoutStyle.call(this, ...args);
     }
 
-    private isNodeAutoLayoutForId(...args: any[]): any {
+    isNodeAutoLayoutForId(...args: any[]): any {
         return event_isNodeAutoLayoutForId.call(this, ...args);
     }
 
-    private estimateCollisionBox(...args: any[]): any {
+    estimateCollisionBox(...args: any[]): any {
         return event_estimateCollisionBox.call(this, ...args);
     }
 
-    private getAxisSpan(...args: any[]): any {
+    getAxisSpan(...args: any[]): any {
         return event_getAxisSpan.call(this, ...args);
     }
 
-    private getDirectionalDistance(...args: any[]): any {
+    getDirectionalDistance(...args: any[]): any {
         return event_getDirectionalDistance.call(this, ...args);
     }
 
-    private isPositionColliding(...args: any[]): any {
+    isPositionColliding(...args: any[]): any {
         return event_isPositionColliding.call(this, ...args);
     }
 
-    private resolveShortcutPosition(...args: any[]): any {
+    resolveShortcutPosition(...args: any[]): any {
         return event_resolveShortcutPosition.call(this, ...args);
     }
 
-    private getFreeChildShortcutPosition(...args: any[]): any {
+    getFreeChildShortcutPosition(...args: any[]): any {
         return event_getFreeChildShortcutPosition.call(this, ...args);
     }
 
-    private getAutoChildShortcutPosition(...args: any[]): any {
+    getAutoChildShortcutPosition(...args: any[]): any {
         return event_getAutoChildShortcutPosition.call(this, ...args);
     }
 
-    private handleCreateChildNode(...args: any[]): any {
+    handleCreateChildNode(...args: any[]): any {
         return event_handleCreateChildNode.call(this, ...args);
     }
 
-    private getFreeSiblingShortcutPosition(...args: any[]): any {
+    getFreeSiblingShortcutPosition(...args: any[]): any {
         return event_getFreeSiblingShortcutPosition.call(this, ...args);
     }
 
-    private getAutoSiblingShortcutPosition(...args: any[]): any {
+    getAutoSiblingShortcutPosition(...args: any[]): any {
         return event_getAutoSiblingShortcutPosition.call(this, ...args);
     }
 
-    private handleCreateSiblingNode(...args: any[]): any {
+    handleCreateSiblingNode(...args: any[]): any {
         return event_handleCreateSiblingNode.call(this, ...args);
     }
 
-    private getFreeParentShortcutPosition(...args: any[]): any {
+    getFreeParentShortcutPosition(...args: any[]): any {
         return event_getFreeParentShortcutPosition.call(this, ...args);
     }
 
-    private getAutoParentShortcutPosition(...args: any[]): any {
+    getAutoParentShortcutPosition(...args: any[]): any {
         return event_getAutoParentShortcutPosition.call(this, ...args);
     }
 
-    private handleCreateParentNode(...args: any[]): any {
+    handleCreateParentNode(...args: any[]): any {
         return event_handleCreateParentNode.call(this, ...args);
     }
 
-    private createPlaceholderConnectionLine(...args: any[]): any {
+    createPlaceholderConnectionLine(...args: any[]): any {
         return event_createPlaceholderConnectionLine.call(this, ...args);
     }
 
-    private handleArrowKeyNavigation(...args: any[]): any {
+    handleArrowKeyNavigation(...args: any[]): any {
         return event_handleArrowKeyNavigation.call(this, ...args);
     }
 
-    private batchDeleteNodes(...args: any[]): any {
+    batchDeleteNodes(...args: any[]): any {
         return event_batchDeleteNodes.call(this, ...args);
     }
 
-    private batchChangeColor(...args: any[]): any {
+    batchChangeColor(...args: any[]): any {
         return event_batchChangeColor.call(this, ...args);
     }
 
-    private isSmartConnectionEnabled(...args: any[]): any {
+    isSmartConnectionEnabled(...args: any[]): any {
         return event_isSmartConnectionEnabled.call(this, ...args);
     }
 

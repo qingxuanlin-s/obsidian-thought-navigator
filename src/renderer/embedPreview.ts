@@ -1,3 +1,4 @@
+import type { CytoscapeRenderer } from './CytoscapeRenderer';
 import { App, Component, FileView, MarkdownRenderer, TFile, WorkspaceLeaf, resolveSubpath, setIcon } from 'obsidian';
 import type * as cytoscape from 'cytoscape';
 import { ZKNode } from 'src/view/indexView';
@@ -210,7 +211,7 @@ const openPreviewHeaderFile = (
             app.workspace.setActiveLeaf(existingLeaf, { focus: true });
             existingLeaf.view.setEphemeralState({ subpath });
         } else {
-            app.workspace.getLeaf(openInNewLeaf).openFile(sourceFile, {
+            void app.workspace.getLeaf(openInNewLeaf).openFile(sourceFile, {
                 eState: { subpath },
                 active: true,
             });
@@ -227,10 +228,10 @@ const openPreviewHeaderFile = (
         }
     }
 
-    app.workspace.getLeaf(openInNewLeaf).openFile(sourceFile);
+    void app.workspace.getLeaf(openInNewLeaf).openFile(sourceFile);
 };
 
-export function renderEmbedNodePreviews(this: any): void {
+export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
         if (!this.cy || !this.container) return;
 
         // 清理前先缓存已渲染的卡片内容（避免 excalidraw/markdown 异步内容闪烁）
@@ -261,7 +262,7 @@ export function renderEmbedNodePreviews(this: any): void {
         // 永久留在 embedCardCache 里(再也不命中、不释放),浏览多个带嵌入的 MOC 即无界增长。
         // 镜像 nodeBadges 里 textMdOverlayCache 的同款回收。
         const liveEmbedNodeIds = new Set<string>();
-        embedNodes.forEach((node: cytoscape.NodeSingular) => liveEmbedNodeIds.add(node.id()));
+        embedNodes.forEach((node: cytoscape.NodeSingular) => { liveEmbedNodeIds.add(node.id()); });
         for (const key of Array.from(this.embedCardCache.keys()) as string[]) {
             if (!liveEmbedNodeIds.has(key)) this.embedCardCache.delete(key);
         }
@@ -779,7 +780,7 @@ export function renderEmbedNodePreviews(this: any): void {
                     const candidates = getMocPreviewPngCandidates(sourceFile.path);
                     for (const candidate of candidates) {
                         const f = app.vault.getAbstractFileByPath(candidate);
-                        if (f) {
+                        if (f instanceof TFile) {
                             previewFile = f;
                             break;
                         }
@@ -1011,7 +1012,7 @@ export function renderEmbedNodePreviews(this: any): void {
      * 为图片文件节点添加图片预览
      * 检测 [[]] 中引用的文件是否为图片格式，如果是则渲染图片
      */
-export function renderImageNodePreviews(this: any): void {
+export function renderImageNodePreviews(this: CytoscapeRenderer): void {
         if (!this.cy || !this.container) return;
 
         const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
@@ -1075,7 +1076,7 @@ export function renderImageNodePreviews(this: any): void {
             const originalNode = data.originalNode as ZKNode;
             const filePath = data.filePath;
             const file = app.vault.getAbstractFileByPath(filePath);
-            if (!file) return;
+            if (!(file instanceof TFile)) return;
 
             const resourcePath = app.vault.getResourcePath(file);
             const nodeId = node.id();

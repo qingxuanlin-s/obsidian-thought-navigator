@@ -29,7 +29,7 @@ export default class chooseCustomNameModal extends SuggestModal<string> {
 	}
 
 	public onOpen(): void {
-		super.onOpen();
+		void super.onOpen();
 
 		this.inputEl.value = this.defaultName;
 		const wrapper = createDiv({ cls: "zk-name-input-wrapper" });
