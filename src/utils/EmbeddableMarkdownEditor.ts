@@ -54,7 +54,6 @@ function resolveEmbeddableEditorCtor(app: App): EditorCtor | null {
 				widgetView.editable = true;
 				widgetView.showEditor?.();
 				const editMode = widgetView.editMode ?? widgetView;
-				const editModeObj = editMode as object;
 				const editorProto = Object.getPrototypeOf(Object.getPrototypeOf(editMode as object));
 				const ctor = editorProto?.constructor;
 				if (ctor) {

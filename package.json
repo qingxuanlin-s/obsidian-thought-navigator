@@ -26,6 +26,7 @@
 		"@typescript-eslint/eslint-plugin": "5.29.0",
 		"@typescript-eslint/parser": "5.29.0",
 		"esbuild": "0.14.47",
+		"eslint-plugin-obsidianmd": "file:tools/eslint-plugin-obsidianmd",
 		"obsidian": "latest",
 		"tslib": "2.4.0",
 		"typescript": "4.7.4"
