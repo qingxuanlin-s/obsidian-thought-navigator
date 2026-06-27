@@ -29,7 +29,7 @@ export class expandGraphModal extends Modal {
     svgGraph.id = "zk-expand-graph";
 
     const { svg } = await mermaid.render(`zk-expand-graph-svg`, `${this.mermaidStr}`);
-    const parsedSvg = new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement;
+    const parsedSvg = new DOMParser().parseFromString(String(svg), 'image/svg+xml').documentElement;
     svgGraph.appendChild(activeDocument.importNode(parsedSvg, true));
     svgGraph.children[0].removeAttribute('style');
     svgGraph.children[0].addClass("zk-full-width");

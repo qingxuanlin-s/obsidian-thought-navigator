@@ -27,6 +27,10 @@ export interface Edge {
  */
 export interface CyData {
     id: string;
+    originalNodeId?: string;
+    isRoot?: boolean;
+    isFirstLevelNode?: boolean;
+    suggestedNodeId?: string;
     label?: string;
     title?: string;
     displayText?: string;

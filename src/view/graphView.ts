@@ -1133,7 +1133,7 @@ export class ZKGraphView extends ItemView {
                     const metaKey = detail.metaKey || triggerEvent?.metaKey;
                     const shiftKey = detail.shiftKey || triggerEvent?.shiftKey;
                     const altKey = detail.altKey || triggerEvent?.altKey;
-                    const clicked = this.resolveLocalGraphNode(allNodes, detail.node);
+                    const clicked = this.resolveLocalGraphNode(allNodes, detail.node as ZKNode | null);
                     if (!clicked) return;
 
                     if (!clicked?.file) {
@@ -1781,7 +1781,7 @@ export class ZKGraphView extends ItemView {
         mocTreeDiv.addEventListener('node-click', (event: CustomEvent) => { void (async () => {
             const detail = event.detail || {};
             const triggerEvent = detail.event as MouseEvent | undefined;
-            const node = this.resolveLocalGraphNode(mocNodes, detail.node);
+            const node = this.resolveLocalGraphNode(mocNodes, detail.node as ZKNode | null);
             const ctrlKey = detail.ctrlKey || triggerEvent?.ctrlKey;
             const shiftKey = detail.shiftKey || triggerEvent?.shiftKey;
             const altKey = detail.altKey || triggerEvent?.altKey;

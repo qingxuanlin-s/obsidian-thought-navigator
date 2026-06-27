@@ -890,7 +890,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
             const parentEdges = grabbedNode.connectedEdges().filter((e: cytoscape.EdgeSingular) =>
                 e.data('type') === 'parent' && e.target().id() === grabbedNode.id());
             if (parentEdges.length === 0) return null;
-            const parentNode = parentEdges.last().source();
+            const parentNode = parentEdges.last().source() as cytoscape.NodeSingular;
             if (parentNode.length === 0) return null;
             const parentBizId = bizIdOf(parentNode);
             const ppos = parentNode.position();

@@ -5,6 +5,7 @@ import { ZKNode } from 'src/view/indexView';
 import { isMocPath } from 'src/utils/utils';
 import { applyPreviewHeaderLinkStyle, getPreviewCardTheme } from './colorUtils';
 import { getMocPreviewPngCandidates } from './renderPipeline';
+import { dataStr } from './cyData';
 
 // Excalidraw 插件未提供官方类型，这里按用到的最小表面声明
 interface ExcalidrawAutomate {
@@ -250,7 +251,7 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
         const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
         // 排除图片文件的嵌入节点（图片由 addImageNodePreviews 处理）
         const embedNodes = this.cy.nodes('[?isEmbed]').filter((node: cytoscape.NodeSingular) => {
-            const filePath = node.data('filePath');
+            const filePath = dataStr(node, 'filePath');
             if (!filePath) return true; // 无路径的保留
             const ext = filePath.split('.').pop()?.toLowerCase() || '';
             return !IMAGE_EXTENSIONS.has(ext);
@@ -330,7 +331,7 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
 				'overlay-opacity': 0,
 				'padding': 0
 			});
-			const theme = getPreviewCardTheme(data, this.currentOptions);
+			const theme = getPreviewCardTheme(data as Record<string, unknown>, this.currentOptions);
             const resolvedCardBorder = isExcalidrawFile && !!data.isFreeNode ? 'none' : theme.cardBorder;
             const resolvedCardBackground = isExcalidrawFile ? 'transparent' : theme.cardBackground;
             const resolvedCardShadow = isExcalidrawFile && !!data.isFreeNode ? 'none' : theme.cardShadow;
@@ -1027,7 +1028,7 @@ export function renderImageNodePreviews(this: CytoscapeRenderer): void {
         // 查找所有 ![[]] 嵌入节点且文件路径为图片格式的节点
         // [[image.png]] 普通文件节点不渲染图片，保持为普通可点击节点
         const imageNodes = this.cy.nodes('[?isEmbed]').filter((node: cytoscape.NodeSingular) => {
-            const filePath = node.data('filePath');
+            const filePath = dataStr(node, 'filePath');
             if (!filePath) return false;
             const ext = filePath.split('.').pop()?.toLowerCase() || '';
             return IMAGE_EXTENSIONS.has(ext);
@@ -1074,7 +1075,7 @@ export function renderImageNodePreviews(this: CytoscapeRenderer): void {
         imageNodes.forEach((node: cytoscape.NodeSingular) => {
             const data = node.data();
             const originalNode = data.originalNode as ZKNode;
-            const filePath = data.filePath;
+            const filePath = dataStr(node, 'filePath');
             const file = app.vault.getAbstractFileByPath(filePath);
             if (!(file instanceof TFile)) return;
 
@@ -1091,7 +1092,7 @@ export function renderImageNodePreviews(this: CytoscapeRenderer): void {
                 });
             }
 
-            const theme = getPreviewCardTheme(data, this.currentOptions);
+            const theme = getPreviewCardTheme(data as Record<string, unknown>, this.currentOptions);
             const resolvedCardBorder = 'none';
 
             // 完全隐藏 Cytoscape 节点（由 HTML 图片卡片处理视觉）

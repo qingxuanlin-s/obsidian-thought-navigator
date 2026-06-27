@@ -213,7 +213,7 @@ type SortMode = 'doc' | 'due' | 'start';
 /** NEXT ACTION 的 UI 偏好(全局,跨项目/重载留存) */
 const LS_HIDE_DONE = 'zkw.task.hideDone';
 const LS_SORT = 'zkw.task.sort';
-function readLS(app: App, k: string): string | null { try { return app.loadLocalStorage(k); } catch { return null; } }
+function readLS(app: App, k: string): string | null { try { return app.loadLocalStorage(k) as string | null; } catch { return null; } }
 /** 当前正在拖动的任务(仅默认顺序下启用,跨行共享) */
 let draggedTask: MdTask | null = null;
 

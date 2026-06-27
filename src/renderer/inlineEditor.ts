@@ -16,6 +16,7 @@ import {
 } from './colorUtils';
 import { buildWikiLinkForFile } from './renderPipeline';
 import { TEXT_MD_OVERLAY_RENDER_VERSION } from './nodeBadges';
+import type { CyData } from './types';
 
 function isLivePreviewMediaInteraction(target: EventTarget | null): boolean {
     const el = target instanceof Element ? target : null;
@@ -720,7 +721,7 @@ export function attachContentSelectionToolbar(this: CytoscapeRenderer, rootEl: H
 export function showInlineEdgeLabelEditor(this: CytoscapeRenderer, edge: cytoscape.EdgeSingular): void {
         if (!this.cy || !this.container || this.isReadOnlyMode()) return;
 
-        const data = edge.data();
+        const data = edge.data() as CyData;
         const currentLabel = data.label || '';
 
         // 移除已存在的编辑器
@@ -730,8 +731,8 @@ export function showInlineEdgeLabelEditor(this: CytoscapeRenderer, edge: cytosca
         }
 
         // 获取边的中点位置
-        const sourceNode = this.cy.$id(data.source);
-        const targetNode = this.cy.$id(data.target);
+        const sourceNode = this.cy.$id(data.source ?? '');
+        const targetNode = this.cy.$id(data.target ?? '');
         
         if (!sourceNode.length || !targetNode.length) return;
 
@@ -883,7 +884,7 @@ export function showInlineNodeEditor(this: CytoscapeRenderer, node: cytoscape.No
         if (!this.cy || !this.container || this.isReadOnlyMode()) return;
         const cursorMode = options?.cursor ?? 'end';
 
-        const data = node.data();
+        const data = node.data() as CyData;
         const originalNode = data.originalNode;
         const isPlaceholder = !!data.isPlaceholder;
         const isDraft = !!data.isDraft;  // 草稿节点(#20):复用同一文本框编辑,保存时只更新内存
@@ -953,19 +954,19 @@ export function showInlineNodeEditor(this: CytoscapeRenderer, node: cytoscape.No
             const renderedFontSize = node.renderedStyle?.('font-size');
             return (typeof renderedFontSize === 'string' && renderedFontSize.trim())
                 ? renderedFontSize
-                : (node.style('font-size') || '20px');
+                : String(node.style('font-size') || '20px');
         };
         const getRenderedNodeFontFamily = (): string => {
             const renderedFontFamily = node.renderedStyle?.('font-family');
             return (typeof renderedFontFamily === 'string' && renderedFontFamily.trim())
                 ? renderedFontFamily
-                : (node.style('font-family') || 'inherit');
+                : String(node.style('font-family') || 'inherit');
         };
         const getRenderedNodeFontWeight = (): string => {
             const renderedFontWeight = node.renderedStyle?.('font-weight');
             return (typeof renderedFontWeight === 'string' && renderedFontWeight.trim())
                 ? renderedFontWeight
-                : (node.style('font-weight') || '500');
+                : String(node.style('font-weight') || '500');
         };
         const getEditorLineHeight = (): string => {
             const fontPx = parsePx(getRenderedNodeFontSize(), 20);

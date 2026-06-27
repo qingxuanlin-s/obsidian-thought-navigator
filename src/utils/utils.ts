@@ -525,7 +525,7 @@ export async function mainNoteInit(plugin: ZKNavigationPlugin) {
             const ctime = nodeCache?.frontmatter?.[plugin.settings.CustomCreatedTime];
 
             if (ctime) {
-                const time = moment(ctime);
+                const time = moment(ctime as string);
                 if (time.isValid()) {
                     node.ctime = time.valueOf();
                 }
@@ -612,7 +612,7 @@ export async function addSvgPanZoom(
     const mermaid = await loadMermaid();
     const { svg } = await mermaid.render(`${zkGraph.id}-svg`, mermaidStr);
 
-    const parsedSvg = new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement;
+    const parsedSvg = new DOMParser().parseFromString(String(svg), 'image/svg+xml').documentElement;
     zkGraph.appendChild(activeDocument.importNode(parsedSvg, true));
 
     if (plugin.settings.graphType === "roadmap") {

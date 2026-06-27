@@ -1,7 +1,7 @@
-import type { ElementDefinition } from 'cytoscape';
+import type { ElementDefinition, Position } from 'cytoscape';
 import { ZKNode } from 'src/view/indexView';
-import { isMocPath, stripMocSuffix } from 'src/utils/utils';
-import { Edge, GraphData, RenderOptions } from './types';
+import { isMocPath, stripMocSuffix, GroupInfo } from 'src/utils/utils';
+import { Edge, GraphData, RenderOptions, CyData } from './types';
 import {
 	getBranchStylePalette,
 	hashString,
@@ -50,9 +50,9 @@ export function convertToElementsWithGroups(data: GraphData, conversionOptions: 
 	const context = buildElementConversionContext(data, conversionOptions.options, parentLinkedNodeIds);
 	const nodes = convertNodesToElements(data.nodes, data, conversionOptions.options, context);
 	const edges = convertEdgesToElements(data.edges, context, conversionOptions.edgeControlPoints, conversionOptions.rootToFirstLevelEdgeWidth);
-	const groups = (data.metadata as any)?.groups || [];
+	const groups: GroupInfo[] = data.metadata.groups || [];
 
-	const groupNodes = groups.map((group: any) => {
+	const groupNodes = groups.map((group) => {
 		return {
 			group: 'nodes' as const,
 			data: {
@@ -66,10 +66,10 @@ export function convertToElementsWithGroups(data: GraphData, conversionOptions: 
 		};
 	});
 
-	nodes.forEach((node: any) => {
-		const nodeId = node.data.originalNode?.ID;
+	nodes.forEach((node) => {
+		const nodeId = (node.data as CyData).originalNode?.ID;
 		if (!nodeId) return;
-		const parentGroup = groups.find((g: any) => g.nodeIds.includes(nodeId));
+		const parentGroup = groups.find((g) => g.nodeIds.includes(nodeId));
 		if (parentGroup) {
 			node.data.parent = parentGroup.id;
 		}
@@ -91,7 +91,7 @@ export function convertNodesToElements(
 	data: GraphData | null,
 	options: RenderOptions | null,
 	context?: ElementConversionContext
-): any[] {
+): ElementDefinition[] {
 	const currentFilePath = data?.metadata.currentFile || '';
 	const nodeColors = data?.metadata.nodeColors || {};
 	const nodeRemarks = data?.metadata.nodeRemarks || {};
@@ -129,7 +129,7 @@ export function convertNodesToElements(
 				customFillTextColor = (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.62 ? '#1f2937' : '#f8fafc';
 			}
 		}
-		const element: any = {
+		const element: ElementDefinition = {
 			group: 'nodes' as const,
 			data: {
 				id: escapeId(node.ID),
@@ -139,7 +139,9 @@ export function convertNodesToElements(
 				title: node.title,
 				filePath: node.file?.path || '',
 				displayText: node.displayText,
-				position: node.position,
+				// node.position 是排序序号(number),借 data.position 透传;cytoscape 的
+				// ElementDataDefinition.position 类型是 Position,故 cast 保留既有行为。
+				position: node.position as unknown as Position,
 				isCurrentFile: node.file?.path === currentFilePath,
 				originalNode: node,
 				isRoot: node.isRoot || false,
@@ -186,7 +188,7 @@ export function convertEdgesToElements(
 	context: ElementConversionContext,
 	edgeControlPoints: Map<string, EdgeControlPoint>,
 	rootToFirstLevelEdgeWidth: number
-): any[] {
+): ElementDefinition[] {
 	const nodeById = context.nodeById;
 	const nodeStyleMap = context.nodeStyleMap;
 
@@ -211,7 +213,7 @@ export function convertEdgesToElements(
 		const hierarchyEdgeWidth = edge.type === 'parent'
 			? getHierarchyEdgeWidth(hierarchyDepth, rootToFirstLevelEdgeWidth)
 			: null;
-		const element: any = {
+		const element: ElementDefinition = {
 			group: 'edges' as const,
 			data: {
 				id: escapeId(edge.id),
@@ -370,7 +372,7 @@ export function getNodeBadge(node: ZKNode, options: RenderOptions | null): strin
 	if (!showNoteId || isLocalLinkNode) return '';
 	// 跨领域节点的 node.ID 是合成 ID(cd-<原ID>-<MOC基名>),展示原节点 ID 更有意义。
 	if (node.isCrossDomain) {
-		const originalId = (node as any).crossDomainOriginalNodeId || '';
+		const originalId = node.crossDomainOriginalNodeId || '';
 		return (nodeText === 'id-title' || nodeText === 'both') ? originalId : '';
 	}
 	if (nodeText === 'id-title' || nodeText === 'both') return node.ID;
@@ -550,7 +552,7 @@ export function buildVividNodeStyleMap(
 
 	const isLight = options?.themeMode === 'light';
 	const branchColorById = new Map<string, NodeBranchStyle>();
-	const styleColorMap = (data?.metadata as any)?.nodeStyleColors || {};
+	const styleColorMap = data?.metadata.nodeStyleColors || {};
 	const palette = getBranchStylePalette();
 	branchIds.forEach((branchId) => {
 		const storedColor = normalizeHexColor(styleColorMap[branchId]);
@@ -662,7 +664,7 @@ export function measureNodeLabel(label: string, options?: {
 		const raw = line || ' ';
 		const estimatedWidth = estimateTextWidth(raw);
 		const wrappedCount = Math.max(1, Math.ceil(estimatedWidth / maxWidth));
-		return new Array(wrappedCount).fill(raw);
+		return new Array<string>(wrappedCount).fill(raw);
 	});
 
 	const longestLineWidth = Math.min(

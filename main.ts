@@ -592,7 +592,7 @@ export default class ZKNavigationPlugin extends Plugin {
                 return true;
             }
             if (this.originalWindowOnError) {
-                return this.originalWindowOnError(message, source, lineno, colno, error);
+                return this.originalWindowOnError(message, source, lineno, colno, error) as boolean;
             }
             return false;
         };
@@ -630,7 +630,7 @@ export default class ZKNavigationPlugin extends Plugin {
                     }
                     this.app.workspace.trigger('zk-navigation:refresh-index-graph');
                 } catch (e) {
-                    new Notice(t('MOC create failed').replace('{message}', e.message));
+                    new Notice(t('MOC create failed').replace('{message}', e instanceof Error ? e.message : String(e)));
                     console.error('[zk-navigation] create via uri failed', e);
                 }
                 return;
@@ -671,7 +671,7 @@ export default class ZKNavigationPlugin extends Plugin {
                     }
                     this.app.workspace.trigger('zk-navigation:refresh-index-graph');
                 } catch (e) {
-                    new Notice(t('MOC create failed').replace('{message}', e.message));
+                    new Notice(t('MOC create failed').replace('{message}', e instanceof Error ? e.message : String(e)));
                     console.error('[zk-navigation] add-node via uri failed', e);
                 }
                 return;

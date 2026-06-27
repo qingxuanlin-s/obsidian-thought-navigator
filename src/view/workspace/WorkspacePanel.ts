@@ -354,7 +354,7 @@ export class WorkspacePanel {
 
     private restoreSession() {
         let target: OpenTarget | null = null;
-        try { const raw = this.deps.app.loadLocalStorage(LS_OPEN); if (raw) target = JSON.parse(raw); } catch {}
+        try { const raw = this.deps.app.loadLocalStorage(LS_OPEN) as string | null; if (raw) target = JSON.parse(raw) as OpenTarget; } catch {}
         if (target && target.kind !== 'home' && 'id' in target && !this.deps.store.getNode(target.id)) target = null;
         if (!target) {
             const first = this.deps.store.getSpaces()[0];
@@ -367,7 +367,7 @@ export class WorkspacePanel {
 
     private lastTargetNode(): WorkspaceNode | null {
         try {
-            const raw = this.deps.app.loadLocalStorage(LS_LAST);
+            const raw = this.deps.app.loadLocalStorage(LS_LAST) as string | null;
             if (!raw) return null;
             const t = JSON.parse(raw) as OpenTarget;
             if (t.kind === 'home' || !('id' in t)) return null;

@@ -4,6 +4,8 @@ import type * as cytoscape from 'cytoscape';
 import { ZKNode } from 'src/view/indexView';
 import { CrossDomainLink } from 'src/utils/utils';
 import { darkenColor, hexToRgba, isModernThemeStyle, normalizeHexColor } from './colorUtils';
+import { dataStr } from './cyData';
+import type { CyData } from './types';
 import { estimateWrappedLines } from './renderPipeline';
 import { renderExcalidrawPreview, wrapForImageToolkit } from './embedPreview';
 import type { TextMdOverlayEntry } from './CytoscapeRenderer';
@@ -734,7 +736,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
             // renderedTooltipSource = 当前已渲染进 DOM 的源文本;与最新备注不一致时下次 hover 才重渲。
             let renderedTooltipSource: string | null = null;
             const ensureTooltipRendered = () => {
-                const remarkText = node.data('remark') || '';
+                const remarkText = dataStr(node, 'remark');
                 if (remarkText === renderedTooltipSource) return;
                 renderedTooltipSource = remarkText;
                 this.renderRemarkTooltipContent(tooltipEl, remarkText);
@@ -742,7 +744,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
 
             const updateRemarkPosition = () => {
                 if (!this.cy) return;
-                const remarkText = node.data('remark') || '';
+                const remarkText = dataStr(node, 'remark');
                 const isSelected = node.selected();
                 // 快速路径：无 remark 且未选中时直接隐藏，跳过 visibility 检查和 boundingBox 计算
                 if (!remarkText && !isSelected) {
@@ -845,7 +847,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
             });
 
             remarkEl.addEventListener('mouseenter', () => {
-                const remarkText = node.data('remark') || '';
+                const remarkText = dataStr(node, 'remark');
                 if (!remarkText) return;
                 ensureTooltipRendered(); // 首次 hover 才渲染富文本(懒加载)
                 tooltipEl.setCssStyles({
@@ -1313,7 +1315,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
             if (!badge || node.data('isEmbed')) return;
             const isModern = isModernThemeStyle(this.currentOptions);
             const branchBorderColor = typeof node.data('branchNodeBorder') === 'string'
-                ? normalizeHexColor(node.data('branchNodeBorder'))
+                ? normalizeHexColor(dataStr(node, 'branchNodeBorder'))
                 : null;
             const modernBase = branchBorderColor || '#64748b';
             const badgeBackgroundColor = isModern
@@ -2406,7 +2408,7 @@ function addCollapseToggleHandle(this: CytoscapeRenderer): void {
         const hasChildren = (originalId: string): boolean => parentIdsWithChildren.has(originalId);
 
         this.cy.nodes().forEach((node: cytoscape.NodeSingular) => {
-            const data = node.data();
+            const data = node.data() as CyData;
             const originalId = data?.originalNode?.IDStr;
             if (!originalId || data?.isGroup || data?.isPlaceholder) return;
             if (!hasChildren(originalId)) return;

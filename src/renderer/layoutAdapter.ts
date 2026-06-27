@@ -1,5 +1,5 @@
 import * as cytoscape from 'cytoscape';
-import { GraphData, GraphChanges, RenderOptions } from './types';
+import { GraphData, GraphChanges, RenderOptions, CyData } from './types';
 import { ZKNode } from 'src/view/indexView';
 
 /** cytoscape 布局配置(含 dagre/cose-bilkent/elk 扩展字段,扩展未提供类型) */
@@ -276,7 +276,7 @@ export function resolveExactNodeOverlaps(cy: cytoscape.Core | null): void {
 export function applyCollapsedState(cy: cytoscape.Core, collapsedNodeIds: Set<string>): Set<string> {
     const existingIds = new Set<string>();
     cy.nodes().forEach((node: cytoscape.NodeSingular) => {
-        const id = node.data()?.originalNode?.IDStr;
+        const id = (node.data() as CyData)?.originalNode?.IDStr;
         if (id) existingIds.add(id);
     });
     const filtered = new Set(Array.from(collapsedNodeIds).filter((id) => existingIds.has(id)));
@@ -287,7 +287,7 @@ export function applyCollapsedState(cy: cytoscape.Core, collapsedNodeIds: Set<st
     const hiddenIds = new Set<string>();
     filtered.forEach((collapsedId) => {
         cy.nodes().forEach((node: cytoscape.NodeSingular) => {
-            const id = node.data()?.originalNode?.IDStr;
+            const id = (node.data() as CyData)?.originalNode?.IDStr;
             if (!id) return;
             if (id !== collapsedId && id.startsWith(`${collapsedId}.`)) {
                 hiddenIds.add(id);
@@ -297,8 +297,8 @@ export function applyCollapsedState(cy: cytoscape.Core, collapsedNodeIds: Set<st
     });
 
     cy.edges().forEach((edge: cytoscape.EdgeSingular) => {
-        const sourceId = edge.data()?.originalSource;
-        const targetId = edge.data()?.originalTarget;
+        const sourceId = (edge.data() as CyData)?.originalSource;
+        const targetId = (edge.data() as CyData)?.originalTarget;
         if ((sourceId && hiddenIds.has(sourceId)) || (targetId && hiddenIds.has(targetId))) {
             edge.addClass('zk-collapsed-hidden');
         }
