@@ -1633,7 +1633,7 @@ export default class ZKNavigationPlugin extends Plugin {
                             });
                     });
                 }
-            );
+            ) || null;
         } catch (e: unknown) {
             console.error('[zk-navigation] 注册 notebook-navigator 文件夹菜单失败', e);
         }

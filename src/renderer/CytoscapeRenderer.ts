@@ -543,7 +543,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
             cy.batch(() => {
                 // 先删除所有占位符节点（因为它们不在传入的数据中）
-                const placeholderNodes = cy.nodes().filter((node: cytoscape.NodeSingular) => node.data('isPlaceholder'));
+                const placeholderNodes = cy.nodes().filter((node: cytoscape.NodeSingular) => Boolean(node.data('isPlaceholder')));
                 if (placeholderNodes.length > 0) {
                     placeholdersRemoved = true;
                     cy.remove(placeholderNodes);
@@ -606,7 +606,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                             const wasEmbed = !!existing.data('isEmbed');
                             const nextIsEmbed = !!ele.data.isEmbed;
                             // 浅比较 ele.data 与现有 data,只有变化时才写入,避免触发不必要的 style/data 事件
-                            const currentData = existing.data();
+                            const currentData = existing.data() as Record<string, unknown>;
                             let dataChanged = false;
                             if (
                                 ele.group === 'edges' &&
@@ -625,7 +625,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                             }
                             if (dataChanged) {
                                 if (isExisting) {
-                                    const mkey = overlayMeaningfulChange(currentData, ele.data);
+                                    const mkey = overlayMeaningfulChange(currentData, ele.data as Record<string, unknown>);
                                     if (mkey) markExistingChanged(`data:${id}:${mkey}`);
                                 }
                                 existing.data(ele.data);
@@ -1869,167 +1869,167 @@ export class CytoscapeRenderer implements IGraphRenderer {
         inlineShowLinkSuggester.call(this, textarea, node, boundingBox, suggesterPopoverRef, isEmbed, onSelectFile);
     }
 
-    bindEvents(...args: any[]): any {
+    bindEvents(...args: Parameters<typeof event_bindEvents>): ReturnType<typeof event_bindEvents> {
         return event_bindEvents.call(this, ...args);
     }
 
-    bindKeyboardEvents(...args: any[]): any {
+    bindKeyboardEvents(...args: Parameters<typeof event_bindKeyboardEvents>): ReturnType<typeof event_bindKeyboardEvents> {
         return event_bindKeyboardEvents.call(this, ...args);
     }
 
-    shouldRelayout(...args: any[]): any {
+    shouldRelayout(...args: Parameters<typeof event_shouldRelayout>): ReturnType<typeof event_shouldRelayout> {
         return event_shouldRelayout.call(this, ...args);
     }
 
-    addGroupResizeHandles(...args: any[]): any {
+    addGroupResizeHandles(...args: Parameters<typeof event_addGroupResizeHandles>): ReturnType<typeof event_addGroupResizeHandles> {
         return event_addGroupResizeHandles.call(this, ...args);
     }
 
-    bindResizeHandleDrag(...args: any[]): any {
+    bindResizeHandleDrag(...args: Parameters<typeof event_bindResizeHandleDrag>): ReturnType<typeof event_bindResizeHandleDrag> {
         return event_bindResizeHandleDrag.call(this, ...args);
     }
 
-    selectNodesInBox(...args: any[]): any {
+    selectNodesInBox(...args: Parameters<typeof event_selectNodesInBox>): ReturnType<typeof event_selectNodesInBox> {
         return event_selectNodesInBox.call(this, ...args);
     }
 
-    initBoxSelection(...args: any[]): any {
+    initBoxSelection(...args: Parameters<typeof event_initBoxSelection>): ReturnType<typeof event_initBoxSelection> {
         return event_initBoxSelection.call(this, ...args);
     }
 
-    showBatchToolbar(...args: any[]): any {
+    showBatchToolbar(...args: Parameters<typeof event_showBatchToolbar>): ReturnType<typeof event_showBatchToolbar> {
         return event_showBatchToolbar.call(this, ...args);
     }
 
-    showSearchBar(...args: any[]): any {
+    showSearchBar(...args: Parameters<typeof event_showSearchBar>): ReturnType<typeof event_showSearchBar> {
         return event_showSearchBar.call(this, ...args);
     }
 
-    hideBatchToolbar(...args: any[]): any {
+    hideBatchToolbar(...args: Parameters<typeof event_hideBatchToolbar>): ReturnType<typeof event_hideBatchToolbar> {
         return event_hideBatchToolbar.call(this, ...args);
     }
 
-    createBatchToolbar(...args: any[]): any {
+    createBatchToolbar(...args: Parameters<typeof event_createBatchToolbar>): ReturnType<typeof event_createBatchToolbar> {
         return event_createBatchToolbar.call(this, ...args);
     }
 
-    createToolbarButton(...args: any[]): any {
+    createToolbarButton(...args: Parameters<typeof event_createToolbarButton>): ReturnType<typeof event_createToolbarButton> {
         return event_createToolbarButton.call(this, ...args);
     }
 
-    batchCreateGroup(...args: any[]): any {
+    batchCreateGroup(...args: Parameters<typeof event_batchCreateGroup>): ReturnType<typeof event_batchCreateGroup> {
         return event_batchCreateGroup.call(this, ...args);
     }
 
-    getActiveNode(...args: any[]): any {
+    getActiveNode(...args: Parameters<typeof event_getActiveNode>): ReturnType<typeof event_getActiveNode> {
         return event_getActiveNode.call(this, ...args);
     }
 
-    normalizeVector(...args: any[]): any {
+    normalizeVector(...args: Parameters<typeof event_normalizeVector>): ReturnType<typeof event_normalizeVector> {
         return event_normalizeVector.call(this, ...args);
     }
 
-    getBranchDirection(...args: any[]): any {
+    getBranchDirection(...args: Parameters<typeof event_getBranchDirection>): ReturnType<typeof event_getBranchDirection> {
         return event_getBranchDirection.call(this, ...args);
     }
 
-    getAutoLayoutDirection(...args: any[]): any {
+    getAutoLayoutDirection(...args: Parameters<typeof event_getAutoLayoutDirection>): ReturnType<typeof event_getAutoLayoutDirection> {
         return event_getAutoLayoutDirection.call(this, ...args);
     }
 
-    getPerpendicular(...args: any[]): any {
+    getPerpendicular(...args: Parameters<typeof event_getPerpendicular>): ReturnType<typeof event_getPerpendicular> {
         return event_getPerpendicular.call(this, ...args);
     }
 
-    getAutoLayoutStackDirection(...args: any[]): any {
+    getAutoLayoutStackDirection(...args: Parameters<typeof event_getAutoLayoutStackDirection>): ReturnType<typeof event_getAutoLayoutStackDirection> {
         return event_getAutoLayoutStackDirection.call(this, ...args);
     }
 
-    nextOffsetByProjection(...args: any[]): any {
+    nextOffsetByProjection(...args: Parameters<typeof event_nextOffsetByProjection>): ReturnType<typeof event_nextOffsetByProjection> {
         return event_nextOffsetByProjection.call(this, ...args);
     }
 
-    isAutoNodeLayoutStyle(...args: any[]): any {
+    isAutoNodeLayoutStyle(...args: Parameters<typeof event_isAutoNodeLayoutStyle>): ReturnType<typeof event_isAutoNodeLayoutStyle> {
         return event_isAutoNodeLayoutStyle.call(this, ...args);
     }
 
-    isNodeAutoLayoutForId(...args: any[]): any {
+    isNodeAutoLayoutForId(...args: Parameters<typeof event_isNodeAutoLayoutForId>): ReturnType<typeof event_isNodeAutoLayoutForId> {
         return event_isNodeAutoLayoutForId.call(this, ...args);
     }
 
-    estimateCollisionBox(...args: any[]): any {
+    estimateCollisionBox(...args: Parameters<typeof event_estimateCollisionBox>): ReturnType<typeof event_estimateCollisionBox> {
         return event_estimateCollisionBox.call(this, ...args);
     }
 
-    getAxisSpan(...args: any[]): any {
+    getAxisSpan(...args: Parameters<typeof event_getAxisSpan>): ReturnType<typeof event_getAxisSpan> {
         return event_getAxisSpan.call(this, ...args);
     }
 
-    getDirectionalDistance(...args: any[]): any {
+    getDirectionalDistance(...args: Parameters<typeof event_getDirectionalDistance>): ReturnType<typeof event_getDirectionalDistance> {
         return event_getDirectionalDistance.call(this, ...args);
     }
 
-    isPositionColliding(...args: any[]): any {
+    isPositionColliding(...args: Parameters<typeof event_isPositionColliding>): ReturnType<typeof event_isPositionColliding> {
         return event_isPositionColliding.call(this, ...args);
     }
 
-    resolveShortcutPosition(...args: any[]): any {
+    resolveShortcutPosition(...args: Parameters<typeof event_resolveShortcutPosition>): ReturnType<typeof event_resolveShortcutPosition> {
         return event_resolveShortcutPosition.call(this, ...args);
     }
 
-    getFreeChildShortcutPosition(...args: any[]): any {
+    getFreeChildShortcutPosition(...args: Parameters<typeof event_getFreeChildShortcutPosition>): ReturnType<typeof event_getFreeChildShortcutPosition> {
         return event_getFreeChildShortcutPosition.call(this, ...args);
     }
 
-    getAutoChildShortcutPosition(...args: any[]): any {
+    getAutoChildShortcutPosition(...args: Parameters<typeof event_getAutoChildShortcutPosition>): ReturnType<typeof event_getAutoChildShortcutPosition> {
         return event_getAutoChildShortcutPosition.call(this, ...args);
     }
 
-    handleCreateChildNode(...args: any[]): any {
+    handleCreateChildNode(...args: Parameters<typeof event_handleCreateChildNode>): ReturnType<typeof event_handleCreateChildNode> {
         return event_handleCreateChildNode.call(this, ...args);
     }
 
-    getFreeSiblingShortcutPosition(...args: any[]): any {
+    getFreeSiblingShortcutPosition(...args: Parameters<typeof event_getFreeSiblingShortcutPosition>): ReturnType<typeof event_getFreeSiblingShortcutPosition> {
         return event_getFreeSiblingShortcutPosition.call(this, ...args);
     }
 
-    getAutoSiblingShortcutPosition(...args: any[]): any {
+    getAutoSiblingShortcutPosition(...args: Parameters<typeof event_getAutoSiblingShortcutPosition>): ReturnType<typeof event_getAutoSiblingShortcutPosition> {
         return event_getAutoSiblingShortcutPosition.call(this, ...args);
     }
 
-    handleCreateSiblingNode(...args: any[]): any {
+    handleCreateSiblingNode(...args: Parameters<typeof event_handleCreateSiblingNode>): ReturnType<typeof event_handleCreateSiblingNode> {
         return event_handleCreateSiblingNode.call(this, ...args);
     }
 
-    getFreeParentShortcutPosition(...args: any[]): any {
+    getFreeParentShortcutPosition(...args: Parameters<typeof event_getFreeParentShortcutPosition>): ReturnType<typeof event_getFreeParentShortcutPosition> {
         return event_getFreeParentShortcutPosition.call(this, ...args);
     }
 
-    getAutoParentShortcutPosition(...args: any[]): any {
+    getAutoParentShortcutPosition(...args: Parameters<typeof event_getAutoParentShortcutPosition>): ReturnType<typeof event_getAutoParentShortcutPosition> {
         return event_getAutoParentShortcutPosition.call(this, ...args);
     }
 
-    handleCreateParentNode(...args: any[]): any {
+    handleCreateParentNode(...args: Parameters<typeof event_handleCreateParentNode>): ReturnType<typeof event_handleCreateParentNode> {
         return event_handleCreateParentNode.call(this, ...args);
     }
 
-    createPlaceholderConnectionLine(...args: any[]): any {
+    createPlaceholderConnectionLine(...args: Parameters<typeof event_createPlaceholderConnectionLine>): ReturnType<typeof event_createPlaceholderConnectionLine> {
         return event_createPlaceholderConnectionLine.call(this, ...args);
     }
 
-    handleArrowKeyNavigation(...args: any[]): any {
+    handleArrowKeyNavigation(...args: Parameters<typeof event_handleArrowKeyNavigation>): ReturnType<typeof event_handleArrowKeyNavigation> {
         return event_handleArrowKeyNavigation.call(this, ...args);
     }
 
-    batchDeleteNodes(...args: any[]): any {
+    batchDeleteNodes(...args: Parameters<typeof event_batchDeleteNodes>): ReturnType<typeof event_batchDeleteNodes> {
         return event_batchDeleteNodes.call(this, ...args);
     }
 
-    batchChangeColor(...args: any[]): any {
+    batchChangeColor(...args: Parameters<typeof event_batchChangeColor>): ReturnType<typeof event_batchChangeColor> {
         return event_batchChangeColor.call(this, ...args);
     }
 
-    isSmartConnectionEnabled(...args: any[]): any {
+    isSmartConnectionEnabled(...args: Parameters<typeof event_isSmartConnectionEnabled>): ReturnType<typeof event_isSmartConnectionEnabled> {
         return event_isSmartConnectionEnabled.call(this, ...args);
     }
 
