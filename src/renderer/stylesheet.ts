@@ -878,6 +878,17 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                 'color': theme.node.textSelected
             }
         },
+        {
+            selector: 'node.zk-right-drag-delete-target',
+            style: {
+                'border-color': '#ef4444',
+                'border-width': '3px',
+                'border-opacity': 1,
+                'overlay-color': '#ef4444',
+                'overlay-opacity': 0.18,
+                'z-index': 1005
+            }
+        },
         // 根节点选中态需要压过通用 node:selected
         {
             selector: 'node[?isRoot][!isFreeNode]:selected',

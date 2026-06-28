@@ -26,6 +26,7 @@ const OVERLAY_CULL_MARGIN = 320;
 const OVERLAY_ZOOM_GATE = 0.35;
 // 节点数超过此阈值才启用 zoom 门控 + 分帧懒建;以下规模的图本就不慢,走原 eager 渲染。
 const LARGE_GRAPH_OVERLAY_THRESHOLD = 400;
+const OFFSCREEN_TRANSFORM = 'translate(-99999px, -99999px)';
 
 function middleEllipsizeToWidth(text: string, maxWidth: number, ctx: CanvasRenderingContext2D | null, font: string): string {
 	const fullText = String(text || '');
@@ -146,7 +147,12 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                     delete entry.el.dataset.styleSig;
                 }
                 delete entry.el.dataset.editing;
-                entry.el.setCssStyles({ display: 'block' });
+                // 不在原点点亮:旧版在此强制 display:block,把缓存 overlay 全部点亮再靠定位器挪回位。
+                // 但全量重渲染带 fit 时(_pendingFit),同步定位被跳过、推迟到 fit 后的 viewport 事件,
+                // 且该事件按视口剔除——落到屏外的节点永不定位 → overlay 停在容器原点 (0,0) 显形
+                // (左上角幽灵卡)。改为先停到屏外:由 updateOverlayPos 在节点进入视口被定位时
+                // 写回真实 left/top 并显形;屏外未定位的保持在 -99999 不可见。
+                entry.el.setCssStyles({ display: 'block', left: '-99999px', top: '-99999px' });
                 if (entry.el.parentNode) entry.el.parentNode.removeChild(entry.el);
             });
 
@@ -715,6 +721,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                     pointerEvents: 'auto',
                     cursor: `${readOnly ? 'default' : 'pointer'}`,
                     userSelect: 'none',
+                    transform: OFFSCREEN_TRANSFORM,
                 });
             };
             applyRemarkBadgeStyle();
@@ -725,6 +732,8 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
 			tooltipEl.dataset.nodeId = node.id();
 			tooltipEl.setCssStyles({
 				position: 'absolute',
+				left: '-99999px',
+				top: '-99999px',
 				maxWidth: '280px',
 				padding: '8px 10px',
 				background: 'rgba(15, 23, 42, 0.96)',
@@ -761,36 +770,44 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                 if (!this.cy) return;
                 const remarkText = dataStr(node, 'remark');
                 const isSelected = node.selected();
-                // 快速路径：无 remark 且未选中时直接隐藏，跳过 visibility 检查和 boundingBox 计算
-                if (!remarkText && !isSelected) {
-                    if (remarkEl.style.display !== 'none') {
-                        remarkEl.setCssStyles({ display: 'none' });
-                        tooltipEl.setCssStyles({
-                            display: 'none',
-                            opacity: '0',
-                        });
-                    }
-                    return;
-                }
                 const isHidden =
                     node.removed() ||
                     node.hasClass('zk-collapsed-hidden') ||
                     node.style('display') === 'none' ||
                     !node.visible();
-                const shouldShow = !isHidden;
-                // 备注 tooltip 内容改为懒渲染(见 ensureTooltipRendered):此处不再每帧/首帧跑
-                // MarkdownRenderer,推迟到 hover 时才渲染,避免打开 MOC 时为全部备注一次性渲染。
-                applyRemarkBadgeStyle();
-
-                if (!shouldShow) {
-                    remarkEl.setCssStyles({ display: 'none' });
+                if (isHidden) {
+                    remarkEl.setCssStyles({
+                        display: 'none',
+                        transform: OFFSCREEN_TRANSFORM,
+                    });
                     tooltipEl.setCssStyles({
                         display: 'none',
                         opacity: '0',
+                        left: '-99999px',
+                        top: '-99999px',
                         transform: 'translateY(4px)',
                     });
                     return;
                 }
+                // 快速路径：无 remark 且未选中时直接隐藏，跳过 visibility 检查和 boundingBox 计算
+                if (!remarkText && !isSelected) {
+                    if (remarkEl.style.display !== 'none') {
+                        remarkEl.setCssStyles({
+                            display: 'none',
+                            transform: OFFSCREEN_TRANSFORM,
+                        });
+                        tooltipEl.setCssStyles({
+                            display: 'none',
+                            opacity: '0',
+                            left: '-99999px',
+                            top: '-99999px',
+                        });
+                    }
+                    return;
+                }
+                // 备注 tooltip 内容改为懒渲染(见 ensureTooltipRendered):此处不再每帧/首帧跑
+                // MarkdownRenderer,推迟到 hover 时才渲染,避免打开 MOC 时为全部备注一次性渲染。
+                applyRemarkBadgeStyle();
 
                 remarkEl.setCssStyles({ display: 'flex' });
                 tooltipEl.setCssStyles({ display: 'block' });
@@ -903,7 +920,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                     0 0 7px rgba(255, 206, 100, 0.3)`;
             starEl.setCssStyles({
                 position: 'absolute',
-                display: 'flex',
+                display: 'none',
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: `${isLightTheme ? '#b8860b' : '#f0d489'}`,
@@ -916,7 +933,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                 boxShadow: `${anchorBadgeShadow}`,
                 textShadow: `${anchorBadgeTextShadow}`,
                 zIndex: '8',
-                transform: 'translate(-50%, -50%)',
+                transform: `${OFFSCREEN_TRANSFORM} translate(-50%, -50%)`,
             });
             badgeContainer.appendChild(starEl);
 
@@ -927,9 +944,15 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                     node.hasClass('zk-collapsed-hidden') ||
                     node.style('display') === 'none' ||
                     !node.visible();
-                if (isHidden) { starEl.setCssStyles({ display: 'none' }); return; }
+                if (isHidden) {
+                    starEl.setCssStyles({
+                        display: 'none',
+                        transform: `${OFFSCREEN_TRANSFORM} translate(-50%, -50%)`,
+                    });
+                    return;
+                }
 
-                starEl.setCssStyles({ display: 'block' });
+                starEl.setCssStyles({ display: 'flex' });
                 const zoom = this.cy.zoom();
                 const bb = node.renderedBoundingBox();
                 const badgeSize = Math.max(MIN_ANCHOR_PX, 26 * zoom);
@@ -961,7 +984,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
             draftEl.textContent = badgeText;
             draftEl.setCssStyles({
                 position: 'absolute',
-                display: 'flex',
+                display: 'none',
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: '#ffffff',
@@ -973,7 +996,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                 borderRadius: '999px',
                 boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
                 zIndex: '8',
-                transform: 'translate(-50%, -50%)',
+                transform: `${OFFSCREEN_TRANSFORM} translate(-50%, -50%)`,
             });
             badgeContainer.appendChild(draftEl);
 
@@ -984,7 +1007,13 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                     node.hasClass('zk-collapsed-hidden') ||
                     node.style('display') === 'none' ||
                     !node.visible();
-                if (isHidden) { draftEl.setCssStyles({ display: 'none' }); return; }
+                if (isHidden) {
+                    draftEl.setCssStyles({
+                        display: 'none',
+                        transform: `${OFFSCREEN_TRANSFORM} translate(-50%, -50%)`,
+                    });
+                    return;
+                }
 
                 draftEl.setCssStyles({ display: 'flex' });
                 const zoom = this.cy.zoom();
@@ -1031,7 +1060,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                 : `跨领域链接 · ${cdLinkTargetText(links[0])}`;
             cdEl.setCssStyles({
                 position: 'absolute',
-                display: 'flex',
+                display: 'none',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '2px',
@@ -1046,7 +1075,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                 borderRadius: '999px',
                 boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
                 zIndex: '8',
-                transform: 'translate(-50%, -50%)',
+                transform: `${OFFSCREEN_TRANSFORM} translate(-50%, -50%)`,
             });
             badgeContainer.appendChild(cdEl);
 
@@ -1229,7 +1258,10 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                     node.style('display') === 'none' ||
                     !node.visible();
                 if (isHidden) {
-                    cdEl.setCssStyles({ display: 'none' });
+                    cdEl.setCssStyles({
+                        display: 'none',
+                        transform: `${OFFSCREEN_TRANSFORM} translate(-50%, -50%)`,
+                    });
                     if (cdPanel.style.display !== 'none') hideCdPanel();
                     return;
                 }
@@ -1276,7 +1308,8 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
 				position: 'absolute',
 				pointerEvents: 'none',
 				borderRadius: '999px',
-				transform: 'translate(-50%, -50%)',
+				display: 'none',
+				transform: `${OFFSCREEN_TRANSFORM} translate(-50%, -50%)`,
 			});
             dotEl.setCssStyles({
                 backgroundColor: color,
@@ -1285,12 +1318,24 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
             badgeContainer.appendChild(dotEl);
 
             const updateDotPos = () => {
-                if (!this.cy || node.removed()) { dotEl.setCssStyles({ display: 'none' }); return; }
+                if (!this.cy || node.removed()) {
+                    dotEl.setCssStyles({
+                        display: 'none',
+                        transform: `${OFFSCREEN_TRANSFORM} translate(-50%, -50%)`,
+                    });
+                    return;
+                }
                 const isHidden =
                     node.hasClass('zk-collapsed-hidden') ||
                     node.style('display') === 'none' ||
                     !node.visible();
-                if (isHidden) { dotEl.setCssStyles({ display: 'none' }); return; }
+                if (isHidden) {
+                    dotEl.setCssStyles({
+                        display: 'none',
+                        transform: `${OFFSCREEN_TRANSFORM} translate(-50%, -50%)`,
+                    });
+                    return;
+                }
 
                 const zoom = this.cy.zoom();
                 const dotSize = Math.max(5, 7 * zoom);
@@ -1576,10 +1621,11 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                     zIndex: '10',
                     width: '24px',
                     height: '24px',
-                    display: 'flex',
+                    display: 'none',
                     alignItems: 'center',
                     justifyContent: 'center',
                     color: 'var(--text-normal)',
+                    transform: OFFSCREEN_TRANSFORM,
                 });
                 const toggleSvg = toggleEl.querySelector('svg') as SVGElement | null;
                 if (toggleSvg) {
@@ -1617,11 +1663,18 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                 const updateTogglePos = () => {
                     if (!this.cy) return;
                     const isHidden = node.removed() || node.hasClass('zk-collapsed-hidden') || node.style('display') === 'none' || !node.visible();
-                    if (isHidden) { toggleEl.setCssStyles({ display: 'none' }); return; }
+                    if (isHidden) {
+                        toggleEl.setCssStyles({
+                            display: 'none',
+                            transform: OFFSCREEN_TRANSFORM,
+                        });
+                        return;
+                    }
                     if (!node.selected()) {
                         toggleEl.setCssStyles({
                             display: 'none',
                             pointerEvents: 'none',
+                            transform: OFFSCREEN_TRANSFORM,
                         });
                         return;
                     }
@@ -1914,8 +1967,11 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                     overlayEl.dataset.styleSig = styleSig;
                     overlayEl.setCssStyles({
                         position: 'absolute',
-                        left: '0',
-                        top: '0',
+                        // 初始落点停到屏外而非原点:styleSig 变化(如局部聚焦切 muted/active class)会重套
+                        // 基础样式,若落在 (0,0) 且此刻节点在屏外被剔除,就会在左上角显形。由 updateOverlayPos
+                        // 写回真实 left/top。
+                        left: '-99999px',
+                        top: '-99999px',
                         display: `${overlayDisplay}`,
                         flexDirection: 'column',
                         justifyContent: 'center',

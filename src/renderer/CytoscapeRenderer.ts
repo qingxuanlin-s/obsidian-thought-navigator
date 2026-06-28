@@ -211,6 +211,19 @@ export class CytoscapeRenderer implements IGraphRenderer {
     // 记住用户上一次在文本选区工具条里选择的颜色，跨选区保持
     lastPickedTextColor: string | null = null;
     lastPickedBgColor: string | null = null;
+    rightDragDeleteState: {
+        start: { x: number; y: number } | null;
+        startNode: cytoscape.NodeSingular | null;
+        active: boolean;
+        nodeIds: Set<string>;
+        suppressContextMenuUntil: number;
+    } = {
+        start: null,
+        startNode: null,
+        active: false,
+        nodeIds: new Set(),
+        suppressContextMenuUntil: 0,
+    };
 
     // 文本节点 Markdown 渲染缓存：跨 addNodeBadges 重建复用已渲染的 overlay DOM + Component
     // key = `${sourcePath}||${rawSource}`

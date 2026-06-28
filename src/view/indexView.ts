@@ -4133,6 +4133,36 @@ window.addEventListener('resize', fitGraph);
             await this.deleteNodeFromGraph(node, relationCount);
         });
 
+        this.addTrackedListener(branchGraphDiv, 'right-drag-delete-nodes', async (event: CustomEvent) => {
+            if (this.isMobileReadOnly()) {
+                return;
+            }
+            const { nodeIds } = event.detail as { nodeIds?: string[] };
+            const ids = Array.from(new Set((nodeIds || []).map((id) => String(id || '').trim()).filter(Boolean)));
+            if (ids.length === 0) {
+                return;
+            }
+
+            if (ids.length === 1) {
+                const id = ids[0];
+                if (this.draftNodes.has(id)) {
+                    this.deleteDraftNode(id);
+                    return;
+                }
+
+                const cyNode = this.findCyNodeByIdStr(id);
+                const original = cyNode?.data('originalNode') as ZKNode | undefined;
+                if (!cyNode || !original) {
+                    return;
+                }
+
+                await this.deleteNodeFromGraph(original, cyNode.connectedEdges().length);
+                return;
+            }
+
+            await this.requestDeleteNodes(ids);
+        });
+
         // 监听跨领域节点右键菜单事件
         this.addTrackedListener(branchGraphDiv, 'cross-domain-contextmenu', async (event: CustomEvent) => {
             const { node, event: mouseEvent } = event.detail as { node?: { file?: { mocPath?: string } | null }; event: MouseEvent };

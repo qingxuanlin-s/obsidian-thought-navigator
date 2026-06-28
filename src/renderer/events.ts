@@ -22,6 +22,25 @@ function getClipboardTextForNode(node: cytoscape.NodeSingular): string {
     ).trim();
 }
 
+const RIGHT_DRAG_DELETE_THRESHOLD = 8;
+
+function nodeIdForDeletion(node: cytoscape.NodeSingular): string {
+    const data = node.data() as CyData;
+    const original = data.originalNode;
+    return String(original?.IDStr || original?.ID || data.id || node.id() || '').trim();
+}
+
+function addNodeToRightDragDeleteSelection(renderer: CytoscapeRenderer, node: cytoscape.NodeSingular): void {
+    const data = node.data() as CyData;
+    if (data.isGroup || data.isPlaceholder) return;
+
+    const nodeId = nodeIdForDeletion(node);
+    if (!nodeId || renderer.rightDragDeleteState.nodeIds.has(nodeId)) return;
+
+    renderer.rightDragDeleteState.nodeIds.add(nodeId);
+    node.addClass('zk-right-drag-delete-target');
+}
+
 async function writeTextToSystemClipboard(text: string): Promise<boolean> {
     if (!text) return false;
 
@@ -299,8 +318,73 @@ export function bindEvents(this: CytoscapeRenderer): void {
             }, data.label);
         });
 
+        this.cy.on('cxttapstart', (evt: cytoscape.EventObject) => {
+            if (this.isReadOnlyMode()) {
+                return;
+            }
+            const target = evt.target;
+            this.rightDragDeleteState.start = { ...evt.renderedPosition };
+            this.rightDragDeleteState.startNode = target !== this.cy && (target as cytoscape.SingularElementArgument).isNode?.()
+                ? target as cytoscape.NodeSingular
+                : null;
+            this.rightDragDeleteState.active = false;
+            this.rightDragDeleteState.nodeIds.clear();
+            this.cy?.nodes('.zk-right-drag-delete-target').removeClass('zk-right-drag-delete-target');
+        });
+
+        this.cy.on('cxtdrag', (evt: cytoscape.EventObject) => {
+            if (!this.rightDragDeleteState.start || this.rightDragDeleteState.active) {
+                return;
+            }
+            const dx = evt.renderedPosition.x - this.rightDragDeleteState.start.x;
+            const dy = evt.renderedPosition.y - this.rightDragDeleteState.start.y;
+            if (Math.hypot(dx, dy) >= RIGHT_DRAG_DELETE_THRESHOLD) {
+                this.rightDragDeleteState.active = true;
+                if (this.rightDragDeleteState.startNode) {
+                    addNodeToRightDragDeleteSelection(this, this.rightDragDeleteState.startNode);
+                }
+                const target = evt.target;
+                if (target !== this.cy && (target as cytoscape.SingularElementArgument).isNode?.()) {
+                    addNodeToRightDragDeleteSelection(this, target as cytoscape.NodeSingular);
+                }
+            }
+        });
+
+        this.cy.on('cxtdragover', 'node[!isGroup]', (evt: cytoscape.EventObject) => {
+            if (!this.rightDragDeleteState.start) {
+                return;
+            }
+            this.rightDragDeleteState.active = true;
+            addNodeToRightDragDeleteSelection(this, evt.target as cytoscape.NodeSingular);
+        });
+
+        this.cy.on('cxttapend', () => {
+            const deletedNodeIds = Array.from(this.rightDragDeleteState.nodeIds);
+            const wasActive = this.rightDragDeleteState.active;
+
+            this.rightDragDeleteState.start = null;
+            this.rightDragDeleteState.startNode = null;
+            this.rightDragDeleteState.active = false;
+            this.rightDragDeleteState.nodeIds.clear();
+            this.cy?.nodes('.zk-right-drag-delete-target').removeClass('zk-right-drag-delete-target');
+
+            if (wasActive && deletedNodeIds.length > 0) {
+                this.rightDragDeleteState.suppressContextMenuUntil = performance.now() + 250;
+                this.container?.dispatchEvent(new CustomEvent('right-drag-delete-nodes', {
+                    detail: { nodeIds: deletedNodeIds }
+                }));
+            }
+        });
+
         // 分组节点右键菜单事件（删除分组）
         this.cy.on('cxttap', 'node[?isGroup]', (evt: cytoscape.EventObject) => {
+            if (
+                this.rightDragDeleteState.active ||
+                this.rightDragDeleteState.nodeIds.size > 0 ||
+                performance.now() < this.rightDragDeleteState.suppressContextMenuUntil
+            ) {
+                return;
+            }
             if (this.isReadOnlyMode()) {
                 return;
             }
@@ -350,6 +434,13 @@ export function bindEvents(this: CytoscapeRenderer): void {
 
         // 节点右键菜单事件
         this.cy.on('cxttap', 'node[!isGroup]', (evt: cytoscape.EventObject) => {
+            if (
+                this.rightDragDeleteState.active ||
+                this.rightDragDeleteState.nodeIds.size > 0 ||
+                performance.now() < this.rightDragDeleteState.suppressContextMenuUntil
+            ) {
+                return;
+            }
             if (this.isReadOnlyMode()) {
                 return;
             }
