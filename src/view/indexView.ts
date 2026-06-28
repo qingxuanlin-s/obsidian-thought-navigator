@@ -150,6 +150,7 @@ export class ZKIndexView extends FileView {
         suggestedNodeId?: string;  // 预生成的节点 ID
         childNodeId?: string;  // 需要移动到此节点下的子节点 ID（用于创建父节点时）
         layoutStyle?: 'free' | 'auto';
+        referenceNodeId?: string;
     }> = new Map();
     private readonly PLACEHOLDER_EXPIRY_MS = 10 * 60 * 1000;
 
@@ -648,6 +649,7 @@ export class ZKIndexView extends FileView {
             suggestedNodeId?: string;
             childNodeId?: string;
             layoutStyle?: 'free' | 'auto';
+            referenceNodeId?: string;
         } = {}
     ): void {
         const mocPath = this.plugin.settings.mocCurrentFile || '__graph__';
@@ -663,6 +665,7 @@ export class ZKIndexView extends FileView {
             suggestedNodeId: extra.suggestedNodeId,
             childNodeId: extra.childNodeId,
             layoutStyle: extra.layoutStyle,
+            referenceNodeId: extra.referenceNodeId,
         });
     }
 
@@ -4373,6 +4376,8 @@ window.addEventListener('resize', fitGraph);
                 );
             }
 
+            const preferredAutoPosition = placeholderInfo.position;
+
             // 从占位符追踪中移除
             this.placeholderNodes.delete(nodeId);
 
@@ -4381,7 +4386,7 @@ window.addEventListener('resize', fitGraph);
 
             // 声明式 reflow: 整棵树重排, 给新节点腾位置, 回收空缺。
             if (this.isNodeAutoLayout(suggestedID)) {
-                await this.applyNewSiblingSide(suggestedID);
+                await this.applyNewSiblingSide(suggestedID, preferredAutoPosition);
                 await this.reflowAutoLayout(suggestedID);
             }
 
@@ -4461,6 +4466,8 @@ window.addEventListener('resize', fitGraph);
                 );
             }
 
+            const preferredAutoPosition = placeholderInfo.position;
+
             // 从占位符追踪中移除
             this.placeholderNodes.delete(nodeId);
 
@@ -4469,7 +4476,7 @@ window.addEventListener('resize', fitGraph);
 
             // 声明式 reflow: 整棵树重排, 给新节点腾位置, 回收空缺。
             if (this.isNodeAutoLayout(suggestedID)) {
-                await this.applyNewSiblingSide(suggestedID);
+                await this.applyNewSiblingSide(suggestedID, preferredAutoPosition);
                 await this.reflowAutoLayout(suggestedID);
             }
 
@@ -8172,13 +8179,8 @@ window.addEventListener('resize', fitGraph);
             return;
         }
 
-        const placeholderLayoutStyle = this.resolvePlaceholderLayoutStyle(activeNode.IDStr);
-        const finalPosition = placeholderLayoutStyle === 'auto'
-            ? this.getAutoPlaceholderPosition(activeNode.IDStr, position)
-            : position;
-
         // 直接创建占位符节点，指定父节点
-        await this.createPlaceholderNode(finalPosition, activeNode.IDStr);
+        await this.createPlaceholderNode(position, activeNode.IDStr);
     }
 
     /**
@@ -8222,6 +8224,7 @@ window.addEventListener('resize', fitGraph);
             parentNodeId: parentId,
             suggestedNodeId: effectiveSuggestedId,
             layoutStyle: placeholderLayoutStyle,
+            referenceNodeId: activeNode.IDStr,
         });
 
         // 通知 Cytoscape 渲染器添加占位符节点
@@ -8476,6 +8479,8 @@ window.addEventListener('resize', fitGraph);
             );
         }
 
+        const preferredAutoPosition = placeholderInfo?.position;
+
         // 从占位符追踪中移除
         this.placeholderNodes.delete(tempId);
 
@@ -8485,7 +8490,7 @@ window.addEventListener('resize', fitGraph);
         // 声明式 reflow: 让算法重新分配整棵树的空间, 给新节点腾位置,
         // 同时回收被删/移动节点留下的空缺。手动拖过的节点作为锚点保留。
         if (this.isNodeAutoLayout(suggestedID)) {
-            await this.applyNewSiblingSide(suggestedID);
+            await this.applyNewSiblingSide(suggestedID, preferredAutoPosition);
             await this.reflowAutoLayout(suggestedID);
         }
 
@@ -8580,6 +8585,8 @@ window.addEventListener('resize', fitGraph);
             await this.clearEmbedNodeSizeFromMOC(mocFile, suggestedID);
         }
 
+        const preferredAutoPosition = placeholderInfo?.position;
+
         // 从占位符追踪中移除
         this.placeholderNodes.delete(tempId);
 
@@ -8589,7 +8596,7 @@ window.addEventListener('resize', fitGraph);
         // 声明式 reflow: 让算法重新分配整棵树的空间, 给新节点腾位置,
         // 同时回收被删/移动节点留下的空缺。手动拖过的节点作为锚点保留。
         if (this.isNodeAutoLayout(suggestedID)) {
-            await this.applyNewSiblingSide(suggestedID);
+            await this.applyNewSiblingSide(suggestedID, preferredAutoPosition);
             await this.reflowAutoLayout(suggestedID);
         }
 
@@ -8962,6 +8969,27 @@ window.addEventListener('resize', fitGraph);
         return projected + 56;
     }
 
+    private getPlaceholderSortPosition(
+        parentNodeId: string,
+        fallbackPosition: { x: number; y: number },
+        referenceNodeId?: string
+    ): { x: number; y: number } {
+        const parentPos = this.getNodePositionForLayout(parentNodeId);
+        if (!parentPos || !referenceNodeId) return fallbackPosition;
+
+        const preset = this.getPresetForChildren(parentNodeId);
+        const direction = this.getNodeDirectionFromParent(referenceNodeId, preset);
+        const stackAxis = this.getAutoStackAxis(direction, preset);
+        const refPos = this.getNodePositionForLayout(referenceNodeId);
+        if (!refPos) return fallbackPosition;
+
+        const siblingGap = this.computeSiblingSlotGap(referenceNodeId, stackAxis) * 0.5;
+        return {
+            x: refPos.x + stackAxis.x * siblingGap,
+            y: refPos.y + stackAxis.y * siblingGap
+        };
+    }
+
     private getChildNodeIds(parentNodeId: string): string[] {
         return this.mocNodes
             .filter((node) => this.getParentNodeId(node) === parentNodeId)
@@ -9049,11 +9077,13 @@ window.addEventListener('resize', fitGraph);
         if (sameParentReference) {
             direction = this.getNodeDirectionFromParent(sameParentReference, preset);
         } else if (childIds.length > 0) {
-            const lastChild = childIds[childIds.length - 1];
-            direction = this.getNodeDirectionFromParent(lastChild, preset);
+            direction = quantizeToPool(fallbackPosition.x - parentPos.x, fallbackPosition.y - parentPos.y, pool);
         } else {
+            const dropped = quantizeToPool(fallbackPosition.x - parentPos.x, fallbackPosition.y - parentPos.y, pool);
             const inherited = this.getNodeDirectionFromParent(parentNodeId, preset);
-            direction = pool.includes(inherited) ? inherited : pool[0];
+            direction = Math.hypot(fallbackPosition.x - parentPos.x, fallbackPosition.y - parentPos.y) > 1
+                ? dropped
+                : (pool.includes(inherited) ? inherited : pool[0]);
         }
         const stackAxis = this.getAutoStackAxis(direction, preset);
 
@@ -9063,14 +9093,25 @@ window.addEventListener('resize', fitGraph);
                 this.getNodeDirectionFromParent(childId, preset) === direction
             );
             if (sameDirSiblings.length > 0) {
-                referenceId = sameDirSiblings.reduce((best, candidate) => {
-                    const bestPos = this.getNodePositionForLayout(best);
+                const fallbackProj = (fallbackPosition.x - parentPos.x) * stackAxis.x
+                    + (fallbackPosition.y - parentPos.y) * stackAxis.y;
+                let minProj = Infinity;
+                let maxProj = -Infinity;
+                let maxId: string | undefined;
+                for (const candidate of sameDirSiblings) {
                     const candPos = this.getNodePositionForLayout(candidate);
-                    if (!bestPos || !candPos) return best;
-                    const bestProj = (bestPos.x - parentPos.x) * stackAxis.x + (bestPos.y - parentPos.y) * stackAxis.y;
-                    const candProj = (candPos.x - parentPos.x) * stackAxis.x + (candPos.y - parentPos.y) * stackAxis.y;
-                    return candProj > bestProj ? candidate : best;
-                });
+                    if (!candPos) continue;
+                    const candProj = (candPos.x - parentPos.x) * stackAxis.x
+                        + (candPos.y - parentPos.y) * stackAxis.y;
+                    if (candProj < minProj) minProj = candProj;
+                    if (candProj > maxProj) {
+                        maxProj = candProj;
+                        maxId = candidate;
+                    }
+                }
+                if (maxId && fallbackProj >= minProj) {
+                    referenceId = maxId;
+                }
             }
         }
         const referencePos = referenceId ? this.getNodePositionForLayout(referenceId) : null;
@@ -9087,10 +9128,15 @@ window.addEventListener('resize', fitGraph);
             };
         } else {
             const dirVec = DIR_VECTORS[direction];
-            const directionalDistance = this.getAutoChildDirectionalDistance(parentNodeId, direction);
+            const directionalDistance = Math.max(
+                this.getAutoChildDirectionalDistance(parentNodeId, direction),
+                Math.abs((fallbackPosition.x - parentPos.x) * dirVec.x + (fallbackPosition.y - parentPos.y) * dirVec.y)
+            );
+            const stackOffset = (fallbackPosition.x - parentPos.x) * stackAxis.x
+                + (fallbackPosition.y - parentPos.y) * stackAxis.y;
             initial = {
-                x: parentPos.x + dirVec.x * directionalDistance,
-                y: parentPos.y + dirVec.y * directionalDistance
+                x: parentPos.x + dirVec.x * directionalDistance + stackAxis.x * stackOffset,
+                y: parentPos.y + dirVec.y * directionalDistance + stackAxis.y * stackOffset
             };
         }
 
@@ -9313,7 +9359,10 @@ window.addEventListener('resize', fitGraph);
      * 随后的 reflow 即据此摆放。把最后一个节点挪到对侧,之后新建的也跟到对侧。
      * 必须在 reflowAutoLayout 之前调用。
      */
-    private async applyNewSiblingSide(newNodeId: string): Promise<void> {
+    private async applyNewSiblingSide(
+        newNodeId: string,
+        preferredPosition?: { x: number; y: number }
+    ): Promise<void> {
         if (!this.isNodeAutoLayout(newNodeId)) return;
         const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
         if (!mocFile) return;
@@ -9322,8 +9371,17 @@ window.addEventListener('resize', fitGraph);
         await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
             const parent = this.findNodeInTree(mocData.nodes, parentId);
             const siblings = (parent?.children || []).filter((c) => c.nodeID !== newNodeId);
-            if (siblings.length === 0) return;
             const pos = mocData.nodePositions || (mocData.nodePositions = {});
+            const nn = this.findNodeInTree(mocData.nodes, newNodeId);
+            if (preferredPosition) {
+                pos[newNodeId] = {
+                    x: Math.round(preferredPosition.x * 100) / 100,
+                    y: Math.round(preferredPosition.y * 100) / 100,
+                };
+                if (nn) nn.extBitMap = ((nn.extBitMap || 0) | NODE_FLAG_SIDE_PINNED) & 0xff;
+                return;
+            }
+            if (siblings.length === 0) return;
             const pp = pos[parentId];
             // 优先用新节点自己的占位坐标(已落在被选中参考节点的槽位旁)定左右侧并保留其 y;
             // 缺失时回退到末尾兄弟。直接用末尾兄弟会把新节点强行对齐到最底下那一行,
@@ -9336,7 +9394,6 @@ window.addEventListener('resize', fitGraph);
                 x: Math.round((pp.x + (leftSide ? -315 : 315)) * 100) / 100,
                 y: ref.y,
             };
-            const nn = this.findNodeInTree(mocData.nodes, newNodeId);
             if (nn) nn.extBitMap = ((nn.extBitMap || 0) | NODE_FLAG_SIDE_PINNED) & 0xff;
         });
     }
@@ -9357,11 +9414,13 @@ window.addEventListener('resize', fitGraph);
         if (!cy) return;
         const ph = cy.$id(placeholderTempId);
         if (!ph || ph.length === 0) return;
+        const placeholderInfo = this.placeholderNodes.get(placeholderTempId);
+        const effectiveReferenceNodeId = referenceNodeId || placeholderInfo?.referenceNodeId;
 
         // 取参考节点(或父的第一个子节点)的分支色,作为占位符的颜色排序键,
         // 否则占位符落到 __default__ 组会被排到所有同色兄弟之后。
         let colorKey: string | undefined;
-        const refId = referenceNodeId || this.getChildNodeIds(parentNodeId)[0];
+        const refId = effectiveReferenceNodeId || this.getChildNodeIds(parentNodeId)[0];
         if (refId) {
             const refNode= cy.$('node').filter((n: cytoscape.NodeSingular) => {
                 const o = dataAs<ZKNode | undefined>(n, 'originalNode');
@@ -9371,13 +9430,19 @@ window.addEventListener('resize', fitGraph);
                 colorKey = refNode.data('branchNodeBorder') || refNode.data('branchNodeBackground') || undefined;
             }
         }
+        const placeholderPos = ph.position();
+        const sortPosition = this.getPlaceholderSortPosition(
+            parentNodeId,
+            { x: placeholderPos.x, y: placeholderPos.y },
+            effectiveReferenceNodeId
+        );
 
         await this.relayoutAutoLayoutSiblings(parentNodeId, {
             compactVisibleNodes: true,
             collapsedNodeIds: this.collapsedNodeIds,
             rebalanceRootChildren: true,
             persistPositions: false,
-            includePlaceholder: { id: placeholderTempId, parentId: parentNodeId, colorKey, size: placeholderSize },
+            includePlaceholder: { id: placeholderTempId, parentId: parentNodeId, colorKey, size: placeholderSize, sortPosition },
         });
 
         // 引擎把占位符摆到了干净槽位,同步占位记录的 position,让后续落盘坐标与所见一致。
@@ -9423,7 +9488,7 @@ window.addEventListener('resize', fitGraph);
             // 让现有兄弟为占位符让出槽位。colorKey 用于让占位符归入参考节点的颜色排序组。
             // size:用真实(编辑框实测)尺寸覆盖占位符的空 cy 尺寸,使预览让位间距=提交后最终间距,
             //      消除"提交时按真实尺寸再排一次"的弹动(占位符 label 为空,cy 量到的是兜底小尺寸)。
-            includePlaceholder?: { id: string; parentId: string; colorKey?: string; size?: { width: number; height: number } };
+            includePlaceholder?: { id: string; parentId: string; colorKey?: string; size?: { width: number; height: number }; sortPosition?: { x: number; y: number } };
         } = {}
     ): Promise<void> {
         if (!this.branchRenderer) {
@@ -9620,7 +9685,9 @@ window.addEventListener('resize', fitGraph);
         // 预览占位符同理:把其 cy 坐标喂进 nodePositions,使引擎按"位置相对父节点"定左右侧,
         // 否则缺位置会退回 sibling-index 取 pool,把新节点甩到对侧。
         if (includePlaceholder && nodes[includePlaceholder.id]) {
-            draftSavedPositions[includePlaceholder.id] = { ...nodes[includePlaceholder.id].position };
+            draftSavedPositions[includePlaceholder.id] = {
+                ...(includePlaceholder.sortPosition || nodes[includePlaceholder.id].position)
+            };
         }
 
         const nodePositions = computeAutoLayout({
@@ -10479,7 +10546,8 @@ window.addEventListener('resize', fitGraph);
         if (!parentNodeId || !this.isNodeAutoLayout(parentNodeId)) return;
         // 用真实尺寸重排一次预览让位(占位符仍在 cy 时才有意义)
         if (placeholderTempId && placeholderSize) {
-            await this.previewReflowForPlaceholder(parentNodeId, placeholderTempId, undefined, placeholderSize);
+            const referenceNodeId = this.placeholderNodes.get(placeholderTempId)?.referenceNodeId;
+            await this.previewReflowForPlaceholder(parentNodeId, placeholderTempId, referenceNodeId, placeholderSize);
         }
         await this.saveAllNodePositionsBeforeRefresh();
     }
