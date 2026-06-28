@@ -6638,6 +6638,10 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 .zkw .dsec-add:hover { background:rgba(139,109,240,0.28); }
 .zkw .dsec-add.on { background:rgba(139,109,240,0.34); box-shadow:inset 0 0 0 1px var(--violet); }
 .zkw .dsec .dsec-ctls { display:flex; align-items:center; gap:8px; }
+.zkw .rangeseg { display:inline-flex; gap:2px; padding:2px; background:var(--panel-2); border:1px solid var(--rule-2); border-radius:8px; }
+.zkw .rangeseg .rseg { font-family:var(--font); font-size:11px; font-weight:500; color:var(--ink-faint); padding:3px 9px; border-radius:6px; cursor:pointer; text-transform:none; letter-spacing:0; transition:color 0.12s, background 0.12s; }
+.zkw .rangeseg .rseg:hover { color:var(--ink); }
+.zkw .rangeseg .rseg.on { color:#d8c9ff; background:rgba(139,109,240,0.22); box-shadow:inset 0 0 0 1px var(--violet); }
 .zkw .asort { background:var(--panel-2); border:1px solid var(--rule-2); border-radius:7px; color:var(--ink); font-family:var(--font); font-size:11px; padding:4px 8px; outline:none; cursor:pointer; text-transform:none; letter-spacing:0; }
 .zkw .asort:focus { border-color:var(--rule-3); }
 .zkw .dchip-x { color:var(--ink-faint); cursor:pointer; font-size:9px; margin-left:1px; }

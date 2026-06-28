@@ -490,6 +490,11 @@ export default {
     // ===== Workspace (typed-node 工作区) =====
     "ws Workspace": "工作区",
     "ws Today": "今日",
+    "ws Task": "任务",
+    "ws range today": "今日",
+    "ws range 7d": "近7天",
+    "ws range 30d": "近30天",
+    "ws range all": "所有",
     "ws Graph": "图谱",
     "ws New space": "新建 Space",
     "ws hide sidebar": "收起侧边栏",

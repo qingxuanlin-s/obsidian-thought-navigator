@@ -331,6 +331,31 @@ function todayLocal(): string {
     return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
+/** base(YYYY-MM-DD)往后推 days 天,返回同格式字符串 */
+function addDaysLocal(base: string, days: number): string {
+    const [y, m, d] = base.split('-').map(Number);
+    const dt = new Date(y, m - 1, d + days);
+    const mm = String(dt.getMonth() + 1).padStart(2, '0');
+    const dd = String(dt.getDate()).padStart(2, '0');
+    return `${dt.getFullYear()}-${mm}-${dd}`;
+}
+
+// 首页任务时间窗:今日 / 近7天 / 近30天 / 所有,持久化于 localStorage
+type HomeRange = 'today' | '7d' | '30d' | 'all';
+const HOME_RANGE_DAYS: Record<Exclude<HomeRange, 'all'>, number> = { today: 0, '7d': 7, '30d': 30 };
+const LS_HOME_RANGE = 'zkw.home.range';
+
+function loadHomeRange(ctx: RenderCtx): HomeRange {
+    try {
+        const v = ctx.app.loadLocalStorage(LS_HOME_RANGE) as string | null;
+        if (v === 'today' || v === '7d' || v === '30d' || v === 'all') return v;
+    } catch {}
+    return 'today';
+}
+function saveHomeRange(ctx: RenderCtx, r: HomeRange): void {
+    try { ctx.app.saveLocalStorage(LS_HOME_RANGE, r); } catch {}
+}
+
 /**
  * 在 afterEl 之后挂一个临时行内输入框,Enter 提交 / Esc / 失焦取消。
  * multiline=true 时改用自适应高度的 textarea:Enter 提交、Shift+Enter 换行(用于多行备注)。
@@ -644,7 +669,7 @@ export function renderHome(container: HTMLElement, ctx: RenderCtx, lastTarget: W
     const ck = container.createDiv({ cls: 'ck' });
     const h = ck.createDiv({ cls: 'ck-hero' });
     h.createDiv({ cls: 'ck-crumb', text: t('ws Workspace') });
-    h.createDiv({ cls: 'ck-titlerow' }).createDiv().createEl('h1', { cls: 'ck-h1', text: t('ws Today') });
+    h.createDiv({ cls: 'ck-titlerow' }).createDiv().createEl('h1', { cls: 'ck-h1', text: t('ws Task') });
 
     const body = ck.createDiv({ cls: 'ck-body' });
 
@@ -688,6 +713,9 @@ export function renderHome(container: HTMLElement, ctx: RenderCtx, lastTarget: W
 /** 今天 / 逾期:跨项目 未完成 且(截止 ≤ 今天 或 今天落在 [开始, 截止] 区间内)的任务,逾期标红;勾选直接回写背书笔记 */
 function renderTodayDue(body: HTMLElement, ctx: RenderCtx): void {
     const today = todayLocal();
+    const range = loadHomeRange(ctx);
+    // 'all' 无上界;其余以 今天+N天 为截止上界
+    const horizon = range === 'all' ? null : addDaysLocal(today, HOME_RANGE_DAYS[range]);
     interface DueItem { project: WSProjectNode; task: MdTask; label: string; overdue: boolean; sortKey: string; }
     const items: DueItem[] = [];
     ctx.store.getAllNodes()
@@ -701,17 +729,26 @@ function renderTodayDue(body: HTMLElement, ctx: RenderCtx): void {
                 const parsed = parseTaskText(tk.text);
                 const start = (parsed.start ?? '').slice(0, 10);
                 const due = (parsed.due ?? '').slice(0, 10);
-                const dueByToday = !!due && due <= today;                          // 今天到期或逾期
-                const inInterval = !!start && start <= today && (!due || today <= due); // 已开始且未过截止
-                if (!dueByToday && !inInterval) continue;
+                if (range !== 'all') {
+                    const dueWithin = !!due && due <= horizon!;                         // 截止落在时间窗内(含逾期)
+                    const inInterval = !!start && start <= today && (!due || today <= due); // 已开始且未过截止
+                    if (!dueWithin && !inInterval) continue;
+                }
                 const overdue = !!due && due < today;
-                const label = overdue ? '⚠ ' + due : due ? '📅 ' + due : '🛫 ' + start;
-                items.push({ project: pr, task: tk, label, overdue, sortKey: due || start });
+                const label = overdue ? '⚠ ' + due : due ? '📅 ' + due : start ? '🛫 ' + start : '';
+                items.push({ project: pr, task: tk, label, overdue, sortKey: due || start || '￿' });
             }
         });
     items.sort((a, b) => (a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0));
 
-    body.createDiv({ cls: 'dsec', text: t('ws today due') });
+    const head = body.createDiv({ cls: 'dsec row' });
+    head.createSpan({ text: t('ws today due') });
+    const seg = head.createDiv({ cls: 'rangeseg' });
+    ([['today', 'ws range today'], ['7d', 'ws range 7d'], ['30d', 'ws range 30d'], ['all', 'ws range all']] as const)
+        .forEach(([val, key]) => {
+            const b = seg.createSpan({ cls: 'rseg' + (val === range ? ' on' : ''), text: t(key) });
+            b.onclick = () => { if (val !== range) { saveHomeRange(ctx, val); ctx.refresh(); } };
+        });
     if (!items.length) { body.createDiv({ cls: 'empty', text: t('ws today due empty') }); return; }
     const list = body.createDiv({ cls: 'actions' });
     items.forEach(it => {
@@ -727,8 +764,10 @@ function renderTodayDue(body: HTMLElement, ctx: RenderCtx): void {
         const main = row.createDiv({ cls: 'amain' });
         renderTaskText(main.createDiv({ cls: 'atext-view' }), ctx, tk.text);
         const meta = main.createDiv({ cls: 'anote' });
-        meta.createSpan({ cls: 'adue' + (it.overdue ? ' overdue' : '') }).setText(it.label);
-        meta.createSpan({ cls: 'anote-mark', text: '·' });
+        if (it.label) {
+            meta.createSpan({ cls: 'adue' + (it.overdue ? ' overdue' : '') }).setText(it.label);
+            meta.createSpan({ cls: 'anote-mark', text: '·' });
+        }
         meta.createSpan({ text: it.project.title });
         if (tk.note !== undefined) {
             const noteEl = main.createDiv({ cls: 'anote' });

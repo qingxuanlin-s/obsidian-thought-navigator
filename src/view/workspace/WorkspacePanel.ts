@@ -180,7 +180,7 @@ export class WorkspacePanel {
 
         const home = tbar.createDiv({ cls: 'home' });
         setIcon(home.createSpan({ cls: 'hic' }), 'home');
-        home.createSpan({ text: t('ws Today') });
+        home.createSpan({ text: t('ws Task') });
         home.onclick = () => this.navigate({ kind: 'home' });
 
         tbar.createDiv({ cls: 'spacer' });

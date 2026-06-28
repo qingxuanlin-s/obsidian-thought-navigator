@@ -4,6 +4,7 @@ import { t } from "src/lang/helper";
 import { RenderCtx, glyph, fwChip, bucketLabel, STATUS_COLOR, progressFor } from "./render";
 
 const FW_CLASS: Record<string, string> = { para: 'para', overview: 'overview', custom: 'custom' };
+const LS_COLLAPSED = "zkw.tree.collapsed";
 
 /**
  * 左侧 rail 的 Spaces 导航树。
@@ -14,14 +15,31 @@ export class SpacesTree {
     private collapsed = new Set<string>();
     private current: OpenTarget | null = null;
 
-    constructor(private container: HTMLElement, private ctx: RenderCtx) {}
+    constructor(private container: HTMLElement, private ctx: RenderCtx) {
+        this.load();
+    }
+
+    /** 折叠状态持久化:跨面板重建 / 重载存活(对应 LS_OPEN/LS_RAIL 同机制) */
+    private load() {
+        try {
+            const raw = this.ctx.app.loadLocalStorage(LS_COLLAPSED) as string | null;
+            if (raw) {
+                const arr = JSON.parse(raw) as string[];
+                if (Array.isArray(arr)) this.collapsed = new Set(arr);
+            }
+        } catch {}
+    }
+
+    private save() {
+        try { this.ctx.app.saveLocalStorage(LS_COLLAPSED, JSON.stringify([...this.collapsed])); } catch {}
+    }
 
     setCurrent(t: OpenTarget | null) { this.current = t; }
 
     /** 展开到目标:沿 Space → 桶 → 结构父链逐级展开,使目标节点在树里可见(只展开不折叠) */
     revealTarget(t: OpenTarget | null) {
         if (!t || t.kind === 'home' || !('id' in t)) return;
-        if (t.kind === 'space') { this.collapsed.delete('space:' + t.id); return; }
+        if (t.kind === 'space') { this.collapsed.delete('space:' + t.id); this.save(); return; }
         const node = this.ctx.store.getNode(t.id);
         if (!node || node.type === 'space') return;
         const spaceId = node.spaceId;
@@ -55,6 +73,7 @@ export class SpacesTree {
                 if (bucket) this.collapsed.delete(`bucket:${spaceId}:${bucket.id}`);
             }
         }
+        this.save();
     }
 
     private isCurrent(id: string): boolean {
@@ -64,6 +83,7 @@ export class SpacesTree {
     private toggle(key: string) {
         if (this.collapsed.has(key)) this.collapsed.delete(key);
         else this.collapsed.add(key);
+        this.save();
         this.render();
     }
     private isOpen(key: string) { return !this.collapsed.has(key); }
@@ -95,6 +115,7 @@ export class SpacesTree {
         const allCollapsed = keys.length > 0 && keys.every(k => this.collapsed.has(k));
         if (allCollapsed) this.collapsed.clear();
         else this.collapsed = new Set(keys);
+        this.save();
         this.render();
     }
 
