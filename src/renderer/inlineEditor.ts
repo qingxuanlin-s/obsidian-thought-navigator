@@ -1616,13 +1616,13 @@ export function startInPlaceTextEdit(this: CytoscapeRenderer, node: cytoscape.No
                 cancelEdit();
                 return;
             }
-            // 内容变化时让高度回归"按新内容自动适配":
-            // 清掉旧的高度锁定（含 inline style 与 data），下一轮 applySizes 会基于新内容重新测量。
-            // 宽度保持用户已锁定的值不动。
-            const widthLockedByUser = Number(node.data('manualWidthModel') || 0) > 0;
-            const heightLockedByUser = Number(node.data('manualHeightModel') || 0) > 0;
-            try { node.removeStyle('height'); } catch { /* ignore */ }
-            if (heightLockedByUser) {
+            const manualWidthModel = Number(node.data('manualWidthModel') || 0);
+            const manualHeightModel = Number(node.data('manualHeightModel') || 0);
+            const widthLockedByUser = manualWidthModel > 0;
+            const heightLockedByUser = manualHeightModel > 0;
+            // 未手动锁高的文本节点继续按新内容自动适配；手动拉高/拉宽过的节点保留用户尺寸。
+            if (!heightLockedByUser) {
+                try { node.removeStyle('height'); } catch { /* ignore */ }
                 node.removeData('manualHeightModel');
             }
             node.data('label', rawValue);
@@ -1634,8 +1634,7 @@ export function startInPlaceTextEdit(this: CytoscapeRenderer, node: cytoscape.No
             const currentHeight = Number.isFinite(rawCurrentHeight) && rawCurrentHeight > 0 ? rawCurrentHeight : entry.height;
             const finalWidth = currentWidth;
             const finalHeightModel = currentHeight;
-            // 只在用户显式锁过宽度时才回写 embed_node_sizes;高度走自动适配,不再持久化。
-            const shouldPersistManualSize = widthLockedByUser;
+            const shouldPersistManualSize = widthLockedByUser || heightLockedByUser;
             isSaved = true;
             clearLiveEdit();
             restoreNodeInteractivity();
@@ -1652,9 +1651,8 @@ export function startInPlaceTextEdit(this: CytoscapeRenderer, node: cytoscape.No
                     content: rawValue,
                     position: anchoredPosition,
                     nodeSize: shouldPersistManualSize ? {
-                        widthModel: finalWidth,
-                        // 高度走自动适配:用 0 表示"无锁定",由 stylesheet/overlay 测量动态决定。
-                        heightModel: 0
+                        widthModel: widthLockedByUser ? (manualWidthModel || finalWidth) : 0,
+                        heightModel: heightLockedByUser ? (manualHeightModel || finalHeightModel) : 0
                     } : undefined
                 }
             }));
@@ -2373,22 +2371,24 @@ export function startInPlaceTextEditLegacy(this: CytoscapeRenderer, node: cytosc
             // 不清除 dataset.editing —— 留到图重建后的 mark-sweep/detach 来清理；
             // 若内容未变化 indexView 会 return，下面的 fallback 会兜底恢复
             const nodePosition = node.position();
-            // 内容变化时让高度回归"按新内容自动适配":
-            // 清掉旧的高度锁定（含 inline style 与 data），避免把旧内容的高度延续到新内容。
-            const widthLockedByUser = Number(node.data('manualWidthModel') || 0) > 0;
-            try { node.removeStyle('height'); } catch { /* ignore */ }
-            node.removeData('manualHeightModel');
+            const manualWidthModel = Number(node.data('manualWidthModel') || 0);
+            const manualHeightModel = Number(node.data('manualHeightModel') || 0);
+            const widthLockedByUser = manualWidthModel > 0;
+            const heightLockedByUser = manualHeightModel > 0;
+            if (!heightLockedByUser) {
+                try { node.removeStyle('height'); } catch { /* ignore */ }
+                node.removeData('manualHeightModel');
+            }
             this.cy?.style().update();
-            const shouldPersistManualSize = widthLockedByUser;
+            const shouldPersistManualSize = widthLockedByUser || heightLockedByUser;
             this.container?.dispatchEvent(new CustomEvent('node-inline-edit-save', {
                 detail: {
                     node: originalNode,
                     content: newValue,
                     position: { x: nodePosition.x, y: nodePosition.y },
                     nodeSize: shouldPersistManualSize ? {
-                        widthModel: Number(node.width()),
-                        // 高度走自动适配:用 0 表示"无锁定"。
-                        heightModel: 0
+                        widthModel: widthLockedByUser ? (manualWidthModel || Number(node.width())) : 0,
+                        heightModel: heightLockedByUser ? (manualHeightModel || savedHeight) : 0
                     } : undefined
                 }
             }));
