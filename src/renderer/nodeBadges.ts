@@ -1869,19 +1869,28 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
         // 尺寸回写助手(上移到循环前):懒建时每个节点在 buildOrReuse 内即时调用,
         // 而非等循环结束统一 flush(那时懒建尚未发生)。
         const measureOverlayHeightForWidth = (el: HTMLElement, width: number, fallbackHeight: number): number => {
-            if (!el || width <= 0) return fallbackHeight;
+            if (!el || width <= 0 || !el.isConnected) return fallbackHeight;
             const prevWidth = el.style.width;
             const prevHeight = el.style.height;
             const prevFontSize = el.style.fontSize;
+            const prevDisplay = el.style.display;
+            const prevVisibility = el.style.visibility;
             const base = Number(el.dataset.baseFontSize || '20');
             try {
-                // 以模型坐标测量内容高度(font-size 复位到 base,对应 zoom=1 的自然尺寸)
+                // 以模型坐标测量内容高度(font-size 复位到 base,对应 zoom=1 的自然尺寸)。
+                // 强制可布局态:刚建好的 overlay 初始 display:none(等 updateOverlayPos 定位后才显形),
+                // 此时 scrollHeight=0 会被 clamp 成 32 → 节点变扁。测量瞬间临时 display:block+visibility:hidden
+                // (同步内复原,不产生绘制),拿到真实内容高度;占位符保存等首建场景不再被压扁。
                 el.setCssStyles({
                     fontSize: `${base}px`,
                     width: `${width}px`,
                     height: 'auto',
+                    display: 'block',
+                    visibility: 'hidden',
                 });
                 const measured = Math.ceil(Math.max(el.scrollHeight, el.getBoundingClientRect().height)) + 12;
+                // 仍测不到(未挂载/被父级隐藏等)→ 回退,避免把节点压成扁条
+                if (measured <= 12) return fallbackHeight;
                 return Math.max(32, Math.min(640, measured));
             } catch {
                 return fallbackHeight;
@@ -1890,6 +1899,8 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                     width: prevWidth,
                     height: prevHeight,
                     fontSize: prevFontSize,
+                    display: prevDisplay,
+                    visibility: prevVisibility,
                 });
             }
         };
@@ -1901,23 +1912,37 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                     if (node.removed()) return;
                     const currentWidthModel = Number(node.data('manualWidthModel') || 0);
                     const currentHeightModel = Number(node.data('manualHeightModel') || 0);
-                    if (currentWidthModel <= 0 && currentHeightModel <= 0) return;
-                    const targetWidth = currentWidthModel > 0 ? currentWidthModel : e.width;
-                    // 仅当用户显式锁过高度（currentHeightModel > 0）才回写 data；
-                    // 否则只在视觉层用 overlay 测量动态适配高度，避免把"为了当前内容渲染的临时高度"固化成用户手动尺寸，
-                    // 否则改短内容后旧高度会被持续保留下来。
-                    const targetHeight = currentHeightModel > 0
+                    const hasManualWidth = currentWidthModel > 0;
+                    const hasManualHeight = currentHeightModel > 0;
+                    // 测量基准宽度:锁过宽就用锁定值,纯自动则用样式表算出的当前自动宽度
+                    const targetWidth = hasManualWidth ? currentWidthModel : Math.ceil(node.width());
+                    // 高度:锁过高用锁定值;否则一律按 overlay 实测内容高度适配(含 markdown 段落间距/换行)。
+                    // 纯自动文本节点此前被 early-return 跳过 → 落回 stylesheet 纯文本估高,多段落内容会被压扁裁剪;
+                    // 这里改为也用 overlay 真实高度。仅当用户显式锁过高度才回写 manualHeightModel,
+                    // 纯自动只在视觉层 node.style 设高,不固化成手动尺寸(改短内容后能重新适配)。
+                    // fallback 用 node.height()(样式表估高,健全值),不用 e.height
+                    //(e.height 在 display:none 下测得也可能是被压扁的值,会把节点带扁)
+                    const targetHeight = hasManualHeight
                         ? currentHeightModel
-                        : measureOverlayHeightForWidth(e.el, targetWidth, e.height);
+                        : measureOverlayHeightForWidth(e.el, targetWidth, Math.ceil(node.height()));
                     e.width = targetWidth;
                     e.height = targetHeight;
-                    if (currentWidthModel > 0) {
+                    if (hasManualWidth) {
                         node.data('manualWidthModel', targetWidth);
                     }
-                    if (currentHeightModel > 0) {
+                    if (hasManualHeight) {
                         node.data('manualHeightModel', targetHeight);
+                    } else {
+                        // 自动高度:把 overlay 实测高度缓存给样式表,下次重渲首帧即用真实高度,
+                        // 不再先用纯文本估高画一帧"扁"再被这里撑高(消除闪烁)。
+                        this.measuredAutoTextHeights.set(node.id(), targetHeight);
                     }
-                    node.style({ width: targetWidth, height: targetHeight });
+                    // 锁过宽的节点同时接管宽+高;纯自动只接管高度,宽度留给样式表自动算
+                    if (hasManualWidth) {
+                        node.style({ width: targetWidth, height: targetHeight });
+                    } else {
+                        node.style({ height: targetHeight });
+                    }
                 });
             });
         };
@@ -2048,13 +2073,9 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                 entry.usedInCycle = true;
                 applyTextOverlayBaseStyle(entry.el);
                 badgeContainer.appendChild(entry.el);
-                // 旧数据可能只有 manualWidthModel、没有 manualHeightModel。
-                // 缓存命中时也要用 overlay 真实高度同步一次节点尺寸，否则会落回
-                // stylesheet 的纯文本估算高度，导致旧宽度锁定节点被压扁。
-                if (Number(node.data('manualWidthModel') || 0) > 0
-                    || Number(node.data('manualHeightModel') || 0) > 0) {
-                    measureAndSizePending.push({ node, entry });
-                }
+                // 缓存命中时也要用 overlay 真实高度同步一次节点尺寸,否则会落回
+                // stylesheet 的纯文本估算高度,导致(锁宽 / 纯自动多段落)节点被压扁裁剪。
+                measureAndSizePending.push({ node, entry });
             } else {
                 // 缓存未命中：创建新 overlay
                 const overlayEl = activeDocument.createElement('div');

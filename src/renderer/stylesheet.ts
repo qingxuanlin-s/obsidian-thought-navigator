@@ -44,6 +44,8 @@ export interface StylesheetDeps {
         maxWidth: number;
         lineHeight?: number;
     }) => { width: number; height: number; lineCount: number };
+    /** 取某节点 overlay 实测高度(模型坐标),无则 0。用于重渲时复用真实高度,消除"先扁后撑高"闪烁 */
+    getMeasuredAutoHeight?: (id: string) => number;
 }
 
 export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): StyleEntry[] {
@@ -86,6 +88,13 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
             .replace(/<[^>]+>/g, '');
     };
     const getTextMeasureLabel = (ele: cytoscape.NodeSingular): string => getVisibleTextForMeasure(dataStr(ele, 'label'));
+
+    // 优先用 overlay 实测高度(若 applySizes 已测过本节点),否则回退纯文本估高。
+    // 让重渲首帧就拿到真实高度,消除"先扁后撑高"的闪烁。
+    const resolveAutoTextHeight = (ele: cytoscape.NodeSingular, autoFallback: number): number => {
+        const measured = deps.getMeasuredAutoHeight?.(ele.id()) || 0;
+        return measured > 0 ? measured : autoFallback;
+    };
 
     const measureSingleLineFileNode = (label: string, opts: {
         fontSize: number;
@@ -226,7 +235,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                         const opts = manualWidthModel > 0
                             ? { maxContentWidth: Math.max(80, manualWidthModel - 72) }
                             : undefined;
-                        const auto = computeAutoTextMetrics(getTextMeasureLabel(ele), opts).height;
+                        const auto = resolveAutoTextHeight(ele, computeAutoTextMetrics(getTextMeasureLabel(ele), opts).height);
                         return manualHeightModel > 0 ? Math.max(manualHeightModel, auto) : auto;
                     }
                     const label = dataStr(ele, 'label');
@@ -381,7 +390,8 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                             paddingX: 72,
                             paddingY: 34
                         }).height;
-                        return manualHeightModel > 0 ? Math.max(manualHeightModel, auto) : auto;
+                        const resolved = resolveAutoTextHeight(ele, auto);
+                        return manualHeightModel > 0 ? Math.max(manualHeightModel, resolved) : resolved;
                     }
                     const label = dataStr(ele, 'label');
                     const auto = Math.max(computeFirstLevelMetrics(label).nodeHeight, 80);
@@ -498,7 +508,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                             lineHeight: 42
                         }).height;
                     }
-                    return deps.measureNodeLabel(label, {
+                    return resolveAutoTextHeight(ele, deps.measureNodeLabel(label, {
                         baseWidth: 210,
                         minHeight: 78,
                         maxWidth: 560,
@@ -506,7 +516,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                         lineHeight: 42,
                         paddingX: 88,
                         paddingY: 38
-                    }).height;
+                    }).height);
                 },
                 'border-width': '4.5px'
             }

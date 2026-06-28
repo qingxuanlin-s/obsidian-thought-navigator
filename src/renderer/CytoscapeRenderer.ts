@@ -239,6 +239,12 @@ export class CytoscapeRenderer implements IGraphRenderer {
     // key = `${sourcePath}||${rawSource}`
     textMdOverlayCache: Map<string, TextMdOverlayEntry> = new Map();
 
+    // 自动高度文本节点的 overlay 实测高度(模型坐标),key = node id。
+    // 由 buildTextMarkdownOverlays/applySizes 在测出 overlay 真实高度后写入,
+    // 供 stylesheet 的 height 函数在重渲时直接复用——避免每次重渲都先用纯文本估高(偏矮)
+    // 画一帧"扁"再被 applySizes 撑高的闪烁。仅缓存,内容变更后由下一次 applySizes 覆盖。
+    measuredAutoTextHeights: Map<string, number> = new Map();
+
     // 节点剪贴板（Cmd+C/V 复制粘贴）
     clipboardNodes: Array<{ originalNode: ZKNode; position: { x: number; y: number } }> = [];
     // Cmd+C 时同步写入系统剪贴板的文本快照;Cmd+V 时跟系统剪贴板比对,
@@ -1001,6 +1007,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             if (entry.el.parentNode) entry.el.remove();
         });
         this.textMdOverlayCache.clear();
+        this.measuredAutoTextHeights.clear();
         if (this.remarkTooltipComponent) {
             try { this.remarkTooltipComponent.unload(); } catch { /* ignore */ }
             this.remarkTooltipComponent = null;
@@ -1469,6 +1476,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     lineCount: Math.max(1, Math.round(fallback.height / (opts.lineHeight ?? Math.ceil(opts.fontSize * 1.4))))
                 };
             },
+            getMeasuredAutoHeight: (id: string) => this.measuredAutoTextHeights.get(id) || 0,
             normalizeHexColor,
             hexToRgba,
             lightenColor,
