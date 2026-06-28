@@ -2064,7 +2064,7 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                 // 若节点在屏外被新增(incIds 增量路径),badgePositionUpdater 的视口剔除会
                 // 跳过 updateOverlayPos,使该 overlay 从未被定位而停留在左上角原点显形。
                 // 由 updateOverlayPos 在节点进入视口被定位时再 display:block。
-                overlayEl.style.display = 'none';
+                overlayEl.setCssStyles({ display: 'none' });
                 overlayEl.addEventListener('click', (e: MouseEvent) => {
                     if (overlayEl.dataset.editing === '1') return;
                     e.preventDefault();
