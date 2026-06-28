@@ -174,13 +174,16 @@ export class SpacesTree {
         const nkey = 'node:' + n.id;
         const open = this.isOpen(nkey);
 
-        const row = this.container.createDiv({ cls: 'nrow' + (this.isCurrent(n.id) ? ' sel' : '') });
-        row.setCssStyles({ paddingLeft: `${16 + depth * 14}px` });
+        const row = this.container.createDiv({
+            cls: `nrow depth-${Math.min(depth, 6)}${kids.length ? ' has-children' : ''}${this.isCurrent(n.id) ? ' sel' : ''}`
+        });
+        row.setCssStyles({ paddingLeft: `${14 + depth * 16}px` });
+        row.dataset.depth = String(depth);
 
         // 嵌套层级的 1px 竖向缩进引导线(桶根节点 depth=2 不画)
         if (depth > 2) {
             const guide = row.createSpan({ cls: 'nguide' });
-            guide.setCssStyles({ left: `${10 + depth * 14}px` });
+            guide.setCssStyles({ left: `${7 + depth * 16}px` });
         }
 
         const caret = row.createSpan({ cls: 'caret' + (open ? ' open' : '') + (kids.length ? '' : ' leaf') });

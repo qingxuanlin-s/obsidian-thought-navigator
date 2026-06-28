@@ -6332,9 +6332,17 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 .zkw .srow .fw { margin-left:auto; }
 .zkw .srow:hover { background:rgba(255,255,255,0.02); }
 
-.zkw .nrow { display:flex; align-items:center; gap:8px; padding:5px 12px 5px 30px; font-size:13px; font-weight:400; color:var(--ink-dim); cursor:pointer; user-select:none; position:relative; }
-.zkw .nguide { position:absolute; top:0; bottom:0; width:1px; background:var(--rule); pointer-events:none; }
-.zkw .nrow:hover { background:rgba(255,255,255,0.035); }
+.zkw .nrow { display:flex; align-items:center; gap:8px; min-height:28px; padding:5px 12px 5px 30px; font-size:13px; font-weight:400; color:var(--ink-dim); cursor:pointer; user-select:none; position:relative; }
+.zkw .nrow.depth-2 { color:var(--ink-dim); font-weight:560; }
+.zkw .nrow.depth-3,
+.zkw .nrow.depth-4,
+.zkw .nrow.depth-5,
+.zkw .nrow.depth-6 { color:var(--ink-faint); background:linear-gradient(90deg, rgba(255,255,255,0.018), transparent 70%); }
+.zkw .nrow.has-children > .nm { font-weight:600; color:var(--ink-dim); }
+.zkw .nrow:not(.has-children) > .g { opacity:0.78; }
+.zkw .nguide { position:absolute; top:-1px; bottom:-1px; width:1px; background:rgba(255,255,255,0.16); pointer-events:none; }
+.zkw .nguide::after { content:''; position:absolute; top:50%; width:9px; height:1px; background:rgba(255,255,255,0.16); }
+.zkw .nrow:hover { background:rgba(255,255,255,0.045); }
 .zkw .nrow.sel { background:linear-gradient(90deg, rgba(139,109,240,0.16), rgba(139,109,240,0.04)); box-shadow:inset 2px 0 0 var(--violet); }
 .zkw .nrow.sel .nm { color:#d8c9ff; }
 .zkw .nrow .nm { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
