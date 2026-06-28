@@ -1271,7 +1271,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 if (edge.data('controlPointDistance') !== undefined) return; // 手动控制点优先
                 // 目标主轴半尺寸:源端肩长改按「到子节点近端边框」算,近端对齐的兄弟肩长一致,不再在父节点旁交叉。
                 const targetHalfMain = horizontal ? tn.width() / 2 : tn.height() / 2;
-                const cp = computeDirectionalEdgeControlPoints(s.x, s.y, t.x, t.y, direction, 0.5, minTangentSource, minTangentTarget, targetHalfMain);
+                // 源端肩短(0.3)+ 目标端肩中等(0.5):挺括扇形,离父快速转向、平顺切入子;对称 0.5/0.5 会回到软波浪。
+                const cp = computeDirectionalEdgeControlPoints(s.x, s.y, t.x, t.y, direction, 0.3, 0.5, minTangentSource, minTangentTarget, targetHalfMain);
                 // 钳住首/末控制点 weight(分别决定源/目标端点求交),其余中间控制点不影响端点。
                 const weights = Array.isArray(cp.weights) ? cp.weights.slice() : cp.weights;
                 if (Array.isArray(weights) && weights.length > 0) {

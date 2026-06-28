@@ -274,7 +274,10 @@ export function computeDirectionalEdgeControlPoints(
 	tx: number,
 	ty: number,
 	direction: 'LR' | 'RL' | 'TB' | 'BT',
-	k = 0.5,
+	// 切向系数拆成源/目标两端:源端肩短(kSource 小)→ 离开父节点很快转向子节点方向、不甩长水平段;
+	// 目标端肩中等(kTarget)→ 平顺地沿主轴水平切入子节点。等值时退化为原对称 S(两端等长肩=波浪软线)。
+	kSource = 0.3,
+	kTarget = 0.5,
 	minTangentSource = 12,
 	minTangentTarget = minTangentSource,
 	targetHalfMain = 0
@@ -294,20 +297,20 @@ export function computeDirectionalEdgeControlPoints(
 	//     目标节点框内部就找不到交点("invalid endpoints",边消失)。因此下限需 ≥ 该端节点半尺寸,
 	//     由调用方按 source/target 各自尺寸传入,保证控制点始终在节点外。正常间距下 |dx|*k 远大于它。
 	// shrink:从主轴跨度里先扣掉的长度(源端扣 targetHalfMain → 用「到目标近端边框」的距离算肩长)。
-	const axisTangent = (delta: number, flow: number, floor: number, shrink = 0): number => {
+	const axisTangent = (delta: number, flow: number, floor: number, kFactor: number, shrink = 0): number => {
 		const sign = delta !== 0 ? Math.sign(delta) : flow;
 		const mag = Math.max(0, Math.abs(delta) - shrink);
-		return Math.max(mag * k, floor) * sign;
+		return Math.max(mag * kFactor, floor) * sign;
 	};
 	let c1x: number, c1y: number, c2x: number, c2y: number;
 	if (horizontal) {
 		const flow = direction === 'RL' ? -1 : 1;
-		c1x = sx + axisTangent(dx, flow, minTangentSource, targetHalfMain); c1y = sy;
-		c2x = tx - axisTangent(dx, flow, minTangentTarget); c2y = ty;
+		c1x = sx + axisTangent(dx, flow, minTangentSource, kSource, targetHalfMain); c1y = sy;
+		c2x = tx - axisTangent(dx, flow, minTangentTarget, kTarget); c2y = ty;
 	} else {
 		const flow = direction === 'BT' ? -1 : 1;
-		c1x = sx; c1y = sy + axisTangent(dy, flow, minTangentSource, targetHalfMain);
-		c2x = tx; c2y = ty - axisTangent(dy, flow, minTangentTarget);
+		c1x = sx; c1y = sy + axisTangent(dy, flow, minTangentSource, kSource, targetHalfMain);
+		c2x = tx; c2y = ty - axisTangent(dy, flow, minTangentTarget, kTarget);
 	}
 	// 绝对坐标 → (weight 沿弦, distance 沿法向 (-dy,dx)/L)
 	const toWD = (cx: number, cy: number): { w: number; d: number } => {
