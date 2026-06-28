@@ -300,6 +300,80 @@ align-items: center;
   background-color: var(--zk-canvas-bg, #2a2a2a);
 }
 
+.zk-right-drag-blade {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 12;
+  overflow: visible;
+  opacity: 1;
+  transition: opacity 180ms ease-out, filter 180ms ease-out;
+}
+
+.zk-right-drag-blade.is-fading {
+  opacity: 0;
+  filter: blur(2px);
+}
+
+.zk-right-drag-blade-glow,
+.zk-right-drag-blade-core {
+  stroke: none;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.zk-right-drag-blade-glow {
+  fill: rgba(34, 211, 238, 0.22);
+  filter: blur(4px) drop-shadow(0 0 14px rgba(125, 211, 252, 0.7));
+}
+
+.zk-right-drag-blade-core {
+  fill: rgba(236, 253, 255, 0.96);
+  filter:
+    drop-shadow(0 0 2px rgba(255, 255, 255, 0.95))
+    drop-shadow(0 0 9px rgba(125, 211, 252, 0.82));
+}
+
+.zk-right-drag-node-cut {
+  position: absolute;
+  height: 8px;
+  pointer-events: none;
+  z-index: 13;
+  clip-path: polygon(0 50%, 9% 38%, 50% 6%, 91% 38%, 100% 50%, 91% 62%, 50% 94%, 9% 62%);
+  background:
+    linear-gradient(90deg, transparent 0%, rgba(168, 245, 255, 0.34) 14%, rgba(255, 255, 255, 0.98) 48%, rgba(125, 211, 252, 0.9) 60%, transparent 100%);
+  filter:
+    drop-shadow(0 0 9px rgba(125, 211, 252, 0.85))
+    drop-shadow(0 0 2px rgba(255, 255, 255, 0.9));
+  animation: zk-right-drag-node-cut 260ms ease-out forwards;
+}
+
+@keyframes zk-right-drag-node-cut {
+  from {
+    opacity: 0;
+    clip-path: inset(0 48% 0 48%);
+    filter: blur(0);
+  }
+  28% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+  to {
+    opacity: 0;
+    clip-path: inset(0 0 0 0);
+    filter: blur(3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zk-right-drag-blade,
+  .zk-right-drag-node-cut {
+    display: none;
+  }
+}
+
 .zk-index-mermaid{
  border-radius: 5px;
  background-color: #2a2a2a;

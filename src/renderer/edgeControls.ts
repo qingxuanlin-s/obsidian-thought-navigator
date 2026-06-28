@@ -263,7 +263,7 @@ export class EdgeControls {
 						opacity: '0',
 						display: 'none',
 					});
-				}, 80);
+				}, 260);
 			};
 
 			const handleMouseOver = showHandle;

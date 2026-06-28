@@ -216,12 +216,22 @@ export class CytoscapeRenderer implements IGraphRenderer {
         startNode: cytoscape.NodeSingular | null;
         active: boolean;
         nodeIds: Set<string>;
+        bladeSvg: SVGSVGElement | null;
+        bladeGlowPolygon: SVGPolygonElement | null;
+        bladeCorePolygon: SVGPolygonElement | null;
+        bladePoints: Array<{ x: number; y: number }>;
+        bladeCleanupTimer: number | null;
         suppressContextMenuUntil: number;
     } = {
         start: null,
         startNode: null,
         active: false,
         nodeIds: new Set(),
+        bladeSvg: null,
+        bladeGlowPolygon: null,
+        bladeCorePolygon: null,
+        bladePoints: [],
+        bladeCleanupTimer: null,
         suppressContextMenuUntil: 0,
     };
 

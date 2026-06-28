@@ -23,6 +23,7 @@ function getClipboardTextForNode(node: cytoscape.NodeSingular): string {
 }
 
 const RIGHT_DRAG_DELETE_THRESHOLD = 8;
+const RIGHT_DRAG_BLADE_POINT_LIMIT = 9;
 
 function nodeIdForDeletion(node: cytoscape.NodeSingular): string {
     const data = node.data() as CyData;
@@ -39,6 +40,141 @@ function addNodeToRightDragDeleteSelection(renderer: CytoscapeRenderer, node: cy
 
     renderer.rightDragDeleteState.nodeIds.add(nodeId);
     node.addClass('zk-right-drag-delete-target');
+    showRightDragNodeCut(renderer, node);
+}
+
+function prefersReducedMotion(): boolean {
+    return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+}
+
+function getBladePolygonPoints(points: Array<{ x: number; y: number }>, scale = 1): string {
+    if (points.length < 2) return '';
+
+    const start = points[0];
+    const end = points[points.length - 1];
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const length = Math.hypot(dx, dy);
+    if (length < 1) return '';
+
+    const nx = -dy / length;
+    const ny = dx / length;
+    const count = points.length;
+    const upper: Array<{ x: number; y: number }> = [];
+    const lower: Array<{ x: number; y: number }> = [];
+
+    points.forEach((point, index) => {
+        const t = count === 1 ? 0.5 : index / (count - 1);
+        const taper = Math.sin(Math.PI * t);
+        const width = (0.9 + taper * 6.5) * scale;
+        upper.push({ x: point.x + nx * width, y: point.y + ny * width });
+        lower.push({ x: point.x - nx * width * 0.55, y: point.y - ny * width * 0.55 });
+    });
+
+    return [...upper, ...lower.reverse()]
+        .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)
+        .join(' ');
+}
+
+function ensureRightDragBlade(renderer: CytoscapeRenderer): SVGSVGElement | null {
+    const container = renderer.container;
+    if (!container) return null;
+    const state = renderer.rightDragDeleteState;
+
+    if (state.bladeCleanupTimer !== null) {
+        window.clearTimeout(state.bladeCleanupTimer);
+        state.bladeCleanupTimer = null;
+    }
+
+    if (state.bladeSvg?.isConnected) {
+        state.bladeSvg.removeClass('is-fading');
+        return state.bladeSvg;
+    }
+
+    const svg = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.addClass('zk-right-drag-blade');
+    const glowPolygon = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    glowPolygon.addClass('zk-right-drag-blade-glow');
+    const corePolygon = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    corePolygon.addClass('zk-right-drag-blade-core');
+    svg.appendChild(glowPolygon);
+    svg.appendChild(corePolygon);
+    container.appendChild(svg);
+
+    state.bladeSvg = svg;
+    state.bladeGlowPolygon = glowPolygon;
+    state.bladeCorePolygon = corePolygon;
+    return svg;
+}
+
+function pushRightDragBladePoint(renderer: CytoscapeRenderer, point: { x: number; y: number }): void {
+    if (prefersReducedMotion()) return;
+    const state = renderer.rightDragDeleteState;
+    if (!ensureRightDragBlade(renderer)) return;
+
+    const last = state.bladePoints[state.bladePoints.length - 1];
+    if (last && Math.hypot(point.x - last.x, point.y - last.y) < 3) return;
+
+    state.bladePoints.push(point);
+    if (state.bladePoints.length > RIGHT_DRAG_BLADE_POINT_LIMIT) {
+        state.bladePoints.splice(0, state.bladePoints.length - RIGHT_DRAG_BLADE_POINT_LIMIT);
+    }
+
+    state.bladeGlowPolygon?.setAttribute('points', getBladePolygonPoints(state.bladePoints, 1.55));
+    state.bladeCorePolygon?.setAttribute('points', getBladePolygonPoints(state.bladePoints, 1));
+}
+
+function finishRightDragBlade(renderer: CytoscapeRenderer): void {
+    const state = renderer.rightDragDeleteState;
+    const svg = state.bladeSvg;
+    state.bladePoints = [];
+    state.bladeGlowPolygon = null;
+    state.bladeCorePolygon = null;
+    if (!svg) return;
+
+    svg.addClass('is-fading');
+    state.bladeCleanupTimer = window.setTimeout(() => {
+        svg.remove();
+        if (state.bladeSvg === svg) {
+            state.bladeSvg = null;
+        }
+        state.bladeCleanupTimer = null;
+    }, prefersReducedMotion() ? 80 : 260);
+}
+
+function cleanupRightDragBlade(renderer: CytoscapeRenderer): void {
+    const state = renderer.rightDragDeleteState;
+    if (state.bladeCleanupTimer !== null) {
+        window.clearTimeout(state.bladeCleanupTimer);
+        state.bladeCleanupTimer = null;
+    }
+    state.bladeSvg?.remove();
+    state.bladeSvg = null;
+    state.bladeGlowPolygon = null;
+    state.bladeCorePolygon = null;
+    state.bladePoints = [];
+}
+
+function showRightDragNodeCut(renderer: CytoscapeRenderer, node: cytoscape.NodeSingular): void {
+    if (prefersReducedMotion()) return;
+    const container = renderer.container;
+    const cy = renderer.cy;
+    if (!container || !cy) return;
+
+    const bb = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
+    if (!Number.isFinite(bb.x1) || !Number.isFinite(bb.y1) || !Number.isFinite(bb.w) || !Number.isFinite(bb.h)) return;
+
+    const slash = activeDocument.createElement('div');
+    slash.addClass('zk-right-drag-node-cut');
+    const width = Math.max(34, Math.min(120, Math.hypot(bb.w, bb.h) * 0.78));
+    const x = bb.x1 + bb.w / 2 - width / 2;
+    const y = bb.y1 + bb.h / 2 - 4;
+    slash.setCssStyles({
+        width: `${width}px`,
+        transform: `translate(${x}px, ${y}px) rotate(-18deg)`,
+    });
+    container.appendChild(slash);
+    window.setTimeout(() => slash.remove(), 320);
 }
 
 async function writeTextToSystemClipboard(text: string): Promise<boolean> {
@@ -323,6 +459,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
                 return;
             }
             const target = evt.target;
+            cleanupRightDragBlade(this);
             this.rightDragDeleteState.start = { ...evt.renderedPosition };
             this.rightDragDeleteState.startNode = target !== this.cy && (target as cytoscape.SingularElementArgument).isNode?.()
                 ? target as cytoscape.NodeSingular
@@ -333,13 +470,19 @@ export function bindEvents(this: CytoscapeRenderer): void {
         });
 
         this.cy.on('cxtdrag', (evt: cytoscape.EventObject) => {
-            if (!this.rightDragDeleteState.start || this.rightDragDeleteState.active) {
+            if (!this.rightDragDeleteState.start) {
+                return;
+            }
+            if (this.rightDragDeleteState.active) {
+                pushRightDragBladePoint(this, evt.renderedPosition);
                 return;
             }
             const dx = evt.renderedPosition.x - this.rightDragDeleteState.start.x;
             const dy = evt.renderedPosition.y - this.rightDragDeleteState.start.y;
             if (Math.hypot(dx, dy) >= RIGHT_DRAG_DELETE_THRESHOLD) {
                 this.rightDragDeleteState.active = true;
+                pushRightDragBladePoint(this, this.rightDragDeleteState.start);
+                pushRightDragBladePoint(this, evt.renderedPosition);
                 if (this.rightDragDeleteState.startNode) {
                     addNodeToRightDragDeleteSelection(this, this.rightDragDeleteState.startNode);
                 }
@@ -355,6 +498,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
                 return;
             }
             this.rightDragDeleteState.active = true;
+            pushRightDragBladePoint(this, evt.renderedPosition);
             addNodeToRightDragDeleteSelection(this, evt.target as cytoscape.NodeSingular);
         });
 
@@ -367,6 +511,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
             this.rightDragDeleteState.active = false;
             this.rightDragDeleteState.nodeIds.clear();
             this.cy?.nodes('.zk-right-drag-delete-target').removeClass('zk-right-drag-delete-target');
+            finishRightDragBlade(this);
 
             if (wasActive && deletedNodeIds.length > 0) {
                 this.rightDragDeleteState.suppressContextMenuUntil = performance.now() + 250;

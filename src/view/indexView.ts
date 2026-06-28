@@ -1002,7 +1002,7 @@ export class ZKIndexView extends FileView {
     /**
      * 删除一批节点(供 CLI / API,#20)。区分草稿与真实节点:
      * - 草稿节点:直接丢弃(纯内存,不弹确认)
-     * - 真实节点:逐个弹「删除确认」对话框,用户确认才真删(连同后代,清元数据并刷新画布)
+     * - 真实节点:单个沿用节点确认;多个只弹一次批量确认,确认后一次性落盘并刷新
      * @returns 各类结果的 nodeID 汇总
      */
     async requestDeleteNodes(nodeIds: string[]): Promise<{
@@ -1013,6 +1013,7 @@ export class ZKIndexView extends FileView {
         const cancelled: string[] = [];
         const notFound: string[] = [];
         if (this.isMobileReadOnly()) return { deleted, draftsDiscarded, cancelled, notFound };
+        const realNodes: Array<{ id: string; cyNode: cytoscape.NodeSingular; original: ZKNode }> = [];
 
         for (const raw of nodeIds || []) {
             const id = String(raw ?? '').trim();
@@ -1029,15 +1030,38 @@ export class ZKIndexView extends FileView {
             const cyNode = this.findCyNodeByIdStr(id);
             const original = cyNode?.data('originalNode') as ZKNode | undefined;
             if (!cyNode || !original) { notFound.push(id); continue; }
-
-            const relationCount = cyNode.connectedEdges().length;
-            const confirmed = await this.showDeleteConfirmDialog(original, relationCount);
-            if (!confirmed) { cancelled.push(id); continue; }
-
-            // 已确认 → 复用完整删除流程;传 relationCount=0 跳过其内部的二次确认,避免重复弹窗
-            await this.deleteNodeFromGraph(original, 0);
-            deleted.push(id);
+            realNodes.push({ id, cyNode, original });
         }
+
+        if (realNodes.length === 0) {
+            return { deleted, draftsDiscarded, cancelled, notFound };
+        }
+
+        if (realNodes.length === 1) {
+            const item = realNodes[0];
+            const relationCount = item.cyNode.connectedEdges().length;
+            const confirmed = await this.showDeleteConfirmDialog(item.original, relationCount);
+            if (!confirmed) {
+                cancelled.push(item.id);
+                return { deleted, draftsDiscarded, cancelled, notFound };
+            }
+
+            await this.deleteNodeFromGraph(item.original, 0);
+            deleted.push(item.id);
+            return { deleted, draftsDiscarded, cancelled, notFound };
+        }
+
+        const confirmed = await this.showBatchDeleteConfirmDialog(realNodes.length);
+        if (!confirmed) {
+            cancelled.push(...realNodes.map((item) => item.id));
+            return { deleted, draftsDiscarded, cancelled, notFound };
+        }
+
+        await this.deleteNodesFromGraphBatch(realNodes.map((item) => ({
+            nodeId: item.id,
+            nodeData: item.original,
+        })));
+        deleted.push(...realNodes.map((item) => item.id));
         return { deleted, draftsDiscarded, cancelled, notFound };
     }
 
@@ -4794,43 +4818,10 @@ window.addEventListener('resize', fitGraph);
             const { nodeIds, nodes } = event.detail as { nodeIds: string[]; nodes: Array<ZKNode & { originalNode?: ZKNode }> };
 
             try {
-                const mocFile = getLatestMOCFile();
-                if (mocFile) {
-                    const batchNodes = nodeIds.map((nodeId: string, index: number): { nodeId: string; nodeData: ZKNode } => ({
-                        nodeId,
-                        nodeData: nodes[index]
-                    }));
-                    await this.flushAndSaveCurrentPositions();
-                    // 删除前解析真实父级(自由节点父子关系只在边里,删除+刷新后丢失)
-                    const reflowParentId = this.pickAutoLayoutParentForReflow(nodeIds);
-                    // 删除前收集各节点内嵌附件(删除后内容已没)
-                    const embeddedAttachments: TFile[] = [];
-                    for (const n of nodes) {
-                        if (n.originalNode) {
-                            embeddedAttachments.push(...this.collectNodeEmbeddedAttachments(n.originalNode, mocFile.path));
-                        }
-                    }
-                    await this.mocHandler.deleteNodesFromMOC(mocFile, batchNodes);
-
-                    // 删除嵌入图片节点对应的图片文件
-                    for (const n of nodes) {
-                        if (n.originalNode) {
-                            await this.deleteImageFileIfNeeded(n.originalNode);
-                        }
-                    }
-
-                    // 文本节点内嵌附件:全库已无其它引用则一并回收
-                    await this.deleteOrphanedAttachments(embeddedAttachments);
-
-                    await this.refreshBranchMermaid();
-
-                    // 声明式 reflow: 批量删除后整棵树重排
-                    if (reflowParentId) {
-                        await this.reflowAutoLayout(reflowParentId);
-                    }
-
-                    new Notice(t("Deleted nodes").replace("{count}", String(nodeIds.length)));
-                }
+                await this.deleteNodesFromGraphBatch(nodeIds.map((nodeId: string, index: number): { nodeId: string; nodeData: ZKNode } => ({
+                    nodeId,
+                    nodeData: nodes[index].originalNode || nodes[index]
+                })));
             } catch (error) {
                 console.error('Failed to batch delete nodes:', error);
                 new Notice(t("Batch delete failed").replace("{message}", String(error.message)));
@@ -6534,6 +6525,42 @@ window.addEventListener('resize', fitGraph);
         }
     }
 
+    private async deleteNodesFromGraphBatch(nodes: Array<{ nodeId: string; nodeData: ZKNode }>): Promise<void> {
+        const deduped = new Map<string, ZKNode>();
+        for (const item of nodes) {
+            const nodeId = String(item.nodeId || item.nodeData?.IDStr || item.nodeData?.ID || '').trim();
+            if (nodeId && item.nodeData) deduped.set(nodeId, item.nodeData);
+        }
+        const batchNodes = Array.from(deduped.entries()).map(([nodeId, nodeData]) => ({ nodeId, nodeData }));
+        if (batchNodes.length === 0) return;
+
+        const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+        if (!mocFile) return;
+
+        await this.flushAndSaveCurrentPositions();
+        const nodeIds = batchNodes.map((item) => item.nodeId);
+        const reflowParentId = this.pickAutoLayoutParentForReflow(nodeIds);
+        const embeddedAttachments: TFile[] = [];
+        for (const item of batchNodes) {
+            embeddedAttachments.push(...this.collectNodeEmbeddedAttachments(item.nodeData, mocFile.path));
+        }
+
+        await this.mocHandler.deleteNodesFromMOC(mocFile, batchNodes);
+
+        for (const item of batchNodes) {
+            await this.deleteImageFileIfNeeded(item.nodeData);
+        }
+
+        await this.deleteOrphanedAttachments(embeddedAttachments);
+        await this.refreshBranchMermaid();
+
+        if (reflowParentId) {
+            await this.reflowAutoLayout(reflowParentId);
+        }
+
+        new Notice(t("Deleted nodes").replace("{count}", String(batchNodes.length)));
+    }
+
     /**
      * 删除节点后挑选接管选中态的邻居 IDStr:
      * 同级里删除项的"后一个",没有则"前一个",都没有则退回父节点(无父则 null)。
@@ -7424,6 +7451,97 @@ window.addEventListener('resize', fitGraph);
                 resolve(true);
             });
             
+            modal.open();
+        });
+    }
+
+    private showBatchDeleteConfirmDialog(nodeCount: number): Promise<boolean> {
+        return new Promise((resolve) => {
+            const modal = new Modal(this.app);
+            modal.titleEl.setText(t("Confirm delete node"));
+
+            const { contentEl } = modal;
+            contentEl.empty();
+            contentEl.setCssStyles({ padding: '20px' });
+
+            const warningDiv = contentEl.createDiv();
+            warningDiv.setCssStyles({
+                marginBottom: '15px',
+                padding: '15px',
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                borderRadius: '4px',
+            });
+
+            const warningIcon = warningDiv.createEl('div', { text: '⚠️' });
+            warningIcon.setCssStyles({
+                fontSize: '24px',
+                marginBottom: '10px',
+            });
+
+            const warningText = warningDiv.createEl('div');
+            const nodeLine = warningText.createDiv({ text: t("Confirm delete nodes").replace("{count}", String(nodeCount)) });
+            nodeLine.setCssStyles({
+                fontWeight: '600',
+                marginBottom: '8px',
+            });
+            const deleteLine = warningText.createDiv({ text: t("Deleting will also remove") });
+            deleteLine.setCssStyles({
+                color: 'var(--text-muted)',
+                marginTop: '8px',
+            });
+            const list = warningText.createEl('ul');
+            list.setCssStyles({
+                margin: '8px 0',
+                paddingLeft: '20px',
+                color: 'var(--text-muted)',
+            });
+            list.createEl('li', { text: t("Node entry in MOC file") });
+            list.createEl('li', { text: t("All arrow relations related to node") });
+            list.createEl('li', { text: t("Node position information") });
+            const irreversibleLine = warningText.createDiv({ text: t("This operation cannot be undone") });
+            irreversibleLine.setCssStyles({
+                color: 'var(--text-error)',
+                fontWeight: '600',
+                marginTop: '8px',
+            });
+
+            const buttonContainer = contentEl.createDiv();
+            buttonContainer.setCssStyles({
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '10px',
+                marginTop: '20px',
+            });
+
+            const cancelButton = buttonContainer.createEl('button', { text: t("Cancel") });
+            cancelButton.setCssStyles({
+                padding: '6px 16px',
+                border: '1px solid var(--background-modifier-border)',
+                borderRadius: '4px',
+                backgroundColor: 'var(--background-primary)',
+                color: 'var(--text-normal)',
+                cursor: 'pointer',
+            });
+            cancelButton.addEventListener('click', () => {
+                modal.close();
+                resolve(false);
+            });
+
+            const confirmButton = buttonContainer.createEl('button', { text: t("Confirm delete") });
+            confirmButton.setCssStyles({
+                padding: '6px 16px',
+                border: 'none',
+                borderRadius: '4px',
+                backgroundColor: '#ef4444',
+                color: '#ffffff',
+                cursor: 'pointer',
+            });
+            confirmButton.addEventListener('click', () => {
+                modal.close();
+                resolve(true);
+            });
+
             modal.open();
         });
     }
