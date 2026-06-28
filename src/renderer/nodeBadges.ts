@@ -20,6 +20,12 @@ type BadgeUpdater = { node: cytoscape.NodeSingular | null; fn: () => void };
 // 节点中心在 [视口 - M, 视口 + M] 外才剔除,覆盖节点自身尺寸 + 单帧快速 pan 的位移,
 // 避免节点刚滑入视口时 overlay 慢一帧。交互结束后 scheduleExtra/immediate 会全量补正。
 const OVERLAY_CULL_MARGIN = 320;
+// 低 zoom 门控:zoom 小于此值时整体跳过 HTML overlay(定位/Markdown 渲染),
+// 文本节点回退到 Cytoscape 原生 canvas label。fit-all 千节点 zoom≈0.1 命中此门,
+// 既省掉全量 overlay 重定位(schedulerImmediate),又免去为不可见的糊字跑 MarkdownRenderer。
+const OVERLAY_ZOOM_GATE = 0.35;
+// 节点数超过此阈值才启用 zoom 门控 + 分帧懒建;以下规模的图本就不慢,走原 eager 渲染。
+const LARGE_GRAPH_OVERLAY_THRESHOLD = 400;
 
 function middleEllipsizeToWidth(text: string, maxWidth: number, ctx: CanvasRenderingContext2D | null, font: string): string {
 	const fullText = String(text || '');
@@ -78,6 +84,9 @@ function modelToRendered(value: number, zoom: number, panValue: number): number 
 export function renderNodeBadges(this: CytoscapeRenderer): void {
         if (!this.cy || !this.container) return;
 
+        // 仅大图启用门控+懒建;小图走原 eager 路径(行为与改动前一致)。
+        this._overlayGateActive = this.cy.nodes().length > LARGE_GRAPH_OVERLAY_THRESHOLD;
+
         // 性能埋点(window.__zkPerf=true):细分 renderNodeBadges 内部各子系统耗时
         const __zkPerf = (window as unknown as { __zkPerf?: boolean }).__zkPerf === true;
         const __bMark: Record<string, number> = {};
@@ -120,6 +129,12 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
             // 全量重建:清理调度器 + 摘除缓存 overlay + 重建容器
             this.overlayScheduler.cleanupScheduler();
             this.cleanupBadgeInteractionBindings();
+            // 容器是新建的,重置门控状态,让首次 badgePositionUpdater 必然校准一次显隐。
+            this._overlayBelowGate = undefined;
+            // 旧分帧建队列引用的是上一轮的节点闭包,全量重建时作废,清空避免建到已移除节点。
+            this._textBuildThunks.clear();
+            this._textBuildScheduled = false;
+            this._pendingEdgeRefreshNodeIds.clear();
 
             // 先从旧 badgeContainer 中摘下缓存的 MD overlay（保持 DOM 节点存活，便于下面复用）
             this.textMdOverlayCache.forEach((entry: TextMdOverlayEntry) => {
@@ -1647,15 +1662,31 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
         // 这里追加一个新的 badgePositionUpdater(不清理旧的),旧节点的 updater 仍在调度器中,
         // pan/zoom 时新旧并集都会被更新。
         const badgePositionUpdater = () => {
-            // 非交互帧(idle / 交互结束后的 scheduleExtra/immediate):全量定位,保证稳态精确。
-            if (!this.cy || !this.overlayScheduler.isInteracting) {
-                for (const u of badgeUpdaters) u.fn();
-                return;
-            }
-            // 交互(pan/zoom/drag)帧:剔除中心远离视口的节点 overlay。判据用 node.position()
-            // (模型坐标,廉价,不触发 renderedBoundingBox),换算到 rendered 坐标后与视口比较。
-            const pan = this.cy.pan();
+            if (!this.cy) return;
             const zoom = this.cy.zoom();
+            // 低 zoom 门控:跨越门限时做一次性的容器显隐 + 文本节点原生 label 切换。
+            // 仅大图启用;小图永不门控(belowGate 恒 false),容器常显、不切原生 label。
+            const belowGate = this._overlayGateActive && zoom < OVERLAY_ZOOM_GATE;
+            if (belowGate !== this._overlayBelowGate) {
+                this._overlayBelowGate = belowGate;
+                badgeContainer.setCssStyles({ display: belowGate ? 'none' : 'block' });
+                glassLayer.setCssStyles({ display: belowGate ? 'none' : 'block' });
+                if (belowGate) {
+                    // 回退原生 canvas label:清掉 hasMarkdownOverlay,让 text-opacity 恢复可见。
+                    // 一次性 batch,避免逐节点 data 写入触发多次样式重算。
+                    this.cy.batch(() => {
+                        this.cy?.nodes('[?isTextOnly][?hasMarkdownOverlay]').forEach(
+                            (n: cytoscape.NodeSingular) => { n.data('hasMarkdownOverlay', false); }
+                        );
+                    });
+                }
+            }
+            // 低 zoom:overlay 整体隐藏,跳过全部 updater(含文本 MD 懒渲染),原生 label 承载显示。
+            if (belowGate) return;
+            // zoom 足够大:按 node.position()(模型坐标,廉价,不触发 renderedBoundingBox)换算到
+            // rendered 坐标剔除视口外节点 overlay。idle 与交互帧统一剔除——视口外 overlay 不可见,
+            // 无需精确定位,也避免空闲全量 O(N) 重定位(此前 schedulerImmediate 卡顿主因)。
+            const pan = this.cy.pan();
             const W = this.container?.clientWidth ?? 0;
             const H = this.container?.clientHeight ?? 0;
             const M = OVERLAY_CULL_MARGIN;
@@ -1682,7 +1713,10 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                 // immediate() 跑一遍全部已注册 updater 重定位全图(成本=一帧 pan,远低于重建 N 个 DOM)。
                 this.overlayScheduler.immediate();
             } else {
-                badgeUpdaters.forEach(u => u.fn());
+                // 经 badgePositionUpdater 走门控+视口剔除:低 zoom 跳过(新节点回退原生 label),
+                // 高 zoom 仅为视口内的新节点懒建 overlay。直接 forEach 会绕过门控、在 fit-all 下
+                // 把新节点置成"既无 overlay 又被隐藏原生 label"的空白态。
+                badgePositionUpdater();
             }
             // 连线手柄(hover 小蓝点)是逐节点绑定的,新节点必须重建才有手柄。addConnectionHandles
             // 已做自幂等(注销旧 updater + 解绑旧逐节点监听),可独立调用而不累积、不影响边 select 处理器。
@@ -1710,7 +1744,14 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
 
             // 所有 overlay 子系统注册完毕后，绑定统一事件监听
             this.overlayScheduler.bindListeners();
-            this.overlayScheduler.immediate();
+            // 本次渲染后 render() 还会 fit:fit 前在 zoom≈1 下做全量定位会被 fit 立刻作废(纯浪费,
+            // 且 fit-all 千节点正是 schedulerImmediate 7.6s 的来源)。跳过它,改由 fit 触发的 viewport
+            // 事件在最终 zoom 下定位/门控;render() 末尾另有一次兜底 schedule()。非 fit 路径(复用实例)
+            // 无 viewport 事件兜底,仍需在此 immediate() 一次。
+            if (!this._pendingFit) {
+                this.overlayScheduler.immediate();
+            }
+            this._pendingFit = false;
             __bLap('schedulerImmediate');
         }
         if (__zkPerf) {
@@ -1735,8 +1776,66 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
         if (!app) return;
         const sourcePath = this.currentData?.metadata?.currentFile || '';
 
-        const measureAndSizePending: Array<{ node: cytoscape.NodeSingular; entry: { el: HTMLElement; width: number; height: number } }> = [];
-        const renderPromises: Promise<void>[] = [];
+        // 本周期出现过的文本节点 cacheKey,供末尾 mark-sweep 判定缓存项是否仍有对应节点。
+        // 懒建后 usedInCycle 不再可靠(低 zoom 一个都不建),改用节点存在性清理。
+        const validCacheKeys = new Set<string>();
+        type SizePending = { node: cytoscape.NodeSingular; entry: TextMdOverlayEntry };
+
+        // 尺寸回写助手(上移到循环前):懒建时每个节点在 buildOrReuse 内即时调用,
+        // 而非等循环结束统一 flush(那时懒建尚未发生)。
+        const measureOverlayHeightForWidth = (el: HTMLElement, width: number, fallbackHeight: number): number => {
+            if (!el || width <= 0) return fallbackHeight;
+            const prevWidth = el.style.width;
+            const prevHeight = el.style.height;
+            const prevFontSize = el.style.fontSize;
+            const base = Number(el.dataset.baseFontSize || '20');
+            try {
+                // 以模型坐标测量内容高度(font-size 复位到 base,对应 zoom=1 的自然尺寸)
+                el.setCssStyles({
+                    fontSize: `${base}px`,
+                    width: `${width}px`,
+                    height: 'auto',
+                });
+                const measured = Math.ceil(Math.max(el.scrollHeight, el.getBoundingClientRect().height)) + 12;
+                return Math.max(32, Math.min(640, measured));
+            } catch {
+                return fallbackHeight;
+            } finally {
+                el.setCssStyles({
+                    width: prevWidth,
+                    height: prevHeight,
+                    fontSize: prevFontSize,
+                });
+            }
+        };
+
+        const applySizes = (pending: SizePending[]) => {
+            if (!this.cy || pending.length === 0) return;
+            this.cy.batch(() => {
+                pending.forEach(({ node, entry: e }) => {
+                    if (node.removed()) return;
+                    const currentWidthModel = Number(node.data('manualWidthModel') || 0);
+                    const currentHeightModel = Number(node.data('manualHeightModel') || 0);
+                    if (currentWidthModel <= 0 && currentHeightModel <= 0) return;
+                    const targetWidth = currentWidthModel > 0 ? currentWidthModel : e.width;
+                    // 仅当用户显式锁过高度（currentHeightModel > 0）才回写 data；
+                    // 否则只在视觉层用 overlay 测量动态适配高度，避免把"为了当前内容渲染的临时高度"固化成用户手动尺寸，
+                    // 否则改短内容后旧高度会被持续保留下来。
+                    const targetHeight = currentHeightModel > 0
+                        ? currentHeightModel
+                        : measureOverlayHeightForWidth(e.el, targetWidth, e.height);
+                    e.width = targetWidth;
+                    e.height = targetHeight;
+                    if (currentWidthModel > 0) {
+                        node.data('manualWidthModel', targetWidth);
+                    }
+                    if (currentHeightModel > 0) {
+                        node.data('manualHeightModel', targetHeight);
+                    }
+                    node.style({ width: targetWidth, height: targetHeight });
+                });
+            });
+        };
 
         this.cy.nodes('[?isTextOnly]').forEach((node: cytoscape.NodeSingular) => {
             if (incIds && !incIds.has(node.id())) return;
@@ -1847,6 +1946,13 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                 }
             };
 
+            validCacheKeys.add(cacheKey);
+
+            // 懒建/复用:首次在 zoom≥门限且节点进视口时由 textUpdater 触发(见下方)。
+            // 低 zoom(fit-all)时整条 textUpdater 不会被调用,从而免去为不可见节点跑 MarkdownRenderer。
+            const buildOrReuse = (): TextMdOverlayEntry | null => {
+            const measureAndSizePending: SizePending[] = [];
+            const renderPromises: Promise<void>[] = [];
             let entry = this.textMdOverlayCache.get(cacheKey);
 
             if (entry) {
@@ -2218,14 +2324,19 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
             node.data('hasMarkdownOverlay', true);
             // 挂载 overlay 引用到节点，便于编辑期查找
             node.scratch('_zkMdOverlay', entry.el);
+            entry.el.dataset.nodeId = node.id();
+            // 懒建节点的尺寸回写:同步快路径立即写,异步(MathJax)完成后再写。
+            applySizes(measureAndSizePending.splice(0));
+            if (renderPromises.length > 0) {
+                void Promise.all(renderPromises).then(() => applySizes(measureAndSizePending.splice(0)));
+            }
+            return entry;
+            };
 
-            // 位置同步 updater
-			const currentEntry = entry;
-			currentEntry.el.dataset.nodeId = node.id();
 			const baseFontSize = isRootTextNode
                 ? this.ROOT_NODE_FONT_SIZE
                 : (isFirstLevelTextNode ? this.FIRST_LEVEL_NODE_FONT_SIZE : 20);
-            const updateOverlayPos = () => {
+            const updateOverlayPos = (currentEntry: TextMdOverlayEntry) => {
                 if (!this.cy || node.removed()) {
                     currentEntry.el.setCssStyles({ display: 'none' });
                     return;
@@ -2275,81 +2386,51 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                     });
                 }
             };
-            badgeUpdaters.push({ node, fn: updateOverlayPos });
+            if (!this._overlayGateActive) {
+                // 小图:维持原始 eager 行为——渲染时立即建(在 finalize 的 refreshDirectionalEdgeCurves
+                // 之前完成,节点尺寸已定,边控制点据正确尺寸计算),updater 只做廉价定位。
+                const built = buildOrReuse();
+                if (built) badgeUpdaters.push({ node, fn: () => updateOverlayPos(built) });
+                return;
+            }
+            // 大图:懒渲染 updater。badgePositionUpdater 已在 zoom<门限时整体短路、并对视口外节点剔除,
+            // 故 textUpdater 仅在 zoom≥门限且节点在视口内时被调用——此刻才真正渲染 Markdown。
+            const textUpdater = () => {
+                if (!this.cy || node.removed()) {
+                    const e = this.textMdOverlayCache.get(cacheKey);
+                    if (e?.el) e.el.setCssStyles({ display: 'none' });
+                    return;
+                }
+                const entry: TextMdOverlayEntry | null | undefined = this.textMdOverlayCache.get(cacheKey);
+                // 已建好:每帧只做廉价的位置同步。
+                if (entry && node.data('hasMarkdownOverlay') === true) {
+                    updateOverlayPos(entry);
+                    return;
+                }
+                // 需首建(或跨门限回高 zoom 后 hasMarkdownOverlay 被清):入队分帧建,不在本帧同步渲染
+                // Markdown(否则一次高 zoom 全量渲染会同步建数百个 overlay 卡死一帧)。未建期间显示
+                // 原生 canvas label。同 id 覆盖、幂等;每帧 BATCH 个由 drainTextBuild 排空。
+                this.enqueueTextBuild(node.id(), () => {
+                    if (node.removed()) return;
+                    const built = buildOrReuse();
+                    if (built) {
+                        updateOverlayPos(built);
+                        // 懒建改了节点尺寸,其边控制点(finalize 时按旧尺寸算)需重算,否则端点失效丢边。
+                        this._pendingEdgeRefreshNodeIds.add(node.id());
+                    }
+                });
+            };
+            badgeUpdaters.push({ node, fn: textUpdater });
         });
 
-        // 批量尺寸回写：先处理同步完成的（快路径），异步完成的在 Promise.all 后再批量
-        const measureOverlayHeightForWidth = (el: HTMLElement, width: number, fallbackHeight: number): number => {
-            if (!el || width <= 0) return fallbackHeight;
-            const prevWidth = el.style.width;
-            const prevHeight = el.style.height;
-            const prevFontSize = el.style.fontSize;
-            const base = Number(el.dataset.baseFontSize || '20');
-            try {
-                // 以模型坐标测量内容高度(font-size 复位到 base,对应 zoom=1 的自然尺寸)
-                el.setCssStyles({
-                    fontSize: `${base}px`,
-                    width: `${width}px`,
-                    height: 'auto',
-                });
-                const measured = Math.ceil(Math.max(el.scrollHeight, el.getBoundingClientRect().height)) + 12;
-                return Math.max(32, Math.min(640, measured));
-            } catch {
-                return fallbackHeight;
-            } finally {
-                el.setCssStyles({
-                    width: prevWidth,
-                    height: prevHeight,
-                    fontSize: prevFontSize,
-                });
-            }
-        };
-
-        const applySizes = (pending: typeof measureAndSizePending) => {
-            if (!this.cy || pending.length === 0) return;
-            this.cy.batch(() => {
-                pending.forEach(({ node, entry: e }) => {
-                    if (node.removed()) return;
-                    const currentWidthModel = Number(node.data('manualWidthModel') || 0);
-                    const currentHeightModel = Number(node.data('manualHeightModel') || 0);
-                    if (currentWidthModel <= 0 && currentHeightModel <= 0) return;
-                    const targetWidth = currentWidthModel > 0 ? currentWidthModel : e.width;
-                    // 仅当用户显式锁过高度（currentHeightModel > 0）才回写 data；
-                    // 否则只在视觉层用 overlay 测量动态适配高度，避免把"为了当前内容渲染的临时高度"固化成用户手动尺寸，
-                    // 否则改短内容后旧高度会被持续保留下来。
-                    const targetHeight = currentHeightModel > 0
-                        ? currentHeightModel
-                        : measureOverlayHeightForWidth(e.el, targetWidth, e.height);
-                    e.width = targetWidth;
-                    e.height = targetHeight;
-                    if (currentWidthModel > 0) {
-                        node.data('manualWidthModel', targetWidth);
-                    }
-                    if (currentHeightModel > 0) {
-                        node.data('manualHeightModel', targetHeight);
-                    }
-                    node.style({ width: targetWidth, height: targetHeight });
-                });
-            });
-        };
-
-        // 同步快路径批量写入
-        const syncPending = measureAndSizePending.splice(0);
-        applySizes(syncPending);
-
-        // 异步 MD 渲染完成后批量写入（不阻塞后续 addNodeBadges 流程）
-        if (renderPromises.length > 0) {
-            void Promise.all(renderPromises).then(() => {
-                applySizes(measureAndSizePending.splice(0));
-            });
-        }
-
-        // 清理本次未使用的缓存项（mark-sweep）。增量模式跳过:本次只遍历了新节点,
-        // 其余缓存项的 usedInCycle 没被置位,若清理会误删仍在用的 overlay。
+        // 清理已无对应节点的缓存项（mark-sweep）。懒建后不能再用 usedInCycle 判定(低 zoom 时
+        // 一个 overlay 都不建,所有项都会显示未使用),改用本周期收集到的 validCacheKeys:
+        // key 不在其中 = 该文本节点已不存在或内容已变(cacheKey 含 rawSource)。增量模式只遍历了
+        // 新节点,validCacheKeys 不全,跳过以免误删。
         const toEvict: string[] = [];
         if (!incIds) {
-            this.textMdOverlayCache.forEach((e: TextMdOverlayEntry, key: string) => {
-                if (!e.usedInCycle) {
+            this.textMdOverlayCache.forEach((_e: TextMdOverlayEntry, key: string) => {
+                if (!validCacheKeys.has(key)) {
                     toEvict.push(key);
                 }
             });

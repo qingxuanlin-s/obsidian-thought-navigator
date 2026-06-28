@@ -185,6 +185,24 @@ export class CytoscapeRenderer implements IGraphRenderer {
     // 与 _incrementalAddIds 配套:增量新增时若已有节点被推开(仅位置变化),置 true,
     // renderNodeBadges 在增量末尾改用 scheduler.immediate() 重定位全部 overlay(一次性消费)。
     _incrementalRepositionAll = false;
+    // 低 zoom 门控状态:overlay 在 zoom < OVERLAY_ZOOM_GATE 时整体隐藏(回退原生 canvas label),
+    // badgePositionUpdater 据此判断是否跨越门限以执行一次性的容器显隐 + 文本节点 label 切换。
+    // undefined = 尚未判定,首次必然触发一次同步。
+    _overlayBelowGate: boolean | undefined = undefined;
+    // 文本 MD overlay 分帧懒建队列:textUpdater 命中"需首建"时入队(node.id → 构建 thunk),
+    // 每帧只建一小批,避免一次高 zoom 全量渲染时同步建数百个 overlay 卡死一帧。
+    // 未建期间节点显示 Cytoscape 原生 canvas label,建好后切换为 HTML overlay。
+    _textBuildThunks: Map<string, () => void> = new Map();
+    _textBuildScheduled = false;
+    // 门控/懒建仅对大图启用(见 nodeBadges LARGE_GRAPH_OVERLAY_THRESHOLD);小图走原 eager 路径,
+    // 避免给本不慢的普通 MOC 引入低 zoom 回退、懒建闪烁、边控制点时序错位等行为变化。
+    _overlayGateActive = false;
+    // 分帧懒建会在 refreshDirectionalEdgeCurves 之后才改节点尺寸,导致这些节点的边控制点按旧尺寸
+    // 算出后端点失效被丢。记录本轮懒建过的节点,drain 排空后只为它们的边重算控制点。
+    _pendingEdgeRefreshNodeIds: Set<string> = new Set();
+    // render() 在"本次渲染后会 fit"时置 true:renderNodeBadges 据此跳过 fit 前那次必被作废的
+    // 全量 immediate() 定位(改由 fit 触发的 viewport 事件在最终 zoom 下定位/门控)。一次性消费。
+    _pendingFit = false;
     domTextMeasurer: DomTextMeasurer | null = null;
     collapsedNodeIds: Set<string> = new Set();
     focusOverlayVisibleCyIds: Set<string> | null = null;
@@ -709,6 +727,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
         __lap('cyDiff');
 
+        // 本次渲染后是否会 fit:新建实例(非复用)且非导出模式时,下方 layout/finalize 会 fit。
+        // 透传给 renderNodeBadges 以跳过 fit 前那次必被作废的全量定位(见 nodeBadges 内说明)。
+        this._pendingFit = !options.exportMode && !reusedInstance;
+
         // 更新节点徽章（exportMode 下跳过，避免 MarkdownRenderer 触发 MutationObserver 导致跳转）
         if (!options.exportMode) {
             this.addNodeBadges();
@@ -748,13 +770,22 @@ export class CytoscapeRenderer implements IGraphRenderer {
         }
         __lap('layout');
         this.applyCollapsedState();
+        __lap('fin:collapse');
         this.updateActiveFirstLevelBranch();
+        __lap('fin:branch');
         // 方向感知 S 形边:布局定稿后按最终坐标重算全部层级边的控制点(覆盖新增边)
         this.refreshDirectionalEdgeCurves();
+        __lap('fin:edgeCurves');
         // 控制点钳好后再 fit(saved-positions 路径的初始 fit 被推迟到此),这样唯一一次
         // 求边端点的包围盒计算发生在控制点合法之后,不再误报 invalid endpoints。
         if (hasSavedPositions && !options.exportMode && !reusedInstance && this.isCyUsable()) {
             this.cy?.fit(undefined, 30);
+        }
+        __lap('fin:fit');
+        // 兜底:fit 前那次全量定位已跳过(_pendingFit),正常情况 fit 会触发 viewport 事件完成定位/门控;
+        // 但 fit 若恰好不改变视口(小图已贴合)则无事件,这里显式 schedule 一次确保 overlay 落位。
+        if (!options.exportMode) {
+            this.overlayScheduler.schedule();
         }
         __lap('finalize');
         if (__zkPerf) {
@@ -1220,25 +1251,40 @@ export class CytoscapeRenderer implements IGraphRenderer {
         const direction = ((opts?.direction) || 'LR') as 'LR' | 'RL' | 'TB' | 'BT';
         const horizontal = direction === 'LR' || direction === 'RL';
         const targetEdges = edges || cy.edges('[type="parent"], [type="forward"]');
+        // 节点几何缓存:一个父节点是其所有子边的 source,width()/outerWidth() 等会被重复读取
+        // (每读一次若 style 脏就触发重算)。按 node id memo,把 ~2×边 次几何读降到 ~节点数次。
+        const dimCache = new Map<string, { x: number; y: number; w: number; h: number; ow: number; oh: number }>();
+        const dim = (n: cytoscape.NodeSingular) => {
+            const id = n.id();
+            let d = dimCache.get(id);
+            if (!d) {
+                const p = n.position();
+                d = { x: p.x, y: p.y, w: n.width(), h: n.height(), ow: n.outerWidth(), oh: n.outerHeight() };
+                dimCache.set(id, d);
+            }
+            return d;
+        };
         cy.batch(() => {
             targetEdges.forEach((edge: cytoscape.EdgeSingular) => {
                 const type = edge.data('type');
                 if (type !== 'parent' && type !== 'forward') return;
                 const sn = edge.source();
                 const tn = edge.target();
-                const s = sn.position();
-                const t = tn.position();
+                const sd = dim(sn);
+                const td = dim(tn);
+                const s = sd;
+                const t = td;
                 // 控制点必须在各自端的节点框外,否则 Cytoscape 求不到端点交点会丢边。
                 // 源端/目标端分别按自身半尺寸取最小切向距离 —— 小源端不再被大目标卡片连累出长肘弯。
                 // margin 不能太小:超大节点(如撑到 693px 的根节点)旁的层级边,控制点只比框沿多
                 // 几像素时,Cytoscape 的 multibezier 端点求解仍会失败丢边;给足出框余量更稳。
                 const margin = 24;
                 const minTangentSource = horizontal
-                    ? sn.width() / 2 + margin
-                    : sn.height() / 2 + margin;
+                    ? sd.w / 2 + margin
+                    : sd.h / 2 + margin;
                 const minTangentTarget = horizontal
-                    ? tn.width() / 2 + margin
-                    : tn.height() / 2 + margin;
+                    ? td.w / 2 + margin
+                    : td.h / 2 + margin;
                 // 近距回退:主轴间距 < 两端切向下限之和时 S 形控制点交叉,曲线缩进两节点框
                 // 之间被盖住(看起来"没有线");贝塞尔在重叠/极近时还可能端点无解直接不画。
                 // 此时整条边降级为直线(zk-near-straight 类切换 curve-style),最稳;拉开自动恢复。
@@ -1257,8 +1303,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 const dy = t.y - s.y;
                 const adx = Math.abs(dx) || 1e-6;
                 const ady = Math.abs(dy) || 1e-6;
-                const tExitSrc = Math.min((sn.outerWidth() / 2 + margin2) / adx, (sn.outerHeight() / 2 + margin2) / ady);
-                const tExitTgt = Math.min((tn.outerWidth() / 2 + margin2) / adx, (tn.outerHeight() / 2 + margin2) / ady);
+                const tExitSrc = Math.min((sd.ow / 2 + margin2) / adx, (sd.oh / 2 + margin2) / ady);
+                const tExitTgt = Math.min((td.ow / 2 + margin2) / adx, (td.oh / 2 + margin2) / ady);
                 const wMin = tExitSrc;
                 const wMax = 1 - tExitTgt;
                 // 两端外框沿连线吃掉了大半条弦(大节点贴近的短边):留给曲线的弦区间过窄,钳位后
@@ -1270,7 +1316,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 edge.removeClass('zk-near-straight');
                 if (edge.data('controlPointDistance') !== undefined) return; // 手动控制点优先
                 // 目标主轴半尺寸:源端肩长改按「到子节点近端边框」算,近端对齐的兄弟肩长一致,不再在父节点旁交叉。
-                const targetHalfMain = horizontal ? tn.width() / 2 : tn.height() / 2;
+                const targetHalfMain = horizontal ? td.w / 2 : td.h / 2;
                 // 源端肩短(0.3)+ 目标端肩中等(0.5):挺括扇形,离父快速转向、平顺切入子;对称 0.5/0.5 会回到软波浪。
                 const cp = computeDirectionalEdgeControlPoints(s.x, s.y, t.x, t.y, direction, 0.3, 0.5, minTangentSource, minTangentTarget, targetHalfMain);
                 // 钳住首/末控制点 weight(分别决定源/目标端点求交),其余中间控制点不影响端点。
@@ -1430,6 +1476,47 @@ export class CytoscapeRenderer implements IGraphRenderer {
      */
     addNodeBadges(): void {
         renderNodeBadges.call(this);
+    }
+
+    /** 文本 overlay 分帧懒建:入队一个节点的构建 thunk(同 id 覆盖,幂等),并确保排空循环在跑。 */
+    enqueueTextBuild(id: string, thunk: () => void): void {
+        this._textBuildThunks.set(id, thunk);
+        if (!this._textBuildScheduled) {
+            this._textBuildScheduled = true;
+            window.requestAnimationFrame(() => this.drainTextBuild());
+        }
+    }
+
+    /** 每帧从队列建一小批(BATCH 个)文本 overlay,剩余留到下一帧,避免单帧长任务。 */
+    private drainTextBuild(): void {
+        this._textBuildScheduled = false;
+        if (!this.isCyUsable()) {
+            this._textBuildThunks.clear();
+            return;
+        }
+        const BATCH = 12;
+        let n = 0;
+        for (const [id, thunk] of this._textBuildThunks) {
+            this._textBuildThunks.delete(id);
+            try { thunk(); } catch { /* 单节点失败不阻断整批 */ }
+            if (++n >= BATCH) break;
+        }
+        if (this._textBuildThunks.size > 0) {
+            this._textBuildScheduled = true;
+            window.requestAnimationFrame(() => this.drainTextBuild());
+            return;
+        }
+        // 队列排空:为本轮懒建过(尺寸已变)的节点重算边控制点,修复因尺寸过期失效被丢的边。
+        if (this._pendingEdgeRefreshNodeIds.size > 0 && this.cy) {
+            const ids = [...this._pendingEdgeRefreshNodeIds];
+            this._pendingEdgeRefreshNodeIds.clear();
+            let eles = this.cy.collection();
+            for (const id of ids) {
+                const node = this.cy.$id(id);
+                if (node.length) eles = eles.union(node.connectedEdges());
+            }
+            if (eles.length) this.refreshDirectionalEdgeCurves(eles);
+        }
     }
 
     applyCollapsedState(): void {

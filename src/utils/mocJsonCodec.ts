@@ -177,10 +177,18 @@ export function parseMOCJson(content: string, filePath: string, app: App): MOCPa
         };
     }
 
+    const __perf = (window as unknown as { __zkPerf?: boolean }).__zkPerf === true;
+    const __tParsed = __perf ? performance.now() : 0;
     const resolvedFileCache = new Map<string, TFile | null>();
     // 兼容读取：旧 shape (wikiLink/displayText/isTextOnly/isEmbed) 自动迁移到新 shape
     const normalized = (json.nodes || []).map(normalizeNode);
     const nodes = normalized.map(n => resolveJsonNode(app, n, basePath, resolvedFileCache));
+    if (__perf) {
+        console.log('[zkPerf:parseJson]', {
+            resolveNodes: +(performance.now() - __tParsed).toFixed(1),
+            uniqueTargets: resolvedFileCache.size,
+        });
+    }
 
     // 兼容读取：旧版顶层 nodeExtBitMap 映射 → 注入到每个节点的 extBitMap
     const legacyBitMap = (json as { nodeExtBitMap?: Record<string, number> }).nodeExtBitMap;

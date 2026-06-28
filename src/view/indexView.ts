@@ -2897,9 +2897,11 @@ window.addEventListener('resize', fitGraph);
         };
 
         let mocParseResult = await parseMOCStructure(this.app, currentMOCPath, headingTitle);
+        __lap('parse:read');
         mocParseResult = await this.ensureInitialRootNode(currentMOCFile, mocParseResult, headingTitle);
+        __lap('parse:root');
         mocParseResult = await this.ensureNodePositions(currentMOCFile, mocParseResult, headingTitle);
-        __lap('parse');
+        __lap('parse:positions');
 
         // 项目徽章:当前 MOC 是否被挂载到任意 FolderNode 下
         this.refreshProjectBadge(currentMOCPath);

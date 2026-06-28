@@ -190,9 +190,20 @@ export async function parseMOCStructure(
     // 用 adapter.read 直读磁盘，绕过 vault.read 基于 mtime 的缓存：
     // 同一秒内连续写入(如脚本/CLI 快速 addNode)mtime 不变会导致 vault.read 返回旧内容，
     // 造成"读到刚写入前的快照、父节点找不到"的竞态。adapter.read 总是磁盘真实内容。
+    const __perf = (window as unknown as { __zkPerf?: boolean }).__zkPerf === true;
+    const __t0 = __perf ? performance.now() : 0;
     const diskContent = await app.vault.adapter.read(filePath);
+    const __t1 = __perf ? performance.now() : 0;
     const { parseMOCJson } = await import('./mocJsonCodec');
-    return parseMOCJson(diskContent, filePath, app);
+    const result = parseMOCJson(diskContent, filePath, app);
+    if (__perf) {
+        console.log('[zkPerf:parseMOC]', {
+            adapterRead: +(__t1 - __t0).toFixed(1),
+            parseJson: +(performance.now() - __t1).toFixed(1),
+            bytes: diskContent.length,
+        });
+    }
+    return result;
 }
 
 // 将 MOC 树结构转换为 ZKNode 数组
