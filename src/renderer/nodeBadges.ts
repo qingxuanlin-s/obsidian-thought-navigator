@@ -1364,6 +1364,9 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                 cursor: 'pointer',
             });
             badgeEl.setCssStyles({ transformOrigin: 'right bottom' });
+            // 初始隐藏:同文本卡——无初始 transform 时新建徽章默认 translate(0,0) 显形于容器原点;
+            // 屏外新增节点的徽章会被视口剔除跳过 updateBadgePosition 而卡在左上角。由其定位时再显示。
+            badgeEl.setCssStyles({ display: 'none' });
             badgeContainer.appendChild(badgeEl);
 
             // 徽章文本按"模型宽度"截断并缓存:zoom/pan 不改变模型宽度,故截断结果在缩放过程中不变。
@@ -1972,6 +1975,11 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                 const overlayEl = activeDocument.createElement('div');
                 overlayEl.className = 'zk-text-md-overlay markdown-rendered';
                 applyTextOverlayBaseStyle(overlayEl);
+                // 初始隐藏:base 样式把 overlay 钉在容器原点(left/top:0)且 display:block。
+                // 若节点在屏外被新增(incIds 增量路径),badgePositionUpdater 的视口剔除会
+                // 跳过 updateOverlayPos,使该 overlay 从未被定位而停留在左上角原点显形。
+                // 由 updateOverlayPos 在节点进入视口被定位时再 display:block。
+                overlayEl.style.display = 'none';
                 overlayEl.addEventListener('click', (e: MouseEvent) => {
                     if (overlayEl.dataset.editing === '1') return;
                     e.preventDefault();
