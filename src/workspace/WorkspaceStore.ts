@@ -133,7 +133,7 @@ export class WorkspaceStore extends Component {
     getNode(id: string): WorkspaceNode | undefined { return this.nodes.get(id); }
     /** 按 vault 文件路径反查已有节点(笔记/图谱/MOC 可能都关联了文件) */
     getNodeByPath(path: string): WorkspaceNode | undefined {
-        return this.getAllNodes().find(n => (n as any).filePath === path);
+        return this.getAllNodes().find(n => (n as { filePath?: string }).filePath === path);
     }
     getAllNodes(): WorkspaceNode[] { return Array.from(this.nodes.values()); }
     isEmpty(): boolean { return this.nodes.size === 0; }
@@ -227,7 +227,7 @@ export class WorkspaceStore extends Component {
 
     /** vault 文件是否已在工作区有节点(= 已"挂载") */
     isFileMounted(path: string): boolean {
-        return this.getAllNodes().some(n => (n as any).filePath === path);
+        return this.getAllNodes().some(n => (n as { filePath?: string }).filePath === path);
     }
 
     /** 文件是否已挂在指定容器下 */
@@ -259,7 +259,7 @@ export class WorkspaceStore extends Component {
     containersHostingFile(path: string): WorkspaceNode[] {
         const hosts = new Set<string>();
         for (const n of this.getAllNodes()) {
-            if ((n as any).filePath !== path) continue;
+            if ((n as { filePath?: string }).filePath !== path) continue;
             const pid = this.parentContainerOf(n.id);
             if (pid) hosts.add(pid);
         }
@@ -324,14 +324,14 @@ export class WorkspaceStore extends Component {
      * 标题仅在它仍等于旧 basename(即用户没改过名)时跟随更新,避免覆盖自定义标题。
      */
     async handleFileRename(oldPath: string, newPath: string): Promise<void> {
-        const affected = this.getAllNodes().filter(n => (n as any).filePath === oldPath);
+        const affected = this.getAllNodes().filter(n => (n as { filePath?: string }).filePath === oldPath);
         if (affected.length === 0) return;
         const oldBase = baseNameNoExt(oldPath);
         const newBase = baseNameNoExt(newPath);
         await this.commit(ctx => {
             for (const n of affected) {
                 ctx.update(n.id, x => {
-                    (x as any).filePath = newPath;
+                    (x as { filePath?: string }).filePath = newPath;
                     if (x.title === oldBase) x.title = newBase;
                 });
             }
@@ -344,14 +344,14 @@ export class WorkspaceStore extends Component {
      * - 其余节点(moc/map/project/有正文的 note)→ 仅清空 filePath,保留节点与关联。
      */
     async handleFileDelete(path: string): Promise<void> {
-        const affected = this.getAllNodes().filter(n => (n as any).filePath === path);
+        const affected = this.getAllNodes().filter(n => (n as { filePath?: string }).filePath === path);
         if (affected.length === 0) return;
         await this.commit(ctx => {
             for (const n of affected) {
                 if (n.type === 'note' && !(n as WSNoteNode).body) {
                     ctx.remove(n.id);
                 } else {
-                    ctx.update(n.id, x => { delete (x as any).filePath; });
+                    ctx.update(n.id, x => { delete (x as { filePath?: string }).filePath; });
                 }
             }
         });
@@ -493,7 +493,7 @@ export class WorkspaceStore extends Component {
         const container = this.nodes.get(containerId);
         if (!container) return false;
         const targets = this.getAllNodes()
-            .filter(n => (n as any).filePath === path && this.parentContainerOf(n.id) === containerId);
+            .filter(n => (n as { filePath?: string }).filePath === path && this.parentContainerOf(n.id) === containerId);
         if (targets.length === 0) return false;
         await this.commit(ctx => {
             for (const node of targets) {

@@ -1,19 +1,32 @@
-import { Component, Platform, finishRenderMath, renderMath, setIcon } from 'obsidian';
+import type { CytoscapeRenderer } from './CytoscapeRenderer';
+import { Component, Platform, TFile, finishRenderMath, renderMath, setIcon } from 'obsidian';
+import type * as cytoscape from 'cytoscape';
 import { ZKNode } from 'src/view/indexView';
+import { CrossDomainLink } from 'src/utils/utils';
 import { darkenColor, hexToRgba, isModernThemeStyle, normalizeHexColor } from './colorUtils';
+import { dataStr } from './cyData';
+import type { CyData } from './types';
 import { estimateWrappedLines } from './renderPipeline';
 import { renderExcalidrawPreview, wrapForImageToolkit } from './embedPreview';
+import type { TextMdOverlayEntry } from './CytoscapeRenderer';
 
 export const TEXT_MD_OVERLAY_RENDER_VERSION = 3;
 
 // overlay 定位 updater + 其所属 Cytoscape 节点(用于视口剔除)。
 // node 为 null 表示该 updater 不绑定单一节点(始终执行,不参与剔除)。
-type BadgeUpdater = { node: any | null; fn: () => void };
+type BadgeUpdater = { node: cytoscape.NodeSingular | null; fn: () => void };
 
 // 交互(pan/zoom/drag)期视口剔除的安全外扩边距(rendered px):
 // 节点中心在 [视口 - M, 视口 + M] 外才剔除,覆盖节点自身尺寸 + 单帧快速 pan 的位移,
 // 避免节点刚滑入视口时 overlay 慢一帧。交互结束后 scheduleExtra/immediate 会全量补正。
 const OVERLAY_CULL_MARGIN = 320;
+// 低 zoom 门控:zoom 小于此值时整体跳过 HTML overlay(定位/Markdown 渲染),
+// 文本节点回退到 Cytoscape 原生 canvas label。fit-all 千节点 zoom≈0.1 命中此门,
+// 既省掉全量 overlay 重定位(schedulerImmediate),又免去为不可见的糊字跑 MarkdownRenderer。
+const OVERLAY_ZOOM_GATE = 0.35;
+// 节点数超过此阈值才启用 zoom 门控 + 分帧懒建;以下规模的图本就不慢,走原 eager 渲染。
+const LARGE_GRAPH_OVERLAY_THRESHOLD = 400;
+const OFFSCREEN_TRANSFORM = 'translate(-99999px, -99999px)';
 
 function middleEllipsizeToWidth(text: string, maxWidth: number, ctx: CanvasRenderingContext2D | null, font: string): string {
 	const fullText = String(text || '');
@@ -61,7 +74,7 @@ function measureVisibleTextWidth(ctx: CanvasRenderingContext2D, text: string, fa
 		: fallbackWidth;
 }
 
-function getRscratchValue(rscratch: any, propName: string): unknown {
+function getRscratchValue(rscratch: Record<string, unknown> | null | undefined, propName: string): unknown {
 	return rscratch ? rscratch[propName] : undefined;
 }
 
@@ -69,11 +82,33 @@ function modelToRendered(value: number, zoom: number, panValue: number): number 
 	return value * zoom + panValue;
 }
 
-export function renderNodeBadges(this: any): void {
+function escapeCssAttributeValue(value: string): string {
+	return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function hideCulledNodeOverlays(badgeContainer: HTMLElement, nodeId: string): void {
+	const selector = `[data-node-id="${escapeCssAttributeValue(nodeId)}"]`;
+	badgeContainer.querySelectorAll<HTMLElement>(selector).forEach((el) => {
+		el.setCssStyles({
+			display: 'none',
+			opacity: el.classList.contains('zk-node-remark-tooltip') || el.classList.contains('zk-node-cross-domain-panel')
+				? '0'
+				: el.style.opacity,
+			left: el.style.left ? '-99999px' : el.style.left,
+			top: el.style.top ? '-99999px' : el.style.top,
+			transform: el.style.transform ? OFFSCREEN_TRANSFORM : el.style.transform,
+		});
+	});
+}
+
+export function renderNodeBadges(this: CytoscapeRenderer): void {
         if (!this.cy || !this.container) return;
 
+        // 仅大图启用门控+懒建;小图走原 eager 路径(行为与改动前一致)。
+        this._overlayGateActive = this.cy.nodes().length > LARGE_GRAPH_OVERLAY_THRESHOLD;
+
         // 性能埋点(window.__zkPerf=true):细分 renderNodeBadges 内部各子系统耗时
-        const __zkPerf = (window as any).__zkPerf === true;
+        const __zkPerf = (window as unknown as { __zkPerf?: boolean }).__zkPerf === true;
         const __bMark: Record<string, number> = {};
         let __bPrev = __zkPerf ? performance.now() : 0;
         const __bLap = (name: string) => {
@@ -114,9 +149,15 @@ export function renderNodeBadges(this: any): void {
             // 全量重建:清理调度器 + 摘除缓存 overlay + 重建容器
             this.overlayScheduler.cleanupScheduler();
             this.cleanupBadgeInteractionBindings();
+            // 容器是新建的,重置门控状态,让首次 badgePositionUpdater 必然校准一次显隐。
+            this._overlayBelowGate = undefined;
+            // 旧分帧建队列引用的是上一轮的节点闭包,全量重建时作废,清空避免建到已移除节点。
+            this._textBuildThunks.clear();
+            this._textBuildScheduled = false;
+            this._pendingEdgeRefreshNodeIds.clear();
 
             // 先从旧 badgeContainer 中摘下缓存的 MD overlay（保持 DOM 节点存活，便于下面复用）
-            this.textMdOverlayCache.forEach((entry: any) => {
+            this.textMdOverlayCache.forEach((entry: TextMdOverlayEntry) => {
                 entry.usedInCycle = false;
                 // 防御性清理：清除可能遗留的编辑标记和隐藏样式，避免下次复用时继续不显示
                 if (entry.el.dataset.editing === '1') {
@@ -125,7 +166,12 @@ export function renderNodeBadges(this: any): void {
                     delete entry.el.dataset.styleSig;
                 }
                 delete entry.el.dataset.editing;
-                entry.el.setCssStyles({ display: 'block' });
+                // 不在原点点亮:旧版在此强制 display:block,把缓存 overlay 全部点亮再靠定位器挪回位。
+                // 但全量重渲染带 fit 时(_pendingFit),同步定位被跳过、推迟到 fit 后的 viewport 事件,
+                // 且该事件按视口剔除——落到屏外的节点永不定位 → overlay 停在容器原点 (0,0) 显形
+                // (左上角幽灵卡)。改为先停到屏外:由 updateOverlayPos 在节点进入视口被定位时
+                // 写回真实 left/top 并显形;屏外未定位的保持在 -99999 不可见。
+                entry.el.setCssStyles({ display: 'block', left: '-99999px', top: '-99999px' });
                 if (entry.el.parentNode) entry.el.parentNode.removeChild(entry.el);
             });
 
@@ -173,7 +219,7 @@ export function renderNodeBadges(this: any): void {
         const badgeMeasureCtx = badgeMeasure.getContext('2d');
 
         // 分组 glass overlay
-        this.cy.nodes('.group-node').forEach((groupNode: any) => {
+        this.cy.nodes('.group-node').forEach((groupNode: cytoscape.NodeSingular) => {
             // 增量模式跳过分组 glass:组 bbox 由 Cytoscape 复合节点维护,旧 glass updater 仍在
             // scheduler 中,pan/zoom 时会自动把新子节点纳入。
             if (incIds) return;
@@ -191,8 +237,6 @@ export function renderNodeBadges(this: any): void {
                 ? 'rgba(255, 255, 255, 0.18)'
                 : 'rgba(255, 255, 255, 0.022)',
             });
-            (glassEl.style as any).backdropFilter = 'blur(6px)';
-            (glassEl.style as any).webkitBackdropFilter = 'blur(6px)';
             glassEl.setCssStyles({ boxShadow: isLightTheme
                 ? '0 1px 8px rgba(0,0,0,0.035)'
                 : '0 1px 10px rgba(0,0,0,0.16)' });
@@ -244,8 +288,6 @@ export function renderNodeBadges(this: any): void {
                 ? 'rgba(255, 255, 255, 0.42)'
                 : 'rgba(14, 24, 40, 0.46)',
             });
-            (labelEl.style as any).backdropFilter = 'blur(5px)';
-            (labelEl.style as any).webkitBackdropFilter = 'blur(5px)';
             labelEl.setCssStyles({
                 boxShadow: isLightTheme
                 ? '0 1px 4px rgba(50, 70, 100, 0.09)'
@@ -316,7 +358,7 @@ export function renderNodeBadges(this: any): void {
             badgeUpdaters.push({ node: null, fn: updateGlassPos });
         });
 
-        this.cy.nodes('[?hasFileIcon]').forEach((node: any) => {
+        this.cy.nodes('[?hasFileIcon]').forEach((node: cytoscape.NodeSingular) => {
             if (incIds && !incIds.has(node.id())) return;
             // 跳过所有 embed 节点（由预览卡片渲染标题和内容）
             if (node.data('isEmbed')) return;
@@ -404,7 +446,7 @@ export function renderNodeBadges(this: any): void {
             const getCytoscapeLabelLayout = (): Array<{ centerX: number; baselineY: number; width: number; lineHeight: number }> | null => {
                 if (!this.cy || !underlineMeasureCtx) return null;
 
-                const rscratch = node?.[0]?._private?.rscratch;
+                const rscratch = (node?.[0] as unknown as { _private?: { rscratch?: Record<string, unknown> } } | undefined)?._private?.rscratch;
                 if (!rscratch) return null;
 
                 const rawLines = getRscratchValue(rscratch, 'labelWrapCachedLines');
@@ -664,7 +706,7 @@ export function renderNodeBadges(this: any): void {
             badgeUpdaters.push({ node, fn: updateUnderlinePosition });
         });
 
-        this.cy.nodes().forEach((node: any) => {
+        this.cy.nodes().forEach((node: cytoscape.NodeSingular) => {
             if (incIds && !incIds.has(node.id())) return;
             if (node.data('isGroup') || node.data('isPlaceholder') || node.data('isEmbed')) {
                 return;
@@ -698,6 +740,7 @@ export function renderNodeBadges(this: any): void {
                     pointerEvents: 'auto',
                     cursor: `${readOnly ? 'default' : 'pointer'}`,
                     userSelect: 'none',
+                    transform: OFFSCREEN_TRANSFORM,
                 });
             };
             applyRemarkBadgeStyle();
@@ -708,6 +751,8 @@ export function renderNodeBadges(this: any): void {
 			tooltipEl.dataset.nodeId = node.id();
 			tooltipEl.setCssStyles({
 				position: 'absolute',
+				left: '-99999px',
+				top: '-99999px',
 				maxWidth: '280px',
 				padding: '8px 10px',
 				background: 'rgba(15, 23, 42, 0.96)',
@@ -734,7 +779,7 @@ export function renderNodeBadges(this: any): void {
             // renderedTooltipSource = 当前已渲染进 DOM 的源文本;与最新备注不一致时下次 hover 才重渲。
             let renderedTooltipSource: string | null = null;
             const ensureTooltipRendered = () => {
-                const remarkText = node.data('remark') || '';
+                const remarkText = dataStr(node, 'remark');
                 if (remarkText === renderedTooltipSource) return;
                 renderedTooltipSource = remarkText;
                 this.renderRemarkTooltipContent(tooltipEl, remarkText);
@@ -742,38 +787,46 @@ export function renderNodeBadges(this: any): void {
 
             const updateRemarkPosition = () => {
                 if (!this.cy) return;
-                const remarkText = node.data('remark') || '';
+                const remarkText = dataStr(node, 'remark');
                 const isSelected = node.selected();
-                // 快速路径：无 remark 且未选中时直接隐藏，跳过 visibility 检查和 boundingBox 计算
-                if (!remarkText && !isSelected) {
-                    if (remarkEl.style.display !== 'none') {
-                        remarkEl.setCssStyles({ display: 'none' });
-                        tooltipEl.setCssStyles({
-                            display: 'none',
-                            opacity: '0',
-                        });
-                    }
-                    return;
-                }
                 const isHidden =
                     node.removed() ||
                     node.hasClass('zk-collapsed-hidden') ||
                     node.style('display') === 'none' ||
                     !node.visible();
-                const shouldShow = !isHidden;
-                // 备注 tooltip 内容改为懒渲染(见 ensureTooltipRendered):此处不再每帧/首帧跑
-                // MarkdownRenderer,推迟到 hover 时才渲染,避免打开 MOC 时为全部备注一次性渲染。
-                applyRemarkBadgeStyle();
-
-                if (!shouldShow) {
-                    remarkEl.setCssStyles({ display: 'none' });
+                if (isHidden) {
+                    remarkEl.setCssStyles({
+                        display: 'none',
+                        transform: OFFSCREEN_TRANSFORM,
+                    });
                     tooltipEl.setCssStyles({
                         display: 'none',
                         opacity: '0',
+                        left: '-99999px',
+                        top: '-99999px',
                         transform: 'translateY(4px)',
                     });
                     return;
                 }
+                // 快速路径：无 remark 且未选中时直接隐藏，跳过 visibility 检查和 boundingBox 计算
+                if (!remarkText && !isSelected) {
+                    if (remarkEl.style.display !== 'none') {
+                        remarkEl.setCssStyles({
+                            display: 'none',
+                            transform: OFFSCREEN_TRANSFORM,
+                        });
+                        tooltipEl.setCssStyles({
+                            display: 'none',
+                            opacity: '0',
+                            left: '-99999px',
+                            top: '-99999px',
+                        });
+                    }
+                    return;
+                }
+                // 备注 tooltip 内容改为懒渲染(见 ensureTooltipRendered):此处不再每帧/首帧跑
+                // MarkdownRenderer,推迟到 hover 时才渲染,避免打开 MOC 时为全部备注一次性渲染。
+                applyRemarkBadgeStyle();
 
                 remarkEl.setCssStyles({ display: 'flex' });
                 tooltipEl.setCssStyles({ display: 'block' });
@@ -845,7 +898,7 @@ export function renderNodeBadges(this: any): void {
             });
 
             remarkEl.addEventListener('mouseenter', () => {
-                const remarkText = node.data('remark') || '';
+                const remarkText = dataStr(node, 'remark');
                 if (!remarkText) return;
                 ensureTooltipRendered(); // 首次 hover 才渲染富文本(懒加载)
                 tooltipEl.setCssStyles({
@@ -864,7 +917,7 @@ export function renderNodeBadges(this: any): void {
 
         // 锚点星星 badge — 金色圆环 + 深色底 + 发光星标
         const MIN_ANCHOR_PX = 20;
-        this.cy.nodes('[?isAnchor]').forEach((node: any) => {
+        this.cy.nodes('[?isAnchor]').forEach((node: cytoscape.NodeSingular) => {
             if (incIds && !incIds.has(node.id())) return;
             if (node.data('isGroup') || node.data('isPlaceholder')) return;
 
@@ -886,7 +939,7 @@ export function renderNodeBadges(this: any): void {
                     0 0 7px rgba(255, 206, 100, 0.3)`;
             starEl.setCssStyles({
                 position: 'absolute',
-                display: 'flex',
+                display: 'none',
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: `${isLightTheme ? '#b8860b' : '#f0d489'}`,
@@ -899,7 +952,7 @@ export function renderNodeBadges(this: any): void {
                 boxShadow: `${anchorBadgeShadow}`,
                 textShadow: `${anchorBadgeTextShadow}`,
                 zIndex: '8',
-                transform: 'translate(-50%, -50%)',
+                transform: `${OFFSCREEN_TRANSFORM} translate(-50%, -50%)`,
             });
             badgeContainer.appendChild(starEl);
 
@@ -910,9 +963,15 @@ export function renderNodeBadges(this: any): void {
                     node.hasClass('zk-collapsed-hidden') ||
                     node.style('display') === 'none' ||
                     !node.visible();
-                if (isHidden) { starEl.setCssStyles({ display: 'none' }); return; }
+                if (isHidden) {
+                    starEl.setCssStyles({
+                        display: 'none',
+                        transform: `${OFFSCREEN_TRANSFORM} translate(-50%, -50%)`,
+                    });
+                    return;
+                }
 
-                starEl.setCssStyles({ display: 'block' });
+                starEl.setCssStyles({ display: 'flex' });
                 const zoom = this.cy.zoom();
                 const bb = node.renderedBoundingBox();
                 const badgeSize = Math.max(MIN_ANCHOR_PX, 26 * zoom);
@@ -932,7 +991,7 @@ export function renderNodeBadges(this: any): void {
 
         // 草稿节点角标 — 左上角小药丸,AI=紫/人工=灰,标识待审批节点(#20)
         const MIN_DRAFT_PX = 16;
-        this.cy.nodes('[?isDraft]').forEach((node: any) => {
+        this.cy.nodes('[?isDraft]').forEach((node: cytoscape.NodeSingular) => {
             if (incIds && !incIds.has(node.id())) return;
             const origin = node.data('draftOrigin') === 'ai' ? 'ai' : 'manual';
             const badgeText = origin === 'ai' ? 'AI' : '草';
@@ -944,7 +1003,7 @@ export function renderNodeBadges(this: any): void {
             draftEl.textContent = badgeText;
             draftEl.setCssStyles({
                 position: 'absolute',
-                display: 'flex',
+                display: 'none',
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: '#ffffff',
@@ -956,7 +1015,7 @@ export function renderNodeBadges(this: any): void {
                 borderRadius: '999px',
                 boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
                 zIndex: '8',
-                transform: 'translate(-50%, -50%)',
+                transform: `${OFFSCREEN_TRANSFORM} translate(-50%, -50%)`,
             });
             badgeContainer.appendChild(draftEl);
 
@@ -967,7 +1026,13 @@ export function renderNodeBadges(this: any): void {
                     node.hasClass('zk-collapsed-hidden') ||
                     node.style('display') === 'none' ||
                     !node.visible();
-                if (isHidden) { draftEl.setCssStyles({ display: 'none' }); return; }
+                if (isHidden) {
+                    draftEl.setCssStyles({
+                        display: 'none',
+                        transform: `${OFFSCREEN_TRANSFORM} translate(-50%, -50%)`,
+                    });
+                    return;
+                }
 
                 draftEl.setCssStyles({ display: 'flex' });
                 const zoom = this.cy.zoom();
@@ -992,16 +1057,16 @@ export function renderNodeBadges(this: any): void {
         const cdBadgeColor = isLightTheme ? '#7357c6' : '#a08be8';
         const cdMocBasename = (p: string) =>
             String(p || '').split('/').pop()?.replace(/\.moc\.md$|\.md$/i, '') || '';
-        const cdLinkTargetText = (link: any) => {
+        const cdLinkTargetText = (link: CrossDomainLink) => {
             const fileBase = link?.filePath
                 ? String(link.filePath).split('/').pop()?.replace(/\.md$/i, '') || ''
                 : '';
             return link?.displayText || fileBase || link?.nodeId || '未命名';
         };
-        this.cy.nodes('[?hasCrossDomain]').forEach((node: any) => {
+        this.cy.nodes('[?hasCrossDomain]').forEach((node: cytoscape.NodeSingular) => {
             if (incIds && !incIds.has(node.id())) return;
             if (node.data('isGroup') || node.data('isPlaceholder')) return;
-            const links: any[] = node.data('crossDomainLinks') || [];
+            const links: CrossDomainLink[] = node.data('crossDomainLinks') || [];
             if (!links.length) return;
             const sourceNodeId = String(node.data('originalNodeId') || node.id());
 
@@ -1014,7 +1079,7 @@ export function renderNodeBadges(this: any): void {
                 : `跨领域链接 · ${cdLinkTargetText(links[0])}`;
             cdEl.setCssStyles({
                 position: 'absolute',
-                display: 'flex',
+                display: 'none',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '2px',
@@ -1029,7 +1094,7 @@ export function renderNodeBadges(this: any): void {
                 borderRadius: '999px',
                 boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
                 zIndex: '8',
-                transform: 'translate(-50%, -50%)',
+                transform: `${OFFSCREEN_TRANSFORM} translate(-50%, -50%)`,
             });
             badgeContainer.appendChild(cdEl);
 
@@ -1212,7 +1277,10 @@ export function renderNodeBadges(this: any): void {
                     node.style('display') === 'none' ||
                     !node.visible();
                 if (isHidden) {
-                    cdEl.setCssStyles({ display: 'none' });
+                    cdEl.setCssStyles({
+                        display: 'none',
+                        transform: `${OFFSCREEN_TRANSFORM} translate(-50%, -50%)`,
+                    });
                     if (cdPanel.style.display !== 'none') hideCdPanel();
                     return;
                 }
@@ -1244,7 +1312,7 @@ export function renderNodeBadges(this: any): void {
         });
 
         // 兼容旧语义：文字前小色点（legacy customColor）
-        this.cy.nodes('[customColor]').forEach((node: any) => {
+        this.cy.nodes('[customColor]').forEach((node: cytoscape.NodeSingular) => {
             if (incIds && !incIds.has(node.id())) return;
             if (node.data('isGroup') || node.data('isEmbed')) return;
             const rawColor = String(node.data('customColor') || '');
@@ -1259,7 +1327,8 @@ export function renderNodeBadges(this: any): void {
 				position: 'absolute',
 				pointerEvents: 'none',
 				borderRadius: '999px',
-				transform: 'translate(-50%, -50%)',
+				display: 'none',
+				transform: `${OFFSCREEN_TRANSFORM} translate(-50%, -50%)`,
 			});
             dotEl.setCssStyles({
                 backgroundColor: color,
@@ -1268,12 +1337,24 @@ export function renderNodeBadges(this: any): void {
             badgeContainer.appendChild(dotEl);
 
             const updateDotPos = () => {
-                if (!this.cy || node.removed()) { dotEl.setCssStyles({ display: 'none' }); return; }
+                if (!this.cy || node.removed()) {
+                    dotEl.setCssStyles({
+                        display: 'none',
+                        transform: `${OFFSCREEN_TRANSFORM} translate(-50%, -50%)`,
+                    });
+                    return;
+                }
                 const isHidden =
                     node.hasClass('zk-collapsed-hidden') ||
                     node.style('display') === 'none' ||
                     !node.visible();
-                if (isHidden) { dotEl.setCssStyles({ display: 'none' }); return; }
+                if (isHidden) {
+                    dotEl.setCssStyles({
+                        display: 'none',
+                        transform: `${OFFSCREEN_TRANSFORM} translate(-50%, -50%)`,
+                    });
+                    return;
+                }
 
                 const zoom = this.cy.zoom();
                 const dotSize = Math.max(5, 7 * zoom);
@@ -1307,13 +1388,13 @@ export function renderNodeBadges(this: any): void {
         });
 
         // 为每个有 badge 的节点创建徽章元素（跳过 embed 节点，由预览卡片展示）
-        this.cy.nodes('[badge]').forEach((node: any) => {
+        this.cy.nodes('[badge]').forEach((node: cytoscape.NodeSingular) => {
             if (incIds && !incIds.has(node.id())) return;
             const badge = String(node.data('badge') || '');
             if (!badge || node.data('isEmbed')) return;
             const isModern = isModernThemeStyle(this.currentOptions);
             const branchBorderColor = typeof node.data('branchNodeBorder') === 'string'
-                ? normalizeHexColor(node.data('branchNodeBorder'))
+                ? normalizeHexColor(dataStr(node, 'branchNodeBorder'))
                 : null;
             const modernBase = branchBorderColor || '#64748b';
             const badgeBackgroundColor = isModern
@@ -1347,8 +1428,9 @@ export function renderNodeBadges(this: any): void {
                 cursor: 'pointer',
             });
             badgeEl.setCssStyles({ transformOrigin: 'right bottom' });
-            (badgeEl.style as any).webkitTextSizeAdjust = 'none';
-            (badgeEl.style as any).textSizeAdjust = 'none';
+            // 初始隐藏:同文本卡——无初始 transform 时新建徽章默认 translate(0,0) 显形于容器原点;
+            // 屏外新增节点的徽章会被视口剔除跳过 updateBadgePosition 而卡在左上角。由其定位时再显示。
+            badgeEl.setCssStyles({ display: 'none' });
             badgeContainer.appendChild(badgeEl);
 
             // 徽章文本按"模型宽度"截断并缓存:zoom/pan 不改变模型宽度,故截断结果在缩放过程中不变。
@@ -1401,12 +1483,13 @@ export function renderNodeBadges(this: any): void {
 
         // 文本节点右下角拉伸手柄（仅选中时可见）
         if (!readOnly) {
-            this.cy.nodes('[?isTextOnly]').forEach((node: any) => {
+            this.cy.nodes('[?isTextOnly]').forEach((node: cytoscape.NodeSingular) => {
                 if (incIds && !incIds.has(node.id())) return;
                 if (node.data('isGroup') || node.data('isPlaceholder') || node.data('isEmbed')) return;
 
                 const resizeEl = activeDocument.createElement('div');
                 resizeEl.className = 'zk-text-node-resize-handle';
+                resizeEl.dataset.nodeId = node.id();
                 resizeEl.setCssStyles({
                     position: 'absolute',
                     width: '18px',
@@ -1536,7 +1619,7 @@ export function renderNodeBadges(this: any): void {
 
         // embed toggle 按钮（睁眼/闭眼，文件节点⟷预览节点互转）
         if (!readOnly) {
-            this.cy.nodes().forEach((node: any) => {
+            this.cy.nodes().forEach((node: cytoscape.NodeSingular) => {
                 if (incIds && !incIds.has(node.id())) return;
                 if (node.data('isRoot') || node.data('isPlaceholder') || node.data('isGroup') || node.data('isStandaloneText')) return;
                 if (node.data('isTextOnly')) return;
@@ -1558,10 +1641,11 @@ export function renderNodeBadges(this: any): void {
                     zIndex: '10',
                     width: '24px',
                     height: '24px',
-                    display: 'flex',
+                    display: 'none',
                     alignItems: 'center',
                     justifyContent: 'center',
                     color: 'var(--text-normal)',
+                    transform: OFFSCREEN_TRANSFORM,
                 });
                 const toggleSvg = toggleEl.querySelector('svg') as SVGElement | null;
                 if (toggleSvg) {
@@ -1599,11 +1683,18 @@ export function renderNodeBadges(this: any): void {
                 const updateTogglePos = () => {
                     if (!this.cy) return;
                     const isHidden = node.removed() || node.hasClass('zk-collapsed-hidden') || node.style('display') === 'none' || !node.visible();
-                    if (isHidden) { toggleEl.setCssStyles({ display: 'none' }); return; }
+                    if (isHidden) {
+                        toggleEl.setCssStyles({
+                            display: 'none',
+                            transform: OFFSCREEN_TRANSFORM,
+                        });
+                        return;
+                    }
                     if (!node.selected()) {
                         toggleEl.setCssStyles({
                             display: 'none',
                             pointerEvents: 'none',
+                            transform: OFFSCREEN_TRANSFORM,
                         });
                         return;
                     }
@@ -1646,25 +1737,50 @@ export function renderNodeBadges(this: any): void {
         // 注册到统一 overlay 调度器。增量模式下 badgeUpdaters 只含新节点的 updater,
         // 这里追加一个新的 badgePositionUpdater(不清理旧的),旧节点的 updater 仍在调度器中,
         // pan/zoom 时新旧并集都会被更新。
+        const culledOverlayNodeIds = new Set<string>();
         const badgePositionUpdater = () => {
-            // 非交互帧(idle / 交互结束后的 scheduleExtra/immediate):全量定位,保证稳态精确。
-            if (!this.cy || !this.overlayScheduler.isInteracting) {
-                for (const u of badgeUpdaters) u.fn();
-                return;
-            }
-            // 交互(pan/zoom/drag)帧:剔除中心远离视口的节点 overlay。判据用 node.position()
-            // (模型坐标,廉价,不触发 renderedBoundingBox),换算到 rendered 坐标后与视口比较。
-            const pan = this.cy.pan();
+            if (!this.cy) return;
             const zoom = this.cy.zoom();
+            // 低 zoom 门控:跨越门限时做一次性的容器显隐 + 文本节点原生 label 切换。
+            // 仅大图启用;小图永不门控(belowGate 恒 false),容器常显、不切原生 label。
+            const belowGate = this._overlayGateActive && zoom < OVERLAY_ZOOM_GATE;
+            if (belowGate !== this._overlayBelowGate) {
+                this._overlayBelowGate = belowGate;
+                badgeContainer.setCssStyles({ display: belowGate ? 'none' : 'block' });
+                glassLayer.setCssStyles({ display: belowGate ? 'none' : 'block' });
+                if (belowGate) {
+                    // 回退原生 canvas label:清掉 hasMarkdownOverlay,让 text-opacity 恢复可见。
+                    // 一次性 batch,避免逐节点 data 写入触发多次样式重算。
+                    this.cy.batch(() => {
+                        this.cy?.nodes('[?isTextOnly][?hasMarkdownOverlay]').forEach(
+                            (n: cytoscape.NodeSingular) => { n.data('hasMarkdownOverlay', false); }
+                        );
+                    });
+                }
+            }
+            // 低 zoom:overlay 整体隐藏,跳过全部 updater(含文本 MD 懒渲染),原生 label 承载显示。
+            if (belowGate) return;
+            // zoom 足够大:按 node.position()(模型坐标,廉价,不触发 renderedBoundingBox)换算到
+            // rendered 坐标剔除视口外节点 overlay。idle 与交互帧统一剔除——视口外 overlay 不可见,
+            // 无需精确定位,也避免空闲全量 O(N) 重定位(此前 schedulerImmediate 卡顿主因)。
+            const pan = this.cy.pan();
             const W = this.container?.clientWidth ?? 0;
             const H = this.container?.clientHeight ?? 0;
             const M = OVERLAY_CULL_MARGIN;
             for (const u of badgeUpdaters) {
                 if (u.node && !u.node.removed()) {
+                    const nodeId = u.node.id();
                     const p = u.node.position();
                     const rx = p.x * zoom + pan.x;
                     const ry = p.y * zoom + pan.y;
-                    if (rx < -M || rx > W + M || ry < -M || ry > H + M) continue;
+                    if (rx < -M || rx > W + M || ry < -M || ry > H + M) {
+                        if (!culledOverlayNodeIds.has(nodeId)) {
+                            hideCulledNodeOverlays(badgeContainer, nodeId);
+                            culledOverlayNodeIds.add(nodeId);
+                        }
+                        continue;
+                    }
+                    culledOverlayNodeIds.delete(nodeId);
                 }
                 u.fn();
             }
@@ -1682,7 +1798,10 @@ export function renderNodeBadges(this: any): void {
                 // immediate() 跑一遍全部已注册 updater 重定位全图(成本=一帧 pan,远低于重建 N 个 DOM)。
                 this.overlayScheduler.immediate();
             } else {
-                badgeUpdaters.forEach(u => u.fn());
+                // 经 badgePositionUpdater 走门控+视口剔除:低 zoom 跳过(新节点回退原生 label),
+                // 高 zoom 仅为视口内的新节点懒建 overlay。直接 forEach 会绕过门控、在 fit-all 下
+                // 把新节点置成"既无 overlay 又被隐藏原生 label"的空白态。
+                badgePositionUpdater();
             }
             // 连线手柄(hover 小蓝点)是逐节点绑定的,新节点必须重建才有手柄。addConnectionHandles
             // 已做自幂等(注销旧 updater + 解绑旧逐节点监听),可独立调用而不累积、不影响边 select 处理器。
@@ -1710,7 +1829,14 @@ export function renderNodeBadges(this: any): void {
 
             // 所有 overlay 子系统注册完毕后，绑定统一事件监听
             this.overlayScheduler.bindListeners();
-            this.overlayScheduler.immediate();
+            // 本次渲染后 render() 还会 fit:fit 前在 zoom≈1 下做全量定位会被 fit 立刻作废(纯浪费,
+            // 且 fit-all 千节点正是 schedulerImmediate 7.6s 的来源)。跳过它,改由 fit 触发的 viewport
+            // 事件在最终 zoom 下定位/门控;render() 末尾另有一次兜底 schedule()。非 fit 路径(复用实例)
+            // 无 viewport 事件兜底,仍需在此 immediate() 一次。
+            if (!this._pendingFit) {
+                this.overlayScheduler.immediate();
+            }
+            this._pendingFit = false;
             __bLap('schedulerImmediate');
         }
         if (__zkPerf) {
@@ -1729,16 +1855,74 @@ export function renderNodeBadges(this: any): void {
      *   2) 快路径检测 —— 无 MD 语法时跳过 MarkdownRenderer，直接 textContent
      *   3) 批量尺寸回写 —— Promise.all 完成后 cy.batch 一次性刷新节点宽高
      */
-function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badgeUpdaters: BadgeUpdater[], incIds: Set<string> | null = null): void {
+function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTMLElement, badgeUpdaters: BadgeUpdater[], incIds: Set<string> | null = null): void {
         if (!this.cy) return;
         const app = this.currentOptions?.app;
         if (!app) return;
         const sourcePath = this.currentData?.metadata?.currentFile || '';
 
-        const measureAndSizePending: Array<{ node: any; entry: { el: HTMLElement; width: number; height: number } }> = [];
-        const renderPromises: Promise<void>[] = [];
+        // 本周期出现过的文本节点 cacheKey,供末尾 mark-sweep 判定缓存项是否仍有对应节点。
+        // 懒建后 usedInCycle 不再可靠(低 zoom 一个都不建),改用节点存在性清理。
+        const validCacheKeys = new Set<string>();
+        type SizePending = { node: cytoscape.NodeSingular; entry: TextMdOverlayEntry };
 
-        this.cy.nodes('[?isTextOnly]').forEach((node: any) => {
+        // 尺寸回写助手(上移到循环前):懒建时每个节点在 buildOrReuse 内即时调用,
+        // 而非等循环结束统一 flush(那时懒建尚未发生)。
+        const measureOverlayHeightForWidth = (el: HTMLElement, width: number, fallbackHeight: number): number => {
+            if (!el || width <= 0) return fallbackHeight;
+            const prevWidth = el.style.width;
+            const prevHeight = el.style.height;
+            const prevFontSize = el.style.fontSize;
+            const base = Number(el.dataset.baseFontSize || '20');
+            try {
+                // 以模型坐标测量内容高度(font-size 复位到 base,对应 zoom=1 的自然尺寸)
+                el.setCssStyles({
+                    fontSize: `${base}px`,
+                    width: `${width}px`,
+                    height: 'auto',
+                });
+                const measured = Math.ceil(Math.max(el.scrollHeight, el.getBoundingClientRect().height)) + 12;
+                return Math.max(32, Math.min(640, measured));
+            } catch {
+                return fallbackHeight;
+            } finally {
+                el.setCssStyles({
+                    width: prevWidth,
+                    height: prevHeight,
+                    fontSize: prevFontSize,
+                });
+            }
+        };
+
+        const applySizes = (pending: SizePending[]) => {
+            if (!this.cy || pending.length === 0) return;
+            this.cy.batch(() => {
+                pending.forEach(({ node, entry: e }) => {
+                    if (node.removed()) return;
+                    const currentWidthModel = Number(node.data('manualWidthModel') || 0);
+                    const currentHeightModel = Number(node.data('manualHeightModel') || 0);
+                    if (currentWidthModel <= 0 && currentHeightModel <= 0) return;
+                    const targetWidth = currentWidthModel > 0 ? currentWidthModel : e.width;
+                    // 仅当用户显式锁过高度（currentHeightModel > 0）才回写 data；
+                    // 否则只在视觉层用 overlay 测量动态适配高度，避免把"为了当前内容渲染的临时高度"固化成用户手动尺寸，
+                    // 否则改短内容后旧高度会被持续保留下来。
+                    const targetHeight = currentHeightModel > 0
+                        ? currentHeightModel
+                        : measureOverlayHeightForWidth(e.el, targetWidth, e.height);
+                    e.width = targetWidth;
+                    e.height = targetHeight;
+                    if (currentWidthModel > 0) {
+                        node.data('manualWidthModel', targetWidth);
+                    }
+                    if (currentHeightModel > 0) {
+                        node.data('manualHeightModel', targetHeight);
+                    }
+                    node.style({ width: targetWidth, height: targetHeight });
+                });
+            });
+        };
+
+        this.cy.nodes('[?isTextOnly]').forEach((node: cytoscape.NodeSingular) => {
             if (incIds && !incIds.has(node.id())) return;
             const data = node.data();
             if (data.isPlaceholder) return;
@@ -1812,8 +1996,11 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                     overlayEl.dataset.styleSig = styleSig;
                     overlayEl.setCssStyles({
                         position: 'absolute',
-                        left: '0',
-                        top: '0',
+                        // 初始落点停到屏外而非原点:styleSig 变化(如局部聚焦切 muted/active class)会重套
+                        // 基础样式,若落在 (0,0) 且此刻节点在屏外被剔除,就会在左上角显形。由 updateOverlayPos
+                        // 写回真实 left/top。
+                        left: '-99999px',
+                        top: '-99999px',
                         display: `${overlayDisplay}`,
                         flexDirection: 'column',
                         justifyContent: 'center',
@@ -1847,6 +2034,13 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                 }
             };
 
+            validCacheKeys.add(cacheKey);
+
+            // 懒建/复用:首次在 zoom≥门限且节点进视口时由 textUpdater 触发(见下方)。
+            // 低 zoom(fit-all)时整条 textUpdater 不会被调用,从而免去为不可见节点跑 MarkdownRenderer。
+            const buildOrReuse = (): TextMdOverlayEntry | null => {
+            const measureAndSizePending: SizePending[] = [];
+            const renderPromises: Promise<void>[] = [];
             let entry = this.textMdOverlayCache.get(cacheKey);
 
             if (entry) {
@@ -1866,6 +2060,11 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                 const overlayEl = activeDocument.createElement('div');
                 overlayEl.className = 'zk-text-md-overlay markdown-rendered';
                 applyTextOverlayBaseStyle(overlayEl);
+                // 初始隐藏:base 样式把 overlay 钉在容器原点(left/top:0)且 display:block。
+                // 若节点在屏外被新增(incIds 增量路径),badgePositionUpdater 的视口剔除会
+                // 跳过 updateOverlayPos,使该 overlay 从未被定位而停留在左上角原点显形。
+                // 由 updateOverlayPos 在节点进入视口被定位时再 display:block。
+                overlayEl.setCssStyles({ display: 'none' });
                 overlayEl.addEventListener('click', (e: MouseEvent) => {
                     if (overlayEl.dataset.editing === '1') return;
                     e.preventDefault();
@@ -1937,7 +2136,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                             const forceTab = e.ctrlKey || e.metaKey;
                             const openLink = this.currentOptions?.openLink;
                             if (openLink) openLink(linkText, sourcePath, forceTab);
-                            else app?.workspace?.openLinkText?.(linkText, sourcePath, forceTab ? 'tab' : undefined);
+                            else void app?.workspace?.openLinkText?.(linkText, sourcePath, forceTab ? 'tab' : undefined);
                         });
                         a.addEventListener('mouseover', (e: MouseEvent) => {
                             if (!linkText) return;
@@ -1964,7 +2163,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
 
                         const file = app?.metadataCache?.getFirstLinkpathDest?.(linkText, sourcePath)
                             || app?.vault?.getAbstractFileByPath?.(pathWithoutSubpath);
-                        if (!file) return createInternalLink(rawTarget);
+                        if (!(file instanceof TFile)) return createInternalLink(rawTarget);
 
                         if (isExcalidraw) {
                             const preview = activeDocument.createElement('div');
@@ -1975,7 +2174,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                                 if (!(e.ctrlKey || e.metaKey)) return;
                                 e.preventDefault();
                                 e.stopPropagation();
-                                app?.workspace?.openLinkText?.(linkText, sourcePath, 'tab');
+                                void app?.workspace?.openLinkText?.(linkText, sourcePath, 'tab');
                             };
                             preview.addEventListener('mousedown', openExcalidraw);
                             preview.addEventListener('click', openExcalidraw);
@@ -2008,7 +2207,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                             audio.addEventListener('mousedown', (e: MouseEvent) => {
                                 if (!(e.ctrlKey || e.metaKey)) return;
                                 e.preventDefault();
-                                app?.workspace?.openLinkText?.(linkText, sourcePath, 'tab');
+                                void app?.workspace?.openLinkText?.(linkText, sourcePath, 'tab');
                             });
                             return audio;
                         }
@@ -2052,7 +2251,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                             if (!(e.ctrlKey || e.metaKey)) return;
                             e.preventDefault();
                             e.stopPropagation();
-                            app?.workspace?.openLinkText?.(linkText, sourcePath, 'tab');
+                            void app?.workspace?.openLinkText?.(linkText, sourcePath, 'tab');
                         };
                         img.addEventListener('mousedown', openImage);
                         img.addEventListener('click', openImage);
@@ -2217,15 +2416,20 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
             // 标记节点已有 overlay（供样式层判断是否隐藏 Canvas 文字）
             node.data('hasMarkdownOverlay', true);
             // 挂载 overlay 引用到节点，便于编辑期查找
-            (node.scratch as any) && node.scratch('_zkMdOverlay', entry.el);
+            node.scratch('_zkMdOverlay', entry.el);
+            entry.el.dataset.nodeId = node.id();
+            // 懒建节点的尺寸回写:同步快路径立即写,异步(MathJax)完成后再写。
+            applySizes(measureAndSizePending.splice(0));
+            if (renderPromises.length > 0) {
+                void Promise.all(renderPromises).then(() => applySizes(measureAndSizePending.splice(0)));
+            }
+            return entry;
+            };
 
-            // 位置同步 updater
-			const currentEntry = entry;
-			currentEntry.el.dataset.nodeId = node.id();
 			const baseFontSize = isRootTextNode
                 ? this.ROOT_NODE_FONT_SIZE
                 : (isFirstLevelTextNode ? this.FIRST_LEVEL_NODE_FONT_SIZE : 20);
-            const updateOverlayPos = () => {
+            const updateOverlayPos = (currentEntry: TextMdOverlayEntry) => {
                 if (!this.cy || node.removed()) {
                     currentEntry.el.setCssStyles({ display: 'none' });
                     return;
@@ -2275,81 +2479,51 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
                     });
                 }
             };
-            badgeUpdaters.push({ node, fn: updateOverlayPos });
+            if (!this._overlayGateActive) {
+                // 小图:维持原始 eager 行为——渲染时立即建(在 finalize 的 refreshDirectionalEdgeCurves
+                // 之前完成,节点尺寸已定,边控制点据正确尺寸计算),updater 只做廉价定位。
+                const built = buildOrReuse();
+                if (built) badgeUpdaters.push({ node, fn: () => updateOverlayPos(built) });
+                return;
+            }
+            // 大图:懒渲染 updater。badgePositionUpdater 已在 zoom<门限时整体短路、并对视口外节点剔除,
+            // 故 textUpdater 仅在 zoom≥门限且节点在视口内时被调用——此刻才真正渲染 Markdown。
+            const textUpdater = () => {
+                if (!this.cy || node.removed()) {
+                    const e = this.textMdOverlayCache.get(cacheKey);
+                    if (e?.el) e.el.setCssStyles({ display: 'none' });
+                    return;
+                }
+                const entry: TextMdOverlayEntry | null | undefined = this.textMdOverlayCache.get(cacheKey);
+                // 已建好:每帧只做廉价的位置同步。
+                if (entry && node.data('hasMarkdownOverlay') === true) {
+                    updateOverlayPos(entry);
+                    return;
+                }
+                // 需首建(或跨门限回高 zoom 后 hasMarkdownOverlay 被清):入队分帧建,不在本帧同步渲染
+                // Markdown(否则一次高 zoom 全量渲染会同步建数百个 overlay 卡死一帧)。未建期间显示
+                // 原生 canvas label。同 id 覆盖、幂等;每帧 BATCH 个由 drainTextBuild 排空。
+                this.enqueueTextBuild(node.id(), () => {
+                    if (node.removed()) return;
+                    const built = buildOrReuse();
+                    if (built) {
+                        updateOverlayPos(built);
+                        // 懒建改了节点尺寸,其边控制点(finalize 时按旧尺寸算)需重算,否则端点失效丢边。
+                        this._pendingEdgeRefreshNodeIds.add(node.id());
+                    }
+                });
+            };
+            badgeUpdaters.push({ node, fn: textUpdater });
         });
 
-        // 批量尺寸回写：先处理同步完成的（快路径），异步完成的在 Promise.all 后再批量
-        const measureOverlayHeightForWidth = (el: HTMLElement, width: number, fallbackHeight: number): number => {
-            if (!el || width <= 0) return fallbackHeight;
-            const prevWidth = el.style.width;
-            const prevHeight = el.style.height;
-            const prevFontSize = el.style.fontSize;
-            const base = Number(el.dataset.baseFontSize || '20');
-            try {
-                // 以模型坐标测量内容高度(font-size 复位到 base,对应 zoom=1 的自然尺寸)
-                el.setCssStyles({
-                    fontSize: `${base}px`,
-                    width: `${width}px`,
-                    height: 'auto',
-                });
-                const measured = Math.ceil(Math.max(el.scrollHeight, el.getBoundingClientRect().height)) + 12;
-                return Math.max(32, Math.min(640, measured));
-            } catch {
-                return fallbackHeight;
-            } finally {
-                el.setCssStyles({
-                    width: prevWidth,
-                    height: prevHeight,
-                    fontSize: prevFontSize,
-                });
-            }
-        };
-
-        const applySizes = (pending: typeof measureAndSizePending) => {
-            if (!this.cy || pending.length === 0) return;
-            this.cy.batch(() => {
-                pending.forEach(({ node, entry: e }) => {
-                    if (node.removed()) return;
-                    const currentWidthModel = Number(node.data('manualWidthModel') || 0);
-                    const currentHeightModel = Number(node.data('manualHeightModel') || 0);
-                    if (currentWidthModel <= 0 && currentHeightModel <= 0) return;
-                    const targetWidth = currentWidthModel > 0 ? currentWidthModel : e.width;
-                    // 仅当用户显式锁过高度（currentHeightModel > 0）才回写 data；
-                    // 否则只在视觉层用 overlay 测量动态适配高度，避免把"为了当前内容渲染的临时高度"固化成用户手动尺寸，
-                    // 否则改短内容后旧高度会被持续保留下来。
-                    const targetHeight = currentHeightModel > 0
-                        ? currentHeightModel
-                        : measureOverlayHeightForWidth(e.el, targetWidth, e.height);
-                    e.width = targetWidth;
-                    e.height = targetHeight;
-                    if (currentWidthModel > 0) {
-                        node.data('manualWidthModel', targetWidth);
-                    }
-                    if (currentHeightModel > 0) {
-                        node.data('manualHeightModel', targetHeight);
-                    }
-                    node.style({ width: targetWidth, height: targetHeight });
-                });
-            });
-        };
-
-        // 同步快路径批量写入
-        const syncPending = measureAndSizePending.splice(0);
-        applySizes(syncPending);
-
-        // 异步 MD 渲染完成后批量写入（不阻塞后续 addNodeBadges 流程）
-        if (renderPromises.length > 0) {
-            Promise.all(renderPromises).then(() => {
-                applySizes(measureAndSizePending.splice(0));
-            });
-        }
-
-        // 清理本次未使用的缓存项（mark-sweep）。增量模式跳过:本次只遍历了新节点,
-        // 其余缓存项的 usedInCycle 没被置位,若清理会误删仍在用的 overlay。
+        // 清理已无对应节点的缓存项（mark-sweep）。懒建后不能再用 usedInCycle 判定(低 zoom 时
+        // 一个 overlay 都不建,所有项都会显示未使用),改用本周期收集到的 validCacheKeys:
+        // key 不在其中 = 该文本节点已不存在或内容已变(cacheKey 含 rawSource)。增量模式只遍历了
+        // 新节点,validCacheKeys 不全,跳过以免误删。
         const toEvict: string[] = [];
         if (!incIds) {
-            this.textMdOverlayCache.forEach((e: any, key: string) => {
-                if (!e.usedInCycle) {
+            this.textMdOverlayCache.forEach((_e: TextMdOverlayEntry, key: string) => {
+                if (!validCacheKeys.has(key)) {
                     toEvict.push(key);
                 }
             });
@@ -2367,7 +2541,7 @@ function buildTextMarkdownOverlays(this: any, badgeContainer: HTMLElement, badge
         });
     }
 
-function addCollapseToggleHandle(this: any): void {
+function addCollapseToggleHandle(this: CytoscapeRenderer): void {
         if (!this.cy || !this.container) return;
 
         if (this.collapseHandleCleanup) {
@@ -2395,7 +2569,7 @@ function addCollapseToggleHandle(this: any): void {
         // 一个 id 的"严格点号前缀"(段数更少且 id.startsWith(prefix + '.'))恰好等价于原
         // childId.startsWith(`${originalId}.`) 的判定,故二者结果完全一致。
         const parentIdsWithChildren = new Set<string>();
-        this.cy.nodes().forEach((n: any) => {
+        this.cy.nodes().forEach((n: cytoscape.NodeSingular) => {
             const id = n.data()?.originalNode?.IDStr;
             if (typeof id !== 'string' || !id) return;
             const parts = id.split('.');
@@ -2407,8 +2581,8 @@ function addCollapseToggleHandle(this: any): void {
         });
         const hasChildren = (originalId: string): boolean => parentIdsWithChildren.has(originalId);
 
-        this.cy.nodes().forEach((node: any) => {
-            const data = node.data();
+        this.cy.nodes().forEach((node: cytoscape.NodeSingular) => {
+            const data = node.data() as CyData;
             const originalId = data?.originalNode?.IDStr;
             if (!originalId || data?.isGroup || data?.isPlaceholder) return;
             if (!hasChildren(originalId)) return;
@@ -2466,7 +2640,7 @@ function addCollapseToggleHandle(this: any): void {
                 const rawLeft = bb.x1 - size - gap;
                 const left = rawLeft < 4 ? bb.x1 + 4 : rawLeft;
                 const rawTop = bb.y1 + (bb.h - size) / 2;
-                const maxTop = Math.max(4, this.container.clientHeight - size - 4);
+                const maxTop = Math.max(4, (this.container?.clientHeight ?? 0) - size - 4);
                 const top = Math.min(Math.max(rawTop, 4), maxTop);
                 const isCollapsed = this.collapsedNodeIds.has(originalId);
                 // 宽限期内(hideTimer 未到期)保持显示:手柄在节点框左外侧,鼠标从节点移到手柄
@@ -2530,8 +2704,8 @@ function addCollapseToggleHandle(this: any): void {
             handle.addEventListener('mouseleave', onHandleLeave);
             nodeHoverCleanups.push(() => {
                 clearHideTimer();
-                node.off('mouseover', onNodeOver);
-                node.off('mouseout', onNodeOut);
+                node.off('mouseover', undefined, onNodeOver);
+                node.off('mouseout', undefined, onNodeOut);
             });
         });
 

@@ -59,7 +59,7 @@ export class Deck {
         closeBtn.onclick = () => this.close();
         const del = this.foot.createEl('button', { cls: 'mod-warning', text: t('ws delete') });
         del.onclick = () => this.ctx.requestDelete(node);
-        const filePath = (node as any).filePath as string | undefined;
+        const filePath = (node as { filePath?: string }).filePath;
         if ((node.type === 'moc' || node.type === 'map') && filePath) {
             const openMap = this.foot.createEl('button', { cls: 'open-map', text: t('ws open graph') });
             openMap.onclick = () => { this.ctx.open({ kind: 'moc', id: node.id }); this.close(); };
@@ -150,16 +150,16 @@ export class Deck {
         // note → 真实 markdown 笔记正文
         this.body.createDiv({ cls: 'dsec', text: t('ws body') });
         const prose = this.body.createDiv({ cls: 'prose' });
-        const filePath = (node as any).filePath as string | undefined;
+        const filePath = (node as { filePath?: string }).filePath;
         const file = filePath ? this.ctx.app.vault.getAbstractFileByPath(filePath) : null;
         if (file instanceof TFile) {
-            this.ctx.app.vault.cachedRead(file).then(md => {
-                MarkdownRenderer.render(this.ctx.app, md, prose, filePath || '', this.owner);
+            void this.ctx.app.vault.cachedRead(file).then(md => {
+                void MarkdownRenderer.render(this.ctx.app, md, prose, filePath || '', this.owner);
             });
-        } else if ((node as any).body) {
-            MarkdownRenderer.render(this.ctx.app, (node as any).body, prose, '', this.owner);
-        } else if ((node as any).description) {
-            prose.createEl('p', { text: (node as any).description });
+        } else if ((node as { body?: string }).body) {
+            void MarkdownRenderer.render(this.ctx.app, (node as { body?: string }).body || '', prose, '', this.owner);
+        } else if ((node as { description?: string }).description) {
+            prose.createEl('p', { text: (node as { description?: string }).description });
         } else {
             prose.createEl('p', { cls: 'muted', text: t('ws no detail') });
         }
@@ -168,12 +168,12 @@ export class Deck {
     /** 多选 vault 笔记批量关联到此 MOC(就地建 note 节点 + partOf 链),完成后刷新面板 */
     private pickAssoc(moc: WSMocNode) {
         const mounted = this.ctx.store.containerChildren(moc.id)
-            .map(c => (c as any).filePath as string | undefined)
+            .map(c => (c as { filePath?: string }).filePath)
             .filter((p): p is string => !!p);
-        new FilePickerModal(this.ctx.app, moc.title, mounted, async (paths) => {
+        new FilePickerModal(this.ctx.app, moc.title, mounted, (paths) => { void (async () => {
             await this.ctx.store.mountFilesToContainer(moc.id, paths);
             this.open(moc);
-        }).open();
+        })(); }).open();
     }
 
     close() {
@@ -190,7 +190,7 @@ export class Deck {
 
     /** 当前正展示的项目背书笔记被外部改动 → 重渲染 deck */
     refreshIfShowing(filePath: string): void {
-        if (this.isOpen && this.currentNode && (this.currentNode as any).filePath === filePath) {
+        if (this.isOpen && this.currentNode && (this.currentNode as { filePath?: string }).filePath === filePath) {
             this.open(this.currentNode);
         }
     }

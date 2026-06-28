@@ -1,13 +1,13 @@
 {
 	"name": "thought-navigator",
-	"version": "0.2.4",
+	"version": "0.2.5",
 	"description": "A visual knowledge-processing workspace: connect notes, shape MOCs, build mind maps, and turn Zettelkasten-style thinking into navigable thought maps.",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-		"lint": "eslint . --ext .ts",
-		"lint:fix": "eslint . --ext .ts --fix",
+		"lint": "eslint \"**/*.ts\"",
+		"lint:fix": "eslint \"**/*.ts\" --fix",
 		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},
 	"keywords": [
@@ -20,15 +20,17 @@
 	"author": "",
 	"license": "PolyForm-Noncommercial-1.0.0",
 	"devDependencies": {
+		"@eslint/js": "^9.39.4",
 		"@types/cytoscape": "^3.19.16",
 		"@types/d3": "^7.4.3",
 		"@types/node": "^16.11.6",
-		"@typescript-eslint/eslint-plugin": "5.29.0",
-		"@typescript-eslint/parser": "5.29.0",
 		"esbuild": "0.14.47",
+		"eslint": "^9.39.4",
+		"eslint-plugin-obsidianmd": "^0.3.0",
 		"obsidian": "latest",
 		"tslib": "2.4.0",
-		"typescript": "4.7.4"
+		"typescript": "^5.4.5",
+		"typescript-eslint": "^8.62.0"
 	},
 	"dependencies": {
 		"@popperjs/core": "^2.11.8",

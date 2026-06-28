@@ -70,7 +70,7 @@ export class WorkspacePanel {
     constructor(parent: HTMLElement, deps: WorkspacePanelDeps) {
         this.deps = deps;
         this.root = parent.createDiv({ cls: 'zkw' });
-        try { this.railCollapsed = localStorage.getItem(LS_RAIL) === '1'; } catch {}
+        try { this.railCollapsed = deps.app.loadLocalStorage(LS_RAIL) === '1'; } catch {}
 
         this.taskStore = new ProjectTaskStore(deps.app);
         this.taskStore.onChange = () => this.refresh();
@@ -85,11 +85,11 @@ export class WorkspacePanel {
             openInline: (t) => this.navigateInline(t),
             openFile: (file, forceTab = false) => {
                 if (deps.onOpenFile) deps.onOpenFile(file, forceTab);
-                else deps.app.workspace.getLeaf(forceTab).openFile(file);
+                else void deps.app.workspace.getLeaf(forceTab).openFile(file);
             },
             openLink: (linkText, sourcePath = '', forceTab = false) => {
                 if (deps.onOpenLink) deps.onOpenLink(linkText, sourcePath, forceTab);
-                else deps.app.workspace.openLinkText(linkText, sourcePath, forceTab);
+                else void deps.app.workspace.openLinkText(linkText, sourcePath, forceTab);
             },
             openDeck: (n) => this.deck?.open(n),
             requestDelete: (n) => this.requestDelete(n),
@@ -102,7 +102,7 @@ export class WorkspacePanel {
             if (!(file instanceof TFile)) return;
             if (this.taskStore.isCurrent(file.path)) return;
             this.taskStore.invalidate(file.path);
-            if (deps.store.getAllNodes().some(n => n.type === 'project' && (n as any).filePath === file.path)) {
+            if (deps.store.getAllNodes().some(n => n.type === 'project' && n.filePath === file.path)) {
                 this.refresh();
                 this.deck?.refreshIfShowing(file.path);
             }
@@ -139,7 +139,7 @@ export class WorkspacePanel {
     /** 收起/展开整个左侧 rail 面板 */
     private toggleRail() {
         this.railCollapsed = !this.railCollapsed;
-        try { localStorage.setItem(LS_RAIL, this.railCollapsed ? '1' : '0'); } catch {}
+        try { this.deps.app.saveLocalStorage(LS_RAIL, this.railCollapsed ? '1' : '0'); } catch {}
         this.applyRailCollapsed();
     }
 
@@ -180,7 +180,7 @@ export class WorkspacePanel {
 
         const home = tbar.createDiv({ cls: 'home' });
         setIcon(home.createSpan({ cls: 'hic' }), 'home');
-        home.createSpan({ text: t('ws Today') });
+        home.createSpan({ text: t('ws Task') });
         home.onclick = () => this.navigate({ kind: 'home' });
 
         tbar.createDiv({ cls: 'spacer' });
@@ -236,20 +236,20 @@ export class WorkspacePanel {
             : descendants > 0
                 ? t('ws delete node confirm children').replace('{title}', node.title).replace('{n}', String(descendants))
                 : t('ws delete node confirm').replace('{title}', node.title);
-        confirmModal(this.deps.app, t('ws delete'), msg, async () => {
+        confirmModal(this.deps.app, t('ws delete'), msg, () => { void (async () => {
             await this.deps.store.deleteSubtree(node.id);
             this.deck?.closeIfShowing(deleted);
             const cur = this.current;
             // store.onChange 已触发重渲;当前页指向被删节点时改导航到首页
             if (cur.kind !== 'home' && 'id' in cur && deleted.has(cur.id)) this.navigateInline({ kind: 'home' });
-        });
+        })(); });
     }
 
     private openNewSpaceModal() {
-        new NewSpaceModal(this.deps.app, async (title, framework) => {
+        new NewSpaceModal(this.deps.app, (title, framework) => { void (async () => {
             const space = await this.deps.store.createSpace(title, { framework });
             this.navigate({ kind: 'space', id: space.id });
-        }).open();
+        })(); }).open();
     }
 
     // ---------- 路由 ----------
@@ -269,8 +269,8 @@ export class WorkspacePanel {
     private navigateInline(target: OpenTarget) {
         if (!this.tree) return;
         this.current = target;
-        if (target.kind !== 'home') { try { localStorage.setItem(LS_LAST, JSON.stringify(target)); } catch {} }
-        try { localStorage.setItem(LS_OPEN, JSON.stringify(target)); } catch {}
+        if (target.kind !== 'home') { try { this.deps.app.saveLocalStorage(LS_LAST, JSON.stringify(target)); } catch {} }
+        try { this.deps.app.saveLocalStorage(LS_OPEN, JSON.stringify(target)); } catch {}
         this.tree.setCurrent(target);
         this.tree.revealTarget(target);
         this.renderCenter();
@@ -354,7 +354,7 @@ export class WorkspacePanel {
 
     private restoreSession() {
         let target: OpenTarget | null = null;
-        try { const raw = localStorage.getItem(LS_OPEN); if (raw) target = JSON.parse(raw); } catch {}
+        try { const raw = this.deps.app.loadLocalStorage(LS_OPEN) as string | null; if (raw) target = JSON.parse(raw) as OpenTarget; } catch {}
         if (target && target.kind !== 'home' && 'id' in target && !this.deps.store.getNode(target.id)) target = null;
         if (!target) {
             const first = this.deps.store.getSpaces()[0];
@@ -367,7 +367,7 @@ export class WorkspacePanel {
 
     private lastTargetNode(): WorkspaceNode | null {
         try {
-            const raw = localStorage.getItem(LS_LAST);
+            const raw = this.deps.app.loadLocalStorage(LS_LAST) as string | null;
             if (!raw) return null;
             const t = JSON.parse(raw) as OpenTarget;
             if (t.kind === 'home' || !('id' in t)) return null;

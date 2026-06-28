@@ -86,10 +86,11 @@ export class MOCReverseIndex {
             };
 
             // JSON 格式：遍历节点树提取 wikilink
-            let json: any;
+            type MocJsonNode = { nodeID?: string; nodeType?: string; isTextOnly?: boolean; target?: string; wikiLink?: string; children?: MocJsonNode[] };
+            let json: { nodes?: MocJsonNode[] };
             try { json = JSON.parse(content); } catch { return; }
 
-            const walk = (nodes: any[]) => {
+            const walk = (nodes: MocJsonNode[]) => {
                 for (const n of nodes) {
                     // 新 shape: nodeType !== 'text' 且 target 存在
                     // 旧 shape: !isTextOnly 且 wikiLink 存在
@@ -98,7 +99,7 @@ export class MOCReverseIndex {
                     if (!isText && link) {
                         const linkedFile = resolveWikiLink(link);
                         if (linkedFile) {
-                            this.addToIndex(linkedFile.path, file, n.nodeID);
+                            this.addToIndex(linkedFile.path, file, n.nodeID || '');
                         }
                     }
                     if (n.children?.length) walk(n.children);

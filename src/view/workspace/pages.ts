@@ -1,4 +1,4 @@
-import { Component, MarkdownRenderer, Menu, Notice, TFile, setIcon } from "obsidian";
+import { App, Component, MarkdownRenderer, Menu, Notice, TFile, setIcon } from "obsidian";
 import { WSMocNode, WSProjectNode, WSNoteNode, WorkspaceNode } from "src/types/workspace";
 import { nextStatus } from "src/workspace/WorkspaceStore";
 import { MdTask, prependTask, toggleTask, removeTask, insertSubtask, setTaskNote, removeTaskNote, setTaskText, taskMetaSuffix, parseTaskText, buildTaskText, moveTask, processFile, addTaskRefs, removeTaskRef, decodeNoteNewlines } from "src/workspace/projectTasks";
@@ -24,7 +24,7 @@ function heroMenuBtn(titleRow: HTMLElement, ctx: RenderCtx, node: WorkspaceNode)
     btn.onclick = (e) => {
         e.stopPropagation();
         const menu = new Menu();
-        menu.addItem(i => { (i as any).setWarning?.(true); i.setTitle(t('ws delete')).setIcon('trash-2')
+        menu.addItem(i => { (i as { setWarning?(warning: boolean): void }).setWarning?.(true); i.setTitle(t('ws delete')).setIcon('trash-2')
             .onClick(() => ctx.requestDelete(node)); });
         menu.showAtMouseEvent(e);
     };
@@ -41,24 +41,24 @@ function actionBtn(parent: HTMLElement, icon: string, label: string, cta: boolea
 /** 多选 vault 笔记批量关联到此 MOC(就地建节点 + partOf/childMoc 链)*/
 function pickMocAssoc(ctx: RenderCtx, moc: WSMocNode): void {
     const mounted = ctx.store.containerChildren(moc.id)
-        .map(c => (c as any).filePath as string | undefined)
+        .map(c => (c as { filePath?: string }).filePath)
         .filter((p): p is string => !!p);
-    new FilePickerModal(ctx.app, moc.title, mounted, async (paths) => {
+    new FilePickerModal(ctx.app, moc.title, mounted, (paths) => { void (async () => {
         await ctx.store.mountFilesToContainer(moc.id, paths);
         ctx.refresh();
-    }).open();
+    })(); }).open();
 }
 
 function pickProjectRefs(ctx: RenderCtx, p: WSProjectNode): void {
     const mounted = ctx.store.linksFrom(p.id)
         .filter(l => l.type === 'related')
         .map(l => ctx.store.getNode(l.to))
-        .map(n => (n as any)?.filePath as string | undefined)
+        .map(n => (n as { filePath?: string } | undefined)?.filePath)
         .filter((path): path is string => !!path);
-    new FilePickerModal(ctx.app, p.title, mounted, async (paths) => {
+    new FilePickerModal(ctx.app, p.title, mounted, (paths) => { void (async () => {
         await ctx.store.addProjectFileReferences(p.id, paths);
         ctx.refresh();
-    }).open();
+    })(); }).open();
 }
 
 function renderProjectRefs(body: HTMLElement, ctx: RenderCtx, p: WSProjectNode): void {
@@ -80,7 +80,7 @@ function renderProjectRefs(body: HTMLElement, ctx: RenderCtx, p: WSProjectNode):
         const chip = refs.createSpan({ cls: 'project-ref' });
         setIcon(chip.createSpan({ cls: 'project-ref-ic' }), node.type === 'moc' ? 'git-branch' : node.type === 'map' ? 'git-fork' : 'file-text');
         chip.createSpan({ cls: 'project-ref-title', text: node.title });
-        chip.setAttribute('title', (node as any).filePath || node.title);
+        chip.setAttribute('title', (node as { filePath?: string }).filePath || node.title);
         chip.onclick = () => ctx.open(ctx.store.targetFor(node));
         const rm = chip.createSpan({ cls: 'project-ref-remove' });
         setIcon(rm, 'x');
@@ -168,8 +168,8 @@ function renderActions(body: HTMLElement, ctx: RenderCtx, p: WSProjectNode): voi
     const abs = p.filePath ? ctx.app.vault.getAbstractFileByPath(p.filePath) : null;
     const file: TFile | null = abs instanceof TFile ? abs : null;
     const tasks = file ? ctx.tasks.get(p.filePath) : null;
-    const hideDone = readLS(LS_HIDE_DONE) === '1';
-    const sortMode = (readLS(LS_SORT) as SortMode) || 'doc';
+    const hideDone = readLS(ctx.app, LS_HIDE_DONE) === '1';
+    const sortMode = (readLS(ctx.app, LS_SORT) as SortMode) || 'doc';
 
     // ── 标题行:排序下拉 + 隐藏已完成开关 ──
     const sec = body.createDiv({ cls: 'dsec row' });
@@ -180,9 +180,9 @@ function renderActions(body: HTMLElement, ctx: RenderCtx, p: WSProjectNode): voi
         sortSel.setAttribute('title', t('ws sort by'));
         ([['doc', t('ws sort doc')], ['due', t('ws sort due')], ['start', t('ws sort start')]] as [SortMode, string][])
             .forEach(([v, l]) => { const o = sortSel.createEl('option', { value: v, text: l }); if (v === sortMode) o.selected = true; });
-        sortSel.onchange = () => { try { localStorage.setItem(LS_SORT, sortSel.value); } catch {} ctx.refresh(); };
+        sortSel.onchange = () => { try { ctx.app.saveLocalStorage(LS_SORT, sortSel.value); } catch {} ctx.refresh(); };
         const toggle = ctls.createSpan({ cls: 'dsec-add' + (hideDone ? ' on' : ''), text: t(hideDone ? 'ws action show done' : 'ws action hide done') });
-        toggle.onclick = () => { try { localStorage.setItem(LS_HIDE_DONE, hideDone ? '0' : '1'); } catch {} ctx.refresh(); };
+        toggle.onclick = () => { try { ctx.app.saveLocalStorage(LS_HIDE_DONE, hideDone ? '0' : '1'); } catch {} ctx.refresh(); };
     }
 
     // ── 新增任务(弹框)+ 打开笔记(置顶)──
@@ -213,7 +213,7 @@ type SortMode = 'doc' | 'due' | 'start';
 /** NEXT ACTION 的 UI 偏好(全局,跨项目/重载留存) */
 const LS_HIDE_DONE = 'zkw.task.hideDone';
 const LS_SORT = 'zkw.task.sort';
-function readLS(k: string): string | null { try { return localStorage.getItem(k); } catch { return null; } }
+function readLS(app: App, k: string): string | null { try { return app.loadLocalStorage(k) as string | null; } catch { return null; } }
 /** 当前正在拖动的任务(仅默认顺序下启用,跨行共享) */
 let draggedTask: MdTask | null = null;
 
@@ -238,7 +238,7 @@ function openTaskModal(ctx: RenderCtx, p: WSProjectNode, file: TFile | null,
         header,
         submitLabel: t(opts.mode === 'edit' ? 'ws save' : 'ws create'),
         initial,
-        onSubmit: async (r) => {
+        onSubmit: (r) => { void (async () => {
             try {
                 const f = file instanceof TFile ? file : await ctx.store.ensureProjectFile(p.id, ctx.projectFolderPath);
                 if (!(f instanceof TFile)) { new Notice(t('ws action add failed')); return; }
@@ -263,7 +263,7 @@ function openTaskModal(ctx: RenderCtx, p: WSProjectNode, file: TFile | null,
                 console.error('[zk-navigation] 保存任务失败', e);
                 new Notice(t('ws action add failed') + ': ' + ((e as Error)?.message ?? e));
             }
-        },
+        })(); },
     }).open();
 }
 
@@ -331,6 +331,31 @@ function todayLocal(): string {
     return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
+/** base(YYYY-MM-DD)往后推 days 天,返回同格式字符串 */
+function addDaysLocal(base: string, days: number): string {
+    const [y, m, d] = base.split('-').map(Number);
+    const dt = new Date(y, m - 1, d + days);
+    const mm = String(dt.getMonth() + 1).padStart(2, '0');
+    const dd = String(dt.getDate()).padStart(2, '0');
+    return `${dt.getFullYear()}-${mm}-${dd}`;
+}
+
+// 首页任务时间窗:今日 / 近7天 / 近30天 / 所有,持久化于 localStorage
+type HomeRange = 'today' | '7d' | '30d' | 'all';
+const HOME_RANGE_DAYS: Record<Exclude<HomeRange, 'all'>, number> = { today: 0, '7d': 7, '30d': 30 };
+const LS_HOME_RANGE = 'zkw.home.range';
+
+function loadHomeRange(ctx: RenderCtx): HomeRange {
+    try {
+        const v = ctx.app.loadLocalStorage(LS_HOME_RANGE) as string | null;
+        if (v === 'today' || v === '7d' || v === '30d' || v === 'all') return v;
+    } catch {}
+    return 'today';
+}
+function saveHomeRange(ctx: RenderCtx, r: HomeRange): void {
+    try { ctx.app.saveLocalStorage(LS_HOME_RANGE, r); } catch {}
+}
+
 /**
  * 在 afterEl 之后挂一个临时行内输入框,Enter 提交 / Esc / 失焦取消。
  * multiline=true 时改用自适应高度的 textarea:Enter 提交、Shift+Enter 换行(用于多行备注)。
@@ -392,13 +417,13 @@ function taskRefMountedPaths(ctx: RenderCtx, source: TFile, tk: MdTask): string[
 }
 
 function pickActionRefs(ctx: RenderCtx, p: WSProjectNode, file: TFile, tk: MdTask): void {
-    new FilePickerModal(ctx.app, p.title, taskRefMountedPaths(ctx, file, tk), async (paths) => {
+    new FilePickerModal(ctx.app, p.title, taskRefMountedPaths(ctx, file, tk), (paths) => { void (async () => {
         const refs = paths.map(path => {
             const picked = ctx.app.vault.getAbstractFileByPath(path);
             return picked instanceof TFile ? linkTextForFile(picked) : path;
         });
         await writeTasks(ctx, file, c => addTaskRefs(c, tk, refs));
-    }).open();
+    })(); }).open();
 }
 
 function renderTaskRefs(main: HTMLElement, ctx: RenderCtx, file: TFile, tk: MdTask): void {
@@ -457,14 +482,14 @@ function renderTaskRow(wrap: HTMLElement, ctx: RenderCtx, p: WSProjectNode, file
             row.toggleClass('drop-before', !after);
         });
         row.addEventListener('dragleave', () => row.removeClasses(['drop-before', 'drop-after']));
-        row.addEventListener('drop', async (e) => {
+        row.addEventListener('drop', (e) => { void (async () => {
             e.preventDefault();
             const moving = draggedTask;
             const after = row.hasClass('drop-after');
             row.removeClasses(['drop-before', 'drop-after']);
             if (!moving || moving === tk) return;
             await writeTasks(ctx, file, c => moveTask(c, moving, tk, after ? 'after' : 'before'));
-        });
+        })(); });
     }
 
     const box = row.createEl('input', { type: 'checkbox' });
@@ -627,13 +652,13 @@ export function renderNotePage(container: HTMLElement, ctx: RenderCtx, n: WSNote
         // 正文预览(内嵌渲染真实 markdown,与右侧 deck 一致)
         body.createDiv({ cls: 'dsec', text: t('ws body') });
         const prose = body.createDiv({ cls: 'prose ws-noteprose' });
-        ctx.app.vault.cachedRead(file).then(md => {
+        void ctx.app.vault.cachedRead(file).then(md => {
             if (!md.trim()) { prose.empty(); prose.createDiv({ cls: 'empty', text: t('ws empty note') }); return; }
-            MarkdownRenderer.render(ctx.app, md, prose, file.path, owner);
+            void MarkdownRenderer.render(ctx.app, md, prose, file.path, owner);
         });
     } else if (n.body) {
         body.createDiv({ cls: 'dsec', text: t('ws body') });
-        MarkdownRenderer.render(ctx.app, n.body, body.createDiv({ cls: 'prose ws-noteprose' }), '', owner);
+        void MarkdownRenderer.render(ctx.app, n.body, body.createDiv({ cls: 'prose ws-noteprose' }), '', owner);
     } else {
         emptyState(body, 'file-text', t('ws empty note'), '');
     }
@@ -644,7 +669,7 @@ export function renderHome(container: HTMLElement, ctx: RenderCtx, lastTarget: W
     const ck = container.createDiv({ cls: 'ck' });
     const h = ck.createDiv({ cls: 'ck-hero' });
     h.createDiv({ cls: 'ck-crumb', text: t('ws Workspace') });
-    h.createDiv({ cls: 'ck-titlerow' }).createDiv().createEl('h1', { cls: 'ck-h1', text: t('ws Today') });
+    h.createDiv({ cls: 'ck-titlerow' }).createDiv().createEl('h1', { cls: 'ck-h1', text: t('ws Task') });
 
     const body = ck.createDiv({ cls: 'ck-body' });
 
@@ -688,6 +713,9 @@ export function renderHome(container: HTMLElement, ctx: RenderCtx, lastTarget: W
 /** 今天 / 逾期:跨项目 未完成 且(截止 ≤ 今天 或 今天落在 [开始, 截止] 区间内)的任务,逾期标红;勾选直接回写背书笔记 */
 function renderTodayDue(body: HTMLElement, ctx: RenderCtx): void {
     const today = todayLocal();
+    const range = loadHomeRange(ctx);
+    // 'all' 无上界;其余以 今天+N天 为截止上界
+    const horizon = range === 'all' ? null : addDaysLocal(today, HOME_RANGE_DAYS[range]);
     interface DueItem { project: WSProjectNode; task: MdTask; label: string; overdue: boolean; sortKey: string; }
     const items: DueItem[] = [];
     ctx.store.getAllNodes()
@@ -701,17 +729,26 @@ function renderTodayDue(body: HTMLElement, ctx: RenderCtx): void {
                 const parsed = parseTaskText(tk.text);
                 const start = (parsed.start ?? '').slice(0, 10);
                 const due = (parsed.due ?? '').slice(0, 10);
-                const dueByToday = !!due && due <= today;                          // 今天到期或逾期
-                const inInterval = !!start && start <= today && (!due || today <= due); // 已开始且未过截止
-                if (!dueByToday && !inInterval) continue;
+                if (range !== 'all') {
+                    const dueWithin = !!due && due <= horizon!;                         // 截止落在时间窗内(含逾期)
+                    const inInterval = !!start && start <= today && (!due || today <= due); // 已开始且未过截止
+                    if (!dueWithin && !inInterval) continue;
+                }
                 const overdue = !!due && due < today;
-                const label = overdue ? '⚠ ' + due : due ? '📅 ' + due : '🛫 ' + start;
-                items.push({ project: pr, task: tk, label, overdue, sortKey: due || start });
+                const label = overdue ? '⚠ ' + due : due ? '📅 ' + due : start ? '🛫 ' + start : '';
+                items.push({ project: pr, task: tk, label, overdue, sortKey: due || start || '￿' });
             }
         });
     items.sort((a, b) => (a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0));
 
-    body.createDiv({ cls: 'dsec', text: t('ws today due') });
+    const head = body.createDiv({ cls: 'dsec row' });
+    head.createSpan({ text: t('ws today due') });
+    const seg = head.createDiv({ cls: 'rangeseg' });
+    ([['today', 'ws range today'], ['7d', 'ws range 7d'], ['30d', 'ws range 30d'], ['all', 'ws range all']] as const)
+        .forEach(([val, key]) => {
+            const b = seg.createSpan({ cls: 'rseg' + (val === range ? ' on' : ''), text: t(key) });
+            b.onclick = () => { if (val !== range) { saveHomeRange(ctx, val); ctx.refresh(); } };
+        });
     if (!items.length) { body.createDiv({ cls: 'empty', text: t('ws today due empty') }); return; }
     const list = body.createDiv({ cls: 'actions' });
     items.forEach(it => {
@@ -727,8 +764,10 @@ function renderTodayDue(body: HTMLElement, ctx: RenderCtx): void {
         const main = row.createDiv({ cls: 'amain' });
         renderTaskText(main.createDiv({ cls: 'atext-view' }), ctx, tk.text);
         const meta = main.createDiv({ cls: 'anote' });
-        meta.createSpan({ cls: 'adue' + (it.overdue ? ' overdue' : '') }).setText(it.label);
-        meta.createSpan({ cls: 'anote-mark', text: '·' });
+        if (it.label) {
+            meta.createSpan({ cls: 'adue' + (it.overdue ? ' overdue' : '') }).setText(it.label);
+            meta.createSpan({ cls: 'anote-mark', text: '·' });
+        }
         meta.createSpan({ text: it.project.title });
         if (tk.note !== undefined) {
             const noteEl = main.createDiv({ cls: 'anote' });

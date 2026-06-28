@@ -491,6 +491,11 @@ export default {
     // ===== Workspace (typed-node 工作区) =====
     "ws Workspace": "Workspace",
     "ws Today": "Today",
+    "ws Task": "Task",
+    "ws range today": "Today",
+    "ws range 7d": "7 days",
+    "ws range 30d": "30 days",
+    "ws range all": "All",
     "ws Graph": "Graph",
     "ws New space": "New Space",
     "ws hide sidebar": "Collapse sidebar",

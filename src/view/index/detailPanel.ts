@@ -277,7 +277,7 @@ export class NodeDetailPanel {
             .replace(/<span\s+style=["'][^"']*["']>([\s\S]*?)<\/span>/gi, '$1')
             .replace(/<\/?[a-z][^>]*>/gi, '')
             .replace(/\*\*(.+?)\*\*|__(.+?)__|~~(.+?)~~|==(.+?)==|`([^`]+?)`/g,
-                (_m, a, b, c, d, e) => a ?? b ?? c ?? d ?? e ?? '')
+                (_m: string, a?: string, b?: string, c?: string, d?: string, e?: string) => a ?? b ?? c ?? d ?? e ?? '')
             .replace(/\\([-*+#])/g, '$1')
             .trim();
     }

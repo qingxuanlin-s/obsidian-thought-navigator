@@ -150,7 +150,7 @@ export function hashString(value: string): number {
 	return Math.abs(hash);
 }
 
-export function getPreviewCardTheme(data: any, options: RenderOptions | null | undefined): {
+export function getPreviewCardTheme(data: Record<string, unknown>, options: RenderOptions | null | undefined): {
 	cardBackground: string;
 	cardBorder: string;
 	cardShadow: string;

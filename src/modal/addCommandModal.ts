@@ -65,7 +65,6 @@ export class addCommandModal extends FuzzySuggestModal<Command>{
 		return item.name;
 	}
 
-	// eslint-disable-next-line no-unused-vars, @typescript-eslint/no-empty-function -- placeholder override required by SuggestModal signature; the real handler is assigned at the call site
 	public onChooseItem(item: Command, evt: MouseEvent | KeyboardEvent): void {}
     
 }

@@ -1,6 +1,7 @@
 import { TFile } from "obsidian";
 import { ZKNode } from "src/view/indexView";
 import { GraphData, Edge, GraphMetadata } from "./types";
+import { ReverseRelation, GroupInfo, CrossDomainLink } from "src/utils/utils";
 
 /**
  * 图形数据构建器
@@ -76,13 +77,13 @@ export class GraphDataBuilder {
      * - 如果箭头是父->子关系，使用实线（type: 'parent'）
      * - 其他情况使用虚线（type: 'reverse'）
      */
-    buildMOCTreeEdges(reverseRelations: Map<string, any>, groups: any[] = []): this {
+    buildMOCTreeEdges(reverseRelations: Map<string, ReverseRelation>, groups: GroupInfo[] = []): this {
         const nodeMap = new Map<string, ZKNode>();
         this.nodes.forEach(node => {
             nodeMap.set(node.IDStr, node);
             if (node.ID) nodeMap.set(node.ID, node);
         });
-        const groupIdSet = new Set<string>((groups || []).map((group: any) => String(group.id || '').trim()).filter(Boolean));
+        const groupIdSet = new Set<string>((groups || []).map((group: GroupInfo) => String(group.id || '').trim()).filter(Boolean));
         const edgeKeySet = new Set<string>();
 
         // 只根据 reverseRelations（Mermaid 文件中的箭头）来生成边
@@ -266,7 +267,7 @@ export class GraphDataBuilder {
      * 源节点上,由 badge 层渲染成源节点右下角的「出口角标」(↗),hover 展开链接列表、点击跳转。
      * 见 renderPipeline.convertNodesToElements(写入 node.data.crossDomainLinks)与 nodeBadges。
      */
-    buildCrossDomainEdges(_crossDomainLinks: Record<string, any[]>): this {
+    buildCrossDomainEdges(_crossDomainLinks: Record<string, CrossDomainLink[]>): this {
         return this;
     }
 
@@ -325,13 +326,13 @@ export class GraphDataBuilder {
      */
     static fromMOCTree(
         nodes: ZKNode[],
-        reverseRelations: Map<string, any>,
+        reverseRelations: Map<string, ReverseRelation>,
         currentFile: TFile | null,
-        groups: any[] = [],
+        groups: GroupInfo[] = [],
         edgeCurvatures: Record<string, { distance: number; weight: number }> = {},
         nodeColors: Record<string, string> = {},
         nodeStyleColors: Record<string, string> = {},
-        crossDomainLinks: Record<string, any[]> = {},
+        crossDomainLinks: Record<string, CrossDomainLink[]> = {},
         nodePositions: Record<string, { x: number; y: number }> = {},
         embedNodeSizes: Record<string, { width: number; height: number }> = {},
         nodeRemarks: Record<string, string> = {},

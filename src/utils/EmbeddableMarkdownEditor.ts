@@ -1,24 +1,60 @@
 import { App, Component, MarkdownView, TFile } from 'obsidian';
 
-let embeddableEditorCtor: any | null = null;
+// Obsidian 私有 MarkdownEditor + CodeMirror EditorView 没有公开类型,这里按用到的最小表面声明
+interface CMView {
+	dom: HTMLElement;
+	contentDOM?: HTMLElement;
+	scrollDOM?: HTMLElement;
+	state: {
+		selection: { main: { from: number; to: number; head: number; empty: boolean } };
+		doc: { length: number; toString(): string; sliceString(from: number, to: number): string };
+	};
+	dispatch: (tr: unknown) => void;
+	focus?: () => void;
+	requestMeasure?: () => void;
+	posAtCoords?: (coords: { x: number; y: number }, precise?: boolean) => number | null;
+	coordsAtPos?: (pos: number) => { left: number; top: number; right: number; bottom: number } | null;
+}
+interface MarkdownEditorEditor {
+	cm?: CMView;
+	replaceSelection?: (text: string) => void;
+	offsetToPos?: (offset: number) => unknown;
+	setCursor?: (pos: unknown) => void;
+	focus?: () => void;
+	refresh?: () => void;
+}
+interface MarkdownEditorView {
+	editor?: MarkdownEditorEditor;
+	cm?: CMView;
+	get?: () => string;
+	set?: (value: string, clear?: boolean) => void;
+	showEditor?: () => void;
+	destroy?: () => void;
+	unload?: () => void;
+	editable?: boolean;
+	editMode?: unknown;
+}
+type EditorCtor = new (...args: unknown[]) => MarkdownEditorView;
+
+let embeddableEditorCtor: EditorCtor | null = null;
 let ctorResolveError = '';
 
-function resolveEmbeddableEditorCtor(app: App): any | null {
+function resolveEmbeddableEditorCtor(app: App): EditorCtor | null {
 	if (embeddableEditorCtor) return embeddableEditorCtor;
 
 	const errors: string[] = [];
-	const embedRegistry = (app as any).embedRegistry;
+	const embedRegistry = (app as { embedRegistry?: { embedByExtension?: { md?: (...args: unknown[]) => MarkdownEditorView } } }).embedRegistry;
 	const mdCreator = embedRegistry?.embedByExtension?.md;
 	if (typeof mdCreator === 'function') {
 		const dummy = activeDocument.createElement('div');
-		let widgetView: any = null;
+		let widgetView: MarkdownEditorView | null = null;
 		try {
 			widgetView = mdCreator({ app, containerEl: dummy }, null, '');
 			if (widgetView) {
 				widgetView.editable = true;
 				widgetView.showEditor?.();
 				const editMode = widgetView.editMode ?? widgetView;
-				const editorProto = Object.getPrototypeOf(Object.getPrototypeOf(editMode));
+				const editorProto = Object.getPrototypeOf(Object.getPrototypeOf(editMode as object));
 				const ctor = editorProto?.constructor;
 				if (ctor) {
 					embeddableEditorCtor = ctor;
@@ -41,9 +77,9 @@ function resolveEmbeddableEditorCtor(app: App): any | null {
 	try {
 		const mdLeaf = app.workspace.getLeavesOfType('markdown')[0];
 		const mdView = mdLeaf?.view as MarkdownView | undefined;
-		const editMode = mdView ? ((mdView as any).editMode ?? (mdView as any).modes?.source) : null;
+		const editMode = mdView ? ((mdView as { editMode?: unknown; modes?: { source?: unknown } }).editMode ?? (mdView as { modes?: { source?: unknown } }).modes?.source) : null;
 		if (editMode) {
-			const editorProto = Object.getPrototypeOf(Object.getPrototypeOf(editMode));
+			const editorProto = Object.getPrototypeOf(Object.getPrototypeOf(editMode as object));
 			const ctor = editorProto?.constructor;
 			if (ctor) {
 				embeddableEditorCtor = ctor;
@@ -75,8 +111,8 @@ export interface EmbeddableMarkdownEditorOptions {
 }
 
 export class EmbeddableMarkdownEditor extends Component {
-	private editView: any = null;
-	private cm: any = null;
+	private editView: MarkdownEditorView | null = null;
+	private cm: CMView | null = null;
 	private destroyed = false;
 	private lastSelection: { from: number; to: number } | null = null;
 	private readonly opts: EmbeddableMarkdownEditorOptions;
@@ -94,7 +130,7 @@ export class EmbeddableMarkdownEditor extends Component {
 	// 判定依据:vim NORMAL 模式下 CM 会给编辑器元素挂 .cm-fat-cursor(块状光标);
 	// 非 NORMAL 就视为 INSERT(含 visual 等子模态,行为上与 INSERT 一致 — 用户按 Esc 期待留在编辑器里)。
 	private isVimInsertMode(): boolean {
-		const vimEnabled = (this.opts.app.vault as any).getConfig?.('vimMode') === true;
+		const vimEnabled = (this.opts.app.vault as { getConfig?: (key: string) => unknown }).getConfig?.('vimMode') === true;
 		if (!vimEnabled) return false;
 		const cm = this.cm;
 		if (!cm?.dom) return false;
@@ -194,8 +230,8 @@ export class EmbeddableMarkdownEditor extends Component {
 		return file instanceof TFile ? file : null;
 	}
 
-	private createOwner(sourceFile: TFile | null): any {
-		const owner: any = {
+	private createOwner(sourceFile: TFile | null): Record<string, unknown> {
+		const owner: Record<string, unknown> = {
 			app: this.opts.app,
 			file: sourceFile,
 			containerEl: this.opts.containerEl,
@@ -230,7 +266,7 @@ export class EmbeddableMarkdownEditor extends Component {
 		return owner;
 	}
 
-	private instantiateEditor(Ctor: any, owner: any): any {
+	private instantiateEditor(Ctor: EditorCtor, owner: Record<string, unknown>): MarkdownEditorView | null {
 		const attempts = [
 			() => new Ctor(this.opts.app, this.opts.containerEl, owner),
 			() => new Ctor(this.opts.app, this.opts.containerEl, owner, this),
@@ -413,7 +449,7 @@ export class EmbeddableMarkdownEditor extends Component {
 		return (this.cm?.dom as HTMLElement | undefined) ?? null;
 	}
 
-	getCM(): any {
+	getCM(): CMView | null {
 		return this.cm;
 	}
 

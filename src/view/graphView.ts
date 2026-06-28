@@ -1,6 +1,6 @@
 import ZKNavigationPlugin from "main";
 import { ExtraButtonComponent, FileView, ItemView, Notice, TFile, WorkspaceLeaf, debounce, setIcon } from "obsidian";
-import { ZKNode, ZK_INDEX_TYPE, ZK_NAVIGATION } from "./indexView";
+import { ZKIndexView, ZKNode, ZK_INDEX_TYPE, ZK_NAVIGATION } from "./indexView";
 import { t } from "src/lang/helper";
 import { convertMOCToZKNodes, getMOCFilesInFolder, isMocFile, parseMOCStructure, ReverseRelation } from "src/utils/utils";
 
@@ -54,8 +54,8 @@ export class ZKGraphView extends ItemView {
     }
 
     private isUserFileLeaf(leaf: WorkspaceLeaf): boolean {
-        const view = leaf.view as any;
-        const viewType = view?.getViewType?.();
+        const view = leaf.view;
+        const viewType = view.getViewType();
         return view instanceof FileView && ![
             ZK_INDEX_TYPE,
             ZK_GRAPH_TYPE,
@@ -86,7 +86,7 @@ export class ZKGraphView extends ItemView {
     }
 
     private openFileInPreferredLeaf(file: TFile, forceTab: boolean): void {
-        this.getFileOpenLeaf(forceTab).openFile(file);
+        void this.getFileOpenLeaf(forceTab).openFile(file);
     }
 
     onResize() {
@@ -106,11 +106,11 @@ export class ZKGraphView extends ItemView {
     }
 
     private isIndexViewActive(): boolean {
-        return this.app.workspace.activeLeaf?.view.getViewType() === ZK_INDEX_TYPE;
+        return this.app.workspace.getActiveViewOfType(ZKIndexView) !== null;
     }
 
     async onOpen() {
-        this.refreshLocalGraph();
+        void this.refreshLocalGraph();
     }
 
     private applyLocalGraphTheme(containerEl: HTMLElement): void {
@@ -173,7 +173,7 @@ export class ZKGraphView extends ItemView {
                 changeRefreshTimer = window.setTimeout(smartChangeRefresh, 5000);
             } else {
                 // 超过 2 秒没有编辑，执行刷新
-                this.refreshLocalGraph();
+                void this.refreshLocalGraph();
                 changeRefreshTimer = null;
             }
         };
@@ -916,11 +916,11 @@ export class ZKGraphView extends ItemView {
                 cls: `zk-local-mode-btn${this.localGraphMode === item.mode ? ' is-active' : ''}`,
                 text: item.label
             });
-            btn.addEventListener('click', async () => {
+            btn.addEventListener('click', () => { void (async () => {
                 if (this.localGraphMode === item.mode) return;
                 this.localGraphMode = item.mode;
                 await this.refreshLocalGraphMOCNode(parent, currentFile, allNodes, currentNode, mocFile);
-            });
+            })(); });
         }
     }
 
@@ -961,7 +961,7 @@ export class ZKGraphView extends ItemView {
                 }
             });
 
-            mocSelector.addEventListener('change', async () => {
+            mocSelector.addEventListener('change', () => { void (async () => {
                 const selectedMOC = availableMOCs.find(m => m.file.path === mocSelector.value);
                 if (selectedMOC && selectedMOC.currentNode) {
                     await this.refreshLocalGraphMOCNode(
@@ -972,7 +972,7 @@ export class ZKGraphView extends ItemView {
                         selectedMOC.file
                     );
                 }
-            });
+            })(); });
 
             if (availableMOCs.length > 1) {
                 actions.createDiv('zk-local-section-count').setText(`${availableMOCs.length}`);
@@ -987,7 +987,7 @@ export class ZKGraphView extends ItemView {
         });
         mocButton.title = mocFile.path;
         mocButton.addEventListener('click', () => {
-            this.app.workspace.openLinkText('', mocFile.path, 'tab');
+            void this.app.workspace.openLinkText('', mocFile.path, 'tab');
         });
     }
 
@@ -1126,14 +1126,14 @@ export class ZKGraphView extends ItemView {
                 }
                 this.familyGraphRenderer.fitAndCenter();
 
-                const handleLocalNodeClick = async (event: any, textNodeOnly = false) => {
+                const handleLocalNodeClick = async (event: CustomEvent, textNodeOnly = false) => {
                     const detail = event.detail || {};
                     const triggerEvent = detail.event as MouseEvent | undefined;
                     const ctrlKey = detail.ctrlKey || triggerEvent?.ctrlKey;
                     const metaKey = detail.metaKey || triggerEvent?.metaKey;
                     const shiftKey = detail.shiftKey || triggerEvent?.shiftKey;
                     const altKey = detail.altKey || triggerEvent?.altKey;
-                    const clicked = this.resolveLocalGraphNode(allNodes, detail.node);
+                    const clicked = this.resolveLocalGraphNode(allNodes, detail.node as ZKNode | null);
                     if (!clicked) return;
 
                     if (!clicked?.file) {
@@ -1151,9 +1151,9 @@ export class ZKGraphView extends ItemView {
                             ID: clicked.ID,
                             filePath: clicked.file.path,
                         };
-                        this.plugin.openGraphView();
+                        void this.plugin.openGraphView();
                     } else if (altKey) {
-                        this.plugin.clearShowingSettings();
+                        void this.plugin.clearShowingSettings();
                         this.plugin.settings.lastRetrival = {
                             type: 'main',
                             ID: clicked.ID,
@@ -1162,21 +1162,21 @@ export class ZKGraphView extends ItemView {
                             openTime: '',
                         };
                         this.plugin.RefreshIndexViewFlag = true;
-                        this.plugin.openIndexView();
+                        void this.plugin.openIndexView();
                     } else {
                         this.openFileInPreferredLeaf(clicked.file, false);
                     }
                 };
 
-                mocNodeTreeDiv.addEventListener('node-click', (event: any) => {
+                mocNodeTreeDiv.addEventListener('node-click', (event: CustomEvent) => {
                     void handleLocalNodeClick(event);
                 });
 
-                mocNodeTreeDiv.addEventListener('node-select', (event: any) => {
+                mocNodeTreeDiv.addEventListener('node-select', (event: CustomEvent) => {
                     void handleLocalNodeClick(event, true);
                 });
 
-                mocNodeTreeDiv.addEventListener('node-hover', (event: any) => {
+                mocNodeTreeDiv.addEventListener('node-hover', (event: CustomEvent) => {
                     const { node, event: mouseEvent } = event.detail;
                     if (!node || !node.file || !mouseEvent) return;
 
@@ -1422,7 +1422,7 @@ export class ZKGraphView extends ItemView {
                 card.setCssProps({ '--focus-card-transform': `translate(calc(-50% + ${options.x}px), calc(-50% + ${options.y}px))` });
             }
 
-            card.addEventListener('click', async (event: MouseEvent) => {
+            card.addEventListener('click', (event: MouseEvent) => { void (async () => {
                 if (mode === 'overview') {
                     if (targetFile) openFile(targetFile, event);
                     return;
@@ -1432,11 +1432,11 @@ export class ZKGraphView extends ItemView {
                 } else if (targetFile) {
                     await this.focusLocalFile(graphMermaidDiv, targetFile);
                 }
-            });
+            })(); });
             card.addEventListener('dblclick', (event) => {
                 if (targetFile) openFile(targetFile, event);
             });
-            card.addEventListener('keydown', async (event: KeyboardEvent) => {
+            card.addEventListener('keydown', (event: KeyboardEvent) => { void (async () => {
                 if (event.key === 'Enter') {
                     event.preventDefault();
                     if (targetFile) openFile(targetFile, event);
@@ -1450,7 +1450,7 @@ export class ZKGraphView extends ItemView {
                         await this.focusLocalFile(graphMermaidDiv, targetFile);
                     }
                 }
-            });
+            })(); });
 
             if (targetFile) {
                 card.addEventListener('mouseover', (event: MouseEvent) => {
@@ -1778,10 +1778,10 @@ export class ZKGraphView extends ItemView {
         }
 
         // 监听节点点击事件
-        mocTreeDiv.addEventListener('node-click', async (event: any) => {
+        mocTreeDiv.addEventListener('node-click', (event: CustomEvent) => { void (async () => {
             const detail = event.detail || {};
             const triggerEvent = detail.event as MouseEvent | undefined;
-            const node = this.resolveLocalGraphNode(mocNodes, detail.node);
+            const node = this.resolveLocalGraphNode(mocNodes, detail.node as ZKNode | null);
             const ctrlKey = detail.ctrlKey || triggerEvent?.ctrlKey;
             const shiftKey = detail.shiftKey || triggerEvent?.shiftKey;
             const altKey = detail.altKey || triggerEvent?.altKey;
@@ -1801,10 +1801,10 @@ export class ZKGraphView extends ItemView {
                     ID: node.ID,
                     filePath: node.file.path,
                 };
-                this.plugin.openGraphView();
+                void this.plugin.openGraphView();
             } else if (altKey) {
                 // Alt + 点击：在索引视图中打开
-                this.plugin.clearShowingSettings();
+                void this.plugin.clearShowingSettings();
                 this.plugin.settings.lastRetrival = {
                     type: 'main',
                     ID: node.ID,
@@ -1813,15 +1813,15 @@ export class ZKGraphView extends ItemView {
                     openTime: '',
                 };
                 this.plugin.RefreshIndexViewFlag = true;
-                this.plugin.openIndexView();
+                void this.plugin.openIndexView();
             } else {
                 // 普通点击：打开文件
                 this.openFileInPreferredLeaf(node.file, false);
             }
-        });
+        })(); });
 
         // 监听节点悬停事件
-        mocTreeDiv.addEventListener('node-hover', (event: any) => {
+        mocTreeDiv.addEventListener('node-hover', (event: CustomEvent) => {
             const { node, event: mouseEvent } = event.detail;
             if (!node || !node.file || !mouseEvent) return;
 
@@ -1866,7 +1866,7 @@ export class ZKGraphView extends ItemView {
                 this.openFileInPreferredLeaf(file, true);
             } else if (e.shiftKey) {
                 this.plugin.retrivalforLocaLgraph = { type: '1', ID: '', filePath: file.path };
-                this.plugin.openGraphView();
+                void this.plugin.openGraphView();
             } else {
                 this.openFileInPreferredLeaf(file, false);
             }

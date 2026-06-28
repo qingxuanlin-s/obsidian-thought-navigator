@@ -1,5 +1,6 @@
 import { App, TFile } from "obsidian";
 import { ZKNode } from "src/view/indexView";
+import { CrossDomainLink, GroupInfo } from "src/utils/utils";
 
 /**
  * 图形数据结构
@@ -16,8 +17,43 @@ export interface Edge {
     target: string;  // 目标节点 ID
     type: 'parent' | 'child' | 'sibling' | 'link' | 'inlink' | 'outlink' | 'forward' | 'reverse' | 'cross-domain';
     label?: string;
-    crossDomainLink?: any;  // 跨领域链接信息（用于 cross-domain 类型）
+    crossDomainLink?: CrossDomainLink;  // 跨领域链接信息（用于 cross-domain 类型）
     crossDomainSourceNodeId?: string;  // 跨领域边的源节点 ID（= ext metadata 中 cross_domain_links 的键，用于标签持久化定位）
+}
+
+/**
+ * cytoscape 元素 data() 的形状(节点与边合用一个结构,字段随元素种类而异故多为可选)。
+ * 用于把 `node.data()` / `edge.data()` 的 any 收成结构化类型。
+ */
+export interface CyData {
+    id: string;
+    originalNodeId?: string;
+    isRoot?: boolean;
+    isFirstLevelNode?: boolean;
+    suggestedNodeId?: string;
+    label?: string;
+    title?: string;
+    displayText?: string;
+    originalNode?: ZKNode;
+    isGroup?: boolean;
+    isPlaceholder?: boolean;
+    isCrossDomain?: boolean;
+    isDraft?: boolean;
+    isDraftEdge?: boolean;
+    isDraftRelation?: boolean;
+    isFreeNode?: boolean;
+    parent?: string;
+    nodeIds?: string[];
+    draftBatchId?: string;
+    relKey?: string;
+    // 边字段
+    source?: string;
+    target?: string;
+    type?: string;
+    originalSource?: string;
+    originalTarget?: string;
+    crossDomainLink?: CrossDomainLink;
+    crossDomainSourceNodeId?: string;
 }
 
 export interface GraphMetadata {
@@ -25,11 +61,11 @@ export interface GraphMetadata {
     timestamp: number;
     hash: string;
     renderType: 'family' | 'inoutlinks' | 'moc' | 'moc-tree' | 'index';
-    groups?: any[];  // 分组信息
+    groups?: GroupInfo[];  // 分组信息
     edgeCurvatures?: Record<string, { distance: number; weight: number }>;  // 边弧度信息
     nodeColors?: Record<string, string>;  // 节点颜色信息
     nodeStyleColors?: Record<string, string>;  // 分支主题色（一级节点）
-    crossDomainLinks?: Record<string, any[]>;  // 跨领域关联信息
+    crossDomainLinks?: Record<string, CrossDomainLink[]>;  // 跨领域关联信息
     nodePositions?: Record<string, { x: number; y: number }>;  // 节点位置信息
     embedNodeSizes?: Record<string, { width: number; height: number }>; // 预览节点尺寸（模型坐标系）
     nodeRemarks?: Record<string, string>; // 节点备注

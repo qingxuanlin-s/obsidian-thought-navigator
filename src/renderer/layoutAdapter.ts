@@ -1,6 +1,9 @@
 import * as cytoscape from 'cytoscape';
-import { GraphData, GraphChanges, RenderOptions } from './types';
+import { GraphData, GraphChanges, RenderOptions, CyData } from './types';
 import { ZKNode } from 'src/view/indexView';
+
+/** cytoscape 布局配置(含 dagre/cose-bilkent/elk 扩展字段,扩展未提供类型) */
+export type LayoutConfig = { name: string; [key: string]: unknown };
 
 // SimpleMind 风格布局间距常量
 export const VERTICAL_GAP = 80;
@@ -23,7 +26,7 @@ export function directionToRankDir(direction: string): string {
 /**
  * 根据 layoutType 获取布局配置(用于局部关系视图等需要自动布局的场景)
  */
-export function getLayoutConfig(options: RenderOptions): any {
+export function getLayoutConfig(options: RenderOptions): LayoutConfig {
     const layoutType = options.layoutType || 'preset';
 
     if (layoutType === 'preset') {
@@ -82,7 +85,7 @@ export function getLayoutConfig(options: RenderOptions): any {
 /**
  * 主图布局配置(根据 RenderOptions.layoutType 选择)
  */
-export function getLayout(options: RenderOptions): any {
+export function getLayout(options: RenderOptions): LayoutConfig {
     const layoutType = options.layoutType || 'dagre';
     const animate = options.animate !== false;
     const animationDuration = options.animationDuration || 500;
@@ -196,7 +199,7 @@ export function presetInOutLinksPositions(data: GraphData): void {
 /**
  * 安全运行布局:首次失败回退到 grid,再失败回退到 preset
  */
-export function runLayoutSafely(cy: cytoscape.Core | null, layoutConfig: any): void {
+export function runLayoutSafely(cy: cytoscape.Core | null, layoutConfig: LayoutConfig): void {
     if (!cy) return;
 
     const nodeCount = cy.nodes().length;
@@ -206,7 +209,7 @@ export function runLayoutSafely(cy: cytoscape.Core | null, layoutConfig: any): v
     }
 
     try {
-        const layout = cy.layout(layoutConfig);
+        const layout = cy.layout(layoutConfig as cytoscape.LayoutOptions);
         layout.run();
     } catch (error) {
         console.error('[CytoscapeRenderer] layout run failed, fallback to breadthfirst', {
@@ -237,8 +240,8 @@ export function runLayoutSafely(cy: cytoscape.Core | null, layoutConfig: any): v
 export function resolveExactNodeOverlaps(cy: cytoscape.Core | null): void {
     if (!cy) return;
 
-    const buckets = new Map<string, any[]>();
-    cy.nodes().forEach((node: any) => {
+    const buckets = new Map<string, cytoscape.NodeSingular[]>();
+    cy.nodes().forEach((node: cytoscape.NodeSingular) => {
         if (node.data('isGroup')) return;
         const pos = node.position();
         const key = `${Math.round(pos.x * 10) / 10}:${Math.round(pos.y * 10) / 10}`;
@@ -272,8 +275,8 @@ export function resolveExactNodeOverlaps(cy: cytoscape.Core | null): void {
  */
 export function applyCollapsedState(cy: cytoscape.Core, collapsedNodeIds: Set<string>): Set<string> {
     const existingIds = new Set<string>();
-    cy.nodes().forEach((node: any) => {
-        const id = node.data()?.originalNode?.IDStr;
+    cy.nodes().forEach((node: cytoscape.NodeSingular) => {
+        const id = (node.data() as CyData)?.originalNode?.IDStr;
         if (id) existingIds.add(id);
     });
     const filtered = new Set(Array.from(collapsedNodeIds).filter((id) => existingIds.has(id)));
@@ -283,8 +286,8 @@ export function applyCollapsedState(cy: cytoscape.Core, collapsedNodeIds: Set<st
 
     const hiddenIds = new Set<string>();
     filtered.forEach((collapsedId) => {
-        cy.nodes().forEach((node: any) => {
-            const id = node.data()?.originalNode?.IDStr;
+        cy.nodes().forEach((node: cytoscape.NodeSingular) => {
+            const id = (node.data() as CyData)?.originalNode?.IDStr;
             if (!id) return;
             if (id !== collapsedId && id.startsWith(`${collapsedId}.`)) {
                 hiddenIds.add(id);
@@ -293,15 +296,15 @@ export function applyCollapsedState(cy: cytoscape.Core, collapsedNodeIds: Set<st
         });
     });
 
-    cy.edges().forEach((edge: any) => {
-        const sourceId = edge.data()?.originalSource;
-        const targetId = edge.data()?.originalTarget;
+    cy.edges().forEach((edge: cytoscape.EdgeSingular) => {
+        const sourceId = (edge.data() as CyData)?.originalSource;
+        const targetId = (edge.data() as CyData)?.originalTarget;
         if ((sourceId && hiddenIds.has(sourceId)) || (targetId && hiddenIds.has(targetId))) {
             edge.addClass('zk-collapsed-hidden');
         }
     });
 
-    cy.nodes('[?isGroup]').forEach((groupNode: any) => {
+    cy.nodes('[?isGroup]').forEach((groupNode: cytoscape.NodeSingular) => {
         const groupNodeIds: string[] = groupNode.data('nodeIds') || [];
         if (groupNodeIds.length === 0) return;
 
@@ -347,12 +350,12 @@ export function getAutoLayoutStackDirection(dir: { x: number; y: number }): { x:
 }
 
 export function nextOffsetByProjection(
-    points: any[],
+    points: cytoscape.NodeSingular[],
     anchor: { x: number; y: number },
     normal: { x: number; y: number },
     gap: number
 ): number {
-    const projections = points.map((n: any) => {
+    const projections = points.map((n: cytoscape.NodeSingular) => {
         const p = n.position();
         return (p.x - anchor.x) * normal.x + (p.y - anchor.y) * normal.y;
     });
@@ -367,9 +370,9 @@ export function nextOffsetByProjection(
     return offset;
 }
 
-export function estimateCollisionBox(referenceNode: any): { width: number; height: number } {
+export function estimateCollisionBox(referenceNode: cytoscape.NodeSingular): { width: number; height: number } {
     const bb = typeof referenceNode.boundingBox === 'function'
-        ? referenceNode.boundingBox({ includeLabels: false } as any)
+        ? referenceNode.boundingBox({ includeLabels: false })
         : null;
     const width = Math.max(
         Number(referenceNode.outerWidth?.() || 0),
@@ -394,7 +397,7 @@ export function getAxisSpan(size: { width: number; height: number }, dir: { x: n
 }
 
 export function getDirectionalDistance(
-    referenceNode: any,
+    referenceNode: cytoscape.NodeSingular,
     dir: { x: number; y: number },
     extraGap = 48
 ): number {
@@ -407,7 +410,7 @@ export function getDirectionalDistance(
 
 // ============ 方向推断 ============
 
-export function getBranchDirection(activeNode: any): { x: number; y: number } {
+export function getBranchDirection(activeNode: cytoscape.NodeSingular): { x: number; y: number } {
     const nodePos = activeNode.position();
     const parent = activeNode.incomers('edge').sources();
     if (parent.length > 0) {
@@ -426,7 +429,7 @@ export function getBranchDirection(activeNode: any): { x: number; y: number } {
     ];
     const score = [0, 0, 0, 0];
 
-    children.forEach((child: any) => {
+    children.forEach((child: cytoscape.NodeSingular) => {
         const cp = child.position();
         const dir = normalizeVector(cp.x - nodePos.x, cp.y - nodePos.y);
         let bestIndex = 0;
@@ -448,13 +451,13 @@ export function getBranchDirection(activeNode: any): { x: number; y: number } {
     return cardinal[minIdx];
 }
 
-export function getAutoLayoutDirection(node: any): { x: number; y: number } {
-    const lineage: any[] = [node];
+export function getAutoLayoutDirection(node: cytoscape.NodeSingular): { x: number; y: number } {
+    const lineage: cytoscape.NodeSingular[] = [node];
     let current = node;
     while (true) {
-        const parents = current.incomers('edge').sources().filter((n: any) => !n.data('isGroup'));
+        const parents = current.incomers('edge').sources().filter((n: cytoscape.NodeSingular) => !n.data('isGroup'));
         if (!parents || parents.length === 0) break;
-        current = parents.first();
+        current = parents.first() as cytoscape.NodeSingular;
         lineage.push(current);
     }
 
@@ -517,7 +520,7 @@ export function isPositionColliding(
         y2: candidate.y + size.height / 2 + marginY
     };
 
-    return cy.nodes('[!isGroup]').some((node: any) => {
+    return cy.nodes('[!isGroup]').some((node: cytoscape.NodeSingular) => {
         if (node.removed() || !node.visible()) return false;
         if (node.hasClass('zk-collapsed-hidden')) return false;
         if (node.data('isPlaceholder')) return false;
@@ -546,7 +549,7 @@ export function isPositionColliding(
 export function resolveShortcutPosition(
     cy: cytoscape.Core,
     basePosition: { x: number; y: number },
-    referenceNode: any,
+    referenceNode: cytoscape.NodeSingular,
     primaryAxis: { x: number; y: number },
     step: number,
     secondaryAxis?: { x: number; y: number },
@@ -611,7 +614,7 @@ export function resolveShortcutPosition(
 
 // ============ Tab/Enter/Shift+Tab 快捷键创建子/兄弟/父节点的目标位置 ============
 
-export function getFreeChildShortcutPosition(cy: cytoscape.Core, activeNode: any): { x: number; y: number } {
+export function getFreeChildShortcutPosition(cy: cytoscape.Core, activeNode: cytoscape.NodeSingular): { x: number; y: number } {
     const nodePos = activeNode.position();
     const children = activeNode.outgoers('edge').targets();
     const dir = getBranchDirection(activeNode);
@@ -625,7 +628,7 @@ export function getFreeChildShortcutPosition(cy: cytoscape.Core, activeNode: any
         x: nodePos.x + dir.x * directionalDistance,
         y: nodePos.y + dir.y * directionalDistance
     };
-    const offset = nextOffsetByProjection(children, anchor, normal, VERTICAL_GAP);
+    const offset = nextOffsetByProjection(children.toArray(), anchor, normal, VERTICAL_GAP);
     const rawPosition = {
         x: anchor.x + normal.x * offset,
         y: anchor.y + normal.y * offset
@@ -640,16 +643,16 @@ export function getFreeChildShortcutPosition(cy: cytoscape.Core, activeNode: any
     );
 }
 
-export function getAutoChildShortcutPosition(activeNode: any): { x: number; y: number } {
+export function getAutoChildShortcutPosition(activeNode: cytoscape.NodeSingular): { x: number; y: number } {
     const nodePos = activeNode.position();
     const children = activeNode.outgoers('edge').targets();
     const dir = getAutoLayoutDirection(activeNode);
     const normal = getAutoLayoutStackDirection(dir);
 
     if (children.length > 0) {
-        let lastChild: any = null;
+        let lastChild: cytoscape.NodeSingular | null = null;
         let maxProj = -Infinity;
-        children.forEach((child: any) => {
+        children.forEach((child: cytoscape.NodeSingular) => {
             const cp = child.position();
             const proj = (cp.x - nodePos.x) * normal.x + (cp.y - nodePos.y) * normal.y;
             if (proj > maxProj) {
@@ -657,7 +660,7 @@ export function getAutoChildShortcutPosition(activeNode: any): { x: number; y: n
                 lastChild = child;
             }
         });
-        const lastPos = lastChild.position();
+        const lastPos = lastChild!.position();
         return {
             x: lastPos.x + normal.x * SIBLING_GAP,
             y: lastPos.y + normal.y * SIBLING_GAP
@@ -673,14 +676,14 @@ export function getAutoChildShortcutPosition(activeNode: any): { x: number; y: n
         x: nodePos.x + dir.x * directionalDistance,
         y: nodePos.y + dir.y * directionalDistance
     };
-    const offset = nextOffsetByProjection(children, anchor, normal, VERTICAL_GAP);
+    const offset = nextOffsetByProjection(children.toArray(), anchor, normal, VERTICAL_GAP);
     return {
         x: anchor.x + normal.x * offset,
         y: anchor.y + normal.y * offset
     };
 }
 
-export function getFreeSiblingShortcutPosition(cy: cytoscape.Core, activeNode: any): { x: number; y: number } {
+export function getFreeSiblingShortcutPosition(cy: cytoscape.Core, activeNode: cytoscape.NodeSingular): { x: number; y: number } {
     const nodePos = activeNode.position();
     const parent = activeNode.incomers('edge').sources();
     if (parent.length === 0) {
@@ -718,7 +721,7 @@ export function getFreeSiblingShortcutPosition(cy: cytoscape.Core, activeNode: a
     );
 }
 
-export function getAutoSiblingShortcutPosition(activeNode: any): { x: number; y: number } {
+export function getAutoSiblingShortcutPosition(activeNode: cytoscape.NodeSingular): { x: number; y: number } {
     const nodePos = activeNode.position();
     const parent = activeNode.incomers('edge').sources();
     const parentPos = parent.first().position();
@@ -733,7 +736,7 @@ export function getAutoSiblingShortcutPosition(activeNode: any): { x: number; y:
     const activeProj = (nodePos.x - anchor.x) * normal.x + (nodePos.y - anchor.y) * normal.y;
     let offset = activeProj + siblingGap;
 
-    const projections = siblings.map((sib: any) => {
+    const projections = siblings.map((sib: cytoscape.NodeSingular) => {
         const p = sib.position();
         return (p.x - anchor.x) * normal.x + (p.y - anchor.y) * normal.y;
     });
@@ -748,7 +751,7 @@ export function getAutoSiblingShortcutPosition(activeNode: any): { x: number; y:
     };
 }
 
-export function getFreeParentShortcutPosition(cy: cytoscape.Core, activeNode: any): { x: number; y: number } {
+export function getFreeParentShortcutPosition(cy: cytoscape.Core, activeNode: cytoscape.NodeSingular): { x: number; y: number } {
     const nodePos = activeNode.position();
     const dir = getBranchDirection(activeNode);
     const directionalDistance = getDirectionalDistance(activeNode, dir);
@@ -766,7 +769,7 @@ export function getFreeParentShortcutPosition(cy: cytoscape.Core, activeNode: an
     );
 }
 
-export function getAutoParentShortcutPosition(activeNode: any): { x: number; y: number } {
+export function getAutoParentShortcutPosition(activeNode: cytoscape.NodeSingular): { x: number; y: number } {
     const nodePos = activeNode.position();
     const dir = getBranchDirection(activeNode);
     return {

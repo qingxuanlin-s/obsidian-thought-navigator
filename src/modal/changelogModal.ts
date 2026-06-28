@@ -1,4 +1,4 @@
-import { App, Modal } from "obsidian";
+import { App, Modal, getLanguage } from "obsidian";
 import { t } from "src/lang/helper";
 import { ChangelogEntry } from "src/utils/changelog";
 
@@ -55,7 +55,7 @@ export class ChangelogModal extends Modal {
     }
 
     private resolveLang(): 'zh' | 'en' {
-        const lang = (window.localStorage.getItem('language') || '').toLowerCase();
+        const lang = (getLanguage() || '').toLowerCase();
         return lang.startsWith('zh') ? 'zh' : 'en';
     }
 }

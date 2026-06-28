@@ -472,7 +472,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
         if(this.plugin.RefreshIndexViewFlag === true){
             this.app.workspace.trigger("zk-navigation:refresh-index-graph");
         }
-        this.plugin.saveData(this.plugin.settings);
+        void this.plugin.saveData(this.plugin.settings);
     }
 
 

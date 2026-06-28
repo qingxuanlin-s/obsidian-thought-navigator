@@ -80,7 +80,7 @@ export class ContainerMountModal extends SuggestModal<PickItem> {
                 new Notice(t("Mounted to folder").replace("{name}", item.node.title));
             }
             this.app.workspace.trigger("zk-navigation:refresh-index-graph");
-        } catch (e: any) {
+        } catch (e) {
             new Notice(t("Operation failed").replace("{message}", String(e?.message || e)));
         }
     }

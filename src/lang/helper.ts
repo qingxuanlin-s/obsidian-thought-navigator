@@ -1,3 +1,4 @@
+import { getLanguage } from "obsidian";
 import zh from "./locale/zh";
 import en from "./locale/en";
 
@@ -17,13 +18,16 @@ function normalizeLanguage(lang: unknown): keyof typeof localeMap | null {
 }
 
 function getLocale(): Partial<typeof en> {
-    const lang = normalizeLanguage(window.localStorage.getItem("language"))
+    const lang = normalizeLanguage(getLanguage())
         || normalizeLanguage(navigator.language)
         || "en";
     return localeMap[lang] || en;
 }
 
-export function t(text: keyof typeof en): string {
+/** 本地化键类型;动态拼接的 key 用 `as TKey` 收窄 */
+export type TKey = keyof typeof en;
+
+export function t(text: TKey): string {
     const locale = getLocale();
     return (locale && locale[text]) || en[text];
 }

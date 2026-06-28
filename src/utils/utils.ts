@@ -137,6 +137,7 @@ export interface CrossDomainLink {
     displayText: string;        // 节点显示文本
     filePath: string;           // 节点文件路径
     position?: { x: number; y: number };  // 虚拟跨领域节点的位置
+    relationLabel?: string;     // 跨领域边的关系描述（可选）
 }
 
 // 分组信息
@@ -189,9 +190,20 @@ export async function parseMOCStructure(
     // 用 adapter.read 直读磁盘，绕过 vault.read 基于 mtime 的缓存：
     // 同一秒内连续写入(如脚本/CLI 快速 addNode)mtime 不变会导致 vault.read 返回旧内容，
     // 造成"读到刚写入前的快照、父节点找不到"的竞态。adapter.read 总是磁盘真实内容。
+    const __perf = (window as unknown as { __zkPerf?: boolean }).__zkPerf === true;
+    const __t0 = __perf ? performance.now() : 0;
     const diskContent = await app.vault.adapter.read(filePath);
+    const __t1 = __perf ? performance.now() : 0;
     const { parseMOCJson } = await import('./mocJsonCodec');
-    return parseMOCJson(diskContent, filePath, app);
+    const result = parseMOCJson(diskContent, filePath, app);
+    if (__perf) {
+        console.log('[zkPerf:parseMOC]', {
+            adapterRead: +(__t1 - __t0).toFixed(1),
+            parseJson: +(performance.now() - __t1).toFixed(1),
+            bytes: diskContent.length,
+        });
+    }
+    return result;
 }
 
 // 将 MOC 树结构转换为 ZKNode 数组
@@ -524,7 +536,7 @@ export async function mainNoteInit(plugin: ZKNavigationPlugin) {
             const ctime = nodeCache?.frontmatter?.[plugin.settings.CustomCreatedTime];
 
             if (ctime) {
-                const time = moment(ctime);
+                const time = moment(ctime as string);
                 if (time.isValid()) {
                     node.ctime = time.valueOf();
                 }
@@ -611,7 +623,7 @@ export async function addSvgPanZoom(
     const mermaid = await loadMermaid();
     const { svg } = await mermaid.render(`${zkGraph.id}-svg`, mermaidStr);
 
-    const parsedSvg = new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement;
+    const parsedSvg = new DOMParser().parseFromString(String(svg), 'image/svg+xml').documentElement;
     zkGraph.appendChild(activeDocument.importNode(parsedSvg, true));
 
     if (plugin.settings.graphType === "roadmap") {
@@ -625,7 +637,7 @@ export async function addSvgPanZoom(
     indexMermaidDiv.appendChild(zkGraph);
 
     const svgPanZoomModule = await import("svg-pan-zoom");
-    const svgPanZoom = (svgPanZoomModule as any).default ?? svgPanZoomModule;
+    const svgPanZoom = svgPanZoomModule;
     const panZoomTiger = await svgPanZoom(`#${zkGraph.id}-svg`, {
         zoomEnabled: true,
         controlIconsEnabled: false,

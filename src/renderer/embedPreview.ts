@@ -1,8 +1,23 @@
-import { Component, MarkdownRenderer, resolveSubpath, setIcon } from 'obsidian';
+import type { CytoscapeRenderer } from './CytoscapeRenderer';
+import { App, Component, FileView, MarkdownRenderer, TFile, WorkspaceLeaf, resolveSubpath, setIcon } from 'obsidian';
+import type * as cytoscape from 'cytoscape';
 import { ZKNode } from 'src/view/indexView';
 import { isMocPath } from 'src/utils/utils';
 import { applyPreviewHeaderLinkStyle, getPreviewCardTheme } from './colorUtils';
 import { getMocPreviewPngCandidates } from './renderPipeline';
+import { dataStr } from './cyData';
+
+// Excalidraw 插件未提供官方类型，这里按用到的最小表面声明
+interface ExcalidrawAutomate {
+    createSVG?: (path: string) => Promise<SVGSVGElement | string>;
+}
+interface ExcalidrawPlugin {
+    ea?: ExcalidrawAutomate;
+    createSVG?: (path: string) => Promise<SVGSVGElement | string>;
+}
+interface AppWithPlugins {
+    plugins?: { plugins?: Record<string, ExcalidrawPlugin | undefined> };
+}
 
 export const wrapForImageToolkit = (img: HTMLElement): HTMLElement => {
     const wrap = activeDocument.createElement('div');
@@ -16,9 +31,9 @@ export const wrapForImageToolkit = (img: HTMLElement): HTMLElement => {
 };
 
 export const renderExcalidrawPreview = async (
-    app: any,
+    app: App,
     contentEl: HTMLElement,
-    sourceFile: any,
+    sourceFile: TFile,
     wikiLink = ''
 ): Promise<boolean> => {
     let rendered = false;
@@ -26,9 +41,9 @@ export const renderExcalidrawPreview = async (
     // 方式 1：Excalidraw 插件 API — 直接生成 SVG
     if (!rendered) {
         try {
-            const excalidrawPlugin = (app as any).plugins?.plugins?.['obsidian-excalidraw-plugin'];
+            const excalidrawPlugin = (app as unknown as AppWithPlugins).plugins?.plugins?.['obsidian-excalidraw-plugin'];
             if (excalidrawPlugin) {
-                let svg: any = null;
+                let svg: string | SVGElement | null = null;
                 // 带 block ref 的链接（如 "file.excalidraw.md#^groupId"）优先传给 Excalidraw，
                 // 让插件自己按 block ref 过滤只渲染对应 group
                 const rawLink = wikiLink.trim();
@@ -55,7 +70,7 @@ export const renderExcalidrawPreview = async (
                     const parsed = new DOMParser().parseFromString(svg, 'image/svg+xml');
                     svg = parsed.querySelector('svg');
                 }
-                if (svg instanceof SVGElement || svg instanceof HTMLElement) {
+                if (svg && typeof svg !== 'string') {
                     svg.removeAttribute('width');
                     svg.removeAttribute('height');
                     const svgString = new XMLSerializer().serializeToString(svg);
@@ -98,11 +113,11 @@ export const renderExcalidrawPreview = async (
             sourceFile.path.replace(/\.md$/i, '.png'),
         ];
         const seen = new Set<string>();
-        let exportedFile: any = null;
+        let exportedFile: TFile | null = null;
         for (const p of candidates) {
             if (seen.has(p)) continue;
             seen.add(p);
-            const f = app.vault.getAbstractFileByPath(p);
+            const f = app.vault.getFileByPath(p);
             if (f) { exportedFile = f; break; }
         }
         if (exportedFile) {
@@ -149,7 +164,7 @@ const normalizeSubpath = (subpath: string): string => {
     }
 };
 
-const extractSubpathMarkdown = (app: any, sourceFile: any, markdown: string, wikiLink: string): string | null => {
+const extractSubpathMarkdown = (app: App, sourceFile: TFile, markdown: string, wikiLink: string): string | null => {
     const subpath = getWikiSubpath(wikiLink);
     if (!subpath || subpath.startsWith('#^')) return null;
 
@@ -162,7 +177,7 @@ const extractSubpathMarkdown = (app: any, sourceFile: any, markdown: string, wik
     const currentHeading = resolved.current;
     const headings = cache.headings || [];
     const currentOffset = currentHeading.position.start.offset;
-    const nextHeading = headings.find((heading: any) =>
+    const nextHeading = headings.find((heading) =>
         heading.position.start.offset > currentOffset && heading.level <= currentHeading.level
     );
     const startOffset = currentHeading.position.start.offset;
@@ -171,11 +186,11 @@ const extractSubpathMarkdown = (app: any, sourceFile: any, markdown: string, wik
 };
 
 const openPreviewHeaderFile = (
-    app: any,
-    sourceFile: any,
+    app: App,
+    sourceFile: TFile,
     wikiLink: string,
     event: MouseEvent,
-    openFile?: (file: any, wikiLink: string, forceTab: boolean) => void
+    openFile?: (file: TFile, wikiLink: string, forceTab: boolean) => void
 ): void => {
     // 与文件节点点击保持一致：默认复用当前标签，Cmd/Ctrl 点击新标签页。
     const openInNewLeaf = event.metaKey || event.ctrlKey;
@@ -190,34 +205,34 @@ const openPreviewHeaderFile = (
 
     if (subpath) {
         const existingLeaf = !openInNewLeaf ? app.workspace.getLeavesOfType('markdown')
-            .concat(app.workspace.getLeavesOfType('excalidraw' as any))
-            .find((leaf: any) => leaf.view?.file?.path === sourceFile.path) : null;
+            .concat(app.workspace.getLeavesOfType('excalidraw'))
+            .find((leaf: WorkspaceLeaf) => (leaf.view as FileView).file?.path === sourceFile.path) : null;
 
         if (existingLeaf) {
             app.workspace.setActiveLeaf(existingLeaf, { focus: true });
-            (existingLeaf.view as any).setEphemeralState?.({ subpath });
+            existingLeaf.view.setEphemeralState({ subpath });
         } else {
-            app.workspace.getLeaf(openInNewLeaf).openFile(sourceFile, {
+            void app.workspace.getLeaf(openInNewLeaf).openFile(sourceFile, {
                 eState: { subpath },
                 active: true,
-            } as any);
+            });
         }
         return;
     }
 
     if (!openInNewLeaf) {
         const existingLeaf = app.workspace.getLeavesOfType('markdown')
-            .find((leaf: any) => leaf.view?.file?.path === sourceFile.path);
+            .find((leaf: WorkspaceLeaf) => (leaf.view as FileView).file?.path === sourceFile.path);
         if (existingLeaf) {
             app.workspace.setActiveLeaf(existingLeaf, { focus: true });
             return;
         }
     }
 
-    app.workspace.getLeaf(openInNewLeaf).openFile(sourceFile);
+    void app.workspace.getLeaf(openInNewLeaf).openFile(sourceFile);
 };
 
-export function renderEmbedNodePreviews(this: any): void {
+export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
         if (!this.cy || !this.container) return;
 
         // 清理前先缓存已渲染的卡片内容（避免 excalidraw/markdown 异步内容闪烁）
@@ -235,8 +250,8 @@ export function renderEmbedNodePreviews(this: any): void {
 
         const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
         // 排除图片文件的嵌入节点（图片由 addImageNodePreviews 处理）
-        const embedNodes = this.cy.nodes('[?isEmbed]').filter((node: any) => {
-            const filePath = node.data('filePath');
+        const embedNodes = this.cy.nodes('[?isEmbed]').filter((node: cytoscape.NodeSingular) => {
+            const filePath = dataStr(node, 'filePath');
             if (!filePath) return true; // 无路径的保留
             const ext = filePath.split('.').pop()?.toLowerCase() || '';
             return !IMAGE_EXTENSIONS.has(ext);
@@ -248,7 +263,7 @@ export function renderEmbedNodePreviews(this: any): void {
         // 永久留在 embedCardCache 里(再也不命中、不释放),浏览多个带嵌入的 MOC 即无界增长。
         // 镜像 nodeBadges 里 textMdOverlayCache 的同款回收。
         const liveEmbedNodeIds = new Set<string>();
-        embedNodes.forEach((node: any) => liveEmbedNodeIds.add(node.id()));
+        embedNodes.forEach((node: cytoscape.NodeSingular) => { liveEmbedNodeIds.add(node.id()); });
         for (const key of Array.from(this.embedCardCache.keys()) as string[]) {
             if (!liveEmbedNodeIds.has(key)) this.embedCardCache.delete(key);
         }
@@ -274,7 +289,7 @@ export function renderEmbedNodePreviews(this: any): void {
         const updaters: Array<() => void> = [];
         // 记录用户手动调整后的尺寸（以画布坐标系存储，缩放时按 zoom 换算为像素）
         const cardSizeMap = new Map<string, { widthModel: number; heightModel: number }>();
-        const embedNodeSizes = ((this.currentData?.metadata as any)?.embedNodeSizes || {}) as Record<string, { width: number; height: number }>;
+        const embedNodeSizes = ((this.currentData?.metadata)?.embedNodeSizes || {}) as Record<string, { width: number; height: number }>;
         const interactionUpdaters: Array<() => void> = [];
         let suppressedCanvasInteractionCount = 0;
         const setCanvasInteractionSuppressed = (suppressed: boolean) => {
@@ -294,7 +309,7 @@ export function renderEmbedNodePreviews(this: any): void {
             }
         };
 
-        embedNodes.forEach((node: any) => {
+        embedNodes.forEach((node: cytoscape.NodeSingular) => {
             const data = node.data();
             const originalNode = data.originalNode as ZKNode | undefined;
             if (!originalNode?.file) return;
@@ -316,7 +331,7 @@ export function renderEmbedNodePreviews(this: any): void {
 				'overlay-opacity': 0,
 				'padding': 0
 			});
-			const theme = getPreviewCardTheme(data, this.currentOptions);
+			const theme = getPreviewCardTheme(data as Record<string, unknown>, this.currentOptions);
             const resolvedCardBorder = isExcalidrawFile && !!data.isFreeNode ? 'none' : theme.cardBorder;
             const resolvedCardBackground = isExcalidrawFile ? 'transparent' : theme.cardBackground;
             const resolvedCardShadow = isExcalidrawFile && !!data.isFreeNode ? 'none' : theme.cardShadow;
@@ -759,14 +774,14 @@ export function renderEmbedNodePreviews(this: any): void {
                     cursor: 'default',
                 });
 
-                (async () => {
-                    let previewFile: any = null;
+                void (async () => {
+                    let previewFile: TFile | null = null;
 
                     // 优先：直接读取已存在的预览 PNG 文件（附件路径）
                     const candidates = getMocPreviewPngCandidates(sourceFile.path);
                     for (const candidate of candidates) {
                         const f = app.vault.getAbstractFileByPath(candidate);
-                        if (f) {
+                        if (f instanceof TFile) {
                             previewFile = f;
                             break;
                         }
@@ -777,7 +792,7 @@ export function renderEmbedNodePreviews(this: any): void {
                         try {
                             const exporter = this.currentOptions?.mocPreviewExporter;
                             if (exporter) {
-                                previewFile = await exporter(sourceFile as any);
+                                previewFile = await exporter(sourceFile);
                             }
                         } catch (error) {
                             console.error('[CytoscapeRenderer] mocPreviewExporter failed:', error);
@@ -822,7 +837,7 @@ export function renderEmbedNodePreviews(this: any): void {
 
             } else if (isExcalidraw && !hasExcalidrawCache) {
                 contentEl.textContent = '';
-                (async () => {
+                void (async () => {
                     const rendered = await renderExcalidrawPreview(
                         app,
                         contentEl,
@@ -856,14 +871,14 @@ export function renderEmbedNodePreviews(this: any): void {
                     contentEl.empty?.();
                     contentEl.textContent = '';
                     await MarkdownRenderer.render(app, snippet, contentEl, sourceFile.path, rendererComponent);
-                    contentEl.querySelectorAll('h1,h2,h3,h4').forEach((el: any) => {
+                    contentEl.querySelectorAll<HTMLElement>('h1,h2,h3,h4').forEach((el) => {
                         el.setCssStyles({
                             marginTop: '0.4em',
                             marginBottom: '0.35em',
                             lineHeight: '1.35',
                         });
                     });
-                    contentEl.querySelectorAll('p,li').forEach((el: any) => {
+                    contentEl.querySelectorAll<HTMLElement>('p,li').forEach((el) => {
                         el.setCssStyles({
                             marginTop: '0.28em',
                             marginBottom: '0.28em',
@@ -998,7 +1013,7 @@ export function renderEmbedNodePreviews(this: any): void {
      * 为图片文件节点添加图片预览
      * 检测 [[]] 中引用的文件是否为图片格式，如果是则渲染图片
      */
-export function renderImageNodePreviews(this: any): void {
+export function renderImageNodePreviews(this: CytoscapeRenderer): void {
         if (!this.cy || !this.container) return;
 
         const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
@@ -1012,8 +1027,8 @@ export function renderImageNodePreviews(this: any): void {
 
         // 查找所有 ![[]] 嵌入节点且文件路径为图片格式的节点
         // [[image.png]] 普通文件节点不渲染图片，保持为普通可点击节点
-        const imageNodes = this.cy.nodes('[?isEmbed]').filter((node: any) => {
-            const filePath = node.data('filePath');
+        const imageNodes = this.cy.nodes('[?isEmbed]').filter((node: cytoscape.NodeSingular) => {
+            const filePath = dataStr(node, 'filePath');
             if (!filePath) return false;
             const ext = filePath.split('.').pop()?.toLowerCase() || '';
             return IMAGE_EXTENSIONS.has(ext);
@@ -1038,7 +1053,7 @@ export function renderImageNodePreviews(this: any): void {
         const interactionUpdaters: Array<() => void> = [];
         // 以模型坐标存储卡片尺寸，缩放时按 zoom 换算为像素
         const cardSizeMap = new Map<string, { widthModel: number; heightModel: number }>();
-        const embedNodeSizes = ((this.currentData?.metadata as any)?.embedNodeSizes || {}) as Record<string, { width: number; height: number }>;
+        const embedNodeSizes = ((this.currentData?.metadata)?.embedNodeSizes || {}) as Record<string, { width: number; height: number }>;
         let suppressedCanvasInteractionCount = 0;
         const setCanvasInteractionSuppressed = (suppressed: boolean) => {
             if (!this.cy) return;
@@ -1057,12 +1072,12 @@ export function renderImageNodePreviews(this: any): void {
             }
         };
 
-        imageNodes.forEach((node: any) => {
+        imageNodes.forEach((node: cytoscape.NodeSingular) => {
             const data = node.data();
-            const originalNode = data.originalNode as any;
-            const filePath = data.filePath;
+            const originalNode = data.originalNode as ZKNode;
+            const filePath = dataStr(node, 'filePath');
             const file = app.vault.getAbstractFileByPath(filePath);
-            if (!file) return;
+            if (!(file instanceof TFile)) return;
 
             const resourcePath = app.vault.getResourcePath(file);
             const nodeId = node.id();
@@ -1077,7 +1092,7 @@ export function renderImageNodePreviews(this: any): void {
                 });
             }
 
-            const theme = getPreviewCardTheme(data, this.currentOptions);
+            const theme = getPreviewCardTheme(data as Record<string, unknown>, this.currentOptions);
             const resolvedCardBorder = 'none';
 
             // 完全隐藏 Cytoscape 节点（由 HTML 图片卡片处理视觉）
@@ -1133,7 +1148,7 @@ export function renderImageNodePreviews(this: any): void {
 
 
             const headerLink = activeDocument.createElement('span');
-            headerLink.textContent = (file as any).basename || filePath.split('/').pop() || '';
+            headerLink.textContent = file.basename || filePath.split('/').pop() || '';
             applyPreviewHeaderLinkStyle(headerLink);
             headerLink.addEventListener('click', (e) => {
                 e.stopPropagation();

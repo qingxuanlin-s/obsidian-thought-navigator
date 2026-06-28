@@ -1,7 +1,7 @@
-import type { ElementDefinition } from 'cytoscape';
+import type { ElementDefinition, Position } from 'cytoscape';
 import { ZKNode } from 'src/view/indexView';
-import { isMocPath, stripMocSuffix } from 'src/utils/utils';
-import { Edge, GraphData, RenderOptions } from './types';
+import { isMocPath, stripMocSuffix, GroupInfo } from 'src/utils/utils';
+import { Edge, GraphData, RenderOptions, CyData } from './types';
 import {
 	getBranchStylePalette,
 	hashString,
@@ -50,9 +50,9 @@ export function convertToElementsWithGroups(data: GraphData, conversionOptions: 
 	const context = buildElementConversionContext(data, conversionOptions.options, parentLinkedNodeIds);
 	const nodes = convertNodesToElements(data.nodes, data, conversionOptions.options, context);
 	const edges = convertEdgesToElements(data.edges, context, conversionOptions.edgeControlPoints, conversionOptions.rootToFirstLevelEdgeWidth);
-	const groups = (data.metadata as any)?.groups || [];
+	const groups: GroupInfo[] = data.metadata.groups || [];
 
-	const groupNodes = groups.map((group: any) => {
+	const groupNodes = groups.map((group) => {
 		return {
 			group: 'nodes' as const,
 			data: {
@@ -66,10 +66,10 @@ export function convertToElementsWithGroups(data: GraphData, conversionOptions: 
 		};
 	});
 
-	nodes.forEach((node: any) => {
-		const nodeId = node.data.originalNode?.ID;
+	nodes.forEach((node) => {
+		const nodeId = (node.data as CyData).originalNode?.ID;
 		if (!nodeId) return;
-		const parentGroup = groups.find((g: any) => g.nodeIds.includes(nodeId));
+		const parentGroup = groups.find((g) => g.nodeIds.includes(nodeId));
 		if (parentGroup) {
 			node.data.parent = parentGroup.id;
 		}
@@ -91,7 +91,7 @@ export function convertNodesToElements(
 	data: GraphData | null,
 	options: RenderOptions | null,
 	context?: ElementConversionContext
-): any[] {
+): ElementDefinition[] {
 	const currentFilePath = data?.metadata.currentFile || '';
 	const nodeColors = data?.metadata.nodeColors || {};
 	const nodeRemarks = data?.metadata.nodeRemarks || {};
@@ -129,7 +129,7 @@ export function convertNodesToElements(
 				customFillTextColor = (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.62 ? '#1f2937' : '#f8fafc';
 			}
 		}
-		const element: any = {
+		const element: ElementDefinition = {
 			group: 'nodes' as const,
 			data: {
 				id: escapeId(node.ID),
@@ -139,7 +139,9 @@ export function convertNodesToElements(
 				title: node.title,
 				filePath: node.file?.path || '',
 				displayText: node.displayText,
-				position: node.position,
+				// node.position 是排序序号(number),借 data.position 透传;cytoscape 的
+				// ElementDataDefinition.position 类型是 Position,故 cast 保留既有行为。
+				position: node.position as unknown as Position,
 				isCurrentFile: node.file?.path === currentFilePath,
 				originalNode: node,
 				isRoot: node.isRoot || false,
@@ -186,7 +188,7 @@ export function convertEdgesToElements(
 	context: ElementConversionContext,
 	edgeControlPoints: Map<string, EdgeControlPoint>,
 	rootToFirstLevelEdgeWidth: number
-): any[] {
+): ElementDefinition[] {
 	const nodeById = context.nodeById;
 	const nodeStyleMap = context.nodeStyleMap;
 
@@ -211,7 +213,7 @@ export function convertEdgesToElements(
 		const hierarchyEdgeWidth = edge.type === 'parent'
 			? getHierarchyEdgeWidth(hierarchyDepth, rootToFirstLevelEdgeWidth)
 			: null;
-		const element: any = {
+		const element: ElementDefinition = {
 			group: 'edges' as const,
 			data: {
 				id: escapeId(edge.id),
@@ -272,7 +274,10 @@ export function computeDirectionalEdgeControlPoints(
 	tx: number,
 	ty: number,
 	direction: 'LR' | 'RL' | 'TB' | 'BT',
-	k = 0.5,
+	// 切向系数拆成源/目标两端:源端肩短(kSource 小)→ 离开父节点很快转向子节点方向、不甩长水平段;
+	// 目标端肩中等(kTarget)→ 平顺地沿主轴水平切入子节点。等值时退化为原对称 S(两端等长肩=波浪软线)。
+	kSource = 0.3,
+	kTarget = 0.5,
 	minTangentSource = 12,
 	minTangentTarget = minTangentSource,
 	targetHalfMain = 0
@@ -292,20 +297,20 @@ export function computeDirectionalEdgeControlPoints(
 	//     目标节点框内部就找不到交点("invalid endpoints",边消失)。因此下限需 ≥ 该端节点半尺寸,
 	//     由调用方按 source/target 各自尺寸传入,保证控制点始终在节点外。正常间距下 |dx|*k 远大于它。
 	// shrink:从主轴跨度里先扣掉的长度(源端扣 targetHalfMain → 用「到目标近端边框」的距离算肩长)。
-	const axisTangent = (delta: number, flow: number, floor: number, shrink = 0): number => {
+	const axisTangent = (delta: number, flow: number, floor: number, kFactor: number, shrink = 0): number => {
 		const sign = delta !== 0 ? Math.sign(delta) : flow;
 		const mag = Math.max(0, Math.abs(delta) - shrink);
-		return Math.max(mag * k, floor) * sign;
+		return Math.max(mag * kFactor, floor) * sign;
 	};
 	let c1x: number, c1y: number, c2x: number, c2y: number;
 	if (horizontal) {
 		const flow = direction === 'RL' ? -1 : 1;
-		c1x = sx + axisTangent(dx, flow, minTangentSource, targetHalfMain); c1y = sy;
-		c2x = tx - axisTangent(dx, flow, minTangentTarget); c2y = ty;
+		c1x = sx + axisTangent(dx, flow, minTangentSource, kSource, targetHalfMain); c1y = sy;
+		c2x = tx - axisTangent(dx, flow, minTangentTarget, kTarget); c2y = ty;
 	} else {
 		const flow = direction === 'BT' ? -1 : 1;
-		c1x = sx; c1y = sy + axisTangent(dy, flow, minTangentSource, targetHalfMain);
-		c2x = tx; c2y = ty - axisTangent(dy, flow, minTangentTarget);
+		c1x = sx; c1y = sy + axisTangent(dy, flow, minTangentSource, kSource, targetHalfMain);
+		c2x = tx; c2y = ty - axisTangent(dy, flow, minTangentTarget, kTarget);
 	}
 	// 绝对坐标 → (weight 沿弦, distance 沿法向 (-dy,dx)/L)
 	const toWD = (cx: number, cy: number): { w: number; d: number } => {
@@ -370,7 +375,7 @@ export function getNodeBadge(node: ZKNode, options: RenderOptions | null): strin
 	if (!showNoteId || isLocalLinkNode) return '';
 	// 跨领域节点的 node.ID 是合成 ID(cd-<原ID>-<MOC基名>),展示原节点 ID 更有意义。
 	if (node.isCrossDomain) {
-		const originalId = (node as any).crossDomainOriginalNodeId || '';
+		const originalId = node.crossDomainOriginalNodeId || '';
 		return (nodeText === 'id-title' || nodeText === 'both') ? originalId : '';
 	}
 	if (nodeText === 'id-title' || nodeText === 'both') return node.ID;
@@ -550,7 +555,7 @@ export function buildVividNodeStyleMap(
 
 	const isLight = options?.themeMode === 'light';
 	const branchColorById = new Map<string, NodeBranchStyle>();
-	const styleColorMap = (data?.metadata as any)?.nodeStyleColors || {};
+	const styleColorMap = data?.metadata.nodeStyleColors || {};
 	const palette = getBranchStylePalette();
 	branchIds.forEach((branchId) => {
 		const storedColor = normalizeHexColor(styleColorMap[branchId]);
@@ -594,7 +599,7 @@ let _canvasMeasureCtx: CanvasRenderingContext2D | null = null;
 function getCanvasCtx(): CanvasRenderingContext2D | null {
 	if (_canvasMeasureCtx) return _canvasMeasureCtx;
 	try {
-		const canvas = document.createElement('canvas');
+		const canvas = activeDocument.createElement('canvas');
 		_canvasMeasureCtx = canvas.getContext('2d');
 	} catch { /* ignore */ }
 	return _canvasMeasureCtx;
@@ -662,7 +667,7 @@ export function measureNodeLabel(label: string, options?: {
 		const raw = line || ' ';
 		const estimatedWidth = estimateTextWidth(raw);
 		const wrappedCount = Math.max(1, Math.ceil(estimatedWidth / maxWidth));
-		return new Array(wrappedCount).fill(raw);
+		return new Array<string>(wrappedCount).fill(raw);
 	});
 
 	const longestLineWidth = Math.min(

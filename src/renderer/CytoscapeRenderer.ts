@@ -3,10 +3,10 @@ import * as dagreNamespace from 'cytoscape-dagre';
 import * as coseBilkentNamespace from 'cytoscape-cose-bilkent';
 import { IGraphRenderer, GraphData, RenderOptions, GraphChanges, ViewState } from './types';
 import { ZKNode } from 'src/view/indexView';
-import { Component, MarkdownRenderer, Platform } from 'obsidian';
+import { Component, MarkdownRenderer, Platform, TFile } from 'obsidian';
 import { EmbeddableMarkdownEditor } from 'src/utils/EmbeddableMarkdownEditor';
 import { Minimap } from './Minimap';
-import { buildStylesheet } from './stylesheet';
+import { buildStylesheet, StyleEntry } from './stylesheet';
 import * as layoutAdapter from './layoutAdapter';
 import { OverlayScheduler } from './overlayScheduler';
 import { EdgeControls } from './edgeControls';
@@ -127,27 +127,39 @@ const registerExtensions = () => {
     }
 };
 
+/** 文本节点 Markdown overlay 缓存条目（textMdOverlayCache 的值） */
+export interface TextMdOverlayEntry {
+    el: HTMLElement;
+    component: Component;
+    mdEditor: EmbeddableMarkdownEditor | null;
+    width: number;
+    height: number;
+    isPlainText: boolean;
+    usedInCycle: boolean;
+}
+
 /**
  * Cytoscape.js 渲染器
  * 提供高性能的图形可视化和增量更新支持
  */
 export class CytoscapeRenderer implements IGraphRenderer {
-    private cy: cytoscape.Core | null = null;
-    private container: HTMLElement | null = null;
-    private currentData: GraphData | null = null;
-    private currentOptions: RenderOptions | null = null;
-    private edgeControlPoints: Map<string, { distance: number; weight: number }> = new Map();
-    private batchSelectedNodeIds: string[] = []; // 保存批量选中的节点ID
-    private batchSelectedNodes: any[] = []; // 保存批量选中的完整节点数据（包含 isCrossDomain 等信息）
-    private isMetaPressed = false; // 标记 Command 键是否被按下（框选模式）
-    private embedPreviewCleanup: (() => void) | null = null;
-    private imagePreviewCleanup: (() => void) | null = null;
-    private minimap: Minimap | null = null;
-    private overlayScheduler = new OverlayScheduler({
+    cy: cytoscape.Core | null = null;
+    container: HTMLElement | null = null;
+    currentData: GraphData | null = null;
+    currentOptions: RenderOptions | null = null;
+    edgeControlPoints: Map<string, { distance: number; weight: number }> = new Map();
+    batchSelectedNodeIds: string[] = []; // 保存批量选中的节点ID
+    batchSelectedNodes: { IDStr: string; isCrossDomain: boolean; originalNode: ZKNode }[] = []; // 保存批量选中的完整节点数据（包含 isCrossDomain 等信息）
+    isMetaPressed = false; // 标记 Command 键是否被按下（框选模式）
+    suppressTapSelectAt = 0; // 角标/徽章 mousedown 后短暂抑制 canvas tap 选中的时间戳
+    embedPreviewCleanup: (() => void) | null = null;
+    imagePreviewCleanup: (() => void) | null = null;
+    minimap: Minimap | null = null;
+    overlayScheduler = new OverlayScheduler({
         getCy: () => this.cy,
         getContainer: () => this.container,
     });
-    private edgeControls = new EdgeControls({
+    edgeControls = new EdgeControls({
         getCy: () => this.cy,
         getContainer: () => this.container,
         getCurrentData: () => this.currentData,
@@ -156,82 +168,115 @@ export class CytoscapeRenderer implements IGraphRenderer {
         showGroupNameDialog: this.showGroupNameDialog.bind(this),
     });
     // 追踪正在进行中的 overlay 拖拽/缩放操作，确保 destroy() 时能中止挂在 activeDocument 上的监听器
-    private activeOverlayDragAborters: Set<AbortController> = new Set();
+    activeOverlayDragAborters: Set<AbortController> = new Set();
     // 缓存已渲染的预览卡片 DOM，避免重建时 excalidraw/markdown 内容闪烁
-    private embedCardCache: Map<string, HTMLElement> = new Map();
-    private embedRendererComponents: Set<Component> = new Set();
+    embedCardCache: Map<string, HTMLElement> = new Map();
+    embedRendererComponents: Set<Component> = new Set();
     // 备注 tooltip 富文本渲染共享生命周期组件(懒建,destroy 时 unload)
-    private remarkTooltipComponent: Component | null = null;
-    private activeAlignmentOverlay: SVGSVGElement | null = null;
-    private activeSeparationOverlay: SVGSVGElement | null = null;
-    private boxSelectionElement: HTMLElement | null = null;
-    private liveEditCleanupHandlers: Set<() => void> = new Set();
-    private collapseHandleCleanup: (() => void) | null = null;
+    remarkTooltipComponent: Component | null = null;
+    activeAlignmentOverlay: SVGSVGElement | null = null;
+    activeSeparationOverlay: SVGSVGElement | null = null;
+    boxSelectionElement: HTMLElement | null = null;
+    liveEditCleanupHandlers: Set<() => void> = new Set();
+    collapseHandleCleanup: (() => void) | null = null;
     // #43 增量新增标记:由 render() 在"复用实例+纯新增+已有节点未变"路径上置为新节点 id 集合,
     // renderNodeBadges 读到后只为这些新节点构建+定位 overlay(一次性消费)。
-    private _incrementalAddIds: Set<string> | null = null;
+    _incrementalAddIds: Set<string> | null = null;
     // 与 _incrementalAddIds 配套:增量新增时若已有节点被推开(仅位置变化),置 true,
     // renderNodeBadges 在增量末尾改用 scheduler.immediate() 重定位全部 overlay(一次性消费)。
-    private _incrementalRepositionAll = false;
-    private domTextMeasurer: DomTextMeasurer | null = null;
-    private collapsedNodeIds: Set<string> = new Set();
-    private focusOverlayVisibleCyIds: Set<string> | null = null;
-    private focusOverlayVisibilityMode: 'hide' | 'dim' = 'hide';
-    private activeTextSelectionToolbarCleanup: (() => void) | null = null;
+    _incrementalRepositionAll = false;
+    // 低 zoom 门控状态:overlay 在 zoom < OVERLAY_ZOOM_GATE 时整体隐藏(回退原生 canvas label),
+    // badgePositionUpdater 据此判断是否跨越门限以执行一次性的容器显隐 + 文本节点 label 切换。
+    // undefined = 尚未判定,首次必然触发一次同步。
+    _overlayBelowGate: boolean | undefined = undefined;
+    // 文本 MD overlay 分帧懒建队列:textUpdater 命中"需首建"时入队(node.id → 构建 thunk),
+    // 每帧只建一小批,避免一次高 zoom 全量渲染时同步建数百个 overlay 卡死一帧。
+    // 未建期间节点显示 Cytoscape 原生 canvas label,建好后切换为 HTML overlay。
+    _textBuildThunks: Map<string, () => void> = new Map();
+    _textBuildScheduled = false;
+    // 门控/懒建仅对大图启用(见 nodeBadges LARGE_GRAPH_OVERLAY_THRESHOLD);小图走原 eager 路径,
+    // 避免给本不慢的普通 MOC 引入低 zoom 回退、懒建闪烁、边控制点时序错位等行为变化。
+    _overlayGateActive = false;
+    // 分帧懒建会在 refreshDirectionalEdgeCurves 之后才改节点尺寸,导致这些节点的边控制点按旧尺寸
+    // 算出后端点失效被丢。记录本轮懒建过的节点,drain 排空后只为它们的边重算控制点。
+    _pendingEdgeRefreshNodeIds: Set<string> = new Set();
+    // render() 在"本次渲染后会 fit"时置 true:renderNodeBadges 据此跳过 fit 前那次必被作废的
+    // 全量 immediate() 定位(改由 fit 触发的 viewport 事件在最终 zoom 下定位/门控)。一次性消费。
+    _pendingFit = false;
+    domTextMeasurer: DomTextMeasurer | null = null;
+    collapsedNodeIds: Set<string> = new Set();
+    focusOverlayVisibleCyIds: Set<string> | null = null;
+    focusOverlayVisibilityMode: 'hide' | 'dim' = 'hide';
+    activeTextSelectionToolbarCleanup: (() => void) | null = null;
     // 记住用户上一次在文本选区工具条里选择的颜色，跨选区保持
-    private lastPickedTextColor: string | null = null;
-    private lastPickedBgColor: string | null = null;
+    lastPickedTextColor: string | null = null;
+    lastPickedBgColor: string | null = null;
+    rightDragDeleteState: {
+        start: { x: number; y: number } | null;
+        startNode: cytoscape.NodeSingular | null;
+        active: boolean;
+        nodeIds: Set<string>;
+        bladeSvg: SVGSVGElement | null;
+        bladeGlowPolygon: SVGPolygonElement | null;
+        bladeCorePolygon: SVGPolygonElement | null;
+        bladePoints: Array<{ x: number; y: number }>;
+        bladeCleanupTimer: number | null;
+        suppressContextMenuUntil: number;
+    } = {
+        start: null,
+        startNode: null,
+        active: false,
+        nodeIds: new Set(),
+        bladeSvg: null,
+        bladeGlowPolygon: null,
+        bladeCorePolygon: null,
+        bladePoints: [],
+        bladeCleanupTimer: null,
+        suppressContextMenuUntil: 0,
+    };
 
     // 文本节点 Markdown 渲染缓存：跨 addNodeBadges 重建复用已渲染的 overlay DOM + Component
     // key = `${sourcePath}||${rawSource}`
-    private textMdOverlayCache: Map<string, {
-        el: HTMLElement;
-        component: Component;
-        mdEditor: EmbeddableMarkdownEditor | null;
-        width: number;
-        height: number;
-        isPlainText: boolean;
-        usedInCycle: boolean;
-    }> = new Map();
+    textMdOverlayCache: Map<string, TextMdOverlayEntry> = new Map();
 
     // 节点剪贴板（Cmd+C/V 复制粘贴）
-    private clipboardNodes: Array<{ originalNode: any; position: { x: number; y: number } }> = [];
+    clipboardNodes: Array<{ originalNode: ZKNode; position: { x: number; y: number } }> = [];
     // Cmd+C 时同步写入系统剪贴板的文本快照;Cmd+V 时跟系统剪贴板比对,
     // 若不一致则说明用户从外部复制了新内容,优先走系统剪贴板路径
-    private lastCopiedSystemText = '';
+    lastCopiedSystemText = '';
 
     // SimpleMind 风格布局常量
-    private readonly VERTICAL_GAP = 80;       // 垂直间距
-    private readonly HORIZONTAL_GAP = 200;    // 水平间距
-    private readonly SIBLING_GAP = 100;       // 兄弟节点间距
-    private readonly ROOT_NODE_FONT_SIZE = 36;
-    private readonly ROOT_NODE_FONT_WEIGHT = 700;
-    private readonly FIRST_LEVEL_NODE_FONT_SIZE = 24;
-    private readonly FIRST_LEVEL_NODE_FONT_WEIGHT = 650;
-    private readonly ROOT_TO_FIRST_LEVEL_EDGE_WIDTH = 3.6;
-    private readonly ROOT_TO_FIRST_LEVEL_EDGE_OPACITY = 0.78;
-    private readonly ACTIVE_ROOT_TO_FIRST_LEVEL_EDGE_OPACITY = 0.85;
-    private readonly SECONDARY_PARENT_EDGE_OPACITY = 0.7;
+    readonly VERTICAL_GAP = 80;       // 垂直间距
+    readonly HORIZONTAL_GAP = 200;    // 水平间距
+    readonly SIBLING_GAP = 100;       // 兄弟节点间距
+    readonly ROOT_NODE_FONT_SIZE = 36;
+    readonly ROOT_NODE_FONT_WEIGHT = 700;
+    readonly FIRST_LEVEL_NODE_FONT_SIZE = 24;
+    readonly FIRST_LEVEL_NODE_FONT_WEIGHT = 650;
+    readonly ROOT_TO_FIRST_LEVEL_EDGE_WIDTH = 3.6;
+    readonly ROOT_TO_FIRST_LEVEL_EDGE_OPACITY = 0.78;
+    readonly ACTIVE_ROOT_TO_FIRST_LEVEL_EDGE_OPACITY = 0.85;
+    readonly SECONDARY_PARENT_EDGE_OPACITY = 0.7;
 
-    private isReadOnlyMode(): boolean {
+    isReadOnlyMode(): boolean {
         return this.currentOptions?.readOnly === true || Platform.isMobile;
     }
 
-    private shouldShowMinimap(options: RenderOptions): boolean {
+    shouldShowMinimap(options: RenderOptions): boolean {
         return options.exportMode !== true && options.showMinimap !== false;
     }
 
-    private isCyUsable(cy: cytoscape.Core | null = this.cy): cy is cytoscape.Core {
-        return !!cy && !!(cy as any)._private;
+    isCyUsable(cy: cytoscape.Core | null = this.cy): cy is cytoscape.Core {
+        return !!cy && !!(cy as unknown as { _private?: unknown })._private;
     }
 
-    private clearActiveTextSelectionToolbar(): void {
+    clearActiveTextSelectionToolbar(): void {
         if (!this.activeTextSelectionToolbarCleanup) return;
         this.activeTextSelectionToolbarCleanup();
         this.activeTextSelectionToolbarCleanup = null;
     }
 
-    private stripInlineTextFormatting(text: string): string {
+    stripInlineTextFormatting(text: string): string {
         let result = text;
         const unwrapPatterns: Array<[RegExp, string]> = [
             [/\*\*([\s\S]*?)\*\*/g, '$1'],
@@ -255,28 +300,28 @@ export class CytoscapeRenderer implements IGraphRenderer {
         return result.replace(/<\/?[^>]+>/g, '');
     }
 
-    private unloadEmbedRendererComponents(): void {
+    unloadEmbedRendererComponents(): void {
         this.embedRendererComponents.forEach((component) => {
             try { component.unload(); } catch { /* ignore */ }
         });
         this.embedRendererComponents.clear();
     }
 
-    private cleanupLiveEditHandlers(): void {
+    cleanupLiveEditHandlers(): void {
         this.liveEditCleanupHandlers.forEach((cleanup) => {
             try { cleanup(); } catch { /* ignore */ }
         });
         this.liveEditCleanupHandlers.clear();
     }
 
-    private cleanupInlineEditingDom(): void {
+    cleanupInlineEditingDom(): void {
         this.clearActiveTextSelectionToolbar();
         this.container?.querySelectorAll(
             '.node-label-editor, .edge-label-editor, .node-link-suggester, .zk-placeholder-edit-overlay'
         ).forEach((el) => el.remove());
     }
 
-    private cleanupBadgeInteractionBindings(): void {
+    cleanupBadgeInteractionBindings(): void {
         this.edgeControls.cleanupBindings();
     }
 
@@ -289,7 +334,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         registerExtensions();
 
         // 性能埋点(与 indexView 共用 window.__zkPerf 开关),细分 render 内部各阶段耗时
-        const __zkPerf = (window as any).__zkPerf === true;
+        const __zkPerf = (window as unknown as { __zkPerf?: boolean }).__zkPerf === true;
         const __mark: Record<string, number> = {};
         let __tPrev = __zkPerf ? performance.now() : 0;
         const __lap = (name: string) => {
@@ -421,8 +466,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
             const cy = this.cy;
             if (!this.isCyUsable(cy)) return;
 
-            if (typeof (cy as any).autoungrabify === 'function') {
-                (cy as any).autoungrabify(options.readOnly === true);
+            if (typeof cy.autoungrabify === 'function') {
+                cy.autoungrabify(options.readOnly === true);
             }
             if (this.isReadOnlyMode()) {
                 this.hideBatchToolbar();
@@ -459,7 +504,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             // 增量更新：复用现有 Cytoscape 实例
 
             // 获取当前所有节点和边的 ID（batch 外计算，避免在 batch 内读取被修改的集合）
-            const currentIds = new Set(cy.elements().map((ele: any) => ele.id()));
+            const currentIds = new Set(cy.elements().map((ele: cytoscape.SingularElementArgument) => ele.id()));
             const newIds = new Set(elements.map(ele => ele.data.id || ''));
 
             // 找出需要删除的元素
@@ -491,7 +536,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     const ele = cy.$id(id);
                     if (ele.length > 0 && ele.data('isGroup')) {
                         const childNodes = cy.nodes(`[parent="${id}"]`);
-                        childNodes.forEach((child: any) => {
+                        childNodes.forEach((child: cytoscape.NodeSingular) => {
                             child.move({ parent: null });
                         });
                     }
@@ -519,7 +564,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             //    插入新节点会让后续所有节点序号 +1,但 overlay 不读它(渲染只用 cy 的 x/y 坐标)。
             // 其余对象值字段按内容比较,避免"引用每次都变"的伪变化;节点真移动时坐标内容不同会照常判变。
             const IGNORED_OVERLAY_DATA_KEYS = new Set(['originalNode', 'position']);
-            const overlayMeaningfulChange = (cur: any, next: any): string => {
+            const overlayMeaningfulChange = (cur: Record<string, unknown>, next: Record<string, unknown>): string => {
                 for (const key in next) {
                     if (IGNORED_OVERLAY_DATA_KEYS.has(key)) continue;
                     const a = cur[key];
@@ -539,7 +584,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
             cy.batch(() => {
                 // 先删除所有占位符节点（因为它们不在传入的数据中）
-                const placeholderNodes = cy.nodes().filter((node: any) => node.data('isPlaceholder'));
+                const placeholderNodes = cy.nodes().filter((node: cytoscape.NodeSingular) => Boolean(node.data('isPlaceholder')));
                 if (placeholderNodes.length > 0) {
                     placeholdersRemoved = true;
                     cy.remove(placeholderNodes);
@@ -602,7 +647,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                             const wasEmbed = !!existing.data('isEmbed');
                             const nextIsEmbed = !!ele.data.isEmbed;
                             // 浅比较 ele.data 与现有 data,只有变化时才写入,避免触发不必要的 style/data 事件
-                            const currentData = existing.data();
+                            const currentData = existing.data() as Record<string, unknown>;
                             let dataChanged = false;
                             if (
                                 ele.group === 'edges' &&
@@ -621,23 +666,23 @@ export class CytoscapeRenderer implements IGraphRenderer {
                             }
                             if (dataChanged) {
                                 if (isExisting) {
-                                    const mkey = overlayMeaningfulChange(currentData, ele.data);
+                                    const mkey = overlayMeaningfulChange(currentData, ele.data as Record<string, unknown>);
                                     if (mkey) markExistingChanged(`data:${id}:${mkey}`);
                                 }
                                 existing.data(ele.data);
                             }
 
                             // 同步更新位置（savedPosition 对应的坐标在 ele.position 上，data 里不含位置）
-                            if (ele.group === 'nodes' && (ele as any).position) {
+                            if (ele.group === 'nodes' && ele.position) {
                                 if (isExisting) {
                                     const cur = existing.position();
-                                    const next = (ele as any).position;
+                                    const next = ele.position;
                                     if (Math.abs(cur.x - next.x) > 0.01 || Math.abs(cur.y - next.y) > 0.01) {
                                         // 仅位置变化:不阻断 fast path,改由 existingMoved 触发增量后重定位
                                         existingMoved = true;
                                     }
                                 }
-                                existing.position((ele as any).position);
+                                existing.position(ele.position);
                             }
 
                             // embed -> 普通文件节点：移除预览卡片写入的 bypass，恢复样式表计算尺寸和边框视觉
@@ -688,7 +733,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 this._incrementalAddIds = new Set(addedNodeIds);
                 this._incrementalRepositionAll = existingMoved;
             }
-            if ((window as any).__zkPerf === true) {
+            if ((window as unknown as { __zkPerf?: boolean }).__zkPerf === true) {
                 console.log('[zkPerf:fastadd]', {
                     taken: fastAddOk,
                     added: addedNodeIds.length,
@@ -704,6 +749,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
         }
 
         __lap('cyDiff');
+
+        // 本次渲染后是否会 fit:新建实例(非复用)且非导出模式时,下方 layout/finalize 会 fit。
+        // 透传给 renderNodeBadges 以跳过 fit 前那次必被作废的全量定位(见 nodeBadges 内说明)。
+        this._pendingFit = !options.exportMode && !reusedInstance;
 
         // 更新节点徽章（exportMode 下跳过，避免 MarkdownRenderer 触发 MutationObserver 导致跳转）
         if (!options.exportMode) {
@@ -744,13 +793,22 @@ export class CytoscapeRenderer implements IGraphRenderer {
         }
         __lap('layout');
         this.applyCollapsedState();
+        __lap('fin:collapse');
         this.updateActiveFirstLevelBranch();
+        __lap('fin:branch');
         // 方向感知 S 形边:布局定稿后按最终坐标重算全部层级边的控制点(覆盖新增边)
         this.refreshDirectionalEdgeCurves();
+        __lap('fin:edgeCurves');
         // 控制点钳好后再 fit(saved-positions 路径的初始 fit 被推迟到此),这样唯一一次
         // 求边端点的包围盒计算发生在控制点合法之后,不再误报 invalid endpoints。
         if (hasSavedPositions && !options.exportMode && !reusedInstance && this.isCyUsable()) {
             this.cy?.fit(undefined, 30);
+        }
+        __lap('fin:fit');
+        // 兜底:fit 前那次全量定位已跳过(_pendingFit),正常情况 fit 会触发 viewport 事件完成定位/门控;
+        // 但 fit 若恰好不改变视口(小图已贴合)则无事件,这里显式 schedule 一次确保 overlay 落位。
+        if (!options.exportMode) {
+            this.overlayScheduler.schedule();
         }
         __lap('finalize');
         if (__zkPerf) {
@@ -766,18 +824,18 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 轻微打散完全重叠的节点，避免边端点重合导致 "invalid endpoints" 警告。
      * 仅处理非分组节点，且只在坐标几乎完全一致时生效。
      */
-    private resolveExactNodeOverlaps(): void {
+    resolveExactNodeOverlaps(): void {
         layoutAdapter.resolveExactNodeOverlaps(this.cy);
     }
 
-    private updateActiveFirstLevelBranch(): void {
+    updateActiveFirstLevelBranch(): void {
         if (!this.cy) return;
 
         this.cy.nodes('.zk-active-first-level-branch').removeClass('zk-active-first-level-branch');
         this.cy.edges('.zk-active-root-branch-edge').removeClass('zk-active-root-branch-edge');
 
         const activeBranchIds = new Set<string>();
-        this.cy.$('node:selected').forEach((node: any) => {
+        this.cy.$('node:selected').forEach((node: cytoscape.NodeSingular) => {
             if (node.data('isGroup') || node.data('isPlaceholder')) return;
             const branchId = String(node.data('firstLevelBranchId') || '').trim();
             if (branchId) {
@@ -801,7 +859,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * - 主要用于规避少数数据情况下 cose/cose-bilkent 内部报错导致整图不可用
      * - 首次布局失败时自动回退到 breadthfirst
      */
-    private runLayoutSafely(layoutConfig: any): void {
+    runLayoutSafely(layoutConfig: layoutAdapter.LayoutConfig): void {
         layoutAdapter.runLayoutSafely(this.cy, layoutConfig);
     }
 
@@ -827,7 +885,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         const childNodes = cy.nodes(`[parent="${nodeId}"]`);
 
                         // 将子节点的 parent 设为 null，使其成为独立节点
-                        childNodes.forEach((child: any) => {
+                        childNodes.forEach((child: cytoscape.NodeSingular) => {
                             child.move({ parent: null });
                         });
                     }
@@ -935,7 +993,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             if (entry.mdEditor) {
                 try { entry.mdEditor.unload(); } catch { /* ignore */ }
             }
-            const liveHost = entry.el.querySelector('.zk-text-md-live-edit-host') as any;
+            const liveHost = entry.el.querySelector('.zk-text-md-live-edit-host') as (HTMLElement & { _mdEditor?: EmbeddableMarkdownEditor | null }) | null;
             if (liveHost?._mdEditor) {
                 try { liveHost._mdEditor.unload(); } catch { /* ignore */ }
             }
@@ -1101,7 +1159,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
     }
 
-    private reapplyFocusOverlayState(): void {
+    reapplyFocusOverlayState(): void {
         if (this.focusOverlayVisibleCyIds === null) return;
         this.applyFocusOverlayState(this.focusOverlayVisibleCyIds, this.focusOverlayVisibilityMode, false);
     }
@@ -1151,7 +1209,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
         // 4. 给命中的 cy 节点加 class,同时收集它们的 cy id
         const activeCyIds = new Set<string>();
-        this.cy.nodes().forEach((n: any) => {
+        this.cy.nodes().forEach((n: cytoscape.NodeSingular) => {
             if (n.data('isGroup')) return;
             if (n.hasClass('zk-level-dimmed')) return;
             const original = n.data('originalNode') as { IDStr?: string; ID?: string } | undefined;
@@ -1163,7 +1221,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 5. 沿途的边:源和目标都在 ancestor 集合里
-        this.cy.edges().forEach((e: any) => {
+        this.cy.edges().forEach((e: cytoscape.EdgeSingular) => {
             if (e.hasClass('zk-level-dimmed')) return;
             if (activeCyIds.has(e.source().id()) && activeCyIds.has(e.target().id())) {
                 e.addClass('zk-ancestor-active');
@@ -1206,35 +1264,50 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 只处理层级骨架边(parent / forward),且跳过用户手动拖过的控制点(controlPointDistance 优先)。
      * @param edges 仅刷新这些边(增量,如拖动时的 connectedEdges);省略则全量。
      */
-    refreshDirectionalEdgeCurves(edges?: any): void {
+    refreshDirectionalEdgeCurves(edges?: cytoscape.EdgeCollection): void {
         if (!this.isCyUsable()) return;
         const cy = this.cy;
         if (!cy) return;
         const opts = this.currentOptions;
         // 仅贝塞尔风格需要;直线/折线无控制点
         if (opts?.edgeStyle && opts.edgeStyle !== 'bezier') return;
-        const direction = ((opts as any)?.direction || 'LR') as 'LR' | 'RL' | 'TB' | 'BT';
+        const direction = ((opts?.direction) || 'LR') as 'LR' | 'RL' | 'TB' | 'BT';
         const horizontal = direction === 'LR' || direction === 'RL';
         const targetEdges = edges || cy.edges('[type="parent"], [type="forward"]');
+        // 节点几何缓存:一个父节点是其所有子边的 source,width()/outerWidth() 等会被重复读取
+        // (每读一次若 style 脏就触发重算)。按 node id memo,把 ~2×边 次几何读降到 ~节点数次。
+        const dimCache = new Map<string, { x: number; y: number; w: number; h: number; ow: number; oh: number }>();
+        const dim = (n: cytoscape.NodeSingular) => {
+            const id = n.id();
+            let d = dimCache.get(id);
+            if (!d) {
+                const p = n.position();
+                d = { x: p.x, y: p.y, w: n.width(), h: n.height(), ow: n.outerWidth(), oh: n.outerHeight() };
+                dimCache.set(id, d);
+            }
+            return d;
+        };
         cy.batch(() => {
-            targetEdges.forEach((edge: any) => {
+            targetEdges.forEach((edge: cytoscape.EdgeSingular) => {
                 const type = edge.data('type');
                 if (type !== 'parent' && type !== 'forward') return;
                 const sn = edge.source();
                 const tn = edge.target();
-                const s = sn.position();
-                const t = tn.position();
+                const sd = dim(sn);
+                const td = dim(tn);
+                const s = sd;
+                const t = td;
                 // 控制点必须在各自端的节点框外,否则 Cytoscape 求不到端点交点会丢边。
                 // 源端/目标端分别按自身半尺寸取最小切向距离 —— 小源端不再被大目标卡片连累出长肘弯。
                 // margin 不能太小:超大节点(如撑到 693px 的根节点)旁的层级边,控制点只比框沿多
                 // 几像素时,Cytoscape 的 multibezier 端点求解仍会失败丢边;给足出框余量更稳。
                 const margin = 24;
                 const minTangentSource = horizontal
-                    ? sn.width() / 2 + margin
-                    : sn.height() / 2 + margin;
+                    ? sd.w / 2 + margin
+                    : sd.h / 2 + margin;
                 const minTangentTarget = horizontal
-                    ? tn.width() / 2 + margin
-                    : tn.height() / 2 + margin;
+                    ? td.w / 2 + margin
+                    : td.h / 2 + margin;
                 // 近距回退:主轴间距 < 两端切向下限之和时 S 形控制点交叉,曲线缩进两节点框
                 // 之间被盖住(看起来"没有线");贝塞尔在重叠/极近时还可能端点无解直接不画。
                 // 此时整条边降级为直线(zk-near-straight 类切换 curve-style),最稳;拉开自动恢复。
@@ -1253,8 +1326,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 const dy = t.y - s.y;
                 const adx = Math.abs(dx) || 1e-6;
                 const ady = Math.abs(dy) || 1e-6;
-                const tExitSrc = Math.min((sn.outerWidth() / 2 + margin2) / adx, (sn.outerHeight() / 2 + margin2) / ady);
-                const tExitTgt = Math.min((tn.outerWidth() / 2 + margin2) / adx, (tn.outerHeight() / 2 + margin2) / ady);
+                const tExitSrc = Math.min((sd.ow / 2 + margin2) / adx, (sd.oh / 2 + margin2) / ady);
+                const tExitTgt = Math.min((td.ow / 2 + margin2) / adx, (td.oh / 2 + margin2) / ady);
                 const wMin = tExitSrc;
                 const wMax = 1 - tExitTgt;
                 // 两端外框沿连线吃掉了大半条弦(大节点贴近的短边):留给曲线的弦区间过窄,钳位后
@@ -1266,8 +1339,9 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 edge.removeClass('zk-near-straight');
                 if (edge.data('controlPointDistance') !== undefined) return; // 手动控制点优先
                 // 目标主轴半尺寸:源端肩长改按「到子节点近端边框」算,近端对齐的兄弟肩长一致,不再在父节点旁交叉。
-                const targetHalfMain = horizontal ? tn.width() / 2 : tn.height() / 2;
-                const cp = computeDirectionalEdgeControlPoints(s.x, s.y, t.x, t.y, direction, 0.5, minTangentSource, minTangentTarget, targetHalfMain);
+                const targetHalfMain = horizontal ? td.w / 2 : td.h / 2;
+                // 源端肩短(0.3)+ 目标端肩中等(0.5):挺括扇形,离父快速转向、平顺切入子;对称 0.5/0.5 会回到软波浪。
+                const cp = computeDirectionalEdgeControlPoints(s.x, s.y, t.x, t.y, direction, 0.3, 0.5, minTangentSource, minTangentTarget, targetHalfMain);
                 // 钳住首/末控制点 weight(分别决定源/目标端点求交),其余中间控制点不影响端点。
                 const weights = Array.isArray(cp.weights) ? cp.weights.slice() : cp.weights;
                 if (Array.isArray(weights) && weights.length > 0) {
@@ -1288,11 +1362,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
             window.requestAnimationFrame(() => {
                 if (!this.isCyUsable() || !this.cy) return;
                 let fixed = 0;
-                this.cy.edges('[type="parent"], [type="forward"]').forEach((edge: any) => {
+                this.cy.edges('[type="parent"], [type="forward"]').forEach((edge: cytoscape.EdgeSingular) => {
                     if (edge.hasClass('zk-near-straight')) return;
                     let invalid = false;
                     try {
-                        const rs = (edge[0] as any)?._private?.rscratch;
+                        const rs = (edge[0] as unknown as { _private?: { rscratch?: Record<string, unknown> } })?._private?.rscratch;
                         invalid = !rs || ![rs.startX, rs.startY, rs.endX, rs.endY].every((v: number) => Number.isFinite(v));
                     } catch { invalid = true; }
                     if (invalid) { edge.addClass('zk-near-straight'); fixed++; }
@@ -1319,7 +1393,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         return {
             zoom: this.cy.zoom(),
             pan: this.cy.pan(),
-            selectedNodes: this.cy.$(':selected').map((ele: any) => ele.id()),
+            selectedNodes: this.cy.$(':selected').map((ele: cytoscape.SingularElementArgument) => ele.id()),
             expandedNodes: [],
             timestamp: Date.now()
         };
@@ -1349,7 +1423,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 为出入链节点预设网格位置（在 Cytoscape 初始化前调用）
      * 直接设置 savedPosition，避免节点堆叠在原点导致 edge 无法绘制
      */
-    private presetInOutLinksPositions(data: GraphData): void {
+    presetInOutLinksPositions(data: GraphData): void {
         layoutAdapter.presetInOutLinksPositions(data);
     }
 
@@ -1357,18 +1431,18 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 根据 layoutType 获取布局配置
      * 用于局部关系视图的出入链图等需要自动布局的场景
      */
-    private getLayoutConfig(options: RenderOptions): any {
+    getLayoutConfig(options: RenderOptions): layoutAdapter.LayoutConfig {
         return layoutAdapter.getLayoutConfig(options);
     }
 
     /**
      * 将方向字符串转换为 dagre 的 rankDir 格式
      */
-    private directionToRankDir(direction: string): string {
+    directionToRankDir(direction: string): string {
         return layoutAdapter.directionToRankDir(direction);
     }
 
-    private getStylesheet(options: RenderOptions): any[] {
+    getStylesheet(options: RenderOptions): StyleEntry[] {
         return buildStylesheet(options, {
             FIRST_LEVEL_NODE_FONT_SIZE: this.FIRST_LEVEL_NODE_FONT_SIZE,
             ROOT_NODE_FONT_SIZE: this.ROOT_NODE_FONT_SIZE,
@@ -1405,29 +1479,70 @@ export class CytoscapeRenderer implements IGraphRenderer {
     /**
      * 为 ![[...]] 节点添加常驻预览卡片（类似 Canvas 笔记卡）
      */
-    private addEmbedNodePreviews(): void {
+    addEmbedNodePreviews(): void {
         renderEmbedNodePreviews.call(this);
     }
 
-    private addImageNodePreviews(): void {
+    addImageNodePreviews(): void {
         renderImageNodePreviews.call(this);
     }
 
     /**
      * 获取布局配置
      */
-    private getLayout(options: RenderOptions): any {
+    getLayout(options: RenderOptions): layoutAdapter.LayoutConfig {
         return layoutAdapter.getLayout(options);
     }
 
     /**
      * 添加节点徽章（HTML 叠加层）
      */
-    private addNodeBadges(): void {
+    addNodeBadges(): void {
         renderNodeBadges.call(this);
     }
 
-    private applyCollapsedState(): void {
+    /** 文本 overlay 分帧懒建:入队一个节点的构建 thunk(同 id 覆盖,幂等),并确保排空循环在跑。 */
+    enqueueTextBuild(id: string, thunk: () => void): void {
+        this._textBuildThunks.set(id, thunk);
+        if (!this._textBuildScheduled) {
+            this._textBuildScheduled = true;
+            window.requestAnimationFrame(() => this.drainTextBuild());
+        }
+    }
+
+    /** 每帧从队列建一小批(BATCH 个)文本 overlay,剩余留到下一帧,避免单帧长任务。 */
+    private drainTextBuild(): void {
+        this._textBuildScheduled = false;
+        if (!this.isCyUsable()) {
+            this._textBuildThunks.clear();
+            return;
+        }
+        const BATCH = 12;
+        let n = 0;
+        for (const [id, thunk] of this._textBuildThunks) {
+            this._textBuildThunks.delete(id);
+            try { thunk(); } catch { /* 单节点失败不阻断整批 */ }
+            if (++n >= BATCH) break;
+        }
+        if (this._textBuildThunks.size > 0) {
+            this._textBuildScheduled = true;
+            window.requestAnimationFrame(() => this.drainTextBuild());
+            return;
+        }
+        // 队列排空:为本轮懒建过(尺寸已变)的节点重算边控制点,修复因尺寸过期失效被丢的边。
+        if (this._pendingEdgeRefreshNodeIds.size > 0 && this.cy) {
+            const ids = [...this._pendingEdgeRefreshNodeIds];
+            this._pendingEdgeRefreshNodeIds.clear();
+            let eles = this.cy.collection();
+            for (const id of ids) {
+                const node = this.cy.$id(id);
+                if (node.length) eles = eles.union(node.connectedEdges());
+            }
+            if (eles.length) this.refreshDirectionalEdgeCurves(eles);
+        }
+    }
+
+    applyCollapsedState(): void {
         if (!this.cy) return;
         this.collapsedNodeIds = layoutAdapter.applyCollapsedState(this.cy, this.collapsedNodeIds);
     }
@@ -1435,7 +1550,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
     /**
      * 显示分组操作选择对话框
      */
-    private showGroupActionDialog(
+    showGroupActionDialog(
         existingGroups: Array<{ id: string; label: string; nodeIds: string[] }>,
         callback: (action: 'new' | 'add', groupId?: string) => void
     ): void {
@@ -1599,7 +1714,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
     /**
      * 显示分组名称输入对话框
      */
-    private showGroupNameDialog(callback: (name: string | null) => void, defaultValue = '分组1'): void {
+    showGroupNameDialog(callback: (name: string | null) => void, defaultValue = '分组1'): void {
         // 创建遮罩层
         const overlay = activeDocument.createElement('div');
         overlay.setCssStyles({
@@ -1729,14 +1844,14 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
 
 
-    private attachInlineTextSelectionToolbar(inputEl: HTMLInputElement | HTMLTextAreaElement): {
+    attachInlineTextSelectionToolbar(inputEl: HTMLInputElement | HTMLTextAreaElement): {
         destroy: () => void;
         containsTarget: (target: Node | null) => boolean;
     } {
         return inlineAttachInlineTextSelectionToolbar.call(this, inputEl);
     }
 
-    private attachContentSelectionToolbar(
+    attachContentSelectionToolbar(
         rootEl: HTMLElement,
         applyTransform: (formatter: (selectedText: string) => string) => boolean
     ): {
@@ -1751,7 +1866,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 纯文本走快路径直接 textContent;含 markdown/HTML 语法才走 MarkdownRenderer。
      * 仅在源文本变化时被调用(调用方做 diff),避免每帧渲染。
      */
-    private renderRemarkTooltipContent(el: HTMLElement, source: string): void {
+    renderRemarkTooltipContent(el: HTMLElement, source: string): void {
         el.empty();
         const text = String(source || '');
         if (!text) return;
@@ -1783,23 +1898,23 @@ export class CytoscapeRenderer implements IGraphRenderer {
         destroy: () => void;
         containsTarget: (target: Node | null) => boolean;
     } {
-        const ctx: any = Object.create(this);
+        const ctx = Object.create(this) as this;
         ctx.container = hostContainer;          // 工具栏挂载/定位改用侧栏根
         ctx.cy = null;                          // 侧栏不随图缩放/平移
         ctx.activeTextSelectionToolbarCleanup = null; // 独立于画布工具栏的清理引用
         return inlineAttachContentSelectionToolbar.call(ctx, rootEl, applyTransform);
     }
 
-    private showInlineEdgeLabelEditor(edge: any): void {
+    showInlineEdgeLabelEditor(edge: cytoscape.EdgeSingular): void {
         inlineShowInlineEdgeLabelEditor.call(this, edge);
     }
 
-    private showInlineNodeEditor(node: any, options?: { cursor?: 'select' | 'end' }): void {
+    showInlineNodeEditor(node: cytoscape.NodeSingular, options?: { cursor?: 'select' | 'end' }): void {
         inlineShowInlineNodeEditor.call(this, node, options);
     }
 
-    private startInPlaceTextEdit(
-        node: any,
+    startInPlaceTextEdit(
+        node: cytoscape.NodeSingular,
         originalNode: ZKNode,
         entry: {
             el: HTMLElement;
@@ -1815,16 +1930,16 @@ export class CytoscapeRenderer implements IGraphRenderer {
         inlineStartInPlaceTextEdit.call(this, node, originalNode, entry, options);
     }
 
-    private startPlaceholderInPlaceEdit(node: any, options?: { cursor?: 'select' | 'end' }): void {
+    startPlaceholderInPlaceEdit(node: cytoscape.NodeSingular, options?: { cursor?: 'select' | 'end' }): void {
         inlineStartPlaceholderInPlaceEdit.call(this, node, options);
     }
 
-    private startPlaceholderTextareaFallback(node: any, options?: { cursor?: 'select' | 'end' }): void {
+    startPlaceholderTextareaFallback(node: cytoscape.NodeSingular, options?: { cursor?: 'select' | 'end' }): void {
         inlineStartPlaceholderTextareaFallback.call(this, node, options);
     }
 
-    private startInPlaceTextEditLegacy(
-        node: any,
+    startInPlaceTextEditLegacy(
+        node: cytoscape.NodeSingular,
         originalNode: ZKNode,
         entry: {
             el: HTMLElement;
@@ -1840,192 +1955,192 @@ export class CytoscapeRenderer implements IGraphRenderer {
         inlineStartInPlaceTextEditLegacy.call(this, node, originalNode, entry, options);
     }
 
-    private ensureNodeVisibleInViewport(node: any, padding = 40): void {
+    ensureNodeVisibleInViewport(node: cytoscape.NodeSingular, padding = 40): void {
         inlineEnsureNodeVisibleInViewport.call(this, node, padding);
     }
 
-    private checkForLinkPattern(
+    checkForLinkPattern(
         textarea: HTMLTextAreaElement,
-        node: any,
-        boundingBox: any,
+        node: cytoscape.NodeSingular,
+        boundingBox: cytoscape.BoundingBox12 & cytoscape.BoundingBoxWH,
         suggesterPopoverRef: { value: HTMLElement | null },
-        onSelectFile?: (file: any, isEmbed: boolean) => void
+        onSelectFile?: (file: TFile, isEmbed: boolean) => void
     ): void {
         inlineCheckForLinkPattern.call(this, textarea, node, boundingBox, suggesterPopoverRef, onSelectFile);
     }
 
-    private showLinkSuggester(
+    showLinkSuggester(
         textarea: HTMLTextAreaElement,
-        node: any,
-        boundingBox: any,
+        node: cytoscape.NodeSingular,
+        boundingBox: cytoscape.BoundingBox12 & cytoscape.BoundingBoxWH,
         suggesterPopoverRef: { value: HTMLElement | null },
         isEmbed = false,
-        onSelectFile?: (file: any, isEmbed: boolean) => void
+        onSelectFile?: (file: TFile, isEmbed: boolean) => void
     ): void {
         inlineShowLinkSuggester.call(this, textarea, node, boundingBox, suggesterPopoverRef, isEmbed, onSelectFile);
     }
 
-    private bindEvents(...args: any[]): any {
+    bindEvents(...args: Parameters<typeof event_bindEvents>): ReturnType<typeof event_bindEvents> {
         return event_bindEvents.call(this, ...args);
     }
 
-    private bindKeyboardEvents(...args: any[]): any {
+    bindKeyboardEvents(...args: Parameters<typeof event_bindKeyboardEvents>): ReturnType<typeof event_bindKeyboardEvents> {
         return event_bindKeyboardEvents.call(this, ...args);
     }
 
-    private shouldRelayout(...args: any[]): any {
+    shouldRelayout(...args: Parameters<typeof event_shouldRelayout>): ReturnType<typeof event_shouldRelayout> {
         return event_shouldRelayout.call(this, ...args);
     }
 
-    private addGroupResizeHandles(...args: any[]): any {
+    addGroupResizeHandles(...args: Parameters<typeof event_addGroupResizeHandles>): ReturnType<typeof event_addGroupResizeHandles> {
         return event_addGroupResizeHandles.call(this, ...args);
     }
 
-    private bindResizeHandleDrag(...args: any[]): any {
+    bindResizeHandleDrag(...args: Parameters<typeof event_bindResizeHandleDrag>): ReturnType<typeof event_bindResizeHandleDrag> {
         return event_bindResizeHandleDrag.call(this, ...args);
     }
 
-    private selectNodesInBox(...args: any[]): any {
+    selectNodesInBox(...args: Parameters<typeof event_selectNodesInBox>): ReturnType<typeof event_selectNodesInBox> {
         return event_selectNodesInBox.call(this, ...args);
     }
 
-    private initBoxSelection(...args: any[]): any {
+    initBoxSelection(...args: Parameters<typeof event_initBoxSelection>): ReturnType<typeof event_initBoxSelection> {
         return event_initBoxSelection.call(this, ...args);
     }
 
-    private showBatchToolbar(...args: any[]): any {
+    showBatchToolbar(...args: Parameters<typeof event_showBatchToolbar>): ReturnType<typeof event_showBatchToolbar> {
         return event_showBatchToolbar.call(this, ...args);
     }
 
-    private showSearchBar(...args: any[]): any {
+    showSearchBar(...args: Parameters<typeof event_showSearchBar>): ReturnType<typeof event_showSearchBar> {
         return event_showSearchBar.call(this, ...args);
     }
 
-    private hideBatchToolbar(...args: any[]): any {
+    hideBatchToolbar(...args: Parameters<typeof event_hideBatchToolbar>): ReturnType<typeof event_hideBatchToolbar> {
         return event_hideBatchToolbar.call(this, ...args);
     }
 
-    private createBatchToolbar(...args: any[]): any {
+    createBatchToolbar(...args: Parameters<typeof event_createBatchToolbar>): ReturnType<typeof event_createBatchToolbar> {
         return event_createBatchToolbar.call(this, ...args);
     }
 
-    private createToolbarButton(...args: any[]): any {
+    createToolbarButton(...args: Parameters<typeof event_createToolbarButton>): ReturnType<typeof event_createToolbarButton> {
         return event_createToolbarButton.call(this, ...args);
     }
 
-    private batchCreateGroup(...args: any[]): any {
+    batchCreateGroup(...args: Parameters<typeof event_batchCreateGroup>): ReturnType<typeof event_batchCreateGroup> {
         return event_batchCreateGroup.call(this, ...args);
     }
 
-    private getActiveNode(...args: any[]): any {
+    getActiveNode(...args: Parameters<typeof event_getActiveNode>): ReturnType<typeof event_getActiveNode> {
         return event_getActiveNode.call(this, ...args);
     }
 
-    private normalizeVector(...args: any[]): any {
+    normalizeVector(...args: Parameters<typeof event_normalizeVector>): ReturnType<typeof event_normalizeVector> {
         return event_normalizeVector.call(this, ...args);
     }
 
-    private getBranchDirection(...args: any[]): any {
+    getBranchDirection(...args: Parameters<typeof event_getBranchDirection>): ReturnType<typeof event_getBranchDirection> {
         return event_getBranchDirection.call(this, ...args);
     }
 
-    private getAutoLayoutDirection(...args: any[]): any {
+    getAutoLayoutDirection(...args: Parameters<typeof event_getAutoLayoutDirection>): ReturnType<typeof event_getAutoLayoutDirection> {
         return event_getAutoLayoutDirection.call(this, ...args);
     }
 
-    private getPerpendicular(...args: any[]): any {
+    getPerpendicular(...args: Parameters<typeof event_getPerpendicular>): ReturnType<typeof event_getPerpendicular> {
         return event_getPerpendicular.call(this, ...args);
     }
 
-    private getAutoLayoutStackDirection(...args: any[]): any {
+    getAutoLayoutStackDirection(...args: Parameters<typeof event_getAutoLayoutStackDirection>): ReturnType<typeof event_getAutoLayoutStackDirection> {
         return event_getAutoLayoutStackDirection.call(this, ...args);
     }
 
-    private nextOffsetByProjection(...args: any[]): any {
+    nextOffsetByProjection(...args: Parameters<typeof event_nextOffsetByProjection>): ReturnType<typeof event_nextOffsetByProjection> {
         return event_nextOffsetByProjection.call(this, ...args);
     }
 
-    private isAutoNodeLayoutStyle(...args: any[]): any {
+    isAutoNodeLayoutStyle(...args: Parameters<typeof event_isAutoNodeLayoutStyle>): ReturnType<typeof event_isAutoNodeLayoutStyle> {
         return event_isAutoNodeLayoutStyle.call(this, ...args);
     }
 
-    private isNodeAutoLayoutForId(...args: any[]): any {
+    isNodeAutoLayoutForId(...args: Parameters<typeof event_isNodeAutoLayoutForId>): ReturnType<typeof event_isNodeAutoLayoutForId> {
         return event_isNodeAutoLayoutForId.call(this, ...args);
     }
 
-    private estimateCollisionBox(...args: any[]): any {
+    estimateCollisionBox(...args: Parameters<typeof event_estimateCollisionBox>): ReturnType<typeof event_estimateCollisionBox> {
         return event_estimateCollisionBox.call(this, ...args);
     }
 
-    private getAxisSpan(...args: any[]): any {
+    getAxisSpan(...args: Parameters<typeof event_getAxisSpan>): ReturnType<typeof event_getAxisSpan> {
         return event_getAxisSpan.call(this, ...args);
     }
 
-    private getDirectionalDistance(...args: any[]): any {
+    getDirectionalDistance(...args: Parameters<typeof event_getDirectionalDistance>): ReturnType<typeof event_getDirectionalDistance> {
         return event_getDirectionalDistance.call(this, ...args);
     }
 
-    private isPositionColliding(...args: any[]): any {
+    isPositionColliding(...args: Parameters<typeof event_isPositionColliding>): ReturnType<typeof event_isPositionColliding> {
         return event_isPositionColliding.call(this, ...args);
     }
 
-    private resolveShortcutPosition(...args: any[]): any {
+    resolveShortcutPosition(...args: Parameters<typeof event_resolveShortcutPosition>): ReturnType<typeof event_resolveShortcutPosition> {
         return event_resolveShortcutPosition.call(this, ...args);
     }
 
-    private getFreeChildShortcutPosition(...args: any[]): any {
+    getFreeChildShortcutPosition(...args: Parameters<typeof event_getFreeChildShortcutPosition>): ReturnType<typeof event_getFreeChildShortcutPosition> {
         return event_getFreeChildShortcutPosition.call(this, ...args);
     }
 
-    private getAutoChildShortcutPosition(...args: any[]): any {
+    getAutoChildShortcutPosition(...args: Parameters<typeof event_getAutoChildShortcutPosition>): ReturnType<typeof event_getAutoChildShortcutPosition> {
         return event_getAutoChildShortcutPosition.call(this, ...args);
     }
 
-    private handleCreateChildNode(...args: any[]): any {
+    handleCreateChildNode(...args: Parameters<typeof event_handleCreateChildNode>): ReturnType<typeof event_handleCreateChildNode> {
         return event_handleCreateChildNode.call(this, ...args);
     }
 
-    private getFreeSiblingShortcutPosition(...args: any[]): any {
+    getFreeSiblingShortcutPosition(...args: Parameters<typeof event_getFreeSiblingShortcutPosition>): ReturnType<typeof event_getFreeSiblingShortcutPosition> {
         return event_getFreeSiblingShortcutPosition.call(this, ...args);
     }
 
-    private getAutoSiblingShortcutPosition(...args: any[]): any {
+    getAutoSiblingShortcutPosition(...args: Parameters<typeof event_getAutoSiblingShortcutPosition>): ReturnType<typeof event_getAutoSiblingShortcutPosition> {
         return event_getAutoSiblingShortcutPosition.call(this, ...args);
     }
 
-    private handleCreateSiblingNode(...args: any[]): any {
+    handleCreateSiblingNode(...args: Parameters<typeof event_handleCreateSiblingNode>): ReturnType<typeof event_handleCreateSiblingNode> {
         return event_handleCreateSiblingNode.call(this, ...args);
     }
 
-    private getFreeParentShortcutPosition(...args: any[]): any {
+    getFreeParentShortcutPosition(...args: Parameters<typeof event_getFreeParentShortcutPosition>): ReturnType<typeof event_getFreeParentShortcutPosition> {
         return event_getFreeParentShortcutPosition.call(this, ...args);
     }
 
-    private getAutoParentShortcutPosition(...args: any[]): any {
+    getAutoParentShortcutPosition(...args: Parameters<typeof event_getAutoParentShortcutPosition>): ReturnType<typeof event_getAutoParentShortcutPosition> {
         return event_getAutoParentShortcutPosition.call(this, ...args);
     }
 
-    private handleCreateParentNode(...args: any[]): any {
+    handleCreateParentNode(...args: Parameters<typeof event_handleCreateParentNode>): ReturnType<typeof event_handleCreateParentNode> {
         return event_handleCreateParentNode.call(this, ...args);
     }
 
-    private createPlaceholderConnectionLine(...args: any[]): any {
+    createPlaceholderConnectionLine(...args: Parameters<typeof event_createPlaceholderConnectionLine>): ReturnType<typeof event_createPlaceholderConnectionLine> {
         return event_createPlaceholderConnectionLine.call(this, ...args);
     }
 
-    private handleArrowKeyNavigation(...args: any[]): any {
+    handleArrowKeyNavigation(...args: Parameters<typeof event_handleArrowKeyNavigation>): ReturnType<typeof event_handleArrowKeyNavigation> {
         return event_handleArrowKeyNavigation.call(this, ...args);
     }
 
-    private batchDeleteNodes(...args: any[]): any {
+    batchDeleteNodes(...args: Parameters<typeof event_batchDeleteNodes>): ReturnType<typeof event_batchDeleteNodes> {
         return event_batchDeleteNodes.call(this, ...args);
     }
 
-    private batchChangeColor(...args: any[]): any {
+    batchChangeColor(...args: Parameters<typeof event_batchChangeColor>): ReturnType<typeof event_batchChangeColor> {
         return event_batchChangeColor.call(this, ...args);
     }
 
-    private isSmartConnectionEnabled(...args: any[]): any {
+    isSmartConnectionEnabled(...args: Parameters<typeof event_isSmartConnectionEnabled>): ReturnType<typeof event_isSmartConnectionEnabled> {
         return event_isSmartConnectionEnabled.call(this, ...args);
     }
 

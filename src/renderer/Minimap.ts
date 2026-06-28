@@ -32,7 +32,7 @@ export class Minimap {
     private destroyed = false;
 
     // 事件清理
-    private cyHandlers: Array<{ ev: string; fn: (...args: any[]) => void }> = [];
+    private cyHandlers: Array<{ ev: string; fn: (...args: unknown[]) => void }> = [];
     private domAbort = new AbortController();
 
     // 拖拽视口
@@ -191,7 +191,7 @@ export class Minimap {
     }
 
     private isCyUsable(): boolean {
-        return !!this.cy && !!(this.cy as any)._private;
+        return !!this.cy && !!(this.cy as unknown as { _private?: unknown })._private;
     }
 
     private recomputeTransform(): void {
@@ -207,9 +207,9 @@ export class Minimap {
         // isCyUsable 通过后 cy 仍可能在 boundingBox 内部被 destroy（_private 置 null），
         // 此处再做一次防御性校验并捕获异常。
         if (!this.isCyUsable()) return;
-        let bb: any;
+        let bb: cytoscape.BoundingBox12 & cytoscape.BoundingBoxWH;
         try {
-            bb = nodes.boundingBox({ includeLabels: false } as any);
+            bb = nodes.boundingBox({ includeLabels: false });
         } catch {
             return;
         }
@@ -233,7 +233,7 @@ export class Minimap {
         ctx.clearRect(0, 0, Minimap.W, Minimap.H);
 
         const nodes = this.cy.nodes(':visible');
-        nodes.forEach((node: any) => {
+        nodes.forEach((node: cytoscape.NodeSingular) => {
             if (node.data('isPlaceholder')) return;
             if (node.data('isGroup')) return;
             const pos = node.position();

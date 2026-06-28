@@ -1,5 +1,5 @@
 import { App, TFile, setIcon } from "obsidian";
-import { t } from "src/lang/helper";
+import { t, TKey } from "src/lang/helper";
 import { WorkspaceStore, progressOf } from "src/workspace/WorkspaceStore";
 import { ProjectTaskStore } from "src/workspace/projectTasks";
 import { OpenTarget, WorkspaceNode, WSNodeType, WSProjectNode, ProjectStatus, FrameworkId } from "src/types/workspace";
@@ -89,13 +89,13 @@ export const STATUS_COLOR: Record<ProjectStatus, string> = {
 
 /** 状态文案(i18n) */
 export function statusLabel(s: ProjectStatus): string {
-    return t(`ws status ${s}` as any);
+    return t(`ws status ${s}` as TKey);
 }
 
 /** 框架完整名 / 短标签 / 桶名(i18n) */
-export function fwLabel(id: FrameworkId): string { return t(`ws fw label ${id}` as any); }
-export function fwChip(id: FrameworkId): string { return t(`ws fw chip ${id}` as any); }
-export function bucketLabel(bucketId: string): string { return t(`ws bucket ${bucketId}` as any); }
+export function fwLabel(id: FrameworkId): string { return t(`ws fw label ${id}` as TKey); }
+export function fwChip(id: FrameworkId): string { return t(`ws fw chip ${id}` as TKey); }
+export function bucketLabel(bucketId: string): string { return t(`ws bucket ${bucketId}` as TKey); }
 
 /** 相对时间(i18n) */
 export function relTime(ts: number): string {

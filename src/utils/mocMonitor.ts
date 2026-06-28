@@ -64,7 +64,7 @@ export class MOCFileMonitor {
                         this.plugin.mocReverseIndex.removeEntriesForMOC(file.path);
                     }
                     // 触发刷新（通知视图该 MOC 已删除）
-                    this.refreshViews(file);
+                    void this.refreshViews(file);
                 }
             })
         );
@@ -168,21 +168,21 @@ export class MOCFileMonitor {
         }
         
         // 设置新的防抖定时器
-        const timer = window.setTimeout(async () => {
+        const timer = window.setTimeout(() => { void (async () => {
             try {
                 // 检查内容是否真的变化了
                 const hasChanged = await this.hasContentChanged(file);
-                
+
                 if (hasChanged) {
                     await this.refreshViews(file);
-                } 
+                }
             } catch (error) {
                 console.error(`MOC Monitor: Error handling file change for ${file.path}`, error);
             } finally {
                 // 清除定时器引用
                 this.debounceTimers.delete(file.path);
             }
-        }, this.DEBOUNCE_DELAY);
+        })(); }, this.DEBOUNCE_DELAY);
         
         // 保存定时器引用
         this.debounceTimers.set(file.path, timer);

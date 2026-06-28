@@ -12,6 +12,44 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
     {
+        version: '0.2.5',
+        date: '2026-06-28',
+        highlights: [
+            {
+                zh: '全新「工作区」视图取代旧 Space:用 typed-node + link 数据模型,以 PARA / Overview 框架镜头组织多个 Space,内置项目追踪、跨 Space 待办与全库笔记关联;文件夹挂载与抽屉统一收敛到 WorkspaceStore',
+                en: 'New "Workspace" view replaces the old Spaces: a typed-node + link data model that organizes multiple Spaces through PARA / Overview framework lenses, with built-in project tracking, cross-Space todos, and vault-wide note linking; folder mounting and drawers are unified into WorkspaceStore',
+            },
+            {
+                zh: '任务首页:原「今日」改名「任务」,可在 今日 / 近7天 / 近30天 / 所有 之间切换时间窗(选择持久化);任务截止时间精确到秒,支持行内多行备注编辑,已开始未截止的区间任务自动进入今天',
+                en: 'Task home: the old "Today" is now "Task" with a switchable time window — Today / 7 days / 30 days / All (persisted); task due times go down to the second, inline multi-line notes are editable, and in-progress interval tasks surface under today',
+            },
+            {
+                zh: '侧边栏 Spaces 树的展开 / 折叠状态现在跨重载保留',
+                en: 'The Spaces tree expand/collapse state in the sidebar now persists across reloads',
+            },
+            {
+                zh: 'MOC 存储格式从 Mermaid 迁移到 JSON(.moc.md),解析更快更稳,往返一致性更可靠',
+                en: 'MOC storage migrated from Mermaid to JSON (.moc.md) for faster, sturdier parsing and more reliable round-trips',
+            },
+            {
+                zh: '跨领域链接改为源节点右下角出口角标(↗),不再物化成虚拟节点;hover 卡可跳转定位或删除',
+                en: 'Cross-domain links now show as an outbound badge (↗) on the source node instead of materializing virtual nodes; the hover card can jump-to-locate or delete',
+            },
+            {
+                zh: '节点支持录音嵌入;删除节点时自动回收无引用附件;新增「文件默认打开方式」配置,链接区点击不再误开详情侧栏',
+                en: 'Nodes support audio-recording embeds; deleting a node reclaims unreferenced attachments; a new "default file open mode" setting, and clicking the link area no longer opens the detail panel by mistake',
+            },
+            {
+                zh: '新增入门引导弹窗;修复 HTML 导出;感知 MOC 文件重命名并同步更新引用',
+                en: 'New getting-started modal; fixed HTML export; MOC file renames are detected and references updated',
+            },
+            {
+                zh: '性能:千节点图谱更顺 —— overlay 低 zoom 门控、文本 Markdown 懒渲染、几何缓存;修复屏外新增节点的 overlay 卡在画布原点',
+                en: 'Performance: smoother thousand-node maps — low-zoom overlay gating, lazy text-Markdown rendering, geometry caching; fixed off-screen new-node overlays sticking to the canvas origin',
+            },
+        ],
+    },
+    {
         version: '0.1.8',
         date: '2026-06-13',
         highlights: [

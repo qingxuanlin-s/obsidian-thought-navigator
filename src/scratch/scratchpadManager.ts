@@ -136,6 +136,13 @@ interface ScratchpadStore {
     activeScratchpadId: string;
 }
 
+/** 旧版本遗留在 plugin data.json(settings)里的暂存字段,迁移时按需读取/清理 */
+interface LegacyScratchpadSettings {
+    scratchpads?: Scratchpad[];
+    activeScratchpadId?: string;
+    scratchpadItems?: ScratchpadEntry[];
+}
+
 const STORE_FILENAME = "scratchpads.json";
 
 export class ScratchpadManager {
@@ -177,9 +184,9 @@ export class ScratchpadManager {
         let migratedFromSettings = false;
         if (!loaded) {
             // 旧版本:暂存数据存在 plugin data.json 的 settings 里,迁移到独立文件
-            const settings = this.plugin.settings as any;
+            const settings = this.plugin.settings as unknown as LegacyScratchpadSettings;
             loaded = {
-                scratchpads: Array.isArray(settings.scratchpads) ? settings.scratchpads as Scratchpad[] : [],
+                scratchpads: Array.isArray(settings.scratchpads) ? settings.scratchpads : [],
                 activeScratchpadId: typeof settings.activeScratchpadId === "string" ? settings.activeScratchpadId : "",
             };
             migratedFromSettings = true;
@@ -190,7 +197,7 @@ export class ScratchpadManager {
 
         if (migratedFromSettings) {
             // 清掉 data.json 里的旧字段,避免与 scratchpads.json 双写
-            const settings = this.plugin.settings as any;
+            const settings = this.plugin.settings as unknown as LegacyScratchpadSettings;
             delete settings.scratchpads;
             delete settings.activeScratchpadId;
             delete settings.scratchpadItems;
@@ -211,7 +218,7 @@ export class ScratchpadManager {
         }
 
         // 旧版 scratchpadItems(单一暂存区)迁移为单 pad
-        const legacyItems = (this.plugin.settings as any).scratchpadItems;
+        const legacyItems = (this.plugin.settings as unknown as LegacyScratchpadSettings).scratchpadItems;
         if (Array.isArray(legacyItems) && legacyItems.length > 0 && this.store.scratchpads.length === 0) {
             this.store.scratchpads.push({
                 id: `pad-legacy-${Date.now().toString(36)}`,
@@ -440,10 +447,10 @@ export class ScratchpadManager {
 
     private scheduleSave(): void {
         if (this.saveTimer !== null) return;
-        this.saveTimer = window.setTimeout(async () => {
+        this.saveTimer = window.setTimeout(() => { void (async () => {
             this.saveTimer = null;
             await this.flush();
-        }, 80);
+        })(); }, 80);
     }
 
     private normalizeMocPath(path?: string): string {

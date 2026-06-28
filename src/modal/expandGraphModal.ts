@@ -29,7 +29,7 @@ export class expandGraphModal extends Modal {
     svgGraph.id = "zk-expand-graph";
 
     const { svg } = await mermaid.render(`zk-expand-graph-svg`, `${this.mermaidStr}`);
-    const parsedSvg = new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement;
+    const parsedSvg = new DOMParser().parseFromString(String(svg), 'image/svg+xml').documentElement;
     svgGraph.appendChild(activeDocument.importNode(parsedSvg, true));
     svgGraph.children[0].removeAttribute('style');
     svgGraph.children[0].addClass("zk-full-width");
@@ -38,7 +38,7 @@ export class expandGraphModal extends Modal {
     this.contentEl.appendChild(svgGraph);
 
     const svgPanZoomModule = await import("svg-pan-zoom");
-    const svgPanZoom = (svgPanZoomModule as any).default ?? svgPanZoomModule;
+    const svgPanZoom = svgPanZoomModule;
     const panZoomTiger = svgPanZoom(`#zk-expand-graph-svg`, {
         zoomEnabled: true,
         controlIconsEnabled: false,
@@ -84,7 +84,7 @@ export class expandGraphModal extends Modal {
             nodeArr[i].textContent = "";
             nodeArr[i].appendChild(link);
             nodeGArr[i].addEventListener("click", (event: MouseEvent) => {
-                this.app.workspace.openLinkText("", path, 'tab');
+                void this.app.workspace.openLinkText("", path, 'tab');
             })
 
             nodeArr[i].addEventListener(`mouseover`, (event: MouseEvent) => {
@@ -120,8 +120,8 @@ export class expandGraphModal extends Modal {
                 // Capture file path to avoid null issues in event handlers
                 const filePath = node.file.path;
 
-                circleNodes[j].addEventListener("click", async (event: MouseEvent) => {
-                    this.app.workspace.openLinkText("", filePath, 'tab');
+                circleNodes[j].addEventListener("click", (event: MouseEvent) => {
+                    void this.app.workspace.openLinkText("", filePath, 'tab');
                 })
 
                 circleNodes[j].addEventListener(`mouseover`, (event: MouseEvent) => {

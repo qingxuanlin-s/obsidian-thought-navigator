@@ -313,10 +313,10 @@ export class NodeIDGenerator {
      * @param existingNodes - 现有节点列表
      * @returns 自由节点 ID
      */
-    static generateFreeNodeID(existingNodes: any[]): string {
+    static generateFreeNodeID(existingNodes: Array<{ IDStr?: string }>): string {
         const maxNum = existingNodes
             .filter(n => n.IDStr?.startsWith('free.'))
-            .map(n => parseInt(n.IDStr.replace('free.', '') || '0'))
+            .map(n => parseInt((n.IDStr || '').replace('free.', '') || '0'))
             .reduce((max, num) => Math.max(max, num), 0);
 
         return `free.${maxNum + 1}`;
