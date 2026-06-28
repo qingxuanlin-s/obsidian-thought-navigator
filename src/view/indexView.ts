@@ -6577,6 +6577,7 @@ window.addEventListener('resize', fitGraph);
     private pickNeighborAfterDelete(node: ZKNode): string | null {
         const targetId = node.IDStr;
         if (!targetId) return null;
+        if (this.isFreeNodeID(targetId)) return null;
         const parentId = this.resolveRealParentId(targetId);
         const siblings = this.mocNodes.filter(
             (n) => !!n.IDStr && !n.isCrossDomain && this.resolveRealParentId(n.IDStr) === parentId
