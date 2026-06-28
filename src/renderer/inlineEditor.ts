@@ -67,6 +67,33 @@ function getLivePreviewLinkText(target: EventTarget | null): string {
     return raw.trim();
 }
 
+function hasActiveCanvasInput(container: HTMLElement | null | undefined): boolean {
+    return !!container?.querySelector(
+        '.node-label-editor, .edge-label-editor, .zk-text-md-live-edit-host, .node-link-suggester'
+    );
+}
+
+function restoreCanvasInteraction(
+    renderer: CytoscapeRenderer,
+    prevZoomingEnabled: boolean,
+    prevPanningEnabled?: boolean
+): void {
+    if (!renderer.cy) return;
+
+    if (hasActiveCanvasInput(renderer.container)) {
+        renderer.cy.userZoomingEnabled(prevZoomingEnabled);
+        if (prevPanningEnabled !== undefined) {
+            renderer.cy.userPanningEnabled(prevPanningEnabled);
+        }
+        return;
+    }
+
+    renderer.cy.userZoomingEnabled(true);
+    if (prevPanningEnabled !== undefined) {
+        renderer.cy.userPanningEnabled(true);
+    }
+}
+
 export function attachInlineTextSelectionToolbar(this: CytoscapeRenderer, inputEl: HTMLInputElement | HTMLTextAreaElement): {
         destroy: () => void;
         containsTarget: (target: Node | null) => boolean;
@@ -1856,10 +1883,10 @@ export function startPlaceholderInPlaceEdit(this: CytoscapeRenderer, node: cytos
             if (this.cy && !node.removed() && typeof node.grabbable === 'function') {
                 if (nodeWasGrabbable) node.grabify(); else node.ungrabify();
             }
-            this.cy?.userZoomingEnabled(prevZoomingEnabled);
         };
 
         let syncRaf: number | null = null;
+        let anchorLeftModel = node.position().x - (Number(node.width()) || defaultW) / 2;
         const autoGrow = () => {
             if (!this.cy || node.removed()) return;
             const value = mdEditor?.getValue() ?? '';
@@ -1870,6 +1897,12 @@ export function startPlaceholderInPlaceEdit(this: CytoscapeRenderer, node: cytos
                 }
             });
             this.cy.style().update();
+            const currentWidth = Number(node.width()) || defaultW;
+            const currentPosition = node.position();
+            const anchoredX = anchorLeftModel + currentWidth / 2;
+            if (Number.isFinite(anchoredX) && Math.abs(currentPosition.x - anchoredX) > 0.5) {
+                node.position({ x: anchoredX, y: currentPosition.y });
+            }
             if (syncRaf !== null) return;
             syncRaf = window.requestAnimationFrame(() => {
                 syncRaf = null;
@@ -1900,6 +1933,7 @@ export function startPlaceholderInPlaceEdit(this: CytoscapeRenderer, node: cytos
                 syncRaf = null;
             }
             this.cy?.off('render zoom pan', onRender);
+            restoreCanvasInteraction(this, prevZoomingEnabled);
         };
         this.liveEditCleanupHandlers.add(cleanup);
 
@@ -2815,11 +2849,10 @@ export function showLinkSuggester(this: CytoscapeRenderer, textarea: HTMLTextAre
                         popover.removeEventListener('wheel', handlePopoverWheel as EventListener);
                         searchInput.removeEventListener('wheel', handlePopoverWheel as EventListener);
                         this.container?.removeEventListener('wheel', handleContainerWheelCapture as EventListener, true);
-                        this.cy?.userZoomingEnabled(prevZoomingEnabled);
-                        this.cy?.userPanningEnabled(prevPanningEnabled);
                         if (suggesterPopoverRef.value === popover) {
                             suggesterPopoverRef.value = null;
                         }
+                        restoreCanvasInteraction(this, prevZoomingEnabled, prevPanningEnabled);
                         observer.disconnect();
                     }
                 });

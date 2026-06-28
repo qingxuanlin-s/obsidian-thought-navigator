@@ -82,6 +82,25 @@ function modelToRendered(value: number, zoom: number, panValue: number): number 
 	return value * zoom + panValue;
 }
 
+function escapeCssAttributeValue(value: string): string {
+	return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function hideCulledNodeOverlays(badgeContainer: HTMLElement, nodeId: string): void {
+	const selector = `[data-node-id="${escapeCssAttributeValue(nodeId)}"]`;
+	badgeContainer.querySelectorAll<HTMLElement>(selector).forEach((el) => {
+		el.setCssStyles({
+			display: 'none',
+			opacity: el.classList.contains('zk-node-remark-tooltip') || el.classList.contains('zk-node-cross-domain-panel')
+				? '0'
+				: el.style.opacity,
+			left: el.style.left ? '-99999px' : el.style.left,
+			top: el.style.top ? '-99999px' : el.style.top,
+			transform: el.style.transform ? OFFSCREEN_TRANSFORM : el.style.transform,
+		});
+	});
+}
+
 export function renderNodeBadges(this: CytoscapeRenderer): void {
         if (!this.cy || !this.container) return;
 
@@ -1470,6 +1489,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
 
                 const resizeEl = activeDocument.createElement('div');
                 resizeEl.className = 'zk-text-node-resize-handle';
+                resizeEl.dataset.nodeId = node.id();
                 resizeEl.setCssStyles({
                     position: 'absolute',
                     width: '18px',
@@ -1717,6 +1737,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
         // 注册到统一 overlay 调度器。增量模式下 badgeUpdaters 只含新节点的 updater,
         // 这里追加一个新的 badgePositionUpdater(不清理旧的),旧节点的 updater 仍在调度器中,
         // pan/zoom 时新旧并集都会被更新。
+        const culledOverlayNodeIds = new Set<string>();
         const badgePositionUpdater = () => {
             if (!this.cy) return;
             const zoom = this.cy.zoom();
@@ -1748,10 +1769,18 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
             const M = OVERLAY_CULL_MARGIN;
             for (const u of badgeUpdaters) {
                 if (u.node && !u.node.removed()) {
+                    const nodeId = u.node.id();
                     const p = u.node.position();
                     const rx = p.x * zoom + pan.x;
                     const ry = p.y * zoom + pan.y;
-                    if (rx < -M || rx > W + M || ry < -M || ry > H + M) continue;
+                    if (rx < -M || rx > W + M || ry < -M || ry > H + M) {
+                        if (!culledOverlayNodeIds.has(nodeId)) {
+                            hideCulledNodeOverlays(badgeContainer, nodeId);
+                            culledOverlayNodeIds.add(nodeId);
+                        }
+                        continue;
+                    }
+                    culledOverlayNodeIds.delete(nodeId);
                 }
                 u.fn();
             }
