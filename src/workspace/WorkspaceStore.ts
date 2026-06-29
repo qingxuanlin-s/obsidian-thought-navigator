@@ -23,6 +23,16 @@ function sanitizeFileName(title: string): string {
     return title.replace(/[\\/:*?"<>|#^[\]]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function normalizeTag(tag: string): string {
+    return tag.trim().replace(/^#+/, '').trim();
+}
+
+function projectFileContent(title: string, tag: string): string {
+    const cleanTag = normalizeTag(tag);
+    const frontmatter = cleanTag ? `---\ntags:\n  - ${cleanTag}\n---\n\n` : '';
+    return `${frontmatter}# ${title}\n\n`;
+}
+
 type ChangeListener = () => void;
 
 async function readStore(adapter: DataAdapter, storePath: string): Promise<WorkspaceStoreFile> {
@@ -538,7 +548,7 @@ export class WorkspaceStore extends Component {
      * 确保项目有背书 markdown 笔记(next action 的 `- [ ]` 写在这里)。
      * 已绑定且文件存在 → 直接返回;否则在 folderPath 下按标题建文件,回写 filePath(不刷 updatedAt)。
      */
-    async ensureProjectFile(projectId: string, folderPath: string): Promise<TFile | null> {
+    async ensureProjectFile(projectId: string, folderPath: string, tag = ''): Promise<TFile | null> {
         const p = this.nodes.get(projectId);
         if (!p || p.type !== 'project') return null;
         const existing = p.filePath ? this.app.vault.getAbstractFileByPath(p.filePath) : null;
@@ -559,7 +569,7 @@ export class WorkspaceStore extends Component {
         const dir = folder ? folder + '/' : '';
         let path = `${dir}${base}.md`;
         for (let i = 2; this.app.vault.getAbstractFileByPath(path); i++) path = `${dir}${base} ${i}.md`;
-        const file = await this.app.vault.create(path, `# ${p.title}\n\n`);
+        const file = await this.app.vault.create(path, projectFileContent(p.title, tag));
         await this.commit(ctx => ctx.updateQuiet(projectId, n => { (n as WSProjectNode).filePath = file.path; }));
         return file;
     }

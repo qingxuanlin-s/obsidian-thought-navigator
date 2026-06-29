@@ -10,6 +10,16 @@ export interface MOCLocation {
     nodeId: string;          // 笔记在该 MOC 中的节点 ID
 }
 
+export type SearchKind = 'fileNode' | 'conceptNode' | 'embedNode' | 'mocFile' | 'remark';
+
+export interface SearchEntry {
+    kind: SearchKind;
+    text: string;
+    mocFilePath: string;
+    mocFileName: string;
+    nodeId: string;
+}
+
 /**
  * MOC 反向索引
  * 维护 notePath -> MOCLocation[] 的映射，用于快速查找一个笔记存在于哪些 MOC 中
@@ -17,6 +27,7 @@ export interface MOCLocation {
 export class MOCReverseIndex {
     private app: App;
     private index: Map<string, MOCLocation[]> = new Map();
+    private searchEntries: SearchEntry[] = [];
     private mocFolderPath = '';
     private headingTitle = '';
     private initialized = false;
@@ -34,6 +45,7 @@ export class MOCReverseIndex {
 
         if (!mocFolderPath) {
             this.index.clear();
+            this.searchEntries = [];
             return;
         }
 
@@ -46,6 +58,7 @@ export class MOCReverseIndex {
      */
     async rebuild(): Promise<void> {
         this.index.clear();
+        this.searchEntries = [];
 
         const mocFiles = this.getMOCFiles();
 
@@ -86,21 +99,40 @@ export class MOCReverseIndex {
             };
 
             // JSON 格式：遍历节点树提取 wikilink
-            type MocJsonNode = { nodeID?: string; nodeType?: string; isTextOnly?: boolean; target?: string; wikiLink?: string; children?: MocJsonNode[] };
+            type MocJsonNode = { nodeID?: string; nodeType?: string; isTextOnly?: boolean; isEmbed?: boolean; target?: string; wikiLink?: string; children?: MocJsonNode[] };
             let json: { nodes?: MocJsonNode[] };
             try { json = JSON.parse(content); } catch { return; }
+            this.searchEntries.push({
+                kind: 'mocFile',
+                text: file.basename,
+                mocFilePath: file.path,
+                mocFileName: file.basename,
+                nodeId: '',
+            });
+            const remarks = this.extractNodeRemarks(json);
 
             const walk = (nodes: MocJsonNode[]) => {
                 for (const n of nodes) {
                     // 新 shape: nodeType !== 'text' 且 target 存在
                     // 旧 shape: !isTextOnly 且 wikiLink 存在
                     const isText = n.nodeType === 'text' || n.isTextOnly;
+                    const isEmbed = n.nodeType === 'embed' || n.isEmbed === true;
                     const link = n.target ?? n.wikiLink;
+                    const nodeId = n.nodeID || '';
                     if (!isText && link) {
                         const linkedFile = resolveWikiLink(link);
                         if (linkedFile) {
-                            this.addToIndex(linkedFile.path, file, n.nodeID || '');
+                            this.addToIndex(linkedFile.path, file, nodeId);
+                            this.addSearchEntry(isEmbed ? 'embedNode' : 'fileNode', linkedFile.basename, file, nodeId);
+                        } else {
+                            this.addSearchEntry(isEmbed ? 'embedNode' : 'fileNode', link, file, nodeId);
                         }
+                    } else if (isText) {
+                        this.addSearchEntry('conceptNode', this.nodeText(n), file, nodeId);
+                    }
+                    const remark = nodeId ? remarks.get(nodeId) : null;
+                    if (remark) {
+                        this.addSearchEntry('remark', remark, file, nodeId);
                     }
                     if (n.children?.length) walk(n.children);
                 }
@@ -109,6 +141,44 @@ export class MOCReverseIndex {
         } catch (error) {
             console.error(`MOCReverseIndex: Failed to index ${file.path}`, error);
         }
+    }
+
+    private addSearchEntry(kind: SearchKind, text: string, mocFile: TFile, nodeId: string): void {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+        this.searchEntries.push({
+            kind,
+            text: trimmed,
+            mocFilePath: mocFile.path,
+            mocFileName: mocFile.basename,
+            nodeId,
+        });
+    }
+
+    private nodeText(node: unknown): string {
+        if (!node || typeof node !== 'object') return '';
+        const record = node as Record<string, unknown>;
+        for (const key of ['target', 'text', 'title', 'displayText', 'name', 'label']) {
+            const value = record[key];
+            if (typeof value === 'string' && value.trim()) return value;
+        }
+        return '';
+    }
+
+    private extractNodeRemarks(json: unknown): Map<string, string> {
+        const remarks = new Map<string, string>();
+        if (!json || typeof json !== 'object') return remarks;
+        const record = json as Record<string, unknown>;
+        const ext = record.ext;
+        const nodeRemarks = record.nodeRemarks || (ext && typeof ext === 'object' ? (ext as Record<string, unknown>).nodeRemarks : null);
+        if (!nodeRemarks || typeof nodeRemarks !== 'object') return remarks;
+
+        for (const [nodeId, value] of Object.entries(nodeRemarks as Record<string, unknown>)) {
+            if (typeof value === 'string' && value.trim()) {
+                remarks.set(nodeId, value);
+            }
+        }
+        return remarks;
     }
 
     private addToIndex(notePath: string, mocFile: TFile, nodeId: string): void {
@@ -149,6 +219,7 @@ export class MOCReverseIndex {
                 this.index.set(notePath, filtered);
             }
         }
+        this.searchEntries = this.searchEntries.filter(entry => entry.mocFilePath !== mocFilePath);
     }
 
     /**
@@ -270,6 +341,10 @@ export class MOCReverseIndex {
      */
     getAllNotePaths(): string[] {
         return Array.from(this.index.keys());
+    }
+
+    getSearchEntries(): SearchEntry[] {
+        return this.searchEntries.slice();
     }
 
     get isInitialized(): boolean {

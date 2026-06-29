@@ -14,6 +14,8 @@ export interface RenderCtx {
     projectFolderPath: string;
     /** 新建任务/子任务时自动插在 `[ ]` 后的前缀字符(如 "🎯 ");空则不加 */
     taskPrefix: string;
+    /** 新建项目背书笔记时自动写入的 tag;空则不加 */
+    taskFileTag: string;
     /** 在中间视口打开一个目标(MOC 带图谱时会甩出面板切到图谱模式) */
     open(target: OpenTarget): void;
     /** 在中间视口打开目标,但始终留在面板内渲染(不甩去图谱) */

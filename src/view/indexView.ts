@@ -8,6 +8,7 @@ import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
 import { AddFreeNodeModal } from "src/modal/addFreeNodeModal";
 import { MOCSelectorModal } from "src/modal/mocSelectorModal";
 import { NoteSearchModal } from "src/modal/noteSearchModal";
+import { GlobalSearchModal, openTaskAtLine } from "src/modal/globalSearchModal";
 import { convertMOCToZKNodes, CrossDomainLink, createMOCTreeNode, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX, MOCParseResult, MOCTreeNode, NODE_FLAG_SEPARATED, NODE_FLAG_SIDE_PINNED, parseMOCStructure, saveMOCStructure, stripMocSuffix } from "src/utils/utils";
 import { WorkspacePanel } from "src/view/workspace/WorkspacePanel";
 import { OpenTarget, WSMocNode } from "src/types/workspace";
@@ -456,6 +457,15 @@ export class ZKIndexView extends FileView {
             this.setWorkspaceMode(false);
         })();
         return true;
+    }
+
+    async openWorkspaceTarget(target: OpenTarget): Promise<void> {
+        if (!this.workspacePanel) {
+            new Notice(t("ws not ready"));
+            return;
+        }
+        this.setWorkspaceMode(true);
+        this.workspacePanel.openTarget(target);
     }
 
     // ============ 浏览历史(上一步/下一步) ============
@@ -1529,6 +1539,7 @@ export class ZKIndexView extends FileView {
                     owner: this,
                     projectFolderPath: this.plugin.settings.projectFolderPath,
                     taskPrefix: this.plugin.settings.wsTaskPrefix,
+                    taskFileTag: this.plugin.settings.wsTaskFileTag,
                     onExitToGraph: () => this.setWorkspaceMode(false),
                     onOpenMoc: (node: WSMocNode) => this.openMocFromWorkspace(node),
                     onOpenFile: (file, forceTab) => this.openFileInPreferredLeaf(file, forceTab),
@@ -1566,7 +1577,7 @@ export class ZKIndexView extends FileView {
             const mainNoteChip = breadcrumbNav.createDiv("zk-chip zk-chip-outlined");
             mainNoteChip.createSpan("zk-chip-label").setText(this.plugin.settings.MainNoteButtonText);
             mainNoteChip.addEventListener("click", () => {
-                this.openNoteSearchModal();
+                this.openGlobalSearchModal();
             });
 
             // 面包屑分隔符
@@ -4868,28 +4879,48 @@ window.addEventListener('resize', fitGraph);
             return;
         }
 
-        new NoteSearchModal(this.app, reverseIndex, (notePath, location) => { void (async () => {
-            // 切换到选中的 MOC
-            this.plugin.settings.mocCurrentFile = location.mocFilePath;
-            this.plugin.settings.BranchTab = 0;
-            await this.plugin.saveData(this.plugin.settings);
-            this.renderedBranches.clear();
-            await this.plugin.clearShowingSettings();
+        new NoteSearchModal(this.app, reverseIndex, (_notePath, location) => {
+            void this.navigateToMOCNode(location.mocFilePath, location.nodeId);
+        }).open();
+    }
 
-            // 更新 MOC 面包屑文本
-            if (this.mocChipLabel) {
-                let mocName = location.mocFileName;
-                const maxLength = 12;
-                if (mocName.length > maxLength) {
-                    mocName = mocName.substring(0, maxLength) + "...";
-                }
-                this.mocChipLabel.setText(mocName);
+    openGlobalSearchModal(): void {
+        new GlobalSearchModal(this.app, {
+            reverseIndex: this.plugin.mocReverseIndex,
+            workspaceStore: this.plugin.workspaceStore,
+            navigateToMOCNode: (mocFilePath, nodeId) => this.navigateToMOCNode(mocFilePath, nodeId),
+            openWorkspaceTarget: (target) => this.openWorkspaceTarget(target),
+            openTask: (filePath, taskRaw) => openTaskAtLine(this.app, filePath, taskRaw),
+        }).open();
+    }
+
+    async navigateToMOCNode(mocFilePath: string, nodeId: string): Promise<void> {
+        const file = this.app.vault.getAbstractFileByPath(mocFilePath);
+        if (!(file instanceof TFile)) {
+            new Notice(t("Current MOC file does not exist"));
+            return;
+        }
+
+        this.plugin.settings.mocCurrentFile = mocFilePath;
+        this.plugin.settings.BranchTab = 0;
+        await this.plugin.saveData(this.plugin.settings);
+        this.renderedBranches.clear();
+        await this.plugin.clearShowingSettings();
+
+        if (this.mocChipLabel) {
+            let mocName = file.basename;
+            const maxLength = 12;
+            if (mocName.length > maxLength) {
+                mocName = mocName.substring(0, maxLength) + "...";
             }
+            this.mocChipLabel.setText(mocName);
+        }
 
-            // 标记渲染完成后需要定位的节点
-            this.pendingSelectNodeId = location.nodeId;
-            this.app.workspace.trigger("zk-navigation:refresh-index-graph");
-        })(); }).open();
+        this.pendingSelectNodeId = nodeId || null;
+        if (this.workspaceMode) {
+            this.setWorkspaceMode(false);
+        }
+        this.app.workspace.trigger("zk-navigation:refresh-index-graph");
     }
 
     private updateMultiverseBadge(node: ZKNode | null): void {

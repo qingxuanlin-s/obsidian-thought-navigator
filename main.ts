@@ -235,6 +235,7 @@ interface ZKNavigationSettings {
     mocFolderPath: string;             // MOC 索引笔记所在文件夹
     projectFolderPath: string;         // 工作区项目背书笔记(next action 任务)所在文件夹
     wsTaskPrefix: string;              // 新建任务/子任务自动插在 `[ ]` 后的前缀字符(如 "🎯 ")
+    wsTaskFileTag: string;             // 新建项目背书笔记时自动写入的 tag,空则不加
     mocHeadingTitle: string;           // 要解析的一级标题名称，如 "思维树"
     mocCurrentFile: string;            // 当前选中的 MOC 文件路径
     mocNodePositions: Record<string, Record<string, { x: number; y: number }>>; // MOC 节点位置存储 {mocFilePath: {nodeId: {x, y}}}
@@ -324,6 +325,7 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     mocFolderPath: '/',
     projectFolderPath: 'config/workspace',
     wsTaskPrefix: '',
+    wsTaskFileTag: '',
     mocHeadingTitle: t('default MOC heading title'),
     mocCurrentFile: '',
     mocNodePositions: {}, // MOC 节点位置存储
@@ -836,6 +838,15 @@ export default class ZKNavigationPlugin extends Plugin {
             }
         });
 
+        this.addCommand({
+            id: "zk-global-search",
+            name: "Search everything",
+            callback: async () => {
+                const view = await this.getOrOpenIndexView();
+                view?.openGlobalSearchModal();
+            }
+        });
+
         // 工作区统一入口:思维树视图工具栏的「工作区」按钮(图谱 ⇄ 工作区 模式切换),
         // 不再提供独立侧边栏 ribbon / 打开命令。
 
@@ -1292,6 +1303,25 @@ export default class ZKNavigationPlugin extends Plugin {
             this.indexModal = false;
         }
 
+    }
+
+    async getOrOpenIndexView(): Promise<ZKIndexView | null> {
+        const active = this.app.workspace.getActiveViewOfType(ZKIndexView);
+        if (active) return active;
+
+        let leaf = this.app.workspace.getLeavesOfType(ZK_INDEX_TYPE)[0];
+        if (!leaf) {
+            const viewState = this.settings.mocCurrentFile
+                ? { type: ZK_INDEX_TYPE, state: { file: this.settings.mocCurrentFile }, active: true }
+                : { type: ZK_INDEX_TYPE, active: true };
+            await this.app.workspace.getLeaf('tab')?.setViewState(viewState);
+            leaf = this.app.workspace.getLeavesOfType(ZK_INDEX_TYPE)[0];
+        }
+        if (leaf) {
+            await this.app.workspace.revealLeaf(leaf);
+            return leaf.view instanceof ZKIndexView ? leaf.view : null;
+        }
+        return null;
     }
 
     async openGraphView() {

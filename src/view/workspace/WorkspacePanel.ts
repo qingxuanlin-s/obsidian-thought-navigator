@@ -24,6 +24,8 @@ export interface WorkspacePanelDeps {
     projectFolderPath: string;
     /** 新建任务/子任务自动前缀字符(如 "🎯 ") */
     taskPrefix: string;
+    /** 新建项目背书笔记时自动写入的 tag */
+    taskFileTag: string;
     /** 打开一个带图谱的 MOC/map 节点时,交给宿主(indexView)切到图谱模式并加载文件。
      *  返回 true 表示宿主已接管(面板不再自渲 MOC 页);false / 不提供则面板内渲 MOC 概览页。 */
     onOpenMoc?: (node: WSMocNode) => boolean;
@@ -81,6 +83,7 @@ export class WorkspacePanel {
             tasks: this.taskStore,
             projectFolderPath: deps.projectFolderPath,
             taskPrefix: deps.taskPrefix,
+            taskFileTag: deps.taskFileTag,
             open: (t) => this.navigate(t),
             openInline: (t) => this.navigateInline(t),
             openFile: (file, forceTab = false) => {
@@ -284,6 +287,9 @@ export class WorkspacePanel {
 
     /** 由宿主浏览历史还原 workspace 目标;始终在面板内渲染,不甩回图谱。 */
     showTarget(target: OpenTarget): void { this.navigateInline(target); }
+
+    /** 外部入口(全局搜索等)打开 workspace 目标,保留 MOC/map 交给宿主切图谱的语义。 */
+    openTarget(target: OpenTarget): void { this.navigate(target); }
 
     private sameTarget(a: OpenTarget | null | undefined, b: OpenTarget): boolean {
         if (!a || a.kind !== b.kind) return false;

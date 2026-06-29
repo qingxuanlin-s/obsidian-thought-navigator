@@ -4007,6 +4007,51 @@ align-items: center;
   color: #b07800;
 }
 
+/* ==================== 全局搜索 Modal ==================== */
+
+.zk-global-search-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.zk-global-search-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  color: var(--text-muted);
+}
+
+.zk-global-search-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.zk-global-search-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.zk-global-search-title {
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zk-global-search-subtitle {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ==================== 边端点手柄 ==================== */
 .zk-edge-endpoint-handle {
   position: absolute;

@@ -250,7 +250,7 @@ function openTaskModal(ctx: RenderCtx, p: WSProjectNode, file: TFile | null,
         initial,
         onSubmit: (r) => { void (async () => {
             try {
-                const f = file instanceof TFile ? file : await ctx.store.ensureProjectFile(p.id, ctx.projectFolderPath);
+                const f = file instanceof TFile ? file : await ctx.store.ensureProjectFile(p.id, ctx.projectFolderPath, ctx.taskFileTag);
                 if (!(f instanceof TFile)) { new Notice(t('ws action add failed')); return; }
                 if (opts.mode === 'edit' && opts.task) {
                     const parsed = parseTaskText(opts.task.text);

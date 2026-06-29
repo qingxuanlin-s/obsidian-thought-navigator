@@ -144,6 +144,18 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                     });
             });
 
+        new Setting(workspaceSection)
+            .setName(t("ws task file tag"))
+            .setDesc(t("ws task file tag desc"))
+            .addText((cb) => {
+                cb.setPlaceholder(t("ws task file tag placeholder"))
+                    .setValue(this.plugin.settings.wsTaskFileTag)
+                    .onChange((value) => {
+                        this.plugin.settings.wsTaskFileTag = value.trim();
+                        void this.plugin.saveData(this.plugin.settings);
+                    });
+            });
+
         // ========== 局部视图 (Local Graph) ==========
         new Setting(containerEl).setName(t("thought-local-graph-view")).setHeading();
         const localSection = containerEl.createDiv("zk-setting-card");
