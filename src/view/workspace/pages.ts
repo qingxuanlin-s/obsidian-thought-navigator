@@ -38,6 +38,14 @@ function actionBtn(parent: HTMLElement, icon: string, label: string, cta: boolea
     btn.onclick = onClick;
 }
 
+/** 任务行右侧的 lucide 线性图标按钮(.aicon),替代旧的 emoji 文本 */
+function aicon(parent: HTMLElement, icon: string, title: string, extraCls = ''): HTMLElement {
+    const el = parent.createSpan({ cls: 'aicon' + (extraCls ? ' ' + extraCls : '') });
+    setIcon(el, icon);
+    el.setAttribute('title', title);
+    return el;
+}
+
 /** 多选 vault 笔记批量关联到此 MOC(就地建节点 + partOf/childMoc 链)*/
 function pickMocAssoc(ctx: RenderCtx, moc: WSMocNode): void {
     const mounted = ctx.store.containerChildren(moc.id)
@@ -516,36 +524,27 @@ function renderTaskRow(wrap: HTMLElement, ctx: RenderCtx, p: WSProjectNode, file
 
     // 未完成任务:编辑(复用 addtask 弹框)
     if (!tk.checked) {
-        const edit = ctl.createSpan({ cls: 'aicon', text: '✎' });
-        edit.setAttribute('title', t('ws action edit'));
-        edit.onclick = () => openTaskModal(ctx, p, file, { mode: 'edit', task: tk });
+        aicon(ctl, 'pencil', t('ws action edit')).onclick = () => openTaskModal(ctx, p, file, { mode: 'edit', task: tk });
     }
 
     // 新建子任务(复用 addtask 弹框)
-    const sub = ctl.createSpan({ cls: 'aicon', text: '↳' });
-    sub.setAttribute('title', t('ws action subtask'));
-    sub.onclick = () => openTaskModal(ctx, p, file, { mode: 'subtask', parent: tk });
+    aicon(ctl, 'corner-down-right', t('ws action subtask')).onclick = () => openTaskModal(ctx, p, file, { mode: 'subtask', parent: tk });
 
-    const refs = ctl.createSpan({ cls: 'aicon' + (tk.refs?.length ? ' hasref' : ''), text: tk.refs?.length ? String(tk.refs.length) : '🔗' });
-    refs.setAttribute('title', t('ws action refs add'));
+    const hasRef = !!tk.refs?.length;
+    const refs = aicon(ctl, 'link', t('ws action refs add'), hasRef ? 'hasref' : '');
+    if (hasRef) { refs.empty(); refs.setText(String(tk.refs!.length)); }
     refs.onclick = () => pickActionRefs(ctx, p, file, tk);
 
     if (tk.note === undefined) {
-        const note = ctl.createSpan({ cls: 'aicon', text: '🗒' });
-        note.setAttribute('title', t('ws action note'));
-        note.onclick = () => mountInlineInput(row, indentPx, t('ws action note placeholder'), '', (v) =>
+        aicon(ctl, 'sticky-note', t('ws action note')).onclick = () => mountInlineInput(row, indentPx, t('ws action note placeholder'), '', (v) =>
             writeTasks(ctx, file, c => setTaskNote(c, tk, v)), true);
     } else {
-        const noteDel = ctl.createSpan({ cls: 'aicon del', text: '🗑' });
-        noteDel.setAttribute('title', t('ws action note delete'));
-        noteDel.onclick = async () => {
+        aicon(ctl, 'trash-2', t('ws action note delete'), 'del').onclick = async () => {
             await writeTasks(ctx, file, c => removeTaskNote(c, tk));
         };
     }
 
-    const del = ctl.createSpan({ cls: 'aicon del', text: '✕' });
-    del.setAttribute('title', t('ws action delete'));
-    del.onclick = async () => {
+    aicon(ctl, 'x', t('ws action delete'), 'del').onclick = async () => {
         await writeTasks(ctx, file, c => removeTask(c, tk));
     };
 }
@@ -783,19 +782,21 @@ function renderTodayDue(body: HTMLElement, ctx: RenderCtx): void {
         }
 
         const ctl = row.createDiv({ cls: 'actl' });
+        // 编辑(复用项目页 addtask 弹框);首页任务均未完成,始终可编辑
+        aicon(ctl, 'pencil', t('ws action edit')).onclick = (e) => {
+            e.stopPropagation();
+            const f = projFile(); if (!f) return;
+            openTaskModal(ctx, it.project, f, { mode: 'edit', task: tk });
+        };
         if (tk.note === undefined) {
-            const note = ctl.createSpan({ cls: 'aicon', text: '🗒' });
-            note.setAttribute('title', t('ws action note'));
-            note.onclick = (e) => {
+            aicon(ctl, 'sticky-note', t('ws action note')).onclick = (e) => {
                 e.stopPropagation();
                 const f = projFile(); if (!f) return;
                 mountInlineInput(row, 0, t('ws action note placeholder'), '', (v) =>
                     writeTasks(ctx, f, c => setTaskNote(c, tk, v)), true);
             };
         } else {
-            const noteDel = ctl.createSpan({ cls: 'aicon del', text: '🗑' });
-            noteDel.setAttribute('title', t('ws action note delete'));
-            noteDel.onclick = async (e) => {
+            aicon(ctl, 'trash-2', t('ws action note delete'), 'del').onclick = async (e) => {
                 e.stopPropagation();
                 const f = projFile(); if (!f) return;
                 await writeTasks(ctx, f, c => removeTaskNote(c, tk));

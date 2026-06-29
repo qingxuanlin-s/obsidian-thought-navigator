@@ -6568,7 +6568,8 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 .zkw .adep { font-family:var(--mono); font-size:9.5px; padding:2px 7px; border-radius:99px; cursor:pointer; color:var(--ink-faint); border:1px solid var(--rule-2); white-space:nowrap; }
 .zkw .adep:hover { color:var(--ink-dim); border-color:var(--rule-3); }
 .zkw .adep.on { color:var(--violet); background:rgba(183,157,255,0.12); border-color:rgba(183,157,255,0.35); }
-.zkw .aicon { width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center; border-radius:6px; font-size:12px; color:var(--ink-faint); cursor:pointer; }
+.zkw .aicon { width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center; border-radius:6px; font-size:11px; color:var(--ink-faint); cursor:pointer; }
+.zkw .aicon .svg-icon { width:14px; height:14px; stroke-width:1.75; }
 .zkw .aicon:hover { color:var(--ink); background:var(--panel-2); }
 .zkw .aicon.hasref { font-family:var(--mono); color:var(--violet); background:rgba(183,157,255,0.1); border:1px solid rgba(183,157,255,0.22); }
 .zkw .aicon.off { opacity:0.25; pointer-events:none; }
