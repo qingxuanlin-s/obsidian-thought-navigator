@@ -1294,6 +1294,17 @@ export class CytoscapeRenderer implements IGraphRenderer {
             }
             return d;
         };
+        // 读写分离(性能关键):下面的 batch 里既要读节点几何(width/height/position)又要写
+        // edge.data/class。布局刚跑完样式是脏的,Cytoscape 在 batch 内每次「写 edge.data 之后再读
+        // 节点尺寸」都会强制全图样式重算 → O(边数) 次全量 recalc(实测 1026 节点 865ms 的元凶)。
+        // 这里先在 batch 之外纯读一遍,把所有端点几何一次性灌进 dimCache —— 纯读只触发一次 recalc,
+        // 之后 batch 内的 dim() 全是缓存命中、零节点读,recalc 从上千次降到一次。
+        targetEdges.forEach((edge: cytoscape.EdgeSingular) => {
+            const type = edge.data('type');
+            if (type !== 'parent' && type !== 'forward') return;
+            dim(edge.source());
+            dim(edge.target());
+        });
         cy.batch(() => {
             targetEdges.forEach((edge: cytoscape.EdgeSingular) => {
                 const type = edge.data('type');
@@ -1878,8 +1889,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
         el.empty();
         const text = String(source || '');
         if (!text) return;
-        // 快路径:无 markdown/HTML 语法
-        if (!/[<*_~`[\]#>]|==|!\[/.test(text)) {
+        // 快路径:无 markdown/HTML 语法(含 $ 视为可能有 LaTeX,交给 MarkdownRenderer)
+        if (!/[<*_~`[\]#>$]|==|!\[/.test(text)) {
             el.textContent = text;
             return;
         }

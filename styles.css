@@ -6583,7 +6583,9 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 .zkw .action-add .aprio:focus { border-color:var(--rule-3); }
 .zkw .action-add .atext { flex:1; background:var(--panel-2); border:1px solid var(--rule-2); border-radius:8px; color:var(--ink); font-size:13px; outline:none; font-family:var(--font); padding:8px 12px; }
 .zkw .action-add .atext:focus { border-color:var(--rule-3); }
-.zkw .achip { font-size:12px; font-weight:600; padding:8px 12px; border-radius:8px; cursor:pointer; white-space:nowrap; color:var(--ink-dim); border:1px solid var(--rule-2); }
+.zkw .achip { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600; padding:8px 12px; border-radius:8px; cursor:pointer; white-space:nowrap; color:var(--ink-dim); border:1px solid var(--rule-2); }
+.zkw .achip-ic { display:inline-flex; align-items:center; }
+.zkw .achip-ic .svg-icon { width:14px; height:14px; stroke-width:1.75; }
 .zkw .achip:hover { color:var(--ink); border-color:var(--rule-3); }
 .zkw .achip.cta { color:#d8c9ff; background:rgba(139,109,240,0.18); border-color:var(--violet); }
 .zkw .project-refs-head { margin-top:22px; }

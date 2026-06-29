@@ -198,7 +198,9 @@ function renderActions(body: HTMLElement, ctx: RenderCtx, p: WSProjectNode): voi
     const addBtn = add.createSpan({ cls: 'achip cta', text: '+ ' + t('ws action add') });
     addBtn.onclick = () => openTaskModal(ctx, p, file, { mode: 'new' });
     if (file instanceof TFile) {
-        const open = add.createSpan({ cls: 'achip', text: '🗒 ' + t('ws action open note') });
+        const open = add.createSpan({ cls: 'achip' });
+        setIcon(open.createSpan({ cls: 'achip-ic' }), 'file-text');
+        open.createSpan({ text: t('ws action open note') });
         open.onclick = (e) => ctx.openFile(file, e.ctrlKey || e.metaKey);
     }
 
