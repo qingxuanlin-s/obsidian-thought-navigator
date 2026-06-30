@@ -29,7 +29,7 @@ import {
     measureTextWidthCanvas,
 } from './renderPipeline';
 import { renderEmbedNodePreviews, renderImageNodePreviews } from './embedPreview';
-import { renderNodeBadges } from './nodeBadges';
+import { renderNodeBadges, type BadgeUpdater } from './nodeBadges';
 import { DomTextMeasurer } from './domTextMeasurer';
 import {
     bindEvents as event_bindEvents,
@@ -197,6 +197,28 @@ export class CytoscapeRenderer implements IGraphRenderer {
     // 门控/懒建仅对大图启用(见 nodeBadges LARGE_GRAPH_OVERLAY_THRESHOLD);小图走原 eager 路径,
     // 避免给本不慢的普通 MOC 引入低 zoom 回退、懒建闪烁、边控制点时序错位等行为变化。
     _overlayGateActive = false;
+    // 常驻 badge 定位 updater 主列表 + 主 updater 引用。全量渲染替换整张表并重新注册唯一主 updater;
+    // 增量新增只把新节点的 updater 追加进来,复用已注册的主 updater——避免每次增量都往调度器追加
+    // 一个新闭包却不清理旧的(#43 早期实现会无界累积,跨 zoom 门限那帧成本被乘以累积次数)。
+    _masterBadgeUpdaters: BadgeUpdater[] = [];
+    _badgePositionUpdater: (() => void) | null = null;
+    // 单帧 renderedBoundingBox 记忆缓存:同一节点在一帧内会被多个 badge updater(R 点/备注/跨域/
+    // resize/toggle/文本 overlay…)各自请求一次 bbox,而 renderedBoundingBox 是较贵的调用。主 updater
+    // 在每帧循环开头清空,各 updater 改走 cachedRenderedBB → 每节点每种 opts 一帧只算一次。
+    _bbFrameCache: Map<string, cytoscape.BoundingBox12 & cytoscape.BoundingBoxWH> = new Map();
+
+    // 单帧内记忆 node.renderedBoundingBox。key='shape' 取纯形状盒(includeLabels/Overlays:false),
+    // key='full' 取默认盒。仅供主 badge updater 循环内调用(循环开头会 clear 缓存)。
+    cachedRenderedBB(node: cytoscape.NodeSingular, key: 'full' | 'shape'): cytoscape.BoundingBox12 & cytoscape.BoundingBoxWH {
+        const ck = `${node.id()}|${key}`;
+        const cached = this._bbFrameCache.get(ck);
+        if (cached) return cached;
+        const bb = key === 'shape'
+            ? node.renderedBoundingBox({ includeLabels: false, includeOverlays: false })
+            : node.renderedBoundingBox();
+        this._bbFrameCache.set(ck, bb);
+        return bb;
+    }
     // 分帧懒建会在 refreshDirectionalEdgeCurves 之后才改节点尺寸,导致这些节点的边控制点按旧尺寸
     // 算出后端点失效被丢。记录本轮懒建过的节点,drain 排空后只为它们的边重算控制点。
     _pendingEdgeRefreshNodeIds: Set<string> = new Set();

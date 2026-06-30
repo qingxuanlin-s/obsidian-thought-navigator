@@ -14,7 +14,7 @@ export const TEXT_MD_OVERLAY_RENDER_VERSION = 3;
 
 // overlay 定位 updater + 其所属 Cytoscape 节点(用于视口剔除)。
 // node 为 null 表示该 updater 不绑定单一节点(始终执行,不参与剔除)。
-type BadgeUpdater = { node: cytoscape.NodeSingular | null; fn: () => void };
+export type BadgeUpdater = { node: cytoscape.NodeSingular | null; fn: () => void };
 
 // 交互(pan/zoom/drag)期视口剔除的安全外扩边距(rendered px):
 // 节点中心在 [视口 - M, 视口 + M] 外才剔除,覆盖节点自身尺寸 + 单帧快速 pan 的位移,
@@ -301,7 +301,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                     glassEl.setCssStyles({ display: 'none' });
                     return;
                 }
-                const bb = groupNode.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
+                const bb = this.cachedRenderedBB(groupNode, 'shape');
                 if (!bb || bb.w <= 0 || bb.h <= 0) {
                     glassEl.setCssStyles({ display: 'none' });
                     return;
@@ -638,7 +638,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                 }
 
                 const zoom = this.cy.zoom();
-                const box = node.renderedBoundingBox();
+                const box = this.cachedRenderedBB(node, 'full');
 
                 underlineGroupEl.setCssStyles({ display: 'block' });
 
@@ -833,10 +833,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                 const zoom = this.cy.zoom();
                 // 文本节点的 Canvas label 会被 markdown overlay 替换（text-opacity:0），
                 // 但仍会撑大默认 boundingBox。排除 labels 后位置才贴合实际可视卡片。
-                const bbOpts = node.data('hasMarkdownOverlay')
-                    ? { includeLabels: false, includeOverlays: false }
-                    : undefined;
-                const boundingBox = bbOpts ? node.renderedBoundingBox(bbOpts) : node.renderedBoundingBox();
+                const boundingBox = this.cachedRenderedBB(node, node.data('hasMarkdownOverlay') ? 'shape' : 'full');
                 const size = 28 * zoom;
 
                 let x: number, y: number;
@@ -973,7 +970,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
 
                 starEl.setCssStyles({ display: 'flex' });
                 const zoom = this.cy.zoom();
-                const bb = node.renderedBoundingBox();
+                const bb = this.cachedRenderedBB(node, 'full');
                 const badgeSize = Math.max(MIN_ANCHOR_PX, 26 * zoom);
                 const fontSize = Math.max(14, badgeSize * 0.62);
                 const borderWidth = Math.max(1, badgeSize * 0.045);
@@ -1036,7 +1033,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
 
                 draftEl.setCssStyles({ display: 'flex' });
                 const zoom = this.cy.zoom();
-                const bb = node.renderedBoundingBox();
+                const bb = this.cachedRenderedBB(node, 'full');
                 const badgeSize = Math.max(MIN_DRAFT_PX, 22 * zoom);
                 const fontSize = Math.max(9, badgeSize * 0.5);
                 draftEl.setCssStyles({
@@ -1287,7 +1284,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
 
                 cdEl.setCssStyles({ display: 'flex' });
                 const zoom = this.cy.zoom();
-                const bb = node.renderedBoundingBox();
+                const bb = this.cachedRenderedBB(node, 'full');
                 const badgeSize = Math.max(MIN_CD_PX, 22 * zoom);
                 const fontSize = Math.max(10, badgeSize * 0.5);
                 cdEl.setCssStyles({
@@ -1453,7 +1450,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                 badgeEl.setCssStyles({ display: '' });
 
                 const zoom = this.cy.zoom();
-                const boundingBox = node.renderedBoundingBox();
+                const boundingBox = this.cachedRenderedBB(node, 'full');
 
                 // 徽章位置：节点右下角内侧
                 const x = boundingBox.x2 - 8 * zoom;
@@ -1603,7 +1600,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                     const zoom = this.cy.zoom();
                     // 文本节点 Canvas label 透明但仍参与默认 boundingBox 计算，
                     // 大段文本会让句柄飘到节点下方很远 — 用纯形状 box 修正
-                    const bb = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
+                    const bb = this.cachedRenderedBB(node, 'shape');
                     const size = Math.max(14, 18 * zoom);
                     resizeEl.setCssStyles({
                         width: `${size}px`,
@@ -1704,7 +1701,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                         pointerEvents: 'auto',
                     });
                     const zoom = this.cy.zoom();
-                    const bb = node.renderedBoundingBox();
+                    const bb = this.cachedRenderedBB(node, 'full');
                     const size = Math.max(20, 24 * zoom);
                     toggleEl.setCssStyles({
                         width: `${size}px`,
@@ -1734,61 +1731,83 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
         buildTextMarkdownOverlays.call(this, badgeContainer, badgeUpdaters, incIds);
         __bLap('textMD');
 
-        // 注册到统一 overlay 调度器。增量模式下 badgeUpdaters 只含新节点的 updater,
-        // 这里追加一个新的 badgePositionUpdater(不清理旧的),旧节点的 updater 仍在调度器中,
-        // pan/zoom 时新旧并集都会被更新。
-        const culledOverlayNodeIds = new Set<string>();
-        const badgePositionUpdater = () => {
-            if (!this.cy) return;
-            const zoom = this.cy.zoom();
-            // 低 zoom 门控:跨越门限时做一次性的容器显隐 + 文本节点原生 label 切换。
-            // 仅大图启用;小图永不门控(belowGate 恒 false),容器常显、不切原生 label。
-            const belowGate = this._overlayGateActive && zoom < OVERLAY_ZOOM_GATE;
-            if (belowGate !== this._overlayBelowGate) {
-                this._overlayBelowGate = belowGate;
-                badgeContainer.setCssStyles({ display: belowGate ? 'none' : 'block' });
-                glassLayer.setCssStyles({ display: belowGate ? 'none' : 'block' });
-                if (belowGate) {
-                    // 回退原生 canvas label:清掉 hasMarkdownOverlay,让 text-opacity 恢复可见。
-                    // 一次性 batch,避免逐节点 data 写入触发多次样式重算。
-                    this.cy.batch(() => {
-                        this.cy?.nodes('[?isTextOnly][?hasMarkdownOverlay]').forEach(
-                            (n: cytoscape.NodeSingular) => { n.data('hasMarkdownOverlay', false); }
-                        );
-                    });
-                }
-            }
-            // 低 zoom:overlay 整体隐藏,跳过全部 updater(含文本 MD 懒渲染),原生 label 承载显示。
-            if (belowGate) return;
-            // zoom 足够大:按 node.position()(模型坐标,廉价,不触发 renderedBoundingBox)换算到
-            // rendered 坐标剔除视口外节点 overlay。idle 与交互帧统一剔除——视口外 overlay 不可见,
-            // 无需精确定位,也避免空闲全量 O(N) 重定位(此前 schedulerImmediate 卡顿主因)。
-            const pan = this.cy.pan();
-            const W = this.container?.clientWidth ?? 0;
-            const H = this.container?.clientHeight ?? 0;
-            const M = OVERLAY_CULL_MARGIN;
-            for (const u of badgeUpdaters) {
-                if (u.node && !u.node.removed()) {
-                    const nodeId = u.node.id();
-                    const p = u.node.position();
-                    const rx = p.x * zoom + pan.x;
-                    const ry = p.y * zoom + pan.y;
-                    if (rx < -M || rx > W + M || ry < -M || ry > H + M) {
-                        if (!culledOverlayNodeIds.has(nodeId)) {
-                            hideCulledNodeOverlays(badgeContainer, nodeId);
-                            culledOverlayNodeIds.add(nodeId);
-                        }
-                        continue;
+        // 注册到统一 overlay 调度器。主 updater 遍历常驻的 this._masterBadgeUpdaters(并集),
+        // 全量渲染替换整张表并重新注册唯一主 updater;增量新增只把新节点的 updater 追加进表、复用
+        // 已注册的主 updater——避免每次增量都追加新闭包却不清理旧的(会无界累积,跨 zoom 门限那帧
+        // 的全表 batch 成本被乘以累积次数)。badgeContainer/glassLayer 随每次全量渲染重建,故主
+        // updater 闭包按那一轮的容器构建;增量复用上一轮全量建的容器,与已注册主 updater 一致。
+        const buildMasterUpdater = (badgeContainerRef: HTMLElement, glassLayerRef: HTMLElement): (() => void) => {
+            const culledOverlayNodeIds = new Set<string>();
+            return () => {
+                if (!this.cy) return;
+                // 单帧 renderedBoundingBox 记忆缓存:本帧开始清空,循环内各 badge updater 经
+                // this.cachedRenderedBB 复用,使同一节点每种 opts 一帧只算一次 bbox。
+                this._bbFrameCache.clear();
+                const zoom = this.cy.zoom();
+                // 低 zoom 门控:跨越门限时做一次性的容器显隐 + 文本节点原生 label 切换。
+                // 仅大图启用;小图永不门控(belowGate 恒 false),容器常显、不切原生 label。
+                const belowGate = this._overlayGateActive && zoom < OVERLAY_ZOOM_GATE;
+                if (belowGate !== this._overlayBelowGate) {
+                    this._overlayBelowGate = belowGate;
+                    badgeContainerRef.setCssStyles({ display: belowGate ? 'none' : 'block' });
+                    glassLayerRef.setCssStyles({ display: belowGate ? 'none' : 'block' });
+                    if (belowGate) {
+                        // 回退原生 canvas label:清掉 hasMarkdownOverlay,让 text-opacity 恢复可见。
+                        // 一次性 batch,避免逐节点 data 写入触发多次样式重算。
+                        this.cy.batch(() => {
+                            this.cy?.nodes('[?isTextOnly][?hasMarkdownOverlay]').forEach(
+                                (n: cytoscape.NodeSingular) => { n.data('hasMarkdownOverlay', false); }
+                            );
+                        });
                     }
-                    culledOverlayNodeIds.delete(nodeId);
                 }
-                u.fn();
-            }
+                // 低 zoom:overlay 整体隐藏,跳过全部 updater(含文本 MD 懒渲染),原生 label 承载显示。
+                if (belowGate) return;
+                // zoom 足够大:按 node.position()(模型坐标,廉价,不触发 renderedBoundingBox)换算到
+                // rendered 坐标剔除视口外节点 overlay。idle 与交互帧统一剔除——视口外 overlay 不可见,
+                // 无需精确定位,也避免空闲全量 O(N) 重定位(此前 schedulerImmediate 卡顿主因)。
+                const pan = this.cy.pan();
+                const W = this.container?.clientWidth ?? 0;
+                const H = this.container?.clientHeight ?? 0;
+                const M = OVERLAY_CULL_MARGIN;
+                for (const u of this._masterBadgeUpdaters) {
+                    if (u.node && !u.node.removed()) {
+                        const nodeId = u.node.id();
+                        const p = u.node.position();
+                        const rx = p.x * zoom + pan.x;
+                        const ry = p.y * zoom + pan.y;
+                        if (rx < -M || rx > W + M || ry < -M || ry > H + M) {
+                            if (!culledOverlayNodeIds.has(nodeId)) {
+                                hideCulledNodeOverlays(badgeContainerRef, nodeId);
+                                culledOverlayNodeIds.add(nodeId);
+                            }
+                            continue;
+                        }
+                        culledOverlayNodeIds.delete(nodeId);
+                    }
+                    u.fn();
+                }
+            };
         };
-        this.overlayScheduler.updaters.add(badgePositionUpdater);
-        this.overlayScheduler.immediateUpdaters.add(badgePositionUpdater);
-        this.overlayScheduler.extraUpdaters.add(badgePositionUpdater);
-        this.overlayScheduler.selectionUpdaters.add(badgePositionUpdater);
+        const registerMasterUpdater = (fn: () => void) => {
+            this._badgePositionUpdater = fn;
+            this.overlayScheduler.updaters.add(fn);
+            this.overlayScheduler.immediateUpdaters.add(fn);
+            this.overlayScheduler.extraUpdaters.add(fn);
+            this.overlayScheduler.selectionUpdaters.add(fn);
+        };
+        if (incIds) {
+            // 增量:把新节点 updater 追加进常驻主列表,复用已注册主 updater。
+            // 极端兜底:若主 updater 缺失(理论上增量前必有一次全量),补建一个。
+            this._masterBadgeUpdaters.push(...badgeUpdaters);
+            if (!this._badgePositionUpdater) {
+                registerMasterUpdater(buildMasterUpdater(badgeContainer, glassLayer));
+            }
+        } else {
+            // 全量:cleanupScheduler 已清空调度器,替换主列表并注册唯一主 updater。
+            this._masterBadgeUpdaters = badgeUpdaters;
+            registerMasterUpdater(buildMasterUpdater(badgeContainer, glassLayer));
+        }
 
         if (incIds) {
             // 增量模式:默认只定位本次新增节点的 overlay。边控制点/端点(选中时惰性创建,select 处理器
@@ -1798,10 +1817,10 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                 // immediate() 跑一遍全部已注册 updater 重定位全图(成本=一帧 pan,远低于重建 N 个 DOM)。
                 this.overlayScheduler.immediate();
             } else {
-                // 经 badgePositionUpdater 走门控+视口剔除:低 zoom 跳过(新节点回退原生 label),
+                // 经主 updater 走门控+视口剔除:低 zoom 跳过(新节点回退原生 label),
                 // 高 zoom 仅为视口内的新节点懒建 overlay。直接 forEach 会绕过门控、在 fit-all 下
                 // 把新节点置成"既无 overlay 又被隐藏原生 label"的空白态。
-                badgePositionUpdater();
+                this._badgePositionUpdater?.();
             }
             // 连线手柄(hover 小蓝点)是逐节点绑定的,新节点必须重建才有手柄。addConnectionHandles
             // 已做自幂等(注销旧 updater + 解绑旧逐节点监听),可独立调用而不累积、不影响边 select 处理器。
@@ -2457,7 +2476,7 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                 }
                 // 使用 includeLabels:false 获取纯形状边界，避免不可见标签
                 // （text-opacity:0）撑大 boundingBox 导致 overlay 宽于节点形状
-                const bb = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
+                const bb = this.cachedRenderedBB(node, 'shape');
                 if (!bb || bb.w <= 0) {
                     currentEntry.el.setCssStyles({ display: 'none' });
                     return;
