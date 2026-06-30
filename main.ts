@@ -840,7 +840,7 @@ export default class ZKNavigationPlugin extends Plugin {
 
         this.addCommand({
             id: "zk-global-search",
-            name: "Search everything",
+            name: t("gs search everything"),
             callback: async () => {
                 const view = await this.getOrOpenIndexView();
                 view?.openGlobalSearchModal();

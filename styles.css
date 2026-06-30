@@ -4052,6 +4052,58 @@ align-items: center;
   white-space: nowrap;
 }
 
+.zk-global-search-scopebar {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px 0;
+}
+
+.zk-gs-scope-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.zk-gs-scope-chip:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.zk-gs-scope-chip.zk-gs-scope-active {
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+}
+
+.zk-gs-scope-icon,
+.zk-gs-scope-close {
+  display: inline-flex;
+  align-items: center;
+}
+
+.zk-gs-scope-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.zk-gs-scope-close svg {
+  width: 13px;
+  height: 13px;
+  opacity: 0.8;
+}
+
+.zk-gs-scope-close:hover svg {
+  opacity: 1;
+}
+
 /* ==================== 边端点手柄 ==================== */
 .zk-edge-endpoint-handle {
   position: absolute;

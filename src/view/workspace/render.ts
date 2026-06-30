@@ -51,19 +51,97 @@ export function nextActionText(ctx: RenderCtx, p: WSProjectNode): string | null 
     return p.nextAction || null;
 }
 
-/** 把含 `[[wikilink]]` 的任务正文渲染成可点链接 + 纯文本 */
-export function renderTaskText(parent: HTMLElement, ctx: RenderCtx, text: string): void {
-    const re = /\[\[([^\]]+)\]\]/g;
-    let last = 0; let m: RegExpExecArray | null;
-    while ((m = re.exec(text)) !== null) {
-        if (m.index > last) parent.appendText(text.slice(last, m.index));
-        const target = m[1].split('|')[0].trim();
-        const shown = (m[1].includes('|') ? m[1].split('|')[1] : m[1]).trim();
-        const link = parent.createSpan({ cls: 'ws-tasklink', text: shown });
-        link.onclick = (e) => { e.stopPropagation(); ctx.openLink(target, '', e.ctrlKey || e.metaKey); };
-        last = m.index + m[0].length;
+type TaskTextToken =
+    | { kind: 'wiki'; raw: string; target: string; label: string }
+    | { kind: 'url'; raw: string; href: string; label: string };
+
+const WIKI_LINK_RE = /\[\[([^\]]+)\]\]/g;
+const MARKDOWN_LINK_RE = /\[([^\]\n]+)\]\(((?:https?:\/\/|obsidian:\/\/|mailto:)[^\s)]+)\)/gi;
+const URL_RE = /\b(?:https?:\/\/|obsidian:\/\/|mailto:)[^\s<>"')\]]+/gi;
+const TRAILING_URL_PUNCT_RE = /[.,;:!?]+$/;
+
+function trimUrlToken(raw: string): { href: string; trailing: string } {
+    let href = raw;
+    let trailing = '';
+    while (href.length > 0) {
+        const last = href[href.length - 1];
+        if (TRAILING_URL_PUNCT_RE.test(last)) {
+            trailing = last + trailing;
+            href = href.slice(0, -1);
+            continue;
+        }
+        if (last === ')' && (href.match(/\(/g)?.length ?? 0) < (href.match(/\)/g)?.length ?? 0)) {
+            trailing = last + trailing;
+            href = href.slice(0, -1);
+            continue;
+        }
+        break;
     }
-    if (last < text.length) parent.appendText(text.slice(last));
+    return { href, trailing };
+}
+
+function nextTaskTextToken(text: string, start: number): TaskTextToken | null {
+    WIKI_LINK_RE.lastIndex = start;
+    MARKDOWN_LINK_RE.lastIndex = start;
+    URL_RE.lastIndex = start;
+
+    const wm = WIKI_LINK_RE.exec(text);
+    const mm = MARKDOWN_LINK_RE.exec(text);
+    const um = URL_RE.exec(text);
+    let bestIndex = Number.POSITIVE_INFINITY;
+    let bestToken: TaskTextToken | null = null;
+
+    if (wm) {
+        const parts = wm[1].split('|');
+        const target = (parts[0] || '').trim();
+        const label = (parts[1] || target).trim();
+        bestIndex = wm.index;
+        bestToken = { kind: 'wiki', raw: wm[0], target, label: label || target };
+    }
+    if (mm && mm.index < bestIndex) {
+        bestIndex = mm.index;
+        bestToken = { kind: 'url', raw: mm[0], href: mm[2], label: mm[1].trim() || mm[2] };
+    }
+    if (um && um.index < bestIndex) {
+        const { href, trailing } = trimUrlToken(um[0]);
+        bestToken = { kind: 'url', raw: href, href, label: href };
+        if (trailing) {
+            // Keep punctuation outside the clickable span.
+            URL_RE.lastIndex -= trailing.length;
+        }
+    }
+    return bestToken;
+}
+
+/** 把含 `[[wikilink]]` / URL 的任务正文渲染成可点链接 + 纯文本 */
+export function renderTaskText(parent: HTMLElement, ctx: RenderCtx, text: string): void {
+    let pos = 0;
+    while (pos < text.length) {
+        const token = nextTaskTextToken(text, pos);
+        if (!token) break;
+        const index = text.indexOf(token.raw, pos);
+        if (index < 0) break;
+        if (index > pos) parent.appendText(text.slice(pos, index));
+        const link = parent.createSpan({
+            cls: 'ws-tasklink',
+            text: token.label,
+        });
+        if (token.kind === 'wiki') {
+            link.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (token.target) ctx.openLink(token.target, '', e.ctrlKey || e.metaKey);
+            };
+        } else {
+            link.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                window.open(token.href, '_blank');
+            };
+        }
+        pos = index + token.raw.length;
+    }
+    if (pos < text.length) parent.appendText(text.slice(pos));
 }
 
 /** 节点类型 → 主题色变量 */

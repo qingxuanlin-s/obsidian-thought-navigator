@@ -4884,14 +4884,31 @@ window.addEventListener('resize', fitGraph);
         }).open();
     }
 
-    openGlobalSearchModal(): void {
+    openGlobalSearchModal(scoped = false): void {
+        const currentPath = this.plugin.settings.mocCurrentFile;
+        const currentFile = currentPath ? this.app.vault.getAbstractFileByPath(currentPath) : null;
+        const currentMoc = currentFile instanceof TFile
+            ? { mocFilePath: currentFile.path, mocFileName: currentFile.basename }
+            : null;
         new GlobalSearchModal(this.app, {
             reverseIndex: this.plugin.mocReverseIndex,
             workspaceStore: this.plugin.workspaceStore,
             navigateToMOCNode: (mocFilePath, nodeId) => this.navigateToMOCNode(mocFilePath, nodeId),
             openWorkspaceTarget: (target) => this.openWorkspaceTarget(target),
             openTask: (filePath, taskRaw) => openTaskAtLine(this.app, filePath, taskRaw),
+            currentMoc,
+            initialScoped: scoped,
+            locateNode: (nodeId) => this.locateNodeInCurrentMOC(nodeId),
         }).open();
+    }
+
+    /** 在当前已渲染的图里原地居中选中节点；无图或无 id 时返回 false 让调用方回退到整图跳转 */
+    locateNodeInCurrentMOC(nodeId: string): boolean {
+        if (!nodeId) return false;
+        const branchGraphDiv = this.currentBranchGraphDiv || activeDocument.getElementById('zk-branch-cytoscape');
+        if (!branchGraphDiv) return false;
+        branchGraphDiv.dispatchEvent(new CustomEvent('select-node-by-id', { detail: { nodeId } }));
+        return true;
     }
 
     async navigateToMOCNode(mocFilePath: string, nodeId: string): Promise<void> {
