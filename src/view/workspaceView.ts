@@ -28,6 +28,7 @@ export class ZKWorkspaceView extends ItemView {
             owner: this,
             projectFolderPath: this.plugin.settings.projectFolderPath,
             taskPrefix: this.plugin.settings.wsTaskPrefix,
+            taskPrefixAuto: this.plugin.settings.wsTaskPrefixAuto !== false,
             taskFileTag: this.plugin.settings.wsTaskFileTag,
         });
     }

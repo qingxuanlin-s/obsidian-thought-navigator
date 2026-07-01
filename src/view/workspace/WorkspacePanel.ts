@@ -24,6 +24,8 @@ export interface WorkspacePanelDeps {
     projectFolderPath: string;
     /** 新建任务/子任务自动前缀字符(如 "🎯 ") */
     taskPrefix: string;
+    /** 是否在新建/编辑任务时自动补任务前缀 */
+    taskPrefixAuto: boolean;
     /** 新建项目背书笔记时自动写入的 tag */
     taskFileTag: string;
     /** 打开一个带图谱的 MOC/map 节点时,交给宿主(indexView)切到图谱模式并加载文件。
@@ -67,6 +69,7 @@ export class WorkspacePanel {
     private unsub: (() => void) | null = null;
     private taskStore: ProjectTaskStore;
     private modifyRef: EventRef | null = null;
+    private taskSettingsListener: EventListener | null = null;
     private readonly MAX_NAV_HISTORY = 50;
 
     constructor(parent: HTMLElement, deps: WorkspacePanelDeps) {
@@ -83,6 +86,7 @@ export class WorkspacePanel {
             tasks: this.taskStore,
             projectFolderPath: deps.projectFolderPath,
             taskPrefix: deps.taskPrefix,
+            taskPrefixAuto: deps.taskPrefixAuto,
             taskFileTag: deps.taskFileTag,
             open: (t) => this.navigate(t),
             openInline: (t) => this.navigateInline(t),
@@ -98,6 +102,13 @@ export class WorkspacePanel {
             requestDelete: (n) => this.requestDelete(n),
             refresh: () => this.refresh(),
         };
+        const taskSettingsListener: EventListener = (event: Event) => {
+            const detail = (event as CustomEvent<Pick<WorkspacePanelDeps, 'projectFolderPath' | 'taskPrefix' | 'taskPrefixAuto' | 'taskFileTag'>>).detail;
+            if (!detail) return;
+            this.updateTaskSettings(detail);
+        };
+        this.taskSettingsListener = taskSettingsListener;
+        window.addEventListener('zkw-workspace-task-settings-change', taskSettingsListener);
 
         // 项目背书笔记被外部(用户编辑 / Tasks 插件勾选)改动 → 失效缓存并重渲染。
         // 自写已经 setFromContent 同步过缓存(isCurrent),跳过以免重复刷新导致闪烁。
@@ -159,6 +170,10 @@ export class WorkspacePanel {
         this.unsub?.();
         this.unsub = null;
         if (this.modifyRef) { this.deps.app.vault.offref(this.modifyRef); this.modifyRef = null; }
+        if (this.taskSettingsListener) {
+            window.removeEventListener('zkw-workspace-task-settings-change', this.taskSettingsListener);
+            this.taskSettingsListener = null;
+        }
         this.taskStore.dispose();
         this.root.remove();
     }
@@ -167,6 +182,15 @@ export class WorkspacePanel {
 
     /** 供宿主在切到工作区模式时刷新一次 */
     refresh() { if (this.tree) { this.renderCenter(); this.tree.render(); } }
+
+    updateTaskSettings(settings: Pick<WorkspacePanelDeps, 'projectFolderPath' | 'taskPrefix' | 'taskPrefixAuto' | 'taskFileTag'>): void {
+        this.deps = { ...this.deps, ...settings };
+        this.ctx.projectFolderPath = settings.projectFolderPath;
+        this.ctx.taskPrefix = settings.taskPrefix;
+        this.ctx.taskPrefixAuto = settings.taskPrefixAuto;
+        this.ctx.taskFileTag = settings.taskFileTag;
+        this.refresh();
+    }
 
     // ---------- Toolbar ----------
     private buildToolbar(shell: HTMLElement) {

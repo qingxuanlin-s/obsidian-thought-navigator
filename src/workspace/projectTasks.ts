@@ -155,6 +155,28 @@ export function setTaskText(content: string, raw: string, newText: string): stri
     return content.replace(raw, () => retextLine(raw, newText));
 }
 
+export function taskHasPrefix(text: string, prefix: string): boolean {
+    const p = prefix.trim();
+    return !p || text.trimStart().startsWith(p);
+}
+
+/** 切换任务正文开头的当前前缀:已有则移除,没有则添加 */
+export function toggleTaskPrefix(content: string, raw: string, prefix: string): string {
+    const p = prefix.trim();
+    if (!p) return content;
+    return content.replace(raw, () => {
+        const m = TASK_RE.exec(raw);
+        if (!m) return raw;
+        const text = m[3];
+        const leading = /^\s*/.exec(text)?.[0] ?? '';
+        const rest = text.slice(leading.length);
+        const nextText = rest.startsWith(p)
+            ? rest.slice(p.length).trimStart()
+            : `${prefix}${rest}`;
+        return `${m[1]}[${m[2]}] ${nextText}`;
+    });
+}
+
 /** 删除任务及其整棵子树(含备注行) */
 export function removeTask(content: string, task: MdTask): string {
     const eol = eolOf(content);
@@ -295,6 +317,27 @@ export function moveTask(content: string, task: MdTask, target: MdTask, pos: 'be
     if (ti < 0) return content; // target 在被移动子树内,放弃
     if (pos === 'after') ti = subtreeEnd(lines, ti, indentWidth(target.raw));
     lines.splice(ti, 0, ...block);
+    return lines.join(eol);
+}
+
+/**
+ * 把 task 的整棵子树移动到 target 子树末尾,并把 task 根缩进为 target 的直接子任务。
+ * 若 target 位于 task 自身子树内,删除移动块后将找不到锚点,安全放弃。
+ */
+export function moveTaskInto(content: string, task: MdTask, target: MdTask): string {
+    if (task.raw === target.raw) return content;
+    const eol = eolOf(content);
+    const lines = content.split(/\r?\n/);
+    const from = lineIndexOf(lines, task.raw);
+    if (from < 0) return content;
+    const fromEnd = subtreeEnd(lines, from, indentWidth(task.raw));
+    const targetChildIndent = indentWidth(target.raw) + indentWidth(INDENT_UNIT);
+    const block = reindentBlock(lines.slice(from, fromEnd), targetChildIndent - indentWidth(task.raw));
+    lines.splice(from, fromEnd - from);
+    const ti = lineIndexOf(lines, target.raw);
+    if (ti < 0) return content;
+    const insertAt = subtreeEnd(lines, ti, indentWidth(target.raw));
+    lines.splice(insertAt, 0, ...block);
     return lines.join(eol);
 }
 

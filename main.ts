@@ -234,7 +234,8 @@ interface ZKNavigationSettings {
     mocModeEnabled: boolean;           // 是否启用 MOC 模式
     mocFolderPath: string;             // MOC 索引笔记所在文件夹
     projectFolderPath: string;         // 工作区项目背书笔记(next action 任务)所在文件夹
-    wsTaskPrefix: string;              // 新建任务/子任务自动插在 `[ ]` 后的前缀字符(如 "🎯 ")
+    wsTaskPrefix: string;              // 任务前缀字符(如 "🎯 ")
+    wsTaskPrefixAuto: boolean;         // 是否在新建/编辑任务时自动补任务前缀
     wsTaskFileTag: string;             // 新建项目背书笔记时自动写入的 tag,空则不加
     mocHeadingTitle: string;           // 要解析的一级标题名称，如 "思维树"
     mocCurrentFile: string;            // 当前选中的 MOC 文件路径
@@ -325,6 +326,7 @@ const DEFAULT_SETTINGS: ZKNavigationSettings = {
     mocFolderPath: '/',
     projectFolderPath: 'config/workspace',
     wsTaskPrefix: '',
+    wsTaskPrefixAuto: true,
     wsTaskFileTag: '',
     mocHeadingTitle: t('default MOC heading title'),
     mocCurrentFile: '',
