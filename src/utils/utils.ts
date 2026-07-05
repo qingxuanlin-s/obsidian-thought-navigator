@@ -217,11 +217,13 @@ export async function convertMOCToZKNodes(
     const nodes: ZKNode[] = [];
     let position = 0;
 
-    const processNode = async (
+    // 同步递归:节点构建已无任何真正的异步工作(file 在 parse 阶段已解析好),
+    // 早期版本的 async/await 只会为每个节点白白分配一个 Promise + 排一次微任务。
+    const processNode = (
         mocNode: MOCTreeNode,
         currentIDArr: string[],
         index: number
-    ): Promise<void> => {
+    ): void => {
         // 构建 ID 数组
         const nodeIDArr = [...currentIDArr];
 
@@ -240,7 +242,7 @@ export async function convertMOCToZKNodes(
         if (!mocNode.file && !isTextOnly) {
             // 既没有文件也不是纯文字节点，跳过但递归处理子节点
             for (let i = 0; i < mocNode.children.length; i++) {
-                await processNode(mocNode.children[i], nodeIDArr, i);
+                processNode(mocNode.children[i], nodeIDArr, i);
             }
             return;
         }
@@ -283,18 +285,23 @@ export async function convertMOCToZKNodes(
 
         // 递归处理子节点
         for (let i = 0; i < mocNode.children.length; i++) {
-            await processNode(mocNode.children[i], nodeIDArr, i);
+            processNode(mocNode.children[i], nodeIDArr, i);
         }
     };
 
     // 处理所有根节点
     for (let i = 0; i < mocTrees.length; i++) {
-        await processNode(mocTrees[i], parentIDArr, i);
+        processNode(mocTrees[i], parentIDArr, i);
     }
 
 
     // 重新计算 position 和 isRoot
     nodes.sort((a, b) => a.IDStr.localeCompare(b.IDStr));
+    // 一次性建 IDStr 索引,把"找父节点是否存在"从逐节点线性扫全表(O(N²))降到 O(1) 查表。
+    const idStrSet = new Set<string>();
+    for (let i = 0; i < nodes.length; i++) {
+        if (nodes[i].IDStr) idStrSet.add(nodes[i].IDStr);
+    }
     for (let i = 0; i < nodes.length; i++) {
         nodes[i].position = i;
         // 检查是否有父节点 - 基于节点ID的层级关系
@@ -307,8 +314,7 @@ export async function convertMOCToZKNodes(
                 nodes[i].isRoot = true;
             } else {
                 const parentId = idParts.slice(0, -1).join('.');
-                const hasParent = nodes.find(n => n.IDStr === parentId);
-                nodes[i].isRoot = !hasParent;
+                nodes[i].isRoot = !idStrSet.has(parentId);
             }
         } else {
             nodes[i].isRoot = parentIDArr.length === 0;

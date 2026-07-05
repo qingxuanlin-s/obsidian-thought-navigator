@@ -5,9 +5,15 @@ import { App, TFile } from "obsidian";
  * 追踪交给 Tasks/Dataview 等插件——本模块只认勾选态,行内日期/优先级/标签/链接原样透传。
  *
  * 父子任务用缩进层级表达(`1111` 的子任务 `1111-1` 缩进一级);
- * 任务备注用缩进一级的 `--- 内容` 行挂在任务下方。
+ * 任务备注用缩进一级的一条或多条 `--- 内容` 行挂在任务下方。
  * 任务引用资料用缩进一级的 `refs:: [[...]] [[...]]` 行挂在任务下方。
  */
+
+export interface MdTaskNote {
+    text: string;
+    raw: string;
+    createdAt?: string;
+}
 
 export interface MdTask {
     checked: boolean;
@@ -15,8 +21,10 @@ export interface MdTask {
     raw: string;        // 整行原文(用于精确回写)
     indent: string;     // 行首缩进空白(用于派生子任务/备注缩进)
     depth: number;      // 嵌套层级(0 为顶层),按缩进栈推导
-    note?: string;      // 任务备注正文(--- 之后的内容),无则缺省
-    noteRaw?: string;   // 备注整行原文(用于改写/删除)
+    notes?: MdTaskNote[]; // 任务备注列表
+    note?: string;      // 首条任务备注正文(兼容旧调用),无则缺省
+    noteRaw?: string;   // 首条备注整行原文(兼容旧调用)
+    noteCreatedAt?: string; // 首条备注新增时间(兼容旧调用)
     refs?: string[];    // 任务引用资料的 wikilink linktext
     refsRaw?: string;   // refs:: 整行原文(用于改写/删除)
 }
@@ -27,6 +35,7 @@ const INDENT_UNIT = '    ';
 const TASK_RE = /^(\s*[-*]\s+)\[([ xX])\]\s?(.*)$/;
 /** 缩进的备注行:`    --- 内容`(要求有前导空白,避开 frontmatter/正文分隔线) */
 const NOTE_RE = /^(\s+)---\s?(.*)$/;
+const NOTE_CREATED_RE = /\s*<!--\s*zkw-note-created:\s*([^>]+?)\s*-->\s*$/;
 /** 缩进的引用资料行:`    refs:: [[A]] [[B]]` */
 const REFS_RE = /^(\s+)refs::\s?(.*)$/i;
 const WIKILINK_RE = /\[\[([^\]]+)\]\]/g;
@@ -69,6 +78,12 @@ function refsLine(indent: string, refs: string[]): string {
     return `${indent}${INDENT_UNIT}refs:: ${refs.map(r => `[[${r}]]`).join(' ')}`;
 }
 
+function splitNoteCreated(text: string): { note: string; createdAt?: string } {
+    const m = NOTE_CREATED_RE.exec(text);
+    if (!m) return { note: text };
+    return { note: text.slice(0, m.index).trimEnd(), createdAt: m[1].trim() };
+}
+
 export function parseTaskLines(content: string): MdTask[] {
     const out: MdTask[] = [];
     const stack: { w: number; task: MdTask }[] = [];
@@ -91,11 +106,17 @@ export function parseTaskLines(content: string): MdTask[] {
             lastTask = task;
             continue;
         }
-        // 备注行归属最近一个任务(且尚未有备注时取首条)
+        // 备注行归属最近一个任务,允许同一任务下多条备注
         const nm = NOTE_RE.exec(line);
-        if (nm && lastTask && lastTask.note === undefined) {
-            lastTask.note = nm[2];
-            lastTask.noteRaw = line;
+        if (nm && lastTask) {
+            const parsedNote = splitNoteCreated(nm[2]);
+            const note: MdTaskNote = { text: parsedNote.note, raw: line, createdAt: parsedNote.createdAt };
+            (lastTask.notes ??= []).push(note);
+            if (lastTask.note === undefined) {
+                lastTask.note = note.text;
+                lastTask.noteRaw = note.raw;
+                lastTask.noteCreatedAt = note.createdAt;
+            }
             continue;
         }
         const rm = REFS_RE.exec(line);
@@ -155,6 +176,28 @@ export function setTaskText(content: string, raw: string, newText: string): stri
     return content.replace(raw, () => retextLine(raw, newText));
 }
 
+export function taskHasPrefix(text: string, prefix: string): boolean {
+    const p = prefix.trim();
+    return !p || text.trimStart().startsWith(p);
+}
+
+/** 切换任务正文开头的当前前缀:已有则移除,没有则添加 */
+export function toggleTaskPrefix(content: string, raw: string, prefix: string): string {
+    const p = prefix.trim();
+    if (!p) return content;
+    return content.replace(raw, () => {
+        const m = TASK_RE.exec(raw);
+        if (!m) return raw;
+        const text = m[3];
+        const leading = /^\s*/.exec(text)?.[0] ?? '';
+        const rest = text.slice(leading.length);
+        const nextText = rest.startsWith(p)
+            ? rest.slice(p.length).trimStart()
+            : `${prefix}${rest}`;
+        return `${m[1]}[${m[2]}] ${nextText}`;
+    });
+}
+
 /** 删除任务及其整棵子树(含备注行) */
 export function removeTask(content: string, task: MdTask): string {
     const eol = eolOf(content);
@@ -192,7 +235,7 @@ export interface ParsedTask {
     cancelled?: string; done?: string; recurrence?: string;
 }
 
-const DATE = '(\\d{4}-\\d{2}-\\d{2}(?: \\d{2}:\\d{2}(?::\\d{2})?)?)';
+const DATE = '(\\d{4}-\\d{2}-\\d{2}(?: \\d{2}:\\d{2}(?::\\d{2})?)?|\\d{2}:\\d{2}(?::\\d{2})?)';
 const FIELD_RE = {
     created: new RegExp(`➕\\s*${DATE}`),
     start: new RegExp(`🛫\\s*${DATE}`),
@@ -298,34 +341,100 @@ export function moveTask(content: string, task: MdTask, target: MdTask, pos: 'be
     return lines.join(eol);
 }
 
+/**
+ * 把 task 的整棵子树移动到 target 子树末尾,并把 task 根缩进为 target 的直接子任务。
+ * 若 target 位于 task 自身子树内,删除移动块后将找不到锚点,安全放弃。
+ */
+export function moveTaskInto(content: string, task: MdTask, target: MdTask): string {
+    if (task.raw === target.raw) return content;
+    const eol = eolOf(content);
+    const lines = content.split(/\r?\n/);
+    const from = lineIndexOf(lines, task.raw);
+    if (from < 0) return content;
+    const fromEnd = subtreeEnd(lines, from, indentWidth(task.raw));
+    const targetChildIndent = indentWidth(target.raw) + indentWidth(INDENT_UNIT);
+    const block = reindentBlock(lines.slice(from, fromEnd), targetChildIndent - indentWidth(task.raw));
+    lines.splice(from, fromEnd - from);
+    const ti = lineIndexOf(lines, target.raw);
+    if (ti < 0) return content;
+    const insertAt = subtreeEnd(lines, ti, indentWidth(target.raw));
+    lines.splice(insertAt, 0, ...block);
+    return lines.join(eol);
+}
+
 /** 备注换行编解码:单行存储用字面量 `\n`,展示/编辑还原成真实换行 */
 export function encodeNoteNewlines(s: string): string { return s.replace(/\r?\n/g, '\\n'); }
 export function decodeNoteNewlines(s: string): string { return s.replace(/\\n/g, '\n'); }
 
-/** 设置/更新任务备注:已有则改写备注行,否则在任务行下方插入 `--- 内容`(缩进一级)。换行以字面量 `\n` 存储 */
-export function setTaskNote(content: string, task: MdTask, note: string): string {
+function nowLocalDateTime(): string {
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+function taskNoteLine(task: MdTask, note: string, createdAt: string): string {
+    return `${task.indent}${INDENT_UNIT}--- ${encodeNoteNewlines(note)} <!-- zkw-note-created: ${createdAt} -->`;
+}
+
+/** 追加任务备注:插到现有备注最上方。换行以字面量 `\n` 存储 */
+export function addTaskNote(content: string, task: MdTask, note: string): string {
+    if (!note.trim()) return content;
     const eol = eolOf(content);
     const lines = content.split(/\r?\n/);
-    const noteLine = `${task.indent}${INDENT_UNIT}--- ${encodeNoteNewlines(note)}`;
-    if (task.noteRaw) {
-        const ni = lineIndexOf(lines, task.noteRaw);
-        if (ni >= 0) { lines[ni] = noteLine; return lines.join(eol); }
-    }
+    const noteLine = taskNoteLine(task, note, nowLocalDateTime());
     const idx = lineIndexOf(lines, task.raw);
     if (idx < 0) return content;
-    lines.splice(idx + 1, 0, noteLine);
+    const firstNoteIdx = firstTaskNoteIndex(lines, task);
+    lines.splice(firstNoteIdx >= 0 ? firstNoteIdx : idx + 1, 0, noteLine);
     return lines.join(eol);
 }
 
-/** 删除任务备注行 */
-export function removeTaskNote(content: string, task: MdTask): string {
-    if (!task.noteRaw) return content;
+/** 设置/更新任务备注:保留旧 API。已有首条则改写首条,否则追加一条。 */
+export function setTaskNote(content: string, task: MdTask, note: string): string {
+    const firstNote = task.notes?.[0];
+    if (firstNote) return updateTaskNote(content, task, firstNote, note);
+    return addTaskNote(content, task, note);
+}
+
+/** 更新单条任务备注;清空则删除该条。 */
+export function updateTaskNote(content: string, task: MdTask, target: MdTaskNote, note: string): string {
+    if (!note.trim()) return removeTaskNote(content, task, target);
     const eol = eolOf(content);
     const lines = content.split(/\r?\n/);
-    const ni = lineIndexOf(lines, task.noteRaw);
+    const ni = lineIndexOf(lines, target.raw);
     if (ni < 0) return content;
-    lines.splice(ni, 1);
+    lines[ni] = taskNoteLine(task, note, target.createdAt ?? nowLocalDateTime());
     return lines.join(eol);
+}
+
+/** 删除任务备注行。传 target 删除单条;不传则删除该任务下全部备注。 */
+export function removeTaskNote(content: string, task: MdTask, target?: MdTaskNote): string {
+    const notes = target ? [target] : (task.notes ?? []);
+    if (!notes.length) return content;
+    const eol = eolOf(content);
+    const lines = content.split(/\r?\n/);
+    for (let i = notes.length - 1; i >= 0; i--) {
+        const ni = lineIndexOf(lines, notes[i].raw);
+        if (ni >= 0) lines.splice(ni, 1);
+    }
+    return lines.join(eol);
+}
+
+function lastTaskNoteIndex(lines: string[], task: MdTask): number {
+    const notes = task.notes ?? [];
+    for (let i = notes.length - 1; i >= 0; i--) {
+        const ni = lineIndexOf(lines, notes[i].raw);
+        if (ni >= 0) return ni;
+    }
+    return -1;
+}
+
+function firstTaskNoteIndex(lines: string[], task: MdTask): number {
+    for (const note of task.notes ?? []) {
+        const ni = lineIndexOf(lines, note.raw);
+        if (ni >= 0) return ni;
+    }
+    return -1;
 }
 
 /** 设置/更新任务引用资料行;空数组会删除 refs 行 */
@@ -342,8 +451,8 @@ export function setTaskRefs(content: string, task: MdTask, refs: string[]): stri
     }
     const idx = lineIndexOf(lines, task.raw);
     if (idx < 0) return content;
-    const insertAt = task.noteRaw ? lineIndexOf(lines, task.noteRaw) + 1 : idx + 1;
-    lines.splice(Math.max(idx + 1, insertAt), 0, line);
+    const lastNoteIdx = lastTaskNoteIndex(lines, task);
+    lines.splice(Math.max(idx + 1, lastNoteIdx + 1), 0, line);
     return lines.join(eol);
 }
 

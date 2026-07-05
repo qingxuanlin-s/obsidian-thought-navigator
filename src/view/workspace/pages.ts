@@ -1,9 +1,9 @@
 import { App, Component, MarkdownRenderer, Menu, Notice, TFile, setIcon } from "obsidian";
 import { WSMocNode, WSProjectNode, WSNoteNode, WorkspaceNode } from "src/types/workspace";
 import { nextStatus } from "src/workspace/WorkspaceStore";
-import { MdTask, prependTask, toggleTask, removeTask, insertSubtask, setTaskNote, removeTaskNote, setTaskText, taskMetaSuffix, parseTaskText, buildTaskText, moveTask, processFile, addTaskRefs, removeTaskRef, decodeNoteNewlines } from "src/workspace/projectTasks";
+import { MdTask, MdTaskNote, prependTask, toggleTask, removeTask, insertSubtask, addTaskNote, updateTaskNote, removeTaskNote, setTaskText, taskMetaSuffix, parseTaskText, buildTaskText, moveTask, moveTaskInto, processFile, addTaskRefs, removeTaskRef, decodeNoteNewlines, toggleTaskPrefix, taskHasPrefix } from "src/workspace/projectTasks";
 import { FilePickerModal } from "src/modal/filePickerModal";
-import { t } from "src/lang/helper";
+import { t, TKey } from "src/lang/helper";
 import { TaskModal } from "./modals";
 import { RenderCtx, relTime, glyph, statusLabel, STATUS_COLOR, renderCrumb, progressFor, nextActionText, renderTaskText } from "./render";
 
@@ -28,6 +28,14 @@ function heroMenuBtn(titleRow: HTMLElement, ctx: RenderCtx, node: WorkspaceNode)
             .onClick(() => ctx.requestDelete(node)); });
         menu.showAtMouseEvent(e);
     };
+}
+
+/** 页头大标题:有对应文件时点击标题即打开原始文件(Cmd/Ctrl 强制新标签) */
+function heroTitle(parent: HTMLElement, ctx: RenderCtx, title: string, file: TFile | null): void {
+    const h1 = parent.createEl('h1', { cls: 'ck-h1' + (file ? ' clickable' : ''), text: title });
+    if (!file) return;
+    h1.setAttribute('title', t('ws open file'));
+    h1.onclick = (e) => ctx.openFile(file, e.ctrlKey || e.metaKey);
 }
 
 /** 操作按钮(.createbtn),带 lucide 图标 + 文案 */
@@ -110,7 +118,8 @@ export function renderProjectPage(container: HTMLElement, ctx: RenderCtx, p: WSP
     const bigic = titleRow.createDiv({ cls: 'ck-bigic space' });
     glyph(bigic, 'project', STATUS_COLOR[p.status]);
     const col = titleRow.createDiv();
-    col.createEl('h1', { cls: 'ck-h1', text: p.title });
+    const pabs = p.filePath ? ctx.app.vault.getAbstractFileByPath(p.filePath) : null;
+    heroTitle(col, ctx, p.title, pabs instanceof TFile ? pabs : null);
     heroMenuBtn(titleRow, ctx, p);
     const tagRow = col.createDiv({ cls: 'ck-tagrow' });
     const stat = tagRow.createSpan({ cls: `pstat ${p.status} click` });
@@ -226,6 +235,24 @@ const LS_SORT = 'zkw.task.sort';
 function readLS(app: App, k: string): string | null { try { return app.loadLocalStorage(k) as string | null; } catch { return null; } }
 /** 当前正在拖动的任务(仅默认顺序下启用,跨行共享) */
 let draggedTask: MdTask | null = null;
+type TaskDropMode = 'before' | 'after' | 'child';
+const TASK_CHILD_DROP_OFFSET = 96;
+
+function taskDropMode(row: HTMLElement, e: DragEvent): TaskDropMode {
+    const r = row.getBoundingClientRect();
+    if (e.clientX >= r.left + TASK_CHILD_DROP_OFFSET) return 'child';
+    return e.clientY > r.top + r.height / 2 ? 'after' : 'before';
+}
+
+function clearTaskDropClasses(root: HTMLElement): void {
+    root.findAll('.action').forEach(el => el.removeClasses(['drop-before', 'drop-after', 'drop-child']));
+}
+
+function setTaskDropClass(row: HTMLElement, mode: TaskDropMode): void {
+    row.toggleClass('drop-before', mode === 'before');
+    row.toggleClass('drop-after', mode === 'after');
+    row.toggleClass('drop-child', mode === 'child');
+}
 
 /**
  * 弹框驱动的新建/子任务/编辑。落盘:
@@ -254,19 +281,21 @@ function openTaskModal(ctx: RenderCtx, p: WSProjectNode, file: TFile | null,
                 if (!(f instanceof TFile)) { new Notice(t('ws action add failed')); return; }
                 if (opts.mode === 'edit' && opts.task) {
                     const parsed = parseTaskText(opts.task.text);
-                    parsed.description = `${ctx.taskPrefix}${r.description}`;
+                    const shouldPrefix = ctx.taskPrefixAuto || taskHasPrefix(parsed.description, ctx.taskPrefix);
+                    parsed.description = shouldPrefix ? `${ctx.taskPrefix}${r.description}` : r.description;
                     parsed.priority = r.priority;
                     parsed.start = r.start || undefined;
                     parsed.due = r.due || undefined;
                     const newText = buildTaskText(parsed);
                     await writeTasks(ctx, f, c => setTaskText(c, opts.task!.raw, newText));
                 } else {
-                    const suffix = taskMetaSuffix({ priority: r.priority, created: todayLocal(), start: r.start, due: r.due });
+                    const suffix = taskMetaSuffix({ priority: r.priority, created: nowLocal(), start: r.start, due: r.due });
+                    const prefix = ctx.taskPrefixAuto ? ctx.taskPrefix : '';
                     if (opts.mode === 'subtask' && opts.parent) {
-                        await writeTasks(ctx, f, c => insertSubtask(c, opts.parent!, r.description, ctx.taskPrefix, suffix));
+                        await writeTasks(ctx, f, c => insertSubtask(c, opts.parent!, r.description, prefix, suffix));
                     } else {
                         // 新任务置顶
-                        await writeTasks(ctx, f, c => prependTask(c, r.description, ctx.taskPrefix, suffix));
+                        await writeTasks(ctx, f, c => prependTask(c, r.description, prefix, suffix));
                     }
                 }
             } catch (e) {
@@ -282,6 +311,19 @@ function stripPrefix(desc: string, prefix: string): string {
     const p = prefix.trim();
     if (p && desc.startsWith(p)) return desc.slice(p.length).trimStart();
     return desc;
+}
+
+function shouldShowPrefixTaskAction(ctx: RenderCtx, tk: MdTask): boolean {
+    return !ctx.taskPrefixAuto && !tk.checked && !!ctx.taskPrefix.trim();
+}
+
+function renderTaskPrefixAction(parent: HTMLElement, ctx: RenderCtx, tk: MdTask, onToggle: () => Promise<void>): void {
+	const hasPrefix = taskHasPrefix(tk.text, ctx.taskPrefix);
+	const btn = aicon(parent, 'tag', t('ws action mark prefix'), hasPrefix ? 'marked' : '');
+	btn.onclick = (e) => {
+		e.stopPropagation();
+		void onToggle();
+	};
 }
 
 /** 按 截止/开始 日期排序,保持父子层级(只在同级内排,子树整体跟随父节点) */
@@ -341,6 +383,13 @@ function todayLocal(): string {
     return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
+/** 本地当前时刻 `YYYY-MM-DD HH:mm:ss` */
+function nowLocal(): string {
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
 /** base(YYYY-MM-DD)往后推 days 天,返回同格式字符串 */
 function addDaysLocal(base: string, days: number): string {
     const [y, m, d] = base.split('-').map(Number);
@@ -354,6 +403,10 @@ function addDaysLocal(base: string, days: number): string {
 type HomeRange = 'today' | '7d' | '30d' | 'all';
 const HOME_RANGE_DAYS: Record<Exclude<HomeRange, 'all'>, number> = { today: 0, '7d': 7, '30d': 30 };
 const LS_HOME_RANGE = 'zkw.home.range';
+type HomeTaskView = 'list' | 'table';
+const LS_HOME_TASK_VIEW = 'zkw.home.taskView';
+type HomeTaskScope = 'open' | 'all';
+const LS_HOME_TASK_SCOPE = 'zkw.home.taskScope';
 
 function loadHomeRange(ctx: RenderCtx): HomeRange {
     try {
@@ -364,6 +417,28 @@ function loadHomeRange(ctx: RenderCtx): HomeRange {
 }
 function saveHomeRange(ctx: RenderCtx, r: HomeRange): void {
     try { ctx.app.saveLocalStorage(LS_HOME_RANGE, r); } catch {}
+}
+
+function loadHomeTaskView(ctx: RenderCtx): HomeTaskView {
+	try {
+		const v = ctx.app.loadLocalStorage(LS_HOME_TASK_VIEW) as string | null;
+		if (v === 'list' || v === 'table') return v;
+	} catch {}
+	return 'list';
+}
+function saveHomeTaskView(ctx: RenderCtx, v: HomeTaskView): void {
+	try { ctx.app.saveLocalStorage(LS_HOME_TASK_VIEW, v); } catch {}
+}
+
+function loadHomeTaskScope(ctx: RenderCtx): HomeTaskScope {
+	try {
+		const v = ctx.app.loadLocalStorage(LS_HOME_TASK_SCOPE) as string | null;
+		if (v === 'open' || v === 'all') return v;
+	} catch {}
+	return 'open';
+}
+function saveHomeTaskScope(ctx: RenderCtx, v: HomeTaskScope): void {
+	try { ctx.app.saveLocalStorage(LS_HOME_TASK_SCOPE, v); } catch {}
 }
 
 /**
@@ -397,7 +472,7 @@ function mountInlineInput(
         committed = true;
         const v = input.value.trim();
         box.remove();
-        if (v) void onCommit(v);
+        void onCommit(v);
     };
     const cancel = () => { committed = true; box.remove(); };
     input.onkeydown = (e) => {
@@ -459,6 +534,11 @@ function renderTaskRefs(main: HTMLElement, ctx: RenderCtx, file: TFile, tk: MdTa
     });
 }
 
+function renderTaskNote(parent: HTMLElement, ctx: RenderCtx, note: MdTaskNote): void {
+    renderTaskText(parent.createSpan({ cls: 'anote-text' }), ctx, decodeNoteNewlines(note.text));
+    if (note.createdAt) parent.createSpan({ cls: 'anote-time', text: note.createdAt });
+}
+
 function renderTaskRow(wrap: HTMLElement, ctx: RenderCtx, p: WSProjectNode, file: TFile, tk: MdTask, draggable: boolean): void {
     const row = wrap.createDiv({ cls: 'action' + (tk.checked ? ' done' : '') });
     const indentPx = tk.depth * 22;
@@ -480,25 +560,22 @@ function renderTaskRow(wrap: HTMLElement, ctx: RenderCtx, p: WSProjectNode, file
             draggedTask = null;
             row.removeClass('dragging');
             row.removeAttribute('draggable');
-            wrap.findAll('.action').forEach(el => el.removeClasses(['drop-before', 'drop-after']));
+            clearTaskDropClasses(wrap);
         });
         row.addEventListener('dragover', (e) => {
             if (!draggedTask || draggedTask === tk) return;
             e.preventDefault();
             if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-            const r = row.getBoundingClientRect();
-            const after = e.clientY > r.top + r.height / 2;
-            row.toggleClass('drop-after', after);
-            row.toggleClass('drop-before', !after);
+            setTaskDropClass(row, taskDropMode(row, e));
         });
-        row.addEventListener('dragleave', () => row.removeClasses(['drop-before', 'drop-after']));
+        row.addEventListener('dragleave', () => row.removeClasses(['drop-before', 'drop-after', 'drop-child']));
         row.addEventListener('drop', (e) => { void (async () => {
             e.preventDefault();
             const moving = draggedTask;
-            const after = row.hasClass('drop-after');
-            row.removeClasses(['drop-before', 'drop-after']);
+            const mode: TaskDropMode = row.hasClass('drop-child') ? 'child' : row.hasClass('drop-after') ? 'after' : 'before';
+            row.removeClasses(['drop-before', 'drop-after', 'drop-child']);
             if (!moving || moving === tk) return;
-            await writeTasks(ctx, file, c => moveTask(c, moving, tk, after ? 'after' : 'before'));
+            await writeTasks(ctx, file, c => mode === 'child' ? moveTaskInto(c, moving, tk) : moveTask(c, moving, tk, mode));
         })(); });
     }
 
@@ -513,13 +590,15 @@ function renderTaskRow(wrap: HTMLElement, ctx: RenderCtx, p: WSProjectNode, file
     const txt = main.createDiv({ cls: 'atext-view' });
     renderTaskText(txt, ctx, tk.text);
     renderTaskRefs(main, ctx, file, tk);
-    if (tk.note !== undefined) {
+    if (tk.notes?.length) {
+        for (const note of tk.notes) {
         const noteEl = main.createDiv({ cls: 'anote' });
         noteEl.createSpan({ cls: 'anote-mark', text: '—' });
-        renderTaskText(noteEl.createSpan({ cls: 'anote-text' }), ctx, decodeNoteNewlines(tk.note));
+        renderTaskNote(noteEl, ctx, note);
         noteEl.setAttribute('title', t('ws action note'));
-        noteEl.onclick = () => mountInlineInput(row, indentPx, t('ws action note placeholder'), decodeNoteNewlines(tk.note ?? ''), (v) =>
-            writeTasks(ctx, file, c => setTaskNote(c, tk, v)), true);
+        noteEl.onclick = () => mountInlineInput(row, indentPx, t('ws action note placeholder'), decodeNoteNewlines(note.text), (v) =>
+            writeTasks(ctx, file, c => updateTaskNote(c, tk, note, v)), true);
+        }
     }
 
     const ctl = row.createDiv({ cls: 'actl' });
@@ -527,6 +606,10 @@ function renderTaskRow(wrap: HTMLElement, ctx: RenderCtx, p: WSProjectNode, file
     // 未完成任务:编辑(复用 addtask 弹框)
     if (!tk.checked) {
         aicon(ctl, 'pencil', t('ws action edit')).onclick = () => openTaskModal(ctx, p, file, { mode: 'edit', task: tk });
+    }
+
+    if (shouldShowPrefixTaskAction(ctx, tk)) {
+        renderTaskPrefixAction(ctl, ctx, tk, () => writeTasks(ctx, file, c => toggleTaskPrefix(c, tk.raw, ctx.taskPrefix)));
     }
 
     // 新建子任务(复用 addtask 弹框)
@@ -537,10 +620,9 @@ function renderTaskRow(wrap: HTMLElement, ctx: RenderCtx, p: WSProjectNode, file
     if (hasRef) { refs.empty(); refs.setText(String(tk.refs!.length)); }
     refs.onclick = () => pickActionRefs(ctx, p, file, tk);
 
-    if (tk.note === undefined) {
-        aicon(ctl, 'sticky-note', t('ws action note')).onclick = () => mountInlineInput(row, indentPx, t('ws action note placeholder'), '', (v) =>
-            writeTasks(ctx, file, c => setTaskNote(c, tk, v)), true);
-    } else {
+    aicon(ctl, 'sticky-note', t('ws action note')).onclick = () => mountInlineInput(row, indentPx, t('ws action note placeholder'), '', (v) =>
+        writeTasks(ctx, file, c => addTaskNote(c, tk, v)), true);
+    if (tk.notes?.length) {
         aicon(ctl, 'trash-2', t('ws action note delete'), 'del').onclick = async () => {
             await writeTasks(ctx, file, c => removeTaskNote(c, tk));
         };
@@ -560,13 +642,12 @@ export function renderMocPage(container: HTMLElement, ctx: RenderCtx, m: WSMocNo
     const bigic = titleRow.createDiv({ cls: 'ck-bigic space' });
     glyph(bigic, 'moc');
     const col = titleRow.createDiv();
-    col.createEl('h1', { cls: 'ck-h1', text: m.title });
-    heroMenuBtn(titleRow, ctx, m);
-
     const members = ctx.store.servedBy(m.id);
     const subMocs = ctx.store.containerChildren(m.id).filter(n => n.type === 'moc');
     const abs = m.filePath ? ctx.app.vault.getAbstractFileByPath(m.filePath) : null;
     const file: TFile | null = abs instanceof TFile ? abs : null;
+    heroTitle(col, ctx, m.title, file);
+    heroMenuBtn(titleRow, ctx, m);
 
     const tagRow = col.createDiv({ cls: 'ck-tagrow' });
     tagRow.createSpan({ cls: 'stat', text: t('ws agg nodes').replace('{n}', String(members.length)) });
@@ -627,7 +708,8 @@ export function renderNotePage(container: HTMLElement, ctx: RenderCtx, n: WSNote
     const titleRow = h.createDiv({ cls: 'ck-titlerow' });
     const bigic = titleRow.createDiv({ cls: 'ck-bigic space' });
     glyph(bigic, n.type);
-    titleRow.createDiv().createEl('h1', { cls: 'ck-h1', text: n.title });
+    const nabs = n.filePath ? ctx.app.vault.getAbstractFileByPath(n.filePath) : null;
+    heroTitle(titleRow.createDiv(), ctx, n.title, nabs instanceof TFile ? nabs : null);
     heroMenuBtn(titleRow, ctx, n);
 
     const partLinks = ctx.store.linksFrom(n.id).filter(l => l.type === 'partOf');
@@ -711,100 +793,245 @@ export function renderHome(container: HTMLElement, ctx: RenderCtx, lastTarget: W
     });
 }
 
-/** 今天 / 逾期:跨项目 未完成 且(截止 ≤ 今天 或 今天落在 [开始, 截止] 区间内)的任务,逾期标红;勾选直接回写背书笔记 */
+interface HomeTaskItem {
+	project: WSProjectNode;
+	task: MdTask;
+	start: string;
+	due: string;
+	done: string;
+	priority: string;
+	label: string;
+	overdue: boolean;
+	sortKey: string;
+}
+
+function taskDateInRange(date: string, today: string, horizon: string | null): boolean {
+	const d = date.slice(0, 10);
+	if (!d) return false;
+	return horizon === null ? true : d >= today && d <= horizon;
+}
+
+function collectHomeTasks(ctx: RenderCtx, range: HomeRange, today: string): { open: HomeTaskItem[]; done: HomeTaskItem[] } {
+	const horizon = range === 'all' ? null : addDaysLocal(today, HOME_RANGE_DAYS[range]);
+	const open: HomeTaskItem[] = [];
+	const done: HomeTaskItem[] = [];
+	ctx.store.getAllNodes()
+		.filter((n): n is WSProjectNode => n.type === 'project' && n.status !== 'archived')
+		.forEach(project => {
+			if (!project.filePath) return;
+			const tasks = ctx.tasks.get(project.filePath);
+			if (!tasks) return;
+			for (const task of tasks) {
+				const parsed = parseTaskText(task.text);
+				const start = (parsed.start ?? '').slice(0, 10);
+				const due = (parsed.due ?? '').slice(0, 10);
+				const doneDate = (parsed.done ?? '').slice(0, 10);
+				const overdue = !task.checked && !!due && due < today;
+				const label = overdue ? '⚠ ' + due : due ? '📅 ' + due : start ? '🛫 ' + start : doneDate ? '✅ ' + doneDate : '';
+				if (task.checked) {
+					if (range !== 'all' && !taskDateInRange(doneDate, today, horizon)) continue;
+					done.push({ project, task, start, due, done: doneDate, priority: parsed.priority, label, overdue: false, sortKey: doneDate || due || start || '￿' });
+				} else {
+					if (range !== 'all') {
+						const dueWithin = !!due && due <= horizon!;
+						const inInterval = !!start && start <= today && (!due || today <= due);
+						if (!dueWithin && !inInterval) continue;
+					}
+					open.push({ project, task, start, due, done: '', priority: parsed.priority, label, overdue, sortKey: due || start || '￿' });
+				}
+			}
+		});
+	open.sort((a, b) => (a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0));
+	done.sort((a, b) => (a.sortKey > b.sortKey ? -1 : a.sortKey < b.sortKey ? 1 : 0));
+	return { open, done };
+}
+
+function projFileFor(ctx: RenderCtx, project: WSProjectNode): TFile | null {
+	if (!project.filePath) return null;
+	const f = ctx.app.vault.getAbstractFileByPath(project.filePath);
+	return f instanceof TFile ? f : null;
+}
+
+function renderHomeTaskControls(parent: HTMLElement, ctx: RenderCtx, range: HomeRange, view: HomeTaskView, scope: HomeTaskScope): void {
+	const controls = parent.createDiv({ cls: 'task-home-ctls' });
+	const viewSeg = controls.createDiv({ cls: 'rangeseg' });
+	([['list', 'ws task view list'], ['table', 'ws task view table']] as const).forEach(([val, key]) => {
+		const b = viewSeg.createSpan({ cls: 'rseg' + (val === view ? ' on' : ''), text: t(key) });
+		b.onclick = () => { if (val !== view) { saveHomeTaskView(ctx, val); ctx.refresh(); } };
+	});
+	const scopeSeg = controls.createDiv({ cls: 'rangeseg' });
+	([['open', 'ws task scope open'], ['all', 'ws task scope all']] as const).forEach(([val, key]) => {
+		const b = scopeSeg.createSpan({ cls: 'rseg' + (val === scope ? ' on' : ''), text: t(key) });
+		b.onclick = () => { if (val !== scope) { saveHomeTaskScope(ctx, val); ctx.refresh(); } };
+	});
+	const rangeSeg = controls.createDiv({ cls: 'rangeseg' });
+	([['today', 'ws range today'], ['7d', 'ws range 7d'], ['30d', 'ws range 30d'], ['all', 'ws range all']] as const)
+		.forEach(([val, key]) => {
+			const b = rangeSeg.createSpan({ cls: 'rseg' + (val === range ? ' on' : ''), text: t(key) });
+			b.onclick = () => { if (val !== range) { saveHomeRange(ctx, val); ctx.refresh(); } };
+		});
+}
+
+function renderHomeTaskActions(parent: HTMLElement, ctx: RenderCtx, item: HomeTaskItem, host: HTMLElement): void {
+	const project = item.project;
+	const task = item.task;
+	aicon(parent, 'pencil', t('ws action edit')).onclick = (e) => {
+		e.stopPropagation();
+		const f = projFileFor(ctx, project); if (!f) return;
+		openTaskModal(ctx, project, f, { mode: 'edit', task });
+	};
+	if (shouldShowPrefixTaskAction(ctx, task)) {
+		renderTaskPrefixAction(parent, ctx, task, async () => {
+			const f = projFileFor(ctx, project); if (!f) return;
+			await writeTasks(ctx, f, c => toggleTaskPrefix(c, task.raw, ctx.taskPrefix));
+		});
+	}
+	aicon(parent, 'corner-down-right', t('ws action subtask')).onclick = (e) => {
+		e.stopPropagation();
+		const f = projFileFor(ctx, project); if (!f) return;
+		openTaskModal(ctx, project, f, { mode: 'subtask', parent: task });
+	};
+	const hasRef = !!task.refs?.length;
+	const refs = aicon(parent, 'link', t('ws action refs add'), hasRef ? 'hasref' : '');
+	if (hasRef) { refs.empty(); refs.setText(String(task.refs!.length)); }
+	refs.onclick = (e) => {
+		e.stopPropagation();
+		const f = projFileFor(ctx, project); if (!f) return;
+		pickActionRefs(ctx, project, f, task);
+	};
+	aicon(parent, 'sticky-note', t('ws action note')).onclick = (e) => {
+		e.stopPropagation();
+		const f = projFileFor(ctx, project); if (!f) return;
+		mountInlineInput(host, 0, t('ws action note placeholder'), '', (v) =>
+			writeTasks(ctx, f, c => addTaskNote(c, task, v)), true);
+	};
+	if (task.notes?.length) {
+		aicon(parent, 'trash-2', t('ws action note delete'), 'del').onclick = async (e) => {
+			e.stopPropagation();
+			const f = projFileFor(ctx, project); if (!f) return;
+			await writeTasks(ctx, f, c => removeTaskNote(c, task));
+		};
+	}
+	aicon(parent, 'x', t('ws action delete'), 'del').onclick = async (e) => {
+		e.stopPropagation();
+		const f = projFileFor(ctx, project); if (!f) return;
+		await writeTasks(ctx, f, c => removeTask(c, task));
+	};
+}
+
+function renderHomeTaskRow(parent: HTMLElement, ctx: RenderCtx, item: HomeTaskItem, today: string): void {
+	const row = parent.createDiv({ cls: 'action' + (item.task.checked ? ' done' : '') });
+	const box = row.createEl('input', { type: 'checkbox' });
+	box.checked = item.task.checked;
+	box.onclick = async (e) => {
+		e.stopPropagation();
+		const f = projFileFor(ctx, item.project); if (!f) return;
+		await writeTasks(ctx, f, c => toggleTask(c, item.task.raw, today));
+	};
+	const main = row.createDiv({ cls: 'amain' });
+	renderTaskText(main.createDiv({ cls: 'atext-view' }), ctx, item.task.text);
+	const meta = main.createDiv({ cls: 'anote' });
+	if (item.label) {
+		meta.createSpan({ cls: 'adue' + (item.overdue ? ' overdue' : '') }).setText(item.label);
+		meta.createSpan({ cls: 'anote-mark', text: '·' });
+	}
+	meta.createSpan({ text: item.project.title });
+	if (item.task.notes?.length) {
+		for (const note of item.task.notes) {
+		const noteEl = main.createDiv({ cls: 'anote' });
+		noteEl.createSpan({ cls: 'anote-mark', text: '-' });
+		renderTaskNote(noteEl, ctx, note);
+		noteEl.setAttribute('title', t('ws action note'));
+		noteEl.onclick = (e) => {
+			e.stopPropagation();
+			const f = projFileFor(ctx, item.project); if (!f) return;
+			mountInlineInput(row, 0, t('ws action note placeholder'), decodeNoteNewlines(note.text), (v) =>
+				writeTasks(ctx, f, c => updateTaskNote(c, item.task, note, v)), true);
+		};
+		}
+	}
+	renderHomeTaskActions(row.createDiv({ cls: 'actl' }), ctx, item, row);
+	row.onclick = () => ctx.open({ kind: 'project', id: item.project.id });
+}
+
+function renderHomeTaskList(body: HTMLElement, ctx: RenderCtx, tasks: { open: HomeTaskItem[]; done: HomeTaskItem[] }, today: string, scope: HomeTaskScope): void {
+	if (!tasks.open.length) body.createDiv({ cls: 'empty', text: t('ws today due empty') });
+	else {
+		const list = body.createDiv({ cls: 'actions' });
+		tasks.open.forEach(item => renderHomeTaskRow(list, ctx, item, today));
+	}
+	if (scope !== 'all') return;
+	body.createDiv({ cls: 'dsec', text: t('ws task completed') });
+	if (!tasks.done.length) body.createDiv({ cls: 'empty', text: t('ws task completed empty') });
+	else {
+		const doneList = body.createDiv({ cls: 'actions task-done-list' });
+		tasks.done.forEach(item => renderHomeTaskRow(doneList, ctx, item, today));
+	}
+}
+
+function renderHomeTaskTable(body: HTMLElement, ctx: RenderCtx, items: HomeTaskItem[], today: string): void {
+	if (!items.length) { body.createDiv({ cls: 'empty', text: t('ws task table empty') }); return; }
+	const wrap = body.createDiv({ cls: 'task-table-wrap' });
+	const table = wrap.createEl('table', { cls: 'task-table' });
+	const head = table.createEl('thead').createEl('tr');
+	(['ws task col status', 'ws task col project', 'ws task col task', 'ws task col priority', 'ws task col start', 'ws task col due', 'ws task col done', 'ws task col refs', 'ws task col note', 'ws task col actions'] as TKey[])
+		.forEach(key => head.createEl('th', { text: t(key) }));
+	const tbody = table.createEl('tbody');
+	items.forEach(item => {
+		const row = tbody.createEl('tr', { cls: item.task.checked ? 'done' : '' });
+		const statusCell = row.createEl('td');
+		const box = statusCell.createEl('input', { type: 'checkbox' });
+		box.checked = item.task.checked;
+		box.onclick = async (e) => {
+			e.stopPropagation();
+			const f = projFileFor(ctx, item.project); if (!f) return;
+			await writeTasks(ctx, f, c => toggleTask(c, item.task.raw, today));
+		};
+		const projectCell = row.createEl('td', { cls: 'project' });
+		projectCell.setText(item.project.title);
+		projectCell.onclick = () => ctx.open({ kind: 'project', id: item.project.id });
+		const taskCell = row.createEl('td', { cls: 'task' });
+		renderTaskText(taskCell.createDiv({ cls: 'atext-view' }), ctx, item.task.text);
+		taskCell.onclick = (e) => {
+			e.stopPropagation();
+			const f = projFileFor(ctx, item.project); if (!f) return;
+			openTaskModal(ctx, item.project, f, { mode: 'edit', task: item.task });
+		};
+		row.createEl('td', { cls: 'mono', text: item.priority || '-' });
+		row.createEl('td', { cls: 'mono', text: item.start || '-' });
+		const due = row.createEl('td', { cls: 'mono' + (item.overdue ? ' overdue' : ''), text: item.due || '-' });
+		due.setAttribute('title', item.overdue ? t('ws task overdue') : '');
+		row.createEl('td', { cls: 'mono', text: item.done || '-' });
+		row.createEl('td', { cls: 'mono', text: item.task.refs?.length ? String(item.task.refs.length) : '-' });
+		const noteCount = item.task.notes?.length ?? 0;
+		const firstNote = item.task.notes?.[0];
+		const noteText = firstNote ? decodeNoteNewlines(firstNote.text) : '-';
+		const noteWithTime = firstNote?.createdAt ? `${noteText} · ${firstNote.createdAt}` : noteText;
+		const noteSummary = noteCount > 1 ? `${noteWithTime} +${noteCount - 1}` : noteWithTime;
+		const noteCell = row.createEl('td', { cls: 'note', text: noteSummary });
+		noteCell.onclick = (e) => {
+			e.stopPropagation();
+			const f = projFileFor(ctx, item.project); if (!f) return;
+			mountInlineInput(wrap, 0, t('ws action note placeholder'), '', (v) =>
+				writeTasks(ctx, f, c => addTaskNote(c, item.task, v)), true);
+		};
+		renderHomeTaskActions(row.createEl('td', { cls: 'actl' }), ctx, item, wrap);
+	});
+}
+
+/** 今天 / 逾期:跨项目任务首页。列表用于推进,表格用于周复盘。 */
 function renderTodayDue(body: HTMLElement, ctx: RenderCtx): void {
-    const today = todayLocal();
-    const range = loadHomeRange(ctx);
-    // 'all' 无上界;其余以 今天+N天 为截止上界
-    const horizon = range === 'all' ? null : addDaysLocal(today, HOME_RANGE_DAYS[range]);
-    interface DueItem { project: WSProjectNode; task: MdTask; label: string; overdue: boolean; sortKey: string; }
-    const items: DueItem[] = [];
-    ctx.store.getAllNodes()
-        .filter((n): n is WSProjectNode => n.type === 'project' && n.status !== 'archived')
-        .forEach(pr => {
-            if (!pr.filePath) return;
-            const tks = ctx.tasks.get(pr.filePath);
-            if (!tks) return;
-            for (const tk of tks) {
-                if (tk.checked) continue;
-                const parsed = parseTaskText(tk.text);
-                const start = (parsed.start ?? '').slice(0, 10);
-                const due = (parsed.due ?? '').slice(0, 10);
-                if (range !== 'all') {
-                    const dueWithin = !!due && due <= horizon!;                         // 截止落在时间窗内(含逾期)
-                    const inInterval = !!start && start <= today && (!due || today <= due); // 已开始且未过截止
-                    if (!dueWithin && !inInterval) continue;
-                }
-                const overdue = !!due && due < today;
-                const label = overdue ? '⚠ ' + due : due ? '📅 ' + due : start ? '🛫 ' + start : '';
-                items.push({ project: pr, task: tk, label, overdue, sortKey: due || start || '￿' });
-            }
-        });
-    items.sort((a, b) => (a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0));
+	const today = todayLocal();
+	const range = loadHomeRange(ctx);
+	const view = loadHomeTaskView(ctx);
+	const scope = loadHomeTaskScope(ctx);
+	const tasks = collectHomeTasks(ctx, range, today);
 
-    const head = body.createDiv({ cls: 'dsec row' });
-    head.createSpan({ text: t('ws today due') });
-    const seg = head.createDiv({ cls: 'rangeseg' });
-    ([['today', 'ws range today'], ['7d', 'ws range 7d'], ['30d', 'ws range 30d'], ['all', 'ws range all']] as const)
-        .forEach(([val, key]) => {
-            const b = seg.createSpan({ cls: 'rseg' + (val === range ? ' on' : ''), text: t(key) });
-            b.onclick = () => { if (val !== range) { saveHomeRange(ctx, val); ctx.refresh(); } };
-        });
-    if (!items.length) { body.createDiv({ cls: 'empty', text: t('ws today due empty') }); return; }
-    const list = body.createDiv({ cls: 'actions' });
-    items.forEach(it => {
-        const tk = it.task;
-        const projFile = () => { const f = ctx.app.vault.getAbstractFileByPath(it.project.filePath!); return f instanceof TFile ? f : null; };
-        const row = list.createDiv({ cls: 'action' });
-        const box = row.createEl('input', { type: 'checkbox' });
-        box.onclick = async (e) => {
-            e.stopPropagation();
-            const f = projFile(); if (!f) return;
-            await writeTasks(ctx, f, c => toggleTask(c, tk.raw, today));
-        };
-        const main = row.createDiv({ cls: 'amain' });
-        renderTaskText(main.createDiv({ cls: 'atext-view' }), ctx, tk.text);
-        const meta = main.createDiv({ cls: 'anote' });
-        if (it.label) {
-            meta.createSpan({ cls: 'adue' + (it.overdue ? ' overdue' : '') }).setText(it.label);
-            meta.createSpan({ cls: 'anote-mark', text: '·' });
-        }
-        meta.createSpan({ text: it.project.title });
-        if (tk.note !== undefined) {
-            const noteEl = main.createDiv({ cls: 'anote' });
-            noteEl.createSpan({ cls: 'anote-mark', text: '—' });
-            renderTaskText(noteEl.createSpan({ cls: 'anote-text' }), ctx, decodeNoteNewlines(tk.note));
-            noteEl.setAttribute('title', t('ws action note'));
-            noteEl.onclick = (e) => {
-                e.stopPropagation();
-                const f = projFile(); if (!f) return;
-                mountInlineInput(row, 0, t('ws action note placeholder'), decodeNoteNewlines(tk.note ?? ''), (v) =>
-                    writeTasks(ctx, f, c => setTaskNote(c, tk, v)), true);
-            };
-        }
+	const head = body.createDiv({ cls: 'dsec row task-home-head' });
+	head.createSpan({ text: t('ws today due') });
+	renderHomeTaskControls(head, ctx, range, view, scope);
 
-        const ctl = row.createDiv({ cls: 'actl' });
-        // 编辑(复用项目页 addtask 弹框);首页任务均未完成,始终可编辑
-        aicon(ctl, 'pencil', t('ws action edit')).onclick = (e) => {
-            e.stopPropagation();
-            const f = projFile(); if (!f) return;
-            openTaskModal(ctx, it.project, f, { mode: 'edit', task: tk });
-        };
-        if (tk.note === undefined) {
-            aicon(ctl, 'sticky-note', t('ws action note')).onclick = (e) => {
-                e.stopPropagation();
-                const f = projFile(); if (!f) return;
-                mountInlineInput(row, 0, t('ws action note placeholder'), '', (v) =>
-                    writeTasks(ctx, f, c => setTaskNote(c, tk, v)), true);
-            };
-        } else {
-            aicon(ctl, 'trash-2', t('ws action note delete'), 'del').onclick = async (e) => {
-                e.stopPropagation();
-                const f = projFile(); if (!f) return;
-                await writeTasks(ctx, f, c => removeTaskNote(c, tk));
-            };
-        }
-
-        row.onclick = () => ctx.open({ kind: 'project', id: it.project.id });
-    });
+	const visibleTasks = scope === 'all' ? [...tasks.open, ...tasks.done] : tasks.open;
+	if (view === 'table') renderHomeTaskTable(body, ctx, visibleTasks, today);
+	else renderHomeTaskList(body, ctx, tasks, today, scope);
 }

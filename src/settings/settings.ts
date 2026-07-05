@@ -129,6 +129,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                     .onChange((value) => {
                         this.plugin.settings.projectFolderPath = value.trim();
                         void this.plugin.saveData(this.plugin.settings);
+                        this.notifyWorkspaceTaskSettingsChanged();
                     });
             });
 
@@ -141,8 +142,21 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                     .onChange((value) => {
                         this.plugin.settings.wsTaskPrefix = value;
                         void this.plugin.saveData(this.plugin.settings);
+                        this.notifyWorkspaceTaskSettingsChanged();
                     });
             });
+
+        const autoPrefixSetting = new Setting(workspaceSection)
+            .setName(t("ws task prefix auto"))
+            .setDesc(t("ws task prefix auto desc"))
+            .addToggle(toggle => toggle.setValue(this.plugin.settings.wsTaskPrefixAuto !== false)
+                .onChange((value) => {
+                    this.plugin.settings.wsTaskPrefixAuto = value;
+                    void this.plugin.saveData(this.plugin.settings);
+                    this.notifyWorkspaceTaskSettingsChanged();
+                })
+            );
+        autoPrefixSetting.settingEl.addClass('zk-setting-subsetting');
 
         new Setting(workspaceSection)
             .setName(t("ws task file tag"))
@@ -153,6 +167,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                     .onChange((value) => {
                         this.plugin.settings.wsTaskFileTag = value.trim();
                         void this.plugin.saveData(this.plugin.settings);
+                        this.notifyWorkspaceTaskSettingsChanged();
                     });
             });
 
@@ -221,6 +236,17 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
         }else{
             div.removeClass("zk-hidden");
         }
+    }
+
+    private notifyWorkspaceTaskSettingsChanged(): void {
+        window.dispatchEvent(new CustomEvent('zkw-workspace-task-settings-change', {
+            detail: {
+                projectFolderPath: this.plugin.settings.projectFolderPath,
+                taskPrefix: this.plugin.settings.wsTaskPrefix,
+                taskPrefixAuto: this.plugin.settings.wsTaskPrefixAuto !== false,
+                taskFileTag: this.plugin.settings.wsTaskFileTag,
+            },
+        }));
     }
 
     async udpateFolderList(folderListDiv:HTMLDivElement){
