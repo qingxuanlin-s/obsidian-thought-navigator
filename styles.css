@@ -6506,6 +6506,8 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 .zkw .ck-bigic .g.space::before { width:17px; height:17px; }
 .zkw .ck-bigic .g.moc::before { width:18px; height:18px; }
 .zkw .ck-h1 { font-size:27px; font-weight:800; letter-spacing:-0.025em; margin:0; line-height:1.15; }
+.zkw .ck-h1.clickable { cursor:pointer; display:inline; text-decoration-color:transparent; transition:color 0.12s ease; }
+.zkw .ck-h1.clickable:hover { color:var(--interactive-accent); text-decoration:underline; text-underline-offset:3px; }
 .zkw .ck-tagrow { display:flex; align-items:center; gap:9px; margin-top:9px; flex-wrap:wrap; }
 .zkw .ck-tagrow .stat { font-family:var(--mono); font-size:10.5px; color:var(--ink-dim); }
 .zkw .ck-tagrow .stat b { color:var(--ink); }
@@ -6714,6 +6716,7 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 .zkw .action .anote:hover { color:var(--ink); }
 .zkw .action .anote .anote-mark { color:var(--ink-faint); flex-shrink:0; }
 .zkw .action .anote .anote-text { white-space:pre-wrap; word-break:break-word; min-width:0; }
+.zkw .action .anote .anote-time { flex-shrink:0; font-family:var(--mono); font-size:11px; color:var(--ink-faint); }
 .zkw .action .anote .adue { font-family:var(--mono); font-size:11px; color:var(--ink-dim); }
 .zkw .action .anote .adue.overdue { color:var(--rose); font-weight:600; }
 .zkw .action.done .anote { color:var(--ink-faint); }

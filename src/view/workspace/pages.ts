@@ -1,7 +1,7 @@
 import { App, Component, MarkdownRenderer, Menu, Notice, TFile, setIcon } from "obsidian";
 import { WSMocNode, WSProjectNode, WSNoteNode, WorkspaceNode } from "src/types/workspace";
 import { nextStatus } from "src/workspace/WorkspaceStore";
-import { MdTask, prependTask, toggleTask, removeTask, insertSubtask, setTaskNote, removeTaskNote, setTaskText, taskMetaSuffix, parseTaskText, buildTaskText, moveTask, moveTaskInto, processFile, addTaskRefs, removeTaskRef, decodeNoteNewlines, toggleTaskPrefix, taskHasPrefix } from "src/workspace/projectTasks";
+import { MdTask, MdTaskNote, prependTask, toggleTask, removeTask, insertSubtask, addTaskNote, updateTaskNote, removeTaskNote, setTaskText, taskMetaSuffix, parseTaskText, buildTaskText, moveTask, moveTaskInto, processFile, addTaskRefs, removeTaskRef, decodeNoteNewlines, toggleTaskPrefix, taskHasPrefix } from "src/workspace/projectTasks";
 import { FilePickerModal } from "src/modal/filePickerModal";
 import { t, TKey } from "src/lang/helper";
 import { TaskModal } from "./modals";
@@ -28,6 +28,14 @@ function heroMenuBtn(titleRow: HTMLElement, ctx: RenderCtx, node: WorkspaceNode)
             .onClick(() => ctx.requestDelete(node)); });
         menu.showAtMouseEvent(e);
     };
+}
+
+/** 页头大标题:有对应文件时点击标题即打开原始文件(Cmd/Ctrl 强制新标签) */
+function heroTitle(parent: HTMLElement, ctx: RenderCtx, title: string, file: TFile | null): void {
+    const h1 = parent.createEl('h1', { cls: 'ck-h1' + (file ? ' clickable' : ''), text: title });
+    if (!file) return;
+    h1.setAttribute('title', t('ws open file'));
+    h1.onclick = (e) => ctx.openFile(file, e.ctrlKey || e.metaKey);
 }
 
 /** 操作按钮(.createbtn),带 lucide 图标 + 文案 */
@@ -110,7 +118,8 @@ export function renderProjectPage(container: HTMLElement, ctx: RenderCtx, p: WSP
     const bigic = titleRow.createDiv({ cls: 'ck-bigic space' });
     glyph(bigic, 'project', STATUS_COLOR[p.status]);
     const col = titleRow.createDiv();
-    col.createEl('h1', { cls: 'ck-h1', text: p.title });
+    const pabs = p.filePath ? ctx.app.vault.getAbstractFileByPath(p.filePath) : null;
+    heroTitle(col, ctx, p.title, pabs instanceof TFile ? pabs : null);
     heroMenuBtn(titleRow, ctx, p);
     const tagRow = col.createDiv({ cls: 'ck-tagrow' });
     const stat = tagRow.createSpan({ cls: `pstat ${p.status} click` });
@@ -280,7 +289,7 @@ function openTaskModal(ctx: RenderCtx, p: WSProjectNode, file: TFile | null,
                     const newText = buildTaskText(parsed);
                     await writeTasks(ctx, f, c => setTaskText(c, opts.task!.raw, newText));
                 } else {
-                    const suffix = taskMetaSuffix({ priority: r.priority, created: todayLocal(), start: r.start, due: r.due });
+                    const suffix = taskMetaSuffix({ priority: r.priority, created: nowLocal(), start: r.start, due: r.due });
                     const prefix = ctx.taskPrefixAuto ? ctx.taskPrefix : '';
                     if (opts.mode === 'subtask' && opts.parent) {
                         await writeTasks(ctx, f, c => insertSubtask(c, opts.parent!, r.description, prefix, suffix));
@@ -374,6 +383,13 @@ function todayLocal(): string {
     return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
+/** 本地当前时刻 `YYYY-MM-DD HH:mm:ss` */
+function nowLocal(): string {
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
 /** base(YYYY-MM-DD)往后推 days 天,返回同格式字符串 */
 function addDaysLocal(base: string, days: number): string {
     const [y, m, d] = base.split('-').map(Number);
@@ -456,7 +472,7 @@ function mountInlineInput(
         committed = true;
         const v = input.value.trim();
         box.remove();
-        if (v) void onCommit(v);
+        void onCommit(v);
     };
     const cancel = () => { committed = true; box.remove(); };
     input.onkeydown = (e) => {
@@ -518,6 +534,11 @@ function renderTaskRefs(main: HTMLElement, ctx: RenderCtx, file: TFile, tk: MdTa
     });
 }
 
+function renderTaskNote(parent: HTMLElement, ctx: RenderCtx, note: MdTaskNote): void {
+    renderTaskText(parent.createSpan({ cls: 'anote-text' }), ctx, decodeNoteNewlines(note.text));
+    if (note.createdAt) parent.createSpan({ cls: 'anote-time', text: note.createdAt });
+}
+
 function renderTaskRow(wrap: HTMLElement, ctx: RenderCtx, p: WSProjectNode, file: TFile, tk: MdTask, draggable: boolean): void {
     const row = wrap.createDiv({ cls: 'action' + (tk.checked ? ' done' : '') });
     const indentPx = tk.depth * 22;
@@ -569,13 +590,15 @@ function renderTaskRow(wrap: HTMLElement, ctx: RenderCtx, p: WSProjectNode, file
     const txt = main.createDiv({ cls: 'atext-view' });
     renderTaskText(txt, ctx, tk.text);
     renderTaskRefs(main, ctx, file, tk);
-    if (tk.note !== undefined) {
+    if (tk.notes?.length) {
+        for (const note of tk.notes) {
         const noteEl = main.createDiv({ cls: 'anote' });
         noteEl.createSpan({ cls: 'anote-mark', text: '—' });
-        renderTaskText(noteEl.createSpan({ cls: 'anote-text' }), ctx, decodeNoteNewlines(tk.note));
+        renderTaskNote(noteEl, ctx, note);
         noteEl.setAttribute('title', t('ws action note'));
-        noteEl.onclick = () => mountInlineInput(row, indentPx, t('ws action note placeholder'), decodeNoteNewlines(tk.note ?? ''), (v) =>
-            writeTasks(ctx, file, c => setTaskNote(c, tk, v)), true);
+        noteEl.onclick = () => mountInlineInput(row, indentPx, t('ws action note placeholder'), decodeNoteNewlines(note.text), (v) =>
+            writeTasks(ctx, file, c => updateTaskNote(c, tk, note, v)), true);
+        }
     }
 
     const ctl = row.createDiv({ cls: 'actl' });
@@ -597,10 +620,9 @@ function renderTaskRow(wrap: HTMLElement, ctx: RenderCtx, p: WSProjectNode, file
     if (hasRef) { refs.empty(); refs.setText(String(tk.refs!.length)); }
     refs.onclick = () => pickActionRefs(ctx, p, file, tk);
 
-    if (tk.note === undefined) {
-        aicon(ctl, 'sticky-note', t('ws action note')).onclick = () => mountInlineInput(row, indentPx, t('ws action note placeholder'), '', (v) =>
-            writeTasks(ctx, file, c => setTaskNote(c, tk, v)), true);
-    } else {
+    aicon(ctl, 'sticky-note', t('ws action note')).onclick = () => mountInlineInput(row, indentPx, t('ws action note placeholder'), '', (v) =>
+        writeTasks(ctx, file, c => addTaskNote(c, tk, v)), true);
+    if (tk.notes?.length) {
         aicon(ctl, 'trash-2', t('ws action note delete'), 'del').onclick = async () => {
             await writeTasks(ctx, file, c => removeTaskNote(c, tk));
         };
@@ -620,13 +642,12 @@ export function renderMocPage(container: HTMLElement, ctx: RenderCtx, m: WSMocNo
     const bigic = titleRow.createDiv({ cls: 'ck-bigic space' });
     glyph(bigic, 'moc');
     const col = titleRow.createDiv();
-    col.createEl('h1', { cls: 'ck-h1', text: m.title });
-    heroMenuBtn(titleRow, ctx, m);
-
     const members = ctx.store.servedBy(m.id);
     const subMocs = ctx.store.containerChildren(m.id).filter(n => n.type === 'moc');
     const abs = m.filePath ? ctx.app.vault.getAbstractFileByPath(m.filePath) : null;
     const file: TFile | null = abs instanceof TFile ? abs : null;
+    heroTitle(col, ctx, m.title, file);
+    heroMenuBtn(titleRow, ctx, m);
 
     const tagRow = col.createDiv({ cls: 'ck-tagrow' });
     tagRow.createSpan({ cls: 'stat', text: t('ws agg nodes').replace('{n}', String(members.length)) });
@@ -687,7 +708,8 @@ export function renderNotePage(container: HTMLElement, ctx: RenderCtx, n: WSNote
     const titleRow = h.createDiv({ cls: 'ck-titlerow' });
     const bigic = titleRow.createDiv({ cls: 'ck-bigic space' });
     glyph(bigic, n.type);
-    titleRow.createDiv().createEl('h1', { cls: 'ck-h1', text: n.title });
+    const nabs = n.filePath ? ctx.app.vault.getAbstractFileByPath(n.filePath) : null;
+    heroTitle(titleRow.createDiv(), ctx, n.title, nabs instanceof TFile ? nabs : null);
     heroMenuBtn(titleRow, ctx, n);
 
     const partLinks = ctx.store.linksFrom(n.id).filter(l => l.type === 'partOf');
@@ -877,14 +899,13 @@ function renderHomeTaskActions(parent: HTMLElement, ctx: RenderCtx, item: HomeTa
 		const f = projFileFor(ctx, project); if (!f) return;
 		pickActionRefs(ctx, project, f, task);
 	};
-	if (task.note === undefined) {
-		aicon(parent, 'sticky-note', t('ws action note')).onclick = (e) => {
-			e.stopPropagation();
-			const f = projFileFor(ctx, project); if (!f) return;
-			mountInlineInput(host, 0, t('ws action note placeholder'), '', (v) =>
-				writeTasks(ctx, f, c => setTaskNote(c, task, v)), true);
-		};
-	} else {
+	aicon(parent, 'sticky-note', t('ws action note')).onclick = (e) => {
+		e.stopPropagation();
+		const f = projFileFor(ctx, project); if (!f) return;
+		mountInlineInput(host, 0, t('ws action note placeholder'), '', (v) =>
+			writeTasks(ctx, f, c => addTaskNote(c, task, v)), true);
+	};
+	if (task.notes?.length) {
 		aicon(parent, 'trash-2', t('ws action note delete'), 'del').onclick = async (e) => {
 			e.stopPropagation();
 			const f = projFileFor(ctx, project); if (!f) return;
@@ -915,17 +936,19 @@ function renderHomeTaskRow(parent: HTMLElement, ctx: RenderCtx, item: HomeTaskIt
 		meta.createSpan({ cls: 'anote-mark', text: '·' });
 	}
 	meta.createSpan({ text: item.project.title });
-	if (item.task.note !== undefined) {
+	if (item.task.notes?.length) {
+		for (const note of item.task.notes) {
 		const noteEl = main.createDiv({ cls: 'anote' });
 		noteEl.createSpan({ cls: 'anote-mark', text: '-' });
-		renderTaskText(noteEl.createSpan({ cls: 'anote-text' }), ctx, decodeNoteNewlines(item.task.note));
+		renderTaskNote(noteEl, ctx, note);
 		noteEl.setAttribute('title', t('ws action note'));
 		noteEl.onclick = (e) => {
 			e.stopPropagation();
 			const f = projFileFor(ctx, item.project); if (!f) return;
-			mountInlineInput(row, 0, t('ws action note placeholder'), decodeNoteNewlines(item.task.note ?? ''), (v) =>
-				writeTasks(ctx, f, c => setTaskNote(c, item.task, v)), true);
+			mountInlineInput(row, 0, t('ws action note placeholder'), decodeNoteNewlines(note.text), (v) =>
+				writeTasks(ctx, f, c => updateTaskNote(c, item.task, note, v)), true);
 		};
+		}
 	}
 	renderHomeTaskActions(row.createDiv({ cls: 'actl' }), ctx, item, row);
 	row.onclick = () => ctx.open({ kind: 'project', id: item.project.id });
@@ -980,12 +1003,17 @@ function renderHomeTaskTable(body: HTMLElement, ctx: RenderCtx, items: HomeTaskI
 		due.setAttribute('title', item.overdue ? t('ws task overdue') : '');
 		row.createEl('td', { cls: 'mono', text: item.done || '-' });
 		row.createEl('td', { cls: 'mono', text: item.task.refs?.length ? String(item.task.refs.length) : '-' });
-		const noteCell = row.createEl('td', { cls: 'note', text: item.task.note ? decodeNoteNewlines(item.task.note) : '-' });
+		const noteCount = item.task.notes?.length ?? 0;
+		const firstNote = item.task.notes?.[0];
+		const noteText = firstNote ? decodeNoteNewlines(firstNote.text) : '-';
+		const noteWithTime = firstNote?.createdAt ? `${noteText} · ${firstNote.createdAt}` : noteText;
+		const noteSummary = noteCount > 1 ? `${noteWithTime} +${noteCount - 1}` : noteWithTime;
+		const noteCell = row.createEl('td', { cls: 'note', text: noteSummary });
 		noteCell.onclick = (e) => {
 			e.stopPropagation();
 			const f = projFileFor(ctx, item.project); if (!f) return;
-			mountInlineInput(wrap, 0, t('ws action note placeholder'), decodeNoteNewlines(item.task.note ?? ''), (v) =>
-				writeTasks(ctx, f, c => setTaskNote(c, item.task, v)), true);
+			mountInlineInput(wrap, 0, t('ws action note placeholder'), '', (v) =>
+				writeTasks(ctx, f, c => addTaskNote(c, item.task, v)), true);
 		};
 		renderHomeTaskActions(row.createEl('td', { cls: 'actl' }), ctx, item, wrap);
 	});
