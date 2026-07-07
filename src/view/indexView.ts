@@ -10932,7 +10932,26 @@ window.addEventListener('resize', fitGraph);
         return !forceTab && (this.plugin.settings.defaultFileOpenMode || 'tab') === 'replace';
     }
 
+    /**
+     * 把当前思维树视图切换到指定 MOC 文件(不新开叶/分屏)。
+     * MOC 文件不支持多开,因此忽略「文件默认打开方式」,只在当前视图内切换。
+     */
+    private switchIndexToMOC(file: TFile): void {
+        void (async () => {
+            if (this.plugin.settings.mocCurrentFile === file.path) return;
+            this.plugin.settings.mocCurrentFile = file.path;
+            await this.plugin.saveData(this.plugin.settings);
+            this.app.workspace.trigger("zk-navigation:refresh-index-graph");
+        })();
+    }
+
     private openFileInPreferredLeaf(file: TFile, forceTab: boolean, subpath = ''): void {
+        // MOC(.moc / .moc.md)不支持多开:无视「文件默认打开方式」,只在当前思维树视图内切换。
+        if (isMocFile(file)) {
+            this.switchIndexToMOC(file);
+            return;
+        }
+
         if (this.shouldReuseExistingFileLeaf(forceTab)) {
             const existingLeaf = this.getExistingFileLeaf(file);
             if (existingLeaf) {
