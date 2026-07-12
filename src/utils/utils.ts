@@ -1,5 +1,5 @@
-import ZKNavigationPlugin, { ZoomPanScale } from "main";
-import { App, loadMermaid, moment, TFile } from "obsidian";
+import ZKNavigationPlugin from "main";
+import { App, moment, TFile } from "obsidian";
 import { LayoutPreset } from "src/utils/growthDirection";
 import { ZKNode } from "src/view/indexView";
 
@@ -617,117 +617,6 @@ export function displayWidth(str: string) {
         length += charCode >= 0 && charCode <= 128 ? 1 : 2;
     }
     return length;
-}
-
-export async function addSvgPanZoom(
-    zkGraph: HTMLDivElement,
-    indexMermaidDiv: HTMLElement,
-    i: number,
-    plugin: ZKNavigationPlugin,
-    mermaidStr: string, height: number) {
-
-    const mermaid = await loadMermaid();
-    const { svg } = await mermaid.render(`${zkGraph.id}-svg`, mermaidStr);
-
-    const parsedSvg = new DOMParser().parseFromString(String(svg), 'image/svg+xml').documentElement;
-    zkGraph.appendChild(activeDocument.importNode(parsedSvg, true));
-
-    if (plugin.settings.graphType === "roadmap") {
-        zkGraph.children[0].removeAttribute('style');
-    }
-
-    zkGraph.children[0].addClass("zk-full-width");
-
-    zkGraph.children[0].setAttr('height', `${height}px`);
-
-    indexMermaidDiv.appendChild(zkGraph);
-
-    const svgPanZoomModule = await import("svg-pan-zoom");
-    const svgPanZoom = svgPanZoomModule;
-    const panZoomTiger = await svgPanZoom(`#${zkGraph.id}-svg`, {
-        zoomEnabled: true,
-        controlIconsEnabled: false,
-        fit: true,
-        center: true,
-        minZoom: 0.001,
-        maxZoom: 1000,
-        dblClickZoomEnabled: false,
-        zoomScaleSensitivity: 0.2,
-
-        onZoom: async () => {
-            // 安全检查：确保数组元素存在
-            if (plugin.settings.zoomPanScaleArr[i]) {
-                plugin.settings.zoomPanScaleArr[i].zoomScale = panZoomTiger.getZoom();
-            }
-        },
-        onPan: async () => {
-            // 安全检查：确保数组元素存在
-            if (plugin.settings.zoomPanScaleArr[i]) {
-                plugin.settings.zoomPanScaleArr[i].pan = panZoomTiger.getPan();
-            }
-        }
-    })
-
-    // 将 panZoom 实例存储到 SVG 元素上，方便后续访问
-    const svgElement = activeDocument.getElementById(`${zkGraph.id}-svg`);
-    if (svgElement) {
-        // @ts-ignore
-        svgElement.panZoomInstance = panZoomTiger;
-    }
-
-    const touchSvg = activeDocument.getElementById(`${zkGraph.id}-svg`);
-
-    if (touchSvg !== null) {
-        let startDistance = 0;
-        let scale = panZoomTiger.getZoom();
-        const lastScale = scale;
-
-        touchSvg.addEventListener('touchstart', (event) => {
-            if (event.touches.length === 2) {
-                const touch1 = event.touches[0];
-                const touch2 = event.touches[1];
-                startDistance = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY);
-            }
-        })
-
-        touchSvg.addEventListener('touchmove', (event) => {
-            if (event.touches.length === 2) {
-                const touch1 = event.touches[0];
-                const touch2 = event.touches[1];
-                const currentDistance = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY);
-                const newScale = currentDistance / startDistance;
-                scale = scale * newScale / lastScale;
-                panZoomTiger.zoom(scale);
-            }
-        })
-    }
-
-    if (typeof plugin.settings.zoomPanScaleArr[i] === 'undefined') {
-
-        const setSvg = activeDocument.getElementById(`${zkGraph.id}-svg`);
-
-        if (setSvg !== null) {
-            const a = setSvg.children[0].getAttr("style");
-            if (a) {
-                const b = a.match(/\d([^,]+)\d/g)
-                if (b !== null && Number(b[0]) > 1) {
-                    panZoomTiger.zoom(1 / Number(b[0]))
-                }
-            }
-            const zoomPanScale: ZoomPanScale = {
-                graphID: zkGraph.id,
-                zoomScale: panZoomTiger.getZoom(),
-                pan: panZoomTiger.getPan(),
-            };
-
-            plugin.settings.zoomPanScaleArr.push(zoomPanScale);
-        }
-
-    } else {
-        panZoomTiger.zoom(plugin.settings.zoomPanScaleArr[i].zoomScale);
-        panZoomTiger.pan(plugin.settings.zoomPanScaleArr[i].pan);
-
-    }
 }
 
 function getfileTags(app: App, file: TFile) {

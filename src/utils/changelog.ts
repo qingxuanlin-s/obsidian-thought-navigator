@@ -12,6 +12,24 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
     {
+        version: '0.2.9',
+        date: '2026-07-12',
+        highlights: [
+            {
+                zh: '新建思维树时先输入文件名称，文件夹右键、Notebook Navigator 与编辑器入口行为一致',
+                en: 'Creating a mind tree now asks for its file name, consistently across folder menus, Notebook Navigator, and the editor command',
+            },
+            {
+                zh: '修复在深色 Obsidian 中选择插件浅色主题时设置页局部变白的问题',
+                en: 'Fixed plugin light mode incorrectly whitening parts of Settings while Obsidian uses a dark theme',
+            },
+            {
+                zh: '移除未使用的 Mermaid/SVG 旧渲染链，图谱统一使用 Cytoscape',
+                en: 'Removed the unused legacy Mermaid/SVG rendering path; graphs now consistently use Cytoscape',
+            },
+        ],
+    },
+    {
         version: '0.2.5',
         date: '2026-06-28',
         highlights: [

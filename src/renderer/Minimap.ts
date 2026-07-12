@@ -244,7 +244,7 @@ export class Minimap {
 
             const isAnchor = !!node.data('isAnchor');
             const isRoot = !!node.data('isRoot');
-            const isLight = activeDocument.body.classList.contains('zk-theme-light');
+            const isLight = this.host.closest('.zk-theme-light') !== null;
 
             if (isAnchor) {
                 ctx.fillStyle = isLight ? '#d4a017' : '#f5dc68';

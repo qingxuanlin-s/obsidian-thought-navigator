@@ -73,7 +73,7 @@ export class GraphDataBuilder {
 
     /**
      * 从 MOC 树节点构建边（包含 reverseRelations）
-     * 只根据 Mermaid 文件中的箭头关系来生成边
+     * 只根据 MOC 文件中的箭头关系来生成边
      * - 如果箭头是父->子关系，使用实线（type: 'parent'）
      * - 其他情况使用虚线（type: 'reverse'）
      */
@@ -86,7 +86,7 @@ export class GraphDataBuilder {
         const groupIdSet = new Set<string>((groups || []).map((group: GroupInfo) => String(group.id || '').trim()).filter(Boolean));
         const edgeKeySet = new Set<string>();
 
-        // 只根据 reverseRelations（Mermaid 文件中的箭头）来生成边
+        // 只根据 reverseRelations（MOC 文件中的箭头）来生成边
         for (const relNode of reverseRelations.values()) {
             const sourceId = String(relNode.sourceID || '').trim();
             const targetId = String(relNode.targetID || '').trim();

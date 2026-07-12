@@ -2,6 +2,7 @@ import { FileView, MarkdownView, moment, Notice, Plugin, TFile, TFolder, Workspa
 import { t } from "src/lang/helper";
 import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
 import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
+import { requestMOCName } from "src/modal/createMocModal";
 import { ZKNavigationSettngTab } from "src/settings/settings";
 import { mainNoteInit, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX } from "src/utils/utils";
 import { createMOCJsonWithInitialNode } from "src/utils/mocJsonCodec";
@@ -19,7 +20,6 @@ import { ZK_RECENT_TYPE, ZKRecentView } from "src/view/recentView";
 import { MOCPreviewView, MOC_PREVIEW_VIEW_TYPE } from "src/view/mocPreviewView";
 import { LayoutPreset, normalizeLayoutPreset } from "src/utils/growthDirection";
 import { ScratchpadManager } from "src/scratch/scratchpadManager";
-import { resolveThemeMode } from "src/utils/themeMode";
 import { ChangelogModal } from "src/modal/changelogModal";
 import { getUnreadEntries } from "src/utils/changelog";
 import { GettingStartedModal } from "src/modal/gettingStartedModal";
@@ -418,16 +418,9 @@ export default class ZKNavigationPlugin extends Plugin {
     }
 
     applyTheme() {
-        // 移除所有主题类
+        // 主题类只能挂在插件视图上。挂到 body 会污染设置页等 Obsidian 宿主界面。
         activeDocument.body.removeClass('zk-theme-dark');
         activeDocument.body.removeClass('zk-theme-light');
-
-        // 根据设置(auto 时跟随 Obsidian)添加对应的主题类
-        if (resolveThemeMode(this.settings.themeMode) === 'light') {
-            activeDocument.body.addClass('zk-theme-light');
-        } else {
-            activeDocument.body.addClass('zk-theme-dark');
-        }
     }
 
     private registerMocExtension(): void {
@@ -875,9 +868,11 @@ export default class ZKNavigationPlugin extends Plugin {
             editorCallback: async (editor, view) => {
                 const activeFile = view.file;
                 if (!activeFile) return;
+                const name = await requestMOCName(this.app);
+                if (!name) return;
                 try {
                     const folder = activeFile.parent;
-                    const newFile = await this.createMOCFile({ folderPath: folder?.path ?? '' });
+                    const newFile = await this.createMOCFile({ folderPath: folder?.path ?? '', name });
                     editor.replaceSelection('![[' + newFile.name + ']]');
                     await this.openCreatedMOC(newFile);
                     this.app.workspace.trigger('zk-navigation:refresh-index-graph');
@@ -1597,8 +1592,10 @@ export default class ZKNavigationPlugin extends Plugin {
     }
 
     private async createMOCInFolder(folder: TFolder): Promise<TFile | null> {
+        const name = await requestMOCName(this.app);
+        if (!name) return null;
         try {
-            const file = await this.createMOCFile({ folderPath: folder.path });
+            const file = await this.createMOCFile({ folderPath: folder.path, name });
             await this.openCreatedMOC(file);
             return file;
         } catch (e) {

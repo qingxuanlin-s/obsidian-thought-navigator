@@ -222,6 +222,7 @@ export default {
     '📖index': '📖关键词',
     "Copy zk-navigation URI":"复制 zk-navigation 链接",
     "New MOC file": "新建思维树",
+    "MOC name": "思维树名称",
     "Reveal current file in tree graph": "在思维树中显示当前文件",
     "default MOC heading title": "思维树",
     "default MOC file prefix": "思维树",
