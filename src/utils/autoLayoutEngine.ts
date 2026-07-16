@@ -50,8 +50,8 @@ const DIAGONAL_GAP_FACTOR = 1.2;
  * 思维导图自动布局引擎(两遍式,所有 preset 共用同一实现):
  * 1. buildLayout 自底向上累计子树跨度;分组放置的节点各方向组独立铺开,跨度取各组的 max。
  * 2. placeLayout 自顶向下分槽;根/分支起点/方向混合的节点按方向分组对称放置,
- *    其余沿继承方向单侧铺开。有保存位置且不在 ignore 集的节点以保存位置为锚,
- *    其子树围绕实际锚点继续放置(saved wins)。
+ *    其余沿继承方向单侧铺开。有保存位置且不在 ignore 集的节点以保存位置为锚;
+ *    若旧位置与继承方向相反,则丢弃该旧位置,避免父分支换侧后子树残留在另一侧。
  *
  * 方向解析:分支起点按"保存位置相对父节点的偏移"量化到所属 preset 的方向池
  * (bidirectional=E/W、top-down=S/N、radial=四对角);深层节点继承父方向,
@@ -146,6 +146,27 @@ export function computeAutoLayout(input: ComputeAutoLayoutInput): Record<string,
 	};
 
 	const getSortPosition = (id: string): Vec2 => input.nodePositions[id] || input.nodes[id].position;
+
+	const canKeepSavedPosition = (layout: LayoutNode, saved: Vec2): boolean => {
+		const parentId = input.parentById[layout.id];
+		if (!parentId || !layout.dir) return true;
+		const parentPos = input.nodePositions[parentId] || input.nodes[parentId]?.position;
+		if (!parentPos) return true;
+
+		// 只有直接按自身位置定向的节点才允许保留与父方向不同的坐标。
+		// 未固定的深层节点必须继承父方向;父节点换侧后,其旧坐标不能继续作为锚点。
+		if (input.sidePinnedIds?.has(layout.id) || isBranchStart(parentId)
+			|| input.realMocRootIds.has(parentId)) {
+			return true;
+		}
+
+		const savedDirection = quantizeToPool(
+			saved.x - parentPos.x,
+			saved.y - parentPos.y,
+			PRESET_POOL[getBranchPreset(parentId)]
+		);
+		return savedDirection === layout.dir;
+	};
 
 	// 颜色分组优先、组内按轴投影排序;投影只计算一次
 	const sortIdsByAxis = (ids: string[], axis: Vec2): string[] => {
@@ -258,8 +279,11 @@ export function computeAutoLayout(input: ComputeAutoLayoutInput): Record<string,
 	};
 
 	const placeLayout = (layout: LayoutNode, cx: number, cy: number) => {
-		const saved = layout.id !== input.relayoutRootId && !input.ignoreSavedPositionsForIds?.has(layout.id)
+		const candidateSaved = layout.id !== input.relayoutRootId && !input.ignoreSavedPositionsForIds?.has(layout.id)
 			? input.nodePositions[layout.id]
+			: undefined;
+		const saved = candidateSaved && canKeepSavedPosition(layout, candidateSaved)
+			? candidateSaved
 			: undefined;
 		const ax = saved ? saved.x : cx;
 		const ay = saved ? saved.y : cy;

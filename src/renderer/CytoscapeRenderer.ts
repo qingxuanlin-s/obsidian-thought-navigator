@@ -1117,13 +1117,18 @@ export class CytoscapeRenderer implements IGraphRenderer {
             '.zk-node-badge'
         ].join(', '))
             .forEach(el => {
+                // pointer-events 是可继承属性，而 .zk-node-badges 容器为 none。恢复时若清成 ''，
+                // 可交互角标(备注 R 标 / 徽章)会继承到 none 而“看得见点不动、悬浮也失效”，
+                // 因此这类角标必须显式恢复成 auto;纯装饰角标继承 none 即符合本意。
+                const restorePE = (el.classList.contains('zk-node-remark-badge')
+                    || el.classList.contains('zk-node-badge')) ? 'auto' : '';
                 if (clearing) {
                     if (el.dataset.levelHidden === '1') el.setCssStyles({ display: '' });
                     if (el.dataset.levelDimmed === '1') {
                         el.setCssStyles({
                             opacity: '',
                             filter: '',
-                            pointerEvents: '',
+                            pointerEvents: restorePE,
                         });
                     }
                     delete el.dataset.levelDimmed;
@@ -1135,6 +1140,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 const cyNode = nodeId && this.cy ? this.cy.$id(nodeId) : null;
                 const isVisible = !!nodeId && visibleCyIds!.has(nodeId);
                 const isDimmed = !!cyNode?.length && cyNode.hasClass('zk-level-dimmed');
+                const isRemarkBadge = el.classList.contains('zk-node-remark-badge');
                 if (visibilityMode === 'dim') {
                     if (el.dataset.levelHidden === '1') el.setCssStyles({ display: '' });
                     delete el.dataset.levelHidden;
@@ -1143,24 +1149,33 @@ export class CytoscapeRenderer implements IGraphRenderer {
                             el.setCssStyles({
                                 opacity: '',
                                 filter: '',
-                                pointerEvents: '',
+                                pointerEvents: restorePE,
                             });
                         }
                         delete el.dataset.levelDimmed;
                     } else {
                         el.dataset.levelDimmed = '1';
-                        if (isLightTheme && el.classList.contains('zk-text-md-overlay')) {
+                        if (isRemarkBadge) {
+                            // 备注角标随分支一起淡化，视觉上与弱化态一致；但它是查看/切换
+                            // 节点上下文的入口，仍保留 pointer-events:auto 使其可点/可悬浮。
+                            el.setCssStyles({
+                                opacity: '0.16',
+                                filter: 'brightness(0.62) saturate(0.58)',
+                                pointerEvents: 'auto',
+                            });
+                        } else if (isLightTheme && el.classList.contains('zk-text-md-overlay')) {
                             el.setCssStyles({
                                 opacity: '0.92',
                                 filter: 'none',
+                                pointerEvents: 'none',
                             });
                         } else {
                             el.setCssStyles({
                                 opacity: '0.16',
                                 filter: 'brightness(0.62) saturate(0.58)',
+                                pointerEvents: 'none',
                             });
                         }
-                        el.setCssStyles({ pointerEvents: 'none' });
                     }
                 } else {
                     if (isVisible) {
@@ -1173,7 +1188,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         el.setCssStyles({
                             opacity: '',
                             filter: '',
-                            pointerEvents: '',
+                            pointerEvents: restorePE,
                         });
                     }
                     delete el.dataset.levelDimmed;
@@ -1585,7 +1600,13 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
     applyCollapsedState(): void {
         if (!this.cy) return;
+        const previouslyCollapsed = this.cy.elements('.zk-collapsed-hidden');
         this.collapsedNodeIds = layoutAdapter.applyCollapsedState(this.cy, this.collapsedNodeIds);
+        // 焦点筛选会以 bypass style 写入 display。先清除旧折叠节点的覆盖，
+        // 再让当前折叠状态明确覆盖焦点筛选，保证收起操作始终生效。
+        previouslyCollapsed.removeStyle('display');
+        this.cy.nodes('.zk-collapsed-hidden').style('display', 'none');
+        this.cy.edges('.zk-collapsed-hidden').style('display', 'none');
     }
     
     /**

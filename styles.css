@@ -4349,7 +4349,9 @@ align-items: center;
 .zk-text-md-overlay[data-level-muted="1"] .zk-rough-heading-line,
 .zk-text-md-overlay[data-level-muted="1"] p,
 .zk-text-md-overlay[data-level-muted="1"] li,
-.zk-text-md-overlay[data-level-muted="1"] blockquote {
+.zk-text-md-overlay[data-level-muted="1"] blockquote,
+.zk-text-md-overlay[data-level-muted="1"] a,
+.zk-text-md-overlay[data-level-muted="1"] a.internal-link {
   color: #94a3b8;
 }
 
@@ -4358,7 +4360,9 @@ align-items: center;
 .zk-theme-light .zk-text-md-overlay[data-level-muted="1"] .zk-rough-heading-line,
 .zk-theme-light .zk-text-md-overlay[data-level-muted="1"] p,
 .zk-theme-light .zk-text-md-overlay[data-level-muted="1"] li,
-.zk-theme-light .zk-text-md-overlay[data-level-muted="1"] blockquote {
+.zk-theme-light .zk-text-md-overlay[data-level-muted="1"] blockquote,
+.zk-theme-light .zk-text-md-overlay[data-level-muted="1"] a,
+.zk-theme-light .zk-text-md-overlay[data-level-muted="1"] a.internal-link {
   color: #475569;
 }
 
@@ -4373,6 +4377,12 @@ align-items: center;
   color: var(--text-normal);
 }
 
+/* 祖先路径上的内部链接恢复正常链接色（保持可点/可识别的链接观感） */
+.zk-text-md-overlay.zk-ancestor-active[data-level-muted="1"] a,
+.zk-text-md-overlay.zk-ancestor-active[data-level-muted="1"] a.internal-link {
+  color: var(--link-color);
+}
+
 .zk-theme-light .zk-text-md-overlay.zk-ancestor-active[data-level-muted="1"],
 .zk-theme-light .zk-text-md-overlay.zk-ancestor-active[data-level-muted="1"] .zk-rough-text-line,
 .zk-theme-light .zk-text-md-overlay.zk-ancestor-active[data-level-muted="1"] .zk-rough-heading-line,
@@ -4380,6 +4390,11 @@ align-items: center;
 .zk-theme-light .zk-text-md-overlay.zk-ancestor-active[data-level-muted="1"] li,
 .zk-theme-light .zk-text-md-overlay.zk-ancestor-active[data-level-muted="1"] blockquote {
   color: #253044;
+}
+
+.zk-theme-light .zk-text-md-overlay.zk-ancestor-active[data-level-muted="1"] a,
+.zk-theme-light .zk-text-md-overlay.zk-ancestor-active[data-level-muted="1"] a.internal-link {
+  color: var(--link-color);
 }
 
 .zk-text-md-overlay .zk-rough-list-line {

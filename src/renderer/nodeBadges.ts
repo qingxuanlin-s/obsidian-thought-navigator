@@ -740,6 +740,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                     pointerEvents: 'auto',
                     cursor: `${readOnly ? 'default' : 'pointer'}`,
                     userSelect: 'none',
+                    zIndex: '30',
                     transform: OFFSCREEN_TRANSFORM,
                 });
             };
@@ -883,6 +884,12 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
 
             // R 角标点击 = 打开/切换该节点的详情侧栏(读+编辑都在面板里完成)。
             // 只读态也允许点开查看备注,编辑能力由面板内部 canEdit 把关。
+            const swallowRemarkPointer = (e: Event) => {
+                e.preventDefault();
+                e.stopPropagation();
+            };
+            remarkEl.addEventListener('pointerdown', swallowRemarkPointer);
+            remarkEl.addEventListener('mousedown', swallowRemarkPointer);
             remarkEl.addEventListener('click', (e) => {
                 e.stopPropagation();
                 node.select();
@@ -2441,15 +2448,19 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                 // 含公式时 MathJax 异步排版，typeset 完成后再测一次尺寸(供手动锁宽高节点回写)
                 if (mathRendered) {
                     const mathEntry = entry;
-                    renderPromises.push(
-                        finishRenderMath().then(() => {
-                            if (node.removed?.()) return;
-                            const r = mathEntry.el.getBoundingClientRect();
-                            mathEntry.width = Math.max(80, Math.min(r.width + 4, 640));
-                            mathEntry.height = Math.max(32, Math.min(r.height + 4, 640));
-                            measureAndSizePending.push({ node, entry: mathEntry });
-                        }).catch(() => { /* ignore */ })
-                    );
+                    try {
+                        renderPromises.push(
+                            finishRenderMath().then(() => {
+                                if (node.removed?.()) return;
+                                const r = mathEntry.el.getBoundingClientRect();
+                                mathEntry.width = Math.max(80, Math.min(r.width + 4, 640));
+                                mathEntry.height = Math.max(32, Math.min(r.height + 4, 640));
+                                measureAndSizePending.push({ node, entry: mathEntry });
+                            }).catch(() => { /* ignore */ })
+                        );
+                    } catch {
+                        // Obsidian 刚重载时 MathJax 可能尚未初始化，保留 renderMath 的回退内容。
+                    }
                 }
             }
 

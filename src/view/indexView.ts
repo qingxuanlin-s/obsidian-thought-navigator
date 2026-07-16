@@ -19,6 +19,7 @@ import { resolveDroppedVaultFiles } from "src/utils/dropFileResolver";
 import { createMOCJsonWithInitialNode } from "src/utils/mocJsonCodec";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
 import { createSelectionColorPanel } from "src/renderer/colorUtils";
+import { ensureMOCPreviewPNG } from "src/embed/mocEmbedExporter";
 import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
 import { RenderOptions, CyData } from "src/renderer/types";
 import { dataStr, dataAs } from "src/renderer/cyData";
@@ -3062,6 +3063,8 @@ window.addEventListener('resize', fitGraph);
             smartConnection: this.plugin.settings.smartConnection === true,
             readOnly: this.isMobileReadOnly(),
             initialCollapsedNodeIds: this.collapsedNodeIds,
+            // MOC 节点优先使用缓存 PNG；首次嵌入时由导出器生成，避免回退到 JSON 正文。
+            mocPreviewExporter: (mocFile) => ensureMOCPreviewPNG(mocFile, this.plugin),
             openLink: (linkText, sourcePath, forceTab) => this.openLinkInPreferredLeaf(linkText, sourcePath, forceTab),
             openFile: (file, wikiLink, forceTab) => this.openFileInPreferredLeaf(file, forceTab, this.getWikiSubpath(wikiLink)),
         };
@@ -3531,6 +3534,10 @@ window.addEventListener('resize', fitGraph);
                 const mocFile = getLatestMOCFile();
                 if (!mocFile) return;
                 this.collapsedNodeIds = collapsedNodeIds;
+                if (this.currentDimLevel !== null && this.currentDimLevel <= this.levelPath.length) {
+                    this.applyLevelDim(this.currentDimLevel, this.levelPath[this.currentDimLevel - 1]);
+                    this.branchRenderer?.applyCollapsedState();
+                }
                 await this.persistCollapseState(mocFile, collapsedNodeIds);
                 if (this.isNodeAutoLayout(nodeId)) {
                     // auto 布局:收起和展开都按当前 collapsedNodeIds 重新计算可见节点的紧凑布局。
@@ -5124,11 +5131,11 @@ window.addEventListener('resize', fitGraph);
         }
         if (node.isCrossDomain || node.isPlaceholder || node.isDraft) return;
         if ((node.IDStr || '').startsWith('free.')) return;
+
+        // 焦点筛选跟随当前选中节点的路径;新节点较浅时收敛层级而不退出筛选。
         this.levelPath = [...node.IDArr];
-        // 校验暗淡级别是否仍有效
-        if (this.currentDimLevel !== null && this.currentDimLevel > this.levelPath.length) {
-            this.clearLevelDim();
-        } else if (this.currentDimLevel !== null) {
+        if (this.currentDimLevel !== null) {
+            this.currentDimLevel = Math.min(this.currentDimLevel, this.levelPath.length);
             this.applyLevelDim(this.currentDimLevel, this.levelPath[this.currentDimLevel - 1]);
         }
         this.refreshLevelBreadcrumb();
@@ -6671,10 +6678,11 @@ window.addEventListener('resize', fitGraph);
             return;
         }
 
+        const contentChanged = newContent !== currentContent;
         try {
             const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
             if (mocFile) {
-                if (newContent !== currentContent) {
+                if (contentChanged) {
                     if (node.isTextOnly) {
                         const contentForSave = this.encodeMultilineText(newContent);
                         await this.mocHandler.updateNodeContentInMOC(mocFile, node.IDStr, contentForSave);
@@ -6706,6 +6714,23 @@ window.addEventListener('resize', fitGraph);
 
                 // 刷新视图
                 await this.refreshBranchMermaid();
+
+                // 编辑改变内容后节点宽度按新内容重算,但其保存的中心坐标不变,会让
+                // "中心-半宽=近端(左/右)边缘"偏离 relayoutAutoLayoutSiblings 的近端对齐线,
+                // 表现为与同级子节点左边缘不齐。对 auto 布局补一次局部重排(等价于用户
+                // "挪出圈再挪回"触发的那次),用新宽度重算中心使近端边缘重新对齐;
+                // 与新建节点路径(finalizeTextOnlyNode 末尾 reflow)保持一致。
+                if (contentChanged && this.isNodeAutoLayout(node.IDStr)) {
+                    const parentId = this.resolveRealParentId(node.IDStr);
+                    if (parentId) {
+                        await this.relayoutAutoLayoutSiblings(parentId, {
+                            compactVisibleNodes: true,
+                            collapsedNodeIds: this.collapsedNodeIds,
+                            rebalanceRootChildren: true,
+                            localOnly: true,
+                        });
+                    }
+                }
 
                 new Notice(`已更新节点内容`);
             }

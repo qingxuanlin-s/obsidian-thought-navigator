@@ -546,7 +546,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
         {
             selector: 'node[?isPlaceholder]',
             style: {
-                'width': (ele: cytoscape.NodeSingular) => Math.max(240, computeAutoTextMetrics(dataStr(ele, 'label')).width),
+                'width': (ele: cytoscape.NodeSingular) => Math.max(100, computeAutoTextMetrics(dataStr(ele, 'label')).width),
                 'height': (ele: cytoscape.NodeSingular) => Math.max(80, computeAutoTextMetrics(dataStr(ele, 'label')).height),
                 'opacity': 0.7,
                 'border-style': 'dashed',
@@ -974,6 +974,8 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
             }
         },
         // 当前文件节点（与分支视图根节点颜色一致）
+        // 文字默认走 muted：当前文件保留边框/底色作为"你在这里"标记，但不再常亮抢眼；
+        // 只有当它落在被选中节点的祖先路径上时，后续的 .zk-ancestor-active 规则才把文字点亮。
         {
             selector: 'node[?isCurrentFile]',
             style: {
@@ -981,7 +983,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                 'border-color': theme.node.currentBorder,
                 'border-width': '2.5px',
                 'background-opacity': theme.effects.currentBackgroundOpacity,
-                'color': theme.node.textSelected,
+                'color': theme.node.textMuted,
                 'font-weight': '600'
             }
         },
@@ -1155,7 +1157,8 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                         return `0 ${pct} ${pct} 100`;
                     },
                     'border-opacity': 0.5,
-                    'color': theme.node.text,
+                    // 不写 'color':让前面 2 级及以下的 muted 文字规则透出,
+                    // 与 text-only 节点 DOM overlay 的 [data-level-muted] 色保持一致。
                 }
             },
             // 1 级节点:卡片左缘同样加一道更亮的分支色条(未选中态)。
@@ -1222,6 +1225,13 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                 'overlay-opacity': 0,
                 'underlay-opacity': 0,
                 'z-index': 1
+            }
+        },
+        // Markdown overlay 节点始终由 HTML 层绘制文字;弱化时也不能恢复 Canvas 原始标签。
+        {
+            selector: 'node.zk-level-dimmed[?isTextOnly][?hasMarkdownOverlay]',
+            style: {
+                'text-opacity': 0
             }
         },
         {

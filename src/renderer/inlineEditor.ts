@@ -1771,7 +1771,7 @@ export function startPlaceholderInPlaceEdit(this: CytoscapeRenderer, node: cytos
         this.ensureNodeVisibleInViewport(node);
 
         // 给占位符节点一个合理的编辑尺寸
-        const defaultW = 240;
+        const defaultW = 100;
         const defaultH = 80;
         node.style({ width: defaultW, height: defaultH });
 
@@ -2102,7 +2102,7 @@ export function startPlaceholderTextareaFallback(this: CytoscapeRenderer, node: 
         const data = node.data();
 
         const bb = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
-        const boxW = Math.max(bb?.w || 0, 240);
+        const boxW = Math.max(bb?.w || 0, 100);
         const boxH = Math.max(bb?.h || 0, 80);
         const renderedPosition = node.renderedPosition();
 

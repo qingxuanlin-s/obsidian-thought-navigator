@@ -304,6 +304,16 @@ export function bindEvents(this: CytoscapeRenderer): void {
             this.updateActiveFirstLevelBranch();
         });
 
+        // 所有选中来源(鼠标、方向键、搜索和程序定位)统一同步到视图层。
+        this.cy.on('select', 'node', (evt: cytoscape.EventObject) => {
+            const node = evt.target as cytoscape.NodeSingular;
+            const data = node.data() as CyData;
+            if (data.isGroup || data.isPlaceholder || !data.originalNode) return;
+            this.container?.dispatchEvent(new CustomEvent('node-select', {
+                detail: { node: data.originalNode }
+            }));
+        });
+
         // 祖先链高亮:点击节点 → 它到 root 的整条路径恢复亮色(覆盖 2 级+ muted)+ 沿途边加粗。
         // unselect 后,如果还有别的节点是选中态,以 ID 字典序最小者为锚(确定性即可,不重要);
         // 全部 unselect 时清除高亮。
@@ -322,7 +332,6 @@ export function bindEvents(this: CytoscapeRenderer): void {
         this.cy.on('tap', 'node', (evt: cytoscape.EventObject) => {
             const node = evt.target as cytoscape.NodeSingular;
             const data = node.data() as CyData;
-            const originalEvent = evt.originalEvent as MouseEvent;
 
             // 点击的是节点内的文件链接/wiki 链接区域(其 mousedown 会打时间戳):
             // 只打开文件,不选中、不开 detail。tap 由 pointerup 合成,早于 DOM click,
@@ -374,25 +383,10 @@ export function bindEvents(this: CytoscapeRenderer): void {
 
             // 跨领域节点：单击只选中，不跳转（跳转到双击处理）
             if (data.isCrossDomain) {
-                // 只选中节点，不触发跳转
-                // 触发选中事件以便其他功能使用
-                this.container?.dispatchEvent(new CustomEvent('node-select', {
-                    detail: {
-                        node: data.originalNode,
-                        event: originalEvent
-                    }
-                }));
                 return;
             }
 
             // 普通节点：单击只选中，不打开文件
-            // 触发自定义事件（用于其他功能，如高亮等）
-            this.container?.dispatchEvent(new CustomEvent('node-select', {
-                detail: {
-                    node: data.originalNode,
-                    event: originalEvent
-                }
-            }));
         });
 
         // 节点双击事件（编辑内容）
@@ -3706,10 +3700,13 @@ export function handleArrowKeyNavigation(this: CytoscapeRenderer, key: string): 
         if (!activeNode) return;
 
         const nodePosition = activeNode.position();
-        const allNodes = this.cy.nodes().filter((node: cytoscape.NodeSingular) => !node.data().isPlaceholder);
+        const allNodes = this.cy.nodes().filter((node: cytoscape.NodeSingular) => {
+            const data = node.data() as CyData;
+            return !data.isPlaceholder && !data.isGroup;
+        });
 
         // 根据方向键找到最近的节点
-        let targetNode: any | null = null;
+        let targetNode: cytoscape.NodeSingular | null = null;
         let minDistance = Infinity;
 
         allNodes.forEach((node: cytoscape.NodeSingular) => {
@@ -3746,12 +3743,13 @@ export function handleArrowKeyNavigation(this: CytoscapeRenderer, key: string): 
             }
         });
 
-        if (targetNode) {
+        const selectedTarget = targetNode as cytoscape.NodeSingular | null;
+        if (selectedTarget) {
             // 取消当前选中
             this.cy.$(':selected').unselect();
 
             // 选中目标节点
-            targetNode.select();
+            selectedTarget.select();
 
             // 可选：将视图中心移到选中的节点
             // this.cy.animate({
