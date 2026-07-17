@@ -3386,6 +3386,17 @@ window.addEventListener('resize', fitGraph);
                                 if (!mocData.nodePositions) {
                                     mocData.nodePositions = {};
                                 }
+                                // 翻面检测:覆盖新位置前,先记录圆内拖动节点相对父节点的旧侧别,
+                                // 拖后若换侧说明用户把整条分支拖到了对侧,需连带翻转其子树。
+                                const oldSideDirById = new Map<string, GrowthDirection>();
+                                for (const [nodeID, sep] of separations) {
+                                    if (sep.willSeparate) continue;
+                                    const oldPos = mocData.nodePositions[nodeID];
+                                    const parentPos = mocData.nodePositions[sep.parentId];
+                                    if (!oldPos || !parentPos) continue;
+                                    const pool = PRESET_POOL[this.getPresetForChildren(sep.parentId)];
+                                    oldSideDirById.set(nodeID, quantizeToPool(oldPos.x - parentPos.x, oldPos.y - parentPos.y, pool));
+                                }
                                 for (const [nodeID, pos] of normalChanges) {
                                     mocData.nodePositions[nodeID] = {
                                         x: Math.round(pos.x * 100) / 100,
@@ -3405,6 +3416,30 @@ window.addEventListener('resize', fitGraph);
                                         // 该节点自身保存位置导出左右,不再继承父方向弹回对侧。
                                         treeNode.extBitMap = (((treeNode.extBitMap || 0) & ~NODE_FLAG_SEPARATED) | NODE_FLAG_SIDE_PINNED) & 0xff;
                                     }
+                                }
+                                // 翻面:圆内拖动使某节点相对父节点换侧时,清掉其整棵子树的 SIDE_PINNED。
+                                // 新建节点会给每个节点打 SIDE_PINNED(定侧),导致子节点被钉在原侧、
+                                // 父分支翻面时不跟随。清掉后,子树按父的新方向继承摆放(见 autoLayoutEngine
+                                // 的继承规则 + canKeepSavedPosition 丢弃反向旧坐标),整体跟随翻面。
+                                for (const [nodeID, sep] of separations) {
+                                    if (sep.willSeparate) continue;
+                                    const oldDir = oldSideDirById.get(nodeID);
+                                    if (!oldDir) continue;
+                                    const newPos = mocData.nodePositions[nodeID];
+                                    const parentPos = mocData.nodePositions[sep.parentId];
+                                    if (!newPos || !parentPos) continue;
+                                    const pool = PRESET_POOL[this.getPresetForChildren(sep.parentId)];
+                                    const newDir = quantizeToPool(newPos.x - parentPos.x, newPos.y - parentPos.y, pool);
+                                    if (newDir === oldDir) continue;
+                                    const flippedRoot = this.findNodeInTree(mocData.nodes, nodeID);
+                                    if (!flippedRoot) continue;
+                                    const unpinDescendants = (n: MOCTreeNode) => {
+                                        for (const child of n.children || []) {
+                                            child.extBitMap = ((child.extBitMap || 0) & ~NODE_FLAG_SIDE_PINNED) & 0xff;
+                                            unpinDescendants(child);
+                                        }
+                                    };
+                                    unpinDescendants(flippedRoot);
                                 }
                                 for (const { nodeId, groupId } of groupLeaves) {
                                     const group = mocData.groups?.find((g) => g.id === groupId);

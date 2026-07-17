@@ -133,11 +133,13 @@ export function computeAutoLayout(input: ComputeAutoLayoutInput): Record<string,
 		// 分支起点(父为 MOC 根)同样按自身位置量化到所属分支的方向池。
 		if (nodeId === input.relayoutRootId || input.realMocRootIds.has(parentId)) {
 			direction = resolveFromPool(nodeId, parentId, getBranchPreset(nodeId));
-		} else if (isBranchStart(parentId) || input.sidePinnedIds?.has(nodeId)) {
-			// 二级节点定分支内侧别;侧别已固定(SIDE_PINNED)的深层节点也按自身保存位置
-			// 导出方向,不继承父方向。
+		} else if (input.sidePinnedIds?.has(nodeId)) {
+			// 侧别已固定(SIDE_PINNED)的节点按自身保存位置导出方向,不继承父方向。
 			direction = resolveFromPool(nodeId, parentId, getBranchPreset(parentId));
 		} else {
+			// 分支只在一级(根的直接子)按位置分左右/方向;其下整条分支继承父方向同向延伸。
+			// 要把某个子节点放到对侧须显式拖动固定(SIDE_PINNED)。这样父分支换侧翻面时,
+			// 整个子树跟随翻面,不会出现"父在左、子仍朝右伸展"的残留。
 			direction = getDirection(parentId) || PRESET_POOL[getBranchPreset(parentId)][0];
 		}
 
@@ -153,9 +155,11 @@ export function computeAutoLayout(input: ComputeAutoLayoutInput): Record<string,
 		const parentPos = input.nodePositions[parentId] || input.nodes[parentId]?.position;
 		if (!parentPos) return true;
 
-		// 只有直接按自身位置定向的节点才允许保留与父方向不同的坐标。
-		// 未固定的深层节点必须继承父方向;父节点换侧后,其旧坐标不能继续作为锚点。
-		if (input.sidePinnedIds?.has(layout.id) || isBranchStart(parentId)
+		// 只有直接按自身位置定向的节点才允许保留与父方向不同的坐标:
+		// 一级分支节点(父为根)按位置定侧、侧别已固定(SIDE_PINNED)的节点按自身位置定向。
+		// 其余(含二级及更深)一律继承父方向;父节点换侧后,其旧坐标不能继续作为锚点,
+		// 否则子树残留在原侧。
+		if (input.sidePinnedIds?.has(layout.id)
 			|| input.realMocRootIds.has(parentId)) {
 			return true;
 		}
