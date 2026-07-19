@@ -756,7 +756,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
 				top: '-99999px',
 				maxWidth: '280px',
 				padding: '8px 10px',
-				background: 'rgba(15, 23, 42, 0.96)',
+				background: '#0f172a',
 				color: '#ffffff',
 				fontSize: '12px',
 				lineHeight: '1.45',
@@ -769,7 +769,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
 				opacity: '0',
 				transform: 'translateY(4px)',
 				transition: 'opacity 0.12s ease, transform 0.12s ease',
-				zIndex: '20',
+				zIndex: '40',
 			});
             badgeContainer.appendChild(tooltipEl);
 

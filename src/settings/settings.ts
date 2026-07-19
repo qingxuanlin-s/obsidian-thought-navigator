@@ -444,7 +444,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
 
         new Setting(quickActionContent)
             .setName(t("Smart connection"))
-            .setDesc(t("When enabled, dragging a placeholder node within 200px of another node automatically attaches it as a child"))
+            .setDesc(t("When enabled, dragging a placeholder or unconnected free node near another node automatically attaches it as a child"))
             .addToggle(toggle => toggle.setValue(this.plugin.settings.smartConnection)
                 .onChange((value) => {
                     this.plugin.settings.smartConnection = value;

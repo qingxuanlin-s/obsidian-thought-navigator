@@ -12,6 +12,32 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
     {
+        version: '0.3.0',
+        date: '2026-07-19',
+        highlights: [
+            {
+                zh: '新增「拖动换父」手势:把节点拖到目标侧边即成为它的子节点,拖到当前父节点正上方即升级为其兄弟(绿框=成子/红框=成兄弟);支持多选批量换父',
+                en: 'New drag-to-reparent gesture: drag a node beside a target to nest it as a child, or drag it just above its current parent to promote it to a sibling (green = child / red = sibling); multi-select batch reparenting supported',
+            },
+            {
+                zh: '换父只感知「同一水平行的横向近邻」:在纵向堆叠里上下拖动排序不再误触换父,只有真正沿生长方向靠到某节点侧边才会挂接',
+                en: 'Reparenting now only senses horizontal neighbors on the same row: reordering nodes up/down within a vertical stack no longer misfires — attachment happens only when you approach a node from its growth side',
+            },
+            {
+                zh: '未连线的自由节点(不再仅限占位符)拖近另一节点也能自动挂为子节点',
+                en: 'Unconnected free nodes (no longer just placeholders) can also auto-attach as a child when dragged near another node',
+            },
+            {
+                zh: '工作区新增「导入已有项目」:把库中已有的项目文件批量导入某个 Space 并自动归类',
+                en: 'Workspace can now "import existing projects": batch-import existing project files into a Space with automatic classification',
+            },
+            {
+                zh: '修复:拖动分支节点换到对侧时整棵子树跟随翻面生长;修复弱化态角标交互、焦点筛选与折叠联动,以及自动布局换侧后的残留',
+                en: 'Fixes: flipping a branch to the opposite side now flips its whole subtree along with it; fixed muted-badge interaction, focus-filter/collapse coupling, and auto-layout side-flip residue',
+            },
+        ],
+    },
+    {
         version: '0.2.9',
         date: '2026-07-12',
         highlights: [

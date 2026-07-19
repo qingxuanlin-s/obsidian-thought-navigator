@@ -934,6 +934,8 @@ export function bindEvents(this: CytoscapeRenderer): void {
         let svgOverlay: SVGSVGElement | null = null;
         let nearbyNodeId: string | null = null;
         const PROXIMITY_THRESHOLD = 250;  // 250px 范围
+        const SINGLE_REPARENT_SNAP_GAP = 36; // 单节点需要边缘几乎贴近，避免普通摆放时误换父
+        const MULTI_REPARENT_SNAP_GAP = 160; // 多选批量拖动保留自动布局的正常父子间距
         let alignmentOverlay: SVGSVGElement | null = null;
         let verticalAlignmentLine: SVGLineElement | null = null;
         let horizontalAlignmentLine: SVGLineElement | null = null;
@@ -980,10 +982,32 @@ export function bindEvents(this: CytoscapeRenderer): void {
             isCrossDomain: boolean;
             metrics: { x: number; y: number; x1: number; x2: number; y1: number; y2: number; width: number; height: number };
         };
+        type ReparentGesture = {
+            primaryCyId: string;
+            roots: Array<{ cyId: string; nodeId: string; currentParentId: string | null }>;
+            draggedCyIds: Set<string>;
+            targetCyId: string | null;
+            targetNodeId: string | null;
+            anchorCyId: string | null;
+            committed: boolean;
+        };
+        type ReparentHit = {
+            target: cytoscape.NodeSingular;
+            anchor: cytoscape.NodeSingular;
+            parentNodeId: string;
+            // 'child' = 丢到目标身上成为其子节点(绿框)；'sibling' = 移出当前父、与其成为兄弟(红框)
+            kind: 'child' | 'sibling';
+        };
         let dragCandidateSnapshot: DragCandidate[] = [];
         let snapshotZoom = 0;
         let snapshotPanX = 0;
         let snapshotPanY = 0;
+        let reparentGesture: ReparentGesture | null = null;
+
+        const businessIdOf = (node: cytoscape.NodeSingular): string => {
+            const data = node.data() as CyData;
+            return data.originalNode?.IDStr || data.originalNode?.ID || data.originalSource || data.id || node.id();
+        };
 
         const buildDragCandidateSnapshot = (draggedId: string) => {
             if (!this.cy) {
@@ -1409,6 +1433,143 @@ export function bindEvents(this: CytoscapeRenderer): void {
             return nearest;
         };
 
+        const findNearestReparentTarget = (): ReparentHit | null => {
+            if (!this.cy || !reparentGesture) return null;
+            const snapGap = reparentGesture.roots.length > 1
+                ? MULTI_REPARENT_SNAP_GAP
+                : SINGLE_REPARENT_SNAP_GAP;
+            const thresholdSq = snapGap * snapGap;
+            const draggedRoots = reparentGesture.roots
+                .map((root) => this.cy!.$id(root.cyId) as cytoscape.NodeSingular)
+                .filter((draggedNode) => draggedNode && draggedNode.length > 0 && !draggedNode.removed())
+                .map((draggedNode) => ({ node: draggedNode, metrics: getRenderedMetrics(draggedNode) }));
+            if (draggedRoots.length === 0) return null;
+            const groupBounds = draggedRoots.reduce((bounds, root) => ({
+                x1: Math.min(bounds.x1, root.metrics.x1),
+                x2: Math.max(bounds.x2, root.metrics.x2),
+                y1: Math.min(bounds.y1, root.metrics.y1),
+                y2: Math.max(bounds.y2, root.metrics.y2),
+            }), {
+                x1: Number.POSITIVE_INFINITY,
+                x2: Number.NEGATIVE_INFINITY,
+                y1: Number.POSITIVE_INFINITY,
+                y2: Number.NEGATIVE_INFINITY,
+            });
+            const groupCenter = {
+                x: (groupBounds.x1 + groupBounds.x2) / 2,
+                y: (groupBounds.y1 + groupBounds.y2) / 2,
+            };
+            // 单节点紧贴当前父节点正上方：提升一级，改挂到祖父节点，与当前父节点成为兄弟。
+            if (reparentGesture.roots.length === 1) {
+                const root = reparentGesture.roots[0];
+                const currentParent = dragCandidateSnapshot.find((candidate) =>
+                    businessIdOf(candidate.node) === root.currentParentId);
+                if (currentParent) {
+                    const verticalGap = currentParent.metrics.y1 - groupBounds.y2;
+                    const horizontalTolerance = Math.max(
+                        SINGLE_REPARENT_SNAP_GAP,
+                        Math.min(currentParent.metrics.width, groupBounds.x2 - groupBounds.x1) * 0.35
+                    );
+                    if (verticalGap >= 0
+                        && verticalGap <= SINGLE_REPARENT_SNAP_GAP
+                        && Math.abs(groupCenter.x - currentParent.metrics.x) <= horizontalTolerance) {
+                        const grandparentEdges = currentParent.node.incomers('edge')
+                            .filter((edge: cytoscape.EdgeSingular) => edge.data('type') === 'parent');
+                        if (grandparentEdges.length > 0) {
+                            const grandparent = (grandparentEdges.last() as cytoscape.EdgeSingular).source();
+                            const grandparentId = businessIdOf(grandparent);
+                            if (grandparentId) {
+                                return {
+                                    target: currentParent.node,
+                                    anchor: draggedRoots[0].node,
+                                    parentNodeId: grandparentId,
+                                    kind: 'sibling',
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+
+            let best: ReparentHit | null = null;
+            let bestLaneOffset = Number.POSITIVE_INFINITY;
+            let bestGapSq = Number.POSITIVE_INFINITY;
+            let bestCenterSq = Number.POSITIVE_INFINITY;
+
+            for (const candidate of dragCandidateSnapshot) {
+                if (candidate.isPlaceholder || candidate.isGroup || candidate.isFreeNode || candidate.isCrossDomain) continue;
+                const targetNodeId = businessIdOf(candidate.node);
+                if (!targetNodeId) continue;
+                if (reparentGesture.roots.some((root) =>
+                    targetNodeId === root.nodeId || targetNodeId.startsWith(`${root.nodeId}.`))) continue;
+                if (reparentGesture.roots.every((root) => root.currentParentId === targetNodeId)) continue;
+                const target = candidate.metrics;
+                const gapX = Math.max(target.x1 - groupBounds.x2, groupBounds.x1 - target.x2, 0);
+                const gapY = Math.max(target.y1 - groupBounds.y2, groupBounds.y1 - target.y2, 0);
+                const gapSq = gapX * gapX + gapY * gapY;
+                if (gapSq > thresholdSq) continue;
+
+                // 换父手势：必须落在目标子节点生长一侧、且与目标在“横向车道”上有交叠（同一行/列），
+                // 避免斜向、错位的远处节点被误吸;不再有“盖住目标框即换父”的重叠兜底(见下方判定)。
+                // 方向须按“目标子节点的实际生长方向”推断:getAutoLayoutDirection 取的是根→一级分支
+                // 方向,对“父子纵向、子树横向生长”的分支会误判成纵向,导致车道判成同列、把纵向堆叠的
+                // 兄弟当近邻(用户只希望感知同一水平线上的近邻)。
+                const direction = layoutAdapter.getAutoChildGrowthDirection(candidate.node);
+                const overlapsX = groupBounds.x1 < target.x2 && groupBounds.x2 > target.x1;
+                const overlapsY = groupBounds.y1 < target.y2 && groupBounds.y2 > target.y1;
+                const offsetX = groupCenter.x - target.x;
+                const offsetY = groupCenter.y - target.y;
+                const forward = offsetX * direction.x + offsetY * direction.y;
+                // 垂直于生长轴的偏移(堆叠轴分量):横向布局即 Y 差。
+                const lateral = offsetX * -direction.y + offsetY * direction.x;
+                // 生长方向为水平(LR/RL)时车道是纵向(比 Y 交叠)，为垂直(TB/BT)时车道是横向(比 X 交叠)。
+                const laneAligned = direction.x !== 0 ? overlapsY : overlapsX;
+                // 换父只感知“沿生长轴(横向布局即 X 轴)靠近”的近邻:必须落在目标子节点生长一侧
+                // (forward>0)、且生长轴分量压过堆叠轴分量(落在 ±45° 锥内=确实“在侧边”而非“上下堆叠”)。
+                // 只判 forward>0 太弱:纵向堆叠里上下拖动时,同列的几像素横向抖动就会让 forward 微正、
+                // 又与相邻兄弟 Y 交叠而误触换父。加锥角判定后,纯上下拖动(堆叠轴分量占主导)不再被感知。
+                if (forward <= 0 || !laneAligned || forward < Math.abs(lateral)) continue;
+                const laneOffset = direction.x !== 0
+                    ? Math.max(target.y1 - groupCenter.y, groupCenter.y - target.y2, 0)
+                    : Math.max(target.x1 - groupCenter.x, groupCenter.x - target.x2, 0);
+                const centerSq = offsetX * offsetX + offsetY * offsetY;
+                if (laneOffset > bestLaneOffset
+                    || (laneOffset === bestLaneOffset && gapSq > bestGapSq)
+                    || (laneOffset === bestLaneOffset && gapSq === bestGapSq && centerSq >= bestCenterSq)) continue;
+
+                const anchor = draggedRoots.reduce((nearest, root) => {
+                    const nearestDx = nearest.metrics.x - target.x;
+                    const nearestDy = nearest.metrics.y - target.y;
+                    const rootDx = root.metrics.x - target.x;
+                    const rootDy = root.metrics.y - target.y;
+                    return rootDx * rootDx + rootDy * rootDy < nearestDx * nearestDx + nearestDy * nearestDy
+                        ? root
+                        : nearest;
+                }).node;
+                bestLaneOffset = laneOffset;
+                bestGapSq = gapSq;
+                bestCenterSq = centerSq;
+                best = { target: candidate.node, anchor, parentNodeId: targetNodeId, kind: 'child' };
+            }
+
+            return best;
+        };
+
+        const ensureConnectionOverlay = (): void => {
+            if (svgOverlay || !this.container) return;
+            svgOverlay = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svgOverlay.setCssStyles({
+                position: 'absolute',
+                top: '0',
+                left: '0',
+                width: '100%',
+                height: '100%',
+                pointerEvents: 'none',
+                zIndex: '2',
+            });
+            this.container.appendChild(svgOverlay);
+        };
+
         // 智能连线虚线：复用单个 SVG line，避免每帧 remove/create
         const ensureTempConnectionLine = (): SVGLineElement | null => {
             if (!svgOverlay) return null;
@@ -1443,6 +1604,47 @@ export function bindEvents(this: CytoscapeRenderer): void {
             }
             smartHoverTargetId = targetId;
             nearbyNodeId = targetId;
+        };
+
+        const setReparentTarget = (hit: ReparentHit | null): void => {
+            if (!reparentGesture) return;
+            const targetCyId = hit?.target.id() || null;
+            if (reparentGesture.targetCyId !== targetCyId) {
+                if (reparentGesture.targetCyId) {
+                    const previous = this.cy!.$id(reparentGesture.targetCyId);
+                    if (previous && previous.length > 0) {
+                        previous.removeClass('connection-target-hover reparent-sibling-hover');
+                    }
+                }
+                // 成子(child)→绿框;移出成兄弟(sibling)→红框,便于区分两种手势
+                if (hit) hit.target.addClass(hit.kind === 'sibling' ? 'reparent-sibling-hover' : 'connection-target-hover');
+            }
+            reparentGesture.targetCyId = targetCyId;
+            reparentGesture.targetNodeId = hit?.parentNodeId || null;
+            reparentGesture.anchorCyId = hit?.anchor.id() || null;
+        };
+
+        const finishAutoHierarchyDrag = (persistPositions: boolean): void => {
+            if (!isAutoHierarchyDrag) return;
+            autoHierarchyDescendants.forEach(({ node: descendant }) => {
+                descendant.removeClass('auto-hierarchy-descendant');
+                if (!persistPositions) return;
+                const descendantData = descendant.data() as CyData;
+                if (!descendantData?.originalNode) return;
+                const position = descendant.position();
+                this.container?.dispatchEvent(new CustomEvent('node-position-changed', {
+                    detail: {
+                        node: descendantData.originalNode,
+                        nodeId: descendantData.id,
+                        position: { x: position.x, y: position.y }
+                    }
+                }));
+            });
+            this.cy!.edges('.auto-hierarchy-descendant-edge').removeClass('auto-hierarchy-descendant-edge');
+            isAutoHierarchyDrag = false;
+            autoHierarchyDescendants = [];
+            autoHierarchyGrabbedNode = null;
+            autoHierarchyStyled = false;
         };
 
         const findContainingGroup = (node: cytoscape.NodeSingular, excludedGroupId?: string | null): cytoscape.NodeSingular | null => {
@@ -1486,8 +1688,54 @@ export function bindEvents(this: CytoscapeRenderer): void {
             ensureAlignmentOverlay();
             hideAlignmentGuides();
 
-            // 单节点拖拽：建静态候选快照（drag 期间复用），多节点拖拽不需要辅助/智能连线
-            if (!isMultiNodeDrag) {
+            if (reparentGesture) setReparentTarget(null);
+            reparentGesture = null;
+            {
+                const gestureNodes: cytoscape.NodeSingular[] = [];
+                const selectedNodes = this.cy!.nodes(':selected');
+                if (isMultiNodeDrag && node.selected()) {
+                    selectedNodes.forEach((selected: cytoscape.NodeSingular) => {
+                        gestureNodes.push(selected);
+                    });
+                } else {
+                    gestureNodes.push(node);
+                }
+                const allAutoTreeNodes = gestureNodes.length > 0 && gestureNodes.every((candidate) => {
+                    const candidateData = candidate.data() as CyData;
+                    if (candidateData.isPlaceholder || candidateData.isGroup || candidateData.isCrossDomain || candidateData.isDraft) return false;
+                    const nodeId = businessIdOf(candidate);
+                    return !!nodeId && !nodeId.startsWith('free.') && this.isNodeAutoLayoutForId(nodeId);
+                });
+                if (allAutoTreeNodes) {
+                    const byNodeId = new Map<string, cytoscape.NodeSingular>();
+                    gestureNodes.forEach((candidate) => byNodeId.set(businessIdOf(candidate), candidate));
+                    const nodeIds = Array.from(byNodeId.keys());
+                    const rootNodeIds = nodeIds.filter((nodeId) =>
+                        !nodeIds.some((otherId) => otherId !== nodeId && nodeId.startsWith(`${otherId}.`)));
+                    const roots = rootNodeIds.map((nodeId) => {
+                        const rootNode = byNodeId.get(nodeId)!;
+                        const parentEdges = rootNode.incomers('edge').filter((edge: cytoscape.EdgeSingular) => edge.data('type') === 'parent');
+                        const currentParentId = parentEdges.length > 0
+                            ? businessIdOf((parentEdges.last() as cytoscape.EdgeSingular).source())
+                            : null;
+                        return { cyId: rootNode.id(), nodeId, currentParentId };
+                    });
+                    if (roots.length > 0) {
+                        reparentGesture = {
+                            primaryCyId: roots.some((root) => root.cyId === node.id()) ? node.id() : roots[0].cyId,
+                            roots,
+                            draggedCyIds: new Set(gestureNodes.map((candidate) => candidate.id())),
+                            targetCyId: null,
+                            targetNodeId: null,
+                            anchorCyId: null,
+                            committed: false,
+                        };
+                    }
+                }
+            }
+
+            // 静态候选快照在 drag 期间复用；多选仅在批量换父时需要。
+            if (!isMultiNodeDrag || reparentGesture) {
                 buildDragCandidateSnapshot(node.id());
             } else {
                 clearDragCandidateSnapshot();
@@ -1566,19 +1814,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
             }
 
             // 创建 SVG 叠加层用于绘制连线
-            if (!svgOverlay && this.container) {
-                svgOverlay = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'svg');
-                svgOverlay.setCssStyles({
-                    position: 'absolute',
-                    top: '0',
-                    left: '0',
-                    width: '100%',
-                    height: '100%',
-                    pointerEvents: 'none',
-                    zIndex: '2',
-                });
-                this.container.appendChild(svgOverlay);
-            }
+            ensureConnectionOverlay();
             ensureTempConnectionLine();
         });
 
@@ -1619,12 +1855,41 @@ export function bindEvents(this: CytoscapeRenderer): void {
                 updateSeparationCircle(node);
             }
 
-            // 多节点拖动时跳过辅助线和智能连线，避免 N 个节点 × 每帧的重复计算
+            const smartEnabled = this.isSmartConnectionEnabled();
+            if (reparentGesture && node.id() === reparentGesture.primaryCyId) {
+                const altPressed = Boolean((evt.originalEvent as { altKey?: boolean } | undefined)?.altKey);
+                if (altPressed) {
+                    hideTempConnectionLine();
+                    setReparentTarget(null);
+                } else {
+                    refreshSnapshotMetricsIfViewportChanged();
+                    const hit = findNearestReparentTarget();
+                    setReparentTarget(hit);
+                    if (hit) {
+                        if (separationCircle) separationCircle.setCssStyles({ display: 'none' });
+                        ensureConnectionOverlay();
+                        const line = ensureTempConnectionLine();
+                        if (line) {
+                            const targetPosition = hit.target.renderedPosition();
+                            const anchorPosition = hit.anchor.renderedPosition();
+                            line.setAttribute('x1', targetPosition.x.toString());
+                            line.setAttribute('y1', targetPosition.y.toString());
+                            line.setAttribute('x2', anchorPosition.x.toString());
+                            line.setAttribute('y2', anchorPosition.y.toString());
+                            // 虚线颜色跟随手势:成子=绿,移出成兄弟=红
+                            line.setAttribute('stroke', hit.kind === 'sibling' ? '#ef4444' : '#10b981');
+                            line.setCssStyles({ display: 'block' });
+                        }
+                    } else {
+                        hideTempConnectionLine();
+                    }
+                }
+            }
+
+            // 多节点拖动时除了上面的单次换父扫描，不再做 N 份对齐/分组计算。
             if (isMultiNodeDrag) return;
 
-            const smartEnabled = this.isSmartConnectionEnabled();
-
-             if (!data.isGroup) {
+             if (!data.isGroup && !reparentGesture?.targetCyId) {
                 updateAlignmentGuides(node);
             }
 
@@ -1646,7 +1911,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
             }
 
             // 分组加入预览：节点中心进入某个分组边界时，用同一套橘黄色虚线反馈目标分组
-            if (!data.isGroup && !data.isPlaceholder && !data.isCrossDomain) {
+            if (!reparentGesture?.targetCyId && !data.isGroup && !data.isPlaceholder && !data.isCrossDomain) {
                 const originalGroupId = draggedNodeOriginalGroup?.id?.() || dataStr(node, 'parent') || null;
                 setGroupJoinPreview(findContainingGroup(node, originalGroupId));
             } else {
@@ -1707,6 +1972,45 @@ export function bindEvents(this: CytoscapeRenderer): void {
             const smartTargetNodeId = nearbyNodeId;
             hideAlignmentGuides();
 
+            const activeReparentGesture = reparentGesture;
+            if (activeReparentGesture?.committed && activeReparentGesture.draggedCyIds.has(node.id())) {
+                hideTempConnectionLine();
+                clearSeparation();
+                return;
+            }
+            if (activeReparentGesture?.targetNodeId && activeReparentGesture.draggedCyIds.has(node.id())) {
+                if (!activeReparentGesture.committed) {
+                    const childNodeIds = activeReparentGesture.roots
+                        .filter((root) => root.currentParentId !== activeReparentGesture.targetNodeId)
+                        .map((root) => root.nodeId);
+                    if (childNodeIds.length > 0) {
+                        activeReparentGesture.committed = true;
+                        this.container?.dispatchEvent(new CustomEvent('reparent-auto-nodes', {
+                            detail: {
+                                childNodeIds,
+                                parentNodeId: activeReparentGesture.targetNodeId,
+                            }
+                        }));
+                    }
+                }
+                if (activeReparentGesture.committed) {
+                    finishAutoHierarchyDrag(false);
+                    hideTempConnectionLine();
+                    setSmartHoverTarget(null);
+                    setReparentTarget(null);
+                    setGroupJoinPreview(null);
+                    pendingGroupLeave = null;
+                    pendingGroupJoin = null;
+                    draggedNodeOriginalGroup = null;
+                    draggedNodeOriginalGroupModelBounds = null;
+                    clearSeparation();
+                    window.setTimeout(() => {
+                        if (reparentGesture === activeReparentGesture) reparentGesture = null;
+                    }, 0);
+                    return;
+                }
+            }
+
             // 分离判定:auto 子节点拖出/拖回分离圆 → 记录意图,随被拖节点的
             // node-position-changed 一并派发,由 indexView 决定置/清 SEPARATED 标志。
             let separationDetail: { parentId: string; willSeparate: boolean; wasSeparated: boolean } | null = null;
@@ -1721,26 +2025,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
             }
 
             // 自动布局：为同步平移的后代派发位置变化事件（以便批量持久化）
-            if (isAutoHierarchyDrag) {
-                autoHierarchyDescendants.forEach(({ node: n }) => {
-                    const d = n.data() as CyData;
-                    n.removeClass('auto-hierarchy-descendant');
-                    if (!d || !d.originalNode) return;
-                    const pos = n.position();
-                    this.container?.dispatchEvent(new CustomEvent('node-position-changed', {
-                        detail: {
-                            node: d.originalNode,
-                            nodeId: d.id,
-                            position: { x: pos.x, y: pos.y }
-                        }
-                    }));
-                });
-                this.cy!.edges('.auto-hierarchy-descendant-edge').removeClass('auto-hierarchy-descendant-edge');
-                isAutoHierarchyDrag = false;
-                autoHierarchyDescendants = [];
-                autoHierarchyGrabbedNode = null;
-                autoHierarchyStyled = false;
-            }
+            finishAutoHierarchyDrag(true);
 
             // 隐藏临时连接线（不移除 DOM，free 事件会整体清理 svgOverlay）
             hideTempConnectionLine();
@@ -1903,7 +2188,6 @@ export function bindEvents(this: CytoscapeRenderer): void {
         // 节点释放事件（清理 SVG 叠加层）
         this.cy.on('free', 'node', (evt: cytoscape.EventObject) => {
             const node = evt.target as cytoscape.NodeSingular;
-            const data = node.data() as CyData;
             hideAlignmentGuides();
             clearDragCandidateSnapshot();
             // 注意:不在此清除 separationOrbit。Cytoscape 不保证 free 与 dragfree 的先后,
@@ -1928,13 +2212,8 @@ export function bindEvents(this: CytoscapeRenderer): void {
                 setGroupJoinPreview(null);
             }
 
-            // 只对自由节点进行清理
-            const originalNodeId = data.originalNode?.ID || data.originalSource || data.id;
-            if (!originalNodeId.startsWith('free.')) {
-                return;
-            }
-
-            // 延迟清理，确保 dragfree 事件已经处理完成
+            // 延迟清理，确保 dragfree 事件已经处理完成。自动节点换父也会创建同一叠加层。
+            const gestureToCleanup = reparentGesture;
             window.setTimeout(() => {
                 // 移除 SVG 叠加层（连同复用的 tempConnectionLine 一起清理）
                 if (svgOverlay && this.container) {
@@ -1943,6 +2222,8 @@ export function bindEvents(this: CytoscapeRenderer): void {
                 }
                 tempConnectionLine = null;
                 setSmartHoverTarget(null);
+                setReparentTarget(null);
+                if (reparentGesture === gestureToCleanup) reparentGesture = null;
             }, 0);
         });
 

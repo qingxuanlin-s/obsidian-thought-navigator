@@ -1051,13 +1051,22 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                 }).height,
             }
         },
-        // 连接目标悬停状态
+        // 连接目标悬停状态(成为子节点:绿框)
         {
             selector: 'node.connection-target-hover',
             style: {
                 'border-color': '#10b981',
                 'border-width': '3px',
                 'background-color': 'rgba(16, 185, 129, 0.1)'
+            }
+        },
+        // 移出子节点、与当前父节点成为兄弟(红框,与"成子"绿框区分)
+        {
+            selector: 'node.reparent-sibling-hover',
+            style: {
+                'border-color': '#ef4444',
+                'border-width': '3px',
+                'background-color': 'rgba(239, 68, 68, 0.1)'
             }
         },
         // 自动布局父节点拖动时，跟随移动的后代节点

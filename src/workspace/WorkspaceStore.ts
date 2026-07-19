@@ -544,6 +544,81 @@ export class WorkspaceStore extends Component {
         return node;
     }
 
+    /** 新建项目并立即创建背书文件。Project 是工作区实体，文件承载正文与 markdown 任务。 */
+    async createProjectWithFile(spaceId: string, title: string, folderPath: string, tag = ''): Promise<WSProjectNode> {
+        const cleanTitle = title.trim() || '未命名项目';
+        const file = await this.createProjectBackingFile(cleanTitle, folderPath, tag);
+        const id = genNodeId(); const now = Date.now();
+        const node: WSProjectNode = {
+            id, type: 'project', spaceId, title: cleanTitle,
+            status: 'todo', filePath: file.path, createdAt: now, updatedAt: now,
+        };
+        await this.commit(ctx => ctx.put(node));
+        return node;
+    }
+
+    /**
+     * 把已有 markdown 文件导入为项目主文件。
+     * 同一路径若已是 Note/MOC，则显式重分类为 Project，避免一个文件在工作区有两个身份。
+     * 原容器关系会转换为 Project→Area(serves)或项目引用(related)。
+     */
+    async importProjectFiles(spaceId: string, paths: string[]): Promise<{ projects: WSProjectNode[]; converted: number }> {
+        const files: TFile[] = [];
+        const seen = new Set<string>();
+        for (const path of paths) {
+            if (!path || seen.has(path)) continue;
+            seen.add(path);
+            const file = this.app.vault.getAbstractFileByPath(path);
+            if (file instanceof TFile && file.extension.toLowerCase() === 'md') files.push(file);
+        }
+
+        const projects: WSProjectNode[] = [];
+        let converted = 0;
+        await this.commit(ctx => {
+            for (const file of files) {
+                const existing = this.getNodeByPath(file.path);
+                if (existing?.type === 'project') continue;
+
+                const now = Date.now();
+                const project: WSProjectNode = {
+                    id: existing?.id ?? genNodeId(),
+                    type: 'project',
+                    spaceId,
+                    title: existing?.title ?? baseNameNoExt(file.path).replace(/\.moc$/, ''),
+                    status: 'todo',
+                    filePath: file.path,
+                    createdAt: existing?.createdAt ?? now,
+                    updatedAt: now,
+                    ...(existing?.icon ? { icon: existing.icon } : {}),
+                    ...(existing?.color ? { color: existing.color } : {}),
+                    ...(existing?.order !== undefined ? { order: existing.order } : {}),
+                };
+
+                if (existing) {
+                    const oldLinks = ctx.links.filter(l => l.from === existing.id || l.to === existing.id);
+                    ctx.remove(existing.id);
+                    ctx.put(project);
+                    for (const link of oldLinks) {
+                        if (link.from === existing.id && (link.type === 'childMoc' || link.type === 'partOf')) {
+                            ctx.addLink({ from: project.id, to: link.to, type: 'serves' });
+                        } else if (link.to === existing.id && (link.type === 'childMoc' || link.type === 'partOf')) {
+                            ctx.addLink({ from: project.id, to: link.from, type: 'related' });
+                        } else if (link.to === existing.id && link.type === 'serves') {
+                            ctx.addLink({ from: link.from, to: project.id, type: 'related' });
+                        } else {
+                            ctx.addLink(link);
+                        }
+                    }
+                    converted++;
+                } else {
+                    ctx.put(project);
+                }
+                projects.push(project);
+            }
+        });
+        return { projects, converted };
+    }
+
     /**
      * 确保项目有背书 markdown 笔记(next action 的 `- [ ]` 写在这里)。
      * 已绑定且文件存在 → 直接返回;否则在 folderPath 下按标题建文件,回写 filePath(不刷 updatedAt)。
@@ -553,6 +628,13 @@ export class WorkspaceStore extends Component {
         if (!p || p.type !== 'project') return null;
         const existing = p.filePath ? this.app.vault.getAbstractFileByPath(p.filePath) : null;
         if (existing instanceof TFile) return existing;
+
+        const file = await this.createProjectBackingFile(p.title, folderPath, tag);
+        await this.commit(ctx => ctx.updateQuiet(projectId, n => { (n as WSProjectNode).filePath = file.path; }));
+        return file;
+    }
+
+    private async createProjectBackingFile(title: string, folderPath: string, tag: string): Promise<TFile> {
 
         const folder = (folderPath || '').replace(/^\/+|\/+$/g, '');
         // 逐级建文件夹:config/workspace 这类父级不存在时,一次性 createFolder 在部分版本会失败
@@ -565,13 +647,11 @@ export class WorkspaceStore extends Component {
                 }
             }
         }
-        const base = sanitizeFileName(p.title) || 'project';
+        const base = sanitizeFileName(title) || 'project';
         const dir = folder ? folder + '/' : '';
         let path = `${dir}${base}.md`;
         for (let i = 2; this.app.vault.getAbstractFileByPath(path); i++) path = `${dir}${base} ${i}.md`;
-        const file = await this.app.vault.create(path, projectFileContent(p.title, tag));
-        await this.commit(ctx => ctx.updateQuiet(projectId, n => { (n as WSProjectNode).filePath = file.path; }));
-        return file;
+        return await this.app.vault.create(path, projectFileContent(title, tag));
     }
 
     async setFramework(spaceId: string, framework: FrameworkId): Promise<void> {

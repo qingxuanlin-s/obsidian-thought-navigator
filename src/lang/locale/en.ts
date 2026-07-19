@@ -149,7 +149,7 @@ export default {
     "Branch layout": "Branch layout",
     "Quick actions": "Quick actions",
     "Smart connection": "Smart connection",
-    "When enabled, dragging a placeholder node within 200px of another node automatically attaches it as a child": "When enabled, dragging a placeholder node within 200px of another node automatically attaches it as a child",
+    "When enabled, dragging a placeholder or unconnected free node near another node automatically attaches it as a child": "When enabled, dragging a placeholder or unconnected free node near another node automatically attaches it as a child",
 
     // indexView.ts
     "Display from : ": "From : ",
@@ -492,7 +492,7 @@ export default {
     // ===== Workspace (typed-node 工作区) =====
     "ws Workspace": "Workspace",
     "ws Today": "Today",
-    "ws Task": "Task",
+    "ws Task": "Task overview",
     "ws range today": "Today",
     "ws range 7d": "7 days",
     "ws range 30d": "30 days",
@@ -627,6 +627,15 @@ export default {
     "ws progress auto hint": "Synced from task completion · drag to override",
     "ws progress reset": "Reset to auto",
     "ws new project": "New project",
+    "ws import project": "Import existing project",
+    "ws import project picker": "Import projects into \"{name}\"",
+    "ws import project search": "Search project files...",
+    "ws import project confirm": "Import as project ({count})",
+    "ws project already imported": "already a project",
+    "ws project create failed": "Failed to create project: {message}",
+    "ws project import failed": "Failed to import project: {message}",
+    "ws project import empty": "No project files were available to import",
+    "ws project import result": "Imported {count} project(s); {converted} existing item(s) were reclassified",
     "ws mount existing": "Mount note / MOC",
     "ws new space title": "New Space",
     "ws new space name": "Space name",

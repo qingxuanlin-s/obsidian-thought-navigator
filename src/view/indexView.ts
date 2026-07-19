@@ -2725,7 +2725,8 @@ window.addEventListener('resize', fitGraph);
                 try {
                     const content = createMOCJsonWithInitialNode(
                         this.plugin.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free',
-                        t("Default node title")
+                        // 用文件名作为根节点标题，省去新建后再改一次
+                        normalizedBaseName
                     );
                     const newFile = await this.app.vault.create(filePath, content);
                     this.plugin.settings.mocCurrentFile = newFile.path;
@@ -3298,6 +3299,80 @@ window.addEventListener('resize', fitGraph);
             } catch (error) {
                 console.error('[auto-connect-node] 连接失败:', error);
                 new Notice(t("Connection failed").replace("{message}", String(error.message)));
+            }
+        });
+
+        // 自动节点拖到另一节点附近：单次或批量换父，随后统一重排。
+        this.addTrackedListener(branchGraphDiv, 'reparent-auto-nodes', async (event: CustomEvent) => {
+            if (this.isMobileReadOnly()) return;
+            const { childNodeIds, parentNodeId } = event.detail as {
+                childNodeIds: string[];
+                parentNodeId: string;
+            };
+            const parentNode = this.mocNodes.find((node) => node.ID === parentNodeId || node.IDStr === parentNodeId);
+            if (!parentNode || this.isFreeNodeID(parentNode.IDStr)) return;
+
+            const uniqueChildIds = Array.from(new Set(childNodeIds || []));
+            const childNodes = uniqueChildIds
+                .map((nodeId) => this.mocNodes.find((node) => node.ID === nodeId || node.IDStr === nodeId))
+                .filter((node): node is ZKNode => Boolean(node))
+                .filter((node) => {
+                    if (node.IDStr === parentNode.IDStr || parentNode.IDStr.startsWith(`${node.IDStr}.`)) return false;
+                    const parts = node.IDStr.split('.');
+                    const currentParentId = parts.length > 1 ? parts.slice(0, -1).join('.') : null;
+                    return currentParentId !== parentNode.IDStr;
+                });
+            if (childNodes.length === 0) return;
+
+            const usedSuffixes = new Set(
+                this.getDirectChildren(parentNode.IDStr).map((child) => child.IDStr.split('.').pop() || '')
+            );
+            const parentSuffix = parentNode.IDStr.split('.').pop() || '';
+            const useNumberSuffix = /^[a-z]+$/.test(parentSuffix);
+            const nextChildId = (): string => {
+                if (useNumberSuffix) {
+                    let number = 1;
+                    while (usedSuffixes.has(String(number))) number++;
+                    usedSuffixes.add(String(number));
+                    return `${parentNode.IDStr}.${number}`;
+                }
+                let index = 0;
+                while (true) {
+                    let value = index + 1;
+                    let suffix = '';
+                    while (value > 0) {
+                        value--;
+                        suffix = String.fromCharCode(97 + (value % 26)) + suffix;
+                        value = Math.floor(value / 26);
+                    }
+                    if (!usedSuffixes.has(suffix)) {
+                        usedSuffixes.add(suffix);
+                        return `${parentNode.IDStr}.${suffix}`;
+                    }
+                    index++;
+                }
+            };
+
+            try {
+                const mocFile = getLatestMOCFile();
+                if (!mocFile) {
+                    new Notice(t("No current MOC file selected"));
+                    return;
+                }
+                await this.saveAllNodePositionsBeforeRefresh();
+                const newChildIds: string[] = [];
+                for (const childNode of childNodes) {
+                    const newChildId = nextChildId();
+                    await this.mocHandler.moveNodeToParent(mocFile, childNode.IDStr, parentNode.IDStr, newChildId);
+                    newChildIds.push(newChildId);
+                }
+
+                await this.refreshBranchMermaid();
+                if (newChildIds.length > 0) await this.reflowAutoLayout(newChildIds[0]);
+                new Notice(`已将 ${newChildIds.length} 个节点移至「${parentNode.displayText}」`);
+            } catch (error) {
+                console.error('[reparent-auto-nodes] 换父失败:', error);
+                new Notice(`换父失败: ${error.message}`);
             }
         });
 

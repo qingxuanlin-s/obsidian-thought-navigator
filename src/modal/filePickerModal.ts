@@ -1,6 +1,14 @@
 import { App, Modal, TFile, setIcon } from "obsidian";
 import { t } from "src/lang/helper";
 
+export interface FilePickerModalOptions {
+    title?: string;
+    searchPlaceholder?: string;
+    confirmLabel?: string;
+    unavailableLabel?: string;
+    filter?: (file: TFile) => boolean;
+}
+
 /**
  * 多选文件挂载框。
  * - 右键 Space 文件夹/文件节点弹出,搜索 + 勾选多个 vault 文件
@@ -13,6 +21,7 @@ export class FilePickerModal extends Modal {
     private selected: Set<string> = new Set();
     private targetName: string;
     private onSubmit: (paths: string[]) => void;
+    private options: FilePickerModalOptions;
 
     private listEl!: HTMLElement;
     private confirmBtn!: HTMLButtonElement;
@@ -24,23 +33,27 @@ export class FilePickerModal extends Modal {
         targetName: string,
         mountedPaths: string[],
         onSubmit: (paths: string[]) => void,
+        options: FilePickerModalOptions = {},
     ) {
         super(app);
         this.targetName = targetName;
         this.mountedPaths = new Set(mountedPaths);
         this.onSubmit = onSubmit;
+        this.options = options;
         // 按修改时间倒序,最近的更可能被挂
-        this.allFiles = app.vault.getFiles().sort((a, b) => b.stat.mtime - a.stat.mtime);
+        this.allFiles = app.vault.getFiles()
+            .filter(file => !options.filter || options.filter(file))
+            .sort((a, b) => b.stat.mtime - a.stat.mtime);
     }
 
     onOpen(): void {
         const { contentEl, titleEl } = this;
-        titleEl.setText(t("Add files to node").replace("{name}", this.targetName));
+        titleEl.setText(this.options.title ?? t("Add files to node").replace("{name}", this.targetName));
         contentEl.addClass("zk-file-picker");
 
         const search = contentEl.createEl("input", {
             type: "text",
-            placeholder: t("Search files to mount placeholder"),
+            placeholder: this.options.searchPlaceholder ?? t("Search files to mount placeholder"),
         });
         search.setCssStyles({
             width: '100%',
@@ -155,7 +168,7 @@ export class FilePickerModal extends Modal {
                     fontSize: '11px',
                     color: 'var(--text-muted)',
                 });
-                tag.setText(t("Already mounted tag"));
+                tag.setText(this.options.unavailableLabel ?? t("Already mounted tag"));
                 continue;
             }
 
@@ -170,7 +183,8 @@ export class FilePickerModal extends Modal {
 
     private updateConfirm(): void {
         const n = this.selected.size;
-        this.confirmBtn.setText(t("Add files confirm").replace("{count}", String(n)));
+        const label = this.options.confirmLabel ?? t("Add files confirm");
+        this.confirmBtn.setText(label.replace("{count}", String(n)));
         this.confirmBtn.disabled = n === 0;
     }
 

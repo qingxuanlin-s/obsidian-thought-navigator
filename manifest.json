@@ -1,7 +1,7 @@
 {
 	"id": "thought-navigator",
 	"name": "Thought Navigator",
-	"version": "0.2.9",
+	"version": "0.3.0",
 	"minAppVersion": "1.8.7",
 	"description": "A visual knowledge-processing workspace: connect notes, shape MOCs, build mind maps, and turn Zettelkasten-style thinking into navigable thought maps.",
 	"author": "qingxuanlin-s",

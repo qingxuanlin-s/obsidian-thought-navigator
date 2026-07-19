@@ -477,6 +477,50 @@ export function getAutoLayoutDirection(node: cytoscape.NodeSingular): { x: numbe
     return { x: 0, y: dy >= 0 ? 1 : -1 };
 }
 
+/**
+ * 换父检测专用:推断某候选节点"子节点的生长方向"(而非 getAutoLayoutDirection
+ * 用的根→一级分支方向)。后者对"父子纵向、子树却横向生长"的分支会误判成纵向,
+ * 导致换父车道判成同列、把纵向堆叠的兄弟当成近邻。
+ *
+ * 优先用该节点已有子节点相对自身的主轴方位;无子节点时回退到"父→本节点"方向
+ * (新子节点会继承同向生长);再无则默认向右。
+ */
+export function getAutoChildGrowthDirection(node: cytoscape.NodeSingular): { x: number; y: number } {
+    const nodePos = node.position();
+    const childEdges = node.outgoers('edge').filter(
+        (e: cytoscape.EdgeSingular) => e.data('type') === 'parent'
+    );
+    let sumX = 0;
+    let sumY = 0;
+    let count = 0;
+    childEdges.targets().forEach((child: cytoscape.NodeSingular) => {
+        if (child.data('isGroup')) return;
+        const cp = child.position();
+        sumX += cp.x - nodePos.x;
+        sumY += cp.y - nodePos.y;
+        count++;
+    });
+    if (count > 0) {
+        return Math.abs(sumX) >= Math.abs(sumY)
+            ? { x: sumX >= 0 ? 1 : -1, y: 0 }
+            : { x: 0, y: sumY >= 0 ? 1 : -1 };
+    }
+
+    const parentEdges = node.incomers('edge').filter(
+        (e: cytoscape.EdgeSingular) => e.data('type') === 'parent'
+    );
+    const parent = parentEdges.sources();
+    if (parent.length > 0) {
+        const pp = parent.first().position();
+        const dx = nodePos.x - pp.x;
+        const dy = nodePos.y - pp.y;
+        return Math.abs(dx) >= Math.abs(dy)
+            ? { x: dx >= 0 ? 1 : -1, y: 0 }
+            : { x: 0, y: dy >= 0 ? 1 : -1 };
+    }
+    return { x: 1, y: 0 };
+}
+
 // ============ 节点布局风格判定(基于 RenderOptions) ============
 
 export function isAutoNodeLayoutStyle(options: RenderOptions | null): boolean {

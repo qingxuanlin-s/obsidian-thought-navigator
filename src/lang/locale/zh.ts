@@ -149,7 +149,7 @@ export default {
     "Branch layout": "本分支布局",
     "Quick actions": "快捷操作",
     "Smart connection": "智能连线",
-    "When enabled, dragging a placeholder node within 200px of another node automatically attaches it as a child": "开启后，拖拽占位符节点时如果在某节点 200px 范围内，会自动成为该节点的子节点",
+    "When enabled, dragging a placeholder or unconnected free node near another node automatically attaches it as a child": "开启后，将占位符或未连线的自由节点拖到其他节点附近，会自动挂载为其子节点",
 
     // indexView.ts
     "Display from : ": "起点：",
@@ -491,7 +491,7 @@ export default {
     // ===== Workspace (typed-node 工作区) =====
     "ws Workspace": "工作区",
     "ws Today": "今日",
-    "ws Task": "任务",
+    "ws Task": "任务总览",
     "ws range today": "今日",
     "ws range 7d": "近7天",
     "ws range 30d": "近30天",
@@ -626,6 +626,15 @@ export default {
     "ws progress auto hint": "跟随任务完成度 · 拖动即手动覆盖",
     "ws progress reset": "恢复自动跟随",
     "ws new project": "新建项目",
+    "ws import project": "导入现有项目",
+    "ws import project picker": "导入项目到「{name}」",
+    "ws import project search": "搜索项目主文件…",
+    "ws import project confirm": "导入为项目（{count}）",
+    "ws project already imported": "已是项目",
+    "ws project create failed": "创建项目失败：{message}",
+    "ws project import failed": "导入项目失败：{message}",
+    "ws project import empty": "没有可导入的项目文件",
+    "ws project import result": "已导入 {count} 个项目，其中 {converted} 个由现有条目重新分类",
     "ws mount existing": "挂载笔记 / MOC",
     "ws new space title": "新建 Space",
     "ws new space name": "Space 名称",

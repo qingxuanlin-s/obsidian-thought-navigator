@@ -1,4 +1,4 @@
-import { Menu } from "obsidian";
+import { Menu, Notice } from "obsidian";
 import { WSSpaceNode, WSMocNode, WSProjectNode, WorkspaceNode, FRAMEWORKS } from "src/types/workspace";
 import { t } from "src/lang/helper";
 import { RenderCtx, relTime, glyph, statusLabel, fwChip, bucketLabel, STATUS_COLOR, progressFor, nextActionText, renderTaskText } from "./render";
@@ -48,18 +48,60 @@ export function renderCockpit(container: HTMLElement, ctx: RenderCtx, space: WSS
     const validLens = initialLens && (initialLens === 'all' || fw.buckets.some(b => b.id === initialLens));
     let activeLens = validLens ? initialLens! : 'all';
 
-    // ---------- 入口:新建项目(工作区自有) + 挂载已有笔记/MOC(指向真实文件) ----------
+    // ---------- 上下文入口:Project 绑定主文件;其它桶挂载 Note/MOC ----------
     const createbar = ck.createDiv({ cls: 'createbar' });
     const mkCreate = (label: string, fn: () => void) => {
         const b = createbar.createSpan({ cls: 'createbtn', text: '+ ' + label });
         b.onclick = fn;
     };
-    mkCreate(t('ws new project'), () => promptTitle(ctx.app, t('ws new project'), (title) => { void (async () => {
-        const n = await ctx.store.createProject(space.id, title);
-        ctx.open({ kind: 'project', id: n.id });
-    })(); }));
+
+    const createProject = () => promptTitle(ctx.app, t('ws new project'), (title) => { void (async () => {
+        try {
+            const n = await ctx.store.createProjectWithFile(
+                space.id, title, ctx.projectFolderPath, ctx.taskFileTag,
+            );
+            ctx.open({ kind: 'project', id: n.id });
+        } catch (e) {
+            console.error('[zk-navigation] 创建项目失败', e);
+            new Notice(t('ws project create failed').replace('{message}', (e as Error)?.message ?? String(e)));
+        }
+    })(); });
+
+    const importProjects = () => {
+        const projectPaths = ctx.store.getAllNodes()
+            .filter((n): n is WSProjectNode => n.type === 'project')
+            .map(n => n.filePath)
+            .filter((path): path is string => !!path);
+        new FilePickerModal(ctx.app, space.title, projectPaths, (paths) => { void (async () => {
+            try {
+                const result = await ctx.store.importProjectFiles(space.id, paths);
+                if (!result.projects.length) {
+                    new Notice(t('ws project import empty'));
+                    return;
+                }
+                new Notice(t('ws project import result')
+                    .replace('{count}', String(result.projects.length))
+                    .replace('{converted}', String(result.converted)));
+                if (result.projects.length === 1) {
+                    ctx.open({ kind: 'project', id: result.projects[0].id });
+                } else {
+                    ctx.refresh();
+                }
+            } catch (e) {
+                console.error('[zk-navigation] 导入项目失败', e);
+                new Notice(t('ws project import failed').replace('{message}', (e as Error)?.message ?? String(e)));
+            }
+        })(); }, {
+            title: t('ws import project picker').replace('{name}', space.title),
+            searchPlaceholder: t('ws import project search'),
+            confirmLabel: t('ws import project confirm'),
+            unavailableLabel: t('ws project already imported'),
+            filter: file => file.extension.toLowerCase() === 'md',
+        }).open();
+    };
+
     // 笔记与 MOC 不再凭空建虚拟节点:挑库里已存在的文件挂进来(`.moc.md` → MOC,其余 → 笔记)
-    mkCreate(t('ws mount existing'), () => {
+    const mountExisting = () => {
         const mounted = ctx.store.containerChildren(space.id)
             .map(c => (c as { filePath?: string }).filePath)
             .filter((p): p is string => !!p);
@@ -69,7 +111,24 @@ export function renderCockpit(container: HTMLElement, ctx: RenderCtx, space: WSS
             await ctx.store.mountFilesToContainer(space.id, paths, { mocIsTop });
             ctx.refresh();
         })(); }).open();
-    });
+    };
+
+    const renderCreatebar = () => {
+        createbar.empty();
+        const isProjectLens = activeLens === 'projects' || activeLens === 'action';
+        const isArchiveLens = activeLens === 'archive';
+        createbar.setCssStyles({ display: isArchiveLens ? 'none' : 'flex' });
+        if (isArchiveLens) return;
+        if (activeLens === 'all') {
+            mkCreate(t('ws new project'), createProject);
+            mkCreate(t('ws mount existing'), mountExisting);
+        } else if (isProjectLens) {
+            mkCreate(t('ws new project'), createProject);
+            mkCreate(t('ws import project'), importProjects);
+        } else {
+            mkCreate(t('ws mount existing'), mountExisting);
+        }
+    };
 
     const body = ck.createDiv({ cls: 'ck-body' });
 
@@ -80,6 +139,7 @@ export function renderCockpit(container: HTMLElement, ctx: RenderCtx, space: WSS
             if (activeLens === id) return;
             activeLens = id;
             Array.from(tabs.children).forEach(c => c.toggleClass('on', (c as HTMLElement) === tab));
+            renderCreatebar();
             renderBody();
         };
     };
@@ -94,6 +154,7 @@ export function renderCockpit(container: HTMLElement, ctx: RenderCtx, space: WSS
         const items = all.filter(bucket.match);
         renderBucketSection(body, ctx, bucket.id, bucketLabel(bucket.id), items);
     };
+    renderCreatebar();
     renderBody();
 }
 

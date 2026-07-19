@@ -280,7 +280,8 @@ export function computeDirectionalEdgeControlPoints(
 	kTarget = 0.5,
 	minTangentSource = 12,
 	minTangentTarget = minTangentSource,
-	targetHalfMain = 0
+	targetHalfMain = 0,
+	sourceHalfMain = 0
 ): { distances: number[]; weights: number[] } {
 	const dx = tx - sx;
 	const dy = ty - sy;
@@ -306,11 +307,12 @@ export function computeDirectionalEdgeControlPoints(
 	if (horizontal) {
 		const flow = direction === 'RL' ? -1 : 1;
 		c1x = sx + axisTangent(dx, flow, minTangentSource, kSource, targetHalfMain); c1y = sy;
-		c2x = tx - axisTangent(dx, flow, minTangentTarget, kTarget); c2y = ty;
+		// 目标肩长对称扣掉源节点半宽:用「到源节点近端边框」的距离算肩长,超宽源节点旁不再让 c2 兜回源框内造成回勾。
+		c2x = tx - axisTangent(dx, flow, minTangentTarget, kTarget, sourceHalfMain); c2y = ty;
 	} else {
 		const flow = direction === 'BT' ? -1 : 1;
 		c1x = sx; c1y = sy + axisTangent(dy, flow, minTangentSource, kSource, targetHalfMain);
-		c2x = tx; c2y = ty - axisTangent(dy, flow, minTangentTarget, kTarget);
+		c2x = tx; c2y = ty - axisTangent(dy, flow, minTangentTarget, kTarget, sourceHalfMain);
 	}
 	// 绝对坐标 → (weight 沿弦, distance 沿法向 (-dy,dx)/L)
 	const toWD = (cx: number, cy: number): { w: number; d: number } => {

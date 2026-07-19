@@ -1,6 +1,6 @@
 import { App, TFile } from "obsidian";
 import ZKNavigationPlugin from "main";
-import { MOCParseResult, CrossDomainLink, MOCTreeNode, ReverseRelation, GroupInfo } from "src/utils/utils";
+import { MOCParseResult, CrossDomainLink, MOCTreeNode, ReverseRelation, GroupInfo, NODE_FLAG_SEPARATED, NODE_FLAG_SIDE_PINNED } from "src/utils/utils";
 import { LayoutPreset, normalizeLayoutPreset } from "src/utils/growthDirection";
 import { computeAutoLayout, AutoLayoutNodeInput } from "src/utils/autoLayoutEngine";
 import { DomTextMeasurer, DomTextMeasureOptions } from "src/renderer/domTextMeasurer";
@@ -1262,6 +1262,10 @@ export class MOCHandler {
 
             // 更新当前节点和整棵子树的 ID / 深度
             remapSubtreeIDs(nodeToMove, freeNodeID, newChildID, parentNode.depth + 1);
+            // 换父后旧父级的“分离/定侧”意图已失效；清除后让新子节点重新参与自动布局。
+            nodeToMove.extBitMap = ((nodeToMove.extBitMap || 0)
+                & ~NODE_FLAG_SEPARATED
+                & ~NODE_FLAG_SIDE_PINNED) & 0xff;
 
             // 添加到父节点的子节点列表
             if (!parentNode.children) {
@@ -1294,6 +1298,18 @@ export class MOCHandler {
                 if (mocData.crossDomainLinks && mocData.crossDomainLinks[mapping.old]) {
                     mocData.crossDomainLinks[mapping.new] = mocData.crossDomainLinks[mapping.old];
                     delete mocData.crossDomainLinks[mapping.old];
+                }
+                if (mocData.nodeAnchors && mapping.old in mocData.nodeAnchors) {
+                    mocData.nodeAnchors[mapping.new] = mocData.nodeAnchors[mapping.old];
+                    delete mocData.nodeAnchors[mapping.old];
+                }
+                if (mocData.nodeLayoutOverrides && mapping.old in mocData.nodeLayoutOverrides) {
+                    mocData.nodeLayoutOverrides[mapping.new] = mocData.nodeLayoutOverrides[mapping.old];
+                    delete mocData.nodeLayoutOverrides[mapping.old];
+                }
+                if (mocData.nodeLayoutPresets && mapping.old in mocData.nodeLayoutPresets) {
+                    mocData.nodeLayoutPresets[mapping.new] = mocData.nodeLayoutPresets[mapping.old];
+                    delete mocData.nodeLayoutPresets[mapping.old];
                 }
                 if (mocData.collapsedNodeIds) {
                     mocData.collapsedNodeIds = mocData.collapsedNodeIds
