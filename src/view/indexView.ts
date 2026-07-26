@@ -1,6 +1,23 @@
 import { toPng } from "html-to-image";
 import type * as cytoscape from 'cytoscape';
 type CrossDomainNodeLike = { IDStr?: string; nodeID?: string; displayText?: string; title?: string; alias?: string; target?: string; file?: TFile | null; filePath?: string };
+
+type FileDropPreviewTarget = {
+	parentNode: ZKNode;
+	modelPosition: { x: number; y: number };
+	renderedPosition: { x: number; y: number };
+	renderedBounds: { x1: number; y1: number; x2: number; y2: number };
+};
+
+type FileDropPreview = {
+	host: HTMLElement;
+	guide: SVGSVGElement;
+	guideLine: SVGLineElement;
+	targetOutline: SVGRectElement;
+	ghost: HTMLElement;
+	hint: HTMLElement;
+	parentNode: ZKNode | null;
+};
 import ZKNavigationPlugin from "main";
 import { ExtraButtonComponent, FileView, Menu, Modal, Notice, Platform, Scope, Setting, TFile, WorkspaceLeaf, debounce, moment, setIcon, setTooltip } from "obsidian";
 import { t } from "src/lang/helper";
@@ -222,6 +239,10 @@ export class ZKIndexView extends FileView {
     // 性能优化：追踪事件监听器初始化状态，避免重复添加
     private branchGraphListenersInitialized = false;
     private currentBranchGraphDiv: HTMLElement | null = null;
+    // 外部文件拖入期间的纯视觉预览:不改 Cytoscape / MOC,落下时才持久化。
+    private fileDropPreview: FileDropPreview | null = null;
+    private fileDropPreviewFrame: number | null = null;
+    private pendingFileDropPreview: { clientX: number; clientY: number; label: string; container: HTMLElement } | null = null;
     private isCreateMOCPromptOpen = false;
     private fullscreenBackButtonListenerBound = false;
     private lastHoverPreviewPath: string | null = null;
@@ -2470,27 +2491,200 @@ window.addEventListener('resize', fitGraph);
         return resolveDroppedVaultFiles(this.app, event);
     }
 
-    private async createDroppedFileNode(file: TFile, position: { x: number; y: number }): Promise<void> {
-        const nodeID = this.generateNextFreeNodeID();
+    private getFileDropPreviewLabel(event: DragEvent): string {
+        const transfer = event.dataTransfer;
+        if (!transfer) return t('ws file');
+
+        const raw = ['text/plain', 'text/uri-list', 'text/x-obsidian-uri']
+            .map((type) => {
+                try { return transfer.getData(type); } catch { return ''; }
+            })
+            .find(Boolean) || '';
+        const firstEntry = raw.split(/\r?\n/).find((entry) => !!entry.trim())?.trim() || '';
+        let decodedEntry = firstEntry;
+        try { decodedEntry = decodeURIComponent(firstEntry); } catch {}
+        const name = decodedEntry
+            .replace(/^file:\/\//, '')
+            .replace(/^.*[\\/]/, '')
+            .replace(/\[\[|\]\]/g, '')
+            .split('|')[0]
+            .split('#')[0];
+        return name || t('ws file');
+    }
+
+    /**
+     * 文件只在节点正右方的窄车道内才能成为子节点。
+     * 不复用自动节点换父的扇形判定，避免一个上级节点在远处抢走本应属于最近节点的拖放。
+     * 返回的坐标已是实际落地坐标，auto 布局会复用占位节点的定位算法。
+     */
+    private findFileDropPreviewTarget(
+        clientX: number,
+        clientY: number,
+        branchGraphDiv: HTMLElement
+    ): FileDropPreviewTarget | null {
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        if (!cy) return null;
+
+        const rect = branchGraphDiv.getBoundingClientRect();
+        const pointer = { x: clientX - rect.left, y: clientY - rect.top };
+        const modelPointer = this.getGraphModelPositionFromClientPoint(clientX, clientY, branchGraphDiv);
+        const candidates: Array<{ node: cytoscape.NodeSingular; original: ZKNode; score: number }> = [];
+
+        cy.nodes().forEach((node: cytoscape.NodeSingular) => {
+            const data = node.data() as CyData;
+            const original = data.originalNode as ZKNode | undefined;
+            if (!original || data.isGroup || data.isPlaceholder || data.isDraft || data.isCrossDomain || original.isCrossDomain) return;
+            if (this.isFreeNodeID(original.IDStr)) return;
+
+            const bounds = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
+            const forward = pointer.x - bounds.x2;
+            const laneOffset = Math.max(bounds.y1 - pointer.y, pointer.y - bounds.y2, 0);
+            // 右边缘外 0–300px, 且仍与节点在同一水平车道(允许 24px 的手部误差)。
+            if (forward < 0 || forward > 300 || laneOffset > 24) return;
+            candidates.push({ node, original, score: forward + laneOffset * 3 });
+        });
+
+        const best = candidates.reduce<typeof candidates[number] | null>((current, candidate) =>
+            !current || candidate.score < current.score ? candidate : current,
+        null);
+        if (!best) return null;
+        const modelPosition = this.isNodeAutoLayout(best.original.IDStr)
+            ? this.getAutoPlaceholderPosition(best.original.IDStr, modelPointer)
+            : modelPointer;
+        const zoom = cy.zoom() || 1;
+        const pan = cy.pan();
+        const bounds = best.node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
+        return {
+            parentNode: best.original,
+            modelPosition,
+            renderedPosition: {
+                x: modelPosition.x * zoom + pan.x,
+                y: modelPosition.y * zoom + pan.y,
+            },
+            renderedBounds: { x1: bounds.x1, y1: bounds.y1, x2: bounds.x2, y2: bounds.y2 },
+        };
+    }
+
+    private ensureFileDropPreview(branchGraphDiv: HTMLElement): FileDropPreview {
+        if (this.fileDropPreview?.host.parentElement === branchGraphDiv) return this.fileDropPreview;
+        this.clearFileDropPreview();
+
+        const host = branchGraphDiv.createDiv('zk-file-drop-preview');
+        const guide = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        guide.addClass('zk-file-drop-preview-guide');
+        const guideLine = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'line');
+        guideLine.addClass('zk-file-drop-preview-line');
+        const targetOutline = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        targetOutline.addClass('zk-file-drop-preview-target');
+        guide.append(guideLine, targetOutline);
+        host.appendChild(guide);
+
+        const ghost = host.createDiv('zk-file-drop-preview-ghost');
+        const icon = ghost.createSpan('zk-file-drop-preview-icon');
+        setIcon(icon, 'file-plus-2');
+        const label = ghost.createSpan('zk-file-drop-preview-label');
+        label.setText(t('ws file'));
+        const hint = host.createDiv('zk-file-drop-preview-hint');
+
+        this.fileDropPreview = { host, guide, guideLine, targetOutline, ghost, hint, parentNode: null };
+        return this.fileDropPreview;
+    }
+
+    private scheduleFileDropPreview(event: DragEvent, branchGraphDiv: HTMLElement): void {
+        this.pendingFileDropPreview = {
+            clientX: event.clientX,
+            clientY: event.clientY,
+            label: this.getFileDropPreviewLabel(event),
+            container: branchGraphDiv,
+        };
+        if (this.fileDropPreviewFrame !== null) return;
+
+        this.fileDropPreviewFrame = window.requestAnimationFrame(() => {
+            this.fileDropPreviewFrame = null;
+            const pending = this.pendingFileDropPreview;
+            this.pendingFileDropPreview = null;
+            if (!pending || !pending.container.isConnected) return;
+
+            const preview = this.ensureFileDropPreview(pending.container);
+            const rect = pending.container.getBoundingClientRect();
+            const target = this.findFileDropPreviewTarget(pending.clientX, pending.clientY, pending.container);
+            const pointer = { x: pending.clientX - rect.left, y: pending.clientY - rect.top };
+            const ghostPosition = target?.renderedPosition || pointer;
+            const label = preview.ghost.querySelector('.zk-file-drop-preview-label');
+            label?.setText(pending.label);
+
+            preview.parentNode = target?.parentNode || null;
+            preview.host.toggleClass('is-attaching', !!target);
+            preview.ghost.setCssStyles({ transform: `translate3d(${ghostPosition.x + 14}px, ${ghostPosition.y + 12}px, 0)` });
+            preview.hint.setCssStyles({ transform: `translate3d(${ghostPosition.x + 14}px, ${ghostPosition.y + 52}px, 0)` });
+            preview.guide.setAttribute('viewBox', `0 0 ${Math.max(1, rect.width)} ${Math.max(1, rect.height)}`);
+            preview.guide.setAttribute('width', String(Math.max(1, rect.width)));
+            preview.guide.setAttribute('height', String(Math.max(1, rect.height)));
+
+            if (target) {
+                const source = this.findCyNodeByIdStr(target.parentNode.IDStr)?.renderedPosition();
+                preview.guideLine.setAttribute('x1', String(source?.x ?? target.renderedBounds.x2));
+                preview.guideLine.setAttribute('y1', String(source?.y ?? (target.renderedBounds.y1 + target.renderedBounds.y2) / 2));
+                preview.guideLine.setAttribute('x2', String(target.renderedPosition.x));
+                preview.guideLine.setAttribute('y2', String(target.renderedPosition.y));
+                preview.guideLine.setCssStyles({ display: 'block' });
+                preview.targetOutline.setAttribute('x', String(target.renderedBounds.x1 - 5));
+                preview.targetOutline.setAttribute('y', String(target.renderedBounds.y1 - 5));
+                preview.targetOutline.setAttribute('width', String(target.renderedBounds.x2 - target.renderedBounds.x1 + 10));
+                preview.targetOutline.setAttribute('height', String(target.renderedBounds.y2 - target.renderedBounds.y1 + 10));
+                preview.targetOutline.setCssStyles({ display: 'block' });
+                preview.hint.setText(`松开后添加为「${this.truncateLabel(target.parentNode.displayText || target.parentNode.title, 24)}」的子节点`);
+            } else {
+                preview.guideLine.setCssStyles({ display: 'none' });
+                preview.targetOutline.setCssStyles({ display: 'none' });
+                preview.hint.setText('松开后添加为自由节点');
+            }
+        });
+    }
+
+    private clearFileDropPreview(): void {
+        if (this.fileDropPreviewFrame !== null) {
+            window.cancelAnimationFrame(this.fileDropPreviewFrame);
+            this.fileDropPreviewFrame = null;
+        }
+        this.pendingFileDropPreview = null;
+        this.fileDropPreview?.host.remove();
+        this.fileDropPreview = null;
+    }
+
+    private async createDroppedFileNode(
+        file: TFile,
+        position: { x: number; y: number },
+        parentNode?: ZKNode
+    ): Promise<void> {
+        const nodeID = parentNode ? this.generateChildNodeID(parentNode.IDStr) : this.generateNextFreeNodeID();
         const mocFilePath = this.plugin.settings.mocCurrentFile;
         if (!mocFilePath) return;
 
         const mocFile = this.app.vault.getFileByPath(mocFilePath);
         if (!mocFile) return;
 
+        const finalPosition = parentNode && this.isNodeAutoLayout(parentNode.IDStr)
+            ? this.getAutoPlaceholderPosition(parentNode.IDStr, position)
+            : position;
+
         // 草稿模式(#20):拖入的文件也先作为草稿,待审批
-        if (this.divertFreeNodeToDraft({ wikiLink: file.basename, file }, position)) return;
+        if (this.divertFreeNodeToDraft({ wikiLink: file.basename, file, connectToNodeID: parentNode?.IDStr }, finalPosition)) return;
 
         await this.saveFreeNodeToMOC({
             wikiLink: file.basename,
             nodeID,
             relationText: '',
             file,
-            isEmbed: false
-        });
-
-        await this.saveNodePositionToMOC(mocFile, nodeID, position);
+            isEmbed: false,
+            connectToNodeID: parentNode?.IDStr,
+        }, finalPosition);
         await this.refreshBranchMermaid();
+
+        if (parentNode && this.isNodeAutoLayout(nodeID)) {
+            await this.applyNewSiblingSide(nodeID);
+            await this.reflowAutoLayout(nodeID);
+        }
 
         const branchGraphDiv = this.currentBranchGraphDiv || activeDocument.getElementById('zk-branch-cytoscape');
         if (branchGraphDiv) {
@@ -2527,12 +2721,25 @@ window.addEventListener('resize', fitGraph);
         return positions;
     }
 
-    private async createDroppedFileNodes(files: TFile[], anchorPosition: { x: number; y: number }): Promise<void> {
+    private async createDroppedFileNodes(
+        files: TFile[],
+        anchorPosition: { x: number; y: number },
+        parentNode?: ZKNode
+    ): Promise<void> {
         const uniqueFiles = files.filter((file, index, arr) => arr.findIndex(other => other.path === file.path) === index);
         if (uniqueFiles.length === 0) return;
 
         if (uniqueFiles.length === 1) {
-            await this.createDroppedFileNode(uniqueFiles[0], anchorPosition);
+            await this.createDroppedFileNode(uniqueFiles[0], anchorPosition, parentNode);
+            return;
+        }
+
+        // 多文件挂载时逐个落地,以便每个新 ID 都基于刚写入的兄弟集合生成,并复用既有 auto 重排规则。
+        if (parentNode) {
+            const positions = this.getDroppedFileNodePositions(anchorPosition, uniqueFiles.length);
+            for (const [index, file] of uniqueFiles.entries()) {
+                await this.createDroppedFileNode(file, positions[index], parentNode);
+            }
             return;
         }
 
@@ -3160,13 +3367,6 @@ window.addEventListener('resize', fitGraph);
 
             const setDropHover = (active: boolean) => {
                 branchGraphDiv.classList.toggle('zk-branch-drop-hover', active);
-                if (active) {
-                    branchGraphDiv.setCssStyles({ boxShadow: 'inset 0 0 0 2px rgba(91, 143, 217, 0.9)' });
-                } else if (this.isMobileReadOnly()) {
-                    branchGraphDiv.setCssStyles({ boxShadow: 'none' });
-                } else {
-                    branchGraphDiv.setCssStyles({ boxShadow: '' });
-                }
             };
             const getLatestMOCFile = () => {
                 const latestMOCPath = this.plugin.settings.mocCurrentFile;
@@ -3178,6 +3378,7 @@ window.addEventListener('resize', fitGraph);
                 if (!this.hasDroppableTypes(event)) return;
                 event.preventDefault();
                 setDropHover(true);
+                this.scheduleFileDropPreview(event, branchGraphDiv);
             });
 
             this.addTrackedListener(branchGraphDiv, 'dragover', (event: DragEvent) => {
@@ -3188,6 +3389,9 @@ window.addEventListener('resize', fitGraph);
                     event.dataTransfer.dropEffect = this.isScratchpadDrag(event) ? 'move' : 'copy';
                 }
                 setDropHover(true);
+                if (!this.isScratchpadDrag(event)) {
+                    this.scheduleFileDropPreview(event, branchGraphDiv);
+                }
             });
 
             this.addTrackedListener(branchGraphDiv, 'dragleave', (event: DragEvent) => {
@@ -3196,11 +3400,14 @@ window.addEventListener('resize', fitGraph);
                     return;
                 }
                 setDropHover(false);
+                this.clearFileDropPreview();
             });
 
             this.addTrackedListener(branchGraphDiv, 'drop', async (event: DragEvent) => {
                 if (this.isMobileReadOnly()) return;
                 setDropHover(false);
+                const dropTarget = this.findFileDropPreviewTarget(event.clientX, event.clientY, branchGraphDiv);
+                this.clearFileDropPreview();
 
                 // 优先处理暂存区卡片落入
                 if (this.isScratchpadDrag(event)) {
@@ -3230,7 +3437,7 @@ window.addEventListener('resize', fitGraph);
                     event.clientY,
                     branchGraphDiv
                 );
-                await this.createDroppedFileNodes(droppedFiles, position);
+                await this.createDroppedFileNodes(droppedFiles, position, dropTarget?.parentNode);
             });
 
             // 监听视图状态变化事件（缩放和平移）
@@ -10214,6 +10421,7 @@ window.addEventListener('resize', fitGraph);
 
         // 清理所有防抖定时器
         this.cleanupTimers();
+        this.clearFileDropPreview();
 
         // 清理所有DOM事件监听器
         this.cleanupEventListeners();

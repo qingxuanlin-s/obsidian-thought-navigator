@@ -497,6 +497,104 @@ align-items: center;
   overflow: hidden;
 }
 
+/* 文件拖放预览只存在于拖动期间。它覆盖在 Cytoscape 上方,不参与命中和图数据更新。 */
+.zk-file-drop-preview {
+  position: absolute;
+  inset: 0;
+  z-index: 2600;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.zk-file-drop-preview-guide {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+
+.zk-file-drop-preview-line {
+  stroke: var(--zk-focus, #5da6ff);
+  stroke-width: 2.5;
+  stroke-dasharray: 7 6;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 4px rgba(93, 166, 255, 0.45));
+  animation: zk-file-drop-dash 900ms linear infinite;
+}
+
+.zk-file-drop-preview-target {
+  fill: rgba(93, 166, 255, 0.1);
+  stroke: var(--zk-focus, #5da6ff);
+  stroke-width: 2;
+  rx: 8;
+  ry: 8;
+  filter: drop-shadow(0 0 6px rgba(93, 166, 255, 0.34));
+}
+
+.zk-file-drop-preview-ghost {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(260px, calc(100% - 28px));
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--zk-focus, #5da6ff) 78%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--zk-surface-solid, #202020) 88%, var(--zk-focus, #5da6ff));
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(93, 166, 255, 0.12);
+  color: var(--zk-text, #e6e7ea);
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.82;
+  transition: opacity 150ms ease-out, border-color 150ms ease-out, background 150ms ease-out;
+  white-space: nowrap;
+}
+
+.zk-file-drop-preview.is-attaching .zk-file-drop-preview-ghost {
+  border-color: var(--zk-focus, #5da6ff);
+  background: color-mix(in srgb, var(--zk-surface-solid, #202020) 78%, var(--zk-focus, #5da6ff));
+  opacity: 1;
+}
+
+.zk-file-drop-preview-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--zk-focus, #5da6ff);
+}
+
+.zk-file-drop-preview-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.zk-file-drop-preview-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.zk-file-drop-preview-hint {
+  position: absolute;
+  max-width: min(320px, calc(100% - 28px));
+  padding: 4px 7px;
+  border: 1px solid var(--zk-border-subtle, rgba(255, 255, 255, 0.16));
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--zk-surface-solid, #202020) 92%, transparent);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  color: var(--zk-text, #e6e7ea);
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+@keyframes zk-file-drop-dash {
+  to { stroke-dashoffset: -26; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zk-file-drop-preview-line { animation: none; }
+  .zk-file-drop-preview-ghost { transition: none; }
+}
+
 /* 全屏模式下的背景色 */
 .zk-graph-cytoscape:fullscreen {
   background-color: #2a2a2a; /* 与正常模式保持一致 */
