@@ -28,7 +28,7 @@ import { NoteSearchModal } from "src/modal/noteSearchModal";
 import { GlobalSearchModal, openTaskAtLine } from "src/modal/globalSearchModal";
 import { convertMOCToZKNodes, CrossDomainLink, createMOCTreeNode, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX, MOCParseResult, MOCTreeNode, NODE_FLAG_SEPARATED, NODE_FLAG_SIDE_PINNED, parseMOCStructure, saveMOCStructure, stripMocSuffix } from "src/utils/utils";
 import { WorkspacePanel } from "src/view/workspace/WorkspacePanel";
-import { OpenTarget, WSMocNode } from "src/types/workspace";
+import { OpenTarget, WSMocNode, WSMapNode } from "src/types/workspace";
 import { ScratchpadDrawer } from "src/view/scratchpadDrawer";
 import { NodeDetailPanel } from "src/view/index/detailPanel";
 import { ScratchpadEntry } from "src/scratch/scratchpadManager";
@@ -40,6 +40,7 @@ import { ensureMOCPreviewPNG } from "src/embed/mocEmbedExporter";
 import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
 import { RenderOptions, CyData } from "src/renderer/types";
 import { dataStr, dataAs } from "src/renderer/cyData";
+import { getTopBranchId } from "src/renderer/renderPipeline";
 import { MOCHandler } from "src/view/index/mocHandler";
 import { computeAutoLayout, AutoLayoutNodeInput } from "src/utils/autoLayoutEngine";
 import { resolveThemeMode } from "src/utils/themeMode";
@@ -170,6 +171,7 @@ export class ZKIndexView extends FileView {
         childNodeId?: string;  // 需要移动到此节点下的子节点 ID（用于创建父节点时）
         layoutStyle?: 'free' | 'auto';
         referenceNodeId?: string;
+        previousSelectedNodeId?: string;  // 创建占位符前选中的节点;取消时把焦点还给它
     }> = new Map();
     private readonly PLACEHOLDER_EXPIRY_MS = 10 * 60 * 1000;
 
@@ -462,7 +464,7 @@ export class ZKIndexView extends FileView {
     }
 
     /** 工作区面板里点了带 .moc.md 的 MOC 节点 → 切回图谱模式并加载该文件 */
-    private openMocFromWorkspace(node: WSMocNode): boolean {
+    private openMocFromWorkspace(node: WSMocNode | WSMapNode): boolean {
         const path = node.filePath;
         if (!path) return false;
         const file = this.app.vault.getAbstractFileByPath(path);
@@ -686,6 +688,10 @@ export class ZKIndexView extends FileView {
     ): void {
         const mocPath = this.plugin.settings.mocCurrentFile || '__graph__';
         this.prunePlaceholderNodes(mocPath);
+        // 此刻选区仍完好(占位符编辑框尚未抢焦点),记下"上一个操作过的节点",取消时还焦点。
+        // 优先当前选中的真实节点,回退到父节点/参考兄弟。
+        const previousSelectedNodeId = this.getSelectedRealNodeId()
+            ?? extra.parentNodeId ?? extra.referenceNodeId;
         this.placeholderNodes.set(tempId, {
             nodeId: tempId,
             tempId,
@@ -698,7 +704,31 @@ export class ZKIndexView extends FileView {
             childNodeId: extra.childNodeId,
             layoutStyle: extra.layoutStyle,
             referenceNodeId: extra.referenceNodeId,
+            previousSelectedNodeId,
         });
+    }
+
+    /** 占位符取消/空输入被移除后,把选中与焦点还给上一个操作过的节点 */
+    private restorePlaceholderFocus(previousSelectedNodeId?: string): void {
+        if (!previousSelectedNodeId) return;
+        const branchGraphDiv = activeDocument.getElementById("zk-branch-cytoscape");
+        branchGraphDiv?.dispatchEvent(new CustomEvent('select-node-by-id', {
+            detail: { nodeId: previousSelectedNodeId }
+        }));
+    }
+
+    /** 当前选中的真实(非占位符/非跨领域)节点 IDStr,无则 null */
+    private getSelectedRealNodeId(): string | null {
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        if (!cy) return null;
+        const selected = cy.$('node:selected');
+        for (let i = 0; i < selected.length; i++) {
+            const data = selected[i].data() as { isPlaceholder?: boolean; originalNode?: ZKNode };
+            if (data?.isPlaceholder) continue;
+            const id = data?.originalNode?.IDStr;
+            if (id) return id;
+        }
+        return null;
     }
 
     // ============ 草稿节点(#20)============
@@ -1037,7 +1067,7 @@ export class ZKIndexView extends FileView {
     /**
      * 删除一批节点(供 CLI / API,#20)。区分草稿与真实节点:
      * - 草稿节点:直接丢弃(纯内存,不弹确认)
-     * - 真实节点:单个沿用节点确认;多个只弹一次批量确认,确认后一次性落盘并刷新
+     * - 真实节点:单个沿用节点确认;多个不弹确认直接一次性落盘(可 Cmd+Z 撤销)
      * @returns 各类结果的 nodeID 汇总
      */
     async requestDeleteNodes(nodeIds: string[]): Promise<{
@@ -1074,24 +1104,13 @@ export class ZKIndexView extends FileView {
 
         if (realNodes.length === 1) {
             const item = realNodes[0];
-            const relationCount = item.cyNode.connectedEdges().length;
-            const confirmed = await this.showDeleteConfirmDialog(item.original, relationCount);
-            if (!confirmed) {
-                cancelled.push(item.id);
-                return { deleted, draftsDiscarded, cancelled, notFound };
-            }
-
+            // 单个删除不弹确认(可 Cmd+Z 撤销)
             await this.deleteNodeFromGraph(item.original, 0);
             deleted.push(item.id);
             return { deleted, draftsDiscarded, cancelled, notFound };
         }
 
-        const confirmed = await this.showBatchDeleteConfirmDialog(realNodes.length);
-        if (!confirmed) {
-            cancelled.push(...realNodes.map((item) => item.id));
-            return { deleted, draftsDiscarded, cancelled, notFound };
-        }
-
+        // 批量删除多个真实节点:不弹确认(可 Cmd+Z 撤销),直接一次性落盘
         await this.deleteNodesFromGraphBatch(realNodes.map((item) => ({
             nodeId: item.id,
             nodeData: item.original,
@@ -1564,7 +1583,7 @@ export class ZKIndexView extends FileView {
                     taskPrefixAuto: this.plugin.settings.wsTaskPrefixAuto !== false,
                     taskFileTag: this.plugin.settings.wsTaskFileTag,
                     onExitToGraph: () => this.setWorkspaceMode(false),
-                    onOpenMoc: (node: WSMocNode) => this.openMocFromWorkspace(node),
+                    onOpenMoc: (node) => this.openMocFromWorkspace(node),
                     onOpenFile: (file, forceTab) => this.openFileInPreferredLeaf(file, forceTab),
                     onOpenLink: (linkText, sourcePath, forceTab) => this.openLinkInPreferredLeaf(linkText, sourcePath, forceTab),
                     onNavigateTarget: () => {
@@ -4604,7 +4623,9 @@ window.addEventListener('resize', fitGraph);
                 if (label.trim()) {
                     this.convertPlaceholderToDraft(nodeId, label.trim());
                 } else {
+                    const previousSelectedNodeId = this.placeholderNodes.get(nodeId)?.previousSelectedNodeId;
                     await this.removePlaceholderNode(nodeId);
+                    this.restorePlaceholderFocus(previousSelectedNodeId);
                 }
                 return;
             }
@@ -4627,8 +4648,10 @@ window.addEventListener('resize', fitGraph);
                 // 情况 2：无 wiki link → 创建纯文字节点（保留编辑时的可视尺寸）
                 await this.finalizeTextOnlyNode(nodeId, label.trim(), position, nodeSize);
             } else {
-                // 情况 3：空输入 → 移除占位符
+                // 情况 3：空输入 → 移除占位符,焦点还给上一个操作过的节点
+                const previousSelectedNodeId = this.placeholderNodes.get(nodeId)?.previousSelectedNodeId;
                 await this.removePlaceholderNode(nodeId);
+                this.restorePlaceholderFocus(previousSelectedNodeId);
             }
         });
 
@@ -4638,13 +4661,25 @@ window.addEventListener('resize', fitGraph);
                 return;
             }
             const { nodeId } = event.detail as { nodeId: string };
-            // auto 预览重排把兄弟挪开了(未落盘),取消时按文件保存坐标还原,回收占位空缺。
-            const wasAutoPreview = this.placeholderNodes.get(nodeId)?.layoutStyle === 'auto';
+            // auto 预览重排把兄弟挪开了(未落盘),取消时重跑一次紧凑重排还原,回收占位空缺。
+            // 不能直接还原文件保存坐标:收起态下文件里存的是「全展开」坐标(只有全展开才落盘),
+            // 套到当前收起视图会把已隐藏的子树也算进去、把可见节点摊散(节点错位)。
+            // 重跑紧凑重排是幂等纯函数,天然排除收起隐藏节点,精确回到放占位符之前的布局。
+            const placeholderInfo = this.placeholderNodes.get(nodeId);
+            const wasAutoPreview = placeholderInfo?.layoutStyle === 'auto';
+            const previewParentId = placeholderInfo?.parentNodeId;
+            const previousSelectedNodeId = placeholderInfo?.previousSelectedNodeId;
             await this.removePlaceholderNode(nodeId);
-            if (wasAutoPreview) {
-                const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
-                if (mocFile) await this.restoreSavedNodePositions(mocFile);
+            if (wasAutoPreview && previewParentId) {
+                await this.relayoutAutoLayoutSiblings(previewParentId, {
+                    compactVisibleNodes: true,
+                    collapsedNodeIds: this.collapsedNodeIds,
+                    rebalanceRootChildren: true,
+                    persistPositions: false,
+                });
             }
+            // 占位符取消后,把选中/焦点还给上一个操作过的节点(键盘导航可继续)
+            this.restorePlaceholderFocus(previousSelectedNodeId);
         });
 
         // 监听占位符节点完成事件（从 suggester 选择文件后触发）
@@ -5169,15 +5204,6 @@ window.addEventListener('resize', fitGraph);
                 console.error('Failed to batch delete nodes:', error);
                 new Notice(t("Batch delete failed").replace("{message}", String(error.message)));
             }
-        });
-
-        // 监听批量显示颜色选择器事件
-        this.addTrackedListener(branchGraphDiv, 'batch-show-color-picker', async (event: CustomEvent) => {
-            if (this.isMobileReadOnly()) {
-                return;
-            }
-            const { nodeIds } = event.detail as { nodeIds: string[] };
-            await this.batchChangeNodeColor(nodeIds);
         });
 
         // 标记监听器已初始化，保存当前容器引用
@@ -6073,7 +6099,7 @@ window.addEventListener('resize', fitGraph);
         // 分隔线
         menu.createDiv('zk-node-ctx-sep');
 
-        // 暂存区:复制 / 剪切到工作区(跨领域虚拟节点不可用)
+        // 暂存区:复制 / 剪切到暂存区(跨领域虚拟节点不可用)
         if (!node.isCrossDomain && !node.isPlaceholder) {
             const scratchRow = menu.createDiv('zk-node-ctx-row');
             this.addContextMenuItem(scratchRow, menu, closeMenu, 'copy', t('ctx copy to scratch'), async () => {
@@ -6085,10 +6111,12 @@ window.addEventListener('resize', fitGraph);
             menu.createDiv('zk-node-ctx-sep');
         }
 
-        // 底部两列：修改节点 ID + 修改节点颜色
+        // 底部两列：修改节点 ID + 修改所属分支色系
         const row = menu.createDiv('zk-node-ctx-row');
         this.addContextMenuItem(row, menu, closeMenu, 'fingerprint', t('ctx rename id'), () => this.renameNodeID(node));
-        this.addContextMenuItem(row, menu, closeMenu, 'palette', t('ctx change color'), () => this.changeNodeColor(node));
+        if (!node.isRoot && !this.isFreeNodeID(nodeId)) {
+            this.addContextMenuItem(row, menu, closeMenu, 'palette', t('ctx change color'), () => this.changeBranchColor(node));
+        }
 
         // 自由节点：成为根节点(分配一个 3 位随机 ID,脱离 free.* 命名)
         if (this.isFreeNodeID(nodeId) && !node.isCrossDomain && !node.isPlaceholder) {
@@ -6551,7 +6579,13 @@ window.addEventListener('resize', fitGraph);
         }
     }
 
-    async changeNodeColor(node: ZKNode) {
+    async changeBranchColor(node: ZKNode) {
+        const branchId = getTopBranchId(node.IDStr || node.ID);
+        if (!branchId || node.isRoot || this.isFreeNodeID(branchId)) {
+            new Notice('当前节点不属于可修改色系的分支');
+            return;
+        }
+
         // 预设颜色
         const colors = [
             { name: '蓝色', value: '#00a8ff' },
@@ -6564,7 +6598,7 @@ window.addEventListener('resize', fitGraph);
         ];
         
         // 显示颜色选择对话框
-        const selectedColor = await this.showColorPickerDialog(colors, node);
+        const selectedColor = await this.showBranchColorPickerDialog(colors, branchId);
         
         if (selectedColor === null) {
             return; // 取消
@@ -6576,74 +6610,28 @@ window.addEventListener('resize', fitGraph);
         try {
             const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
             if (mocFile) {
-                const persistedColor = selectedColor ? `fill2:${selectedColor}` : '';
-                await this.mocHandler.updateNodeColorInMOC(mocFile, node.IDStr, persistedColor);
+                await this.mocHandler.updateBranchStyleColorInMOC(mocFile, branchId, selectedColor);
                 
                 // 刷新视图
                 await this.refreshBranchMermaid();
                 
                 if (selectedColor) {
-                    new Notice(`已设置节点 ${node.ID} 的底色`);
+                    new Notice(`已修改分支 ${branchId} 的色系`);
                 } else {
-                    new Notice(`已重置节点 ${node.ID} 的底色`);
+                    new Notice(`已重置分支 ${branchId} 的色系`);
                 }
             }
         } catch (error) {
-            console.error('Failed to change node color:', error);
-            new Notice(`修改节点底色失败: ${error.message}`);
-        }
-    }
-
-    /**
-     * 批量修改节点颜色
-     */
-    async batchChangeNodeColor(nodeIds: string[]) {
-        // 预设颜色
-        const colors = [
-            { name: '蓝色', value: '#00a8ff' },
-            { name: '绿色', value: '#34d399' },
-            { name: '橙色', value: '#f59e0b' },
-            { name: '红色', value: '#ef4444' },
-            { name: '紫色', value: '#a78bfa' },
-            { name: '浅灰', value: '#e2e8f0' },
-            { name: '默认', value: '' }
-        ];
-
-        // 显示批量颜色选择对话框
-        const selectedColor = await this.showBatchColorPickerDialog(colors, nodeIds);
-
-        if (selectedColor === null) {
-            return; // 取消
-        }
-
-        // 在刷新前保存所有节点的当前位置
-        await this.saveAllNodePositionsBeforeRefresh();
-
-        try {
-            const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
-            if (mocFile) {
-                const persistedColor = selectedColor ? `fill2:${selectedColor}` : '';
-                await this.mocHandler.updateNodeColorsInMOC(mocFile, nodeIds, persistedColor);
-
-                // 刷新视图
-                await this.refreshBranchMermaid();
-
-                if (selectedColor) {
-                    new Notice(`已修改 ${nodeIds.length} 个节点的底色`);
-                } else {
-                    new Notice(`已重置 ${nodeIds.length} 个节点的底色`);
-                }
-            }
-        } catch (error) {
-            console.error('Failed to batch change node color:', error);
-            new Notice(`批量修改节点底色失败: ${error.message}`);
+            console.error('Failed to change branch color scheme:', error);
+            new Notice(`修改分支色系失败: ${error.message}`);
         }
     }
 
     private showNodeFillColorDialog(
         colors: Array<{ name: string; value: string }>,
         title: string,
-        targetLabel: string
+        targetLabel: string,
+        customColorLabel = '自定义底色'
     ): Promise<string | null> {
         return new Promise((resolve) => {
             const modal = new Modal(this.app);
@@ -6682,7 +6670,7 @@ window.addEventListener('resize', fitGraph);
             const panel = createSelectionColorPanel(
                 initialColor,
                 this.lastPickedNodeFillColor,
-                '自定义底色',
+                customColorLabel,
                 (hexColor: string) => {
                     selectedColor = hexColor;
                     this.lastPickedNodeFillColor = hexColor;
@@ -6726,15 +6714,8 @@ window.addEventListener('resize', fitGraph);
         });
     }
 
-    /**
-     * 显示批量颜色选择对话框
-     */
-    private showBatchColorPickerDialog(colors: Array<{ name: string; value: string }>, nodeIds: string[]): Promise<string | null> {
-        return this.showNodeFillColorDialog(colors, '批量修改节点底色', `选中节点: ${nodeIds.length} 个`);
-    }
-
-    private showColorPickerDialog(colors: Array<{ name: string; value: string }>, node: ZKNode): Promise<string | null> {
-        return this.showNodeFillColorDialog(colors, '选择节点底色', `节点: ${node.ID}`);
+    private showBranchColorPickerDialog(colors: Array<{ name: string; value: string }>, branchId: string): Promise<string | null> {
+        return this.showNodeFillColorDialog(colors, '修改该分支色系', `分支: ${branchId}`, '自定义分支色');
     }
 
     /**
@@ -6833,16 +6814,10 @@ window.addEventListener('resize', fitGraph);
 
     /**
      * 删除节点(从画布与 MOC),复用删除键的完整流程:
-     * 关系数 > 2 时二次确认 → 落盘当前位置 → 区分跨领域/普通节点删除 → 清理图片 → 刷新 → reflow。
+     * 不弹确认(可 Cmd+Z 撤销) → 落盘当前位置 → 区分跨领域/普通节点删除 → 清理图片 → 刷新 → reflow。
      */
-    private async deleteNodeFromGraph(node: ZKNode, relationCount = 0) {
-        // 关系数量超过2个，删除前需要二次确认(空内容删除与删除键共用此护栏)
-        if (relationCount > 2) {
-            const confirmed = await this.showDeleteConfirmDialog(node, relationCount);
-            if (!confirmed) {
-                return;
-            }
-        }
+    private async deleteNodeFromGraph(node: ZKNode, _relationCount = 0) {
+        // 删除不弹确认(可 Cmd+Z 撤销)
 
         // 删除前先算好"接管选中态"的邻居(自由节点父子关系依赖 cy 当前状态,删除后丢失)
         const neighborIdAfterDelete = node.isCrossDomain ? null : this.pickNeighborAfterDelete(node);
@@ -7754,198 +7729,6 @@ window.addEventListener('resize', fitGraph);
 
         return { wikiLink, displayText, isEmbed };
     }
-
-    /**
-     * 显示删除确认对话框
-     */
-    private showDeleteConfirmDialog(node: ZKNode, relationCount: number): Promise<boolean> {
-        return new Promise((resolve) => {
-            const modal = new Modal(this.app);
-            modal.titleEl.setText(t("Confirm delete node"));
-            
-            const { contentEl } = modal;
-            contentEl.empty();
-            contentEl.setCssStyles({ padding: '20px' });
-            
-            const warningDiv = contentEl.createDiv();
-            warningDiv.setCssStyles({
-                marginBottom: '15px',
-                padding: '15px',
-                backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                borderRadius: '4px',
-            });
-            
-            const warningIcon = warningDiv.createEl('div', { text: '⚠️' });
-            warningIcon.setCssStyles({
-                fontSize: '24px',
-                marginBottom: '10px',
-            });
-            
-            const warningText = warningDiv.createEl('div');
-            const nodeLine = warningText.createDiv({ text: t("Deleting node").replace("{id}", String(node.ID)) });
-            nodeLine.setCssStyles({
-                fontWeight: '600',
-                marginBottom: '8px',
-            });
-            const relationLine = warningText.createDiv();
-            relationLine.setCssStyles({ color: 'var(--text-muted)' });
-            relationLine.appendText(t("This node has"));
-            relationLine.createEl('strong', { text: String(relationCount) });
-            relationLine.appendText(t("relation connections suffix"));
-            const deleteLine = warningText.createDiv({ text: t("Deleting will also remove") });
-            deleteLine.setCssStyles({
-                color: 'var(--text-muted)',
-                marginTop: '8px',
-            });
-            const list = warningText.createEl('ul');
-            list.setCssStyles({
-                margin: '8px 0',
-                paddingLeft: '20px',
-                color: 'var(--text-muted)',
-            });
-            list.createEl('li', { text: t("Node entry in MOC file") });
-            list.createEl('li', { text: t("All arrow relations related to node") });
-            list.createEl('li', { text: t("Node position information") });
-            const irreversibleLine = warningText.createDiv({ text: t("This operation cannot be undone") });
-            irreversibleLine.setCssStyles({
-                color: 'var(--text-error)',
-                fontWeight: '600',
-                marginTop: '8px',
-            });
-            
-            const buttonContainer = contentEl.createDiv();
-            buttonContainer.setCssStyles({
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: '10px',
-                marginTop: '20px',
-            });
-            
-            const cancelButton = buttonContainer.createEl('button', { text: t("Cancel") });
-            cancelButton.setCssStyles({
-                padding: '6px 16px',
-                border: '1px solid var(--background-modifier-border)',
-                borderRadius: '4px',
-                backgroundColor: 'var(--background-primary)',
-                color: 'var(--text-normal)',
-                cursor: 'pointer',
-            });
-            cancelButton.addEventListener('click', () => {
-                modal.close();
-                resolve(false);
-            });
-            
-            const confirmButton = buttonContainer.createEl('button', { text: t("Confirm delete") });
-            confirmButton.setCssStyles({
-                padding: '6px 16px',
-                border: 'none',
-                borderRadius: '4px',
-                backgroundColor: '#ef4444',
-                color: '#ffffff',
-                cursor: 'pointer',
-            });
-            confirmButton.addEventListener('click', () => {
-                modal.close();
-                resolve(true);
-            });
-            
-            modal.open();
-        });
-    }
-
-    private showBatchDeleteConfirmDialog(nodeCount: number): Promise<boolean> {
-        return new Promise((resolve) => {
-            const modal = new Modal(this.app);
-            modal.titleEl.setText(t("Confirm delete node"));
-
-            const { contentEl } = modal;
-            contentEl.empty();
-            contentEl.setCssStyles({ padding: '20px' });
-
-            const warningDiv = contentEl.createDiv();
-            warningDiv.setCssStyles({
-                marginBottom: '15px',
-                padding: '15px',
-                backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                borderRadius: '4px',
-            });
-
-            const warningIcon = warningDiv.createEl('div', { text: '⚠️' });
-            warningIcon.setCssStyles({
-                fontSize: '24px',
-                marginBottom: '10px',
-            });
-
-            const warningText = warningDiv.createEl('div');
-            const nodeLine = warningText.createDiv({ text: t("Confirm delete nodes").replace("{count}", String(nodeCount)) });
-            nodeLine.setCssStyles({
-                fontWeight: '600',
-                marginBottom: '8px',
-            });
-            const deleteLine = warningText.createDiv({ text: t("Deleting will also remove") });
-            deleteLine.setCssStyles({
-                color: 'var(--text-muted)',
-                marginTop: '8px',
-            });
-            const list = warningText.createEl('ul');
-            list.setCssStyles({
-                margin: '8px 0',
-                paddingLeft: '20px',
-                color: 'var(--text-muted)',
-            });
-            list.createEl('li', { text: t("Node entry in MOC file") });
-            list.createEl('li', { text: t("All arrow relations related to node") });
-            list.createEl('li', { text: t("Node position information") });
-            const irreversibleLine = warningText.createDiv({ text: t("This operation cannot be undone") });
-            irreversibleLine.setCssStyles({
-                color: 'var(--text-error)',
-                fontWeight: '600',
-                marginTop: '8px',
-            });
-
-            const buttonContainer = contentEl.createDiv();
-            buttonContainer.setCssStyles({
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: '10px',
-                marginTop: '20px',
-            });
-
-            const cancelButton = buttonContainer.createEl('button', { text: t("Cancel") });
-            cancelButton.setCssStyles({
-                padding: '6px 16px',
-                border: '1px solid var(--background-modifier-border)',
-                borderRadius: '4px',
-                backgroundColor: 'var(--background-primary)',
-                color: 'var(--text-normal)',
-                cursor: 'pointer',
-            });
-            cancelButton.addEventListener('click', () => {
-                modal.close();
-                resolve(false);
-            });
-
-            const confirmButton = buttonContainer.createEl('button', { text: t("Confirm delete") });
-            confirmButton.setCssStyles({
-                padding: '6px 16px',
-                border: 'none',
-                borderRadius: '4px',
-                backgroundColor: '#ef4444',
-                color: '#ffffff',
-                cursor: 'pointer',
-            });
-            confirmButton.addEventListener('click', () => {
-                modal.close();
-                resolve(true);
-            });
-
-            modal.open();
-        });
-    }
-
-
 
     /**
      * 添加反向连接节点（选择现有节点）
@@ -9811,8 +9594,13 @@ window.addEventListener('resize', fitGraph);
 
         // 取参考节点(或父的第一个子节点)的分支色,作为占位符的颜色排序键,
         // 否则占位符落到 __default__ 组会被排到所有同色兄弟之后。
+        // 例外:父是 MOC root 且无参考节点时——根的一级子节点各有独立分支色,新建的是一条
+        // 独立新分支,不该蹭第一个子节点的色被并入其颜色组(会强排到它旁边、丢弃拖拽落点)。
+        // 给唯一色键让占位符自成一组,纯按落点在兄弟间排序(拖到最下就落最下)。
         let colorKey: string | undefined;
-        const refId = effectiveReferenceNodeId || this.getChildNodeIds(parentNodeId)[0];
+        const isNewRootBranch = !effectiveReferenceNodeId && this.isMocRootNodeId(parentNodeId);
+        const refId = effectiveReferenceNodeId
+            || (isNewRootBranch ? undefined : this.getChildNodeIds(parentNodeId)[0]);
         if (refId) {
             const refNode= cy.$('node').filter((n: cytoscape.NodeSingular) => {
                 const o = dataAs<ZKNode | undefined>(n, 'originalNode');
@@ -9821,6 +9609,9 @@ window.addEventListener('resize', fitGraph);
             if (refNode && refNode.length > 0) {
                 colorKey = refNode.data('branchNodeBorder') || refNode.data('branchNodeBackground') || undefined;
             }
+        }
+        if (isNewRootBranch) {
+            colorKey = `__placeholder_${placeholderTempId}__`;
         }
         const placeholderPos = ph.position();
         const sortPosition = this.getPlaceholderSortPosition(
@@ -9949,6 +9740,9 @@ window.addEventListener('resize', fitGraph);
         const nodes: Record<string, AutoLayoutNodeInput> = {};
         const parentById: Record<string, string | undefined> = {};
         const childrenById: Record<string, string[]> = {};
+        // 完整父子结构(含收起节点与 free 节点):auto 引擎只消费 childrenById 中的可见
+        // auto 子节点；完整结构留给布局完成后的自由子树整体平移。
+        const structuralChildrenById: Record<string, string[]> = {};
         // 未显式传入时回退到视图当前收起状态:所有调用方(拖拽、新建、切换布局风格等)
         // 都不该让隐藏节点参与布局。
         const collapsedIds = new Set(relayoutOptions.collapsedNodeIds ?? this.collapsedNodeIds);
@@ -9970,11 +9764,12 @@ window.addEventListener('resize', fitGraph);
             const nodeId = isIncludedPlaceholder ? data.id : (originalNode?.IDStr || originalNode?.ID);
             // 草稿(#20)作为一等节点参与重排(有 synthetic originalNode);其余占位符/分组排除
             if (!nodeId || data.isGroup || (data.isPlaceholder && !isIncludedPlaceholder)) return;
+            cyNodeById.set(nodeId, node);
+            structuralChildrenById[nodeId] = [];
             // 被收起隐藏的节点(display:none)一律不参与布局:量不到真实尺寸(会被钳到
             // 80×44 兜底值),算出的跨度是错的。不依赖 compactVisibleNodes 开关 ——
             // 任何调用方(切换布局风格/preset 等)都不该让隐藏节点参与。
             if (isHiddenByCollapse(nodeId)) return;
-            cyNodeById.set(nodeId, node);
             nodes[nodeId] = {
                 id: nodeId,
                 // 预览占位符优先用调用方给的真实尺寸(编辑框实测),避免空 label 量到兜底小尺寸,
@@ -9997,7 +9792,11 @@ window.addEventListener('resize', fitGraph);
             const targetOriginal = dataAs<ZKNode | undefined>(target, 'originalNode');
             const sourceId = sourceOriginal?.IDStr || sourceOriginal?.ID;
             const targetId = targetOriginal?.IDStr || targetOriginal?.ID;
-            if (!sourceId || !targetId || !nodes[sourceId] || !nodes[targetId]) return;
+            if (!sourceId || !targetId || !cyNodeById.has(sourceId) || !cyNodeById.has(targetId)) return;
+            const structuralChildren = structuralChildrenById[sourceId]
+                || (structuralChildrenById[sourceId] = []);
+            if (!structuralChildren.includes(targetId)) structuralChildren.push(targetId);
+            if (!nodes[sourceId] || !nodes[targetId]) return;
             parentById[targetId] = sourceId;
             // 已分离的子节点不进父节点的排布列表:其余兄弟据此重新紧凑排布(关闭空位),
             // 分离子树自身保留拖动后坐标,不被本次重排触及。parentById 仍保留映射,
@@ -10158,6 +9957,46 @@ window.addEventListener('resize', fitGraph);
                 nodePositions[id] = (maxY - minY) >= (maxX - minX)
                     ? { x: cur.x, y: round2((minY + maxY) / 2) }
                     : { x: round2((minX + maxX) / 2), y: cur.y };
+            }
+        }
+
+        // auto → free 边界:free 节点不参加自动布局,但它相对自动父节点的人工偏移应保持。
+        // 自动父节点移动多少,其直接 free 子节点的整棵结构后继树就整体平移多少；
+        // 后继树内部的相对位置不变,其中嵌套的 auto 岛也作为自由分支的一部分随锚点移动。
+        // 使用 cy 的布局前坐标作基准,因此预览 reflow/取消预览也能以相反位移无损还原。
+        {
+            const round2 = (v: number) => Math.round(v * 100) / 100;
+            const translatedIds = new Set<string>();
+            const translateSubtree = (rootId: string, dx: number, dy: number): void => {
+                const stack = [rootId];
+                while (stack.length > 0) {
+                    const nodeId = stack.pop()!;
+                    if (translatedIds.has(nodeId)) continue;
+                    translatedIds.add(nodeId);
+                    const oldPosition = cyNodeById.get(nodeId)?.position();
+                    if (oldPosition) {
+                        nodePositions[nodeId] = {
+                            x: round2(oldPosition.x + dx),
+                            y: round2(oldPosition.y + dy),
+                        };
+                    }
+                    for (const childId of structuralChildrenById[nodeId] || []) {
+                        stack.push(childId);
+                    }
+                }
+            };
+
+            for (const [parentId, nextParentPosition] of Object.entries(nodePositions)) {
+                if (!this.isNodeAutoLayout(parentId)) continue;
+                const previousParentPosition = cyNodeById.get(parentId)?.position();
+                if (!previousParentPosition) continue;
+                const dx = nextParentPosition.x - previousParentPosition.x;
+                const dy = nextParentPosition.y - previousParentPosition.y;
+                if (dx === 0 && dy === 0) continue;
+                for (const childId of structuralChildrenById[parentId] || []) {
+                    if (this.isNodeAutoLayout(childId)) continue;
+                    translateSubtree(childId, dx, dy);
+                }
             }
         }
 

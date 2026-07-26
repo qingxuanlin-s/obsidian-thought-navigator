@@ -71,7 +71,6 @@ import {
     createPlaceholderConnectionLine as event_createPlaceholderConnectionLine,
     handleArrowKeyNavigation as event_handleArrowKeyNavigation,
     batchDeleteNodes as event_batchDeleteNodes,
-    batchChangeColor as event_batchChangeColor,
     isSmartConnectionEnabled as event_isSmartConnectionEnabled,
     handlePasteShortcut as event_handlePasteShortcut,
 } from './events';
@@ -2198,10 +2197,6 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
     batchDeleteNodes(...args: Parameters<typeof event_batchDeleteNodes>): ReturnType<typeof event_batchDeleteNodes> {
         return event_batchDeleteNodes.call(this, ...args);
-    }
-
-    batchChangeColor(...args: Parameters<typeof event_batchChangeColor>): ReturnType<typeof event_batchChangeColor> {
-        return event_batchChangeColor.call(this, ...args);
     }
 
     isSmartConnectionEnabled(...args: Parameters<typeof event_isSmartConnectionEnabled>): ReturnType<typeof event_isSmartConnectionEnabled> {

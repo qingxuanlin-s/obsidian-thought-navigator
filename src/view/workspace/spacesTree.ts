@@ -1,7 +1,15 @@
-import { Menu } from "obsidian";
-import { WSSpaceNode, WorkspaceNode, WSProjectNode, FRAMEWORKS, OpenTarget } from "src/types/workspace";
+import { Menu, TFile, setIcon } from "obsidian";
+import { WSSpaceNode, WorkspaceNode, WSProjectNode, FRAMEWORKS, OpenTarget, isWorkspaceNodeArchived } from "src/types/workspace";
 import { t } from "src/lang/helper";
 import { RenderCtx, glyph, fwChip, bucketLabel, STATUS_COLOR, progressFor } from "./render";
+
+function displayNodeTitle(n: WorkspaceNode): string {
+    const path = (n as { filePath?: string }).filePath;
+    if (!path || n.type !== 'note') return n.title;
+    const fileName = path.split('/').pop() || path;
+    const isMocPreview = /\.moc(?:\.md)?\.png$/i.test(fileName);
+    return isMocPreview && n.title === fileName.replace(/\.[^.]+$/, '') ? fileName : n.title;
+}
 
 const FW_CLASS: Record<string, string> = { para: 'para', overview: 'overview', custom: 'custom' };
 const LS_COLLAPSED = "zkw.tree.collapsed";
@@ -44,8 +52,12 @@ export class SpacesTree {
         if (!node || node.type === 'space') return;
         const spaceId = node.spaceId;
         this.collapsed.delete('space:' + spaceId);
+        const space = this.ctx.store.getNode(spaceId);
+        const fw = space?.type === 'space' ? FRAMEWORKS[(space as WSSpaceNode).framework] : null;
+        const bucket = fw?.buckets.find(b => b.match(node));
 
-        // 沿结构父链(partOf/childMoc,限本 Space 内)向上,展开每个有子节点的祖先
+        // 沿同一桶内的结构父链向上展开；父节点属于别的桶时，当前节点就是本桶根。
+        // 归档资源仍保留 partOf 关系，但会在 Archive 根部显示，不能继续展开原 Areas 桶。
         const inSpace = new Set(this.ctx.store.nodesInSpace(spaceId).map(n => n.id));
         const parentOf = (id: string): string | null => {
             const link = this.ctx.store.linksFrom(id)
@@ -59,19 +71,17 @@ export class SpacesTree {
             guard.add(cur);
             root = cur;
             const p = parentOf(cur);
-            if (p) this.collapsed.delete('node:' + p);
+            const parentNode = p ? this.ctx.store.getNode(p) : null;
+            if (!p || !parentNode || (bucket && !bucket.match(parentNode))) break;
+            this.collapsed.delete('node:' + p);
             cur = p;
         }
 
         // 根节点所属的框架桶
-        const space = this.ctx.store.getNode(spaceId);
-        if (space && space.type === 'space') {
-            const rootNode = this.ctx.store.getNode(root);
-            const fw = FRAMEWORKS[(space as WSSpaceNode).framework];
-            if (rootNode) {
-                const bucket = fw.buckets.find(b => b.match(rootNode));
-                if (bucket) this.collapsed.delete(`bucket:${spaceId}:${bucket.id}`);
-            }
+        const rootNode = this.ctx.store.getNode(root);
+        const rootBucket = bucket || (rootNode ? fw?.buckets.find(b => b.match(rootNode)) : undefined);
+        if (rootBucket) {
+            this.collapsed.delete(`bucket:${spaceId}:${rootBucket.id}`);
         }
         this.save();
     }
@@ -99,11 +109,16 @@ export class SpacesTree {
             const parentMap = this.buildParentMap(space.id);
             const fw = FRAMEWORKS[space.framework];
             for (const bucket of fw.buckets) {
-                const roots = nodes.filter(n => bucket.match(n) && parentMap.get(n.id) == null);
+                const bucketNodes = nodes.filter(bucket.match);
+                const bucketIds = new Set(bucketNodes.map(n => n.id));
+                const roots = bucketNodes.filter(n => {
+                    const parentIds = parentMap.get(n.id) ?? [];
+                    return parentIds.every(id => !bucketIds.has(id));
+                });
                 if (roots.length) keys.push(`bucket:${space.id}:${bucket.id}`);
-            }
-            for (const n of nodes) {
-                if (nodes.some(c => parentMap.get(c.id) === n.id)) keys.push('node:' + n.id);
+                for (const n of bucketNodes) {
+                    if (bucketNodes.some(c => parentMap.get(c.id)?.includes(n.id))) keys.push('node:' + n.id);
+                }
             }
         }
         return keys;
@@ -135,13 +150,15 @@ export class SpacesTree {
         for (const space of spaces) this.renderSpace(space);
     }
 
-    /** 某 Space 内:nodeId → 结构父 id(partOf / childMoc 的目标),无则为 null(根) */
-    private buildParentMap(spaceId: string): Map<string, string | null> {
+    /** 某 Space 内:nodeId → 全部结构父 id(partOf / childMoc 的目标)。 */
+    private buildParentMap(spaceId: string): Map<string, string[]> {
         const inSpace = new Set(this.ctx.store.nodesInSpace(spaceId).map(n => n.id));
-        const parent = new Map<string, string | null>();
+        const parent = new Map<string, string[]>();
         for (const id of inSpace) {
-            const link = this.ctx.store.linksFrom(id).find(l => (l.type === 'partOf' || l.type === 'childMoc') && inSpace.has(l.to));
-            parent.set(id, link ? link.to : null);
+            const parentIds = this.ctx.store.linksFrom(id)
+                .filter(l => (l.type === 'partOf' || l.type === 'childMoc') && inSpace.has(l.to))
+                .map(l => l.to);
+            parent.set(id, parentIds);
         }
         return parent;
     }
@@ -165,12 +182,18 @@ export class SpacesTree {
 
         const nodes = this.ctx.store.nodesInSpace(space.id);
         const parentMap = this.buildParentMap(space.id);
-        const childrenOf = (id: string) => nodes.filter(n => parentMap.get(n.id) === id);
         const fw = FRAMEWORKS[space.framework];
 
         for (const bucket of fw.buckets) {
-            // 桶里只放「根节点」(结构上无父),后代由递归嵌套渲染
-            const roots = nodes.filter(n => bucket.match(n) && parentMap.get(n.id) == null);
+            // 桶内按同类父子关系递归；父节点落在别的桶时，当前节点提升为本桶根节点。
+            // 这样资源归档后不会继续显示在原 Area 下，也不会因仍保留 partOf 关系而从 Archive 消失。
+            const bucketNodes = nodes.filter(bucket.match);
+            const bucketIds = new Set(bucketNodes.map(n => n.id));
+            const childrenOf = (id: string) => bucketNodes.filter(n => parentMap.get(n.id)?.includes(id));
+            const roots = bucketNodes.filter(n => {
+                const parentIds = parentMap.get(n.id) ?? [];
+                return parentIds.every(id => !bucketIds.has(id));
+            });
             if (!roots.length) continue;
             const bkey = `bucket:${space.id}:${bucket.id}`;
             const bopen = this.isOpen(bkey);
@@ -186,11 +209,11 @@ export class SpacesTree {
             // 点桶标签 → 打开 cockpit 并聚焦该桶(lens)
             b.onclick = () => this.ctx.open({ kind: 'space', id: space.id, lens: bucket.id });
             if (!bopen) continue;
-            roots.forEach(n => this.renderNode(n, 2, childrenOf));
+            roots.forEach(n => this.renderNode(n, 2, childrenOf, null, space.id));
         }
     }
 
-    private renderNode(n: WorkspaceNode, depth: number, childrenOf: (id: string) => WorkspaceNode[]) {
+    private renderNode(n: WorkspaceNode, depth: number, childrenOf: (id: string) => WorkspaceNode[], parentContainerId: string | null, spaceId: string) {
         const kids = childrenOf(n.id);
         const nkey = 'node:' + n.id;
         const open = this.isOpen(nkey);
@@ -212,14 +235,8 @@ export class SpacesTree {
         caret.onclick = (e) => { e.stopPropagation(); if (kids.length) this.toggle(nkey); };
 
         glyph(row, n.type);
-        // 名字 = 跳转(MOC→图谱 / project→项目页 / note→笔记页 / space→cockpit);行其余 = 开详情 deck
-        const nm = row.createSpan({ cls: 'nm link' + (n.type === 'note' || n.type === 'map' ? ' dim' : '') });
-        nm.setText(n.title);
-        // 名字只占文字宽度(否则 flex:1 撑满整行,右侧空白也成了"名字",点了照样跳转)
-        nm.setCssStyles({ cursor: 'pointer', flex: '0 1 auto' });
-        nm.onclick = (e) => { e.stopPropagation(); this.ctx.open(this.ctx.store.targetFor(n)); };
-        // 撑满剩余宽度、与行同高的空白:点它冒泡到 row → 开 deck
-        row.createSpan().setCssStyles({ flex: '1 1 auto', alignSelf: 'stretch' });
+        const nm = row.createSpan({ cls: 'nm' + (n.type === 'note' || n.type === 'map' ? ' dim' : '') });
+        nm.setText(displayNodeTitle(n));
 
         if (n.type === 'project') {
             const p = n as WSProjectNode;
@@ -237,29 +254,75 @@ export class SpacesTree {
             if (agg) row.createSpan({ cls: 'mcount', text: String(agg) });
         }
 
-        // 行空白:面板内预览(中间主区渲染该节点页面 + 侧栏选中),和打开普通 MOC 一致,不跳图谱、不弹 deck
-        row.onclick = () => this.ctx.openInline(this.ctx.store.targetFor(n));
-        row.oncontextmenu = (e) => this.showMenu(e, n);
+        const sourceAction = this.sourceAction(n);
+        if (sourceAction) {
+            const openSource = row.createEl('button', { cls: 'nrow-source', attr: { 'aria-label': sourceAction.title } });
+            setIcon(openSource, sourceAction.icon);
+            openSource.setAttribute('title', sourceAction.title);
+            openSource.onclick = (event) => {
+                event.stopPropagation();
+                this.ctx.openInline(this.ctx.store.targetFor(n));
+                this.openSource(n, event.metaKey || event.ctrlKey);
+            };
+        }
 
-        if (open && kids.length) kids.forEach(k => this.renderNode(k, depth + 1, childrenOf));
+        // 树行用于工作区内导航；打开源文件 / 图谱由右侧动作或 Cmd/Ctrl 点击完成。
+        row.onclick = (event) => {
+            this.ctx.openInline(this.ctx.store.targetFor(n));
+            if (event.metaKey || event.ctrlKey) this.openSource(n, true);
+        };
+        row.oncontextmenu = (e) => this.showMenu(e, n, parentContainerId, spaceId);
+
+        if (open && kids.length) kids.forEach(k => this.renderNode(k, depth + 1, childrenOf, n.id, spaceId));
+    }
+
+    /** 节点在左树中的显式“打开源内容”动作；没有可打开文件时不显示。 */
+    private sourceAction(n: WorkspaceNode): { icon: string; title: string } | null {
+        const filePath = (n as { filePath?: string }).filePath;
+        if (!filePath) return null;
+        if (n.type === 'moc' || n.type === 'map') return { icon: 'git-fork', title: t('ws open graph') };
+        const file = this.ctx.app.vault.getAbstractFileByPath(filePath);
+        return file instanceof TFile ? { icon: 'external-link', title: t('ws open file') } : null;
+    }
+
+    private openSource(n: WorkspaceNode, forceTab = false) {
+        const filePath = (n as { filePath?: string }).filePath;
+        if (!filePath) return;
+        if (n.type === 'moc' || n.type === 'map') {
+            this.ctx.open({ kind: 'moc', id: n.id }, forceTab);
+            return;
+        }
+        const file = this.ctx.app.vault.getAbstractFileByPath(filePath);
+        if (file instanceof TFile) this.ctx.openFile(file, forceTab);
     }
 
     /** 行右键菜单:打开 / (容器内节点)移出容器 / 删除 */
-    private showMenu(e: MouseEvent, n: WorkspaceNode) {
+    private showMenu(e: MouseEvent, n: WorkspaceNode, parentContainerId: string | null = null, spaceId?: string) {
         e.preventDefault();
         e.stopPropagation();
         const menu = new Menu();
-        menu.addItem(i => i.setTitle(t('ws open')).setIcon('panel-right-open')
-            .onClick(() => this.ctx.open(this.ctx.store.targetFor(n))));
+        menu.addItem(i => i.setTitle(t('ws view workspace')).setIcon('panel-right-open')
+            .onClick(() => this.ctx.openInline(this.ctx.store.targetFor(n))));
+        const sourceAction = this.sourceAction(n);
+        if (sourceAction) {
+            menu.addItem(i => i.setTitle(sourceAction.title).setIcon(sourceAction.icon)
+                .onClick(() => this.openSource(n)));
+        }
+        if (n.type !== 'space') {
+            const archived = isWorkspaceNodeArchived(n);
+            menu.addItem(i => i.setTitle(t(archived ? 'ws restore archive' : 'ws archive'))
+                .setIcon(archived ? 'archive-restore' : 'archive')
+                .onClick(() => { void this.ctx.store.setArchived(n.id, !archived); }));
+        }
         // 挂在某 MOC 容器下的节点:提供「移出容器」浮回所在 Space 顶层(非删除)
         if (n.type !== 'space' && this.ctx.store.linksFrom(n.id)
             .some(l => (l.type === 'partOf' || l.type === 'childMoc' || l.type === 'serves'))) {
             menu.addItem(i => i.setTitle(t('ws unmount')).setIcon('log-out')
-                .onClick(async () => { await this.ctx.store.unmountFromContainer(n.id); }));
+                .onClick(async () => { await this.ctx.store.unmountFromContainer(n.id, parentContainerId ?? undefined); }));
         }
         menu.addSeparator();
         menu.addItem(i => { (i as { setWarning?(warning: boolean): void }).setWarning?.(true); i.setTitle(t('ws delete')).setIcon('trash-2')
-            .onClick(() => this.ctx.requestDelete(n)); });
+            .onClick(() => this.ctx.requestDelete(n, spaceId)); });
         menu.showAtMouseEvent(e);
     }
 }

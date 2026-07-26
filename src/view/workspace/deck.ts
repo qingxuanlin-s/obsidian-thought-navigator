@@ -1,8 +1,8 @@
 import { Component, MarkdownRenderer, TFile } from "obsidian";
-import { WorkspaceNode, WSProjectNode, WSMocNode } from "src/types/workspace";
+import { WorkspaceNode, WSProjectNode, WSMocNode, isWorkspaceNodeArchived } from "src/types/workspace";
 import { FilePickerModal } from "src/modal/filePickerModal";
 import { t } from "src/lang/helper";
-import { RenderCtx, TYPE_COLOR, statusLabel, STATUS_COLOR, relTime, progressFor, nextActionText } from "./render";
+import { RenderCtx, TYPE_COLOR, statusLabel, STATUS_COLOR, relTime, progressFor, nextActionText, renderWorkspaceFileSummary } from "./render";
 
 const TYPE_LABEL: Record<string, string> = { space: 'SPACE', moc: 'MOC', project: 'PROJECT', note: 'NOTE', map: 'MAP' };
 
@@ -57,9 +57,24 @@ export class Deck {
         // foot
         const closeBtn = this.foot.createEl('button', { cls: 'close', text: t('ws close esc') });
         closeBtn.onclick = () => this.close();
+        if (node.type !== 'space') {
+            const archived = isWorkspaceNodeArchived(node);
+            const archive = this.foot.createEl('button', {
+                text: t(archived ? 'ws restore archive' : 'ws archive'),
+            });
+            archive.onclick = () => { void (async () => {
+                await this.ctx.store.setArchived(node.id, !archived);
+                this.close();
+            })(); };
+        }
         const del = this.foot.createEl('button', { cls: 'mod-warning', text: t('ws delete') });
         del.onclick = () => this.ctx.requestDelete(node);
         const filePath = (node as { filePath?: string }).filePath;
+        const file = filePath ? this.ctx.app.vault.getAbstractFileByPath(filePath) : null;
+        if (node.type === 'note' && file instanceof TFile) {
+            const openFile = this.foot.createEl('button', { cls: 'open-map', text: t('ws open file') });
+            openFile.onclick = () => { this.ctx.open(this.ctx.store.targetFor(node)); this.close(); };
+        }
         if ((node.type === 'moc' || node.type === 'map') && filePath) {
             const openMap = this.foot.createEl('button', { cls: 'open-map', text: t('ws open graph') });
             openMap.onclick = () => { this.ctx.open({ kind: 'moc', id: node.id }); this.close(); };
@@ -147,16 +162,18 @@ export class Deck {
             return;
         }
 
-        // note → 真实 markdown 笔记正文
-        this.body.createDiv({ cls: 'dsec', text: t('ws body') });
-        const prose = this.body.createDiv({ cls: 'prose' });
+        // 文件正文由 Obsidian 原生视图负责，deck 只展示文件上下文。
         const filePath = (node as { filePath?: string }).filePath;
         const file = filePath ? this.ctx.app.vault.getAbstractFileByPath(filePath) : null;
         if (file instanceof TFile) {
-            void this.ctx.app.vault.cachedRead(file).then(md => {
-                void MarkdownRenderer.render(this.ctx.app, md, prose, filePath || '', this.owner);
-            });
-        } else if ((node as { body?: string }).body) {
+            this.body.createDiv({ cls: 'dsec', text: t('ws file') });
+            renderWorkspaceFileSummary(this.body, file);
+            return;
+        }
+
+        this.body.createDiv({ cls: 'dsec', text: t('ws body') });
+        const prose = this.body.createDiv({ cls: 'prose' });
+        if ((node as { body?: string }).body) {
             void MarkdownRenderer.render(this.ctx.app, (node as { body?: string }).body || '', prose, '', this.owner);
         } else if ((node as { description?: string }).description) {
             prose.createEl('p', { text: (node as { description?: string }).description });

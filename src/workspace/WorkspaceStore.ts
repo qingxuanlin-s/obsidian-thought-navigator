@@ -4,6 +4,7 @@ import {
     WorkspaceStoreFile, FrameworkId, OpenTarget, targetFor, ChecklistItem,
     LinkType,
 } from "src/types/workspace";
+import { isMocPath, stripMocSuffix } from "src/utils/utils";
 
 /** id 生成:`wsn_` + 8 位 base36 + 时间戳尾 */
 export function genNodeId(): string {
@@ -16,6 +17,12 @@ export function genNodeId(): string {
 function baseNameNoExt(path: string): string {
     const base = path.split('/').pop() || path;
     return base.replace(/\.[^.]+$/, '');
+}
+
+/** MOC 去掉完整后缀；普通文件保持 Obsidian 的 basename 语义。 */
+function fileNodeTitle(path: string): string {
+    const base = path.split('/').pop() || path;
+    return isMocPath(path) ? stripMocSuffix(base) : baseNameNoExt(path);
 }
 
 /** 清掉文件名非法字符,作为新建笔记的 basename */
@@ -35,23 +42,32 @@ function projectFileContent(title: string, tag: string): string {
 
 type ChangeListener = () => void;
 
-async function readStore(adapter: DataAdapter, storePath: string): Promise<WorkspaceStoreFile> {
+interface WorkspaceStoreSnapshot {
+    data: WorkspaceStoreFile;
+    raw: string | null;
+}
+
+async function readStore(adapter: DataAdapter, storePath: string): Promise<WorkspaceStoreSnapshot> {
     const empty: WorkspaceStoreFile = { version: 1, nodes: [], links: [] };
     try {
-        if (!(await adapter.exists(storePath))) return empty;
-        const parsed = JSON.parse(await adapter.read(storePath)) as WorkspaceStoreFile;
-        if (!parsed || !Array.isArray(parsed.nodes)) return empty;
+        if (!(await adapter.exists(storePath))) return { data: empty, raw: null };
+        const raw = await adapter.read(storePath);
+        const parsed = JSON.parse(raw) as WorkspaceStoreFile;
+        if (!parsed || !Array.isArray(parsed.nodes)) return { data: empty, raw };
         return {
-            version: 1,
-            nodes: parsed.nodes,
-            links: Array.isArray(parsed.links) ? parsed.links : [],
-            // 关键:透传已落盘的迁移版本号,否则每次 reload 都被视作 0、
-            // 触发 ensureWorkspaceSeed 重迁并覆盖用户新建数据
-            migrationVersion: typeof parsed.migrationVersion === 'number' ? parsed.migrationVersion : 0,
+            data: {
+                version: 1,
+                nodes: parsed.nodes,
+                links: Array.isArray(parsed.links) ? parsed.links : [],
+                // 关键:透传已落盘的迁移版本号,否则每次 reload 都被视作 0、
+                // 触发 ensureWorkspaceSeed 重迁并覆盖用户新建数据
+                migrationVersion: typeof parsed.migrationVersion === 'number' ? parsed.migrationVersion : 0,
+            },
+            raw,
         };
     } catch (e) {
         console.warn('[zk-navigation] workspace.json 读取失败:', storePath, e);
-        return empty;
+        return { data: empty, raw: null };
     }
 }
 
@@ -70,6 +86,9 @@ export class WorkspaceStore extends Component {
     private listeners: Set<ChangeListener> = new Set();
     private bootstrapped = false;
     private flushChain: Promise<void> = Promise.resolve();
+    /** 最近一次成功读/写的原始内容,用于识别 Remote Save 等外部修改。 */
+    private lastDiskContent: string | null = null;
+    private hasStoreFile = false;
 
     constructor(app: App, storePath: string) {
         super();
@@ -84,11 +103,46 @@ export class WorkspaceStore extends Component {
     }
 
     async reload(): Promise<void> {
-        const data = await readStore(this.app.vault.adapter, this.storePath);
+        await this.applySnapshot(await readStore(this.app.vault.adapter, this.storePath));
+    }
+
+    /** 写入前检测磁盘是否已被外部同步替换,防止旧内存快照覆盖远端数据。 */
+    private async refreshIfDiskChanged(): Promise<void> {
+        const snapshot = await readStore(this.app.vault.adapter, this.storePath);
+        if (snapshot.raw === this.lastDiskContent) return;
+        await this.applySnapshot(snapshot);
+    }
+
+    private async applySnapshot(snapshot: WorkspaceStoreSnapshot): Promise<void> {
+        const { data } = snapshot;
+        this.lastDiskContent = snapshot.raw;
+        this.hasStoreFile = snapshot.raw !== null;
         this.nodes.clear();
-        for (const n of data.nodes) this.nodes.set(n.id, n);
-        this.links = data.links.filter(l => this.nodes.has(l.from) && this.nodes.has(l.to));
+        const reclassifiedMocIds = new Set<string>();
+        for (const n of data.nodes) {
+            if (n.type === 'note' && n.filePath && isMocPath(n.filePath)) {
+                const moc = {
+                    ...n,
+                    type: 'moc' as const,
+                    title: n.title === baseNameNoExt(n.filePath) ? fileNodeTitle(n.filePath) : n.title,
+                };
+                delete moc.body;
+                delete moc.lid;
+                this.nodes.set(n.id, {
+                    ...moc,
+                });
+                reclassifiedMocIds.add(n.id);
+            } else {
+                this.nodes.set(n.id, n);
+            }
+        }
+        this.links = data.links
+            .filter(l => this.nodes.has(l.from) && this.nodes.has(l.to))
+            .map(l => reclassifiedMocIds.has(l.from) && l.type === 'partOf'
+                ? { ...l, type: 'childMoc' as const }
+                : l);
         this.migrationVersion = data.migrationVersion ?? 0;
+        if (reclassifiedMocIds.size > 0) await this.flush();
         this.emitChange();
     }
 
@@ -97,6 +151,7 @@ export class WorkspaceStore extends Component {
      * mutator 收到 helpers 以便创建/触碰节点。
      */
     async commit(mutator: (ctx: WorkspaceMutation) => void | Promise<void>): Promise<void> {
+        await this.refreshIfDiskChanged();
         const ctx = new WorkspaceMutation(this.nodes, this.links);
         await mutator(ctx);
         this.links = ctx.links;
@@ -116,13 +171,18 @@ export class WorkspaceStore extends Component {
             links: this.links,
             migrationVersion: this.migrationVersion,
         };
-        await this.app.vault.adapter.write(this.storePath, JSON.stringify(data, null, 2));
+        const raw = JSON.stringify(data, null, 2);
+        await this.app.vault.adapter.write(this.storePath, raw);
+        this.lastDiskContent = raw;
+        this.hasStoreFile = true;
     }
 
     getMigrationVersion(): number { return this.migrationVersion; }
+    hasStoredFile(): boolean { return this.hasStoreFile; }
 
     /** 仅更新迁移版本号并落盘(不动节点/边),用于"无新数据可迁但要记录已处理过本版本" */
     async setMigrationVersion(v: number): Promise<void> {
+        await this.refreshIfDiskChanged();
         if (this.migrationVersion === v) return;
         this.migrationVersion = v;
         await this.flush();
@@ -130,6 +190,7 @@ export class WorkspaceStore extends Component {
 
     /** 整体替换数据并记录迁移版本号(用于自动重迁移) */
     async resetTo(nodes: WorkspaceNode[], links: WSLink[], migrationVersion: number): Promise<void> {
+        await this.refreshIfDiskChanged();
         this.migrationVersion = migrationVersion;
         await this.commit(ctx => {
             for (const n of Array.from(this.nodes.values())) ctx.remove(n.id);
@@ -149,6 +210,37 @@ export class WorkspaceStore extends Component {
     isEmpty(): boolean { return this.nodes.size === 0; }
     getAllLinks(): WSLink[] { return this.links.slice(); }
 
+    getNodeSpaceIds(nodeId: string): string[] {
+        const node = this.nodes.get(nodeId);
+        return node ? this.nodeSpaceIds(node) : [];
+    }
+
+    /** 节点所有所属 Space，spaceId 保持为兼容旧数据的主归属。 */
+    private nodeSpaceIds(node: WorkspaceNode): string[] {
+        return Array.from(new Set([node.spaceId, ...(node.spaceIds ?? [])]));
+    }
+
+    private addNodeToSpace(node: WorkspaceNode, spaceId: string): void {
+        if (node.spaceId === spaceId || node.spaceIds?.includes(spaceId)) return;
+        node.spaceIds = [...(node.spaceIds ?? []), spaceId];
+    }
+
+    /** 移除一个 Space 归属；返回 true 表示已无任何 Space，应删除该节点。 */
+    private removeNodeFromSpace(node: WorkspaceNode, spaceId: string): boolean {
+        if (node.spaceId !== spaceId) {
+            const remaining = (node.spaceIds ?? []).filter(id => id !== spaceId);
+            if (remaining.length) node.spaceIds = remaining;
+            else delete node.spaceIds;
+            return false;
+        }
+        const [nextPrimary, ...remaining] = node.spaceIds ?? [];
+        if (!nextPrimary) return true;
+        node.spaceId = nextPrimary;
+        if (remaining.length) node.spaceIds = remaining;
+        else delete node.spaceIds;
+        return false;
+    }
+
     /** 所有 Space 节点,按 createdAt 排序 */
     getSpaces(): WSSpaceNode[] {
         return this.getAllNodes()
@@ -158,7 +250,7 @@ export class WorkspaceStore extends Component {
 
     /** 某 Space 下的全部非 Space 节点 */
     nodesInSpace(spaceId: string): WorkspaceNode[] {
-        return this.getAllNodes().filter(n => n.type !== 'space' && n.spaceId === spaceId);
+        return this.getAllNodes().filter(n => n.type !== 'space' && this.nodeSpaceIds(n).includes(spaceId));
     }
 
     linksFrom(id: string): WSLink[] { return this.links.filter(l => l.from === id); }
@@ -209,7 +301,7 @@ export class WorkspaceStore extends Component {
         if (!container) return [];
         if (container.type === 'space') {
             // Space 顶层 = 属于本 space、且不指向本 space 内任何容器的节点
-            const inSpace = this.getAllNodes().filter(n => n.type !== 'space' && n.spaceId === containerId);
+            const inSpace = this.nodesInSpace(containerId);
             const idSet = new Set(inSpace.map(n => n.id));
             return inSpace
                 .filter(n => !this.linksFrom(n.id).some(l => this.isContainmentLink(l) && idSet.has(l.to)))
@@ -270,8 +362,13 @@ export class WorkspaceStore extends Component {
         const hosts = new Set<string>();
         for (const n of this.getAllNodes()) {
             if ((n as { filePath?: string }).filePath !== path) continue;
-            const pid = this.parentContainerOf(n.id);
-            if (pid) hosts.add(pid);
+            const parentIds = this.linksFrom(n.id)
+                .filter(l => this.isContainmentLink(l))
+                .map(l => l.to);
+            if (parentIds.length > 0) {
+                parentIds.forEach(id => hosts.add(id));
+            }
+            this.nodeSpaceIds(n).forEach(id => hosts.add(id));
         }
         return Array.from(hosts)
             .map(id => this.nodes.get(id))
@@ -308,24 +405,23 @@ export class WorkspaceStore extends Component {
     }
 
     /**
-     * 把 vault 里任意 markdown 笔记关联到某 MOC:
-     * 若该文件还没有对应工作区节点,就地建一个 note 节点(归到 MOC 所在 Space),再建 partOf 链。
+     * 把 vault 文件关联到某 MOC:
+     * 若该文件还没有对应工作区节点,按路径建 note 或 MOC 节点,再建立正确的容器链。
      */
     async associateFileToMoc(mocId: string, file: TFile): Promise<void> {
         const moc = this.nodes.get(mocId);
         if (!moc) return;
         await this.commit(ctx => {
-            let note = this.getNodeByPath(file.path);
-            if (!note) {
+            let node = this.getNodeByPath(file.path);
+            if (!node) {
                 const now = Date.now();
-                const node: WSNoteNode = {
-                    id: genNodeId(), type: 'note', spaceId: moc.spaceId,
-                    title: file.basename, filePath: file.path, createdAt: now, updatedAt: now,
-                };
-                ctx.put(node);
-                note = node;
+                const nodeForFile: WorkspaceNode = isMocPath(file.path)
+                    ? { id: genNodeId(), type: 'moc', spaceId: moc.spaceId, title: fileNodeTitle(file.path), filePath: file.path, createdAt: now, updatedAt: now }
+                    : { id: genNodeId(), type: 'note', spaceId: moc.spaceId, title: file.basename, filePath: file.path, createdAt: now, updatedAt: now };
+                ctx.put(nodeForFile);
+                node = nodeForFile;
             }
-            ctx.addLink({ from: note.id, to: mocId, type: 'partOf' });
+            ctx.addLink({ from: node.id, to: mocId, type: node.type === 'moc' ? 'childMoc' : 'partOf' });
         });
     }
 
@@ -336,8 +432,8 @@ export class WorkspaceStore extends Component {
     async handleFileRename(oldPath: string, newPath: string): Promise<void> {
         const affected = this.getAllNodes().filter(n => (n as { filePath?: string }).filePath === oldPath);
         if (affected.length === 0) return;
-        const oldBase = baseNameNoExt(oldPath);
-        const newBase = baseNameNoExt(newPath);
+        const oldBase = fileNodeTitle(oldPath);
+        const newBase = fileNodeTitle(newPath);
         await this.commit(ctx => {
             for (const n of affected) {
                 ctx.update(n.id, x => {
@@ -373,7 +469,7 @@ export class WorkspaceStore extends Component {
      * 把一批已存在的 vault 文件挂到容器(MOC 或 Space)下。
      * - 文件无对应节点 → 按扩展名就地建节点:`.moc.md`/`.moc` → moc 节点,其余 → note 节点(都指向真实文件)。
      * - 容器是 MOC → moc 子节点加 childMoc 链、其余加 partOf 链(去重,支持一个文件多父)。
-     * - 容器是 Space → 仅置 spaceId,作为该 Space 顶层节点(无容器边)。
+     * - 容器是 Space → 追加 Space 归属，作为该 Space 顶层节点(无容器边)。
      * - opts.mocIsTop:挂到 Space 顶层时,按当前镜头决定 MOC 落「总览」(true)还是「主题」(false);
      *   undefined 表示不指定(沿用默认/既有值)。见 issue #71。
      * 返回新建的节点数。
@@ -382,7 +478,6 @@ export class WorkspaceStore extends Component {
         const container = this.nodes.get(containerId);
         if (!container) return 0;
         const spaceId = container.type === 'space' ? container.id : container.spaceId;
-        const isMocPath = (p: string) => p.endsWith('.moc.md') || p.endsWith('.moc');
         let added = 0;
         await this.commit(ctx => {
             for (const path of paths) {
@@ -391,21 +486,20 @@ export class WorkspaceStore extends Component {
                 if (!node) {
                     const now = Date.now();
                     const n: WorkspaceNode = isMocPath(path)
-                        ? { id: genNodeId(), type: 'moc', spaceId, title: baseNameNoExt(path).replace(/\.moc$/, ''), filePath: path, createdAt: now, updatedAt: now, ...(opts?.mocIsTop !== undefined ? { isTop: opts.mocIsTop } : {}) }
+                        ? { id: genNodeId(), type: 'moc', spaceId, title: fileNodeTitle(path), filePath: path, createdAt: now, updatedAt: now, ...(opts?.mocIsTop !== undefined ? { isTop: opts.mocIsTop } : {}) }
                         : { id: genNodeId(), type: 'note', spaceId, title: baseNameNoExt(path), filePath: path, createdAt: now, updatedAt: now };
                     ctx.put(n);
                     node = n;
                     added++;
                 }
+                ctx.updateQuiet(node.id, x => {
+                    if (x.type === 'space') return;
+                    this.addNodeToSpace(x, spaceId);
+                    // 挂到 Space 顶层的 MOC:按镜头落总览/主题
+                    if (container.type === 'space' && x.type === 'moc' && opts?.mocIsTop !== undefined) x.isTop = opts.mocIsTop;
+                });
                 if (container.type === 'moc') {
                     ctx.addLink({ from: node.id, to: containerId, type: node.type === 'moc' ? 'childMoc' : 'partOf' });
-                } else {
-                    ctx.updateQuiet(node.id, x => {
-                        if (x.type === 'space') return;
-                        x.spaceId = spaceId;
-                        // 挂到 Space 顶层的 MOC:按镜头落总览/主题(既有节点也跟随,使其出现在期望桶里)
-                        if (x.type === 'moc' && opts?.mocIsTop !== undefined) x.isTop = opts.mocIsTop;
-                    });
                 }
             }
         });
@@ -419,7 +513,6 @@ export class WorkspaceStore extends Component {
     async addProjectFileReferences(projectId: string, paths: string[]): Promise<number> {
         const project = this.nodes.get(projectId);
         if (!project || project.type !== 'project') return 0;
-        const isMocPath = (p: string) => p.endsWith('.moc.md') || p.endsWith('.moc');
         let added = 0;
         await this.commit(ctx => {
             for (const path of paths) {
@@ -428,7 +521,7 @@ export class WorkspaceStore extends Component {
                 if (!node) {
                     const now = Date.now();
                     const n: WorkspaceNode = isMocPath(path)
-                        ? { id: genNodeId(), type: 'moc', spaceId: project.spaceId, title: baseNameNoExt(path).replace(/\.moc$/, ''), filePath: path, createdAt: now, updatedAt: now }
+                        ? { id: genNodeId(), type: 'moc', spaceId: project.spaceId, title: fileNodeTitle(path), filePath: path, createdAt: now, updatedAt: now }
                         : { id: genNodeId(), type: 'note', spaceId: project.spaceId, title: baseNameNoExt(path), filePath: path, createdAt: now, updatedAt: now };
                     ctx.put(n);
                     node = n;
@@ -473,7 +566,7 @@ export class WorkspaceStore extends Component {
 
     /**
      * 把节点重新挂到新容器下(拖拽重挂)。
-     * - 目标是 Space:解掉容器边,改 spaceId 成为顶层。
+     * - 目标是 Space:解掉容器边,改主 Space 成为顶层。
      * - 目标是 MOC:解掉旧容器边,按节点类型加 childMoc/serves/partOf,并同步整棵子树 spaceId。
      * 防环:不能挂到自身或后代下。返回是否发生移动。
      */
@@ -488,7 +581,11 @@ export class WorkspaceStore extends Component {
         const newSpaceId = target.type === 'space' ? target.id : target.spaceId;
         await this.commit(ctx => {
             for (const l of outLinks) ctx.removeLink(l.from, l.to, l.type);
-            for (const id of subtree) ctx.updateQuiet(id, x => { if (x.type !== 'space') x.spaceId = newSpaceId; });
+            for (const id of subtree) ctx.updateQuiet(id, x => {
+                if (x.type === 'space') return;
+                x.spaceId = newSpaceId;
+                delete x.spaceIds;
+            });
             if (target.type === 'moc') {
                 const linkType: LinkType = node.type === 'moc' ? 'childMoc'
                     : node.type === 'project' ? 'serves' : 'partOf';
@@ -503,7 +600,13 @@ export class WorkspaceStore extends Component {
         const container = this.nodes.get(containerId);
         if (!container) return false;
         const targets = this.getAllNodes()
-            .filter(n => (n as { filePath?: string }).filePath === path && this.parentContainerOf(n.id) === containerId);
+            .filter(n => {
+                if ((n as { filePath?: string }).filePath !== path) return false;
+                const containerLinks = this.linksFrom(n.id).filter(l => this.isContainmentLink(l));
+                return container.type === 'moc'
+                    ? containerLinks.some(l => l.to === containerId)
+                    : this.nodeSpaceIds(n).includes(containerId) && containerLinks.length === 0;
+            });
         if (targets.length === 0) return false;
         await this.commit(ctx => {
             for (const node of targets) {
@@ -512,16 +615,32 @@ export class WorkspaceStore extends Component {
                         if (this.isContainmentLink(l) && l.to === containerId) ctx.removeLink(l.from, l.to, l.type);
                     }
                 } else {
-                    ctx.remove(node.id);
+                    let removeNode = false;
+                    ctx.updateQuiet(node.id, x => {
+                        if (x.type !== 'space') removeNode = this.removeNodeFromSpace(x, containerId);
+                    });
+                    if (removeNode) ctx.remove(node.id);
                 }
             }
         });
         return true;
     }
 
-    /** 从当前容器解挂:删掉容器出边,节点浮回所在 Space 顶层(不删节点)。 */
-    async unmountFromContainer(nodeId: string): Promise<boolean> {
-        const outLinks = this.linksFrom(nodeId).filter(l => this.isContainmentLink(l));
+    /** 共享节点从一个 Space 移出，保留其余 Space 中的同一节点和全部子树。 */
+    async unmountNodeFromSpace(nodeId: string, spaceId: string): Promise<boolean> {
+        const node = this.nodes.get(nodeId);
+        if (!node || node.type === 'space' || !this.nodeSpaceIds(node).includes(spaceId)) return false;
+        if (this.nodeSpaceIds(node).length < 2) return false;
+        await this.commit(ctx => ctx.updateQuiet(nodeId, n => {
+            if (n.type !== 'space') this.removeNodeFromSpace(n, spaceId);
+        }));
+        return true;
+    }
+
+    /** 从指定容器解挂；未指定容器时保留旧行为，移除全部容器关系。 */
+    async unmountFromContainer(nodeId: string, containerId?: string): Promise<boolean> {
+        const outLinks = this.linksFrom(nodeId)
+            .filter(l => this.isContainmentLink(l) && (!containerId || l.to === containerId));
         if (outLinks.length === 0) return false;
         await this.commit(ctx => { for (const l of outLinks) ctx.removeLink(l.from, l.to, l.type); });
         return true;
@@ -663,6 +782,26 @@ export class WorkspaceStore extends Component {
     async setProjectStatus(id: string, status: WSProjectNode['status']): Promise<void> {
         await this.commit(ctx => ctx.update(id, n => {
             if (n.type === 'project') n.status = status;
+        }));
+    }
+
+    /** 归档/恢复任意工作区条目；Project 沿用 status，其余节点使用 archived 标记。 */
+    async setArchived(id: string, archived: boolean): Promise<void> {
+        const node = this.nodes.get(id);
+        if (!node || node.type === 'space') return;
+        const current = node.type === 'project'
+            ? node.status === 'archived'
+            : node.archived === true;
+        if (current === archived) return;
+        await this.commit(ctx => ctx.update(id, n => {
+            if (n.type === 'space') return;
+            if (n.type === 'project') {
+                n.status = archived ? 'archived' : 'todo';
+            } else if (archived) {
+                n.archived = true;
+            } else {
+                delete n.archived;
+            }
         }));
     }
 

@@ -773,9 +773,20 @@ export class MOCHandler {
         });
     }
 
-    async updateNodeColorsInMOC(mocFile: TFile, nodeIDs: string[], color: string): Promise<void> {
+    /**
+     * 更新一级分支的主题色，渲染时由该分支下的所有节点继承
+     */
+    async updateBranchStyleColorInMOC(mocFile: TFile, branchID: string, color: string): Promise<void> {
         await this.modifyMOCData(mocFile, (mocData) => {
-            nodeIDs.forEach((nodeID) => this.updateNodeColorInData(mocData, nodeID, color));
+            if (!mocData.nodeStyleColors) {
+                mocData.nodeStyleColors = {};
+            }
+
+            if (color) {
+                mocData.nodeStyleColors[branchID] = color;
+            } else {
+                delete mocData.nodeStyleColors[branchID];
+            }
         });
     }
 

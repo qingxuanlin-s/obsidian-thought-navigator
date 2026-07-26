@@ -1,5 +1,5 @@
 import { Menu, Notice } from "obsidian";
-import { WSSpaceNode, WSMocNode, WSProjectNode, WorkspaceNode, FRAMEWORKS } from "src/types/workspace";
+import { WSSpaceNode, WSMocNode, WSProjectNode, WorkspaceNode, FRAMEWORKS, isWorkspaceNodeArchived } from "src/types/workspace";
 import { t } from "src/lang/helper";
 import { RenderCtx, relTime, glyph, statusLabel, fwChip, bucketLabel, STATUS_COLOR, progressFor, nextActionText, renderTaskText } from "./render";
 import { promptTitle } from "./modals";
@@ -7,7 +7,7 @@ import { FilePickerModal } from "src/modal/filePickerModal";
 
 const FW_CLASS: Record<string, string> = { para: 'para', overview: 'overview', custom: 'custom' };
 // 桶 → 卡片样式
-const PROJECT_BUCKETS = new Set(['projects', 'archive', 'action']);
+const PROJECT_BUCKETS = new Set(['projects', 'action']);
 const MOC_BUCKETS = new Set(['areas', 'overview', 'theme']);
 
 /** Space cockpit 概览页(原型 .ck)。initialLens:从 rail 点桶进入时预选的 lens。 */
@@ -143,7 +143,7 @@ export function renderCockpit(container: HTMLElement, ctx: RenderCtx, space: WSS
             renderBody();
         };
     };
-    mkTab('all', t('ws bucket all'), all.filter(n => !(n.type === 'project' && n.status === 'archived')).length);
+    mkTab('all', t('ws bucket all'), all.filter(n => !isWorkspaceNodeArchived(n)).length);
     fw.buckets.forEach(b => mkTab(b.id, bucketLabel(b.id), all.filter(b.match).length));
 
     const renderBody = () => {
@@ -162,35 +162,38 @@ function renderAllSections(
     body: HTMLElement, ctx: RenderCtx,
     projects: WSProjectNode[], mocs: WSMocNode[], notes: WorkspaceNode[],
 ): void {
-    const liveProjects = projects.filter(p => p.status !== 'archived');
-    const archived = projects.filter(p => p.status === 'archived');
+    const liveProjects = projects.filter(p => !isWorkspaceNodeArchived(p));
+    const liveMocs = mocs.filter(m => !isWorkspaceNodeArchived(m));
+    const liveNotes = notes.filter(n => !isWorkspaceNodeArchived(n));
+    const archived = [...projects, ...mocs, ...notes].filter(isWorkspaceNodeArchived);
 
     if (liveProjects.length) {
         sectitle(body, t('ws sec projects'), liveProjects.length, t('ws sec projects desc'));
         const grid = body.createDiv({ cls: 'pgrid' });
         liveProjects.sort(byStatusThenTime).forEach(p => renderProjectCard(grid, ctx, p));
     }
-    if (mocs.length) {
-        sectitle(body, t('ws sec areas'), mocs.length, t('ws sec areas desc'));
+    if (liveMocs.length) {
+        sectitle(body, t('ws sec areas'), liveMocs.length, t('ws sec areas desc'));
         const grid = body.createDiv({ cls: 'pgrid' });
-        mocs.forEach(m => renderMocCard(grid, ctx, m));
+        liveMocs.forEach(m => renderMocCard(grid, ctx, m));
     }
-    if (notes.length) {
-        sectitle(body, t('ws sec resources'), notes.length);
+    if (liveNotes.length) {
+        sectitle(body, t('ws sec resources'), liveNotes.length);
         const grid = body.createDiv({ cls: 'notegrid' });
-        notes.forEach(n => renderNoteCard(grid, ctx, n));
+        liveNotes.forEach(n => renderNoteCard(grid, ctx, n));
     }
     if (archived.length) {
         sectitle(body, t('ws sec archive'), archived.length);
-        const grid = body.createDiv({ cls: 'pgrid' });
-        archived.forEach(p => renderProjectCard(grid, ctx, p));
+        renderArchiveCards(body, ctx, archived);
     }
 }
 
 function renderBucketSection(body: HTMLElement, ctx: RenderCtx, bucketId: string, label: string, items: WorkspaceNode[]): void {
     sectitle(body, label, items.length);
     if (!items.length) { body.createDiv({ cls: 'empty', text: t('ws no members') }); return; }
-    if (PROJECT_BUCKETS.has(bucketId)) {
+    if (bucketId === 'archive') {
+        renderArchiveCards(body, ctx, items);
+    } else if (PROJECT_BUCKETS.has(bucketId)) {
         const grid = body.createDiv({ cls: 'pgrid' });
         (items as WSProjectNode[]).slice().sort(byStatusThenTime).forEach(p => renderProjectCard(grid, ctx, p));
     } else if (MOC_BUCKETS.has(bucketId)) {
@@ -202,11 +205,34 @@ function renderBucketSection(body: HTMLElement, ctx: RenderCtx, bucketId: string
     }
 }
 
+function renderArchiveCards(body: HTMLElement, ctx: RenderCtx, items: WorkspaceNode[]): void {
+    const projects = items.filter((n): n is WSProjectNode => n.type === 'project');
+    const mocs = items.filter((n): n is WSMocNode => n.type === 'moc');
+    const notes = items.filter(n => n.type === 'note' || n.type === 'map');
+    if (projects.length) {
+        const grid = body.createDiv({ cls: 'pgrid' });
+        projects.slice().sort(byStatusThenTime).forEach(p => renderProjectCard(grid, ctx, p));
+    }
+    if (mocs.length) {
+        const grid = body.createDiv({ cls: 'pgrid' });
+        mocs.forEach(m => renderMocCard(grid, ctx, m));
+    }
+    if (notes.length) {
+        const grid = body.createDiv({ cls: 'notegrid' });
+        notes.forEach(n => renderNoteCard(grid, ctx, n));
+    }
+}
+
 /** 卡片右键菜单:删除该条目(二次确认走 ctx.requestDelete) */
 function cardMenu(e: MouseEvent, ctx: RenderCtx, node: WorkspaceNode): void {
     e.preventDefault();
     e.stopPropagation();
     const menu = new Menu();
+    const archived = isWorkspaceNodeArchived(node);
+    menu.addItem(i => i.setTitle(t(archived ? 'ws restore archive' : 'ws archive'))
+        .setIcon(archived ? 'archive-restore' : 'archive')
+        .onClick(() => { void ctx.store.setArchived(node.id, !archived); }));
+    menu.addSeparator();
     menu.addItem(i => { (i as { setWarning?(warning: boolean): void }).setWarning?.(true); i.setTitle(t('ws delete')).setIcon('trash-2')
         .onClick(() => ctx.requestDelete(node)); });
     menu.showAtMouseEvent(e);

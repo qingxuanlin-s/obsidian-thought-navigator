@@ -2,7 +2,7 @@ import { App, Component, EventRef, Modal, TFile, setIcon, setTooltip } from "obs
 import { t } from "src/lang/helper";
 import { WorkspaceStore } from "src/workspace/WorkspaceStore";
 import { ProjectTaskStore } from "src/workspace/projectTasks";
-import { OpenTarget, WorkspaceNode, WSMocNode, FrameworkId } from "src/types/workspace";
+import { OpenTarget, WorkspaceNode, WSMocNode, WSMapNode, FrameworkId } from "src/types/workspace";
 import { fwLabel } from "./render";
 import { RenderCtx } from "./render";
 import { renderCockpit } from "./cockpit";
@@ -30,7 +30,7 @@ export interface WorkspacePanelDeps {
     taskFileTag: string;
     /** 打开一个带图谱的 MOC/map 节点时,交给宿主(indexView)切到图谱模式并加载文件。
      *  返回 true 表示宿主已接管(面板不再自渲 MOC 页);false / 不提供则面板内渲 MOC 概览页。 */
-    onOpenMoc?: (node: WSMocNode) => boolean;
+    onOpenMoc?: (node: WSMocNode | WSMapNode) => boolean;
     /** 顶栏「图谱」按钮:切回图谱模式。提供则显示该按钮。 */
     onExitToGraph?: () => void;
     /** 打开文件笔记,交给宿主按「文件默认打开方式」打开(绝不覆盖思维树图谱)。
@@ -88,7 +88,7 @@ export class WorkspacePanel {
             taskPrefix: deps.taskPrefix,
             taskPrefixAuto: deps.taskPrefixAuto,
             taskFileTag: deps.taskFileTag,
-            open: (t) => this.navigate(t),
+            open: (t, forceTab = false) => this.navigate(t, forceTab),
             openInline: (t) => this.navigateInline(t),
             openFile: (file, forceTab = false) => {
                 if (deps.onOpenFile) deps.onOpenFile(file, forceTab);
@@ -253,8 +253,23 @@ export class WorkspacePanel {
         meta.setText(t('ws spaces count').replace('{n}', String(this.deps.store.getSpaces().length)));
     }
 
-    /** 删除条目:统计子树规模 → 二次确认 → deleteSubtree;若当前视口/deck 展示的是被删节点则退回首页/关 deck。 */
-    private requestDelete(node: WorkspaceNode) {
+    /** 删除条目；共享节点在当前 Space 中仅解除绑定，避免删除另一 Space 的同一节点及子树。 */
+    private requestDelete(node: WorkspaceNode, requestedSpaceId?: string) {
+        const spaceId = requestedSpaceId ?? (this.current.kind === 'space' ? this.current.id : node.spaceId);
+        const spaces = node.type === 'space' ? [] : this.deps.store.getNodeSpaceIds(node.id);
+        if (node.type !== 'space' && spaces.length > 1 && spaces.includes(spaceId)) {
+            const spaceTitle = this.deps.store.getNode(spaceId)?.title ?? '';
+            const msg = t('ws delete shared node confirm')
+                .replace('{title}', node.title)
+                .replace('{space}', spaceTitle);
+            confirmModal(this.deps.app, t('ws delete'), msg, () => { void (async () => {
+                await this.deps.store.unmountNodeFromSpace(node.id, spaceId);
+                if (this.current.kind !== 'home' && 'id' in this.current && this.current.id === node.id) {
+                    this.navigateInline({ kind: 'space', id: spaceId });
+                }
+            })(); });
+            return;
+        }
         const ids = this.deps.store.collectSubtreeIds(node.id);
         const deleted = new Set(ids);
         const descendants = ids.length - 1;
@@ -280,15 +295,27 @@ export class WorkspacePanel {
     }
 
     // ---------- 路由 ----------
-    private navigate(target: OpenTarget) {
+    private navigate(target: OpenTarget, forceTab = false) {
         if (!this.tree) return;
-        // MOC/map 带图谱 → 交给宿主切图谱模式
-        if (target.kind === 'moc') {
-            const node = this.deps.store.getNode(target.id);
-            if (node && node.type === 'moc' && (node as WSMocNode).filePath && this.deps.onOpenMoc) {
-                if (this.deps.onOpenMoc(node as WSMocNode)) return;
-            }
+        const node = target.kind === 'home' ? null : this.deps.store.getNode(target.id);
+
+        // MOC / map 带图谱 → 优先交给宿主切图谱模式；独立工作区则按文件原生打开。
+        if (target.kind === 'moc' && node && (node.type === 'moc' || node.type === 'map') && node.filePath) {
+            if (this.deps.onOpenMoc?.(node)) return;
+            this.navigateInline(target);
+            const file = this.deps.app.vault.getAbstractFileByPath(node.filePath);
+            if (file instanceof TFile) this.ctx.openFile(file, forceTab);
+            return;
         }
+
+        // 文件节点先保留工作区选中态，再交给 Obsidian / 对应插件的原生视图。
+        if (target.kind === 'note' && node?.type === 'note' && node.filePath) {
+            this.navigateInline(target);
+            const file = this.deps.app.vault.getAbstractFileByPath(node.filePath);
+            if (file instanceof TFile) this.ctx.openFile(file, forceTab);
+            return;
+        }
+
         this.navigateInline(target);
     }
 
@@ -390,9 +417,8 @@ export class WorkspacePanel {
             const first = this.deps.store.getSpaces()[0];
             target = first ? { kind: 'space', id: first.id } : { kind: 'home' };
         }
-        // 恢复时不要把图谱 MOC 甩给宿主(避免一进面板就跳走),仅在面板内渲染
-        if (target.kind === 'moc') this.navigateInline(target);
-        else this.navigate(target);
+        // 恢复时只还原工作区状态，不自动打开图谱或外部文件。
+        this.navigateInline(target);
     }
 
     private lastTargetNode(): WorkspaceNode | null {

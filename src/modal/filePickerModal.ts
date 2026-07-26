@@ -1,6 +1,11 @@
 import { App, Modal, TFile, setIcon } from "obsidian";
 import { t } from "src/lang/helper";
 
+function isMocPreviewImage(path: string): boolean {
+    const lower = path.toLowerCase();
+    return lower.endsWith('.moc.md.png') || lower.endsWith('.moc.png');
+}
+
 export interface FilePickerModalOptions {
     title?: string;
     searchPlaceholder?: string;
@@ -147,7 +152,8 @@ export class FilePickerModal extends Modal {
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
             });
-            name.setText(file.basename);
+            // Obsidian 的 basename 会把预览图的 .png 去掉，使 y2.moc.md.png 看起来像 MOC 源文件。
+            name.setText(isMocPreviewImage(file.path) ? file.name : file.basename);
 
             const path = row.createSpan();
             path.setCssStyles({

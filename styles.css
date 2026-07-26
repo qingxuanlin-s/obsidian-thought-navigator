@@ -6567,6 +6567,11 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 .zkw .nrow.sel .nm { color:#d8c9ff; }
 .zkw .nrow .nm { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .zkw .nrow .nm.dim { color:var(--ink-dim); font-weight:400; }
+.zkw .nrow-source { width:22px; height:22px; flex:none; display:inline-flex; align-items:center; justify-content:center; padding:0; border:0; border-radius:5px; background:transparent; color:var(--ink-faint); opacity:0; cursor:pointer; transition:opacity .15s, color .15s, background .15s; }
+.zkw .nrow-source svg { width:14px; height:14px; }
+.zkw .nrow:hover .nrow-source, .zkw .nrow.sel .nrow-source, .zkw .nrow-source:focus-visible { opacity:1; }
+.zkw .nrow-source:hover { color:var(--ink); background:rgba(255,255,255,0.08); }
+.zkw .nrow-source:focus-visible { outline:1px solid var(--violet); outline-offset:1px; }
 .zkw .nrow.l2 { padding-left:44px; }
 .zkw .nrow.l3 { padding-left:58px; }
 
@@ -6722,6 +6727,13 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 .zkw .ws-noteprose > :first-child { margin-top:0; }
 .zkw .ws-noteprose > :last-child { margin-bottom:0; }
 .zkw .ws-noteprose img { max-width:100%; border-radius:8px; }
+
+/* ───────── 原生文件视图交接信息 ───────── */
+.zkw .ws-file-summary { max-width:820px; border:1px solid var(--rule); border-radius:12px; background:var(--panel); overflow:hidden; }
+.zkw .ws-file-row { display:grid; grid-template-columns:88px minmax(0, 1fr); gap:16px; padding:11px 16px; border-bottom:1px solid var(--rule); }
+.zkw .ws-file-label { color:var(--ink-faint); font-size:11px; }
+.zkw .ws-file-value { color:var(--ink); font-size:12px; overflow-wrap:anywhere; }
+.zkw .ws-file-hint { padding:12px 16px; color:var(--ink-dim); font-size:12px; line-height:1.5; background:var(--panel-2); }
 
 /* ───────── 进度控制(项目页手动可拖) ───────── */
 .zkw .progctl { background:var(--panel); border:1px solid var(--rule-2); border-radius:12px; padding:16px; margin-bottom:8px; }

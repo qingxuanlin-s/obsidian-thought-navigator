@@ -5,7 +5,7 @@ import { MdTask, MdTaskNote, prependTask, toggleTask, removeTask, insertSubtask,
 import { FilePickerModal } from "src/modal/filePickerModal";
 import { t, TKey } from "src/lang/helper";
 import { TaskModal } from "./modals";
-import { RenderCtx, relTime, glyph, statusLabel, STATUS_COLOR, renderCrumb, progressFor, nextActionText, renderTaskText } from "./render";
+import { RenderCtx, relTime, glyph, statusLabel, STATUS_COLOR, renderCrumb, progressFor, nextActionText, renderTaskText, renderWorkspaceFileSummary } from "./render";
 
 /** 居中空态卡:图标 + 标题 + 提示,返回按钮容器供调用方填动作按钮 */
 function emptyState(parent: HTMLElement, icon: string, title: string, hint: string): HTMLElement {
@@ -729,16 +729,11 @@ export function renderNotePage(container: HTMLElement, ctx: RenderCtx, n: WSNote
     const body = ck.createDiv({ cls: 'ck-body' });
     const file = n.filePath ? ctx.app.vault.getAbstractFileByPath(n.filePath) : null;
     if (file instanceof TFile) {
-        // 操作条:在 Obsidian 打开真身
+        // 文件内容统一交给 Obsidian / 对应插件的原生视图，工作区只保留上下文信息。
         const bar = ck.createDiv({ cls: 'createbar' });
         actionBtn(bar, 'external-link', t('ws open file'), false, () => ctx.openFile(file));
-        // 正文预览(内嵌渲染真实 markdown,与右侧 deck 一致)
-        body.createDiv({ cls: 'dsec', text: t('ws body') });
-        const prose = body.createDiv({ cls: 'prose ws-noteprose' });
-        void ctx.app.vault.cachedRead(file).then(md => {
-            if (!md.trim()) { prose.empty(); prose.createDiv({ cls: 'empty', text: t('ws empty note') }); return; }
-            void MarkdownRenderer.render(ctx.app, md, prose, file.path, owner);
-        });
+        body.createDiv({ cls: 'dsec', text: t('ws file') });
+        renderWorkspaceFileSummary(body, file);
     } else if (n.body) {
         body.createDiv({ cls: 'dsec', text: t('ws body') });
         void MarkdownRenderer.render(ctx.app, n.body, body.createDiv({ cls: 'prose ws-noteprose' }), '', owner);

@@ -33,7 +33,8 @@ export interface WSLink {
 export interface WSBaseNode {
     id: string;            // 稳定唯一 id,生成后永不变
     type: WSNodeType;
-    spaceId: string;       // 所属 Space(Space 节点自身 spaceId === id)
+    spaceId: string;       // 主属 Space(Space 节点自身 spaceId === id)
+    spaceIds?: string[];   // 额外绑定的 Space；与 spaceId 合起来构成完整归属
     title: string;
     createdAt: number;
     updatedAt: number;     // 任何编辑都刷新 —— "最近更新/停滞"全靠它
@@ -41,6 +42,7 @@ export interface WSBaseNode {
     color?: string;        // 可选主题色
     collapsed?: boolean;   // 树视图(文件夹抽屉)折叠态,持久化
     order?: number;        // 同一容器下的手动排序;缺省按 updatedAt 兜底
+    archived?: boolean;    // 非 Project 节点的归档状态；Project 继续使用 status='archived'
 }
 
 /** 领域 —— 顶层组织单元,可被打开(打开后显示 cockpit 概览页) */
@@ -121,33 +123,33 @@ export interface Framework {
     buckets: FrameworkBucket[];
 }
 
-const isArchived = (n: WorkspaceNode) =>
-    n.type === 'project' && n.status === 'archived';
+export const isWorkspaceNodeArchived = (n: WorkspaceNode): boolean =>
+    n.type === 'project' ? n.status === 'archived' : n.archived === true;
 
 /** 三套内置框架(DESIGN §2.3)。切换 = 换一组 buckets 重新分组同一批节点,零数据迁移。 */
 export const FRAMEWORKS: Record<FrameworkId, Framework> = {
     para: {
         id: 'para', label: 'PARA', chip: 'PARA',
         buckets: [
-            { id: 'projects', label: 'Projects', match: n => n.type === 'project' && n.status !== 'archived' },
-            { id: 'areas', label: 'Areas', match: n => n.type === 'moc' },
-            { id: 'resources', label: 'Resources', match: n => n.type === 'note' || n.type === 'map' },
-            { id: 'archive', label: 'Archive', match: n => isArchived(n) },
+            { id: 'projects', label: 'Projects', match: n => n.type === 'project' && !isWorkspaceNodeArchived(n) },
+            { id: 'areas', label: 'Areas', match: n => n.type === 'moc' && !isWorkspaceNodeArchived(n) },
+            { id: 'resources', label: 'Resources', match: n => (n.type === 'note' || n.type === 'map') && !isWorkspaceNodeArchived(n) },
+            { id: 'archive', label: 'Archive', match: n => isWorkspaceNodeArchived(n) },
         ],
     },
     overview: {
         id: 'overview', label: '总览·主题·局部', chip: '总览体系',
         buckets: [
-            { id: 'overview', label: '总览', match: n => n.type === 'moc' && !!(n as WSMocNode).isTop },
-            { id: 'theme', label: '主题', match: n => n.type === 'moc' && !(n as WSMocNode).isTop },
-            { id: 'local', label: '局部知识', match: n => n.type === 'note' || n.type === 'map' },
-            { id: 'action', label: '行动·项目', match: n => n.type === 'project' && n.status !== 'archived' },
+            { id: 'overview', label: '总览', match: n => n.type === 'moc' && !isWorkspaceNodeArchived(n) && !!(n as WSMocNode).isTop },
+            { id: 'theme', label: '主题', match: n => n.type === 'moc' && !isWorkspaceNodeArchived(n) && !(n as WSMocNode).isTop },
+            { id: 'local', label: '局部知识', match: n => (n.type === 'note' || n.type === 'map') && !isWorkspaceNodeArchived(n) },
+            { id: 'action', label: '行动·项目', match: n => n.type === 'project' && !isWorkspaceNodeArchived(n) },
         ],
     },
     custom: {
         id: 'custom', label: '自定义', chip: '自定义',
         buckets: [
-            { id: 'all', label: '全部', match: n => !isArchived(n) },
+            { id: 'all', label: '全部', match: n => !isWorkspaceNodeArchived(n) },
         ],
     },
 };

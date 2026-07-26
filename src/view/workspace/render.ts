@@ -18,8 +18,8 @@ export interface RenderCtx {
     taskPrefixAuto: boolean;
     /** 新建项目背书笔记时自动写入的 tag;空则不加 */
     taskFileTag: string;
-    /** 在中间视口打开一个目标(MOC 带图谱时会甩出面板切到图谱模式) */
-    open(target: OpenTarget): void;
+    /** 打开一个目标。文件节点交给 Obsidian 原生视图，工作区节点留在中间视口。 */
+    open(target: OpenTarget, forceTab?: boolean): void;
     /** 在中间视口打开目标,但始终留在面板内渲染(不甩去图谱) */
     openInline(target: OpenTarget): void;
     /** 右侧滑出详情 deck */
@@ -29,8 +29,8 @@ export interface RenderCtx {
     openFile(file: TFile, forceTab?: boolean): void;
     /** 打开一个 wiki 链接(任务文本里的 [[..]] 等)。同样走宿主的默认打开方式,绝不覆盖图谱。 */
     openLink(linkText: string, sourcePath?: string, forceTab?: boolean): void;
-    /** 删除条目(节点 + 容器子树):二次确认 → store.deleteSubtree → 必要时退回首页 */
-    requestDelete(node: WorkspaceNode): void;
+    /** 删除条目；共享节点传入当前 Space 时仅解除该 Space 绑定。 */
+    requestDelete(node: WorkspaceNode, spaceId?: string): void;
     /** 重渲染中间视口 + 侧栏(异步任务加载完成 / 文件外部变动后调用) */
     refresh(): void;
 }
@@ -189,6 +189,28 @@ export function relTime(ts: number): string {
     if (diff < 30 * day) return t('ws time weeks').replace('{n}', String(Math.floor(diff / (7 * day))));
     if (diff < 365 * day) return t('ws time months').replace('{n}', String(Math.floor(diff / (30 * day))));
     return t('ws time years').replace('{n}', String(Math.floor(diff / (365 * day))));
+}
+
+export function renderWorkspaceFileSummary(parent: HTMLElement, file: TFile): HTMLElement {
+    const path = file.path.toLowerCase();
+    const kind = path.endsWith('.canvas')
+        ? 'Canvas'
+        : path.endsWith('.excalidraw.md') || path.endsWith('.excalidraw')
+            ? 'Excalidraw'
+            : path.endsWith('.moc.md') || path.endsWith('.moc')
+                ? 'MOC'
+                : file.extension.toUpperCase() || t('ws file');
+    const summary = parent.createDiv({ cls: 'ws-file-summary' });
+    const addRow = (label: string, value: string) => {
+        const row = summary.createDiv({ cls: 'ws-file-row' });
+        row.createSpan({ cls: 'ws-file-label', text: label });
+        row.createSpan({ cls: 'ws-file-value', text: value });
+    };
+    addRow(t('ws file type'), kind);
+    addRow(t('ws file path'), file.path);
+    addRow(t('ws updated'), relTime(file.stat.mtime));
+    summary.createDiv({ cls: 'ws-file-hint', text: t('ws native view hint') });
+    return summary;
 }
 
 /**

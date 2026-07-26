@@ -2,6 +2,7 @@ import { DataAdapter } from "obsidian";
 import {
     WorkspaceNode, WSLink, WSSpaceNode, WSMocNode, WSProjectNode, FrameworkId,
 } from "src/types/workspace";
+import { isMocPath, stripMocSuffix } from "src/utils/utils";
 import { genNodeId, WorkspaceStore } from "./WorkspaceStore";
 
 interface SeedResult {
@@ -115,8 +116,6 @@ function migrateFromSpaces(raw: LegacySpaceNode[]): SeedResult | null {
         if (names.some(n => /总览|主题|局部/.test(n))) return 'overview';
         return 'custom';
     };
-    const isMocPath = (p?: string) => !!p && (p.endsWith('.moc.md') || p.endsWith('.moc'));
-
     for (const root of roots) {
         const spaceId = genNodeId();
         const space: WSSpaceNode = {
@@ -134,7 +133,7 @@ function migrateFromSpaces(raw: LegacySpaceNode[]): SeedResult | null {
                 if (child.kind === 'file') {
                     const asMoc = isMocPath(child.filePath);
                     const node: WorkspaceNode = asMoc
-                        ? { id: genNodeId(), type: 'moc', spaceId, title: child.name.replace(/\.moc(\.md)?$/, ''), filePath: child.filePath, createdAt: child.createdAt || now, updatedAt: child.updatedAt || now }
+                        ? { id: genNodeId(), type: 'moc', spaceId, title: stripMocSuffix(child.name), filePath: child.filePath, createdAt: child.createdAt || now, updatedAt: child.updatedAt || now }
                         : { id: genNodeId(), type: 'note', spaceId, title: child.name.replace(/\.md$/, ''), filePath: child.filePath, createdAt: child.createdAt || now, updatedAt: child.updatedAt || now };
                     nodes.push(node);
                     if (parentMocId) links.push({ from: node.id, to: parentMocId, type: asMoc ? 'childMoc' : 'partOf' });
@@ -185,6 +184,8 @@ export const MIGRATION_VERSION = 4;
  */
 export async function ensureWorkspaceSeed(store: WorkspaceStore, adapter: DataAdapter, spacesPath: string): Promise<boolean> {
     if (store.getMigrationVersion() >= MIGRATION_VERSION) return false;
+    // 首次启动时若 Remote Save 尚未下载 workspace.json,不要提前写出空文件并抢占较新的远端版本。
+    if (!store.hasStoredFile() && !(await adapter.exists(spacesPath))) return false;
 
     const migrated = migrateFromSpaces(await readLegacySpaces(adapter, spacesPath));
     if (migrated) {

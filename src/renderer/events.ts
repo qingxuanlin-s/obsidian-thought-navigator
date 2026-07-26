@@ -1149,7 +1149,9 @@ export function bindEvents(this: CytoscapeRenderer): void {
             const parentBizId = bizIdOf(parentNode);
             const ppos = parentNode.position();
             const separatedSet = new Set(this.currentOptions?.separatedNodeIds || []);
-            // 收集父节点的其它子节点(非分离、可见),取最远距离
+            // 只收集父节点的其它 auto 子节点(非分离、可见),取最远距离。
+            // free 兄弟可被放在任意远处,若计入会把分离圆撑到几千像素,
+            // 导致 auto 节点无论拖多远都仍被判定在圆内、松手后吸附回原位。
             let maxDist = 0;
             parentNode.connectedEdges().forEach((e: cytoscape.EdgeSingular) => {
                 if (e.data('type') !== 'parent' || e.source().id() !== parentNode.id()) return;
@@ -1158,7 +1160,9 @@ export function bindEvents(this: CytoscapeRenderer): void {
                 const sd = sib.data() as CyData;
                 if (sd.isGroup || sd.isPlaceholder || sd.isCrossDomain) return;
                 if (sib.removed() || !sib.visible() || sib.hasClass('zk-collapsed-hidden')) return;
-                if (separatedSet.has(bizIdOf(sib))) return; // 已分离的远处兄弟不计入
+                const siblingBizId = bizIdOf(sib);
+                if (!this.isNodeAutoLayoutForId(siblingBizId)) return;
+                if (separatedSet.has(siblingBizId)) return; // 已分离的远处兄弟不计入
                 const sp = sib.position();
                 const dist = Math.hypot(sp.x - ppos.x, sp.y - ppos.y);
                 if (dist > maxDist) maxDist = dist;
@@ -1491,6 +1495,12 @@ export function bindEvents(this: CytoscapeRenderer): void {
                 }
             }
 
+            // 多选是刻意的批量换父手势,且被拖组通常是纵向堆叠 → 组中心会远离位于顶部/一侧的目标,
+            // 用组中心做锥角判定会把"组里有节点正对目标生长侧"的合法父节点错杀。
+            // 故多选时改用「离目标最近的被拖节点」作方向/车道参考(用户诉求:节点在目标正后方即认它当父)。
+            // 单节点仍用组中心+锥角,保留纵向堆叠里上下拖动不误触换父的保护。
+            const isMultiReparent = reparentGesture.roots.length > 1;
+
             let best: ReparentHit | null = null;
             let bestLaneOffset = Number.POSITIVE_INFINITY;
             let bestGapSq = Number.POSITIVE_INFINITY;
@@ -1517,8 +1527,20 @@ export function bindEvents(this: CytoscapeRenderer): void {
                 const direction = layoutAdapter.getAutoChildGrowthDirection(candidate.node);
                 const overlapsX = groupBounds.x1 < target.x2 && groupBounds.x2 > target.x1;
                 const overlapsY = groupBounds.y1 < target.y2 && groupBounds.y2 > target.y1;
-                const offsetX = groupCenter.x - target.x;
-                const offsetY = groupCenter.y - target.y;
+                // 离目标最近的被拖节点:多选换父时作方向/车道参考,替代远离目标的组中心。
+                const anchorRoot = draggedRoots.reduce((nearest, root) => {
+                    const nearestDx = nearest.metrics.x - target.x;
+                    const nearestDy = nearest.metrics.y - target.y;
+                    const rootDx = root.metrics.x - target.x;
+                    const rootDy = root.metrics.y - target.y;
+                    return rootDx * rootDx + rootDy * rootDy < nearestDx * nearestDx + nearestDy * nearestDy
+                        ? root
+                        : nearest;
+                });
+                const refX = isMultiReparent ? anchorRoot.metrics.x : groupCenter.x;
+                const refY = isMultiReparent ? anchorRoot.metrics.y : groupCenter.y;
+                const offsetX = refX - target.x;
+                const offsetY = refY - target.y;
                 const forward = offsetX * direction.x + offsetY * direction.y;
                 // 垂直于生长轴的偏移(堆叠轴分量):横向布局即 Y 差。
                 const lateral = offsetX * -direction.y + offsetY * direction.x;
@@ -1530,26 +1552,17 @@ export function bindEvents(this: CytoscapeRenderer): void {
                 // 又与相邻兄弟 Y 交叠而误触换父。加锥角判定后,纯上下拖动(堆叠轴分量占主导)不再被感知。
                 if (forward <= 0 || !laneAligned || forward < Math.abs(lateral)) continue;
                 const laneOffset = direction.x !== 0
-                    ? Math.max(target.y1 - groupCenter.y, groupCenter.y - target.y2, 0)
-                    : Math.max(target.x1 - groupCenter.x, groupCenter.x - target.x2, 0);
+                    ? Math.max(target.y1 - refY, refY - target.y2, 0)
+                    : Math.max(target.x1 - refX, refX - target.x2, 0);
                 const centerSq = offsetX * offsetX + offsetY * offsetY;
                 if (laneOffset > bestLaneOffset
                     || (laneOffset === bestLaneOffset && gapSq > bestGapSq)
                     || (laneOffset === bestLaneOffset && gapSq === bestGapSq && centerSq >= bestCenterSq)) continue;
 
-                const anchor = draggedRoots.reduce((nearest, root) => {
-                    const nearestDx = nearest.metrics.x - target.x;
-                    const nearestDy = nearest.metrics.y - target.y;
-                    const rootDx = root.metrics.x - target.x;
-                    const rootDy = root.metrics.y - target.y;
-                    return rootDx * rootDx + rootDy * rootDy < nearestDx * nearestDx + nearestDy * nearestDy
-                        ? root
-                        : nearest;
-                }).node;
                 bestLaneOffset = laneOffset;
                 bestGapSq = gapSq;
                 bestCenterSq = centerSq;
-                best = { target: candidate.node, anchor, parentNodeId: targetNodeId, kind: 'child' };
+                best = { target: candidate.node, anchor: anchorRoot.node, parentNodeId: targetNodeId, kind: 'child' };
             }
 
             return best;
@@ -2004,6 +2017,10 @@ export function bindEvents(this: CytoscapeRenderer): void {
                     draggedNodeOriginalGroup = null;
                     draggedNodeOriginalGroupModelBounds = null;
                     clearSeparation();
+                    // 换父完成:多选操作已消费,清空批量选中并隐藏工具栏,避免残留在下方
+                    this.batchSelectedNodeIds = [];
+                    this.batchSelectedNodes = [];
+                    this.hideBatchToolbar();
                     window.setTimeout(() => {
                         if (reparentGesture === activeReparentGesture) reparentGesture = null;
                     }, 0);
@@ -3615,9 +3632,6 @@ export function createBatchToolbar(this: CytoscapeRenderer): HTMLElement {
         // 删除按钮
         toolbar.appendChild(this.createToolbarButton('trash-2', t('batch delete'), 'zk-batch-btn-delete', () => { this.batchDeleteNodes(); }));
 
-        // 改颜色按钮
-        toolbar.appendChild(this.createToolbarButton('palette', t('batch change color'), '', () => { this.batchChangeColor(); }));
-
         // 分隔线
         const divider2 = activeDocument.createElement('div');
         divider2.className = 'zk-batch-toolbar-divider';
@@ -4050,104 +4064,20 @@ export function batchDeleteNodes(this: CytoscapeRenderer): void {
         const nodeIdsSnapshot = [...this.batchSelectedNodeIds];
         const nodesSnapshot = this.batchSelectedNodes.map((n) => ({ ...n }));
 
-        // 先隐藏工具栏，避免遮挡对话框
+        // 直接删除；删除结果可通过 Cmd/Ctrl+Z 撤销
         this.hideBatchToolbar();
-
-        // 创建确认对话框
-        const overlay = activeDocument.createElement('div');
-        overlay.setCssStyles({
-            position: 'fixed',
-            top: '0',
-            left: '0',
-            width: '100%',
-            height: '100%',
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: '10001',
-        });
-
-        const dialog = activeDocument.createElement('div');
-        dialog.setCssStyles({
-            backgroundColor: 'var(--background-primary)',
-            border: '1px solid var(--background-modifier-border)',
-            borderRadius: '8px',
-            padding: '20px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '15px',
-            minWidth: '300px',
-        });
-
-        const title = activeDocument.createElement('h3');
-        title.textContent = t("Confirm delete");
-        title.setCssStyles({ margin: '0' });
-        dialog.appendChild(title);
-
-        const message = activeDocument.createElement('p');
-        message.textContent = t("Confirm delete nodes").replace("{count}", String(nodeIdsSnapshot.length));
-        message.setCssStyles({ margin: '0' });
-        dialog.appendChild(message);
-
-        const buttonContainer = activeDocument.createElement('div');
-        buttonContainer.setCssStyles({
-            display: 'flex',
-            gap: '10px',
-            justifyContent: 'flex-end',
-        });
-
-        const confirmBtn = activeDocument.createElement('button');
-        confirmBtn.textContent = t("Confirm");
-        confirmBtn.onclick = () => {
-            // 触发批量删除事件
-            this.container?.dispatchEvent(new CustomEvent('batch-delete-nodes', {
-                detail: {
-                    nodeIds: nodeIdsSnapshot,
-                    nodes: nodesSnapshot
-                }
-            }));
-
-            overlay.remove();
-
-            // 清除选择并清空节点ID
-            if (this.cy) {
-                this.cy.$(':selected').unselect();
+        this.container?.dispatchEvent(new CustomEvent('batch-delete-nodes', {
+            detail: {
+                nodeIds: nodeIdsSnapshot,
+                nodes: nodesSnapshot
             }
-            this.batchSelectedNodeIds = [];
-            this.batchSelectedNodes = [];
-        };
-
-        const cancelBtn = activeDocument.createElement('button');
-        cancelBtn.textContent = t("Cancel");
-        cancelBtn.onclick = () => {
-            overlay.remove();
-            // 用户取消，重新显示工具栏
-            this.showBatchToolbar();
-        };
-
-        buttonContainer.appendChild(confirmBtn);
-        buttonContainer.appendChild(cancelBtn);
-        dialog.appendChild(buttonContainer);
-
-        overlay.appendChild(dialog);
-        activeDocument.body.appendChild(overlay);
-    }
-
-    /**
-     * 批量改变颜色
-     */
-export function batchChangeColor(this: CytoscapeRenderer): void {
-        if (this.batchSelectedNodeIds.length === 0) return;
-        const nodeIdsSnapshot = [...this.batchSelectedNodeIds];
-
-        // 先隐藏工具栏
-        this.hideBatchToolbar();
-
-        // 触发批量颜色选择事件
-        this.container?.dispatchEvent(new CustomEvent('batch-show-color-picker', {
-            detail: { nodeIds: nodeIdsSnapshot }
         }));
+
+        if (this.cy) {
+            this.cy.$(':selected').unselect();
+        }
+        this.batchSelectedNodeIds = [];
+        this.batchSelectedNodes = [];
     }
 
     /**
