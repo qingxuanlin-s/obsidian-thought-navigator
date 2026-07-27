@@ -28,6 +28,8 @@ export interface NodeDetailPanelDeps {
     onWidthChange: (px: number) => void;
     /** 钉住状态变化 → 持久化 */
     onPinChange: (pinned: boolean) => void;
+    /** 在备注下方追加知识工作台上下文操作。 */
+    renderWorkbenchSection?: (parent: HTMLElement, node: ZKNode) => void;
     /** markdown 渲染生命周期挂载点 */
     component: Component;
 }
@@ -178,6 +180,10 @@ export class NodeDetailPanel {
         const node = this.currentNode;
         this.enterRemarkEdit(node, (this.deps.getRemark(node) || '').trim(), !!node.file && !node.isTextOnly, 'end');
         return this.isEditing;
+    }
+
+    refreshCurrent(): void {
+        if (this.currentNode) void this.show(this.currentNode);
     }
 
     async show(node: ZKNode): Promise<void> {
@@ -348,6 +354,10 @@ export class NodeDetailPanel {
         // 备注区(可内联编辑,独立容器以便编辑/读模式互切)
         this.remarkArea = this.bodyEl.createDiv("zk-detail-remark-area");
         this.renderRemarkRead(node, (this.deps.getRemark(node) || '').trim(), isFileNode);
+        if (this.deps.renderWorkbenchSection) {
+            const workbench = this.bodyEl.createDiv('zk-detail-workbench');
+            this.deps.renderWorkbenchSection(workbench, node);
+        }
 
         // 文件节点:笔记正文预览(只读)
         // 暂时注释:文件节点改成与文本节点一致,只渲染备注,不再嵌入笔记正文预览。

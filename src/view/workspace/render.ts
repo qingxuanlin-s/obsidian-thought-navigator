@@ -23,14 +23,14 @@ export interface RenderCtx {
     /** 在中间视口打开目标,但始终留在面板内渲染(不甩去图谱) */
     openInline(target: OpenTarget): void;
     /** 右侧滑出详情 deck */
-    openDeck(node: WorkspaceNode): void;
+    openDeck(node: WorkspaceNode, placementId?: string): void;
     /** 打开一个文件笔记。按宿主的「文件默认打开方式」设置打开,绝不覆盖思维树图谱;
      *  无宿主(独立工作区视图)时退化为在当前 leaf 打开。forceTab=true 时强制新标签页。 */
     openFile(file: TFile, forceTab?: boolean): void;
     /** 打开一个 wiki 链接(任务文本里的 [[..]] 等)。同样走宿主的默认打开方式,绝不覆盖图谱。 */
     openLink(linkText: string, sourcePath?: string, forceTab?: boolean): void;
-    /** 删除条目；共享节点传入当前 Space 时仅解除该 Space 绑定。 */
-    requestDelete(node: WorkspaceNode, spaceId?: string): void;
+    /** 删除条目；传入 Placement 时仅作用于明确的 Space 子树。 */
+    requestDelete(node: WorkspaceNode, spaceId?: string, placementId?: string): void;
     /** 重渲染中间视口 + 侧栏(异步任务加载完成 / 文件外部变动后调用) */
     refresh(): void;
 }
@@ -217,22 +217,38 @@ export function renderWorkspaceFileSummary(parent: HTMLElement, file: TFile): HT
  * 可跳转面包屑:沿容器链(root Space → … → node)渲染每一段为可点击。
  * 点击 = 面板内导航到该段(openInline,不甩去图谱)。
  */
-export function renderCrumb(parent: HTMLElement, ctx: RenderCtx, node: WorkspaceNode): HTMLElement {
+export function renderCrumb(parent: HTMLElement, ctx: RenderCtx, node: WorkspaceNode, placementId?: string): HTMLElement {
     const cr = parent.createDiv({ cls: 'ck-crumb' });
-    const chain: WorkspaceNode[] = [];
-    const seen = new Set<string>();
-    let cur: WorkspaceNode | undefined = node;
-    while (cur && !seen.has(cur.id)) {
-        seen.add(cur.id);
-        chain.unshift(cur);
-        const pid = ctx.store.parentContainerOf(cur.id);
-        cur = pid ? (ctx.store.getNode(pid) || undefined) : undefined;
+    const chain: Array<{ node: WorkspaceNode; placementId?: string }> = [];
+    if (node.type === 'space') {
+        chain.push({ node });
+    } else {
+        const placement = placementId
+            ? ctx.store.getPlacement(placementId)
+            : ctx.store.placementsOfNode(node.id)[0];
+        if (placement) {
+            let current = placement;
+            const seen = new Set<string>();
+            while (!seen.has(current.id)) {
+                seen.add(current.id);
+                const currentNode = ctx.store.getNode(current.nodeId);
+                if (currentNode) chain.unshift({ node: currentNode, placementId: current.id });
+                const parent = ctx.store.parentPlacementOf(current.id);
+                if (!parent) break;
+                current = parent;
+            }
+            const space = ctx.store.getNode(placement.spaceId);
+            if (space) chain.unshift({ node: space });
+        } else {
+            chain.push({ node });
+        }
     }
-    chain.forEach((n, i) => {
+    chain.forEach((part, i) => {
         if (i > 0) cr.createSpan({ cls: 'cs', text: ' › ' });
-        const seg = cr.createSpan({ cls: 'crumb-seg', text: n.title });
+        const seg = cr.createSpan({ cls: 'crumb-seg', text: part.node.title });
         seg.setCssStyles({ cursor: 'pointer' });
-        seg.onclick = () => ctx.openInline(ctx.store.targetFor(n));
+        const placement = part.placementId ? ctx.store.getPlacement(part.placementId) : undefined;
+        seg.onclick = () => ctx.openInline(ctx.store.targetFor(part.node, placement));
     });
     return cr;
 }

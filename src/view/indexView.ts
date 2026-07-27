@@ -26,9 +26,12 @@ import { AddFreeNodeModal } from "src/modal/addFreeNodeModal";
 import { MOCSelectorModal } from "src/modal/mocSelectorModal";
 import { NoteSearchModal } from "src/modal/noteSearchModal";
 import { GlobalSearchModal, openTaskAtLine } from "src/modal/globalSearchModal";
+import { WorkspaceContextModal } from "src/modal/workspaceContextModal";
+import { MOCParentPickerModal } from "src/modal/mocParentPickerModal";
 import { convertMOCToZKNodes, CrossDomainLink, createMOCTreeNode, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX, MOCParseResult, MOCTreeNode, NODE_FLAG_SEPARATED, NODE_FLAG_SIDE_PINNED, parseMOCStructure, saveMOCStructure, stripMocSuffix } from "src/utils/utils";
 import { WorkspacePanel } from "src/view/workspace/WorkspacePanel";
 import { OpenTarget, WSMocNode, WSMapNode } from "src/types/workspace";
+import { WorkspaceSessionSnapshot } from "src/workspace/WorkspaceSession";
 import { ScratchpadDrawer } from "src/view/scratchpadDrawer";
 import { NodeDetailPanel } from "src/view/index/detailPanel";
 import { ScratchpadEntry } from "src/scratch/scratchpadManager";
@@ -51,7 +54,9 @@ import {
 
 export const ZK_INDEX_TYPE = "zk-index-type";
 export const ZK_INDEX_VIEW: string = t("thought-tree-graph");
-type IndexNavState = { mode: 'graph'; mocPath: string | null } | { mode: 'workspace'; mocPath: null; workspaceTarget: OpenTarget };
+type IndexNavState =
+    | { mode: 'graph'; mocPath: string | null; session?: WorkspaceSessionSnapshot }
+    | { mode: 'workspace'; mocPath: null; workspaceTarget: OpenTarget; session?: WorkspaceSessionSnapshot };
 export const ZK_NAVIGATION = "zk-navigation";
 
 export interface ReverseRelation {
@@ -208,6 +213,9 @@ export class ZKIndexView extends FileView {
     // MOC 芯片标签引用（用于更新显示）
     private mocChipLabel: HTMLElement | null = null;
     private mocChipProjectBadge: HTMLElement | null = null;
+    private mocChipProjectBadgeCount: HTMLElement | null = null;
+    private mocParentChip: HTMLElement | null = null;
+    private workspaceSourceCapsule: HTMLElement | null = null;
     private multiverseContainer: HTMLElement | null = null;
     private levelBreadcrumbContainer: HTMLElement | null = null;
     private currentDimLevel: number | null = null;
@@ -444,22 +452,37 @@ export class ZKIndexView extends FileView {
             this.plugin.settings.mocCurrentFile = file.path;
             await this.plugin.saveData(this.plugin.settings);
         }
+        this.plugin.workspaceSession.update({
+            activeMocPath: file.path,
+            selectedMocNodeId: null,
+            sourceWorkspaceTarget: null,
+        }, 'external');
         this.plugin.RefreshIndexViewFlag = true;
     }
 
     async onUnloadFile(_file: TFile): Promise<void> {
     }
 
-    /** 图谱 ⇄ 工作区 模式切换(同一视图内整块替换,非蒙层) */
-    private setWorkspaceMode(on: boolean): void {
+    /** 图谱 ⇄ 知识工作台模式切换；从图谱进入时优先消费当前 MOC/节点上下文。 */
+    private setWorkspaceMode(on: boolean, syncGraphContext = true): void {
         if (!this.workspacePanel) {
             new Notice(t("ws not ready"));
             return;
         }
         this.workspaceMode = on;
         this.workspacePanel.setVisible(on);
-        if (on) this.workspacePanel.refresh();
+        if (on) {
+            if (syncGraphContext) {
+                const state = this.plugin.workspaceSession.getState();
+                const mocPath = this.plugin.settings.mocCurrentFile || state.activeMocPath;
+                if (mocPath) this.workspacePanel.showGraphContext(mocPath, state.selectedMocNodeId);
+                else this.workspacePanel.refresh();
+            } else {
+                void this.workspacePanel.refreshFromDisk();
+            }
+        }
         // 面板为 position:absolute inset:0,自然覆盖图谱工具栏与画布,无需手动隐藏
+        this.refreshWorkspaceSourceCapsule();
         this.recordNavState();
     }
 
@@ -473,12 +496,25 @@ export class ZKIndexView extends FileView {
             return false;
         }
         void (async () => {
+            const sessionState = this.plugin.workspaceSession.getState();
+            const bridges = this.plugin.workspaceStore?.bridgesForWorkspaceNode(node.id)
+                .filter(bridge => bridge.mocPath === file.path) ?? [];
+            const bridge = bridges.find(item => item.placementId === sessionState.selectedPlacementId) ?? bridges[0];
+            this.plugin.workspaceSession.enterGraphFromWorkspace(
+                this.workspacePanel?.getCurrentTarget() ?? { kind: 'home' },
+                this.plugin.workspaceStore?.getNode(node.id)?.title,
+            );
+            this.plugin.workspaceSession.update({
+                activeMocPath: file.path,
+                selectedMocNodeId: bridge?.mocNodeId ?? null,
+            }, 'workspace');
             if (this.plugin.settings.mocCurrentFile !== file.path) {
                 this.plugin.settings.mocCurrentFile = file.path;
                 await this.plugin.saveData(this.plugin.settings);
                 await this.refreshBranchMermaid();
             }
             this.setWorkspaceMode(false);
+            if (bridge?.mocNodeId) this.selectAndShowDetailByIdStr(bridge.mocNodeId);
         })();
         return true;
     }
@@ -488,24 +524,112 @@ export class ZKIndexView extends FileView {
             new Notice(t("ws not ready"));
             return;
         }
-        this.setWorkspaceMode(true);
+        this.setWorkspaceMode(true, false);
         this.workspacePanel.openTarget(target);
+    }
+
+    /** 精确打开工作台内部位置；即便目标是 MOC 也不立即甩回图谱。 */
+    private showWorkspaceTarget(target: OpenTarget): void {
+        if (!this.workspacePanel) return;
+        this.setWorkspaceMode(true, false);
+        this.workspacePanel.showTarget(target);
+    }
+
+    private openWorkspaceContextModal(node?: ZKNode): void {
+        const store = this.plugin.workspaceStore;
+        const mocPath = this.plugin.settings.mocCurrentFile;
+        if (!store || !mocPath) {
+            new Notice(t('ws not ready'));
+            return;
+        }
+        const state = this.plugin.workspaceSession.getState();
+        const nodeId = node?.IDStr ?? (state.activeMocPath === mocPath ? state.selectedMocNodeId : null);
+        new WorkspaceContextModal(this.app, {
+            store,
+            mocPath,
+            mocNodeId: nodeId,
+            nodeTitle: node ? (node.title || node.displayText || node.IDStr) : nodeId ? this.getNodeLabelByIdStr(nodeId) : undefined,
+            onOpenTarget: target => this.showWorkspaceTarget(target),
+            onMountMoc: () => {
+                const file = this.app.vault.getFileByPath(mocPath);
+                if (file) this.plugin.openFolderMountModal(file);
+            },
+            onChanged: () => {
+                this.refreshProjectBadge(mocPath);
+                this.refreshWorkspaceSourceCapsule();
+                this.detailPanel?.refreshCurrent();
+            },
+        }).open();
+    }
+
+    private renderNodeWorkbenchSection(parent: HTMLElement, node: ZKNode): void {
+        const store = this.plugin.workspaceStore;
+        const mocPath = this.plugin.settings.mocCurrentFile;
+        if (!store || !mocPath || node.isPlaceholder || node.isDraft) return;
+        const bridges = store.bridgesForGraphNode(mocPath, node.IDStr);
+        const head = parent.createDiv('zk-detail-workbench-head');
+        setIcon(head.createSpan('zk-detail-workbench-icon'), 'layout-grid');
+        head.createSpan({ cls: 'zk-detail-workbench-title', text: t('ws Workspace') });
+        head.createSpan({ cls: 'zk-detail-workbench-count', text: String(bridges.length) });
+        const body = parent.createDiv('zk-detail-workbench-body');
+        if (bridges.length === 0) {
+            body.createDiv({ cls: 'zk-detail-workbench-empty', text: t('ws context no node links') });
+        } else {
+            for (const bridge of bridges.slice(0, 4)) {
+                const workspaceNode = store.getNode(bridge.workspaceNodeId);
+                if (!workspaceNode) continue;
+                const placement = bridge.placementId ? store.getPlacement(bridge.placementId) : undefined;
+                const row = body.createDiv('zk-detail-workbench-link');
+                const roleKey = bridge.role === 'project' ? 'ws bridge role project'
+                    : bridge.role === 'resource' ? 'ws bridge role resource' : 'ws bridge role workbench';
+                row.createSpan({ cls: 'zk-detail-workbench-role', text: t(roleKey) });
+                row.createSpan({ cls: 'zk-detail-workbench-name', text: workspaceNode.title });
+                row.addEventListener('click', () => {
+                    const targetPlacement = placement ?? store.placementsOfNode(workspaceNode.id)[0];
+                    if (targetPlacement) this.showWorkspaceTarget(store.targetFor(workspaceNode, targetPlacement));
+                });
+            }
+        }
+        const manage = parent.createEl('button', { cls: 'zk-detail-workbench-manage', text: t('ws context manage') });
+        manage.addEventListener('click', () => this.openWorkspaceContextModal(node));
+    }
+
+    private refreshWorkspaceSourceCapsule(): void {
+        if (!this.workspaceSourceCapsule) return;
+        const source = this.plugin.workspaceSession.getState().sourceWorkspaceTarget;
+        if (!source || this.workspaceMode) {
+            this.workspaceSourceCapsule.setCssStyles({ display: 'none' });
+            this.workspaceSourceCapsule.empty();
+            return;
+        }
+        this.workspaceSourceCapsule.empty();
+        setIcon(this.workspaceSourceCapsule.createSpan('zk-workspace-source-icon'), 'corner-up-left');
+        const label = source.title || (source.target.kind === 'home'
+            ? t('ws Workspace')
+            : this.plugin.workspaceStore?.getNode(source.target.id)?.title ?? t('ws Workspace'));
+        this.workspaceSourceCapsule.createSpan({ cls: 'zk-workspace-source-text', text: `${t('ws source prefix')} ${label}` });
+        this.workspaceSourceCapsule.setCssStyles({ display: 'inline-flex' });
+        setTooltip(this.workspaceSourceCapsule, t('ws source back'));
     }
 
     // ============ 浏览历史(上一步/下一步) ============
 
     /** 当前有效视图状态:工作区模式优先,否则为图谱当前 MOC */
     private currentNavState(): IndexNavState {
+        const session = this.plugin.workspaceSession.snapshot();
         return this.workspaceMode
-            ? { mode: 'workspace', mocPath: null, workspaceTarget: this.workspacePanel?.getCurrentTarget() ?? { kind: 'home' } }
-            : { mode: 'graph', mocPath: this.plugin.settings.mocCurrentFile || null };
+            ? { mode: 'workspace', mocPath: null, workspaceTarget: this.workspacePanel?.getCurrentTarget() ?? { kind: 'home' }, session }
+            : { mode: 'graph', mocPath: this.plugin.settings.mocCurrentFile || null, session };
     }
 
     private sameWorkspaceTarget(a: OpenTarget, b: OpenTarget): boolean {
         if (a.kind !== b.kind) return false;
         if (a.kind === 'home' || b.kind === 'home') return true;
         if (a.id !== b.id) return false;
-        return a.kind !== 'space' || b.kind !== 'space' || a.lens === b.lens;
+        if (a.kind === 'space' && b.kind === 'space') return a.lens === b.lens;
+        const ap = 'placementId' in a ? a.placementId : undefined;
+        const bp = 'placementId' in b ? b.placementId : undefined;
+        return ap === bp;
     }
 
     private sameNavState(a: IndexNavState | null, b: IndexNavState): boolean {
@@ -547,8 +671,9 @@ export class ZKIndexView extends FileView {
         this.navApplying = true;
         try {
             if (state.mode === 'workspace') {
-                this.setWorkspaceMode(true);
+                this.setWorkspaceMode(true, false);
                 this.workspacePanel?.showTarget(state.workspaceTarget);
+                if (state.session) this.plugin.workspaceSession.restore(state.session);
             } else {
                 if (state.mocPath && this.plugin.settings.mocCurrentFile !== state.mocPath) {
                     this.plugin.settings.mocCurrentFile = state.mocPath;
@@ -556,6 +681,12 @@ export class ZKIndexView extends FileView {
                     await this.refreshBranchMermaid();
                 }
                 this.setWorkspaceMode(false);
+                if (state.session) {
+                    this.plugin.workspaceSession.restore(state.session);
+                    if (state.session.selectedMocNodeId) {
+                        this.selectAndShowDetailByIdStr(state.session.selectedMocNodeId);
+                    }
+                }
             }
             this.navIndex = index;
         } finally {
@@ -1559,6 +1690,7 @@ export class ZKIndexView extends FileView {
                     this.branchRenderer?.attachSelectionToolbarToHost(rootEl, applyTransform, hostContainer) ?? null,
                 onWidthChange: (px) => { this.plugin.settings.detailPanelWidth = px; void this.plugin.saveData(this.plugin.settings); },
                 onPinChange: (pinned) => { this.plugin.settings.detailPanelPinned = pinned; void this.plugin.saveData(this.plugin.settings); },
+                renderWorkbenchSection: (parent, node) => this.renderNodeWorkbenchSection(parent, node),
                 component: this,
             });
             this.detailPanel.setSide(this.plugin.settings.detailPanelSide === 'left' ? 'left' : 'right');
@@ -1569,6 +1701,7 @@ export class ZKIndexView extends FileView {
             if (this.plugin.workspaceStore && !this.workspaceStoreUnsubscribe) {
                 this.workspaceStoreUnsubscribe = this.plugin.workspaceStore.onChange(() => {
                     this.refreshProjectBadge(this.plugin.settings.mocCurrentFile);
+                    this.refreshWorkspaceSourceCapsule();
                 });
             }
 
@@ -1577,6 +1710,8 @@ export class ZKIndexView extends FileView {
                 this.workspacePanel = new WorkspacePanel(containerEl, {
                     app: this.app,
                     store: this.plugin.workspaceStore,
+                    session: this.plugin.workspaceSession,
+                    taskStore: this.plugin.workspaceTaskStore!,
                     owner: this,
                     projectFolderPath: this.plugin.settings.projectFolderPath,
                     taskPrefix: this.plugin.settings.wsTaskPrefix,
@@ -1615,51 +1750,17 @@ export class ZKIndexView extends FileView {
         // 面包屑导航区域
         const breadcrumbNav = toolbarDiv.createDiv("zk-breadcrumb-nav");
 
-        if (this.plugin.settings.MainNoteButton == true) {
-            const mainNoteChip = breadcrumbNav.createDiv("zk-chip zk-chip-outlined");
-            mainNoteChip.createSpan("zk-chip-label").setText(this.plugin.settings.MainNoteButtonText);
-            mainNoteChip.addEventListener("click", () => {
-                this.openGlobalSearchModal();
-            });
+        // 知识结构父级：当前 MOC 被其它 MOC 作为直接节点引用时才显示。
+        const parentMocChip = breadcrumbNav.createDiv('zk-moc-parent-chip');
+        parentMocChip.setCssStyles({ display: 'none' });
+        this.mocParentChip = parentMocChip;
 
-            // 面包屑分隔符
-            breadcrumbNav.createSpan("zk-breadcrumb-sep").setText("\u203A");
-        }
-
-        if (this.plugin.settings.IndexButton == true) {
-            const indexChip = breadcrumbNav.createDiv("zk-chip zk-chip-outlined");
-            setIcon(indexChip.createSpan("zk-chip-icon"), "search");
-            indexChip.createSpan("zk-chip-label").setText(this.plugin.settings.IndexButtonText);
-            indexChip.addEventListener("click", () => {
-                if (this.plugin.settings.SuggestMode === "keywordOrder") {
-                    new indexModal(this.app, this.plugin, this.plugin.MainNotes, (index) => {
-                        this.plugin.settings.lastRetrival = {
-                            type: 'index',
-                            ID: '',
-                            displayText: index.keyword,
-                            filePath: index.path,
-                            openTime: moment().format("YYYY-MM-DD HH:mm:ss"),
-                        }
-                        void this.plugin.clearShowingSettings();
-                        this.app.workspace.trigger("zk-navigation:refresh-index-graph");
-                    }).open();
-                } else {
-                    new indexFuzzyModal(this.app, this.plugin, this.plugin.MainNotes, (index) => {
-                        this.plugin.settings.lastRetrival = {
-                            type: 'index',
-                            ID: '',
-                            displayText: index.keyword,
-                            filePath: index.path,
-                            openTime: moment().format("YYYY-MM-DD HH:mm:ss"),
-                        }
-                        void this.plugin.clearShowingSettings();
-                        this.app.workspace.trigger("zk-navigation:refresh-index-graph");
-                    }).open();
-                }
-            });
-
-            breadcrumbNav.createSpan("zk-breadcrumb-sep").setText("\u203A");
-        }
+        const knowledgeSearch = breadcrumbNav.createDiv('zk-chip zk-chip-outlined zk-knowledge-search-chip');
+        setIcon(knowledgeSearch.createSpan('zk-chip-icon'), 'search');
+        knowledgeSearch.createSpan('zk-chip-label').setText(t('gs search everything'));
+        setTooltip(knowledgeSearch, t('gs search everything'));
+        knowledgeSearch.addEventListener('click', () => this.openGlobalSearchModal(false));
+        breadcrumbNav.createSpan('zk-breadcrumb-sep').setText("›");
 
         // MOC 选择器
         const mocChip = breadcrumbNav.createDiv("zk-chip zk-chip-filled");
@@ -1668,8 +1769,14 @@ export class ZKIndexView extends FileView {
 
         // 项目徽章(默认隐藏,加载 MOC 后根据 isProject 决定显示)
         const projectBadge = mocChip.createSpan("zk-chip-project-badge");
-        setIcon(projectBadge, "ruler");
-        setTooltip(projectBadge, t("Project"));
+        setIcon(projectBadge, "layout-grid");
+        const projectBadgeCount = projectBadge.createSpan("zk-chip-project-badge-count");
+        setTooltip(projectBadge, t("ws context title"));
+        projectBadge.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            this.openWorkspaceContextModal();
+        });
 
         // 获取当前MOC名称
         const currentMOCPath = this.plugin.settings.mocCurrentFile;
@@ -1684,9 +1791,18 @@ export class ZKIndexView extends FileView {
         // 保存引用以便后续更新
         this.mocChipLabel = mocLabel;
         this.mocChipProjectBadge = projectBadge;
+        this.mocChipProjectBadgeCount = projectBadgeCount;
         mocChip.addEventListener("click", () => {
             this.openMOCSelectorModal();
         });
+
+        const sourceCapsule = breadcrumbNav.createDiv('zk-workspace-source-capsule');
+        sourceCapsule.setCssStyles({ display: 'none' });
+        sourceCapsule.addEventListener('click', () => {
+            const source = this.plugin.workspaceSession.getState().sourceWorkspaceTarget;
+            if (source) this.showWorkspaceTarget(source.target);
+        });
+        this.workspaceSourceCapsule = sourceCapsule;
 
         // 平行宇宙面包屑：选中节点 + MOC 徽章（动态区域）
         this.multiverseContainer = breadcrumbNav.createDiv("zk-multiverse-container");
@@ -1718,9 +1834,9 @@ export class ZKIndexView extends FileView {
         rightBtns.appendChild(navSep);
 
         const searchBtn = new ExtraButtonComponent(rightBtns);
-        searchBtn.setIcon("search").setTooltip(t("search placeholder"));
+        searchBtn.setIcon("search").setTooltip(t('gs search current graph'));
         searchBtn.onClick(() => {
-            this.openBranchSearchBar();
+            this.openGlobalSearchModal(true);
         });
 
         const sep = activeDocument.createElement("span");
@@ -2394,6 +2510,10 @@ window.addEventListener('resize', fitGraph);
                         await this.refreshBranchMermaidMOC(indexMermaidDiv);
                     });
                 }
+            } else {
+                // 父 MOC 更新会改变当前子 MOC 的反向索引，但无需重绘整张子图；
+                // 只刷新顶栏父级入口即可。
+                this.refreshMOCParentBreadcrumb(this.plugin.settings.mocCurrentFile);
             }
         }));
     }
@@ -3109,6 +3229,12 @@ window.addEventListener('resize', fitGraph);
             }
         }
         if (this.lastRenderedMOCPath && this.lastRenderedMOCPath !== incomingMOCPath) {
+            // 切换前先同步保存旧图当前视口；不能依赖下方防抖事件，因为它可能在
+            // mocCurrentFile 已更新后才触发。
+            const cy = this.branchRenderer?.getCytoscapeInstance();
+            if (cy) {
+                this.saveMOCViewState(this.lastRenderedMOCPath, cy.zoom(), { ...cy.pan() });
+            }
             await this.flushAndSaveCurrentPositions();
         }
 
@@ -3170,8 +3296,9 @@ window.addEventListener('resize', fitGraph);
         mocParseResult = await this.ensureNodePositions(currentMOCFile, mocParseResult, headingTitle);
         __lap('parse:positions');
 
-        // 项目徽章:当前 MOC 是否被挂载到任意 FolderNode 下
+        // 当前 MOC 的工作台位置与全局知识结构父级。
         this.refreshProjectBadge(currentMOCPath);
+        this.refreshMOCParentBreadcrumb(currentMOCPath);
 
         // 读取 MOC 文件中持久化的节点布局风格；老 .moc 未记录时按历史默认 free 处理。
         // 新建 .moc 会在创建时写入 nodeLayoutStyle，后续不再受全局设置切换影响。
@@ -3285,6 +3412,7 @@ window.addEventListener('resize', fitGraph);
             edgeStyle: this.plugin.settings.edgeStyle || 'bezier',
             nodeLayoutStyle: this.currentNodeLayoutStyle,
             nodeLayoutOverrides: this.currentNodeLayoutOverrides,
+            viewStatePath: currentMOCPath,
             separatedNodeIds,
             showNoteId: this.plugin.settings.showNoteIdInBranchView,
             smartConnection: this.plugin.settings.smartConnection === true,
@@ -3461,11 +3589,13 @@ window.addEventListener('resize', fitGraph);
 
             // 监听视图状态变化事件（缩放和平移）
             this.addTrackedListener(branchGraphDiv, 'viewStateChanged', async (event: CustomEvent) => {
-                const { zoom, pan } = event.detail as { zoom: number; pan: { x: number; y: number } };
-                // 监听器可能复用，保存时读取最新当前文件路径，避免写入旧 MOC 的视图状态
-                const latestMOCPath = this.plugin.settings.mocCurrentFile;
-                if (!latestMOCPath) return;
-                this.saveMOCViewState(latestMOCPath, zoom, pan);
+                const { zoom, pan, viewStatePath } = event.detail as {
+                    zoom: number;
+                    pan: { x: number; y: number };
+                    viewStatePath?: string;
+                };
+                if (!viewStatePath) return;
+                this.saveMOCViewState(viewStatePath, zoom, pan);
             });
 
         // 监听自动连接事件（拖动节点到附近节点时触发）
@@ -4100,6 +4230,14 @@ window.addEventListener('resize', fitGraph);
             this.updateMultiverseBadge(node);
             this.syncLevelBreadcrumbWithNode(node);
             this.handleDetailPanelSelect(node);
+            if (this.plugin.workspaceSession.getState().sourceWorkspaceTarget) {
+                this.plugin.workspaceSession.clearWorkspaceSource();
+                this.refreshWorkspaceSourceCapsule();
+            }
+            this.plugin.workspaceSession.selectGraphNode(
+                this.plugin.settings.mocCurrentFile || null,
+                node?.IDStr ?? null,
+            );
         });
 
         // 点击画布空白处 — 隐藏平行宇宙徽章,清除暗淡;层级面包屑保持显示
@@ -4107,6 +4245,11 @@ window.addEventListener('resize', fitGraph);
             this.updateMultiverseBadge(null);
             this.clearLevelDim();
             this.refreshLevelBreadcrumb();
+            if (this.plugin.workspaceSession.getState().sourceWorkspaceTarget) {
+                this.plugin.workspaceSession.clearWorkspaceSource();
+                this.refreshWorkspaceSourceCapsule();
+            }
+            this.plugin.workspaceSession.selectGraphNode(this.plugin.settings.mocCurrentFile || null, null);
             // 钉住(常驻)时背景点击不收起,也不丢失当前节点引用
             if (!this.detailPanel?.isPinned) {
                 this.detailPanelLastId = null;
@@ -5244,6 +5387,7 @@ window.addEventListener('resize', fitGraph);
         new GlobalSearchModal(this.app, {
             reverseIndex: this.plugin.mocReverseIndex,
             workspaceStore: this.plugin.workspaceStore,
+            taskStore: this.plugin.workspaceTaskStore ?? undefined,
             navigateToMOCNode: (mocFilePath, nodeId) => this.navigateToMOCNode(mocFilePath, nodeId),
             openWorkspaceTarget: (target) => this.openWorkspaceTarget(target),
             openTask: (filePath, taskRaw) => openTaskAtLine(this.app, filePath, taskRaw),
@@ -5263,6 +5407,8 @@ window.addEventListener('resize', fitGraph);
     }
 
     async navigateToMOCNode(mocFilePath: string, nodeId: string): Promise<void> {
+        this.plugin.workspaceSession.clearWorkspaceSource();
+        this.refreshWorkspaceSourceCapsule();
         const file = this.app.vault.getAbstractFileByPath(mocFilePath);
         if (!(file instanceof TFile)) {
             new Notice(t("Current MOC file does not exist"));
@@ -5925,7 +6071,7 @@ window.addEventListener('resize', fitGraph);
         }
 
         // 使用 MOCSelectorModal 创建搜索界面
-        new MOCSelectorModal(this.app, mocFiles, this.plugin.workspaceStore, (item) => { void (async () => {
+        new MOCSelectorModal(this.app, mocFiles, this.plugin.workspaceStore, this.plugin.settings.mocCurrentFile || null, (item) => { void (async () => {
             if (item.file) {
                 this.plugin.settings.mocCurrentFile = item.file.path;
                 this.plugin.settings.BranchTab = 0;
@@ -9475,11 +9621,42 @@ window.addEventListener('resize', fitGraph);
         });
     }
 
-    /** 项目徽章:当前 MOC 是否已挂载到工作区任一容器下 */
+    private refreshMOCParentBreadcrumb(mocPath: string | null | undefined): void {
+        const chip = this.mocParentChip;
+        if (!chip) return;
+        chip.empty();
+        const parents = mocPath ? this.plugin.mocReverseIndex?.queryMOCParents(mocPath) ?? [] : [];
+        if (parents.length === 0) {
+            chip.setCssStyles({ display: 'none' });
+            return;
+        }
+        const first = parents[0];
+        setIcon(chip.createSpan('zk-moc-parent-chip-icon'), 'corner-up-left');
+        chip.createSpan({ cls: 'zk-moc-parent-chip-label', text: t('moc parent from').replace('{moc}', first.parentMocName) });
+        if (parents.length > 1) chip.createSpan({ cls: 'zk-moc-parent-chip-more', text: `+${parents.length - 1}` });
+        chip.setCssStyles({ display: 'inline-flex' });
+        setTooltip(chip, t('moc parent title'));
+        chip.onclick = () => {
+            if (parents.length === 1) {
+                void this.navigateToMOCNode(first.parentMocPath, first.parentNodeId);
+                return;
+            }
+            new MOCParentPickerModal(this.app, parents, parent => {
+                void this.navigateToMOCNode(parent.parentMocPath, parent.parentNodeId);
+            }).open();
+        };
+    }
+
+    /** 当前 MOC 的知识工作台上下文入口：始终可点，数字表示有效位置数。 */
     private refreshProjectBadge(mocPath: string | null | undefined): void {
         if (!this.mocChipProjectBadge) return;
-        const mounted = !!(mocPath && this.plugin.workspaceStore?.isFileMounted(mocPath));
-        this.mocChipProjectBadge.setCssStyles({ display: mounted ? "inline-flex" : "none" });
+        const count = mocPath ? this.plugin.workspaceStore?.locationsHostingFile(mocPath).length ?? 0 : 0;
+        this.mocChipProjectBadge.toggleClass('is-mounted', count > 0);
+        this.mocChipProjectBadgeCount?.setText(count > 0 ? String(count) : '+');
+        this.mocChipProjectBadge.setCssStyles({ display: mocPath ? 'inline-flex' : 'none' });
+        setTooltip(this.mocChipProjectBadge, count > 0
+            ? t('ws context mounted count').replace('{n}', String(count))
+            : t('ws context add moc'));
     }
 
     private normalizeNodeLayoutStyle(

@@ -33,8 +33,10 @@ export interface WSLink {
 export interface WSBaseNode {
     id: string;            // 稳定唯一 id,生成后永不变
     type: WSNodeType;
-    spaceId: string;       // 主属 Space(Space 节点自身 spaceId === id)
-    spaceIds?: string[];   // 额外绑定的 Space；与 spaceId 合起来构成完整归属
+    /** @deprecated V1 兼容输入；V2 中位置与 Space 归属以 WorkspacePlacement 为准。 */
+    spaceId: string;
+    /** @deprecated V1 兼容输入；V2 中不再作为权威归属来源。 */
+    spaceIds?: string[];
     title: string;
     createdAt: number;
     updatedAt: number;     // 任何编辑都刷新 —— "最近更新/停滞"全靠它
@@ -99,14 +101,53 @@ export type WorkspaceNode =
     | WSNoteNode
     | WSMapNode;
 
-/** 写盘 schema(workspace.json 顶层结构) */
-export interface WorkspaceStoreFile {
+/**
+ * 节点在某一 Space 中的唯一展示位置。
+ * 身份、业务关系和展示位置分离后，删除/移动只作用于明确的 Space 子树。
+ */
+export interface WorkspacePlacement {
+    id: string;
+    nodeId: string;
+    spaceId: string;
+    parentPlacementId: string | null;
+    order?: number;
+    collapsed?: boolean;
+}
+
+export type MocWorkspaceBridgeRole = 'project' | 'resource' | 'workbench';
+
+/** MOC 内具体图节点与工作台实体的显式、多对多桥接。 */
+export interface MocWorkspaceBridge {
+    id: string;
+    mocPath: string;
+    mocNodeId: string;
+    workspaceNodeId: string;
+    placementId?: string;
+    role: MocWorkspaceBridgeRole;
+    createdAt: number;
+    updatedAt: number;
+}
+
+/** V1 仅用于兼容读取；位置隐含在 node.spaceId/spaceIds 与 containment link 中。 */
+export interface WorkspaceStoreFileV1 {
     version: 1;
     nodes: WorkspaceNode[];
     links: WSLink[];
+    migrationVersion?: number;
+}
+
+/** V2 中 placements 是 Space 归属与树位置的唯一事实源。 */
+export interface WorkspaceStoreFileV2 {
+    version: 2;
+    nodes: WorkspaceNode[];
+    placements: WorkspacePlacement[];
+    links: WSLink[];
+    bridges: MocWorkspaceBridge[];
     /** 已应用的迁移逻辑版本(seed.ts MIGRATION_VERSION);缺省视为 0 */
     migrationVersion?: number;
 }
+
+export type WorkspaceStoreFile = WorkspaceStoreFileV1 | WorkspaceStoreFileV2;
 
 // ---------- 框架(镜头)定义 ----------
 
@@ -159,15 +200,16 @@ export const FRAMEWORKS: Record<FrameworkId, Framework> = {
 export type OpenTarget =
     | { kind: 'home' }
     | { kind: 'space'; id: string; lens?: string }
-    | { kind: 'moc'; id: string }
-    | { kind: 'project'; id: string }
-    | { kind: 'note'; id: string };
+    | { kind: 'moc'; id: string; placementId?: string; spaceId?: string }
+    | { kind: 'project'; id: string; placementId?: string; spaceId?: string }
+    | { kind: 'note'; id: string; placementId?: string; spaceId?: string };
 
-/** 节点 → 默认打开目标 */
-export function targetFor(n: WorkspaceNode): OpenTarget {
+/** 节点 → 默认打开目标；传入 Placement 时保留精确的 Space 上下文。 */
+export function targetFor(n: WorkspaceNode, placement?: WorkspacePlacement): OpenTarget {
     if (n.type === 'space') return { kind: 'space', id: n.id };
-    if (n.type === 'moc') return { kind: 'moc', id: n.id };
-    if (n.type === 'map') return { kind: 'moc', id: n.id }; // map 走图谱视口
-    if (n.type === 'project') return { kind: 'project', id: n.id };
-    return { kind: 'note', id: n.id };
+    const location = placement ? { placementId: placement.id, spaceId: placement.spaceId } : {};
+    if (n.type === 'moc') return { kind: 'moc', id: n.id, ...location };
+    if (n.type === 'map') return { kind: 'moc', id: n.id, ...location }; // map 走图谱视口
+    if (n.type === 'project') return { kind: 'project', id: n.id, ...location };
+    return { kind: 'note', id: n.id, ...location };
 }

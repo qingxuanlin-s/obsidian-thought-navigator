@@ -1,10 +1,18 @@
-import { App, Component, DataAdapter, TFile } from "obsidian";
+import { App, Component, DataAdapter, Notice, TFile } from "obsidian";
 import {
     WorkspaceNode, WSLink, WSSpaceNode, WSMocNode, WSProjectNode, WSNoteNode,
-    WorkspaceStoreFile, FrameworkId, OpenTarget, targetFor, ChecklistItem,
+    WorkspaceStoreFile, WorkspaceStoreFileV1, WorkspaceStoreFileV2, WorkspacePlacement,
+    MocWorkspaceBridge, MocWorkspaceBridgeRole, FrameworkId, OpenTarget, targetFor, ChecklistItem,
     LinkType,
 } from "src/types/workspace";
 import { isMocPath, stripMocSuffix } from "src/utils/utils";
+import {
+    migrateWorkspaceV1,
+    migrationIssueCount,
+    normalizeWorkspaceV2,
+    placementIdFor,
+    WorkspaceMigrationDiagnostics,
+} from "./workspaceMigration";
 
 /** id 生成:`wsn_` + 8 位 base36 + 时间戳尾 */
 export function genNodeId(): string {
@@ -43,31 +51,49 @@ function projectFileContent(title: string, tag: string): string {
 type ChangeListener = () => void;
 
 interface WorkspaceStoreSnapshot {
-    data: WorkspaceStoreFile;
+    data: WorkspaceStoreFileV2;
     raw: string | null;
+    migratedFromV1: boolean;
+    diagnostics: WorkspaceMigrationDiagnostics;
 }
 
+const EMPTY_DIAGNOSTICS: WorkspaceMigrationDiagnostics = {
+    ambiguousParents: 0,
+    crossSpaceParents: 0,
+    detachedCycles: 0,
+    missingSpaces: 0,
+    invalidPlacements: 0,
+    invalidBridges: 0,
+};
+
 async function readStore(adapter: DataAdapter, storePath: string): Promise<WorkspaceStoreSnapshot> {
-    const empty: WorkspaceStoreFile = { version: 1, nodes: [], links: [] };
+    const empty: WorkspaceStoreFileV2 = { version: 2, nodes: [], placements: [], links: [], bridges: [] };
     try {
-        if (!(await adapter.exists(storePath))) return { data: empty, raw: null };
+        if (!(await adapter.exists(storePath))) {
+            return { data: empty, raw: null, migratedFromV1: false, diagnostics: { ...EMPTY_DIAGNOSTICS } };
+        }
         const raw = await adapter.read(storePath);
         const parsed = JSON.parse(raw) as WorkspaceStoreFile;
-        if (!parsed || !Array.isArray(parsed.nodes)) return { data: empty, raw };
-        return {
-            data: {
-                version: 1,
-                nodes: parsed.nodes,
-                links: Array.isArray(parsed.links) ? parsed.links : [],
-                // 关键:透传已落盘的迁移版本号,否则每次 reload 都被视作 0、
-                // 触发 ensureWorkspaceSeed 重迁并覆盖用户新建数据
-                migrationVersion: typeof parsed.migrationVersion === 'number' ? parsed.migrationVersion : 0,
-            },
-            raw,
+        if (!parsed || !Array.isArray(parsed.nodes)) {
+            throw new Error('workspace.json schema 无效');
+        }
+        if (parsed.version === 2) {
+            const normalized = normalizeWorkspaceV2(parsed);
+            return { ...normalized, raw, migratedFromV1: false };
+        }
+        const legacy: WorkspaceStoreFileV1 = {
+            version: 1,
+            nodes: parsed.nodes,
+            links: Array.isArray(parsed.links) ? parsed.links : [],
+            // 关键:透传已落盘的迁移版本号,否则每次 reload 都被视作 0、
+            // 触发 ensureWorkspaceSeed 重迁并覆盖用户新建数据
+            migrationVersion: typeof parsed.migrationVersion === 'number' ? parsed.migrationVersion : 0,
         };
+        const migrated = migrateWorkspaceV1(legacy);
+        return { ...migrated, raw, migratedFromV1: true };
     } catch (e) {
         console.warn('[zk-navigation] workspace.json 读取失败:', storePath, e);
-        return { data: empty, raw: null };
+        return { data: empty, raw: null, migratedFromV1: false, diagnostics: { ...EMPTY_DIAGNOSTICS } };
     }
 }
 
@@ -81,7 +107,9 @@ export class WorkspaceStore extends Component {
     private app: App;
     private storePath: string;
     private nodes: Map<string, WorkspaceNode> = new Map();
+    private placements: Map<string, WorkspacePlacement> = new Map();
     private links: WSLink[] = [];
+    private bridges: MocWorkspaceBridge[] = [];
     private migrationVersion = 0;
     private listeners: Set<ChangeListener> = new Set();
     private bootstrapped = false;
@@ -106,6 +134,14 @@ export class WorkspaceStore extends Component {
         await this.applySnapshot(await readStore(this.app.vault.adapter, this.storePath));
     }
 
+    /** 工作台可见/窗口重新聚焦时调用：仅在磁盘内容变更后重载，不覆盖本地已写入快照。 */
+    async reloadIfChanged(): Promise<boolean> {
+        const snapshot = await readStore(this.app.vault.adapter, this.storePath);
+        if (snapshot.raw === this.lastDiskContent) return false;
+        await this.applySnapshot(snapshot);
+        return true;
+    }
+
     /** 写入前检测磁盘是否已被外部同步替换,防止旧内存快照覆盖远端数据。 */
     private async refreshIfDiskChanged(): Promise<void> {
         const snapshot = await readStore(this.app.vault.adapter, this.storePath);
@@ -115,6 +151,9 @@ export class WorkspaceStore extends Component {
 
     private async applySnapshot(snapshot: WorkspaceStoreSnapshot): Promise<void> {
         const { data } = snapshot;
+        if (snapshot.migratedFromV1 && snapshot.raw !== null) {
+            await this.backupV1(snapshot.raw);
+        }
         this.lastDiskContent = snapshot.raw;
         this.hasStoreFile = snapshot.raw !== null;
         this.nodes.clear();
@@ -128,22 +167,37 @@ export class WorkspaceStore extends Component {
                 };
                 delete moc.body;
                 delete moc.lid;
-                this.nodes.set(n.id, {
-                    ...moc,
-                });
+                this.nodes.set(n.id, { ...moc });
                 reclassifiedMocIds.add(n.id);
             } else {
                 this.nodes.set(n.id, n);
             }
         }
+        this.placements = new Map(data.placements
+            .filter(placement => this.nodes.has(placement.nodeId))
+            .map(placement => [placement.id, { ...placement }]));
         this.links = data.links
             .filter(l => this.nodes.has(l.from) && this.nodes.has(l.to))
             .map(l => reclassifiedMocIds.has(l.from) && l.type === 'partOf'
                 ? { ...l, type: 'childMoc' as const }
                 : l);
+        this.bridges = data.bridges
+            .filter(bridge => this.nodes.has(bridge.workspaceNodeId))
+            .map(bridge => ({ ...bridge }));
         this.migrationVersion = data.migrationVersion ?? 0;
-        if (reclassifiedMocIds.size > 0) await this.flush();
+        if (snapshot.migratedFromV1 || reclassifiedMocIds.size > 0) await this.flush();
+        const issueCount = migrationIssueCount(snapshot.diagnostics);
+        if (snapshot.migratedFromV1 && issueCount > 0) {
+            console.warn('[zk-navigation] 工作台 V2 迁移已安全降级歧义位置:', snapshot.diagnostics);
+            new Notice(`知识工作台已升级；${issueCount} 个歧义位置已移到空间根级`);
+        }
         this.emitChange();
+    }
+
+    private async backupV1(raw: string): Promise<void> {
+        const backupPath = this.storePath.replace(/workspace\.json$/, 'workspace.v1-backup.json');
+        if (backupPath === this.storePath || await this.app.vault.adapter.exists(backupPath)) return;
+        await this.app.vault.adapter.write(backupPath, raw);
     }
 
     /**
@@ -152,11 +206,16 @@ export class WorkspaceStore extends Component {
      */
     async commit(mutator: (ctx: WorkspaceMutation) => void | Promise<void>): Promise<void> {
         await this.refreshIfDiskChanged();
-        const ctx = new WorkspaceMutation(this.nodes, this.links);
+        const ctx = new WorkspaceMutation(this.nodes, this.placements, this.links, this.bridges);
         await mutator(ctx);
+        this.placements = ctx.placements;
         this.links = ctx.links;
-        // 清理悬挂边
+        this.bridges = ctx.bridges;
+        // 清理悬挂边、位置和桥接
         this.links = this.links.filter(l => this.nodes.has(l.from) && this.nodes.has(l.to));
+        this.placements = new Map(Array.from(this.placements.entries())
+            .filter(([, placement]) => this.nodes.has(placement.nodeId)));
+        this.bridges = this.bridges.filter(bridge => this.nodes.has(bridge.workspaceNodeId));
         this.emitChange();
         this.flushChain = this.flushChain.then(() => this.flush()).catch((e) => {
             console.error('[zk-navigation] workspace.json 写入失败', e);
@@ -165,10 +224,12 @@ export class WorkspaceStore extends Component {
     }
 
     private async flush(): Promise<void> {
-        const data: WorkspaceStoreFile = {
-            version: 1,
+        const data: WorkspaceStoreFileV2 = {
+            version: 2,
             nodes: Array.from(this.nodes.values()),
+            placements: Array.from(this.placements.values()),
             links: this.links,
+            bridges: this.bridges,
             migrationVersion: this.migrationVersion,
         };
         const raw = JSON.stringify(data, null, 2);
@@ -192,10 +253,15 @@ export class WorkspaceStore extends Component {
     async resetTo(nodes: WorkspaceNode[], links: WSLink[], migrationVersion: number): Promise<void> {
         await this.refreshIfDiskChanged();
         this.migrationVersion = migrationVersion;
+        const migrated = migrateWorkspaceV1({ version: 1, nodes, links, migrationVersion }).data;
         await this.commit(ctx => {
             for (const n of Array.from(this.nodes.values())) ctx.remove(n.id);
-            for (const n of nodes) ctx.put(n);
-            for (const l of links) ctx.addLink(l);
+            ctx.placements.clear();
+            ctx.links = [];
+            ctx.bridges = [];
+            for (const n of migrated.nodes) ctx.put(n);
+            for (const placement of migrated.placements) ctx.putPlacement(placement);
+            for (const l of migrated.links) ctx.addLink(l);
         });
     }
 
@@ -209,36 +275,24 @@ export class WorkspaceStore extends Component {
     getAllNodes(): WorkspaceNode[] { return Array.from(this.nodes.values()); }
     isEmpty(): boolean { return this.nodes.size === 0; }
     getAllLinks(): WSLink[] { return this.links.slice(); }
+    getAllPlacements(): WorkspacePlacement[] { return Array.from(this.placements.values()).map(p => ({ ...p })); }
+    getPlacement(id: string): WorkspacePlacement | undefined {
+        const placement = this.placements.get(id);
+        return placement ? { ...placement } : undefined;
+    }
+    placementsOfNode(nodeId: string): WorkspacePlacement[] {
+        return this.getAllPlacements().filter(placement => placement.nodeId === nodeId);
+    }
+    placementForNodeInSpace(nodeId: string, spaceId: string): WorkspacePlacement | undefined {
+        return this.placementsOfNode(nodeId).find(placement => placement.spaceId === spaceId);
+    }
+    getPlacementNode(placementId: string): WorkspaceNode | undefined {
+        const placement = this.placements.get(placementId);
+        return placement ? this.nodes.get(placement.nodeId) : undefined;
+    }
 
     getNodeSpaceIds(nodeId: string): string[] {
-        const node = this.nodes.get(nodeId);
-        return node ? this.nodeSpaceIds(node) : [];
-    }
-
-    /** 节点所有所属 Space，spaceId 保持为兼容旧数据的主归属。 */
-    private nodeSpaceIds(node: WorkspaceNode): string[] {
-        return Array.from(new Set([node.spaceId, ...(node.spaceIds ?? [])]));
-    }
-
-    private addNodeToSpace(node: WorkspaceNode, spaceId: string): void {
-        if (node.spaceId === spaceId || node.spaceIds?.includes(spaceId)) return;
-        node.spaceIds = [...(node.spaceIds ?? []), spaceId];
-    }
-
-    /** 移除一个 Space 归属；返回 true 表示已无任何 Space，应删除该节点。 */
-    private removeNodeFromSpace(node: WorkspaceNode, spaceId: string): boolean {
-        if (node.spaceId !== spaceId) {
-            const remaining = (node.spaceIds ?? []).filter(id => id !== spaceId);
-            if (remaining.length) node.spaceIds = remaining;
-            else delete node.spaceIds;
-            return false;
-        }
-        const [nextPrimary, ...remaining] = node.spaceIds ?? [];
-        if (!nextPrimary) return true;
-        node.spaceId = nextPrimary;
-        if (remaining.length) node.spaceIds = remaining;
-        else delete node.spaceIds;
-        return false;
+        return Array.from(new Set(this.placementsOfNode(nodeId).map(placement => placement.spaceId)));
     }
 
     /** 所有 Space 节点,按 createdAt 排序 */
@@ -248,9 +302,12 @@ export class WorkspaceStore extends Component {
             .sort((a, b) => a.createdAt - b.createdAt);
     }
 
-    /** 某 Space 下的全部非 Space 节点 */
+    /** 某 Space 下的全部非 Space 节点；V2 以 Placement 为唯一成员来源。 */
     nodesInSpace(spaceId: string): WorkspaceNode[] {
-        return this.getAllNodes().filter(n => n.type !== 'space' && this.nodeSpaceIds(n).includes(spaceId));
+        return this.getAllPlacements()
+            .filter(placement => placement.spaceId === spaceId)
+            .map(placement => this.nodes.get(placement.nodeId))
+            .filter((node): node is WorkspaceNode => !!node && node.type !== 'space');
     }
 
     linksFrom(id: string): WSLink[] { return this.links.filter(l => l.from === id); }
@@ -287,49 +344,89 @@ export class WorkspaceStore extends Component {
         return a.title.localeCompare(b.title, 'zh');
     };
 
-    /** 节点的父容器 id(指向的容器);无容器边时返回其 Space id;Space 自身返回 null */
-    parentContainerOf(nodeId: string): string | null {
-        const n = this.nodes.get(nodeId);
-        if (!n || n.type === 'space') return null;
-        const up = this.linksFrom(nodeId).find(l => this.isContainmentLink(l) && this.nodes.has(l.to));
-        return up ? up.to : n.spaceId;
+    parentPlacementOf(placementId: string): WorkspacePlacement | null {
+        const placement = this.placements.get(placementId);
+        if (!placement?.parentPlacementId) return null;
+        const parent = this.placements.get(placement.parentPlacementId);
+        return parent ? { ...parent } : null;
     }
 
-    /** 容器(Space 或 MOC)的直接子节点,已排序 */
-    containerChildren(containerId: string): WorkspaceNode[] {
-        const container = this.nodes.get(containerId);
-        if (!container) return [];
-        if (container.type === 'space') {
-            // Space 顶层 = 属于本 space、且不指向本 space 内任何容器的节点
-            const inSpace = this.nodesInSpace(containerId);
-            const idSet = new Set(inSpace.map(n => n.id));
-            return inSpace
-                .filter(n => !this.linksFrom(n.id).some(l => this.isContainmentLink(l) && idSet.has(l.to)))
-                .sort(this.cmpOrder);
-        }
-        const childIds = this.links
-            .filter(l => l.to === containerId && this.isContainmentLink(l))
-            .map(l => l.from);
-        return Array.from(new Set(childIds))
-            .map(id => this.nodes.get(id))
-            .filter((n): n is WorkspaceNode => !!n)
-            .sort(this.cmpOrder);
+    placementChildren(parentPlacementId: string | null, spaceId: string): WorkspacePlacement[] {
+        return this.getAllPlacements()
+            .filter(placement => placement.spaceId === spaceId && placement.parentPlacementId === parentPlacementId)
+            .sort((a, b) => {
+                const na = this.nodes.get(a.nodeId), nb = this.nodes.get(b.nodeId);
+                if (!na || !nb) return 0;
+                const oa = a.order ?? Number.MAX_SAFE_INTEGER;
+                const ob = b.order ?? Number.MAX_SAFE_INTEGER;
+                return oa !== ob ? oa - ob : this.cmpOrder(na, nb);
+            });
     }
 
-    /** 该容器(含其后代容器)下所有节点 id,用于子树删除/防环 */
-    collectSubtreeIds(containerId: string): string[] {
+    /** 精确 Placement 子树；永远不会跨 Space。 */
+    collectPlacementSubtreeIds(placementId: string): string[] {
+        const root = this.placements.get(placementId);
+        if (!root) return [];
         const out: string[] = [];
         const visit = (id: string) => {
             out.push(id);
-            for (const c of this.containerChildren(id)) visit(c.id);
+            for (const child of this.placementChildren(id, root.spaceId)) visit(child.id);
         };
-        visit(containerId);
+        visit(root.id);
         return out;
     }
 
-    /** vault 文件是否已在工作区有节点(= 已"挂载") */
+    /** 兼容查询：显式 spaceId 时精确；省略时使用该节点第一个 Placement。 */
+    parentContainerOf(nodeId: string, spaceId?: string): string | null {
+        const node = this.nodes.get(nodeId);
+        if (!node || node.type === 'space') return null;
+        const placement = spaceId
+            ? this.placementForNodeInSpace(nodeId, spaceId)
+            : this.placementsOfNode(nodeId)[0];
+        if (!placement) return null;
+        const parent = this.parentPlacementOf(placement.id);
+        return parent ? parent.nodeId : placement.spaceId;
+    }
+
+    /** 容器的直接子节点；MOC 多空间时调用方应传 spaceId。 */
+    containerChildren(containerId: string, spaceId?: string): WorkspaceNode[] {
+        const container = this.nodes.get(containerId);
+        if (!container) return [];
+        const resolvedSpaceId = container.type === 'space'
+            ? container.id
+            : spaceId ?? this.placementsOfNode(containerId)[0]?.spaceId;
+        if (!resolvedSpaceId) return [];
+        const parentPlacementId = container.type === 'space'
+            ? null
+            : this.placementForNodeInSpace(containerId, resolvedSpaceId)?.id ?? null;
+        if (container.type !== 'space' && !parentPlacementId) return [];
+        return this.placementChildren(parentPlacementId, resolvedSpaceId)
+            .map(placement => this.nodes.get(placement.nodeId))
+            .filter((node): node is WorkspaceNode => !!node)
+            .sort(this.cmpOrder);
+    }
+
+    /** 兼容子树查询，结果限制在一个 Placement/Space 内。 */
+    collectSubtreeIds(containerId: string, spaceId?: string): string[] {
+        const container = this.nodes.get(containerId);
+        if (!container) return [];
+        if (container.type === 'space') {
+            return [container.id, ...this.getAllPlacements()
+                .filter(placement => placement.spaceId === container.id)
+                .map(placement => placement.nodeId)];
+        }
+        const placement = spaceId
+            ? this.placementForNodeInSpace(containerId, spaceId)
+            : this.placementsOfNode(containerId)[0];
+        if (!placement) return [containerId];
+        return this.collectPlacementSubtreeIds(placement.id)
+            .map(id => this.placements.get(id)?.nodeId)
+            .filter((id): id is string => !!id);
+    }
+
+    /** vault 文件是否在工作台存在至少一个有效 Placement(= 已“挂载”) */
     isFileMounted(path: string): boolean {
-        return this.getAllNodes().some(n => (n as { filePath?: string }).filePath === path);
+        return this.locationsHostingFile(path).length > 0;
     }
 
     /** 文件是否已挂在指定容器下 */
@@ -342,41 +439,117 @@ export class WorkspaceStore extends Component {
         return this.getAllNodes().filter(n => n.type === 'space' || n.type === 'moc');
     }
 
-    /** 节点展示路径:从根容器到自身的标题链,用 / 连接 */
-    displayPath(nodeId: string): string {
-        const parts: string[] = [];
-        const seen = new Set<string>();
-        let cur: string | null = nodeId;
-        while (cur && !seen.has(cur)) {
-            seen.add(cur);
-            const n = this.nodes.get(cur);
-            if (!n) break;
-            parts.unshift(n.title);
-            cur = this.parentContainerOf(cur);
+    /** 节点展示路径:从当前 Placement 根容器到自身；省略 spaceId 时使用第一个位置。 */
+    displayPath(nodeId: string, spaceId?: string): string {
+        const node = this.nodes.get(nodeId);
+        if (!node) return '';
+        if (node.type === 'space') return node.title;
+        const placement = spaceId
+            ? this.placementForNodeInSpace(nodeId, spaceId)
+            : this.placementsOfNode(nodeId)[0];
+        if (!placement) return node.title;
+        const parts = [node.title];
+        const seen = new Set<string>([placement.id]);
+        let parentId = placement.parentPlacementId;
+        while (parentId && !seen.has(parentId)) {
+            seen.add(parentId);
+            const parent = this.placements.get(parentId);
+            const parentNode = parent ? this.nodes.get(parent.nodeId) : undefined;
+            if (!parent || !parentNode) break;
+            parts.unshift(parentNode.title);
+            parentId = parent.parentPlacementId;
         }
+        const space = this.nodes.get(placement.spaceId);
+        if (space) parts.unshift(space.title);
         return parts.join(' / ');
     }
 
-    /** 承载某文件的父容器节点(去重) */
-    containersHostingFile(path: string): WorkspaceNode[] {
-        const hosts = new Set<string>();
-        for (const n of this.getAllNodes()) {
-            if ((n as { filePath?: string }).filePath !== path) continue;
-            const parentIds = this.linksFrom(n.id)
-                .filter(l => this.isContainmentLink(l))
-                .map(l => l.to);
-            if (parentIds.length > 0) {
-                parentIds.forEach(id => hosts.add(id));
+    locationsHostingFile(path: string): Array<{ placement: WorkspacePlacement; node: WorkspaceNode; container: WorkspaceNode }> {
+        const out: Array<{ placement: WorkspacePlacement; node: WorkspaceNode; container: WorkspaceNode }> = [];
+        for (const node of this.getAllNodes()) {
+            if ((node as { filePath?: string }).filePath !== path) continue;
+            for (const placement of this.placementsOfNode(node.id)) {
+                const parent = placement.parentPlacementId ? this.placements.get(placement.parentPlacementId) : null;
+                const container = parent ? this.nodes.get(parent.nodeId) : this.nodes.get(placement.spaceId);
+                if (container) out.push({ placement, node, container });
             }
-            this.nodeSpaceIds(n).forEach(id => hosts.add(id));
         }
-        return Array.from(hosts)
-            .map(id => this.nodes.get(id))
-            .filter((n): n is WorkspaceNode => !!n);
+        return out;
+    }
+
+    /** 承载某文件的父容器节点(兼容旧 UI，按位置去重) */
+    containersHostingFile(path: string): WorkspaceNode[] {
+        return Array.from(new Map(this.locationsHostingFile(path)
+            .map(location => [location.container.id, location.container])).values());
     }
 
     /** 节点 → 默认打开目标 */
-    targetFor(node: WorkspaceNode): OpenTarget { return targetFor(node); }
+    targetFor(node: WorkspaceNode, placement?: WorkspacePlacement): OpenTarget { return targetFor(node, placement); }
+
+    placementForContainer(containerId: string, spaceId?: string): { spaceId: string; parentPlacementId: string | null } | null {
+        const container = this.nodes.get(containerId);
+        if (!container) return null;
+        if (container.type === 'space') return { spaceId: container.id, parentPlacementId: null };
+        const placement = spaceId
+            ? this.placementForNodeInSpace(containerId, spaceId)
+            : this.placementsOfNode(containerId)[0];
+        return placement ? { spaceId: placement.spaceId, parentPlacementId: placement.id } : null;
+    }
+
+    getAllBridges(): MocWorkspaceBridge[] { return this.bridges.map(bridge => ({ ...bridge })); }
+    bridgesForGraphNode(mocPath: string, mocNodeId: string): MocWorkspaceBridge[] {
+        return this.getAllBridges().filter(bridge => bridge.mocPath === mocPath && bridge.mocNodeId === mocNodeId);
+    }
+    bridgesForWorkspaceNode(workspaceNodeId: string): MocWorkspaceBridge[] {
+        return this.getAllBridges().filter(bridge => bridge.workspaceNodeId === workspaceNodeId);
+    }
+
+    async addBridge(input: {
+        mocPath: string;
+        mocNodeId: string;
+        workspaceNodeId: string;
+        placementId?: string;
+        role: MocWorkspaceBridgeRole;
+    }): Promise<MocWorkspaceBridge | null> {
+        if (!input.mocPath || !input.mocNodeId || !this.nodes.has(input.workspaceNodeId)) return null;
+        const existing = this.bridges.find(bridge => bridge.mocPath === input.mocPath
+            && bridge.mocNodeId === input.mocNodeId
+            && bridge.workspaceNodeId === input.workspaceNodeId
+            && bridge.role === input.role);
+        if (existing) return { ...existing };
+        const now = Date.now();
+        const bridge: MocWorkspaceBridge = {
+            id: `wsb_${genNodeId().slice(4)}`,
+            ...input,
+            placementId: input.placementId && this.placements.has(input.placementId) ? input.placementId : undefined,
+            createdAt: now,
+            updatedAt: now,
+        };
+        await this.commit(ctx => ctx.addBridge(bridge));
+        return bridge;
+    }
+
+    async removeBridge(id: string): Promise<void> {
+        if (!this.bridges.some(bridge => bridge.id === id)) return;
+        await this.commit(ctx => ctx.removeBridge(id));
+    }
+
+    private putPlacement(ctx: WorkspaceMutation, nodeId: string, spaceId: string, parentPlacementId: string | null): WorkspacePlacement {
+        const existing = Array.from(ctx.placements.values())
+            .find(placement => placement.nodeId === nodeId && placement.spaceId === spaceId);
+        if (existing) {
+            ctx.updatePlacement(existing.id, placement => { placement.parentPlacementId = parentPlacementId; });
+            return existing;
+        }
+        const placement: WorkspacePlacement = {
+            id: placementIdFor(nodeId, spaceId),
+            nodeId,
+            spaceId,
+            parentPlacementId,
+        };
+        ctx.putPlacement(placement);
+        return placement;
+    }
 
     // ---------- 写操作(在 commit 外的便捷封装) ----------
 
@@ -408,19 +581,23 @@ export class WorkspaceStore extends Component {
      * 把 vault 文件关联到某 MOC:
      * 若该文件还没有对应工作区节点,按路径建 note 或 MOC 节点,再建立正确的容器链。
      */
-    async associateFileToMoc(mocId: string, file: TFile): Promise<void> {
+    async associateFileToMoc(mocId: string, file: TFile, spaceId?: string): Promise<void> {
         const moc = this.nodes.get(mocId);
-        if (!moc) return;
+        const mocPlacement = spaceId
+            ? this.placementForNodeInSpace(mocId, spaceId)
+            : this.placementsOfNode(mocId)[0];
+        if (!moc || !mocPlacement) return;
         await this.commit(ctx => {
             let node = this.getNodeByPath(file.path);
             if (!node) {
                 const now = Date.now();
                 const nodeForFile: WorkspaceNode = isMocPath(file.path)
-                    ? { id: genNodeId(), type: 'moc', spaceId: moc.spaceId, title: fileNodeTitle(file.path), filePath: file.path, createdAt: now, updatedAt: now }
-                    : { id: genNodeId(), type: 'note', spaceId: moc.spaceId, title: file.basename, filePath: file.path, createdAt: now, updatedAt: now };
+                    ? { id: genNodeId(), type: 'moc', spaceId: mocPlacement.spaceId, title: fileNodeTitle(file.path), filePath: file.path, createdAt: now, updatedAt: now }
+                    : { id: genNodeId(), type: 'note', spaceId: mocPlacement.spaceId, title: file.basename, filePath: file.path, createdAt: now, updatedAt: now };
                 ctx.put(nodeForFile);
                 node = nodeForFile;
             }
+            this.putPlacement(ctx, node.id, mocPlacement.spaceId, mocPlacement.id);
             ctx.addLink({ from: node.id, to: mocId, type: node.type === 'moc' ? 'childMoc' : 'partOf' });
         });
     }
@@ -474,10 +651,11 @@ export class WorkspaceStore extends Component {
      *   undefined 表示不指定(沿用默认/既有值)。见 issue #71。
      * 返回新建的节点数。
      */
-    async mountFilesToContainer(containerId: string, paths: string[], opts?: { mocIsTop?: boolean }): Promise<number> {
+    async mountFilesToContainer(containerId: string, paths: string[], opts?: { mocIsTop?: boolean; spaceId?: string }): Promise<number> {
         const container = this.nodes.get(containerId);
-        if (!container) return 0;
-        const spaceId = container.type === 'space' ? container.id : container.spaceId;
+        const location = this.placementForContainer(containerId, opts?.spaceId);
+        if (!container || !location) return 0;
+        const { spaceId, parentPlacementId } = location;
         let added = 0;
         await this.commit(ctx => {
             for (const path of paths) {
@@ -492,14 +670,13 @@ export class WorkspaceStore extends Component {
                     node = n;
                     added++;
                 }
+                this.putPlacement(ctx, node.id, spaceId, parentPlacementId);
                 ctx.updateQuiet(node.id, x => {
-                    if (x.type === 'space') return;
-                    this.addNodeToSpace(x, spaceId);
                     // 挂到 Space 顶层的 MOC:按镜头落总览/主题
                     if (container.type === 'space' && x.type === 'moc' && opts?.mocIsTop !== undefined) x.isTop = opts.mocIsTop;
                 });
                 if (container.type === 'moc') {
-                    ctx.addLink({ from: node.id, to: containerId, type: node.type === 'moc' ? 'childMoc' : 'partOf' });
+                    ctx.addLink({ from: node.id, to: containerId, type: node.type === 'moc' ? 'childMoc' : node.type === 'project' ? 'serves' : 'partOf' });
                 }
             }
         });
@@ -512,7 +689,8 @@ export class WorkspaceStore extends Component {
      */
     async addProjectFileReferences(projectId: string, paths: string[]): Promise<number> {
         const project = this.nodes.get(projectId);
-        if (!project || project.type !== 'project') return 0;
+        const projectPlacement = this.placementsOfNode(projectId)[0];
+        if (!project || project.type !== 'project' || !projectPlacement) return 0;
         let added = 0;
         await this.commit(ctx => {
             for (const path of paths) {
@@ -521,10 +699,13 @@ export class WorkspaceStore extends Component {
                 if (!node) {
                     const now = Date.now();
                     const n: WorkspaceNode = isMocPath(path)
-                        ? { id: genNodeId(), type: 'moc', spaceId: project.spaceId, title: fileNodeTitle(path), filePath: path, createdAt: now, updatedAt: now }
-                        : { id: genNodeId(), type: 'note', spaceId: project.spaceId, title: baseNameNoExt(path), filePath: path, createdAt: now, updatedAt: now };
+                        ? { id: genNodeId(), type: 'moc', spaceId: projectPlacement.spaceId, title: fileNodeTitle(path), filePath: path, createdAt: now, updatedAt: now }
+                        : { id: genNodeId(), type: 'note', spaceId: projectPlacement.spaceId, title: baseNameNoExt(path), filePath: path, createdAt: now, updatedAt: now };
                     ctx.put(n);
                     node = n;
+                }
+                if (this.placementsOfNode(node.id).length === 0) {
+                    this.putPlacement(ctx, node.id, projectPlacement.spaceId, null);
                 }
                 const before = ctx.links.length;
                 ctx.addLink({ from: projectId, to: node.id, type: 'related' });
@@ -535,16 +716,18 @@ export class WorkspaceStore extends Component {
     }
 
     /** 在容器(MOC/Space)下新建子 MOC(= 文件夹)。容器是 MOC 时加 childMoc 链。 */
-    async createChildMoc(containerId: string, title: string): Promise<WSMocNode | null> {
+    async createChildMoc(containerId: string, title: string, requestedSpaceId?: string): Promise<WSMocNode | null> {
         const container = this.nodes.get(containerId);
-        if (!container) return null;
-        const spaceId = container.type === 'space' ? container.id : container.spaceId;
+        const location = this.placementForContainer(containerId, requestedSpaceId);
+        if (!container || !location) return null;
+        const { spaceId, parentPlacementId } = location;
         const id = genNodeId(); const now = Date.now();
         const node: WSMocNode = {
             id, type: 'moc', spaceId, title: title.trim() || '未命名 MOC', createdAt: now, updatedAt: now,
         };
         await this.commit(ctx => {
             ctx.put(node);
+            this.putPlacement(ctx, node.id, spaceId, parentPlacementId);
             if (container.type === 'moc') ctx.addLink({ from: id, to: containerId, type: 'childMoc' });
         });
         return node;
@@ -564,28 +747,70 @@ export class WorkspaceStore extends Component {
         await this.commit(ctx => { for (const id of targets) ctx.updateQuiet(id, x => { x.collapsed = false; }); });
     }
 
-    /**
-     * 把节点重新挂到新容器下(拖拽重挂)。
-     * - 目标是 Space:解掉容器边,改主 Space 成为顶层。
-     * - 目标是 MOC:解掉旧容器边,按节点类型加 childMoc/serves/partOf,并同步整棵子树 spaceId。
-     * 防环:不能挂到自身或后代下。返回是否发生移动。
-     */
-    async reparent(nodeId: string, toContainerId: string): Promise<boolean> {
+    /** 移动一个明确 Placement 子树；不会改写节点在其他 Space 的位置。 */
+    async reparent(nodeId: string, toContainerId: string, sourceSpaceId?: string): Promise<boolean> {
         const node = this.nodes.get(nodeId);
         const target = this.nodes.get(toContainerId);
-        if (!node || !target || node.id === target.id || node.type === 'space') return false;
-        if (this.parentContainerOf(nodeId) === toContainerId) return false;
-        const subtree = this.collectSubtreeIds(nodeId);
-        if (subtree.includes(toContainerId)) return false;
-        const outLinks = this.linksFrom(nodeId).filter(l => this.isContainmentLink(l));
-        const newSpaceId = target.type === 'space' ? target.id : target.spaceId;
+        const source = sourceSpaceId
+            ? this.placementForNodeInSpace(nodeId, sourceSpaceId)
+            : this.placementsOfNode(nodeId)[0];
+        const targetLocation = target?.type === 'space'
+            ? this.placementForContainer(toContainerId, target.id)
+            : this.placementForContainer(toContainerId, source?.spaceId)
+                ?? this.placementForContainer(toContainerId);
+        if (!node || !target || !source || !targetLocation || node.id === target.id || node.type === 'space') return false;
+        if (source.spaceId === targetLocation.spaceId && source.parentPlacementId === targetLocation.parentPlacementId) return false;
+        const subtreeIds = this.collectPlacementSubtreeIds(source.id);
+        if (targetLocation.parentPlacementId && subtreeIds.includes(targetLocation.parentPlacementId)) return false;
+        const subtree = subtreeIds
+            .map(id => this.placements.get(id))
+            .filter((placement): placement is WorkspacePlacement => !!placement);
+        const subtreeNodeIds = new Set(subtree.map(placement => placement.nodeId));
+        const destinationConflict = this.getAllPlacements().some(placement => placement.spaceId === targetLocation.spaceId
+            && subtreeNodeIds.has(placement.nodeId) && !subtreeIds.includes(placement.id));
+        if (destinationConflict) return false;
+
+        const oldParent = source.parentPlacementId ? this.placements.get(source.parentPlacementId) : null;
+        const oldParentNodeId = oldParent?.nodeId;
         await this.commit(ctx => {
-            for (const l of outLinks) ctx.removeLink(l.from, l.to, l.type);
-            for (const id of subtree) ctx.updateQuiet(id, x => {
-                if (x.type === 'space') return;
-                x.spaceId = newSpaceId;
-                delete x.spaceIds;
-            });
+            if (source.spaceId === targetLocation.spaceId) {
+                ctx.updatePlacement(source.id, placement => { placement.parentPlacementId = targetLocation.parentPlacementId; });
+            } else {
+                const replacementIds = new Map<string, string>();
+                for (const placement of subtree) {
+                    replacementIds.set(placement.id, placementIdFor(placement.nodeId, targetLocation.spaceId));
+                }
+                for (const placement of subtree) ctx.removePlacement(placement.id);
+                for (const placement of subtree) {
+                    const isRoot = placement.id === source.id;
+                    const nextId = replacementIds.get(placement.id)!;
+                    const nextParentId = isRoot
+                        ? targetLocation.parentPlacementId
+                        : placement.parentPlacementId ? replacementIds.get(placement.parentPlacementId) ?? null : null;
+                    ctx.putPlacement({
+                        ...placement,
+                        id: nextId,
+                        spaceId: targetLocation.spaceId,
+                        parentPlacementId: nextParentId,
+                    });
+                }
+                ctx.bridges = ctx.bridges.map(bridge => {
+                    const nextPlacementId = bridge.placementId ? replacementIds.get(bridge.placementId) : undefined;
+                    return nextPlacementId ? { ...bridge, placementId: nextPlacementId, updatedAt: Date.now() } : bridge;
+                });
+            }
+
+            if (oldParentNodeId) {
+                const oldRelationStillPlaced = Array.from(ctx.placements.values()).some(placement => {
+                    if (placement.nodeId !== nodeId || !placement.parentPlacementId) return false;
+                    return ctx.placements.get(placement.parentPlacementId)?.nodeId === oldParentNodeId;
+                });
+                if (!oldRelationStillPlaced) {
+                    for (const link of ctx.links.filter(link => link.from === nodeId && link.to === oldParentNodeId && this.isContainmentLink(link))) {
+                        ctx.removeLink(link.from, link.to, link.type);
+                    }
+                }
+            }
             if (target.type === 'moc') {
                 const linkType: LinkType = node.type === 'moc' ? 'childMoc'
                     : node.type === 'project' ? 'serves' : 'partOf';
@@ -595,62 +820,104 @@ export class WorkspaceStore extends Component {
         return true;
     }
 
-    /** 从指定容器解挂某文件:MOC → 删容器链;Space 顶层 → 删裸指针节点。 */
-    async unmountFileFromContainer(path: string, containerId: string): Promise<boolean> {
+    /** 从指定容器解挂文件：MOC 下浮到同 Space 根；Space 根则只移除该 Placement。 */
+    async unmountFileFromContainer(path: string, containerId: string, spaceId?: string): Promise<boolean> {
         const container = this.nodes.get(containerId);
         if (!container) return false;
-        const targets = this.getAllNodes()
-            .filter(n => {
-                if ((n as { filePath?: string }).filePath !== path) return false;
-                const containerLinks = this.linksFrom(n.id).filter(l => this.isContainmentLink(l));
-                return container.type === 'moc'
-                    ? containerLinks.some(l => l.to === containerId)
-                    : this.nodeSpaceIds(n).includes(containerId) && containerLinks.length === 0;
-            });
-        if (targets.length === 0) return false;
+        const locations = this.locationsHostingFile(path).filter(location => {
+            if (spaceId && location.placement.spaceId !== spaceId) return false;
+            return container.type === 'space'
+                ? location.placement.spaceId === container.id && location.placement.parentPlacementId === null
+                : location.container.id === containerId;
+        });
+        if (locations.length === 0) return false;
         await this.commit(ctx => {
-            for (const node of targets) {
-                if (container.type === 'moc') {
-                    for (const l of this.linksFrom(node.id)) {
-                        if (this.isContainmentLink(l) && l.to === containerId) ctx.removeLink(l.from, l.to, l.type);
-                    }
+            for (const location of locations) {
+                if (container.type === 'space') {
+                    ctx.removePlacement(location.placement.id);
                 } else {
-                    let removeNode = false;
-                    ctx.updateQuiet(node.id, x => {
-                        if (x.type !== 'space') removeNode = this.removeNodeFromSpace(x, containerId);
+                    ctx.updatePlacement(location.placement.id, placement => { placement.parentPlacementId = null; });
+                }
+            }
+            if (container.type === 'moc') {
+                for (const nodeId of new Set(locations.map(location => location.node.id))) {
+                    const relationStillPlaced = Array.from(ctx.placements.values()).some(placement => {
+                        if (placement.nodeId !== nodeId || !placement.parentPlacementId) return false;
+                        return ctx.placements.get(placement.parentPlacementId)?.nodeId === containerId;
                     });
-                    if (removeNode) ctx.remove(node.id);
+                    if (!relationStillPlaced) {
+                        for (const link of ctx.links.filter(link => link.from === nodeId && link.to === containerId && this.isContainmentLink(link))) {
+                            ctx.removeLink(link.from, link.to, link.type);
+                        }
+                    }
                 }
             }
         });
         return true;
     }
 
-    /** 共享节点从一个 Space 移出，保留其余 Space 中的同一节点和全部子树。 */
+    /** 从一个 Space 移除节点的 Placement 子树，其他 Space 与节点身份全部保留。 */
     async unmountNodeFromSpace(nodeId: string, spaceId: string): Promise<boolean> {
-        const node = this.nodes.get(nodeId);
-        if (!node || node.type === 'space' || !this.nodeSpaceIds(node).includes(spaceId)) return false;
-        if (this.nodeSpaceIds(node).length < 2) return false;
-        await this.commit(ctx => ctx.updateQuiet(nodeId, n => {
-            if (n.type !== 'space') this.removeNodeFromSpace(n, spaceId);
-        }));
+        const placement = this.placementForNodeInSpace(nodeId, spaceId);
+        if (!placement) return false;
+        await this.deletePlacementSubtree(placement.id);
         return true;
     }
 
-    /** 从指定容器解挂；未指定容器时保留旧行为，移除全部容器关系。 */
-    async unmountFromContainer(nodeId: string, containerId?: string): Promise<boolean> {
-        const outLinks = this.linksFrom(nodeId)
-            .filter(l => this.isContainmentLink(l) && (!containerId || l.to === containerId));
-        if (outLinks.length === 0) return false;
-        await this.commit(ctx => { for (const l of outLinks) ctx.removeLink(l.from, l.to, l.type); });
+    /** 从指定 MOC 容器移出到当前 Space 根；未指定容器时处理首个有父位置。 */
+    async unmountFromContainer(nodeId: string, containerId?: string, spaceId?: string): Promise<boolean> {
+        const placement = spaceId
+            ? this.placementForNodeInSpace(nodeId, spaceId)
+            : this.placementsOfNode(nodeId).find(item => item.parentPlacementId !== null);
+        if (!placement?.parentPlacementId) return false;
+        const parent = this.placements.get(placement.parentPlacementId);
+        if (!parent || (containerId && parent.nodeId !== containerId)) return false;
+        await this.commit(ctx => {
+            ctx.updatePlacement(placement.id, item => { item.parentPlacementId = null; });
+            const relationStillPlaced = Array.from(ctx.placements.values()).some(item => item.nodeId === nodeId
+                && item.parentPlacementId !== null
+                && ctx.placements.get(item.parentPlacementId)?.nodeId === parent.nodeId);
+            if (!relationStillPlaced) {
+                for (const link of ctx.links.filter(link => link.from === nodeId && link.to === parent.nodeId && this.isContainmentLink(link))) {
+                    ctx.removeLink(link.from, link.to, link.type);
+                }
+            }
+        });
         return true;
     }
 
-    /** 删除节点及其容器子树(连带解链) */
-    async deleteSubtree(nodeId: string): Promise<void> {
-        const ids = this.collectSubtreeIds(nodeId);
+    async deletePlacementSubtree(placementId: string): Promise<void> {
+        const ids = this.collectPlacementSubtreeIds(placementId);
         if (ids.length === 0) return;
-        await this.commit(ctx => { for (const id of ids) ctx.remove(id); });
+        await this.commit(ctx => { for (const id of ids.reverse()) ctx.removePlacement(id); });
+    }
+
+    /** 默认只删除当前位置子树；Space 删除也只清该 Space 的 Placement，不波及共享实体。 */
+    async deleteSubtree(nodeId: string, spaceId?: string): Promise<void> {
+        const node = this.nodes.get(nodeId);
+        if (!node) return;
+        if (node.type === 'space') {
+            const placementIds = this.getAllPlacements()
+                .filter(placement => placement.spaceId === node.id)
+                .map(placement => placement.id);
+            await this.commit(ctx => {
+                for (const id of placementIds.reverse()) ctx.removePlacement(id);
+                ctx.remove(node.id);
+            });
+            return;
+        }
+        const placement = spaceId
+            ? this.placementForNodeInSpace(nodeId, spaceId)
+            : this.placementsOfNode(nodeId)[0];
+        if (placement) await this.deletePlacementSubtree(placement.id);
+    }
+
+    /** 二级危险操作：仅允许永久清理已无任何 Placement 的孤立实体。 */
+    async deleteOrphanNode(nodeId: string): Promise<boolean> {
+        const node = this.nodes.get(nodeId);
+        if (!node || node.type === 'space' || this.placementsOfNode(nodeId).length > 0) return false;
+        await this.commit(ctx => ctx.remove(nodeId));
+        return true;
     }
 
     async createProject(spaceId: string, title: string): Promise<WSProjectNode> {
@@ -659,7 +926,10 @@ export class WorkspaceStore extends Component {
             id, type: 'project', spaceId, title: title.trim() || '未命名项目',
             status: 'todo', createdAt: now, updatedAt: now,
         };
-        await this.commit(ctx => ctx.put(node));
+        await this.commit(ctx => {
+            ctx.put(node);
+            this.putPlacement(ctx, node.id, spaceId, null);
+        });
         return node;
     }
 
@@ -672,7 +942,10 @@ export class WorkspaceStore extends Component {
             id, type: 'project', spaceId, title: cleanTitle,
             status: 'todo', filePath: file.path, createdAt: now, updatedAt: now,
         };
-        await this.commit(ctx => ctx.put(node));
+        await this.commit(ctx => {
+            ctx.put(node);
+            this.putPlacement(ctx, node.id, spaceId, null);
+        });
         return node;
     }
 
@@ -715,8 +988,12 @@ export class WorkspaceStore extends Component {
 
                 if (existing) {
                     const oldLinks = ctx.links.filter(l => l.from === existing.id || l.to === existing.id);
+                    const oldPlacements = Array.from(ctx.placements.values())
+                        .filter(placement => placement.nodeId === existing.id)
+                        .map(placement => ({ ...placement }));
                     ctx.remove(existing.id);
                     ctx.put(project);
+                    for (const placement of oldPlacements) ctx.putPlacement(placement);
                     for (const link of oldLinks) {
                         if (link.from === existing.id && (link.type === 'childMoc' || link.type === 'partOf')) {
                             ctx.addLink({ from: project.id, to: link.to, type: 'serves' });
@@ -731,6 +1008,9 @@ export class WorkspaceStore extends Component {
                     converted++;
                 } else {
                     ctx.put(project);
+                }
+                if (!Array.from(ctx.placements.values()).some(placement => placement.nodeId === project.id && placement.spaceId === spaceId)) {
+                    this.putPlacement(ctx, project.id, spaceId, null);
                 }
                 projects.push(project);
             }
@@ -840,11 +1120,35 @@ export class WorkspaceStore extends Component {
 export class WorkspaceMutation {
     constructor(
         private nodes: Map<string, WorkspaceNode>,
+        public placements: Map<string, WorkspacePlacement>,
         public links: WSLink[],
+        public bridges: MocWorkspaceBridge[],
     ) {}
 
     put(node: WorkspaceNode): void {
         this.nodes.set(node.id, node);
+    }
+
+    putPlacement(placement: WorkspacePlacement): void {
+        const duplicate = Array.from(this.placements.values())
+            .find(p => p.nodeId === placement.nodeId && p.spaceId === placement.spaceId && p.id !== placement.id);
+        if (duplicate) return;
+        this.placements.set(placement.id, placement);
+    }
+
+    updatePlacement(id: string, fn: (placement: WorkspacePlacement) => void): void {
+        const placement = this.placements.get(id);
+        if (placement) fn(placement);
+    }
+
+    removePlacement(id: string): void {
+        this.placements.delete(id);
+        for (const placement of this.placements.values()) {
+            if (placement.parentPlacementId === id) placement.parentPlacementId = null;
+        }
+        this.bridges = this.bridges.map(bridge => bridge.placementId === id
+            ? { ...bridge, placementId: undefined }
+            : bridge);
     }
 
     update(id: string, fn: (n: WorkspaceNode) => void): void {
@@ -863,7 +1167,11 @@ export class WorkspaceMutation {
 
     remove(id: string): void {
         this.nodes.delete(id);
+        for (const placement of Array.from(this.placements.values())) {
+            if (placement.nodeId === id) this.removePlacement(placement.id);
+        }
         this.links = this.links.filter(l => l.from !== id && l.to !== id);
+        this.bridges = this.bridges.filter(bridge => bridge.workspaceNodeId !== id);
     }
 
     addLink(link: WSLink): void {
@@ -873,6 +1181,18 @@ export class WorkspaceMutation {
 
     removeLink(from: string, to: string, type?: string): void {
         this.links = this.links.filter(l => !(l.from === from && l.to === to && (!type || l.type === type)));
+    }
+
+    addBridge(bridge: MocWorkspaceBridge): void {
+        const duplicate = this.bridges.some(existing => existing.mocPath === bridge.mocPath
+            && existing.mocNodeId === bridge.mocNodeId
+            && existing.workspaceNodeId === bridge.workspaceNodeId
+            && existing.role === bridge.role);
+        if (!duplicate) this.bridges.push(bridge);
+    }
+
+    removeBridge(id: string): void {
+        this.bridges = this.bridges.filter(bridge => bridge.id !== id);
     }
 }
 

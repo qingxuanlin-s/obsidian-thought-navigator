@@ -30,6 +30,7 @@ interface ScoredEntry {
 interface GlobalSearchModalDeps {
     reverseIndex: MOCReverseIndex | null;
     workspaceStore: WorkspaceStore | null;
+    taskStore?: ProjectTaskStore;
     navigateToMOCNode: (mocFilePath: string, nodeId: string) => Promise<void>;
     openWorkspaceTarget: (target: OpenTarget) => Promise<void> | void;
     openTask: (filePath: string, taskRaw: string) => Promise<void>;
@@ -84,6 +85,7 @@ function taskLineIndex(content: string, raw: string): number {
 
 export class GlobalSearchModal extends SuggestModal<ScoredEntry> {
     private readonly taskStore: ProjectTaskStore;
+    private taskStoreUnsubscribe: (() => void) | null = null;
     private readonly deps: GlobalSearchModalDeps;
     private scoped: boolean;
     private cachedEntries: GlobalSearchEntry[] | null = null;
@@ -93,11 +95,11 @@ export class GlobalSearchModal extends SuggestModal<ScoredEntry> {
         super(app);
         this.deps = deps;
         this.scoped = Boolean(deps.initialScoped && deps.currentMoc);
-        this.taskStore = new ProjectTaskStore(app);
-        this.taskStore.onChange = () => {
+        this.taskStore = deps.taskStore ?? new ProjectTaskStore(app);
+        this.taskStoreUnsubscribe = this.taskStore.onChange(() => {
             this.cachedEntries = null; // 任务异步加载完成后失效缓存
             this.inputEl.trigger("input");
-        };
+        });
         this.applyPlaceholder();
         this.limit = 50;
     }
@@ -109,7 +111,8 @@ export class GlobalSearchModal extends SuggestModal<ScoredEntry> {
 
     onClose(): void {
         super.onClose();
-        this.taskStore.dispose();
+        this.taskStoreUnsubscribe?.();
+        this.taskStoreUnsubscribe = null;
     }
 
     /** 当前生效的作用域 MOC（null = 全局） */

@@ -25,6 +25,8 @@ export class ZKWorkspaceView extends ItemView {
         this.panel = new WorkspacePanel(this.contentEl, {
             app: this.app,
             store: this.plugin.workspaceStore!,
+            session: this.plugin.workspaceSession,
+            taskStore: this.plugin.workspaceTaskStore!,
             owner: this,
             projectFolderPath: this.plugin.settings.projectFolderPath,
             taskPrefix: this.plugin.settings.wsTaskPrefix,

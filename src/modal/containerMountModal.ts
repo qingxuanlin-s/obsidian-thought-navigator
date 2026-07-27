@@ -5,6 +5,9 @@ import { t } from "src/lang/helper";
 
 interface PickItem {
     node: WorkspaceNode;
+    spaceId: string;
+    placementId?: string;
+    path: string;
     mounted: boolean;
 }
 
@@ -29,20 +32,35 @@ export class ContainerMountModal extends SuggestModal<PickItem> {
         const containers = this.store.getContainers();
         if (containers.length === 0) return [];
 
-        const items: PickItem[] = containers.map(n => ({
-            node: n,
-            mounted: this.store.isFileMountedIn(this.filePath, n.id),
-        }));
+        const hosted = this.store.locationsHostingFile(this.filePath);
+        const items: PickItem[] = containers.flatMap((node): PickItem[] => {
+            if (node.type === 'space') {
+                return [{
+                    node,
+                    spaceId: node.id,
+                    path: this.store.displayPath(node.id),
+                    mounted: hosted.some(location => location.container.id === node.id
+                        && location.placement.parentPlacementId === null),
+                }];
+            }
+            return this.store.placementsOfNode(node.id).map(placement => ({
+                node,
+                spaceId: placement.spaceId,
+                placementId: placement.id,
+                path: this.store.displayPath(node.id, placement.spaceId),
+                mounted: hosted.some(location => location.container.id === node.id
+                    && location.placement.spaceId === placement.spaceId),
+            }));
+        });
 
         const filtered = q
-            ? items.filter(it => this.store.displayPath(it.node.id).toLowerCase().includes(q))
+            ? items.filter(it => it.path.toLowerCase().includes(q))
             : items;
 
         // 已挂载排前面,再按完整路径排序
         filtered.sort((a, b) => {
             if (a.mounted !== b.mounted) return a.mounted ? -1 : 1;
-            return this.store.displayPath(a.node.id)
-                .localeCompare(this.store.displayPath(b.node.id), 'zh');
+            return a.path.localeCompare(b.path, 'zh');
         });
 
         return filtered;
@@ -61,7 +79,7 @@ export class ContainerMountModal extends SuggestModal<PickItem> {
 
         const path = el.createSpan();
         path.setCssStyles({ flex: '1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
-        path.setText(this.store.displayPath(item.node.id));
+        path.setText(item.path);
 
         if (item.mounted) {
             const check = el.createSpan();
@@ -73,10 +91,10 @@ export class ContainerMountModal extends SuggestModal<PickItem> {
     async onChooseSuggestion(item: PickItem): Promise<void> {
         try {
             if (item.mounted) {
-                await this.store.unmountFileFromContainer(this.filePath, item.node.id);
+                await this.store.unmountFileFromContainer(this.filePath, item.node.id, item.spaceId);
                 new Notice(t("Unmounted from folder").replace("{name}", item.node.title));
             } else {
-                await this.store.mountFilesToContainer(item.node.id, [this.filePath]);
+                await this.store.mountFilesToContainer(item.node.id, [this.filePath], { spaceId: item.spaceId });
                 new Notice(t("Mounted to folder").replace("{name}", item.node.title));
             }
             this.app.workspace.trigger("zk-navigation:refresh-index-graph");

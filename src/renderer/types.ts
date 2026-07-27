@@ -106,6 +106,8 @@ export interface RenderOptions {
     smartConnection?: boolean;
     readOnly?: boolean;
     showMinimap?: boolean;
+    // 视口事件所属的业务视图标识；防抖回调需要保留触发时的归属。
+    viewStatePath?: string;
     exportMode?: boolean;  // 纯导出模式：跳过所有 DOM 事件绑定和预览渲染，防止触发 MutationObserver 副作用
     mocPreviewExporter?: (mocFile: TFile) => Promise<TFile | null>;
     initialCollapsedNodeIds?: string[];

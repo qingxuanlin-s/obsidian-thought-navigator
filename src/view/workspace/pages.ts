@@ -110,10 +110,10 @@ function renderProjectRefs(body: HTMLElement, ctx: RenderCtx, p: WSProjectNode):
 }
 
 /** 项目页:可点状态机 + 进度 + next action(markdown `- [ ]`) */
-export function renderProjectPage(container: HTMLElement, ctx: RenderCtx, p: WSProjectNode): void {
+export function renderProjectPage(container: HTMLElement, ctx: RenderCtx, p: WSProjectNode, placementId?: string): void {
     const ck = container.createDiv({ cls: 'ck' });
     const h = ck.createDiv({ cls: 'ck-hero' });
-    renderCrumb(h, ctx, p);
+    renderCrumb(h, ctx, p, placementId);
     const titleRow = h.createDiv({ cls: 'ck-titlerow' });
     const bigic = titleRow.createDiv({ cls: 'ck-bigic space' });
     glyph(bigic, 'project', STATUS_COLOR[p.status]);
@@ -172,7 +172,7 @@ export function renderProjectPage(container: HTMLElement, ctx: RenderCtx, p: WSP
             const chip = chips.createSpan({ cls: 'dchip' });
             chip.createSpan({ cls: 'a', text: '◎' });
             chip.appendText(m.title);
-            chip.onclick = () => ctx.open({ kind: 'moc', id: m.id });
+            chip.onclick = () => ctx.open(ctx.store.targetFor(m));
         });
     }
 }
@@ -287,7 +287,7 @@ function openTaskModal(ctx: RenderCtx, p: WSProjectNode, file: TFile | null,
                     parsed.start = r.start || undefined;
                     parsed.due = r.due || undefined;
                     const newText = buildTaskText(parsed);
-                    await writeTasks(ctx, f, c => setTaskText(c, opts.task!.raw, newText));
+                    await writeTasks(ctx, f, c => setTaskText(c, opts.task!, newText));
                 } else {
                     const suffix = taskMetaSuffix({ priority: r.priority, created: nowLocal(), start: r.start, due: r.due });
                     const prefix = ctx.taskPrefixAuto ? ctx.taskPrefix : '';
@@ -583,7 +583,7 @@ function renderTaskRow(wrap: HTMLElement, ctx: RenderCtx, p: WSProjectNode, file
     box.checked = tk.checked;
     box.onclick = async (e) => {
         e.stopPropagation();
-        await writeTasks(ctx, file, c => toggleTask(c, tk.raw, todayLocal()));
+        await writeTasks(ctx, file, c => toggleTask(c, tk, todayLocal()));
     };
 
     const main = row.createDiv({ cls: 'amain' });
@@ -609,7 +609,7 @@ function renderTaskRow(wrap: HTMLElement, ctx: RenderCtx, p: WSProjectNode, file
     }
 
     if (shouldShowPrefixTaskAction(ctx, tk)) {
-        renderTaskPrefixAction(ctl, ctx, tk, () => writeTasks(ctx, file, c => toggleTaskPrefix(c, tk.raw, ctx.taskPrefix)));
+        renderTaskPrefixAction(ctl, ctx, tk, () => writeTasks(ctx, file, c => toggleTaskPrefix(c, tk, ctx.taskPrefix)));
     }
 
     // 新建子任务(复用 addtask 弹框)
@@ -634,18 +634,20 @@ function renderTaskRow(wrap: HTMLElement, ctx: RenderCtx, p: WSProjectNode, file
 }
 
 /** MOC 概览页:Hero + 操作条 + 子主题 + 聚合成员;全空时给居中空态 */
-export function renderMocPage(container: HTMLElement, ctx: RenderCtx, m: WSMocNode): void {
+export function renderMocPage(container: HTMLElement, ctx: RenderCtx, m: WSMocNode, placementId?: string): void {
     const ck = container.createDiv({ cls: 'ck' });
     const h = ck.createDiv({ cls: 'ck-hero' });
-    renderCrumb(h, ctx, m);
+    const placement = placementId ? ctx.store.getPlacement(placementId) : ctx.store.placementsOfNode(m.id)[0];
+    renderCrumb(h, ctx, m, placement?.id);
     const titleRow = h.createDiv({ cls: 'ck-titlerow' });
     const bigic = titleRow.createDiv({ cls: 'ck-bigic space' });
     glyph(bigic, 'moc');
     const col = titleRow.createDiv();
     const members = ctx.store.servedBy(m.id);
-    const subMocs = ctx.store.containerChildren(m.id).filter(n => n.type === 'moc');
+    const subMocs = ctx.store.containerChildren(m.id, placement?.spaceId).filter(n => n.type === 'moc');
     const abs = m.filePath ? ctx.app.vault.getAbstractFileByPath(m.filePath) : null;
     const file: TFile | null = abs instanceof TFile ? abs : null;
+    const mocTarget = ctx.store.targetFor(m, placement);
     heroTitle(col, ctx, m.title, file);
     heroMenuBtn(titleRow, ctx, m);
 
@@ -662,14 +664,14 @@ export function renderMocPage(container: HTMLElement, ctx: RenderCtx, m: WSMocNo
     // 完全空(无子主题 + 无聚合成员)→ 居中空态,自带主行动
     if (!subMocs.length && !members.length) {
         const btns = emptyState(body, 'git-branch', t('ws moc empty title'), t('ws moc empty hint'));
-        if (file) actionBtn(btns, 'git-fork', t('ws open graph'), true, () => ctx.open({ kind: 'moc', id: m.id }));
+        if (file) actionBtn(btns, 'git-fork', t('ws open graph'), true, () => ctx.open(mocTarget));
         actionBtn(btns, 'link', t('ws assoc node'), !file, () => pickMocAssoc(ctx, m));
         return;
     }
 
     // 操作条:打开图谱 + 关联节点
     const bar = ck.createDiv({ cls: 'createbar' });
-    if (file) actionBtn(bar, 'git-fork', t('ws open graph'), true, () => ctx.open({ kind: 'moc', id: m.id }));
+    if (file) actionBtn(bar, 'git-fork', t('ws open graph'), true, () => ctx.open(mocTarget));
     actionBtn(bar, 'link', t('ws assoc node'), false, () => pickMocAssoc(ctx, m));
 
     // 子主题
@@ -678,7 +680,10 @@ export function renderMocPage(container: HTMLElement, ctx: RenderCtx, m: WSMocNo
         const grid = body.createDiv({ cls: 'notegrid' });
         subMocs.forEach(n => {
             const card = grid.createDiv({ cls: 'notecard' });
-            card.onclick = () => ctx.open(ctx.store.targetFor(n));
+            const childPlacement = placement
+                ? ctx.store.placementForNodeInSpace(n.id, placement.spaceId)
+                : undefined;
+            card.onclick = () => ctx.open(ctx.store.targetFor(n, childPlacement));
             glyph(card, n.type);
             card.createSpan({ cls: 'nn', text: n.title });
         });
@@ -701,10 +706,10 @@ export function renderMocPage(container: HTMLElement, ctx: RenderCtx, m: WSMocNo
 }
 
 /** 笔记页 */
-export function renderNotePage(container: HTMLElement, ctx: RenderCtx, n: WSNoteNode, owner: Component): void {
+export function renderNotePage(container: HTMLElement, ctx: RenderCtx, n: WSNoteNode, owner: Component, placementId?: string): void {
     const ck = container.createDiv({ cls: 'ck' });
     const h = ck.createDiv({ cls: 'ck-hero' });
-    renderCrumb(h, ctx, n);
+    renderCrumb(h, ctx, n, placementId);
     const titleRow = h.createDiv({ cls: 'ck-titlerow' });
     const bigic = titleRow.createDiv({ cls: 'ck-bigic space' });
     glyph(bigic, n.type);
@@ -722,7 +727,7 @@ export function renderNotePage(container: HTMLElement, ctx: RenderCtx, n: WSNote
             const chip = chips.createSpan({ cls: 'dchip' });
             chip.createSpan({ cls: 'a', text: '◎' });
             chip.appendText(m.title);
-            chip.onclick = () => ctx.open({ kind: 'moc', id: m.id });
+            chip.onclick = () => ctx.open(ctx.store.targetFor(m));
         });
     }
 
@@ -878,7 +883,7 @@ function renderHomeTaskActions(parent: HTMLElement, ctx: RenderCtx, item: HomeTa
 	if (shouldShowPrefixTaskAction(ctx, task)) {
 		renderTaskPrefixAction(parent, ctx, task, async () => {
 			const f = projFileFor(ctx, project); if (!f) return;
-			await writeTasks(ctx, f, c => toggleTaskPrefix(c, task.raw, ctx.taskPrefix));
+			await writeTasks(ctx, f, c => toggleTaskPrefix(c, task, ctx.taskPrefix));
 		});
 	}
 	aicon(parent, 'corner-down-right', t('ws action subtask')).onclick = (e) => {
@@ -921,7 +926,7 @@ function renderHomeTaskRow(parent: HTMLElement, ctx: RenderCtx, item: HomeTaskIt
 	box.onclick = async (e) => {
 		e.stopPropagation();
 		const f = projFileFor(ctx, item.project); if (!f) return;
-		await writeTasks(ctx, f, c => toggleTask(c, item.task.raw, today));
+		await writeTasks(ctx, f, c => toggleTask(c, item.task, today));
 	};
 	const main = row.createDiv({ cls: 'amain' });
 	renderTaskText(main.createDiv({ cls: 'atext-view' }), ctx, item.task.text);
@@ -980,7 +985,7 @@ function renderHomeTaskTable(body: HTMLElement, ctx: RenderCtx, items: HomeTaskI
 		box.onclick = async (e) => {
 			e.stopPropagation();
 			const f = projFileFor(ctx, item.project); if (!f) return;
-			await writeTasks(ctx, f, c => toggleTask(c, item.task.raw, today));
+			await writeTasks(ctx, f, c => toggleTask(c, item.task, today));
 		};
 		const projectCell = row.createEl('td', { cls: 'project' });
 		projectCell.setText(item.project.title);

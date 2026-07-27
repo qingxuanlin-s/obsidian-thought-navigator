@@ -1,5 +1,5 @@
 import { Component, MarkdownRenderer, TFile } from "obsidian";
-import { WorkspaceNode, WSProjectNode, WSMocNode, isWorkspaceNodeArchived } from "src/types/workspace";
+import { WorkspaceNode, WorkspacePlacement, WSProjectNode, WSMocNode, isWorkspaceNodeArchived } from "src/types/workspace";
 import { FilePickerModal } from "src/modal/filePickerModal";
 import { t } from "src/lang/helper";
 import { RenderCtx, TYPE_COLOR, statusLabel, STATUS_COLOR, relTime, progressFor, nextActionText, renderWorkspaceFileSummary } from "./render";
@@ -16,6 +16,7 @@ export class Deck {
     private pinned = false;
     private isOpen = false;
     private currentNode: WorkspaceNode | null = null;
+    private currentPlacement: WorkspacePlacement | null = null;
 
     constructor(parent: HTMLElement, private ctx: RenderCtx, private owner: Component) {
         this.scrim = parent.createDiv({ cls: 'scrim' });
@@ -26,8 +27,11 @@ export class Deck {
         this.foot = this.panel.createDiv({ cls: 'deck-foot' });
     }
 
-    open(node: WorkspaceNode) {
+    open(node: WorkspaceNode, placementId?: string) {
         this.currentNode = node;
+        this.currentPlacement = placementId
+            ? this.ctx.store.getPlacement(placementId) ?? null
+            : this.ctx.store.placementsOfNode(node.id)[0] ?? null;
         this.head.empty(); this.body.empty(); this.foot.empty();
 
         // head
@@ -46,11 +50,8 @@ export class Deck {
         close.onclick = () => this.close();
 
         this.head.createEl('h2', { cls: 'deck-h2', text: node.title });
-        const space = this.ctx.store.getNode(node.spaceId);
         const crumb = this.head.createDiv({ cls: 'deck-crumb' });
-        crumb.appendText(space?.title || '');
-        crumb.createSpan({ cls: 's', text: '›' });
-        crumb.appendText(node.title);
+        crumb.appendText(this.ctx.store.displayPath(node.id, this.currentPlacement?.spaceId));
 
         this.renderBody(node);
 
@@ -68,16 +69,16 @@ export class Deck {
             })(); };
         }
         const del = this.foot.createEl('button', { cls: 'mod-warning', text: t('ws delete') });
-        del.onclick = () => this.ctx.requestDelete(node);
+        del.onclick = () => this.ctx.requestDelete(node, this.currentPlacement?.spaceId, this.currentPlacement?.id);
         const filePath = (node as { filePath?: string }).filePath;
         const file = filePath ? this.ctx.app.vault.getAbstractFileByPath(filePath) : null;
         if (node.type === 'note' && file instanceof TFile) {
             const openFile = this.foot.createEl('button', { cls: 'open-map', text: t('ws open file') });
-            openFile.onclick = () => { this.ctx.open(this.ctx.store.targetFor(node)); this.close(); };
+            openFile.onclick = () => { this.ctx.open(this.ctx.store.targetFor(node, this.currentPlacement ?? undefined)); this.close(); };
         }
         if ((node.type === 'moc' || node.type === 'map') && filePath) {
             const openMap = this.foot.createEl('button', { cls: 'open-map', text: t('ws open graph') });
-            openMap.onclick = () => { this.ctx.open({ kind: 'moc', id: node.id }); this.close(); };
+            openMap.onclick = () => { this.ctx.open(this.ctx.store.targetFor(node, this.currentPlacement ?? undefined)); this.close(); };
         }
 
         this.isOpen = true;
@@ -125,7 +126,13 @@ export class Deck {
                     const chip = chips.createSpan({ cls: 'dchip' });
                     chip.createSpan({ cls: 'a', text: '◎' });
                     chip.appendText(m.title);
-                    chip.onclick = () => { this.ctx.open({ kind: 'moc', id: m.id }); this.close(); };
+                    chip.onclick = () => {
+                        const placement = this.currentPlacement
+                            ? this.ctx.store.placementForNodeInSpace(m.id, this.currentPlacement.spaceId)
+                            : undefined;
+                        this.ctx.open(this.ctx.store.targetFor(m, placement));
+                        this.close();
+                    };
                 });
             }
             return;
@@ -153,7 +160,7 @@ export class Deck {
                         chip.onclick = () => { this.ctx.open(this.ctx.store.targetFor(m)); this.close(); };
                         const x = chip.createSpan({ cls: 'dchip-x', text: '✕' });
                         x.setAttribute('title', t('ws assoc remove'));
-                        x.onclick = async (e) => { e.stopPropagation(); await this.ctx.store.removeRelation(m.id, moc.id); this.open(moc); };
+                        x.onclick = async (e) => { e.stopPropagation(); await this.ctx.store.removeRelation(m.id, moc.id); this.open(moc, this.currentPlacement?.id); };
                     });
                 } else {
                     this.body.createDiv({ cls: 'empty', text: t('ws no members') });
@@ -184,18 +191,19 @@ export class Deck {
 
     /** 多选 vault 笔记批量关联到此 MOC(就地建 note 节点 + partOf 链),完成后刷新面板 */
     private pickAssoc(moc: WSMocNode) {
-        const mounted = this.ctx.store.containerChildren(moc.id)
+        const mounted = this.ctx.store.containerChildren(moc.id, this.currentPlacement?.spaceId)
             .map(c => (c as { filePath?: string }).filePath)
             .filter((p): p is string => !!p);
         new FilePickerModal(this.ctx.app, moc.title, mounted, (paths) => { void (async () => {
-            await this.ctx.store.mountFilesToContainer(moc.id, paths);
-            this.open(moc);
+            await this.ctx.store.mountFilesToContainer(moc.id, paths, { spaceId: this.currentPlacement?.spaceId });
+            this.open(moc, this.currentPlacement?.id);
         })(); }).open();
     }
 
     close() {
         this.isOpen = false;
         this.currentNode = null;
+        this.currentPlacement = null;
         this.scrim.removeClass('show');
         this.panel.removeClass('open');
     }
@@ -208,7 +216,7 @@ export class Deck {
     /** 当前正展示的项目背书笔记被外部改动 → 重渲染 deck */
     refreshIfShowing(filePath: string): void {
         if (this.isOpen && this.currentNode && (this.currentNode as { filePath?: string }).filePath === filePath) {
-            this.open(this.currentNode);
+            this.open(this.currentNode, this.currentPlacement?.id);
         }
     }
 

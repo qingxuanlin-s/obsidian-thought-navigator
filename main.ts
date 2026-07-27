@@ -11,6 +11,8 @@ import { MOCFileMonitor } from "src/utils/mocMonitor";
 import { ensureMOCPreviewPNG } from "src/embed/mocEmbedExporter";
 import { MOCReverseIndex } from "src/utils/mocReverseIndex";
 import { WorkspaceStore } from "src/workspace/WorkspaceStore";
+import { WorkspaceSession } from "src/workspace/WorkspaceSession";
+import { ProjectTaskStore } from "src/workspace/projectTasks";
 import { ensureWorkspaceSeed } from "src/workspace/seed";
 import { ZKWorkspaceView, ZK_WORKSPACE_TYPE } from "src/view/workspaceView";
 import { ContainerMountModal } from "src/modal/containerMountModal";
@@ -53,7 +55,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export interface CreateMOCOptions {
     folderPath?: string;       // 不含文件名,'' 或省略 = vault 根
     name?: string;             // 不含后缀,省略 = 默认前缀+时间戳
-    title?: string;            // 根节点文本,省略 = t('Default node title')
+    title?: string;            // 根节点文本,省略 = 文件名
     layout?: 'free' | 'auto';  // 省略 = settings.nodeLayoutStyle
     overwrite?: boolean;       // 目标已存在时是否覆盖,默认 false
     rootId?: string;           // 指定根节点 ID(便于脚本后续 add-node);省略 = 随机
@@ -372,6 +374,8 @@ export default class ZKNavigationPlugin extends Plugin {
     api!: ZKNavigationExternalAPI;
     // typed-node 工作区数据层(workspace.json),三栏工作区视图的数据源
     workspaceStore: WorkspaceStore | null = null;
+    workspaceSession = new WorkspaceSession();
+    workspaceTaskStore: ProjectTaskStore | null = null;
     /** 旧 spaces.json 路径,仅用于工作区首启/升级时的一次性迁移读取 */
     private get spacesStorePath(): string {
         return `${this.app.vault.configDir}/plugins/${this.manifest.id}/spaces.json`;
@@ -918,6 +922,8 @@ export default class ZKNavigationPlugin extends Plugin {
         const wsStorePath = `${this.app.vault.configDir}/plugins/${this.manifest.id}/workspace.json`;
         this.workspaceStore = new WorkspaceStore(this.app, wsStorePath);
         this.addChild(this.workspaceStore);
+        this.workspaceSession.clear();
+        this.workspaceTaskStore = new ProjectTaskStore(this.app);
         // 临时工作区管理器(跨 MOC 暂存,持久化到独立的 scratchpads.json)
         this.scratchpad = new ScratchpadManager(this);
         await this.scratchpad.load();
@@ -1579,9 +1585,10 @@ export default class ZKNavigationPlugin extends Plugin {
         // 3) 已存在策略
         const existing = this.app.vault.getAbstractFileByPath(filePath);
         const rootId = opts.rootId?.trim();
+        const initialNodeTitle = opts.title?.trim() || safeName;
         const content = rootId
-            ? createMOCJsonWithInitialNode(layout, opts.title?.trim() || t('Default node title'), rootId)
-            : createMOCJsonWithInitialNode(layout, opts.title?.trim() || t('Default node title'));
+            ? createMOCJsonWithInitialNode(layout, initialNodeTitle, rootId)
+            : createMOCJsonWithInitialNode(layout, initialNodeTitle);
         if (existing) {
             if (!(existing instanceof TFile)) throw new Error(t('MOC path occupied').replace('{path}', filePath));
             if (!opts.overwrite) throw new Error(t('MOC file already exists').replace('{path}', filePath));

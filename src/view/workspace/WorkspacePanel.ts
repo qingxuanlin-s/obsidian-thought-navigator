@@ -1,6 +1,7 @@
 import { App, Component, EventRef, Modal, TFile, setIcon, setTooltip } from "obsidian";
 import { t } from "src/lang/helper";
 import { WorkspaceStore } from "src/workspace/WorkspaceStore";
+import { WorkspaceSession } from "src/workspace/WorkspaceSession";
 import { ProjectTaskStore } from "src/workspace/projectTasks";
 import { OpenTarget, WorkspaceNode, WSMocNode, WSMapNode, FrameworkId } from "src/types/workspace";
 import { fwLabel } from "./render";
@@ -18,6 +19,8 @@ const LS_RAIL = "zkw.rail.collapsed";
 export interface WorkspacePanelDeps {
     app: App;
     store: WorkspaceStore;
+    session: WorkspaceSession;
+    taskStore: ProjectTaskStore;
     /** 宿主组件,用于 MarkdownRenderer 生命周期 */
     owner: Component;
     /** 项目背书笔记(next action 任务)所在文件夹 */
@@ -61,6 +64,7 @@ export class WorkspacePanel {
     private tree!: SpacesTree;
     private deck!: Deck;
     private current: OpenTarget = { kind: 'home' };
+    private unlinkedGraphContext: { mocPath: string; mocNodeId: string | null } | null = null;
     private navHistory: OpenTarget[] = [];
     private navIndex = -1;
     private navApplying = false;
@@ -68,6 +72,7 @@ export class WorkspacePanel {
     private navForwardEl: HTMLElement | null = null;
     private unsub: (() => void) | null = null;
     private taskStore: ProjectTaskStore;
+    private taskStoreUnsubscribe: (() => void) | null = null;
     private modifyRef: EventRef | null = null;
     private taskSettingsListener: EventListener | null = null;
     private readonly MAX_NAV_HISTORY = 50;
@@ -77,8 +82,8 @@ export class WorkspacePanel {
         this.root = parent.createDiv({ cls: 'zkw' });
         try { this.railCollapsed = deps.app.loadLocalStorage(LS_RAIL) === '1'; } catch {}
 
-        this.taskStore = new ProjectTaskStore(deps.app);
-        this.taskStore.onChange = () => this.refresh();
+        this.taskStore = deps.taskStore;
+        this.taskStoreUnsubscribe = this.taskStore.onChange(() => this.refresh());
 
         this.ctx = {
             app: deps.app,
@@ -98,8 +103,8 @@ export class WorkspacePanel {
                 if (deps.onOpenLink) deps.onOpenLink(linkText, sourcePath, forceTab);
                 else void deps.app.workspace.openLinkText(linkText, sourcePath, forceTab);
             },
-            openDeck: (n) => this.deck?.open(n),
-            requestDelete: (n) => this.requestDelete(n),
+            openDeck: (n, placementId) => this.deck?.open(n, placementId),
+            requestDelete: (n, spaceId, placementId) => this.requestDelete(n, spaceId, placementId),
             refresh: () => this.refresh(),
         };
         const taskSettingsListener: EventListener = (event: Event) => {
@@ -174,7 +179,8 @@ export class WorkspacePanel {
             window.removeEventListener('zkw-workspace-task-settings-change', this.taskSettingsListener);
             this.taskSettingsListener = null;
         }
-        this.taskStore.dispose();
+        this.taskStoreUnsubscribe?.();
+        this.taskStoreUnsubscribe = null;
         this.root.remove();
     }
 
@@ -182,6 +188,11 @@ export class WorkspacePanel {
 
     /** 供宿主在切到工作区模式时刷新一次 */
     refresh() { if (this.tree) { this.renderCenter(); this.tree.render(); } }
+
+    async refreshFromDisk(): Promise<void> {
+        await this.deps.store.reloadIfChanged();
+        this.refresh();
+    }
 
     updateTaskSettings(settings: Pick<WorkspacePanelDeps, 'projectFolderPath' | 'taskPrefix' | 'taskPrefixAuto' | 'taskFileTag'>): void {
         this.deps = { ...this.deps, ...settings };
@@ -253,37 +264,42 @@ export class WorkspacePanel {
         meta.setText(t('ws spaces count').replace('{n}', String(this.deps.store.getSpaces().length)));
     }
 
-    /** 删除条目；共享节点在当前 Space 中仅解除绑定，避免删除另一 Space 的同一节点及子树。 */
-    private requestDelete(node: WorkspaceNode, requestedSpaceId?: string) {
-        const spaceId = requestedSpaceId ?? (this.current.kind === 'space' ? this.current.id : node.spaceId);
-        const spaces = node.type === 'space' ? [] : this.deps.store.getNodeSpaceIds(node.id);
-        if (node.type !== 'space' && spaces.length > 1 && spaces.includes(spaceId)) {
-            const spaceTitle = this.deps.store.getNode(spaceId)?.title ?? '';
-            const msg = t('ws delete shared node confirm')
-                .replace('{title}', node.title)
-                .replace('{space}', spaceTitle);
-            confirmModal(this.deps.app, t('ws delete'), msg, () => { void (async () => {
-                await this.deps.store.unmountNodeFromSpace(node.id, spaceId);
-                if (this.current.kind !== 'home' && 'id' in this.current && this.current.id === node.id) {
-                    this.navigateInline({ kind: 'space', id: spaceId });
-                }
-            })(); });
-            return;
-        }
-        const ids = this.deps.store.collectSubtreeIds(node.id);
-        const deleted = new Set(ids);
-        const descendants = ids.length - 1;
+    /** 删除只作用于明确 Placement 子树；节点在其他空间的位置和原始文件始终保留。 */
+    private requestDelete(node: WorkspaceNode, requestedSpaceId?: string, requestedPlacementId?: string) {
+        const targetPlacementId = node.type === 'space' ? null
+            : requestedPlacementId
+                ?? (this.current.kind !== 'home' && 'placementId' in this.current ? this.current.placementId : undefined)
+                ?? (requestedSpaceId ? this.deps.store.placementForNodeInSpace(node.id, requestedSpaceId)?.id : undefined)
+                ?? this.deps.store.placementsOfNode(node.id)[0]?.id;
+        const placementIds = node.type === 'space'
+            ? this.deps.store.getAllPlacements().filter(p => p.spaceId === node.id).map(p => p.id)
+            : targetPlacementId ? this.deps.store.collectPlacementSubtreeIds(targetPlacementId) : [];
+        const affectedNodeIds = new Set(placementIds
+            .map(id => this.deps.store.getPlacement(id)?.nodeId)
+            .filter((id): id is string => !!id));
+        const descendants = Math.max(0, placementIds.length - (node.type === 'space' ? 0 : 1));
+        const shared = node.type !== 'space' && this.deps.store.getNodeSpaceIds(node.id).length > 1;
+        const spaceId = requestedSpaceId
+            ?? (targetPlacementId ? this.deps.store.getPlacement(targetPlacementId)?.spaceId : undefined)
+            ?? (this.current.kind === 'space' ? this.current.id : undefined);
+        const spaceTitle = spaceId ? this.deps.store.getNode(spaceId)?.title ?? '' : '';
         const msg = node.type === 'space'
-            ? t('ws delete space confirm').replace('{title}', node.title).replace('{n}', String(descendants))
-            : descendants > 0
-                ? t('ws delete node confirm children').replace('{title}', node.title).replace('{n}', String(descendants))
-                : t('ws delete node confirm').replace('{title}', node.title);
+            ? t('ws delete space confirm').replace('{title}', node.title).replace('{n}', String(placementIds.length))
+            : shared
+                ? t('ws delete shared node confirm').replace('{title}', node.title).replace('{space}', spaceTitle)
+                : descendants > 0
+                    ? t('ws delete node confirm children').replace('{title}', node.title).replace('{n}', String(descendants))
+                    : t('ws delete node confirm').replace('{title}', node.title);
         confirmModal(this.deps.app, t('ws delete'), msg, () => { void (async () => {
-            await this.deps.store.deleteSubtree(node.id);
-            this.deck?.closeIfShowing(deleted);
+            if (node.type === 'space') await this.deps.store.deleteSubtree(node.id);
+            else if (targetPlacementId) await this.deps.store.deletePlacementSubtree(targetPlacementId);
+            this.deck?.closeIfShowing(affectedNodeIds);
             const cur = this.current;
-            // store.onChange 已触发重渲;当前页指向被删节点时改导航到首页
-            if (cur.kind !== 'home' && 'id' in cur && deleted.has(cur.id)) this.navigateInline({ kind: 'home' });
+            if (cur.kind !== 'home' && 'id' in cur && cur.id === node.id) {
+                this.navigateInline(spaceId && this.deps.store.getNode(spaceId)
+                    ? { kind: 'space', id: spaceId }
+                    : { kind: 'home' });
+            }
         })(); });
     }
 
@@ -301,8 +317,8 @@ export class WorkspacePanel {
 
         // MOC / map 带图谱 → 优先交给宿主切图谱模式；独立工作区则按文件原生打开。
         if (target.kind === 'moc' && node && (node.type === 'moc' || node.type === 'map') && node.filePath) {
-            if (this.deps.onOpenMoc?.(node)) return;
             this.navigateInline(target);
+            if (this.deps.onOpenMoc?.(node)) return;
             const file = this.deps.app.vault.getAbstractFileByPath(node.filePath);
             if (file instanceof TFile) this.ctx.openFile(file, forceTab);
             return;
@@ -323,6 +339,9 @@ export class WorkspacePanel {
     private navigateInline(target: OpenTarget) {
         if (!this.tree) return;
         this.current = target;
+        this.unlinkedGraphContext = null;
+        const targetNode = target.kind === 'home' ? null : this.deps.store.getNode(target.id);
+        this.deps.session.selectWorkspaceTarget(target, targetNode?.title);
         if (target.kind !== 'home') { try { this.deps.app.saveLocalStorage(LS_LAST, JSON.stringify(target)); } catch {} }
         try { this.deps.app.saveLocalStorage(LS_OPEN, JSON.stringify(target)); } catch {}
         this.tree.setCurrent(target);
@@ -342,11 +361,63 @@ export class WorkspacePanel {
     /** 外部入口(全局搜索等)打开 workspace 目标,保留 MOC/map 交给宿主切图谱的语义。 */
     openTarget(target: OpenTarget): void { this.navigate(target); }
 
+    showPlacement(placementId: string): boolean {
+        const placement = this.deps.store.getPlacement(placementId);
+        const node = placement ? this.deps.store.getNode(placement.nodeId) : null;
+        if (!placement || !node) return false;
+        this.navigateInline(this.deps.store.targetFor(node, placement));
+        return true;
+    }
+
+    /** 图谱切入知识工作台时，优先 Bridge，其次当前 MOC 文件位置，最后显示未关联空态。 */
+    showGraphContext(mocPath: string, mocNodeId: string | null): boolean {
+        const state = this.deps.session.getState();
+        const bridges = mocNodeId ? this.deps.store.bridgesForGraphNode(mocPath, mocNodeId) : [];
+        const bridge = bridges.find(item => item.placementId
+            && this.deps.store.getPlacement(item.placementId)?.spaceId === state.activeSpaceId)
+            ?? bridges.find(item => item.placementId && !!this.deps.store.getPlacement(item.placementId))
+            ?? bridges[0];
+        if (bridge) {
+            const preferred = bridge.placementId ? this.deps.store.getPlacement(bridge.placementId) : undefined;
+            const placement = preferred
+                ?? (state.activeSpaceId
+                    ? this.deps.store.placementForNodeInSpace(bridge.workspaceNodeId, state.activeSpaceId)
+                    : undefined)
+                ?? this.deps.store.placementsOfNode(bridge.workspaceNodeId)[0];
+            const node = this.deps.store.getNode(bridge.workspaceNodeId);
+            if (node && placement) {
+                this.navigateInline(this.deps.store.targetFor(node, placement));
+                return true;
+            }
+        }
+
+        const mocNode = this.deps.store.getNodeByPath(mocPath);
+        if (mocNode) {
+            const placements = this.deps.store.placementsOfNode(mocNode.id);
+            const placement = placements.find(item => item.spaceId === state.activeSpaceId) ?? placements[0];
+            if (placement) {
+                this.navigateInline(this.deps.store.targetFor(mocNode, placement));
+                return true;
+            }
+        }
+
+        this.current = { kind: 'home' };
+        this.unlinkedGraphContext = { mocPath, mocNodeId };
+        this.tree.setCurrent(null);
+        this.renderCenter();
+        this.tree.render();
+        this.updateNavButtons();
+        return false;
+    }
+
     private sameTarget(a: OpenTarget | null | undefined, b: OpenTarget): boolean {
         if (!a || a.kind !== b.kind) return false;
         if (a.kind === 'home' || b.kind === 'home') return true;
         if (a.id !== b.id) return false;
-        return (a.kind !== 'space' || b.kind !== 'space' || a.lens === b.lens);
+        if (a.kind === 'space' && b.kind === 'space') return a.lens === b.lens;
+        const ap = 'placementId' in a ? a.placementId : undefined;
+        const bp = 'placementId' in b ? b.placementId : undefined;
+        return ap === bp;
     }
 
     private recordNavState(target: OpenTarget) {
@@ -433,15 +504,47 @@ export class WorkspacePanel {
 
     private renderCenter() {
         this.centerEl.empty();
-        const t = this.current;
-        if (t.kind === 'home') { renderHome(this.centerEl, this.ctx, this.lastTargetNode()); return; }
-        const node = this.deps.store.getNode(t.id);
-        if (!node) { this.centerEl.createDiv({ cls: 'ck' }).createDiv({ cls: 'ck-body' }).createDiv({ cls: 'empty', text: '节点已不存在' }); return; }
-        switch (t.kind) {
-            case 'space': if (node.type === 'space') renderCockpit(this.centerEl, this.ctx, node, t.lens); break;
-            case 'moc': if (node.type === 'moc') renderMocPage(this.centerEl, this.ctx, node); break;
-            case 'project': if (node.type === 'project') renderProjectPage(this.centerEl, this.ctx, node); break;
-            case 'note': if (node.type === 'note') renderNotePage(this.centerEl, this.ctx, node, this.deps.owner); break;
+        const target = this.current;
+        if (this.unlinkedGraphContext) {
+            const body = this.centerEl.createDiv({ cls: 'ck' }).createDiv({ cls: 'ck-body' });
+            const empty = body.createDiv({ cls: 'ck-empty' });
+            empty.createDiv({ cls: 'et', text: t('ws context unlinked title') });
+            empty.createDiv({ cls: 'eh', text: t('ws context unlinked hint')
+                .replace('{name}', this.unlinkedGraphContext.mocPath.split('/').pop() ?? this.unlinkedGraphContext.mocPath) });
+            return;
+        }
+        if (target.kind === 'home') { renderHome(this.centerEl, this.ctx, this.lastTargetNode()); return; }
+        const node = this.deps.store.getNode(target.id);
+        if (!node) {
+            this.centerEl.createDiv({ cls: 'ck' }).createDiv({ cls: 'ck-body' })
+                .createDiv({ cls: 'empty', text: t('ws no detail') });
+            return;
+        }
+        switch (target.kind) {
+            case 'space':
+                if (node.type === 'space') renderCockpit(this.centerEl, this.ctx, node, target.lens);
+                break;
+            case 'moc':
+                if (node.type === 'moc') {
+                    renderMocPage(this.centerEl, this.ctx, node, target.placementId);
+                } else if (node.type === 'map') {
+                    const body = this.centerEl.createDiv({ cls: 'ck' }).createDiv({ cls: 'ck-body' });
+                    const empty = body.createDiv({ cls: 'ck-empty' });
+                    empty.createDiv({ cls: 'et', text: node.title });
+                    empty.createDiv({ cls: 'eh', text: node.filePath ? t('ws native view hint') : t('ws no detail') });
+                    if (node.filePath) {
+                        const buttons = empty.createDiv({ cls: 'ebtns' });
+                        const open = buttons.createEl('button', { cls: 'createbtn cta', text: t('ws open graph') });
+                        open.onclick = () => this.navigate(target);
+                    }
+                }
+                break;
+            case 'project':
+                if (node.type === 'project') renderProjectPage(this.centerEl, this.ctx, node, target.placementId);
+                break;
+            case 'note':
+                if (node.type === 'note') renderNotePage(this.centerEl, this.ctx, node, this.deps.owner, target.placementId);
+                break;
         }
     }
 }

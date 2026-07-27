@@ -19,6 +19,10 @@ export interface MdTask {
     checked: boolean;
     text: string;       // checkbox 之后的剩余原文(可能含 📅/⏫/#tag/[[link]] 及前缀字符)
     raw: string;        // 整行原文(用于精确回写)
+    /** 解析时的行号和同内容出现序号；写入前可重新定位，避免重复任务误命中首行。 */
+    line: number;
+    occurrence: number;
+    fingerprint: string;
     indent: string;     // 行首缩进空白(用于派生子任务/备注缩进)
     depth: number;      // 嵌套层级(0 为顶层),按缩进栈推导
     notes?: MdTaskNote[]; // 任务备注列表
@@ -84,20 +88,33 @@ function splitNoteCreated(text: string): { note: string; createdAt?: string } {
     return { note: text.slice(0, m.index).trimEnd(), createdAt: m[1].trim() };
 }
 
+function taskFingerprint(line: string): string {
+    return line.replace(/\s+/g, ' ').trim();
+}
+
 export function parseTaskLines(content: string): MdTask[] {
     const out: MdTask[] = [];
+    const occurrences = new Map<string, number>();
     const stack: { w: number; task: MdTask }[] = [];
     let lastTask: MdTask | null = null;
-    for (const line of content.split(/\r?\n/)) {
+    const lines = content.split(/\r?\n/);
+    for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
+        const line = lines[lineNumber];
         const tm = TASK_RE.exec(line);
         if (tm) {
             const indent = leadingWs(line);
             const w = indentWidth(line);
             while (stack.length && stack[stack.length - 1].w >= w) stack.pop();
+            const fingerprint = taskFingerprint(line);
+            const occurrence = occurrences.get(fingerprint) ?? 0;
+            occurrences.set(fingerprint, occurrence + 1);
             const task: MdTask = {
                 checked: tm[2] !== ' ',
                 text: tm[3],
                 raw: line,
+                line: lineNumber,
+                occurrence,
+                fingerprint,
                 indent,
                 depth: stack.length,
             };
@@ -136,9 +153,19 @@ function retextLine(line: string, newText: string): string {
     return `${m[1]}[${m[2]}] ${newText}`;
 }
 
-/** 找到 task.raw 所在行号(整行精确匹配),失败返回 -1 */
-function lineIndexOf(lines: string[], raw: string): number {
-    return lines.indexOf(raw);
+/** 根据解析时行号 + 指纹 + 出现序号定位任务；内容移动时仍定位同一重复项。 */
+export function taskLineIndex(lines: string[], task: MdTask): number {
+    if (lines[task.line] === task.raw) return task.line;
+    const matches = lines
+        .map((line, index) => ({ line, index }))
+        .filter(item => taskFingerprint(item.line) === task.fingerprint);
+    if (matches.length === 0) return -1;
+    return matches[task.occurrence]?.index ?? -1;
+}
+
+/** 找到 task.raw 所在行号(优先稳定定位,兼容旧构造的 task)。 */
+function lineIndexOf(lines: string[], raw: string, task?: MdTask): number {
+    return task ? taskLineIndex(lines, task) : lines.indexOf(raw);
 }
 
 /** 自 task 行后扫描其整棵子树的结束行号(遇空行或缩进回退即止) */
@@ -161,8 +188,17 @@ const DONE_RE = /\s*✅\s*\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?/g;
  * 翻转勾选态,并联动完成日期(Tasks `✅ YYYY-MM-DD`):
  * 勾选 → 追加 `✅ doneDate`;取消 → 移除既有 ✅ 日期。doneDate 缺省则只翻框。
  */
-export function toggleTask(content: string, raw: string, doneDate?: string): string {
-    return content.replace(raw, () => {
+function replaceTaskLine(content: string, task: MdTask, transform: (line: string) => string): string {
+    const eol = eolOf(content);
+    const lines = content.split(/\r?\n/);
+    const index = taskLineIndex(lines, task);
+    if (index < 0) return content;
+    lines[index] = transform(lines[index]);
+    return lines.join(eol);
+}
+
+export function toggleTask(content: string, task: MdTask, doneDate?: string): string {
+    return replaceTaskLine(content, task, raw => {
         const m = TASK_RE.exec(raw);
         if (!m) return raw;
         const willCheck = m[2] === ' ';
@@ -172,8 +208,8 @@ export function toggleTask(content: string, raw: string, doneDate?: string): str
     });
 }
 
-export function setTaskText(content: string, raw: string, newText: string): string {
-    return content.replace(raw, () => retextLine(raw, newText));
+export function setTaskText(content: string, task: MdTask, newText: string): string {
+    return replaceTaskLine(content, task, raw => retextLine(raw, newText));
 }
 
 export function taskHasPrefix(text: string, prefix: string): boolean {
@@ -182,10 +218,10 @@ export function taskHasPrefix(text: string, prefix: string): boolean {
 }
 
 /** 切换任务正文开头的当前前缀:已有则移除,没有则添加 */
-export function toggleTaskPrefix(content: string, raw: string, prefix: string): string {
+export function toggleTaskPrefix(content: string, task: MdTask, prefix: string): string {
     const p = prefix.trim();
     if (!p) return content;
-    return content.replace(raw, () => {
+    return replaceTaskLine(content, task, raw => {
         const m = TASK_RE.exec(raw);
         if (!m) return raw;
         const text = m[3];
@@ -202,7 +238,7 @@ export function toggleTaskPrefix(content: string, raw: string, prefix: string): 
 export function removeTask(content: string, task: MdTask): string {
     const eol = eolOf(content);
     const lines = content.split(/\r?\n/);
-    const idx = lineIndexOf(lines, task.raw);
+    const idx = taskLineIndex(lines, task);
     if (idx < 0) return content;
     const end = subtreeEnd(lines, idx, indentWidth(task.raw));
     lines.splice(idx, end - idx);
@@ -326,15 +362,15 @@ function reindentBlock(block: string[], delta: number): string[] {
  * (即移动后成为 target 的同级)。拖入自身子树时安全放弃(target 落在被移动块内 → 找不到锚点)。
  */
 export function moveTask(content: string, task: MdTask, target: MdTask, pos: 'before' | 'after'): string {
-    if (task.raw === target.raw) return content;
+    if (task.raw === target.raw && task.occurrence === target.occurrence) return content;
     const eol = eolOf(content);
     const lines = content.split(/\r?\n/);
-    const from = lineIndexOf(lines, task.raw);
+    const from = taskLineIndex(lines, task);
     if (from < 0) return content;
     const fromEnd = subtreeEnd(lines, from, indentWidth(task.raw));
     const block = reindentBlock(lines.slice(from, fromEnd), indentWidth(target.raw) - indentWidth(task.raw));
     lines.splice(from, fromEnd - from);
-    let ti = lineIndexOf(lines, target.raw);
+    let ti = taskLineIndex(lines, target);
     if (ti < 0) return content; // target 在被移动子树内,放弃
     if (pos === 'after') ti = subtreeEnd(lines, ti, indentWidth(target.raw));
     lines.splice(ti, 0, ...block);
@@ -346,16 +382,16 @@ export function moveTask(content: string, task: MdTask, target: MdTask, pos: 'be
  * 若 target 位于 task 自身子树内,删除移动块后将找不到锚点,安全放弃。
  */
 export function moveTaskInto(content: string, task: MdTask, target: MdTask): string {
-    if (task.raw === target.raw) return content;
+    if (task.raw === target.raw && task.occurrence === target.occurrence) return content;
     const eol = eolOf(content);
     const lines = content.split(/\r?\n/);
-    const from = lineIndexOf(lines, task.raw);
+    const from = taskLineIndex(lines, task);
     if (from < 0) return content;
     const fromEnd = subtreeEnd(lines, from, indentWidth(task.raw));
     const targetChildIndent = indentWidth(target.raw) + indentWidth(INDENT_UNIT);
     const block = reindentBlock(lines.slice(from, fromEnd), targetChildIndent - indentWidth(task.raw));
     lines.splice(from, fromEnd - from);
-    const ti = lineIndexOf(lines, target.raw);
+    const ti = taskLineIndex(lines, target);
     if (ti < 0) return content;
     const insertAt = subtreeEnd(lines, ti, indentWidth(target.raw));
     lines.splice(insertAt, 0, ...block);
@@ -382,7 +418,7 @@ export function addTaskNote(content: string, task: MdTask, note: string): string
     const eol = eolOf(content);
     const lines = content.split(/\r?\n/);
     const noteLine = taskNoteLine(task, note, nowLocalDateTime());
-    const idx = lineIndexOf(lines, task.raw);
+    const idx = taskLineIndex(lines, task);
     if (idx < 0) return content;
     const firstNoteIdx = firstTaskNoteIndex(lines, task);
     lines.splice(firstNoteIdx >= 0 ? firstNoteIdx : idx + 1, 0, noteLine);
@@ -449,7 +485,7 @@ export function setTaskRefs(content: string, task: MdTask, refs: string[]): stri
         const ri = lineIndexOf(lines, task.refsRaw);
         if (ri >= 0) { lines[ri] = line; return lines.join(eol); }
     }
-    const idx = lineIndexOf(lines, task.raw);
+    const idx = taskLineIndex(lines, task);
     if (idx < 0) return content;
     const lastNoteIdx = lastTaskNoteIndex(lines, task);
     lines.splice(Math.max(idx + 1, lastNoteIdx + 1), 0, line);
@@ -483,15 +519,21 @@ export async function processFile(app: App, file: TFile, fn: (c: string) => stri
  * 项目任务缓存:按 filePath:mtime 缓存解析结果,渲染同步取用。
  * 缓存缺失/过期时后台读盘,完成后经 onChange(防抖)通知宿主重渲染。
  */
+type TaskChangeListener = () => void;
+
 export class ProjectTaskStore {
     private cache = new Map<string, { mtime: number; tasks: MdTask[] }>();
     private stale = new Set<string>();
     private loading = new Set<string>();
     private notifyTimer: number | null = null;
-    /** 后台加载完成后触发(宿主接成防抖重渲染) */
-    onChange: (() => void) | null = null;
+    private listeners = new Set<TaskChangeListener>();
 
     constructor(private app: App) {}
+
+    onChange(listener: TaskChangeListener): () => void {
+        this.listeners.add(listener);
+        return () => this.listeners.delete(listener);
+    }
 
     /** 同步取任务:新鲜命中直接返回;过期/脏标记则后台重读,期间仍返回旧值(stale-while-revalidate,避免空窗闪烁) */
     get(filePath: string | undefined): MdTask[] | null {
@@ -553,13 +595,13 @@ export class ProjectTaskStore {
         if (this.notifyTimer != null) return;
         this.notifyTimer = window.setTimeout(() => {
             this.notifyTimer = null;
-            this.onChange?.();
+            for (const listener of this.listeners) listener();
         }, 60);
     }
 
     dispose(): void {
         if (this.notifyTimer != null) { window.clearTimeout(this.notifyTimer); this.notifyTimer = null; }
-        this.onChange = null;
+        this.listeners.clear();
         this.cache.clear();
     }
 }

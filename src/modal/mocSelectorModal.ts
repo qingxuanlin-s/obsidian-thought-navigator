@@ -6,6 +6,7 @@ interface MOCItem {
     file: TFile | null;
     isProject?: boolean;
     sectionHeader?: string; // 非空表示这是一个分组标签伪项
+    isCurrent?: boolean;
 }
 
 function formatRelativeTime(ms: number): string {
@@ -29,12 +30,14 @@ export class MOCSelectorModal extends SuggestModal<MOCItem> {
     onSubmit: (item: MOCItem) => void;
     private sortedFiles: TFile[];
     private store: WorkspaceStore | null;
+    private currentMocPath: string | null;
 
-    constructor(app: App, mocFiles: TFile[], store: WorkspaceStore | null, onSubmit: (item: MOCItem) => void) {
+    constructor(app: App, mocFiles: TFile[], store: WorkspaceStore | null, currentMocPath: string | null, onSubmit: (item: MOCItem) => void) {
         super(app);
         this.mocFiles = mocFiles;
         this.onSubmit = onSubmit;
         this.store = store;
+        this.currentMocPath = currentMocPath;
         this.setPlaceholder("搜索 MOC 文件...");
 
         // 按 mtime 倒序(编辑时间)
@@ -52,7 +55,9 @@ export class MOCSelectorModal extends SuggestModal<MOCItem> {
             : this.sortedFiles;
 
         // 不再区分项目/普通思维树:统一一个列表,按编辑时间(mtime)倒序。
-        return filtered.map(f => ({ type: 'moc', file: f, isProject: this.isProjectMoc(f) }));
+        return filtered.map(f => ({
+            type: 'moc', file: f, isProject: this.isProjectMoc(f), isCurrent: f.path === this.currentMocPath,
+        }));
     }
 
     renderSuggestion(item: MOCItem, el: HTMLElement): void {
@@ -82,6 +87,7 @@ export class MOCSelectorModal extends SuggestModal<MOCItem> {
             justifyContent: 'space-between',
             alignItems: 'center',
         });
+        el.toggleClass('zk-moc-selector-current', item.isCurrent === true);
 
         const left = el.createDiv();
         left.setCssStyles({
@@ -100,6 +106,11 @@ export class MOCSelectorModal extends SuggestModal<MOCItem> {
             whiteSpace: 'nowrap',
             flexShrink: '0',
         });
+
+        if (item.isCurrent) {
+            const current = left.createSpan({ cls: 'zk-moc-selector-current-mark', text: '当前' });
+            current.setAttribute('aria-label', '当前 MOC');
+        }
 
         // 挂载所在的容器名(可能多个)
         if (item.isProject && this.store) {

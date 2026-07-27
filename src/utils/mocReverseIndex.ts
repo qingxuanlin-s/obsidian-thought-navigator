@@ -10,6 +10,13 @@ export interface MOCLocation {
     nodeId: string;          // 笔记在该 MOC 中的节点 ID
 }
 
+export interface MOCParentLocation {
+    parentMocPath: string;
+    parentMocName: string;
+    /** 父 MOC 中指向当前子 MOC 的节点 ID，可用于打开后选中并居中。 */
+    parentNodeId: string;
+}
+
 export type SearchKind = 'fileNode' | 'conceptNode' | 'embedNode' | 'mocFile' | 'remark';
 
 export interface SearchEntry {
@@ -27,6 +34,8 @@ export interface SearchEntry {
 export class MOCReverseIndex {
     private app: App;
     private index: Map<string, MOCLocation[]> = new Map();
+    /** 子 MOC 路径 → 所有直接引用它的父 MOC 位置。 */
+    private mocParents: Map<string, MOCParentLocation[]> = new Map();
     private searchEntries: SearchEntry[] = [];
     private mocFolderPath = '';
     private headingTitle = '';
@@ -45,6 +54,7 @@ export class MOCReverseIndex {
 
         if (!mocFolderPath) {
             this.index.clear();
+            this.mocParents.clear();
             this.searchEntries = [];
             return;
         }
@@ -58,6 +68,7 @@ export class MOCReverseIndex {
      */
     async rebuild(): Promise<void> {
         this.index.clear();
+        this.mocParents.clear();
         this.searchEntries = [];
 
         const mocFiles = this.getMOCFiles();
@@ -93,9 +104,29 @@ export class MOCReverseIndex {
                 if (resolvedFileCache.has(wikiLink)) {
                     return resolvedFileCache.get(wikiLink) || null;
                 }
-                const linkedFile = this.app.metadataCache.getFirstLinkpathDest(wikiLink, basePath);
+                const pathOnly = wikiLink.split('#', 1)[0];
+                let linkedFile = this.app.metadataCache.getFirstLinkpathDest(pathOnly, basePath);
+                // Obsidian 无法总是把旧式 .moc 链接解析为新式 .moc.md 文件；
+                // 反向索引需与图谱解析保持一致，确保父 MOC 能被发现。
+                if (!linkedFile) {
+                    const relativePath = basePath ? `${basePath}/${pathOnly}` : pathOnly;
+                    const candidates = [pathOnly, relativePath];
+                    if (pathOnly.toLowerCase().endsWith('.moc')) {
+                        candidates.push(`${pathOnly}.md`, `${relativePath}.md`);
+                    }
+                    linkedFile = candidates
+                        .map(path => this.app.vault.getFileByPath(path))
+                        .find((candidate): candidate is TFile => candidate instanceof TFile)
+                        ?? null;
+                }
                 resolvedFileCache.set(wikiLink, linkedFile);
                 return linkedFile;
+            };
+            /** 文本节点中纯 `[[target]]` 形式也是真实可点击文件节点，兼容旧 MOC 数据。 */
+            const pureWikiLinkTarget = (text: string | undefined): string | null => {
+                if (!text) return null;
+                const match = /^\s*\[\[([^\]|#]+)(?:\|[^\]]*)?\]\]\s*$/.exec(text);
+                return match?.[1]?.trim() || null;
             };
 
             // JSON 格式：遍历节点树提取 wikilink
@@ -118,14 +149,19 @@ export class MOCReverseIndex {
                     const isText = n.nodeType === 'text' || n.isTextOnly;
                     const isEmbed = n.nodeType === 'embed' || n.isEmbed === true;
                     const link = n.target ?? n.wikiLink;
+                    const textLink = isText ? pureWikiLinkTarget(link) : null;
+                    const resolvedLink = textLink ?? link;
                     const nodeId = n.nodeID || '';
-                    if (!isText && link) {
-                        const linkedFile = resolveWikiLink(link);
+                    if ((!isText || textLink) && resolvedLink) {
+                        const linkedFile = resolveWikiLink(resolvedLink);
                         if (linkedFile) {
                             this.addToIndex(linkedFile.path, file, nodeId);
+                            if (linkedFile.path !== file.path && isMocFile(linkedFile)) {
+                                this.addMocParent(linkedFile.path, file, nodeId);
+                            }
                             this.addSearchEntry(isEmbed ? 'embedNode' : 'fileNode', linkedFile.basename, file, nodeId);
                         } else {
-                            this.addSearchEntry(isEmbed ? 'embedNode' : 'fileNode', link, file, nodeId);
+                            this.addSearchEntry(isEmbed ? 'embedNode' : 'fileNode', resolvedLink, file, nodeId);
                         }
                     } else if (isText) {
                         this.addSearchEntry('conceptNode', this.nodeText(n), file, nodeId);
@@ -181,6 +217,20 @@ export class MOCReverseIndex {
         return remarks;
     }
 
+    private addMocParent(childMocPath: string, parentMoc: TFile, parentNodeId: string): void {
+        if (!parentNodeId) return;
+        const location: MOCParentLocation = {
+            parentMocPath: parentMoc.path,
+            parentMocName: parentMoc.basename,
+            parentNodeId,
+        };
+        const existing = this.mocParents.get(childMocPath) ?? [];
+        if (!existing.some(item => item.parentMocPath === location.parentMocPath && item.parentNodeId === location.parentNodeId)) {
+            existing.push(location);
+            this.mocParents.set(childMocPath, existing);
+        }
+    }
+
     private addToIndex(notePath: string, mocFile: TFile, nodeId: string): void {
         const location: MOCLocation = {
             mocFilePath: mocFile.path,
@@ -201,16 +251,17 @@ export class MOCReverseIndex {
      * 增量更新：当某个 MOC 文件变化时，重新索引该文件
      */
     async updateFile(file: TFile): Promise<void> {
-        // 先移除该 MOC 文件的所有旧条目
-        this.removeEntriesForMOC(file.path);
+        // 先移除该 MOC 作为父级写入的旧条目；保留其它 MOC 指向它的父级记录。
+        this.removeEntriesForMOC(file.path, false);
         // 重新索引
         await this.indexMOCFile(file);
     }
 
     /**
      * 移除某个 MOC 文件的所有索引条目
+     * @param removeIncomingParentReferences 文件删除时为 true；内容更新时必须保留其它 MOC 指向它的记录。
      */
-    removeEntriesForMOC(mocFilePath: string): void {
+    removeEntriesForMOC(mocFilePath: string, removeIncomingParentReferences = true): void {
         for (const [notePath, locations] of this.index.entries()) {
             const filtered = locations.filter(loc => loc.mocFilePath !== mocFilePath);
             if (filtered.length === 0) {
@@ -218,6 +269,16 @@ export class MOCReverseIndex {
             } else {
                 this.index.set(notePath, filtered);
             }
+        }
+        // 始终移除该文件作为父 MOC 的旧引用；重新索引后会按最新内容写回。
+        for (const [childPath, locations] of this.mocParents.entries()) {
+            const filtered = locations.filter(loc => loc.parentMocPath !== mocFilePath);
+            if (filtered.length === 0) this.mocParents.delete(childPath);
+            else this.mocParents.set(childPath, filtered);
+        }
+        // 只有文件真正删除时，才移除其它 MOC 指向它的记录。
+        if (removeIncomingParentReferences) {
+            this.mocParents.delete(mocFilePath);
         }
         this.searchEntries = this.searchEntries.filter(entry => entry.mocFilePath !== mocFilePath);
     }
@@ -234,6 +295,14 @@ export class MOCReverseIndex {
             return locations.filter(loc => loc.mocFilePath !== excludeMOCPath);
         }
         return locations;
+    }
+
+    /** 当前 MOC 被哪些其它 MOC 作为直接图节点引用。 */
+    queryMOCParents(childMocPath: string): MOCParentLocation[] {
+        return (this.mocParents.get(childMocPath) ?? [])
+            .slice()
+            .sort((a, b) => a.parentMocName.localeCompare(b.parentMocName, 'zh')
+                || a.parentMocPath.localeCompare(b.parentMocPath));
     }
 
     /**

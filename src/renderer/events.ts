@@ -2357,13 +2357,14 @@ export function bindEvents(this: CytoscapeRenderer): void {
         // 使用防抖避免频繁触发
         let viewStateTimeout: number | null = null;
         this.cy.on('zoom pan', () => {
+            const viewStatePath = this.currentOptions?.viewStatePath;
             if (viewStateTimeout) window.clearTimeout(viewStateTimeout);
             viewStateTimeout = window.setTimeout(() => {
                 if (!this.cy) return;
                 const zoom = this.cy.zoom();
                 const pan = this.cy.pan();
                 this.container?.dispatchEvent(new CustomEvent('viewStateChanged', {
-                    detail: { zoom, pan }
+                    detail: { zoom, pan, viewStatePath }
                 }));
             }, 150);
         });

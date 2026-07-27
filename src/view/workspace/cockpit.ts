@@ -148,18 +148,18 @@ export function renderCockpit(container: HTMLElement, ctx: RenderCtx, space: WSS
 
     const renderBody = () => {
         body.empty();
-        if (activeLens === 'all') { renderAllSections(body, ctx, projects, mocs, notes); return; }
+        if (activeLens === 'all') { renderAllSections(body, ctx, space.id, projects, mocs, notes); return; }
         const bucket = fw.buckets.find(b => b.id === activeLens);
         if (!bucket) return;
         const items = all.filter(bucket.match);
-        renderBucketSection(body, ctx, bucket.id, bucketLabel(bucket.id), items);
+        renderBucketSection(body, ctx, space.id, bucket.id, bucketLabel(bucket.id), items);
     };
     renderCreatebar();
     renderBody();
 }
 
 function renderAllSections(
-    body: HTMLElement, ctx: RenderCtx,
+    body: HTMLElement, ctx: RenderCtx, spaceId: string,
     projects: WSProjectNode[], mocs: WSMocNode[], notes: WorkspaceNode[],
 ): void {
     const liveProjects = projects.filter(p => !isWorkspaceNodeArchived(p));
@@ -170,61 +170,61 @@ function renderAllSections(
     if (liveProjects.length) {
         sectitle(body, t('ws sec projects'), liveProjects.length, t('ws sec projects desc'));
         const grid = body.createDiv({ cls: 'pgrid' });
-        liveProjects.sort(byStatusThenTime).forEach(p => renderProjectCard(grid, ctx, p));
+        liveProjects.sort(byStatusThenTime).forEach(p => renderProjectCard(grid, ctx, p, spaceId));
     }
     if (liveMocs.length) {
         sectitle(body, t('ws sec areas'), liveMocs.length, t('ws sec areas desc'));
         const grid = body.createDiv({ cls: 'pgrid' });
-        liveMocs.forEach(m => renderMocCard(grid, ctx, m));
+        liveMocs.forEach(m => renderMocCard(grid, ctx, m, spaceId));
     }
     if (liveNotes.length) {
         sectitle(body, t('ws sec resources'), liveNotes.length);
         const grid = body.createDiv({ cls: 'notegrid' });
-        liveNotes.forEach(n => renderNoteCard(grid, ctx, n));
+        liveNotes.forEach(n => renderNoteCard(grid, ctx, n, spaceId));
     }
     if (archived.length) {
         sectitle(body, t('ws sec archive'), archived.length);
-        renderArchiveCards(body, ctx, archived);
+        renderArchiveCards(body, ctx, archived, spaceId);
     }
 }
 
-function renderBucketSection(body: HTMLElement, ctx: RenderCtx, bucketId: string, label: string, items: WorkspaceNode[]): void {
+function renderBucketSection(body: HTMLElement, ctx: RenderCtx, spaceId: string, bucketId: string, label: string, items: WorkspaceNode[]): void {
     sectitle(body, label, items.length);
     if (!items.length) { body.createDiv({ cls: 'empty', text: t('ws no members') }); return; }
     if (bucketId === 'archive') {
-        renderArchiveCards(body, ctx, items);
+        renderArchiveCards(body, ctx, items, spaceId);
     } else if (PROJECT_BUCKETS.has(bucketId)) {
         const grid = body.createDiv({ cls: 'pgrid' });
-        (items as WSProjectNode[]).slice().sort(byStatusThenTime).forEach(p => renderProjectCard(grid, ctx, p));
+        (items as WSProjectNode[]).slice().sort(byStatusThenTime).forEach(p => renderProjectCard(grid, ctx, p, spaceId));
     } else if (MOC_BUCKETS.has(bucketId)) {
         const grid = body.createDiv({ cls: 'pgrid' });
-        (items as WSMocNode[]).forEach(m => renderMocCard(grid, ctx, m));
+        (items as WSMocNode[]).forEach(m => renderMocCard(grid, ctx, m, spaceId));
     } else {
         const grid = body.createDiv({ cls: 'notegrid' });
-        items.forEach(n => renderNoteCard(grid, ctx, n));
+        items.forEach(n => renderNoteCard(grid, ctx, n, spaceId));
     }
 }
 
-function renderArchiveCards(body: HTMLElement, ctx: RenderCtx, items: WorkspaceNode[]): void {
+function renderArchiveCards(body: HTMLElement, ctx: RenderCtx, items: WorkspaceNode[], spaceId: string): void {
     const projects = items.filter((n): n is WSProjectNode => n.type === 'project');
     const mocs = items.filter((n): n is WSMocNode => n.type === 'moc');
     const notes = items.filter(n => n.type === 'note' || n.type === 'map');
     if (projects.length) {
         const grid = body.createDiv({ cls: 'pgrid' });
-        projects.slice().sort(byStatusThenTime).forEach(p => renderProjectCard(grid, ctx, p));
+        projects.slice().sort(byStatusThenTime).forEach(p => renderProjectCard(grid, ctx, p, spaceId));
     }
     if (mocs.length) {
         const grid = body.createDiv({ cls: 'pgrid' });
-        mocs.forEach(m => renderMocCard(grid, ctx, m));
+        mocs.forEach(m => renderMocCard(grid, ctx, m, spaceId));
     }
     if (notes.length) {
         const grid = body.createDiv({ cls: 'notegrid' });
-        notes.forEach(n => renderNoteCard(grid, ctx, n));
+        notes.forEach(n => renderNoteCard(grid, ctx, n, spaceId));
     }
 }
 
 /** 卡片右键菜单:删除该条目(二次确认走 ctx.requestDelete) */
-function cardMenu(e: MouseEvent, ctx: RenderCtx, node: WorkspaceNode): void {
+function cardMenu(e: MouseEvent, ctx: RenderCtx, node: WorkspaceNode, spaceId?: string, placementId?: string): void {
     e.preventDefault();
     e.stopPropagation();
     const menu = new Menu();
@@ -234,7 +234,7 @@ function cardMenu(e: MouseEvent, ctx: RenderCtx, node: WorkspaceNode): void {
         .onClick(() => { void ctx.store.setArchived(node.id, !archived); }));
     menu.addSeparator();
     menu.addItem(i => { (i as { setWarning?(warning: boolean): void }).setWarning?.(true); i.setTitle(t('ws delete')).setIcon('trash-2')
-        .onClick(() => ctx.requestDelete(node)); });
+        .onClick(() => ctx.requestDelete(node, spaceId, placementId)); });
     menu.showAtMouseEvent(e);
 }
 
@@ -251,11 +251,11 @@ function sectitle(body: HTMLElement, title: string, count: number, desc?: string
     if (desc) st.createSpan({ cls: 'sq', text: '?' }).setAttribute('title', desc);
 }
 
-function renderProjectCard(grid: HTMLElement, ctx: RenderCtx, p: WSProjectNode): void {
+function renderProjectCard(grid: HTMLElement, ctx: RenderCtx, p: WSProjectNode, spaceId: string): void {
+    const placement = ctx.store.placementForNodeInSpace(p.id, spaceId);
     const card = grid.createDiv({ cls: 'pcard reveal' + (p.status === 'archived' ? ' arch' : '') });
-    // 卡片空白区 → 详情面板;名字 → 项目页(含 NEXT ACTION / 关联笔记)
-    card.onclick = () => ctx.openDeck(p);
-    card.oncontextmenu = (e) => cardMenu(e, ctx, p);
+    card.onclick = () => ctx.openDeck(p, placement?.id);
+    card.oncontextmenu = (e) => cardMenu(e, ctx, p, spaceId, placement?.id);
 
     const top = card.createDiv({ cls: 'ptop' });
     const stat = top.createSpan({ cls: `pstat ${p.status}` });
@@ -264,7 +264,7 @@ function renderProjectCard(grid: HTMLElement, ctx: RenderCtx, p: WSProjectNode):
     top.createSpan({ cls: 'plast', text: t('ws update prefix').replace('{t}', relTime(p.updatedAt)) });
 
     const pname = card.createDiv({ cls: 'pname link', text: p.title });
-    pname.onclick = (e) => { e.stopPropagation(); ctx.open({ kind: 'project', id: p.id }); };
+    pname.onclick = (e) => { e.stopPropagation(); ctx.open(ctx.store.targetFor(p, placement)); };
 
     const na = nextActionText(ctx, p);
     if (na) {
@@ -290,16 +290,19 @@ function renderProjectCard(grid: HTMLElement, ctx: RenderCtx, p: WSProjectNode):
             const m = ctx.store.getNode(l.to);
             if (!m) return;
             const chip = refs.createSpan({ cls: 'refchip', text: m.title });
-            chip.onclick = (e) => { e.stopPropagation(); ctx.open({ kind: 'moc', id: m.id }); };
+            chip.onclick = (e) => {
+                e.stopPropagation();
+                ctx.open(ctx.store.targetFor(m, ctx.store.placementForNodeInSpace(m.id, spaceId)));
+            };
         });
     }
 }
 
-function renderMocCard(grid: HTMLElement, ctx: RenderCtx, m: WSMocNode): void {
+function renderMocCard(grid: HTMLElement, ctx: RenderCtx, m: WSMocNode, spaceId: string): void {
+    const placement = ctx.store.placementForNodeInSpace(m.id, spaceId);
     const card = grid.createDiv({ cls: 'moccard reveal' });
-    // 卡片空白区 → 详情/关联面板;名字 → 跳思维树图谱
-    card.onclick = () => ctx.openDeck(m);
-    card.oncontextmenu = (e) => cardMenu(e, ctx, m);
+    card.onclick = () => ctx.openDeck(m, placement?.id);
+    card.oncontextmenu = (e) => cardMenu(e, ctx, m, spaceId, placement?.id);
 
     const members = ctx.store.servedBy(m.id);
     card.toggleClass('empty-moc', members.length === 0);
@@ -308,7 +311,7 @@ function renderMocCard(grid: HTMLElement, ctx: RenderCtx, m: WSMocNode): void {
     glyph(top, 'moc');
     const name = top.createSpan({ cls: 'mname link', text: m.title });
     name.setAttribute('title', t('ws open graph'));
-    name.onclick = (e) => { e.stopPropagation(); ctx.open({ kind: 'moc', id: m.id }); };
+    name.onclick = (e) => { e.stopPropagation(); ctx.open(ctx.store.targetFor(m, placement)); };
     // 聚合 0 不出标签(噪音);仅 1+ 时高亮显示
     if (members.length) top.createSpan({ cls: 'magg', text: t('ws agg').replace('{n}', String(members.length)) });
 
@@ -323,12 +326,12 @@ function renderMocCard(grid: HTMLElement, ctx: RenderCtx, m: WSMocNode): void {
     }
 }
 
-function renderNoteCard(grid: HTMLElement, ctx: RenderCtx, n: WorkspaceNode): void {
+function renderNoteCard(grid: HTMLElement, ctx: RenderCtx, n: WorkspaceNode, spaceId: string): void {
+    const placement = ctx.store.placementForNodeInSpace(n.id, spaceId);
     const card = grid.createDiv({ cls: 'notecard reveal' });
-    // 卡片空白区 → 详情面板;名字 → 打开节点
-    card.onclick = () => ctx.openDeck(n);
-    card.oncontextmenu = (e) => cardMenu(e, ctx, n);
+    card.onclick = () => ctx.openDeck(n, placement?.id);
+    card.oncontextmenu = (e) => cardMenu(e, ctx, n, spaceId, placement?.id);
     glyph(card, n.type);
     const nn = card.createSpan({ cls: 'nn link', text: n.title });
-    nn.onclick = (e) => { e.stopPropagation(); ctx.open(ctx.store.targetFor(n)); };
+    nn.onclick = (e) => { e.stopPropagation(); ctx.open(ctx.store.targetFor(n, placement)); };
 }
