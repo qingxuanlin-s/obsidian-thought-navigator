@@ -651,6 +651,11 @@ align-items: center;
   background-color: transparent;
 }
 
+/* 主思维图画布不显示外框，避免与工作区边界形成嵌套框线。 */
+#zk-branch-cytoscape {
+  border: 0;
+}
+
 .zk-graph-text {
   position: fixed;
   background-color: #242424;
