@@ -12,6 +12,36 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
     {
+        version: '0.3.1',
+        date: '2026-07-28',
+        highlights: [
+            {
+                zh: '文件可直接拖入图谱：放到节点旁即可成为子节点，其他位置则新建独立节点。',
+                en: 'Drag files straight into a map: drop beside a node to make it a child, or elsewhere to create an independent node.',
+            },
+            {
+                zh: '知识工作台支持归档与恢复内容；同一内容放在多个空间时，移出一处不会影响其他位置或原文件。',
+                en: 'The Knowledge Workbench now supports archiving and restoring content. Removing an item from one space keeps its other locations and source file intact.',
+            },
+            {
+                zh: '打开工作台中的笔记和文件时，会直接使用 Obsidian 或对应插件的熟悉视图。',
+                en: 'Notes and files opened from the Knowledge Workbench now use the familiar Obsidian or plugin view.',
+            },
+            {
+                zh: '图谱与知识工作台可以相互定位：查看 MOC 的所属位置、关联项目或资料，并可一键返回来源。',
+                en: 'Maps and the Knowledge Workbench now connect both ways: see where a MOC belongs, link projects or resources, and return to where you came from.',
+            },
+            {
+                zh: 'MOC 面包屑会显示上级结构并支持跳转；再次打开时会回到上次浏览的位置。',
+                en: 'MOC breadcrumbs now show parent structures and let you jump to them; reopening a map returns you to where you left off.',
+            },
+            {
+                zh: '去除多余的外框，保持简洁性',
+                en: 'Removed the extra frame to keep the canvas clean.',
+            },
+        ],
+    },
+    {
         version: '0.3.0',
         date: '2026-07-19',
         highlights: [
