@@ -933,6 +933,7 @@ export default class ZKNavigationPlugin extends Plugin {
                 this.settings.mocFolderPath,
                 this.settings.mocHeadingTitle
             );
+            this.app.workspace.trigger('zk-navigation:moc-reverse-index-ready');
             if (this.workspaceStore) {
                 await this.workspaceStore.bootstrap();
                 await ensureWorkspaceSeed(this.workspaceStore, this.app.vault.adapter, this.spacesStorePath);

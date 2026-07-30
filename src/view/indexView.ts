@@ -2500,6 +2500,11 @@ window.addEventListener('resize', fitGraph);
         const refresh = debounce(this.refreshIndexLayout, 500, true);
         this.registerEvent(this.app.workspace.on("zk-navigation:refresh-index-graph", refresh));
 
+        // 反向索引在 layout-ready 后异步完成。首开图谱早于索引完成时，仅补刷父 MOC 入口。
+        this.registerEvent(this.app.workspace.on("zk-navigation:moc-reverse-index-ready", () => {
+            this.refreshMOCParentBreadcrumb(this.plugin.settings.mocCurrentFile);
+        }));
+
         // MOC 文件变化事件监听（实时同步）
         this.registerEvent(this.app.workspace.on("zk-navigation:moc-file-changed", async (mocFile: TFile) => {
             // 只在 MOC 模式下且当前显示的是该 MOC 时才刷新

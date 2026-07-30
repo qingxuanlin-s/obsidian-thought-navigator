@@ -43,6 +43,13 @@ declare module "obsidian"{
         ):EventRef;
     }
 
+    interface Workspace{
+        on(
+            name:"zk-navigation:moc-reverse-index-ready",
+            callback: ()=>unknown
+        ):EventRef;
+    }
+
     interface App {
         commands:{
             commands:{
