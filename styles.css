@@ -4304,6 +4304,12 @@ align-items: center;
 }
 .zk-text-md-math mjx-container {
   margin: 0;
+  display: inline-block;
+  vertical-align: middle;
+}
+.zk-text-md-math mjx-container > svg {
+  display: block;
+  height: auto;
 }
 
 .zk-text-md-overlay h1,

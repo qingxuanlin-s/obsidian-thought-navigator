@@ -1182,7 +1182,8 @@ export class MOCHandler {
      * @param parentID - 父节点 ID
      * @param newChildID - 新的子节点 ID
      */
-    async moveNodeToParent(mocFile: TFile, freeNodeID: string, parentID: string, newChildID: string): Promise<void> {
+    async moveNodeToParent(mocFile: TFile, freeNodeID: string, parentID: string, newChildID: string): Promise<string> {
+        let resolvedChildID = newChildID;
         await this.modifyMOCData(mocFile, (mocData) => {
             const idMappings: Array<{ old: string; new: string }> = [];
             const remapSubtreeIDs = (node: MOCTreeNode, oldPrefix: string, newPrefix: string, depth: number) => {
@@ -1271,8 +1272,46 @@ export class MOCHandler {
                 throw new Error(`未找到父节点: ${parentID}`);
             }
 
+            // 调用方通常从当前渲染快照预测子 ID；快照可能落后于文件，必须以
+            // 文件中的整棵树为准再做一次冲突校验，否则两个节点同 ID 会互相覆盖。
+            const usedNodeIDs = new Set<string>();
+            const collectNodeIDs = (nodes: MOCTreeNode[]) => {
+                nodes.forEach((node) => {
+                    if (node.nodeID !== freeNodeID) usedNodeIDs.add(node.nodeID);
+                    if (node.children?.length) collectNodeIDs(node.children);
+                });
+            };
+            collectNodeIDs(mocData.nodes);
+            if (usedNodeIDs.has(resolvedChildID)) {
+                const parentLastSegment = parentID.split('.').pop() || '';
+                const existingSuffixes = new Set(
+                    (parentNode.children || []).map((child) => child.nodeID.split('.').pop() || '')
+                );
+                if (/^[a-z]+$/.test(parentLastSegment)) {
+                    let n = 1;
+                    while (existingSuffixes.has(String(n))) n++;
+                    resolvedChildID = `${parentID}.${n}`;
+                } else {
+                    const letters = 'abcdefghijklmnopqrstuvwxyz';
+                    let suffix = '';
+                    for (let i = 0; i < letters.length && !suffix; i++) {
+                        if (!existingSuffixes.has(letters[i])) suffix = letters[i];
+                    }
+                    if (!suffix) {
+                        let index = 0;
+                        do {
+                            const first = letters[Math.floor(index / letters.length)];
+                            const second = letters[index % letters.length];
+                            suffix = `${first}${second}`;
+                            index++;
+                        } while (existingSuffixes.has(suffix));
+                    }
+                    resolvedChildID = `${parentID}.${suffix}`;
+                }
+            }
+
             // 更新当前节点和整棵子树的 ID / 深度
-            remapSubtreeIDs(nodeToMove, freeNodeID, newChildID, parentNode.depth + 1);
+            remapSubtreeIDs(nodeToMove, freeNodeID, resolvedChildID, parentNode.depth + 1);
             // 换父后旧父级的“分离/定侧”意图已失效；清除后让新子节点重新参与自动布局。
             nodeToMove.extBitMap = ((nodeToMove.extBitMap || 0)
                 & ~NODE_FLAG_SEPARATED
@@ -1329,15 +1368,15 @@ export class MOCHandler {
             });
 
             // 为新建一级节点自动分配分支主题色
-            if (newChildID.split('.').length === 2) {
+            if (resolvedChildID.split('.').length === 2) {
                 if (!mocData.nodeStyleColors) {
                     mocData.nodeStyleColors = {};
                 }
-                if (!mocData.nodeStyleColors[newChildID]) {
-                    mocData.nodeStyleColors[newChildID] = this.pickNextBranchStyleColor(mocData.nodeStyleColors);
+                if (!mocData.nodeStyleColors[resolvedChildID]) {
+                    mocData.nodeStyleColors[resolvedChildID] = this.pickNextBranchStyleColor(mocData.nodeStyleColors);
                 }
             }
-            this.ensureFirstLevelNodeLayoutDefaults(mocData, newChildID);
+            this.ensureFirstLevelNodeLayoutDefaults(mocData, resolvedChildID);
 
             // 5. 更新边弧度（需要更新包含该节点的所有边 key）
             if (mocData.edgeCurvatures) {
@@ -1373,7 +1412,7 @@ export class MOCHandler {
                 }
 
                 // 跳过旧父节点 -> 新子节点 ID 的失效关系（它是移动前的父子树边，现已无意义）
-                if (oldParentID && newSourceID === oldParentID && newTargetID === newChildID) {
+                if (oldParentID && newSourceID === oldParentID && newTargetID === resolvedChildID) {
                     continue;
                 }
 
@@ -1386,6 +1425,7 @@ export class MOCHandler {
             }
             mocData.reverseRelations = newReverseRelations;
         });
+        return resolvedChildID;
     }
 
     /**

@@ -317,6 +317,7 @@ export default {
     "detail type concept": "Concept",
     "detail type embed": "Embed",
     "detail type crossdomain": "Cross-domain",
+    "detail open": "Open remark panel",
     "detail no remark": "No remark yet",
     "detail add remark": "Add remark",
     "detail dblclick edit": "Double-click to edit",

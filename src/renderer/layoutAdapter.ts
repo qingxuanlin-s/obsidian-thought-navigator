@@ -661,6 +661,24 @@ export function resolveShortcutPosition(
 export function getFreeChildShortcutPosition(cy: cytoscape.Core, activeNode: cytoscape.NodeSingular): { x: number; y: number } {
     const nodePos = activeNode.position();
     const children = activeNode.outgoers('edge').targets();
+    const lastChild = children.last();
+
+    // 自由布局下把最后一个子节点当作纵向序列的末端，后续节点直接追加在下方。
+    // 这样不会被根节点到该子节点的斜向连线带偏到左侧或右侧。
+    if (lastChild.length > 0) {
+        const lastPos = lastChild.position();
+        const down = { x: 0, y: 1 };
+        const distance = getDirectionalDistance(lastChild, down, 64);
+        return resolveShortcutPosition(
+            cy,
+            { x: lastPos.x, y: lastPos.y + distance },
+            lastChild,
+            down,
+            distance,
+            { x: 1, y: 0 }
+        );
+    }
+
     const dir = getBranchDirection(activeNode);
     const normal = getPerpendicular(dir);
     const directionalDistance = getDirectionalDistance(
@@ -729,38 +747,17 @@ export function getAutoChildShortcutPosition(activeNode: cytoscape.NodeSingular)
 
 export function getFreeSiblingShortcutPosition(cy: cytoscape.Core, activeNode: cytoscape.NodeSingular): { x: number; y: number } {
     const nodePos = activeNode.position();
-    const parent = activeNode.incomers('edge').sources();
-    if (parent.length === 0) {
-        const downDir = { x: 0, y: 1 };
-        const directionalDistance = getDirectionalDistance(activeNode, downDir, 36);
-        const basePosition = { x: nodePos.x, y: nodePos.y + directionalDistance };
-        return resolveShortcutPosition(
-            cy,
-            basePosition,
-            activeNode,
-            downDir,
-            directionalDistance,
-            { x: 1, y: 0 },
-            5
-        );
-    }
-
-    const dir = getBranchDirection(activeNode);
-    const normal = getPerpendicular(dir);
-    const siblingGap = getDirectionalDistance(activeNode, normal, 28);
-
-    const basePosition = {
-        x: nodePos.x + normal.x * siblingGap,
-        y: nodePos.y + normal.y * siblingGap
-    };
+    const downDir = { x: 0, y: 1 };
+    const siblingGap = getDirectionalDistance(activeNode, downDir, 36);
+    const basePosition = { x: nodePos.x, y: nodePos.y + siblingGap };
 
     return resolveShortcutPosition(
         cy,
         basePosition,
         activeNode,
-        normal,
+        downDir,
         siblingGap,
-        dir,
+        { x: 1, y: 0 },
         5
     );
 }

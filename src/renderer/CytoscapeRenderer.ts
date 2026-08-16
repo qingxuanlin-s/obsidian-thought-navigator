@@ -162,6 +162,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         getCy: () => this.cy,
         getContainer: () => this.container,
         getCurrentData: () => this.currentData,
+		createChildFromNode: (node) => this.handleCreateChildNode(node),
         overlayScheduler: this.overlayScheduler,
         showGroupActionDialog: this.showGroupActionDialog.bind(this),
         showGroupNameDialog: this.showGroupNameDialog.bind(this),

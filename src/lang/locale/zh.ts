@@ -316,6 +316,7 @@ export default {
     "detail type concept": "知识点",
     "detail type embed": "嵌入",
     "detail type crossdomain": "跨领域",
+    "detail open": "打开备注侧栏",
     "detail no remark": "暂无备注",
     "detail add remark": "添加备注",
     "detail dblclick edit": "双击编辑",

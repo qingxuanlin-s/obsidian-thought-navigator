@@ -3639,8 +3639,13 @@ window.addEventListener('resize', fitGraph);
                     return;
                 }
 
-                const newChildID = this.generateChildNodeID(parentNode.IDStr);
-                await this.mocHandler.moveNodeToParent(mocFile, childNode.IDStr, parentNode.IDStr, newChildID);
+                const requestedChildID = this.generateChildNodeID(parentNode.IDStr);
+                const newChildID = await this.mocHandler.moveNodeToParent(
+                    mocFile,
+                    childNode.IDStr,
+                    parentNode.IDStr,
+                    requestedChildID
+                );
 
                 // 保存移动后的节点位置（使用新子节点 ID）
                 await this.saveNodePositionToMOC(mocFile, newChildID, position);
@@ -4824,6 +4829,7 @@ window.addEventListener('resize', fitGraph);
                     collapsedNodeIds: this.collapsedNodeIds,
                     rebalanceRootChildren: true,
                     persistPositions: false,
+                    localOnly: true,
                 });
             }
             // 占位符取消后,把选中/焦点还给上一个操作过的节点(键盘导航可继续)
@@ -4895,18 +4901,17 @@ window.addEventListener('resize', fitGraph);
                 );
             }
 
-            const preferredAutoPosition = placeholderInfo.position;
-
             // 从占位符追踪中移除
             this.placeholderNodes.delete(nodeId);
 
             // 刷新视图
             await this.refreshBranchMermaid();
 
-            // 声明式 reflow: 整棵树重排, 给新节点腾位置, 回收空缺。
+            // 以父节点为锚点重新分配同级槽位，已有同级节点会让位到下一行。
             if (this.isNodeAutoLayout(suggestedID)) {
-                await this.applyNewSiblingSide(suggestedID, preferredAutoPosition);
-                await this.reflowAutoLayout(suggestedID);
+                await this.reflowNewAutoNodeSubtree(placeholderInfo.parentNodeId, suggestedID);
+            } else {
+                await this.finalizeFreeBranchLayout(placeholderInfo.parentNodeId, suggestedID);
             }
 
             // 清理所有占位符连接线（因为视图已经刷新，占位符节点已不存在）
@@ -4985,18 +4990,17 @@ window.addEventListener('resize', fitGraph);
                 );
             }
 
-            const preferredAutoPosition = placeholderInfo.position;
-
             // 从占位符追踪中移除
             this.placeholderNodes.delete(nodeId);
 
             // 刷新视图
             await this.refreshBranchMermaid();
 
-            // 声明式 reflow: 整棵树重排, 给新节点腾位置, 回收空缺。
+            // 以父节点为锚点重新分配同级槽位，已有同级节点会让位到下一行。
             if (this.isNodeAutoLayout(suggestedID)) {
-                await this.applyNewSiblingSide(suggestedID, preferredAutoPosition);
-                await this.reflowAutoLayout(suggestedID);
+                await this.reflowNewAutoNodeSubtree(placeholderInfo.parentNodeId, suggestedID);
+            } else {
+                await this.finalizeFreeBranchLayout(placeholderInfo.parentNodeId, suggestedID);
             }
 
             // 清理所有占位符连接线（因为视图已经刷新，占位符节点已不存在）
@@ -5240,8 +5244,13 @@ window.addEventListener('resize', fitGraph);
                     // 仅对真实 MOC 节点生效（分组节点不参与父子树）。
                     const sourceExistsInTree = this.mocNodes.some((n) => n.IDStr === finalSourceId || n.ID === finalSourceId);
                     if (!sourceIsFree && targetIsFree && sourceExistsInTree) {
-                        const newChildID = this.generateChildNodeID(finalSourceId);
-                        await this.mocHandler.moveNodeToParent(mocFile, finalTargetId, finalSourceId, newChildID);
+                    const requestedChildID = this.generateChildNodeID(finalSourceId);
+                    const newChildID = await this.mocHandler.moveNodeToParent(
+                        mocFile,
+                        finalTargetId,
+                        finalSourceId,
+                        requestedChildID
+                    );
                         await this.refreshBranchMermaid();
                         // 节点成为 auto 父节点的子节点后,重排兄弟腾位(issue #68)
                         if (this.isNodeAutoLayout(newChildID)) {
@@ -8407,6 +8416,284 @@ window.addEventListener('resize', fitGraph);
         return this.getRealChildNodeIds(parentNodeId).some((id) => this.isNodeAutoLayout(id));
     }
 
+    /**
+     * 找到「自由分支 + 自动子树岛」的局部区域。
+     *
+     * 例如 11 的父级区域里同时有 121(auto): 新建 11 的自由子节点时,
+     * 应围绕 11 展开,而不是沿最后一个孩子继续向下堆叠。自动子树保持其
+     * 已有位置，只作为新节点选槽时的障碍。纯 free 画布不命中这个上下文,
+     * 保持原有的手工位置行为。
+     */
+    private getFreeBranchAutoIslandContext(branchParentId: string): {
+        autoIslandRootIds: string[];
+    } | null {
+        if (this.isNodeAutoLayout(branchParentId)) return null;
+
+        let regionNodeId: string | null = branchParentId;
+        const visited = new Set<string>();
+        while (regionNodeId && !visited.has(regionNodeId)) {
+            visited.add(regionNodeId);
+            // 不跨过 auto 边界:只处理当前 free 区域里的独立 auto 岛。
+            if (this.isNodeAutoLayout(regionNodeId)) return null;
+
+            const autoIslandRootIds = this.getRealChildNodeIds(regionNodeId)
+                .filter((childId) => this.isNodeAutoLayout(childId));
+            if (autoIslandRootIds.length > 0) {
+                // 一个 free 根下可能同时挂着多个彼此无关的 auto 子树(当前图里有
+                // 1.b / 1.c / 1.f / 1.i)。只拿离正在编辑分支最近的那一棵作为
+                // 避让对象,绝不能为了 11 的新孩子把整张图的其它自动分支一起下推。
+                const branchPosition = this.getNodePositionForLayout(branchParentId);
+                const closestAutoIsland = branchPosition
+                    ? autoIslandRootIds.slice().sort((a, b) => {
+                        const aPos = this.getNodePositionForLayout(a);
+                        const bPos = this.getNodePositionForLayout(b);
+                        const aDistance = aPos
+                            ? Math.hypot(aPos.x - branchPosition.x, aPos.y - branchPosition.y)
+                            : Infinity;
+                        const bDistance = bPos
+                            ? Math.hypot(bPos.x - branchPosition.x, bPos.y - branchPosition.y)
+                            : Infinity;
+                        return aDistance - bDistance;
+                    })[0]
+                    : autoIslandRootIds[0];
+                return closestAutoIsland ? { autoIslandRootIds: [closestAutoIsland] } : null;
+            }
+            regionNodeId = this.resolveRealParentId(regionNodeId);
+        }
+        return null;
+    }
+
+    private getCyNodeForLayout(nodeId: string): cytoscape.NodeSingular | null {
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        if (!cy) return null;
+
+        const direct = cy.$id(nodeId) as cytoscape.NodeSingular;
+        if (direct && direct.length > 0) return direct;
+
+        const found = cy.$('node').filter((node: cytoscape.NodeSingular) => {
+            const originalNode = dataAs<ZKNode | undefined>(node, 'originalNode');
+            return !!originalNode && (originalNode.IDStr === nodeId || originalNode.ID === nodeId);
+        }).first() as cytoscape.NodeSingular;
+        return found && found.length > 0 ? found : null;
+    }
+
+    private collectStructuralSubtreeNodeIds(rootNodeId: string): string[] {
+        const ids: string[] = [];
+        const pending = [rootNodeId];
+        const seen = new Set<string>();
+        while (pending.length > 0) {
+            const nodeId = pending.pop()!;
+            if (seen.has(nodeId)) continue;
+            seen.add(nodeId);
+            ids.push(nodeId);
+            for (const childId of this.getRealChildNodeIds(nodeId)) {
+                pending.push(childId);
+            }
+        }
+        return ids;
+    }
+
+    /**
+     * 为混合自由区域生成稳定的双侧槽位。
+     *
+     * 首圈把父节点的上下、左右与四个斜向位置都作为可用槽位, 后续再扩到外圈。
+     * 这样既保留自由画布的手动感,又避免把节点无限追加成垂直链。
+     */
+    private getFreeBranchOrbitSlots(count: number): Array<{ column: number; row: number }> {
+        const slots: Array<{ column: number; row: number }> = [];
+        for (let ring = 1; slots.length < count; ring++) {
+            const ringSlots = ring === 1
+                ? [
+                    { column: -1, row: -1 }, { column: 1, row: -1 },
+                    { column: -1, row: 0 }, { column: 1, row: 0 },
+                    { column: -1, row: 1 }, { column: 1, row: 1 },
+                    { column: 0, row: 1 }, { column: 0, row: -1 },
+                ]
+                : [
+                    { column: -ring, row: -ring }, { column: ring, row: -ring },
+                    { column: -ring, row: 0 }, { column: ring, row: 0 },
+                    { column: -ring, row: ring }, { column: ring, row: ring },
+                    { column: -1, row: -ring }, { column: 1, row: -ring },
+                    { column: -1, row: ring }, { column: 1, row: ring },
+                    { column: 0, row: ring }, { column: 0, row: -ring },
+                ];
+            slots.push(...ringSlots);
+        }
+        return slots.slice(0, count);
+    }
+
+    private getLayoutNodeSize(node: cytoscape.NodeSingular | null): { width: number; height: number } {
+        return {
+            width: Math.max(Number(node?.outerWidth?.() ?? 0), 160),
+            height: Math.max(Number(node?.outerHeight?.() ?? 0), 64),
+        };
+    }
+
+    private getLayoutNodeBounds(node: cytoscape.NodeSingular): { left: number; right: number; top: number; bottom: number } {
+        const position = node.position();
+        const size = this.getLayoutNodeSize(node);
+        return {
+            left: position.x - size.width / 2,
+            right: position.x + size.width / 2,
+            top: position.y - size.height / 2,
+            bottom: position.y + size.height / 2,
+        };
+    }
+
+    private rectanglesOverlap(
+        a: { left: number; right: number; top: number; bottom: number },
+        b: { left: number; right: number; top: number; bottom: number },
+        padding = 0
+    ): boolean {
+        return a.left < b.right + padding
+            && a.right > b.left - padding
+            && a.top < b.bottom + padding
+            && a.bottom > b.top - padding;
+    }
+
+    /**
+     * 只为新自由子节点找一个空的环绕槽位。
+     * 已有自由节点和其它分支都被视为固定障碍,绝不因新节点而被自动重排。
+     */
+    private getFreeBranchPlaceholderPosition(
+        branchParentId: string,
+        fallbackPosition: { x: number; y: number },
+        options: {
+            excludeNodeId?: string;
+            size?: { width: number; height: number };
+        } = {}
+    ): { x: number; y: number } {
+        const context = this.getFreeBranchAutoIslandContext(branchParentId);
+        const parentNode = this.getCyNodeForLayout(branchParentId);
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        if (!context || !parentNode || !cy) return fallbackPosition;
+
+        const parentPosition = parentNode.position();
+        const parentSize = this.getLayoutNodeSize(parentNode);
+        const freeChildIds = this.getRealChildNodeIds(branchParentId)
+            .filter((childId) => !this.isNodeAutoLayout(childId));
+        const childNodes = freeChildIds
+            .map((childId) => this.getCyNodeForLayout(childId))
+            .filter((node): node is cytoscape.NodeSingular => !!node);
+        const maxChildWidth = Math.max(160, ...childNodes.map((node) => this.getLayoutNodeSize(node).width));
+        const maxChildHeight = Math.max(64, ...childNodes.map((node) => this.getLayoutNodeSize(node).height));
+        const newNodeSize = options.size || { width: maxChildWidth, height: maxChildHeight };
+        const horizontalGap = parentSize.width / 2 + newNodeSize.width / 2 + 84;
+        const verticalGap = parentSize.height / 2 + newNodeSize.height / 2 + 64;
+
+        // 仅用同一父级的自由孩子占槽。其它节点保留给提交阶段的局部纵向流式布局：
+        // 空间不足时，从父节点开始的下方区域整体让位，而不是让新节点绕到远处。
+        const childObstacles = childNodes
+            .filter((node) => {
+                const data = node.data() as CyData;
+                const originalNode = data.originalNode as ZKNode | undefined;
+                const nodeId = originalNode?.IDStr || originalNode?.ID || data.id;
+                return nodeId !== options.excludeNodeId;
+            })
+            .map((node) => this.getLayoutNodeBounds(node));
+        const slots = this.getFreeBranchOrbitSlots(36).slice().sort((a, b) => {
+            const aRadius = Math.hypot(a.column, a.row);
+            const bRadius = Math.hypot(b.column, b.row);
+            if (Math.abs(aRadius - bRadius) > 0.01) return aRadius - bRadius;
+            // 优先使用父节点上方的近邻槽位；空间不够时，父节点及其下方区域向下让位。
+            if (a.row !== b.row) return a.row - b.row;
+            return Math.abs(a.column) - Math.abs(b.column);
+        });
+
+        for (const slot of slots) {
+            const position = {
+                x: Math.round((parentPosition.x + slot.column * horizontalGap) * 100) / 100,
+                y: Math.round((parentPosition.y + slot.row * verticalGap) * 100) / 100,
+            };
+            const candidate = {
+                left: position.x - newNodeSize.width / 2,
+                right: position.x + newNodeSize.width / 2,
+                top: position.y - newNodeSize.height / 2,
+                bottom: position.y + newNodeSize.height / 2,
+            };
+            if (!childObstacles.some((obstacle) => this.rectanglesOverlap(candidate, obstacle, 32))) {
+                return position;
+            }
+        }
+
+        return fallbackPosition;
+    }
+
+    private async persistFreeBranchPositions(nodeIds: string[]): Promise<void> {
+        const persistentIds = nodeIds.filter((nodeId) => !nodeId.startsWith('temp_'));
+        if (persistentIds.length === 0) return;
+        const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
+        if (!mocFile) return;
+
+        const positions: Record<string, { x: number; y: number }> = {};
+        persistentIds.forEach((nodeId) => {
+            const node = this.getCyNodeForLayout(nodeId);
+            if (!node) return;
+            const position = node.position();
+            positions[nodeId] = {
+                x: Math.round(position.x * 100) / 100,
+                y: Math.round(position.y * 100) / 100,
+            };
+        });
+        if (Object.keys(positions).length === 0) return;
+
+        await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
+            if (!mocData.nodePositions) mocData.nodePositions = {};
+            Object.entries(positions).forEach(([nodeId, position]) => {
+                mocData.nodePositions[nodeId] = position;
+            });
+        });
+    }
+
+    /**
+     * 新自由节点落地后，检查其父节点的后续兄弟是否被扩展后的子树挤占。
+     * 命中时从第一个冲突兄弟起整体下移，父节点及其上方区域保持不动。
+     */
+    private async finalizeFreeBranchLayout(parentNodeId: string | undefined, newNodeId: string): Promise<void> {
+        if (!parentNodeId) return;
+        const newNode = this.getCyNodeForLayout(newNodeId);
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        const parentNode = this.getCyNodeForLayout(parentNodeId);
+        if (!newNode || !parentNode || !cy) return;
+
+        const grandParentId = this.resolveRealParentId(parentNodeId);
+        if (!grandParentId) return;
+        const parentPosition = parentNode.position();
+        const lowerSiblings = this.getRealChildNodeIds(grandParentId)
+            .filter((nodeId) => nodeId !== parentNodeId)
+            .map((nodeId) => ({ nodeId, node: this.getCyNodeForLayout(nodeId) }))
+            .filter((entry): entry is { nodeId: string; node: cytoscape.NodeSingular } => !!entry.node)
+            .filter(({ node }) => node.position().y >= parentPosition.y - 0.5)
+            .sort((a, b) => a.node.position().y - b.node.position().y);
+        if (lowerSiblings.length === 0) return;
+
+        const newNodeBounds = this.getLayoutNodeBounds(newNode);
+        const firstConflict = lowerSiblings.find(({ node }) =>
+            this.rectanglesOverlap(newNodeBounds, this.getLayoutNodeBounds(node), 32)
+        );
+        if (!firstConflict) return;
+
+        const movedSiblingRoots = lowerSiblings.filter(({ node }) =>
+            node.position().y >= firstConflict.node.position().y - 0.5
+        );
+        const regionTop = Math.min(...movedSiblingRoots.map(({ node }) => this.getLayoutNodeBounds(node).top));
+        const requiredShift = Math.round(Math.max(0, newNodeBounds.bottom + 72 - regionTop) * 100) / 100;
+        if (requiredShift < 0.01) return;
+
+        const movedNodeIds = Array.from(new Set(movedSiblingRoots.flatMap(({ nodeId }) =>
+            this.collectStructuralSubtreeNodeIds(nodeId)
+        )));
+        cy.batch(() => {
+            movedNodeIds.forEach((nodeId) => {
+                const node = this.getCyNodeForLayout(nodeId);
+                if (!node) return;
+                const position = node.position();
+                node.position({ x: position.x, y: position.y + requiredShift });
+            });
+        });
+        await this.persistFreeBranchPositions(movedNodeIds);
+    }
+
     private getBranchStylePalette(): string[] {
         return ['#ff5a5f', '#ff8a3d', '#f7c948', '#56d364', '#38d9a9', '#4dabf7', '#9775fa', '#f06595'];
     }
@@ -8505,8 +8792,9 @@ window.addEventListener('resize', fitGraph);
             return;
         }
 
-        // 直接创建占位符节点，指定父节点
-        await this.createPlaceholderNode(position, activeNode.IDStr);
+        // Tab 在「自由分支 + 自动子树岛」区域中使用局部环绕布局;
+        // 拖拽到空白处仍尊重用户手动指定的位置。
+        await this.createPlaceholderNode(position, activeNode.IDStr, { preferFreeBranchOrbit: true });
     }
 
     /**
@@ -8545,7 +8833,7 @@ window.addEventListener('resize', fitGraph);
         const effectiveSuggestedId = this.isFreeNodeID(parentId) ? this.generateNextFreeNodeID() : siblingId;
         const finalPosition = placeholderLayoutStyle === 'auto'
             ? this.getAutoPlaceholderPosition(parentId, position, activeNode.IDStr)
-            : position;
+            : this.getFreeBranchPlaceholderPosition(parentId, position);
         this.createPlaceholderRecord(tempId, finalPosition, {
             parentNodeId: parentId,
             suggestedNodeId: effectiveSuggestedId,
@@ -8625,7 +8913,11 @@ window.addEventListener('resize', fitGraph);
      * @param position 节点位置
      * @param explicitParentId 显式指定的父节点 ID（可选，如果提供则跳过智能连线并预生成节点 ID）
      */
-    async createPlaceholderNode(position: { x: number; y: number }, explicitParentId?: string) {
+    async createPlaceholderNode(
+        position: { x: number; y: number },
+        explicitParentId?: string,
+        options: { preferFreeBranchOrbit?: boolean } = {}
+    ) {
         const tempId = `temp_${Date.now()}`;
 
         // 确定父节点 ID、占位符布局风格和预生成的节点 ID
@@ -8696,7 +8988,9 @@ window.addEventListener('resize', fitGraph);
 
         const finalPosition = parentNodeId && placeholderLayoutStyle === 'auto'
             ? this.getAutoPlaceholderPosition(parentNodeId, position)
-            : position;
+            : parentNodeId && options.preferFreeBranchOrbit
+                ? this.getFreeBranchPlaceholderPosition(parentNodeId, position)
+                : position;
 
         // 存储占位符信息（包括潜在的父节点ID和预生成的节点ID）
         this.createPlaceholderRecord(tempId, finalPosition, {
@@ -8805,19 +9099,17 @@ window.addEventListener('resize', fitGraph);
             );
         }
 
-        const preferredAutoPosition = placeholderInfo?.position;
-
         // 从占位符追踪中移除
         this.placeholderNodes.delete(tempId);
 
         // 刷新视图
         await this.refreshBranchMermaid();
 
-        // 声明式 reflow: 让算法重新分配整棵树的空间, 给新节点腾位置,
-        // 同时回收被删/移动节点留下的空缺。手动拖过的节点作为锚点保留。
+        // 以父节点为锚点重新分配同级槽位，已有同级节点会让位到下一行。
         if (this.isNodeAutoLayout(suggestedID)) {
-            await this.applyNewSiblingSide(suggestedID, preferredAutoPosition);
-            await this.reflowAutoLayout(suggestedID);
+            await this.reflowNewAutoNodeSubtree(placeholderInfo?.parentNodeId, suggestedID);
+        } else {
+            await this.finalizeFreeBranchLayout(placeholderInfo?.parentNodeId, suggestedID);
         }
 
         // 清理所有占位符连接线（因为视图已经刷新，占位符节点已不存在）
@@ -8911,19 +9203,17 @@ window.addEventListener('resize', fitGraph);
             await this.clearEmbedNodeSizeFromMOC(mocFile, suggestedID);
         }
 
-        const preferredAutoPosition = placeholderInfo?.position;
-
         // 从占位符追踪中移除
         this.placeholderNodes.delete(tempId);
 
         // 刷新视图
         await this.refreshBranchMermaid();
 
-        // 声明式 reflow: 让算法重新分配整棵树的空间, 给新节点腾位置,
-        // 同时回收被删/移动节点留下的空缺。手动拖过的节点作为锚点保留。
+        // 以父节点为锚点重新分配同级槽位，已有同级节点会让位到下一行。
         if (this.isNodeAutoLayout(suggestedID)) {
-            await this.applyNewSiblingSide(suggestedID, preferredAutoPosition);
-            await this.reflowAutoLayout(suggestedID);
+            await this.reflowNewAutoNodeSubtree(placeholderInfo?.parentNodeId, suggestedID);
+        } else {
+            await this.finalizeFreeBranchLayout(placeholderInfo?.parentNodeId, suggestedID);
         }
 
         // 清理所有占位符连接线（因为视图已经刷新，占位符节点已不存在）
@@ -9710,6 +10000,66 @@ window.addEventListener('resize', fitGraph);
         });
     }
 
+    /** 新建自动节点时，固定父节点，只重新分配其直属自动子节点的槽位。 */
+    private async reflowNewAutoNodeSubtree(parentNodeId: string | undefined, newNodeId: string): Promise<void> {
+        if (!parentNodeId) {
+            await this.reflowAutoLayout(newNodeId);
+            return;
+        }
+        await this.relayoutAutoLayoutSiblings(parentNodeId, {
+            compactVisibleNodes: true,
+            collapsedNodeIds: this.collapsedNodeIds,
+            rebalanceRootChildren: true,
+            localOnly: true,
+        });
+        await this.resolveAutoSiblingVerticalOverlaps(parentNodeId, newNodeId);
+    }
+
+    /**
+     * 自动布局的方向分组完成后，再做一次同父级的纵向碰撞收口。
+     * 新创建的节点占用当前槽位，已有兄弟及其完整子树依次向下让位，避免重叠。
+     */
+    private async resolveAutoSiblingVerticalOverlaps(parentNodeId: string, newNodeId: string): Promise<void> {
+        const cy = this.branchRenderer?.getCytoscapeInstance();
+        const newNode = this.getCyNodeForLayout(newNodeId);
+        if (!cy || !newNode) return;
+
+        const siblings = this.getRealChildNodeIds(parentNodeId)
+            .filter((nodeId) => nodeId !== newNodeId)
+            .map((nodeId) => ({ nodeId, node: this.getCyNodeForLayout(nodeId) }))
+            .filter((entry): entry is { nodeId: string; node: cytoscape.NodeSingular } => !!entry.node)
+            .sort((a, b) => a.node.position().y - b.node.position().y);
+
+        const placedNodes: cytoscape.NodeSingular[] = [newNode];
+        const movedNodeIds = new Set<string>();
+        for (const sibling of siblings) {
+            const siblingBounds = this.getLayoutNodeBounds(sibling.node);
+            const shiftY = Math.round(Math.max(0, ...placedNodes.map((placed) => {
+                const placedBounds = this.getLayoutNodeBounds(placed);
+                return this.rectanglesOverlap(placedBounds, siblingBounds, 32)
+                    ? placedBounds.bottom + 64 - siblingBounds.top
+                    : 0;
+            })) * 100) / 100;
+            if (shiftY < 0.01) {
+                placedNodes.push(sibling.node);
+                continue;
+            }
+            const subtreeIds = this.collectStructuralSubtreeNodeIds(sibling.nodeId);
+            cy.batch(() => {
+                subtreeIds.forEach((nodeId) => {
+                    const node = this.getCyNodeForLayout(nodeId);
+                    if (!node) return;
+                    const position = node.position();
+                    node.position({ x: position.x, y: position.y + shiftY });
+                });
+            });
+            subtreeIds.forEach((nodeId) => movedNodeIds.add(nodeId));
+            placedNodes.push(sibling.node);
+        }
+
+        await this.persistFreeBranchPositions(Array.from(movedNodeIds));
+    }
+
     /**
      * 新建同级节点跟随"最近创建的兄弟"(children 数组末尾 = 最大 id)的左右侧:
      * 读取该兄弟相对父节点的位置定出左/右,把新节点放到同侧并打 SIDE_PINNED,
@@ -9807,6 +10157,7 @@ window.addEventListener('resize', fitGraph);
             collapsedNodeIds: this.collapsedNodeIds,
             rebalanceRootChildren: true,
             persistPositions: false,
+            localOnly: true,
             includePlaceholder: { id: placeholderTempId, parentId: parentNodeId, colorKey, size: placeholderSize, sortPosition },
         });
 
@@ -9970,6 +10321,7 @@ window.addEventListener('resize', fitGraph);
         cy.$('edge').filter((edge: cytoscape.EdgeSingular) => edge.data('type') === 'parent').forEach((edge: cytoscape.EdgeSingular) => {
             const source = edge.source();
             const target = edge.target();
+            const sourceData = source.data() as CyData;
             const sourceOriginal = dataAs<ZKNode | undefined>(source, 'originalNode');
             const targetOriginal = dataAs<ZKNode | undefined>(target, 'originalNode');
             const sourceId = sourceOriginal?.IDStr || sourceOriginal?.ID;
@@ -9983,9 +10335,19 @@ window.addEventListener('resize', fitGraph);
             // 已分离的子节点不进父节点的排布列表:其余兄弟据此重新紧凑排布(关闭空位),
             // 分离子树自身保留拖动后坐标,不被本次重排触及。parentById 仍保留映射,
             // 故分离岛内部(以分离节点为锚点)的重排上溯链不受影响。
+            // free 父节点自身是固定锚点，但其下的 auto 子节点仍是一组同级节点，
+            // 新增时必须一起分配槽位，才能把已有兄弟向下推开。
+            const sourceUsesFreeLayout = sourceData.isFreeNode
+                || sourceId.startsWith('free.')
+                || !this.isNodeAutoLayout(sourceId);
+            const isAutoIslandRoot = sourceUsesFreeLayout
+                && this.isNodeAutoLayout(targetId);
             if (this.isNodeAutoLayout(targetId) && !isSeparated(targetId)) {
                 childrenById[sourceId].push(targetId);
             }
+            // 直接挂在自由父节点下的 auto 子节点仍按它们当前相对父节点的位置定向，
+            // 但位置本身交给本次 reflow 重算，避免新增兄弟和旧节点叠在同一槽位。
+            if (isAutoIslandRoot) sidePinnedIds.add(targetId);
         });
 
         // 占位符无 parent 边,手动挂到目标父节点下,使其和真实兄弟一起被排布。

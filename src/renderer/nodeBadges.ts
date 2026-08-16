@@ -3,6 +3,7 @@ import { Component, Platform, TFile, finishRenderMath, renderMath, setIcon } fro
 import type * as cytoscape from 'cytoscape';
 import { ZKNode } from 'src/view/indexView';
 import { CrossDomainLink } from 'src/utils/utils';
+import { t } from 'src/lang/helper';
 import { darkenColor, hexToRgba, isModernThemeStyle, normalizeHexColor } from './colorUtils';
 import { dataStr } from './cyData';
 import type { CyData } from './types';
@@ -715,25 +716,27 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
 			const remarkEl = activeDocument.createElement('div');
 			remarkEl.className = 'zk-node-remark-badge';
 			remarkEl.dataset.nodeId = node.id();
-			remarkEl.textContent = 'R';
+			setIcon(remarkEl, 'sticky-note');
+			remarkEl.querySelector('svg')?.setAttribute('width', '13');
+			remarkEl.querySelector('svg')?.setAttribute('height', '13');
+			remarkEl.setAttribute('aria-label', t('detail open'));
+			remarkEl.setAttribute('title', t('detail open'));
             let lastRemarkColor = '';
             const applyRemarkBadgeStyle = () => {
                 const remarkColor = node.data('branchNodeBorder') || '#ef4444';
                 if (remarkColor === lastRemarkColor) return;
                 lastRemarkColor = remarkColor;
+                const badgeColor = normalizeHexColor(String(remarkColor)) || '#ef4444';
                 remarkEl.setCssStyles({
                     position: 'absolute',
                     transformOrigin: 'top left',
-                    width: '28px',
-                    height: '28px',
-                    background: `radial-gradient(circle at 50% 32%, ${remarkColor} 0%, ${remarkColor} 58%, ${remarkColor}d8 100%)`,
-                    color: '#ffffff',
-                    fontSize: '16px',
-                    fontWeight: '700',
-                    borderRadius: '999px',
-                    border: '1.5px solid rgba(255, 255, 255, 0.5)',
-                    boxShadow: `0 0 8px ${remarkColor}59, 0 1px 3px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.3)`,
-                    textShadow: '0 1px 1px rgba(0, 0, 0, 0.25)',
+                    width: '20px',
+                    height: '20px',
+                    background: hexToRgba(darkenColor(badgeColor, 0.46), 0.92),
+                    color: 'rgba(255, 255, 255, 0.9)',
+                    borderRadius: '5px',
+                    border: `1px solid ${hexToRgba(badgeColor, 0.52)}`,
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.24)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -741,6 +744,8 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                     cursor: `${readOnly ? 'default' : 'pointer'}`,
                     userSelect: 'none',
                     zIndex: '30',
+                    opacity: '0.78',
+                    transition: 'opacity 0.15s ease, filter 0.15s ease',
                     transform: OFFSCREEN_TRANSFORM,
                 });
             };
@@ -835,7 +840,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                 // 文本节点的 Canvas label 会被 markdown overlay 替换（text-opacity:0），
                 // 但仍会撑大默认 boundingBox。排除 labels 后位置才贴合实际可视卡片。
                 const boundingBox = this.cachedRenderedBB(node, node.data('hasMarkdownOverlay') ? 'shape' : 'full');
-                const size = 28 * zoom;
+                const size = 20 * zoom;
 
                 let x: number, y: number;
                 const curIsImageNode = node.data('isImageNode');
@@ -882,7 +887,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
 
             badgeUpdaters.push({ node, fn: updateRemarkPosition });
 
-            // R 角标点击 = 打开/切换该节点的详情侧栏(读+编辑都在面板里完成)。
+            // 备注角标点击 = 打开/切换该节点的详情侧栏(读+编辑都在面板里完成)。
             // 只读态也允许点开查看备注,编辑能力由面板内部 canEdit 把关。
             const swallowRemarkPointer = (e: Event) => {
                 e.preventDefault();
@@ -902,6 +907,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
             });
 
             remarkEl.addEventListener('mouseenter', () => {
+                remarkEl.setCssStyles({ opacity: '1', filter: 'brightness(1.2)' });
                 const remarkText = dataStr(node, 'remark');
                 if (!remarkText) return;
                 ensureTooltipRendered(); // 首次 hover 才渲染富文本(懒加载)
@@ -912,6 +918,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
             });
 
             remarkEl.addEventListener('mouseleave', () => {
+                remarkEl.setCssStyles({ opacity: '0.78', filter: 'none' });
                 tooltipEl.setCssStyles({
                     opacity: '0',
                     transform: 'translateY(4px)',
@@ -1894,6 +1901,36 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
 
         // 尺寸回写助手(上移到循环前):懒建时每个节点在 buildOrReuse 内即时调用,
         // 而非等循环结束统一 flush(那时懒建尚未发生)。
+        const fitMathToAvailableWidth = (el: HTMLElement): void => {
+            const overlayRect = el.getBoundingClientRect();
+            const paddingRight = parseFloat(getComputedStyle(el).paddingRight) || 0;
+            const contentRight = overlayRect.right - paddingRight;
+
+            el.querySelectorAll<HTMLElement>('.zk-text-md-math mjx-container').forEach((mathEl) => {
+                const mathParent = mathEl.parentElement;
+                if (!mathParent) return;
+
+                // MathJax 通常在容器上写百分比字号。首次记录其相对字号，随后每次先还原
+                // 基准值再测量，避免同一公式因重复测量被不断缩小。
+                let baseScale = Number(mathEl.dataset.zkBaseFontScale || 0);
+                if (!baseScale) {
+                    const parentFontSize = parseFloat(getComputedStyle(mathParent).fontSize) || 1;
+                    const mathFontSize = parseFloat(getComputedStyle(mathEl).fontSize) || parentFontSize;
+                    baseScale = mathFontSize / parentFontSize;
+                    mathEl.dataset.zkBaseFontScale = String(baseScale);
+                }
+                mathEl.setCssStyles({ fontSize: `${baseScale}em` });
+
+                const mathRect = mathEl.getBoundingClientRect();
+                const availableWidth = contentRight - mathRect.left;
+                const intrinsicWidth = Math.max(mathEl.scrollWidth, mathRect.width);
+                if (availableWidth <= 0 || intrinsicWidth <= availableWidth) return;
+
+                // 公式作为一个整体缩放而非裁切或横向滚动，保持等号、上下标等数学结构完整。
+                mathEl.setCssStyles({ fontSize: `${baseScale * (availableWidth / intrinsicWidth)}em` });
+            });
+        };
+
         const measureOverlayHeightForWidth = (el: HTMLElement, width: number, fallbackHeight: number): number => {
             if (!el || width <= 0 || !el.isConnected) return fallbackHeight;
             const prevWidth = el.style.width;
@@ -1914,6 +1951,7 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                     display: 'block',
                     visibility: 'hidden',
                 });
+                fitMathToAvailableWidth(el);
                 const measured = Math.ceil(Math.max(el.scrollHeight, el.getBoundingClientRect().height)) + 12;
                 // 仍测不到(未挂载/被父级隐藏等)→ 回退,避免把节点压成扁条
                 if (measured <= 12) return fallbackHeight;

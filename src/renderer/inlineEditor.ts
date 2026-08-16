@@ -1764,8 +1764,9 @@ export function startInPlaceTextEdit(this: CytoscapeRenderer, node: cytoscape.No
 export function startPlaceholderInPlaceEdit(this: CytoscapeRenderer, node: cytoscape.NodeSingular, options?: { cursor?: 'select' | 'end' }): void {
         if (!this.cy || !this.container) return;
 
-        const data = node.data();
+        const data = node.data() as CyData;
         const isDraft = !!data.isDraft;                 // 草稿节点(#20):复用本 CM6 编辑器,但保存只更新内存
+        const isPlaceholder = !!data.isPlaceholder;
         const originalLabel = String(data.label || ''); // 草稿原始内容,用于取消时还原 / 判断是否新建空节点
 
         this.ensureNodeVisibleInViewport(node);
@@ -1886,7 +1887,7 @@ export function startPlaceholderInPlaceEdit(this: CytoscapeRenderer, node: cytos
         };
 
         let syncRaf: number | null = null;
-        let anchorLeftModel = node.position().x - (Number(node.width()) || defaultW) / 2;
+        const anchorLeftModel = node.position().x - (Number(node.width()) || defaultW) / 2;
         const autoGrow = () => {
             if (!this.cy || node.removed()) return;
             const value = mdEditor?.getValue() ?? '';
@@ -1900,7 +1901,9 @@ export function startPlaceholderInPlaceEdit(this: CytoscapeRenderer, node: cytos
             const currentWidth = Number(node.width()) || defaultW;
             const currentPosition = node.position();
             const anchoredX = anchorLeftModel + currentWidth / 2;
-            if (Number.isFinite(anchoredX) && Math.abs(currentPosition.x - anchoredX) > 0.5) {
+            // Tab 新建的占位节点以快捷键计算出的中心坐标为锚点。编辑时若为保持左边缘
+            // 而改变 x，提交刷新又会按该初始坐标重建，视觉上便会先偏移再跳回。
+            if (!isPlaceholder && Number.isFinite(anchoredX) && Math.abs(currentPosition.x - anchoredX) > 0.5) {
                 node.position({ x: anchoredX, y: currentPosition.y });
             }
             if (syncRaf !== null) return;

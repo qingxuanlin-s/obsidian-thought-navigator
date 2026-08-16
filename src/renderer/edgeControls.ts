@@ -9,6 +9,7 @@ export interface EdgeControlsDeps {
 	getCy(): cytoscape.Core | null;
 	getContainer(): HTMLElement | null;
 	getCurrentData(): GraphData | null;
+	createChildFromNode(node: cytoscape.NodeSingular): void;
 	overlayScheduler: OverlayScheduler;
 	showGroupActionDialog(
 		existingGroups: GroupInfo[],
@@ -61,10 +62,17 @@ export class EdgeControls {
 			this.edgeEndpointRemoveHandler = null;
 		}
 		cy.nodes().forEach((node: cytoscape.NodeSingular) => {
-			const listeners = node.scratch('_zkConnectionHandleListeners') as { mouseover?: cytoscape.EventHandler; mouseout?: cytoscape.EventHandler } | undefined;
+			const listeners = node.scratch('_zkConnectionHandleListeners') as {
+				mouseover?: cytoscape.EventHandler;
+				mouseout?: cytoscape.EventHandler;
+				select?: cytoscape.EventHandler;
+				unselect?: cytoscape.EventHandler;
+			} | undefined;
 			if (!listeners) return;
 			if (listeners.mouseover) node.off('mouseover', undefined, listeners.mouseover);
 			if (listeners.mouseout) node.off('mouseout', undefined, listeners.mouseout);
+			if (listeners.select) node.off('select', undefined, listeners.select);
+			if (listeners.unselect) node.off('unselect', undefined, listeners.unselect);
 			node.removeScratch('_zkConnectionHandleListeners');
 		});
 		this.clearTransientUpdaters();
@@ -120,35 +128,62 @@ export class EdgeControls {
 
 		cy.nodes('[!isPlaceholder]').forEach((node: cytoscape.NodeSingular) => {
 			// 自幂等:解绑该节点上一次的 hover 监听(独立调用时无 cleanupBindings 兜底),避免重复绑定。
-			const oldListeners = node.scratch('_zkConnectionHandleListeners') as { mouseover?: cytoscape.EventHandler; mouseout?: cytoscape.EventHandler } | undefined;
+			const oldListeners = node.scratch('_zkConnectionHandleListeners') as {
+				mouseover?: cytoscape.EventHandler;
+				mouseout?: cytoscape.EventHandler;
+				select?: cytoscape.EventHandler;
+				unselect?: cytoscape.EventHandler;
+			} | undefined;
 			if (oldListeners) {
 				if (oldListeners.mouseover) node.off('mouseover', undefined, oldListeners.mouseover);
 				if (oldListeners.mouseout) node.off('mouseout', undefined, oldListeners.mouseout);
+				if (oldListeners.select) node.off('select', undefined, oldListeners.select);
+				if (oldListeners.unselect) node.off('unselect', undefined, oldListeners.unselect);
 			}
 			const handle = activeDocument.createElement('div');
 			handle.className = 'zk-connection-handle';
-			const baseHandleSize = 36;
+			const hitTargetSize = 40;
+			const visualSize = 28;
+			handle.setAttribute('title', '新建子节点（Tab）。拖动可指定位置或建立关联');
+			handle.setAttribute('aria-label', '新建子节点');
 			handle.setCssStyles({
 				position: 'absolute',
-				width: `${baseHandleSize}px`,
-				height: `${baseHandleSize}px`,
-				background: 'radial-gradient(circle at 50% 34%, #7aa6e6 0%, #5b8fd9 60%, #4a7bc4 100%)',
-				border: '1.5px solid rgba(255, 255, 255, 0.55)',
-				borderRadius: '50%',
-				cursor: 'crosshair',
+				width: `${hitTargetSize}px`,
+				height: `${hitTargetSize}px`,
+				cursor: 'pointer',
 				pointerEvents: 'auto',
 				transform: 'translate(-50%, -50%)',
-				boxShadow: '0 0 10px rgba(91, 143, 217, 0.55), 0 1px 3px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.35)',
 				opacity: '0',
-				transition: 'opacity 0.2s',
+				transition: 'opacity 160ms ease-out',
 			});
+			const handleGlyph = activeDocument.createElement('span');
+			handleGlyph.textContent = '+';
+			handleGlyph.setCssStyles({
+				position: 'absolute',
+				left: '50%',
+				top: '50%',
+				width: `${visualSize}px`,
+				height: `${visualSize}px`,
+				transform: 'translate(-50%, -50%)',
+				border: '2px solid rgba(255, 255, 255, 0.82)',
+				borderRadius: '50%',
+				background: '#4f8fdf',
+				boxShadow: '0 0 0 3px rgba(79, 143, 223, 0.16), 0 2px 7px rgba(0, 0, 0, 0.3)',
+				color: '#ffffff',
+				fontSize: '20px',
+				fontWeight: '600',
+				lineHeight: `${visualSize - 4}px`,
+				textAlign: 'center',
+				pointerEvents: 'none',
+			});
+			handle.appendChild(handleGlyph);
 			handle.setCssStyles({ display: 'none' });
 			handleContainer.appendChild(handle);
 
 			const nodeId = node.id();
 			let handleImageCardCache: HTMLElement | null = null;
 			let handleEmbedCardCache: HTMLElement | null = null;
-			let handleLastZoom = -1;
+			let lastGlyphSize = -1;
 			const updateHandlePosition = () => {
 				const currentCy = this.deps.getCy();
 				const currentContainer = this.deps.getContainer();
@@ -169,6 +204,17 @@ export class EdgeControls {
 				}
 
 				const zoom = currentCy.zoom();
+				const glyphSize = Math.min(visualSize, Math.max(20, visualSize * zoom));
+				if (glyphSize !== lastGlyphSize) {
+					lastGlyphSize = glyphSize;
+					handleGlyph.setCssStyles({
+						width: `${glyphSize}px`,
+						height: `${glyphSize}px`,
+						fontSize: `${Math.round(glyphSize * 0.7)}px`,
+						lineHeight: `${glyphSize - 4}px`,
+					});
+				}
+
 				const curIsImageNode = node.data('isImageNode');
 				const curIsEmbedNode = node.data('isEmbed');
 
@@ -220,14 +266,6 @@ export class EdgeControls {
 					display: 'block',
 					transform: `translate(${x}px, ${y}px) translate(-50%, -50%)`,
 				});
-				if (zoom !== handleLastZoom) {
-					handleLastZoom = zoom;
-					handle.setCssStyles({
-						width: `${baseHandleSize * zoom}px`,
-						height: `${baseHandleSize * zoom}px`,
-						borderWidth: `${2 * zoom}px`,
-					});
-				}
 			};
 
 			handleUpdaters.push(updateHandlePosition);
@@ -236,12 +274,8 @@ export class EdgeControls {
 			handle.dataset.imageNodeId = nodeId;
 			handle.dataset.embedNodeId = nodeId;
 
-			// 小蓝点左半边压在节点右边缘上(x = x2,translate(-50%))。鼠标从节点内向右移到小蓝点时,
-			// 指针落到 handle(pointer-events:auto,z-index 高于画布)上 → cytoscape 立刻对节点派发
-			// mouseout。若此时立即 display:none,小蓝点会在「节点→小蓝点」的交接处消失,且因元素已隐藏,
-			// handle 自身的 mouseenter 永远不会触发。故改为「延迟隐藏 + handle.mouseenter 取消隐藏」:
-			// node.mouseout 仅预约隐藏(此刻 handle 仍可见可命中),指针真正落到 handle 上时 mouseenter
-			// 取消预约,从而桥接交接间隙。从节点外接近时同理无副作用。
+			// 选中节点时操作柄持续可见；hover 仅作为未选中节点的临时发现入口。
+			// 延迟隐藏仍保留，以桥接节点与操作柄之间的指针交接。
 			let hideTimer: number | null = null;
 			const cancelHide = () => {
 				if (hideTimer !== null) {
@@ -256,6 +290,7 @@ export class EdgeControls {
 				updateHandlePosition();
 			};
 			const scheduleHide = () => {
+				if (node.selected()) return;
 				cancelHide();
 				hideTimer = window.setTimeout(() => {
 					hideTimer = null;
@@ -268,12 +303,19 @@ export class EdgeControls {
 
 			const handleMouseOver = showHandle;
 			const handleMouseOut = scheduleHide;
+			const handleSelect = showHandle;
+			const handleUnselect = scheduleHide;
 			node.on('mouseover', handleMouseOver);
 			node.on('mouseout', handleMouseOut);
+			node.on('select', handleSelect);
+			node.on('unselect', handleUnselect);
 			node.scratch('_zkConnectionHandleListeners', {
 				mouseover: handleMouseOver,
-				mouseout: handleMouseOut
+				mouseout: handleMouseOut,
+				select: handleSelect,
+				unselect: handleUnselect,
 			});
+			if (node.selected()) showHandle();
 
 			handle.addEventListener('mouseenter', showHandle);
 			handle.addEventListener('mouseleave', (e: MouseEvent) => {
@@ -430,6 +472,7 @@ export class EdgeControls {
 		if (!this.deps.getCy() || !this.deps.getContainer()) return;
 
 		let isDragging = false;
+		let dragStart: { x: number; y: number } | null = null;
 		let dragLine: SVGLineElement | null = null;
 		let svgOverlay: SVGSVGElement | null = null;
 		const detachDocListeners = () => {
@@ -444,6 +487,7 @@ export class EdgeControls {
 			e.stopPropagation();
 
 			isDragging = true;
+			dragStart = { x: e.clientX, y: e.clientY };
 			handle.setCssStyles({ opacity: '1' });
 			svgOverlay = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'svg');
 			svgOverlay.setCssStyles({
@@ -520,6 +564,9 @@ export class EdgeControls {
 			const containerRect = container.getBoundingClientRect();
 			const mouseX = e.clientX - containerRect.left;
 			const mouseY = e.clientY - containerRect.top;
+			const dragDistance = dragStart
+				? Math.hypot(e.clientX - dragStart.x, e.clientY - dragStart.y)
+				: 0;
 			const targetNode = this.getNodeAtPosition({ x: mouseX, y: mouseY });
 
 			if (svgOverlay) {
@@ -528,10 +575,18 @@ export class EdgeControls {
 			}
 			dragLine = null;
 			cy.nodes('.connection-target-hover').removeClass('connection-target-hover');
+			dragStart = null;
 
 			const sourceData = sourceNode.data();
 			const sourceOriginalNode = sourceData.originalNode;
 			const sourceId = sourceData.originalNodeId || sourceData.id;
+
+			// 点击是主操作：按 Tab 的同一规则直接新建子节点。
+			// 拖动才进入指定落点新建/建立关联，避免让常用操作依赖精细拖拽。
+			if (dragDistance < 6) {
+				if (sourceOriginalNode) this.deps.createChildFromNode(sourceNode);
+				return;
+			}
 
 			if (targetNode && targetNode !== sourceNode) {
 				const targetData = targetNode.data();

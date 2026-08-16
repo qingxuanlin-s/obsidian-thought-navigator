@@ -1130,7 +1130,8 @@ export function bindEvents(this: CytoscapeRenderer): void {
         };
 
         // grab 时计算分离圆:圆心=父节点位置,半径=非分离兄弟最远距离+forwardGap,
-        // 独子/无兄弟用默认最小半径。返回 null 表示该节点不参与分离(无父/非 auto)。
+        // 独子/无兄弟用默认最小半径。自由布局父节点下的 auto 子树根不参与此圆,
+        // 它是独立的自动子树岛,位置由用户放在自由区域后自行锚定。
         const computeSeparationOrbit = (
             grabbedNode: any,
             grabbedBizId: string
@@ -1147,6 +1148,11 @@ export function bindEvents(this: CytoscapeRenderer): void {
             const parentNode = parentEdges.last().source() as cytoscape.NodeSingular;
             if (parentNode.length === 0) return null;
             const parentBizId = bizIdOf(parentNode);
+            const parentData = parentNode.data() as CyData;
+            const parentUsesFreeLayout = parentData.isFreeNode
+                || parentBizId.startsWith('free.')
+                || !this.isNodeAutoLayoutForId(parentBizId);
+            if (parentUsesFreeLayout) return null;
             const ppos = parentNode.position();
             const separatedSet = new Set(this.currentOptions?.separatedNodeIds || []);
             // 只收集父节点的其它 auto 子节点(非分离、可见),取最远距离。
@@ -3807,13 +3813,15 @@ export function getAutoChildShortcutPosition(this: CytoscapeRenderer, activeNode
         return layoutAdapter.getAutoChildShortcutPosition(activeNode);
     }
 
-export function handleCreateChildNode(this: CytoscapeRenderer): void {
-        const activeNode = this.getActiveNode() as cytoscape.NodeSingular | null;
+export function handleCreateChildNode(this: CytoscapeRenderer, node?: cytoscape.NodeSingular): void {
+		const activeNode = node || this.getActiveNode() as cytoscape.NodeSingular | null;
         if (!activeNode) return;
 
         const nodeData = activeNode.data() as CyData;
-        const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
-        const finalPosition = this.isAutoNodeLayoutStyle()
+        const activeNodeId = nodeData.originalNode?.IDStr || nodeData.originalNode?.ID || nodeData.id;
+        // 节点级 auto 覆盖不能回退到文件默认值。否则 free 默认文件中的 auto
+        // 子树会先按自由坐标生成占位符,再由视图重排一次,造成明显的两段跳动。
+        const finalPosition = this.isNodeAutoLayoutForId(activeNodeId)
             ? this.getAutoChildShortcutPosition(activeNode)
             : this.getFreeChildShortcutPosition(activeNode);
 
@@ -3840,11 +3848,11 @@ export function handleCreateSiblingNode(this: CytoscapeRenderer): void {
         if (!activeNode) return;
 
         const nodeData = activeNode.data() as CyData;
-        const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
+        const activeNodeId = nodeData.originalNode?.IDStr || nodeData.originalNode?.ID || nodeData.id;
         const parent = activeNode.incomers('edge').sources();
         if (parent.length === 0) return;
 
-        const finalPosition = this.isAutoNodeLayoutStyle()
+        const finalPosition = this.isNodeAutoLayoutForId(activeNodeId)
             ? this.getAutoSiblingShortcutPosition(activeNode)
             : this.getFreeSiblingShortcutPosition(activeNode);
 
@@ -3873,12 +3881,11 @@ export function handleCreateParentNode(this: CytoscapeRenderer): void {
         const activeNode = this.getActiveNode() as cytoscape.NodeSingular | null;
         if (!activeNode) return;
 
-        const finalPosition = this.isAutoNodeLayoutStyle()
+        const nodeData = activeNode.data() as CyData;
+        const activeNodeId = nodeData.originalNode?.IDStr || nodeData.originalNode?.ID || nodeData.id;
+        const finalPosition = this.isNodeAutoLayoutForId(activeNodeId)
             ? this.getAutoParentShortcutPosition(activeNode)
             : this.getFreeParentShortcutPosition(activeNode);
-        const nodeData = activeNode.data() as CyData;
-
-        const activeNodeId = nodeData.originalNode?.ID || nodeData.id;
 
 
         // 触发创建父节点事件
