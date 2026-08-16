@@ -12,6 +12,24 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
     {
+        version: '0.3.2',
+        date: '2026-08-16',
+        highlights: [
+            {
+                zh: '重构节点生成时的碰撞检测算法。',
+                en: 'Refactored collision detection when generating nodes.',
+            },
+            {
+                zh: '优化新建“+”节点操作。',
+                en: 'Improved the “+” action for creating nodes.',
+            },
+            {
+                zh: '优化数学公式显示。',
+                en: 'Improved math formula rendering.',
+            },
+        ],
+    },
+    {
         version: '0.3.1',
         date: '2026-07-28',
         highlights: [

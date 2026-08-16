@@ -8552,6 +8552,134 @@ window.addEventListener('resize', fitGraph);
     }
 
     /**
+     * 同一父节点、同一生长方向的兄弟分支不能侵入彼此的影响范围。
+     *
+     * 影响范围取整棵可见子树在兄弟排列轴上的投影区间。发生相交时固定前一个
+     * 分支，只把后一个分支连同全部后代沿排列轴推开。分支向外延伸得再深，也不会
+     * 被错误换算成纵向半径，因此不会出现一次新增把整张图拉散的情况。
+     */
+    private resolveSiblingBranchInfluenceCollisions(
+        cyNodeById: Map<string, cytoscape.NodeSingular>,
+        parentById: Record<string, string | undefined>,
+        structuralChildrenById: Record<string, string[]>,
+        visibleNodes: Record<string, AutoLayoutNodeInput>,
+        nodePositions: Record<string, { x: number; y: number }>,
+        changedParentId: string
+    ): void {
+        const round2 = (value: number): number => Math.round(value * 100) / 100;
+        const branchGap = 56;
+
+        const collectSubtreeIds = (rootId: string): string[] => {
+            const ids: string[] = [];
+            const pending = [rootId];
+            const seen = new Set<string>();
+            while (pending.length > 0) {
+                const nodeId = pending.pop()!;
+                if (seen.has(nodeId) || !cyNodeById.has(nodeId)) continue;
+                seen.add(nodeId);
+                ids.push(nodeId);
+                (structuralChildrenById[nodeId] || []).forEach((childId) => pending.push(childId));
+            }
+            return ids;
+        };
+
+        const translateSubtree = (
+            rootId: string,
+            axis: { x: number; y: number },
+            distance: number
+        ): void => {
+            collectSubtreeIds(rootId).forEach((nodeId) => {
+                const node = cyNodeById.get(nodeId);
+                const position = nodePositions[nodeId] || node?.position();
+                if (!node || !position) return;
+                const next = {
+                    x: round2(position.x + axis.x * distance),
+                    y: round2(position.y + axis.y * distance),
+                };
+                nodePositions[nodeId] = next;
+                node.position(next);
+            });
+        };
+
+        const getProjectedRange = (
+            rootId: string,
+            axis: { x: number; y: number }
+        ): { min: number; max: number } | null => {
+            let min = Infinity;
+            let max = -Infinity;
+            collectSubtreeIds(rootId).forEach((nodeId) => {
+                const layoutNode = visibleNodes[nodeId];
+                const cyNode = cyNodeById.get(nodeId);
+                const position = nodePositions[nodeId] || cyNode?.position();
+                if (!layoutNode || !position) return;
+                const center = position.x * axis.x + position.y * axis.y;
+                const halfSpan = (
+                    Math.abs(axis.x) * layoutNode.size.width
+                    + Math.abs(axis.y) * layoutNode.size.height
+                ) / 2;
+                min = Math.min(min, center - halfSpan);
+                max = Math.max(max, center + halfSpan);
+            });
+            return Number.isFinite(min) && Number.isFinite(max) ? { min, max } : null;
+        };
+
+        // 先整理变化点内部的兄弟，再逐级向上整理它所在的整条分支。
+        const ancestors: string[] = [];
+        const visited = new Set<string>();
+        let current: string | undefined = changedParentId;
+        while (current && !visited.has(current)) {
+            visited.add(current);
+            ancestors.push(current);
+            current = parentById[current];
+        }
+
+        for (const parentId of ancestors) {
+            const parentNode = cyNodeById.get(parentId);
+            const parentPosition = nodePositions[parentId] || parentNode?.position();
+            if (!parentPosition) continue;
+
+            const preset = this.getPresetForChildren(parentId);
+            const groups = new Map<GrowthDirection, string[]>();
+            for (const childId of structuralChildrenById[parentId] || []) {
+                const childNode = cyNodeById.get(childId);
+                const childPosition = nodePositions[childId] || childNode?.position();
+                if (!childNode || !childPosition || !visibleNodes[childId]) continue;
+                const direction = quantizeToPool(
+                    childPosition.x - parentPosition.x,
+                    childPosition.y - parentPosition.y,
+                    PRESET_POOL[preset]
+                );
+                const group = groups.get(direction) || [];
+                group.push(childId);
+                groups.set(direction, group);
+            }
+
+            for (const [direction, branchRoots] of groups) {
+                if (branchRoots.length < 2) continue;
+                const axis = this.getAutoStackAxis(direction, preset);
+                branchRoots.sort((a, b) => {
+                    const ap = nodePositions[a] || cyNodeById.get(a)!.position();
+                    const bp = nodePositions[b] || cyNodeById.get(b)!.position();
+                    return (ap.x * axis.x + ap.y * axis.y) - (bp.x * axis.x + bp.y * axis.y);
+                });
+
+                let occupiedMax = -Infinity;
+                for (const branchRootId of branchRoots) {
+                    const range = getProjectedRange(branchRootId, axis);
+                    if (!range) continue;
+                    const distance = Number.isFinite(occupiedMax)
+                        ? Math.max(0, occupiedMax + branchGap - range.min)
+                        : 0;
+                    if (distance > 0.01) {
+                        translateSubtree(branchRootId, axis, distance);
+                    }
+                    occupiedMax = Math.max(occupiedMax, range.max + distance);
+                }
+            }
+        }
+    }
+
+    /**
      * 只为新自由子节点找一个空的环绕槽位。
      * 已有自由节点和其它分支都被视为固定障碍,绝不因新节点而被自动重排。
      */
@@ -10350,11 +10478,15 @@ window.addEventListener('resize', fitGraph);
             if (isAutoIslandRoot) sidePinnedIds.add(targetId);
         });
 
-        // 占位符无 parent 边,手动挂到目标父节点下,使其和真实兄弟一起被排布。
+        // 占位符无 parent 边,同时挂进自动布局和完整结构树。后者保证父分支因
+        // 预览而整体避让时，占位符会和父节点、真实兄弟同步平移，预览位置与提交后一致。
         if (includePlaceholder && nodes[includePlaceholder.id] && nodes[includePlaceholder.parentId]) {
             parentById[includePlaceholder.id] = includePlaceholder.parentId;
             const list = childrenById[includePlaceholder.parentId] || (childrenById[includePlaceholder.parentId] = []);
             if (!list.includes(includePlaceholder.id)) list.push(includePlaceholder.id);
+            const structuralList = structuralChildrenById[includePlaceholder.parentId]
+                || (structuralChildrenById[includePlaceholder.parentId] = []);
+            if (!structuralList.includes(includePlaceholder.id)) structuralList.push(includePlaceholder.id);
         }
 
         const realMocRootIds = new Set<string>(mocData.nodes.map((node) => node.nodeID));
@@ -10548,6 +10680,14 @@ window.addEventListener('resize', fitGraph);
             Object.entries(nodePositions).forEach(([nodeId, position]) => {
                 cyNodeById.get(nodeId)?.position(position);
             });
+            this.resolveSiblingBranchInfluenceCollisions(
+                cyNodeById,
+                parentById,
+                structuralChildrenById,
+                nodes,
+                nodePositions,
+                parentNodeId
+            );
         });
 
         if (relayoutOptions.persistPositions === false) {
