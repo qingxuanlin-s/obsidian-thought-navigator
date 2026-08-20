@@ -2724,6 +2724,13 @@ function addCollapseToggleHandle(this: CytoscapeRenderer): void {
 
                 const bb = node.renderedBoundingBox();
                 const size = 24;
+                const containerWidth = this.container?.clientWidth ?? 0;
+                const containerHeight = this.container?.clientHeight ?? 0;
+                // 节点离开画布可视区域后不应把手柄钳在边缘，否则会留下与节点脱节的孤立按钮。
+                if (bb.x1 < 0 || bb.x2 > containerWidth || bb.y1 < 0 || bb.y2 > containerHeight) {
+                    handle.setCssStyles({ display: 'none' });
+                    return;
+                }
                 // 负间隙：按钮右侧叠在节点左边缘上，消除节点→按钮移动途中的鼠标死区
                 const gap = -4;
                 const rawLeft = bb.x1 - size - gap;

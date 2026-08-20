@@ -12,6 +12,20 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
     {
+        version: '0.3.3',
+        date: '2026-08-20',
+        highlights: [
+            {
+                zh: '嵌入音频现以原生播放器展示；编辑节点时可通过“/录音”快速检索录音命令。',
+                en: 'Audio embeds now use native playback controls, and the node editor finds recording commands through “/recording”.',
+            },
+            {
+                zh: '修复节点移出画布可视区域后，仍残留孤立展开按钮的问题。',
+                en: 'Fixed orphaned expand controls remaining after their nodes leave the visible canvas.',
+            },
+        ],
+    },
+    {
         version: '0.3.2',
         date: '2026-08-16',
         highlights: [

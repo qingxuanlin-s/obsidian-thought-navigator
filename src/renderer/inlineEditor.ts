@@ -9,6 +9,22 @@ interface AppCommandsInternal {
     listCommands?(): Array<{ id: string; name: string }>;
     commands?: Record<string, { id: string; name: string }>;
 }
+
+type SlashCommand = { id: string; name: string };
+
+function isStartAudioRecordingCommand(cmd: SlashCommand): boolean {
+    const text = `${cmd.id} ${cmd.name}`.toLowerCase();
+    const isAudioRecorder = text.includes('audio-recorder')
+        || (text.includes('record') && text.includes('audio'));
+    return isAudioRecorder && !/(?:stop|停止|结束)/.test(text);
+}
+
+function getSlashCommandSearchText(cmd: SlashCommand): string {
+    const text = `${cmd.id} ${cmd.name}`.toLowerCase();
+    return isStartAudioRecordingCommand(cmd)
+        ? `${text} 录音 音频 audio recording recorder`
+        : text;
+}
 import {
     DEFAULT_SELECTION_BG_COLOR,
     DEFAULT_SELECTION_TEXT_COLOR,
@@ -1728,9 +1744,7 @@ export function startInPlaceTextEdit(this: CytoscapeRenderer, node: cytoscape.No
             (editorHost as HTMLElement & { _mdEditor?: EmbeddableMarkdownEditor | null })._mdEditor = mdEditor;
             slashMenu = attachSlashCommandMenu(app, () => mdEditor, editorHost, (cmd) => {
                 // 录音类命令拦截:改用自带录音(不打开文件/不切视图),录完插入当前编辑框
-                const hay = `${cmd.id} ${cmd.name}`.toLowerCase();
-                const isAudio = hay.includes('audio-recorder') || (hay.includes('record') && hay.includes('audio'));
-                if (!isAudio || /stop/.test(hay)) return false; // 仅拦截"开始录音"
+                if (!isStartAudioRecordingCommand(cmd)) return false;
                 startNodeAudioRecording(app, () => mdEditor, this.container, sourcePath, originalNode.IDStr);
                 return true;
             });
@@ -2071,9 +2085,7 @@ export function startPlaceholderInPlaceEdit(this: CytoscapeRenderer, node: cytos
             });
             slashMenu = attachSlashCommandMenu(app, () => mdEditor, editorHost, (cmd) => {
                 // 录音类命令拦截:新建节点尚未落盘,录完直接插入编辑框,随保存一起落地
-                const hay = `${cmd.id} ${cmd.name}`.toLowerCase();
-                const isAudio = hay.includes('audio-recorder') || (hay.includes('record') && hay.includes('audio'));
-                if (!isAudio || /stop/.test(hay)) return false;
+                if (!isStartAudioRecordingCommand(cmd)) return false;
                 startNodeAudioRecording(app, () => mdEditor, this.container, sourcePath, '');
                 return true;
             });
@@ -2958,12 +2970,12 @@ export function attachSlashCommandMenu(
             let filtered: Array<{ id: string; name: string }>;
             if (tokens.length) {
                 filtered = all.filter((c) => {
-                    const name = c.name.toLowerCase();
-                    return tokens.every((t) => name.includes(t));
+                    const searchText = getSlashCommandSearchText(c);
+                    return tokens.every((t) => searchText.includes(t));
                 });
                 filtered.sort((a, b) => {
-                    const ai = a.name.toLowerCase().indexOf(tokens[0]);
-                    const bi = b.name.toLowerCase().indexOf(tokens[0]);
+                    const ai = getSlashCommandSearchText(a).indexOf(tokens[0]);
+                    const bi = getSlashCommandSearchText(b).indexOf(tokens[0]);
                     return ai - bi || a.name.localeCompare(b.name);
                 });
             } else {

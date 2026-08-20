@@ -4793,10 +4793,16 @@ window.addEventListener('resize', fitGraph);
 
             const parsed = this.parseRawWikiLinkInput(label);
             if (parsed) {
-                // 情况 1：检测到 wiki link/嵌入 link → 创建文件节点
-                const aliasToSave = parsed.displayText && parsed.displayText !== parsed.wikiLink
-                    ? parsed.displayText : undefined;
-                await this.finalizeFileNode(nodeId, parsed.wikiLink, label, position, parsed.isEmbed, aliasToSave, nodeSize);
+                // 单独的音频嵌入继续保存为文本节点，复用文本节点内已经稳定的 audio
+                // 播放器渲染。若存成通用 embed 节点，预览器会尝试读取二进制内容并显示乱码。
+                if (parsed.isEmbed && this.isAudioWikiLink(parsed.wikiLink)) {
+                    await this.finalizeTextOnlyNode(nodeId, label.trim(), position);
+                } else {
+                    // 情况 1：检测到 wiki link/嵌入 link → 创建文件节点
+                    const aliasToSave = parsed.displayText && parsed.displayText !== parsed.wikiLink
+                        ? parsed.displayText : undefined;
+                    await this.finalizeFileNode(nodeId, parsed.wikiLink, label, position, parsed.isEmbed, aliasToSave, nodeSize);
+                }
             } else if (label.trim()) {
                 // 情况 2：无 wiki link → 创建纯文字节点（保留编辑时的可视尺寸）
                 await this.finalizeTextOnlyNode(nodeId, label.trim(), position, nodeSize);
@@ -7888,6 +7894,11 @@ window.addEventListener('resize', fitGraph);
         }
 
         return { wikiLink, displayText, isEmbed };
+    }
+
+    private isAudioWikiLink(wikiLink: string): boolean {
+        const path = wikiLink.split('#')[0].trim().toLowerCase();
+        return /\.(?:m4a|mp3|wav|ogg|oga|aac|flac|webm)$/.test(path);
     }
 
     /**

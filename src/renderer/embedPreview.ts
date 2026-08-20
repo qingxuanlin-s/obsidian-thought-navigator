@@ -315,6 +315,7 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
             if (!originalNode?.file) return;
             const sourceFile = originalNode.file;
             const isExcalidrawFile = sourceFile.path.includes('.excalidraw');
+			const isAudioFile = /^(?:m4a|mp3|wav|ogg|oga|aac|flac|webm)$/i.test(sourceFile.extension);
 			const nodeId = node.id();
 			const persistedSize = embedNodeSizes[originalNode.ID] || embedNodeSizes[originalNode.IDStr];
 			if (persistedSize && persistedSize.width > 0 && persistedSize.height > 0) {
@@ -636,7 +637,7 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
                 if (e.button !== 0) return;
                 if (e.detail >= 2) return; // 双击交给编辑逻辑
                 const target = e.target as HTMLElement | null;
-                if (target?.closest('a, button, input, textarea, select, [contenteditable="true"], .cm-editor')) return;
+				if (target?.closest('a, audio, video, button, input, textarea, select, [contenteditable="true"], .cm-editor')) return;
                 e.preventDefault();
                 e.stopPropagation();
                 if (!node.selected()) {
@@ -859,7 +860,29 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
                         contentEl.textContent = `Excalidraw 预览不可用：${sourceFile.basename || sourceFile.path}`;
                     }
                 })();
-            } else if (!isExcalidraw) {
+			} else if (isAudioFile) {
+				contentEl.textContent = '';
+				contentEl.setCssStyles({
+					display: 'flex',
+					alignItems: 'center',
+					justifyContent: 'center',
+					padding: '12px 14px',
+					overflow: 'hidden',
+				});
+
+				const audio = activeDocument.createElement('audio');
+				audio.src = app.vault.getResourcePath(sourceFile);
+				audio.controls = true;
+				audio.preload = 'metadata';
+				audio.setCssStyles({
+					width: '100%',
+					maxWidth: '100%',
+				});
+				['pointerdown', 'mousedown', 'click', 'dblclick', 'wheel', 'contextmenu'].forEach((eventName) => {
+					audio.addEventListener(eventName, (event) => event.stopPropagation());
+				});
+				contentEl.appendChild(audio);
+			} else if (!isExcalidraw) {
                 // 普通 Markdown 文件
                 app.vault.cachedRead(sourceFile).then(async (markdown: string) => {
                     if (!contentEl.isConnected) return;
