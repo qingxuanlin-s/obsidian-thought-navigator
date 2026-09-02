@@ -6935,10 +6935,10 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 
 
 /* === 图谱 × 知识工作台上下文桥 === */
-.zk-chip-project-badge { align-items:center; gap:3px; cursor:pointer; border:1px solid var(--background-modifier-border); border-radius:999px; padding:1px 5px; margin-left:4px; color:var(--text-muted); background:var(--background-secondary); }
+.zk-chip-project-badge { display:inline-flex; align-items:center; gap:3px; min-height:18px; cursor:pointer; border:1px solid var(--background-modifier-border); border-radius:999px; padding:0 6px; margin-left:4px; color:var(--text-muted); background:var(--background-secondary); vertical-align:middle; transition:color 120ms ease, border-color 120ms ease, background 120ms ease; }
 .zk-chip-project-badge:hover, .zk-chip-project-badge.is-mounted { color:var(--interactive-accent); border-color:var(--interactive-accent); }
-.zk-chip-project-badge .svg-icon { width:12px; height:12px; }.zk-chip-project-badge-count { font-size:10px; font-weight:700; line-height:1; }
-.zk-workspace-source-capsule, .zk-moc-parent-chip { align-items:center; gap:5px; max-width:220px; min-width:0; cursor:pointer; padding:3px 8px; border:1px solid var(--background-modifier-border); border-radius:999px; color:var(--text-muted); background:var(--background-secondary); font-size:11px; }
+.zk-chip-project-badge .svg-icon { width:12px; height:12px; }.zk-chip-project-badge-count { min-width:1ch; font-size:10px; font-weight:700; line-height:1; text-align:center; }
+.zk-workspace-source-capsule, .zk-moc-parent-chip { display:inline-flex; align-items:center; gap:5px; min-height:24px; max-width:220px; min-width:0; cursor:pointer; padding:2px 8px; border:1px solid var(--background-modifier-border); border-radius:999px; color:var(--text-muted); background:var(--background-secondary); font-size:11px; transition:color 120ms ease, border-color 120ms ease, background 120ms ease; }
 .zk-workspace-source-capsule:hover, .zk-moc-parent-chip:hover { color:var(--interactive-accent); border-color:var(--interactive-accent); }
 .zk-workspace-source-icon, .zk-moc-parent-chip-icon { display:flex; flex:none; }.zk-workspace-source-icon .svg-icon, .zk-moc-parent-chip-icon .svg-icon { width:12px; height:12px; }
 .zk-workspace-source-text, .zk-moc-parent-chip-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.zk-moc-parent-chip-more { flex:none; font-weight:700; color:var(--interactive-accent); }
@@ -6947,3 +6947,196 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 .zk-moc-selector-current { background:color-mix(in srgb, var(--interactive-accent) 14%, var(--background-secondary)); }.zk-moc-selector-current-mark { color:var(--interactive-accent); font-size:10px; font-weight:700; border:1px solid color-mix(in srgb, var(--interactive-accent) 45%, transparent); border-radius:99px; padding:1px 5px; }.zk-moc-parent-picker-icon { display:flex; color:var(--interactive-accent); }.zk-moc-parent-picker-icon .svg-icon { width:15px; height:15px; }.zk-moc-parent-picker-content { min-width:0; }.zk-moc-parent-picker-title { font-size:13px; }.zk-moc-parent-picker-path { color:var(--text-muted); font-size:11px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 /* 将工作台的独立色板映射到 Obsidian 主题变量，保留其信息密度而不强制深色。 */
 .zkw { --bg:var(--background-primary); --bg2:var(--background-primary-alt); --panel:var(--background-secondary); --panel-2:var(--background-secondary-alt); --panel-3:var(--background-modifier-hover); --ink:var(--text-normal); --ink-dim:var(--text-muted); --ink-faint:var(--text-faint); --ink-ghost:var(--text-faint); --rule:var(--background-modifier-border); --rule-2:var(--background-modifier-border-hover); --rule-3:var(--interactive-hover); --violet:var(--interactive-accent); --violet-d:var(--interactive-accent-hover); --font:var(--font-interface); --mono:var(--font-monospace); background:radial-gradient(1200px 700px at 78% -10%, color-mix(in srgb, var(--interactive-accent) 12%, transparent), transparent 60%), var(--bg); }
+
+/* 浅色主题：工作台保留层级和状态色，但使用可读的低饱和表面与文本。 */
+body.theme-light .zkw,
+body.zk-theme-light .zkw,
+.zk-view-content.zk-theme-light .zkw {
+  --bg: var(--zk-canvas-bg, var(--background-primary));
+  --bg2: var(--zk-surface, var(--background-primary-alt));
+  --panel: var(--zk-surface-solid, var(--background-secondary));
+  --panel-2: var(--zk-surface-raised, var(--background-secondary-alt));
+  --panel-3: var(--zk-control-bg, var(--background-modifier-hover));
+  --ink: var(--zk-text, var(--text-normal));
+  --ink-dim: var(--zk-text-muted, var(--text-muted));
+  --ink-faint: color-mix(in srgb, var(--zk-text-muted, var(--text-muted)) 76%, var(--zk-canvas-bg, var(--background-primary)));
+  --ink-ghost: color-mix(in srgb, var(--zk-text-muted, var(--text-muted)) 54%, var(--zk-canvas-bg, var(--background-primary)));
+  --rule: var(--zk-border-subtle, var(--background-modifier-border));
+  --rule-2: color-mix(in srgb, var(--zk-border-subtle, var(--background-modifier-border)) 82%, var(--zk-text, var(--text-normal)));
+  --rule-3: var(--zk-control-border, var(--interactive-hover));
+  --violet: var(--zk-accent, var(--interactive-accent));
+  --violet-d: var(--zk-accent, var(--interactive-accent-hover));
+  --zkw-accent-text: color-mix(in srgb, var(--zk-accent, var(--interactive-accent)) 78%, var(--zk-text, var(--text-normal)));
+  --zkw-accent-soft: color-mix(in srgb, var(--zk-accent, var(--interactive-accent)) 10%, transparent);
+  --zkw-accent-soft-strong: color-mix(in srgb, var(--zk-accent, var(--interactive-accent)) 16%, transparent);
+  --zkw-accent-border: color-mix(in srgb, var(--zk-accent, var(--interactive-accent)) 46%, var(--zk-border-subtle, var(--background-modifier-border)));
+  --zkw-hover: color-mix(in srgb, var(--zk-text, var(--text-normal)) 5%, transparent);
+  background: radial-gradient(1100px 620px at 78% -12%, color-mix(in srgb, var(--zk-accent, var(--interactive-accent)) 7%, transparent), transparent 62%), var(--bg);
+}
+
+body.theme-light .zkw ::-webkit-scrollbar-thumb,
+body.zk-theme-light .zkw ::-webkit-scrollbar-thumb,
+.zk-view-content.zk-theme-light .zkw ::-webkit-scrollbar-thumb { background:color-mix(in srgb, var(--text-muted) 24%, transparent); }
+body.theme-light .zkw ::-webkit-scrollbar-thumb:hover,
+body.zk-theme-light .zkw ::-webkit-scrollbar-thumb:hover,
+.zk-view-content.zk-theme-light .zkw ::-webkit-scrollbar-thumb:hover { background:color-mix(in srgb, var(--text-muted) 42%, transparent); }
+
+body.theme-light .zkw .tbar,
+body.zk-theme-light .zkw .tbar,
+.zk-view-content.zk-theme-light .zkw .tbar { background:color-mix(in srgb, var(--bg) 90%, transparent); }
+body.theme-light .zkw .brand .mk,
+body.zk-theme-light .zkw .brand .mk,
+.zk-view-content.zk-theme-light .zkw .brand .mk { color:var(--text-on-accent, #ffffff); box-shadow:0 2px 8px color-mix(in srgb, var(--interactive-accent) 24%, transparent); }
+body.theme-light .zkw .tbar .home:hover,
+body.zk-theme-light .zkw .tbar .home:hover,
+.zk-view-content.zk-theme-light .zkw .tbar .home:hover,
+body.theme-light .zkw .createbtn:hover,
+body.zk-theme-light .zkw .createbtn:hover,
+.zk-view-content.zk-theme-light .zkw .createbtn:hover { color:var(--zkw-accent-text); border-color:var(--zkw-accent-border); background:var(--zkw-accent-soft); }
+body.theme-light .zkw .tbar .ticon:hover,
+body.theme-light .zkw .rail-head .add:hover,
+body.zk-theme-light .zkw .tbar .ticon:hover,
+body.zk-theme-light .zkw .rail-head .add:hover,
+.zk-view-content.zk-theme-light .zkw .tbar .ticon:hover,
+.zk-view-content.zk-theme-light .zkw .rail-head .add:hover { color:var(--ink); border-color:var(--zkw-accent-border); background:var(--zkw-hover); }
+body.theme-light .zkw .tbar .ticon:focus-visible,
+body.theme-light .zkw .rail-head .add:focus-visible,
+body.zk-theme-light .zkw .tbar .ticon:focus-visible,
+body.zk-theme-light .zkw .rail-head .add:focus-visible,
+.zk-view-content.zk-theme-light .zkw .tbar .ticon:focus-visible,
+.zk-view-content.zk-theme-light .zkw .rail-head .add:focus-visible { outline:2px solid var(--interactive-accent); outline-offset:2px; }
+
+body.theme-light .zkw .srow .nm,
+body.zk-theme-light .zkw .srow .nm,
+.zk-view-content.zk-theme-light .zkw .srow .nm { color:var(--ink); }
+body.theme-light .zkw .srow:hover,
+body.zk-theme-light .zkw .srow:hover,
+.zk-view-content.zk-theme-light .zkw .srow:hover,
+body.theme-light .zkw .nrow:hover,
+body.zk-theme-light .zkw .nrow:hover,
+.zk-view-content.zk-theme-light .zkw .nrow:hover,
+body.theme-light .zkw .task-table tbody tr:hover td,
+body.zk-theme-light .zkw .task-table tbody tr:hover td,
+.zk-view-content.zk-theme-light .zkw .task-table tbody tr:hover td { background:var(--zkw-hover); }
+body.theme-light .zkw .nrow.depth-3,
+body.theme-light .zkw .nrow.depth-4,
+body.theme-light .zkw .nrow.depth-5,
+body.theme-light .zkw .nrow.depth-6,
+body.zk-theme-light .zkw .nrow.depth-3,
+body.zk-theme-light .zkw .nrow.depth-4,
+body.zk-theme-light .zkw .nrow.depth-5,
+body.zk-theme-light .zkw .nrow.depth-6,
+.zk-view-content.zk-theme-light .zkw .nrow.depth-3,
+.zk-view-content.zk-theme-light .zkw .nrow.depth-4,
+.zk-view-content.zk-theme-light .zkw .nrow.depth-5,
+.zk-view-content.zk-theme-light .zkw .nrow.depth-6 { background:linear-gradient(90deg, var(--zkw-hover), transparent 70%); }
+body.theme-light .zkw .nguide,
+body.theme-light .zkw .nguide::after,
+body.zk-theme-light .zkw .nguide,
+body.zk-theme-light .zkw .nguide::after,
+.zk-view-content.zk-theme-light .zkw .nguide,
+.zk-view-content.zk-theme-light .zkw .nguide::after { background:color-mix(in srgb, var(--text-muted) 32%, transparent); }
+body.theme-light .zkw .nrow.sel,
+body.zk-theme-light .zkw .nrow.sel,
+.zk-view-content.zk-theme-light .zkw .nrow.sel { background:linear-gradient(90deg, var(--zkw-accent-soft-strong), var(--zkw-accent-soft)); }
+body.theme-light .zkw .nrow.sel .nm,
+body.zk-theme-light .zkw .nrow.sel .nm,
+.zk-view-content.zk-theme-light .zkw .nrow.sel .nm { color:var(--zkw-accent-text); }
+body.theme-light .zkw .nrow-source:hover,
+body.zk-theme-light .zkw .nrow-source:hover,
+.zk-view-content.zk-theme-light .zkw .nrow-source:hover { background:var(--zkw-hover); }
+
+body.theme-light .zkw .fwchip.custom,
+body.zk-theme-light .zkw .fwchip.custom,
+.zk-view-content.zk-theme-light .zkw .fwchip.custom,
+body.theme-light .zkw .pcard .pstat.todo,
+body.zk-theme-light .zkw .pcard .pstat.todo,
+.zk-view-content.zk-theme-light .zkw .pcard .pstat.todo,
+body.theme-light .zkw .pcard .pstat.archived,
+body.zk-theme-light .zkw .pcard .pstat.archived,
+.zk-view-content.zk-theme-light .zkw .pcard .pstat.archived,
+body.theme-light .zkw .aref,
+body.zk-theme-light .zkw .aref,
+.zk-view-content.zk-theme-light .zkw .aref { background:color-mix(in srgb, var(--text-normal) 3%, transparent); }
+body.theme-light .zkw .fwopt.on,
+body.zk-theme-light .zkw .fwopt.on,
+.zk-view-content.zk-theme-light .zkw .fwopt.on { color:var(--ink); }
+body.theme-light .zkw .fwopt.on.para,
+body.theme-light .zkw .fwopt.on.overview,
+body.theme-light .zkw .createbtn.cta,
+body.theme-light .zkw .achip.cta,
+body.theme-light .zkw .dsec-add,
+body.zk-theme-light .zkw .fwopt.on.para,
+body.zk-theme-light .zkw .fwopt.on.overview,
+body.zk-theme-light .zkw .createbtn.cta,
+body.zk-theme-light .zkw .achip.cta,
+body.zk-theme-light .zkw .dsec-add,
+.zk-view-content.zk-theme-light .zkw .fwopt.on.para,
+.zk-view-content.zk-theme-light .zkw .fwopt.on.overview,
+.zk-view-content.zk-theme-light .zkw .createbtn.cta,
+.zk-view-content.zk-theme-light .zkw .achip.cta,
+.zk-view-content.zk-theme-light .zkw .dsec-add { color:var(--zkw-accent-text); background:var(--zkw-accent-soft-strong); border-color:var(--zkw-accent-border); }
+body.theme-light .zkw .rangeseg .rseg.on,
+body.zk-theme-light .zkw .rangeseg .rseg.on,
+.zk-view-content.zk-theme-light .zkw .rangeseg .rseg.on { color:var(--zkw-accent-text); background:var(--zkw-accent-soft-strong); box-shadow:inset 0 0 0 1px var(--zkw-accent-border); }
+body.theme-light .zkw .action-add .adate,
+body.zk-theme-light .zkw .action-add .adate,
+.zk-view-content.zk-theme-light .zkw .action-add .adate { color-scheme:light; }
+body.theme-light .zkw .progslider::-webkit-slider-thumb,
+body.zk-theme-light .zkw .progslider::-webkit-slider-thumb,
+.zk-view-content.zk-theme-light .zkw .progslider::-webkit-slider-thumb { box-shadow:0 1px 4px color-mix(in srgb, var(--text-normal) 24%, transparent); }
+body.theme-light .zkw .deck,
+body.zk-theme-light .zkw .deck,
+.zk-view-content.zk-theme-light .zkw .deck { box-shadow:-24px 0 48px color-mix(in srgb, var(--text-normal) 20%, transparent); }
+body.theme-light .zkw .prose pre,
+body.zk-theme-light .zkw .prose pre,
+.zk-view-content.zk-theme-light .zkw .prose pre { color:var(--text-normal); }
+
+body.theme-light .zk-chip-project-badge,
+body.zk-theme-light .zk-chip-project-badge,
+.zk-view-content.zk-theme-light .zk-chip-project-badge,
+body.theme-light .zk-workspace-source-capsule,
+body.zk-theme-light .zk-workspace-source-capsule,
+.zk-view-content.zk-theme-light .zk-workspace-source-capsule { color:var(--zk-text, #253044); background:color-mix(in srgb, var(--zk-accent, #6d57c4) 7%, var(--zk-surface-raised, #fcfdff)); border-color:color-mix(in srgb, var(--zk-accent, #6d57c4) 27%, var(--zk-border-subtle, rgba(92, 101, 128, 0.18))); }
+body.theme-light .zk-chip-project-badge:hover,
+body.theme-light .zk-chip-project-badge.is-mounted,
+body.theme-light .zk-workspace-source-capsule:hover,
+body.zk-theme-light .zk-chip-project-badge:hover,
+body.zk-theme-light .zk-chip-project-badge.is-mounted,
+body.zk-theme-light .zk-workspace-source-capsule:hover,
+.zk-view-content.zk-theme-light .zk-chip-project-badge:hover,
+.zk-view-content.zk-theme-light .zk-chip-project-badge.is-mounted,
+.zk-view-content.zk-theme-light .zk-workspace-source-capsule:hover { color:var(--zk-accent, var(--interactive-accent)); background:color-mix(in srgb, var(--zk-accent, #6d57c4) 13%, var(--zk-surface-raised, #fcfdff)); border-color:var(--zk-accent, var(--interactive-accent)); }
+
+/* 浅色图谱的当前位置与工作台入口保持为轻表面，避免深色/渐变胶囊残留。 */
+.zk-theme-light .zk-chip-filled,
+.zk-view-content.zk-theme-light .zk-chip-filled {
+  background:color-mix(in srgb, var(--zk-accent, #6d57c4) 14%, var(--zk-surface-raised, #fcfdff));
+  border-color:color-mix(in srgb, var(--zk-accent, #6d57c4) 42%, var(--zk-border-subtle, rgba(92, 101, 128, 0.18)));
+  color:color-mix(in srgb, var(--zk-accent, #6d57c4) 78%, var(--zk-text, #253044));
+  box-shadow:none;
+}
+.zk-theme-light .zk-chip-filled:hover,
+.zk-view-content.zk-theme-light .zk-chip-filled:hover {
+  background:color-mix(in srgb, var(--zk-accent, #6d57c4) 20%, var(--zk-surface-raised, #fcfdff));
+  border-color:var(--zk-accent, #6d57c4);
+  color:color-mix(in srgb, var(--zk-accent, #6d57c4) 84%, var(--zk-text, #253044));
+}
+
+/* 该入口由 Obsidian 工具栏规则二次着色，浅色模式下需显式阻断深色表面回退。 */
+.zk-theme-light .zk-workspace-source-capsule,
+.zk-theme-light .zk-moc-parent-chip,
+.zk-view-content.zk-theme-light .zk-workspace-source-capsule,
+.zk-view-content.zk-theme-light .zk-moc-parent-chip {
+  color:#253044 !important;
+  background:#f8fafd !important;
+  border-color:rgba(92, 101, 128, 0.24) !important;
+}
+.zk-theme-light .zk-workspace-source-capsule:hover,
+.zk-theme-light .zk-moc-parent-chip:hover,
+.zk-view-content.zk-theme-light .zk-workspace-source-capsule:hover,
+.zk-view-content.zk-theme-light .zk-moc-parent-chip:hover {
+  color:var(--zk-accent, #6d57c4) !important;
+  background:#eef2f8 !important;
+  border-color:var(--zk-accent, #6d57c4) !important;
+}

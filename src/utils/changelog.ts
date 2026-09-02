@@ -12,6 +12,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
     {
+        version: '0.3.4',
+        date: '2026-09-03',
+        highlights: [
+            {
+                zh: '修复浅色模式下图谱、预览卡片与知识工作台控件仍显示深色样式的问题。',
+                en: 'Fixed graph, preview cards, and Knowledge Workbench controls that could still appear dark in light mode.',
+            },
+        ],
+    },
+    {
         version: '0.3.3',
         date: '2026-08-20',
         highlights: [

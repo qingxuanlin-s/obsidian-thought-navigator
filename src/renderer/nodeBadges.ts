@@ -2632,6 +2632,7 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
 
 function addCollapseToggleHandle(this: CytoscapeRenderer): void {
         if (!this.cy || !this.container) return;
+		const isLightTheme = this.currentOptions?.themeMode === 'light';
 
         if (this.collapseHandleCleanup) {
             this.collapseHandleCleanup();
@@ -2682,9 +2683,10 @@ function addCollapseToggleHandle(this: CytoscapeRenderer): void {
                 width: '24px',
                 height: '24px',
                 borderRadius: '12px',
-                backgroundColor: 'rgba(17, 24, 39, 0.85)',
-                border: '1px solid rgba(148, 163, 184, 0.45)',
-                color: '#e2e8f0',
+                backgroundColor: isLightTheme ? 'rgba(248, 250, 253, 0.96)' : 'rgba(17, 24, 39, 0.85)',
+                border: isLightTheme ? '1px solid rgba(91, 111, 145, 0.32)' : '1px solid rgba(148, 163, 184, 0.45)',
+                color: isLightTheme ? '#334155' : '#e2e8f0',
+                boxShadow: isLightTheme ? '0 2px 7px rgba(42, 57, 82, 0.18)' : 'none',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',

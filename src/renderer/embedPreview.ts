@@ -333,6 +333,7 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
 				'padding': 0
 			});
 			const theme = getPreviewCardTheme(data as Record<string, unknown>, this.currentOptions);
+			const isLightTheme = this.currentOptions?.themeMode === 'light';
             const resolvedCardBorder = isExcalidrawFile && !!data.isFreeNode ? 'none' : theme.cardBorder;
             const resolvedCardBackground = isExcalidrawFile ? 'transparent' : theme.cardBackground;
             const resolvedCardShadow = isExcalidrawFile && !!data.isFreeNode ? 'none' : theme.cardShadow;
@@ -348,11 +349,11 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
                 border: `${resolvedCardBorder}`,
                 borderRadius: '8px',
                 boxShadow: `${resolvedCardShadow}`,
-                color: 'var(--text-normal)',
+				color: isLightTheme ? '#253044' : 'var(--text-normal)',
                 overflow: 'hidden',
                 pointerEvents: 'auto',
-                opacity: '0.82',
-                filter: 'brightness(0.86) saturate(0.92)',
+				opacity: isLightTheme ? '0.92' : '0.82',
+				filter: isLightTheme ? 'none' : 'brightness(0.86) saturate(0.92)',
                 transition: 'opacity 0.15s ease, filter 0.15s ease',
                 willChange: 'transform',
             });
@@ -366,7 +367,7 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
                 alignItems: 'center',
                 gap: '6px',
                 background: `${theme.headerBackground}`,
-                color: 'var(--text-muted)',
+				color: isLightTheme ? '#5d6678' : 'var(--text-muted)',
                 fontSize: '12px',
                 fontWeight: '500',
                 letterSpacing: '0.2px',
@@ -384,7 +385,7 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
             headerLink.textContent = hasAlias
                 ? `${sourceFile.basename}|${aliasCandidate}`
                 : sourceFile.basename;
-            applyPreviewHeaderLinkStyle(headerLink);
+			applyPreviewHeaderLinkStyle(headerLink, isLightTheme);
             headerLink.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
@@ -409,7 +410,7 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
                 padding: '12px 14px',
                 fontSize: '14px',
                 lineHeight: '1.6',
-                color: 'var(--text-normal)',
+				color: isLightTheme ? '#253044' : 'var(--text-normal)',
             });
 
             // 右下角 resize 焦点（仅在选中时可用）
@@ -831,7 +832,7 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
                     const missingPreview = contentEl.createDiv({ text: `未找到 MOC 预览 PNG（attachments/${sourceFile.name}.png）` });
                     missingPreview.setCssStyles({
                         fontSize: '12px',
-                        color: 'var(--text-muted)',
+				color: isLightTheme ? '#5d6678' : 'var(--text-muted)',
                         textAlign: 'center',
                     });
                 })();
@@ -1115,7 +1116,8 @@ export function renderImageNodePreviews(this: CytoscapeRenderer): void {
                 });
             }
 
-            const theme = getPreviewCardTheme(data as Record<string, unknown>, this.currentOptions);
+			const theme = getPreviewCardTheme(data as Record<string, unknown>, this.currentOptions);
+			const isLightTheme = this.currentOptions?.themeMode === 'light';
             const resolvedCardBorder = 'none';
 
             // 完全隐藏 Cytoscape 节点（由 HTML 图片卡片处理视觉）
@@ -1143,8 +1145,8 @@ export function renderImageNodePreviews(this: CytoscapeRenderer): void {
                 overflow: 'hidden',
                 pointerEvents: 'auto',
                 boxShadow: `${theme.cardShadow}`,
-                opacity: '0.82',
-                filter: 'brightness(0.86) saturate(0.92)',
+				opacity: isLightTheme ? '0.92' : '0.82',
+				filter: isLightTheme ? 'none' : 'brightness(0.86) saturate(0.92)',
                 transition: 'border-color 0.15s ease, opacity 0.15s ease, filter 0.15s ease',
                 willChange: 'transform',
             });
@@ -1172,7 +1174,7 @@ export function renderImageNodePreviews(this: CytoscapeRenderer): void {
 
             const headerLink = activeDocument.createElement('span');
             headerLink.textContent = file.basename || filePath.split('/').pop() || '';
-            applyPreviewHeaderLinkStyle(headerLink);
+			applyPreviewHeaderLinkStyle(headerLink, isLightTheme);
             headerLink.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();

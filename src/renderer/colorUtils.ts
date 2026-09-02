@@ -158,18 +158,19 @@ export function getPreviewCardTheme(data: Record<string, unknown>, options: Rend
 	headerDivider: string;
 } {
 	const isModern = isModernThemeStyle(options);
+	const isLight = options?.themeMode === 'light';
 	const isColored = isModern;
 	const branchBorderColor = typeof data?.branchNodeBorder === 'string' ? data.branchNodeBorder : '';
 	const vividHeaderBackground = isColored && branchBorderColor
-		? hexToRgba(branchBorderColor, options?.themeMode === 'light' ? 0.18 : 0.28)
-		: 'rgba(11, 16, 25, 0.72)';
+		? hexToRgba(branchBorderColor, isLight ? 0.18 : 0.28)
+		: isLight ? 'rgba(248, 250, 253, 0.92)' : 'rgba(11, 16, 25, 0.72)';
 	const vividHeaderDivider = isColored && branchBorderColor
-		? hexToRgba(branchBorderColor, options?.themeMode === 'light' ? 0.55 : 0.7)
-		: 'rgba(90, 111, 127, 0.45)';
+		? hexToRgba(branchBorderColor, isLight ? 0.55 : 0.7)
+		: isLight ? 'rgba(90, 111, 127, 0.28)' : 'rgba(90, 111, 127, 0.45)';
 
 	const cardBorder = isModern && branchBorderColor
-		? `1px solid ${hexToRgba(branchBorderColor, options?.themeMode === 'light' ? 0.45 : 0.38)}`
-		: `1px solid rgba(90, 111, 127, 0.28)`;
+		? `1px solid ${hexToRgba(branchBorderColor, isLight ? 0.45 : 0.38)}`
+		: `1px solid rgba(90, 111, 127, ${isLight ? 0.22 : 0.28})`;
 	const cardShadow = isModern && branchBorderColor
 		? `0 0 10px ${hexToRgba(branchBorderColor, 0.35)}`
 		: 'none';
@@ -187,19 +188,21 @@ export function getPreviewCardTheme(data: Record<string, unknown>, options: Rend
 	};
 }
 
-export function applyPreviewHeaderLinkStyle(linkEl: HTMLElement): void {
+export function applyPreviewHeaderLinkStyle(linkEl: HTMLElement, isLight = false): void {
+	const mutedColor = isLight ? '#5d6678' : 'var(--text-muted)';
+	const textColor = isLight ? '#253044' : 'var(--text-normal)';
 	linkEl.setCssStyles({
 		overflow: 'hidden',
 		textOverflow: 'ellipsis',
 		cursor: 'pointer',
-		color: 'var(--text-muted)',
+		color: mutedColor,
 		transition: 'color 0.15s ease',
 	});
 	linkEl.addEventListener('mouseenter', () => {
-		linkEl.setCssStyles({ color: 'var(--text-normal)' });
+		linkEl.setCssStyles({ color: textColor });
 	});
 	linkEl.addEventListener('mouseleave', () => {
-		linkEl.setCssStyles({ color: 'var(--text-muted)' });
+		linkEl.setCssStyles({ color: mutedColor });
 	});
 }
 
