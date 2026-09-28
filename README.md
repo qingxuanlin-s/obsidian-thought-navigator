@@ -65,6 +65,12 @@ The plugin has three main views:
 
 ## Commands
 
+### Create a MOC from rules
+
+In the `New MOC file` dialog, enable **Populate from existing notes**. Add condition groups and choose AND/OR within each group and between groups. Conditions can inspect the file name, immediate folder name, or a frontmatter property. Set the hierarchy source to the file name or a property, then enter a separator and stop marker (defaults: `.` and a space). You can select a matching root note. **Preview rules** shows the resulting tree and counts before creation; editing a rule requires a new preview. Generated trees use auto layout.
+
+For example, `a Hello.md`, `a.1 Parent.md`, and `a.1.a Child.md` form a three-level tree when the separator is `.` and the stop marker is a space. The rules generate the tree at creation time; you can then edit the MOC normally.
+
 | Command | Description |
 | --- | --- |
 | `Open tree graph` | Open the main thought tree view. |

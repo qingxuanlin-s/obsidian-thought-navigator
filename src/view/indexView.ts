@@ -36,7 +36,10 @@ import { ScratchpadDrawer } from "src/view/scratchpadDrawer";
 import { NodeDetailPanel } from "src/view/index/detailPanel";
 import { ScratchpadEntry } from "src/scratch/scratchpadManager";
 import { resolveDroppedVaultFiles } from "src/utils/dropFileResolver";
-import { createMOCJsonWithInitialNode } from "src/utils/mocJsonCodec";
+import { createEmptyMOCJson, createMOCJsonWithInitialNode, parseMOCJson, serializeMOCJson } from "src/utils/mocJsonCodec";
+import { exportMOCAsMarkdown, exportMOCAsXMind } from "src/utils/mocExport";
+import { importMarkdown, importXMind } from "src/utils/mocImport";
+import { requestMOCSetup } from "src/modal/createMocModal";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
 import { createSelectionColorPanel } from "src/renderer/colorUtils";
 import { ensureMOCPreviewPNG } from "src/embed/mocEmbedExporter";
@@ -1930,6 +1933,23 @@ export class ZKIndexView extends FileView {
             menu.createDiv('zk-menu-separator');
         }
 
+        const importOption = menu.createDiv('zk-menu-option');
+        setIcon(importOption.createSpan('zk-menu-option-icon'), 'file-input');
+        importOption.createSpan().setText(t('import xmind or markdown'));
+        importOption.addEventListener('click', (e) => {
+            e.stopPropagation();
+            menu.remove();
+            const input = activeDocument.createElement('input');
+            input.type = 'file';
+            input.accept = '.xmind,.md';
+            input.onchange = () => {
+                const file = input.files?.[0];
+                if (file) void this.importMOCFile(file);
+            };
+            input.click();
+        });
+        menu.createDiv('zk-menu-separator');
+
         // 导出为图片（带子菜单）
         const exportOption = menu.createDiv('zk-menu-option');
         setIcon(exportOption.createSpan('zk-menu-option-icon'), 'image');
@@ -1978,6 +1998,24 @@ export class ZKIndexView extends FileView {
             await this.exportGraphAsHTML();
         })(); });
 
+        const xmindOption = menu.createDiv('zk-menu-option');
+        setIcon(xmindOption.createSpan('zk-menu-option-icon'), 'network');
+        xmindOption.createSpan().setText(t('export as xmind'));
+        xmindOption.addEventListener('click', (e) => { void (async () => {
+            e.stopPropagation();
+            menu.remove();
+            await this.exportMOC('xmind');
+        })(); });
+
+        const markdownOption = menu.createDiv('zk-menu-option');
+        setIcon(markdownOption.createSpan('zk-menu-option-icon'), 'file-text');
+        markdownOption.createSpan().setText(t('export as markdown'));
+        markdownOption.addEventListener('click', (e) => { void (async () => {
+            e.stopPropagation();
+            menu.remove();
+            await this.exportMOC('md');
+        })(); });
+
         // 定位菜单：在按钮下方
         menu.setCssStyles({ top: `${btnRect.bottom + 4}px` });
         menu.setCssStyles({ right: `${activeDocument.documentElement.clientWidth - btnRect.right}px` });
@@ -1992,6 +2030,85 @@ export class ZKIndexView extends FileView {
         window.setTimeout(() => {
             activeDocument.addEventListener('click', closeMenu);
         }, 0);
+    }
+
+    private async exportMOC(format: 'xmind' | 'md'): Promise<void> {
+        try {
+            const path = this.plugin.settings.mocCurrentFile;
+            const file = path ? this.app.vault.getFileByPath(path) : null;
+            if (!file || !isMocFile(file)) throw new Error('No MOC file is open');
+
+            const title = stripMocSuffix(file.name);
+            const data = await parseMOCStructure(this.app, file.path, '');
+            const blob = format === 'xmind'
+                ? await exportMOCAsXMind(data, title)
+                : new Blob([exportMOCAsMarkdown(data, title)], { type: 'text/markdown;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = activeDocument.createElement('a');
+            a.href = url;
+            a.download = `${title}.${format}`;
+            activeDocument.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+            new Notice(t('export success'));
+        } catch (err) {
+            console.error(`[ZK] export MOC as ${format} failed`, err);
+            new Notice(t('export fail'));
+        }
+    }
+
+    private async importMOCFile(source: File): Promise<void> {
+        try {
+            const folder = this.plugin.settings.mocFolderPath.replace(/^\/+|\/+$/g, '');
+            if (!folder) throw new Error(t('Please configure MOC folder path in settings'));
+            if (!this.app.vault.getAbstractFileByPath(folder)) throw new Error(t('MOC folder not found').replace('{path}', folder));
+
+            let imported;
+            if (source.name.toLowerCase().endsWith('.xmind')) {
+                imported = await importXMind(await source.arrayBuffer());
+            } else if (source.name.toLowerCase().endsWith('.md')) {
+                imported = importMarkdown(await source.text());
+            } else {
+                throw new Error('Unsupported file format');
+            }
+            const baseName = source.name.replace(/\.(xmind|md)$/i, '')
+                .replace(/[\\/:*?"<>|]/g, '_').trim() || t('default MOC file prefix');
+            let name = baseName;
+            let filePath = this.buildMOCFilePath(folder, name);
+            for (let suffix = 2; this.app.vault.getAbstractFileByPath(filePath); suffix++) {
+                name = `${baseName}-${suffix}`;
+                filePath = this.buildMOCFilePath(folder, name);
+            }
+
+            const data = parseMOCJson(createEmptyMOCJson('auto'), filePath, this.app);
+            const preserveMissingLinks = (nodes: MOCTreeNode[]): void => {
+                for (const node of nodes) {
+                    if (node.nodeType !== 'text') {
+                        const target = node.target.split('#')[0];
+                        if (!this.app.metadataCache.getFirstLinkpathDest(target, filePath)) {
+                            node.target = `${node.nodeType === 'embed' ? '!' : ''}[[${node.target}${node.alias ? `|${node.alias}` : ''}]]`;
+                            node.nodeType = 'text';
+                            delete node.alias;
+                        }
+                    }
+                    preserveMissingLinks(node.children);
+                }
+            };
+            preserveMissingLinks(imported.nodes);
+            data.nodes = imported.nodes;
+            data.reverseRelations = imported.reverseRelations;
+            data.nodeRemarks = imported.nodeRemarks;
+            const file = await this.app.vault.create(filePath, serializeMOCJson(data));
+            this.plugin.settings.mocCurrentFile = file.path;
+            this.plugin.settings.BranchTab = 0;
+            await this.plugin.saveData(this.plugin.settings);
+            await this.refreshBranchMermaid(true);
+            new Notice(t('import success').replace('{path}', file.path));
+        } catch (err) {
+            console.error('[ZK] MOC import failed', err);
+            new Notice(t('import fail').replace('{message}', err instanceof Error ? err.message : String(err)));
+        }
     }
 
     /**
@@ -2110,13 +2227,42 @@ export class ZKIndexView extends FileView {
         try {
             // 提取每个节点/边的计算后样式
             const nodes: Array<{ data: Record<string, unknown>; position?: { x: number; y: number }; style: Record<string, unknown> }> = [];
+            const graphDiv = activeDocument.getElementById('zk-branch-cytoscape');
+            const previewCards = new Map<string, HTMLElement>();
+            graphDiv?.querySelectorAll<HTMLElement>('.zk-embed-preview-card[data-node-id], .zk-image-preview-card[data-node-id]')
+                .forEach(card => {
+                    if (card.dataset.nodeId) previewCards.set(card.dataset.nodeId, card);
+                });
+            const previewImages = new Map<string, { src: string; width: number; height: number }>();
+            for (const node of cy.nodes()) {
+                if (!node.data('isEmbed') || node.style('display') === 'none') continue;
+                const card = previewCards.get(node.id());
+                if (!card || card.style.display === 'none' || !card.clientWidth || !card.clientHeight) continue;
+                try {
+                    previewImages.set(node.id(), {
+                        src: await toPng(card, {
+                            pixelRatio: Math.max(1, Math.min(2, window.devicePixelRatio || 1)),
+                            width: card.clientWidth,
+                            height: card.clientHeight,
+                            style: { transform: 'none' },
+                        }),
+                        width: card.clientWidth / cy.zoom(),
+                        height: card.clientHeight / cy.zoom(),
+                    });
+                } catch (error) {
+                    console.warn('[ZK] embed preview snapshot skipped', node.id(), error);
+                }
+            }
             cy.nodes().forEach((n: cytoscape.NodeSingular) => {
                 if (n.style('display') === 'none') return;
                 const d = n.data();
+                const preview = previewImages.get(n.id());
                 nodes.push({
                     data: {
                         id: d.id,
                         label: d.label || '',
+                        filePath: d.filePath || '',
+                        previewImage: preview?.src || '',
                         isRoot: !!d.isRoot,
                         isEmbed: !!d.isEmbed,
                         isGroup: !!d.isGroup,
@@ -2125,8 +2271,8 @@ export class ZKIndexView extends FileView {
                     },
                     position: { ...n.position() },
                     style: {
-                        'width': n.width(),
-                        'height': n.height(),
+                        'width': preview?.width || n.width(),
+                        'height': preview?.height || n.height(),
                         'background-color': n.style('background-color'),
                         'background-opacity': n.style('background-opacity'),
                         'border-width': n.style('border-width'),
@@ -2168,7 +2314,7 @@ export class ZKIndexView extends FileView {
             }
 
             const bgColor = getComputedStyle(activeDocument.body).getPropertyValue('--background-primary').trim() || '#1e1e1e';
-            const graphJson = JSON.stringify({ nodes, edges })
+            const graphJson = JSON.stringify({ nodes, edges, vaultName: this.app.vault.getName() })
                 .replace(/</g, '\\u003c')
                 .replace(/\u2028/g, '\\u2028')
                 .replace(/\u2029/g, '\\u2029');
@@ -2183,7 +2329,7 @@ export class ZKIndexView extends FileView {
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { background: ${bgColor}; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 #stage {
-  position: fixed; inset: 0; overflow: hidden; cursor: grab; user-select: none;
+  position: fixed; inset: 0; overflow: hidden; cursor: grab; user-select: none; touch-action: none;
 }
 #stage.dragging { cursor: grabbing; }
 #world {
@@ -2199,9 +2345,19 @@ body { background: ${bgColor}; overflow: hidden; font-family: -apple-system, Bli
   position: absolute; display: flex; align-items: center; justify-content: center;
   white-space: pre-wrap; overflow-wrap: anywhere; text-align: center;
   border-style: solid; box-shadow: 0 10px 28px rgba(0,0,0,0.14);
-  cursor: grab; line-height: 1.32;
+  cursor: grab; line-height: 1.32; touch-action: none;
 }
 .node.dragging { cursor: grabbing; }
+.node.preview { padding: 0; border: 0; box-shadow: none; overflow: hidden; }
+.node.preview img { width: 100%; height: 100%; display: block; }
+.open-link {
+  position: absolute; top: 4px; right: 4px; z-index: 1;
+  display: flex; align-items: center; justify-content: center;
+  min-width: 34px; min-height: 34px; padding: 0 6px; border-radius: 6px;
+  background: rgba(20,24,32,0.9); color: #fff; font: 600 11px/1 sans-serif;
+  text-decoration: none; border: 1px solid rgba(255,255,255,0.35);
+}
+.open-link:hover, .open-link:focus-visible { background: #2c4369; outline: 2px solid #a9c9ff; outline-offset: 1px; }
 .node.group {
   justify-content: flex-start; align-items: flex-start; padding: 10px 14px;
   background: rgba(255,255,255,0.04); box-shadow: none;
@@ -2211,7 +2367,7 @@ body { background: ${bgColor}; overflow: hidden; font-family: -apple-system, Bli
   stroke: rgba(0,0,0,0.48); stroke-width: 3px; stroke-linejoin: round;
 }
 #toolbar {
-  position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+  position: fixed; bottom: max(16px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%);
   background: rgba(30,30,30,0.85); border-radius: 8px; padding: 6px 12px;
   display: flex; gap: 8px; z-index: 10; backdrop-filter: blur(8px);
   border: 1px solid rgba(255,255,255,0.1);
@@ -2222,6 +2378,11 @@ body { background: ${bgColor}; overflow: hidden; font-family: -apple-system, Bli
   font-size: 13px; transition: all 0.15s;
 }
 #toolbar button:hover { background: rgba(255,255,255,0.1); color: #fff; }
+#toolbar button:focus-visible { outline: 2px solid #a9c9ff; outline-offset: 2px; }
+@media (pointer: coarse) {
+  .open-link { min-width: 44px; min-height: 44px; }
+  #toolbar button { min-height: 44px; }
+}
 </style>
 </head>
 <body>
@@ -2244,23 +2405,35 @@ var edgeSvg = document.getElementById('edges');
 var nodesEl = document.getElementById('nodes');
 var state = { scale: 1, tx: 0, ty: 0 };
 var padding = 120;
-var nodeById = {};
-var bounds = graphData.nodes.reduce(function(acc, node) {
-  var w = numberValue(node.style.width, 160);
-  var h = numberValue(node.style.height, 72);
-  acc.x1 = Math.min(acc.x1, node.position.x - w / 2);
-  acc.y1 = Math.min(acc.y1, node.position.y - h / 2);
-  acc.x2 = Math.max(acc.x2, node.position.x + w / 2);
-  acc.y2 = Math.max(acc.y2, node.position.y + h / 2);
-  return acc;
-}, { x1: Infinity, y1: Infinity, x2: -Infinity, y2: -Infinity });
+var nodeById = Object.create(null);
+var edgesByNode = Object.create(null);
+var edgeViews = [];
+var worldWidth = 1;
+var worldHeight = 1;
 
-var worldWidth = Math.max(1, bounds.x2 - bounds.x1 + padding * 2);
-var worldHeight = Math.max(1, bounds.y2 - bounds.y1 + padding * 2);
-edgeSvg.setAttribute('width', String(worldWidth));
-edgeSvg.setAttribute('height', String(worldHeight));
-world.style.width = worldWidth + 'px';
-world.style.height = worldHeight + 'px';
+function measureBounds() {
+  return graphData.nodes.reduce(function(acc, node) {
+    var w = numberValue(node.style.width, 160);
+    var h = numberValue(node.style.height, 72);
+    acc.x1 = Math.min(acc.x1, node.position.x - w / 2);
+    acc.y1 = Math.min(acc.y1, node.position.y - h / 2);
+    acc.x2 = Math.max(acc.x2, node.position.x + w / 2);
+    acc.y2 = Math.max(acc.y2, node.position.y + h / 2);
+    return acc;
+  }, { x1: Infinity, y1: Infinity, x2: -Infinity, y2: -Infinity });
+}
+
+var bounds = measureBounds();
+
+function updateWorldSize() {
+  worldWidth = Math.max(1, bounds.x2 - bounds.x1 + padding * 2);
+  worldHeight = Math.max(1, bounds.y2 - bounds.y1 + padding * 2);
+  edgeSvg.setAttribute('width', String(worldWidth));
+  edgeSvg.setAttribute('height', String(worldHeight));
+  world.style.width = worldWidth + 'px';
+  world.style.height = worldHeight + 'px';
+}
+updateWorldSize();
 
 function numberValue(value, fallback) {
   var parsed = typeof value === 'number' ? value : parseFloat(String(value || ''));
@@ -2278,62 +2451,105 @@ function cssColor(value, fallback) {
   return value && value !== 'undefined' ? String(value) : fallback;
 }
 
+function positionNode(entry) {
+  var p = localPosition(entry.model.position);
+  entry.el.style.left = (p.x - entry.width / 2) + 'px';
+  entry.el.style.top = (p.y - entry.height / 2) + 'px';
+}
+
 function renderNodes() {
   graphData.nodes.forEach(function(node) {
-    var p = localPosition(node.position);
     var w = numberValue(node.style.width, 160);
     var h = numberValue(node.style.height, 72);
     var el = document.createElement('div');
-    el.className = 'node' + (node.data.isGroup ? ' group' : '');
+    el.className = 'node' + (node.data.isGroup ? ' group' : '') + (node.data.previewImage ? ' preview' : '');
     el.dataset.id = node.data.id;
-    el.textContent = node.data.label || '';
-    el.style.left = (p.x - w / 2) + 'px';
-    el.style.top = (p.y - h / 2) + 'px';
+    if (node.data.previewImage) {
+      var img = document.createElement('img');
+      img.src = node.data.previewImage;
+      img.alt = node.data.label || 'Embedded preview';
+      el.appendChild(img);
+    } else {
+      el.textContent = node.data.label || '';
+    }
     el.style.width = w + 'px';
-    el.style.minHeight = h + 'px';
+    el.style.height = h + 'px';
     el.style.color = cssColor(node.style.color, '#e8e8e8');
     el.style.background = Number(node.style['background-opacity']) === 0 ? 'transparent' : cssColor(node.style['background-color'], 'rgba(80,120,200,0.22)');
-    el.style.borderWidth = numberValue(node.style['border-width'], node.data.isGroup ? 1 : 2) + 'px';
+    el.style.borderWidth = node.data.previewImage ? '0' : numberValue(node.style['border-width'], node.data.isGroup ? 1 : 2) + 'px';
     el.style.borderColor = cssColor(node.style['border-color'], 'rgba(255,255,255,0.28)');
     el.style.borderRadius = node.style.shape === 'ellipse' ? '999px' : '14px';
     el.style.fontSize = numberValue(node.style['font-size'], 18) + 'px';
     el.style.fontWeight = String(node.style['font-weight'] || 500);
     el.style.opacity = String(node.style.opacity || 1);
+    if (node.data.filePath && graphData.vaultName) {
+      var link = document.createElement('a');
+      link.className = 'open-link';
+      link.href = 'obsidian://open?vault=' + encodeURIComponent(graphData.vaultName) + '&file=' + encodeURIComponent(node.data.filePath);
+      link.textContent = 'Open';
+      link.title = 'Open ' + node.data.filePath + ' in Obsidian';
+      link.setAttribute('aria-label', link.title);
+      link.addEventListener('pointerdown', function(event) { event.stopPropagation(); });
+      el.appendChild(link);
+    }
     nodesEl.appendChild(el);
     nodeById[node.data.id] = { model: node, el: el, width: w, height: h };
+    positionNode(nodeById[node.data.id]);
     bindNodeDrag(el, node);
   });
 }
 
+function edgeEndpoint(center, other, width, height) {
+  var dx = other.x - center.x;
+  var dy = other.y - center.y;
+  var extent = Math.max(Math.abs(dx) / Math.max(1, width / 2 + 4), Math.abs(dy) / Math.max(1, height / 2 + 4));
+  var ratio = extent > 1 ? 1 / extent : 0;
+  return { x: center.x + dx * ratio, y: center.y + dy * ratio };
+}
+
+function updateEdgeGeometry(view) {
+  var source = nodeById[view.edge.data.source];
+  var target = nodeById[view.edge.data.target];
+  var sourceCenter = localPosition(source.model.position);
+  var targetCenter = localPosition(target.model.position);
+  var sp = edgeEndpoint(sourceCenter, targetCenter, source.width, source.height);
+  var tp = edgeEndpoint(targetCenter, sourceCenter, target.width, target.height);
+  var dx = tp.x - sp.x;
+  view.path.setAttribute('d', 'M ' + sp.x + ' ' + sp.y + ' C ' + (sp.x + dx * 0.42) + ' ' + sp.y + ', ' + (tp.x - dx * 0.42) + ' ' + tp.y + ', ' + tp.x + ' ' + tp.y);
+  if (view.label) {
+    view.label.setAttribute('x', String((sp.x + tp.x) / 2));
+    view.label.setAttribute('y', String((sp.y + tp.y) / 2 - 8));
+  }
+}
+
 function renderEdges() {
-  while (edgeSvg.firstChild) edgeSvg.removeChild(edgeSvg.firstChild);
   var defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
   defs.innerHTML = '<marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(180,190,205,0.72)"></path></marker>';
   edgeSvg.appendChild(defs);
   graphData.edges.forEach(function(edge) {
-    var source = nodeById[edge.data.source];
-    var target = nodeById[edge.data.target];
-    if (!source || !target) return;
-    var sp = localPosition(source.model.position);
-    var tp = localPosition(target.model.position);
-    var dx = tp.x - sp.x;
+    if (!nodeById[edge.data.source] || !nodeById[edge.data.target]) return;
     var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', 'M ' + sp.x + ' ' + sp.y + ' C ' + (sp.x + dx * 0.42) + ' ' + sp.y + ', ' + (tp.x - dx * 0.42) + ' ' + tp.y + ', ' + tp.x + ' ' + tp.y);
     path.setAttribute('fill', 'none');
     path.setAttribute('stroke', cssColor(edge.style['line-color'], 'rgba(180,190,205,0.72)'));
     path.setAttribute('stroke-width', String(numberValue(edge.style.width, 2)));
     path.setAttribute('stroke-linecap', 'round');
-    path.setAttribute('marker-end', 'url(#arrow)');
+    if (edge.style['target-arrow-shape'] && edge.style['target-arrow-shape'] !== 'none') {
+      path.setAttribute('marker-end', 'url(#arrow)');
+    }
     edgeSvg.appendChild(path);
+    var label = null;
     if (edge.data.label) {
-      var label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      label.setAttribute('x', String((sp.x + tp.x) / 2));
-      label.setAttribute('y', String((sp.y + tp.y) / 2 - 8));
+      label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
       label.setAttribute('text-anchor', 'middle');
       label.setAttribute('class', 'edge-label');
       label.textContent = edge.data.label;
       edgeSvg.appendChild(label);
     }
+    var view = { edge: edge, path: path, label: label };
+    edgeViews.push(view);
+    (edgesByNode[edge.data.source] || (edgesByNode[edge.data.source] = [])).push(view);
+    (edgesByNode[edge.data.target] || (edgesByNode[edge.data.target] = [])).push(view);
+    updateEdgeGeometry(view);
   });
 }
 
@@ -2341,16 +2557,31 @@ function applyTransform() {
   world.style.transform = 'translate(' + state.tx + 'px,' + state.ty + 'px) scale(' + state.scale + ')';
 }
 
+function refreshWorldBounds(preserveView) {
+  var oldBounds = bounds;
+  bounds = measureBounds();
+  updateWorldSize();
+  if (preserveView) {
+    state.tx += (bounds.x1 - oldBounds.x1) * state.scale;
+    state.ty += (bounds.y1 - oldBounds.y1) * state.scale;
+  }
+  Object.keys(nodeById).forEach(function(id) { positionNode(nodeById[id]); });
+  edgeViews.forEach(updateEdgeGeometry);
+  applyTransform();
+}
+
 function fitGraph() {
+  refreshWorldBounds(false);
   var scale = Math.min(window.innerWidth / worldWidth, window.innerHeight / worldHeight) * 0.92;
-  state.scale = Math.max(0.05, Math.min(3, scale));
+  state.scale = Math.min(3, scale);
   state.tx = (window.innerWidth - worldWidth * state.scale) / 2;
   state.ty = (window.innerHeight - worldHeight * state.scale) / 2;
   applyTransform();
 }
 
 function zoomAt(nextScale, clientX, clientY) {
-  nextScale = Math.max(0.05, Math.min(3, nextScale));
+  var fitScale = Math.min(window.innerWidth / worldWidth, window.innerHeight / worldHeight) * 0.92;
+  nextScale = Math.max(Math.min(0.05, fitScale / 2), Math.min(3, nextScale));
   var worldX = (clientX - state.tx) / state.scale;
   var worldY = (clientY - state.ty) / state.scale;
   state.scale = nextScale;
@@ -2360,22 +2591,53 @@ function zoomAt(nextScale, clientX, clientY) {
 }
 
 function bindStagePan() {
+  var pointers = new Map();
   var start = null;
-  stage.addEventListener('mousedown', function(event) {
-    if (event.button !== 0 || event.target.closest('.node') || event.target.closest('#toolbar')) return;
-    start = { x: event.clientX, y: event.clientY, tx: state.tx, ty: state.ty };
+  var pinch = null;
+  function metrics() {
+    var points = Array.from(pointers.values());
+    return {
+      x: (points[0].x + points[1].x) / 2,
+      y: (points[0].y + points[1].y) / 2,
+      distance: Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y)
+    };
+  }
+  stage.addEventListener('pointerdown', function(event) {
+    if ((event.pointerType === 'mouse' && event.button !== 0) || event.target.closest('.node')) return;
+    event.preventDefault();
+    stage.setPointerCapture(event.pointerId);
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointers.size === 1) start = { x: event.clientX, y: event.clientY, tx: state.tx, ty: state.ty };
+    if (pointers.size === 2) { pinch = metrics(); start = null; }
     stage.classList.add('dragging');
   });
-  window.addEventListener('mousemove', function(event) {
-    if (!start) return;
-    state.tx = start.tx + event.clientX - start.x;
-    state.ty = start.ty + event.clientY - start.y;
-    applyTransform();
+  stage.addEventListener('pointermove', function(event) {
+    if (!pointers.has(event.pointerId)) return;
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointers.size === 2 && pinch) {
+      var next = metrics();
+      if (pinch.distance > 0) zoomAt(state.scale * next.distance / pinch.distance, pinch.x, pinch.y);
+      state.tx += next.x - pinch.x;
+      state.ty += next.y - pinch.y;
+      pinch = next;
+      applyTransform();
+    } else if (start) {
+      state.tx = start.tx + event.clientX - start.x;
+      state.ty = start.ty + event.clientY - start.y;
+      applyTransform();
+    }
   });
-  window.addEventListener('mouseup', function() {
-    start = null;
-    stage.classList.remove('dragging');
-  });
+  function finish(event) {
+    if (!pointers.has(event.pointerId)) return;
+    pointers.delete(event.pointerId);
+    if (stage.hasPointerCapture(event.pointerId)) stage.releasePointerCapture(event.pointerId);
+    pinch = null;
+    var remaining = Array.from(pointers.values())[0];
+    start = remaining ? { x: remaining.x, y: remaining.y, tx: state.tx, ty: state.ty } : null;
+    if (!remaining) stage.classList.remove('dragging');
+  }
+  stage.addEventListener('pointerup', finish);
+  stage.addEventListener('pointercancel', finish);
   stage.addEventListener('wheel', function(event) {
     event.preventDefault();
     zoomAt(state.scale * (event.deltaY < 0 ? 1.12 : 0.89), event.clientX, event.clientY);
@@ -2384,33 +2646,48 @@ function bindStagePan() {
 
 function bindNodeDrag(el, node) {
   var start = null;
-  el.addEventListener('mousedown', function(event) {
-    if (event.button !== 0) return;
+  el.addEventListener('pointerdown', function(event) {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
     event.stopPropagation();
-    start = { x: event.clientX, y: event.clientY, px: node.position.x, py: node.position.y };
+    event.preventDefault();
+    el.setPointerCapture(event.pointerId);
+    start = { id: event.pointerId, x: event.clientX, y: event.clientY, px: node.position.x, py: node.position.y, moved: false };
     el.classList.add('dragging');
   });
-  window.addEventListener('mousemove', function(event) {
-    if (!start) return;
+  el.addEventListener('pointermove', function(event) {
+    if (!start || event.pointerId !== start.id) return;
+    if (Math.abs(event.clientX - start.x) + Math.abs(event.clientY - start.y) > 3) start.moved = true;
+    if (!start.moved) return;
     node.position.x = start.px + (event.clientX - start.x) / state.scale;
     node.position.y = start.py + (event.clientY - start.y) / state.scale;
-    var p = localPosition(node.position);
-    var entry = nodeById[node.data.id];
-    el.style.left = (p.x - entry.width / 2) + 'px';
-    el.style.top = (p.y - entry.height / 2) + 'px';
-    renderEdges();
+    positionNode(nodeById[node.data.id]);
+    (edgesByNode[node.data.id] || []).forEach(updateEdgeGeometry);
   });
-  window.addEventListener('mouseup', function() {
+  function finish(event) {
+    if (!start || event.pointerId !== start.id) return;
+    var moved = start.moved;
     start = null;
+    if (el.hasPointerCapture(event.pointerId)) el.releasePointerCapture(event.pointerId);
     el.classList.remove('dragging');
-  });
+    if (moved) refreshWorldBounds(true);
+  }
+  el.addEventListener('pointerup', finish);
+  el.addEventListener('pointercancel', finish);
 }
 
 renderNodes();
 renderEdges();
 bindStagePan();
 fitGraph();
-window.addEventListener('resize', fitGraph);
+var viewportSize = { width: window.innerWidth, height: window.innerHeight };
+window.addEventListener('resize', function() {
+  var centerX = (viewportSize.width / 2 - state.tx) / state.scale;
+  var centerY = (viewportSize.height / 2 - state.ty) / state.scale;
+  viewportSize = { width: window.innerWidth, height: window.innerHeight };
+  state.tx = viewportSize.width / 2 - centerX * state.scale;
+  state.ty = viewportSize.height / 2 - centerY * state.scale;
+  applyTransform();
+});
 </script>
 </body>
 </html>`;
@@ -2425,7 +2702,7 @@ window.addEventListener('resize', fitGraph);
             activeDocument.body.appendChild(a);
             a.click();
             activeDocument.body.removeChild(a);
-            URL.revokeObjectURL(url);
+            window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 
             new Notice(t('export success'));
         } catch (err) {
@@ -3013,88 +3290,20 @@ window.addEventListener('resize', fitGraph);
     private async promptCreateInitialMOCFile(mocFolder: string): Promise<TFile | null> {
         if (this.isCreateMOCPromptOpen) return null;
         this.isCreateMOCPromptOpen = true;
-
-        return new Promise((resolve) => {
-            const modal = new Modal(this.app);
-            let settled = false;
-            const finish = (file: TFile | null) => {
-                if (settled) return;
-                settled = true;
-                this.isCreateMOCPromptOpen = false;
-                resolve(file);
-            };
-
-            modal.titleEl.setText(t("No MOC file detected"));
-            const { contentEl } = modal;
-            contentEl.empty();
-            contentEl.createEl('p', { text: t("No mind tree file exists yet. Create one now?") });
-
-            const defaultBaseName = `${t("default MOC file prefix")}-${moment().format('YYYYMMDDHHmmss')}`;
-            let draftBaseName = defaultBaseName;
-
-            new Setting(contentEl)
-                .setName(t("File name"))
-                .setDesc(t("MOC suffix will be added automatically"))
-                .addText((text) => {
-                    text.setPlaceholder(defaultBaseName);
-                    text.setValue(defaultBaseName);
-                    text.onChange((value) => {
-                        draftBaseName = value.trim();
-                    });
-                });
-
-            const buttonRow = contentEl.createDiv();
-            buttonRow.setCssStyles({
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: '8px',
-                marginTop: '16px',
-            });
-
-            const cancelBtn = buttonRow.createEl('button', { text: t("Cancel") });
-            cancelBtn.onclick = () => {
-                modal.close();
-                finish(null);
-            };
-
-            const createBtn = buttonRow.createEl('button', { text: t("Create") });
-            createBtn.addClass('mod-cta');
-            createBtn.onclick = async () => {
-                const normalizedBaseName = stripMocSuffix(draftBaseName || defaultBaseName).trim();
-                if (!normalizedBaseName) {
-                    new Notice(t("File name cannot be empty"));
-                    return;
-                }
-
-                const filePath = this.buildMOCFilePath(mocFolder, normalizedBaseName);
-                const exists = this.app.vault.getAbstractFileByPath(filePath);
-                if (exists) {
-                    new Notice(`文件已存在: ${filePath}`);
-                    return;
-                }
-
-                try {
-                    const content = createMOCJsonWithInitialNode(
-                        this.plugin.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free',
-                        // 用文件名作为根节点标题，省去新建后再改一次
-                        normalizedBaseName
-                    );
-                    const newFile = await this.app.vault.create(filePath, content);
-                    this.plugin.settings.mocCurrentFile = newFile.path;
-                    await this.plugin.saveData(this.plugin.settings);
-                    modal.close();
-                    finish(newFile);
-                } catch (error) {
-                    new Notice(t("Create failed").replace("{message}", String(error?.message || error)));
-                }
-            };
-
-            modal.onClose = () => {
-                finish(null);
-            };
-
-            modal.open();
-        });
+        try {
+            const defaultName = `${t("default MOC file prefix")}-${moment().format('YYYYMMDDHHmmss')}`;
+            const setup = await requestMOCSetup(this.app, defaultName);
+            if (!setup) return null;
+            const newFile = await this.plugin.createMOCFile({ folderPath: mocFolder, name: setup.name }, setup.content);
+            this.plugin.settings.mocCurrentFile = newFile.path;
+            await this.plugin.saveData(this.plugin.settings);
+            return newFile;
+        } catch (error) {
+            new Notice(t("Create failed").replace("{message}", String(error instanceof Error ? error.message : error)));
+            return null;
+        } finally {
+            this.isCreateMOCPromptOpen = false;
+        }
     }
 
     private async ensureCurrentMOCFile(mocFolder: string): Promise<TFile | null> {

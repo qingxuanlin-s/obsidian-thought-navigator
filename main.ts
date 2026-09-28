@@ -2,7 +2,7 @@ import { FileView, MarkdownView, moment, Notice, Plugin, TFile, TFolder, Workspa
 import { t } from "src/lang/helper";
 import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
 import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
-import { requestMOCName } from "src/modal/createMocModal";
+import { requestMOCSetup } from "src/modal/createMocModal";
 import { ZKNavigationSettngTab } from "src/settings/settings";
 import { mainNoteInit, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX } from "src/utils/utils";
 import { createMOCJsonWithInitialNode } from "src/utils/mocJsonCodec";
@@ -872,11 +872,11 @@ export default class ZKNavigationPlugin extends Plugin {
             editorCallback: async (editor, view) => {
                 const activeFile = view.file;
                 if (!activeFile) return;
-                const name = await requestMOCName(this.app);
-                if (!name) return;
+                const setup = await requestMOCSetup(this.app);
+                if (!setup) return;
                 try {
                     const folder = activeFile.parent;
-                    const newFile = await this.createMOCFile({ folderPath: folder?.path ?? '', name });
+                    const newFile = await this.createMOCFile({ folderPath: folder?.path ?? '', name: setup.name }, setup.content);
                     editor.replaceSelection('![[' + newFile.name + ']]');
                     await this.openCreatedMOC(newFile);
                     this.app.workspace.trigger('zk-navigation:refresh-index-graph');
@@ -1563,7 +1563,7 @@ export default class ZKNavigationPlugin extends Plugin {
      * 共享创建逻辑:校验目录 → 文件名安全化 → 已存在策略 → 写入合法 .moc.md。
      * 三处入口(右键文件夹 / zk-new-moc-embed / URI create)共用,消除行为漂移。
      */
-    async createMOCFile(opts: CreateMOCOptions = {}): Promise<TFile> {
+    async createMOCFile(opts: CreateMOCOptions = {}, generatedContent?: string): Promise<TFile> {
         const layout = opts.layout
             ?? (this.settings.nodeLayoutStyle === 'auto' ? 'auto' : 'free');
         const baseName = opts.name?.trim()
@@ -1587,9 +1587,9 @@ export default class ZKNavigationPlugin extends Plugin {
         const existing = this.app.vault.getAbstractFileByPath(filePath);
         const rootId = opts.rootId?.trim();
         const initialNodeTitle = opts.title?.trim() || safeName;
-        const content = rootId
+        const content = generatedContent ?? (rootId
             ? createMOCJsonWithInitialNode(layout, initialNodeTitle, rootId)
-            : createMOCJsonWithInitialNode(layout, initialNodeTitle);
+            : createMOCJsonWithInitialNode(layout, initialNodeTitle));
         if (existing) {
             if (!(existing instanceof TFile)) throw new Error(t('MOC path occupied').replace('{path}', filePath));
             if (!opts.overwrite) throw new Error(t('MOC file already exists').replace('{path}', filePath));
@@ -1600,10 +1600,10 @@ export default class ZKNavigationPlugin extends Plugin {
     }
 
     private async createMOCInFolder(folder: TFolder): Promise<TFile | null> {
-        const name = await requestMOCName(this.app);
-        if (!name) return null;
+        const setup = await requestMOCSetup(this.app);
+        if (!setup) return null;
         try {
-            const file = await this.createMOCFile({ folderPath: folder.path, name });
+            const file = await this.createMOCFile({ folderPath: folder.path, name: setup.name }, setup.content);
             await this.openCreatedMOC(file);
             return file;
         } catch (e) {
