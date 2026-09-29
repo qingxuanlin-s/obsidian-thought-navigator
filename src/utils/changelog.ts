@@ -12,6 +12,20 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
     {
+        version: '0.3.5',
+        date: '2026-09-29',
+        highlights: [
+            {
+                zh: 'MOC 现可导入 XMind 和 Markdown 文件，并导出为这两种格式。',
+                en: 'MOCs can now import XMind and Markdown files and export to either format.',
+            },
+            {
+                zh: '新建 MOC 时可按文件名、目录名或笔记属性筛选现有笔记，设置层级规则并预演生成的结构。',
+                en: 'When creating a MOC, filter existing notes by file name, folder name, or properties, then set hierarchy rules and preview the generated structure.',
+            },
+        ],
+    },
+    {
         version: '0.3.4',
         date: '2026-09-03',
         highlights: [
