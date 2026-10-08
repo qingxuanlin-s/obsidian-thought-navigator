@@ -1,7 +1,9 @@
 import * as cytoscape from 'cytoscape';
 import { Notice } from 'obsidian';
+import type { ZKNode } from 'src/view/indexView';
 import type { GraphData, CyData } from './types';
 import { OverlayScheduler } from './overlayScheduler';
+import { dataAs, dataBool, dataNum, dataStr } from './cyData';
 
 type GroupInfo = { id: string; label: string; nodeIds: string[] };
 
@@ -215,8 +217,8 @@ export class EdgeControls {
 					});
 				}
 
-				const curIsImageNode = node.data('isImageNode');
-				const curIsEmbedNode = node.data('isEmbed');
+				const curIsImageNode = dataBool(node, 'isImageNode');
+				const curIsEmbedNode = dataBool(node, 'isEmbed');
 
 				let x: number, y: number;
 				if (curIsImageNode) {
@@ -577,9 +579,8 @@ export class EdgeControls {
 			cy.nodes('.connection-target-hover').removeClass('connection-target-hover');
 			dragStart = null;
 
-			const sourceData = sourceNode.data();
-			const sourceOriginalNode = sourceData.originalNode;
-			const sourceId = sourceData.originalNodeId || sourceData.id;
+			const sourceOriginalNode = dataAs<ZKNode | undefined>(sourceNode, 'originalNode');
+			const sourceId = dataStr(sourceNode, 'originalNodeId') || dataStr(sourceNode, 'id');
 
 			// 点击是主操作：按 Tab 的同一规则直接新建子节点。
 			// 拖动才进入指定落点新建/建立关联，避免让常用操作依赖精细拖拽。
@@ -589,15 +590,14 @@ export class EdgeControls {
 			}
 
 			if (targetNode && targetNode !== sourceNode) {
-				const targetData = targetNode.data();
-				const targetOriginalNode = targetData.originalNode;
-				const targetId = targetData.originalNodeId || targetData.id;
+				const targetOriginalNode = dataAs<ZKNode | undefined>(targetNode, 'originalNode');
+				const targetId = dataStr(targetNode, 'originalNodeId') || dataStr(targetNode, 'id');
 				container.dispatchEvent(new CustomEvent('create-arrow-relation', {
 					detail: {
 						sourceId,
 						targetId,
-						sourceIsGroup: !!sourceData.isGroup,
-						targetIsGroup: !!targetData.isGroup,
+						sourceIsGroup: dataBool(sourceNode, 'isGroup'),
+						targetIsGroup: dataBool(targetNode, 'isGroup'),
 						sourceNode: sourceOriginalNode,
 						targetNode: targetOriginalNode
 					}
@@ -717,7 +717,7 @@ export class EdgeControls {
 			const containerRect = currentContainer.getBoundingClientRect();
 			const mouseX = e.clientX - containerRect.left;
 			const mouseY = e.clientY - containerRect.top;
-			const currentWeight = edge.data('controlPointWeight') !== undefined ? edge.data('controlPointWeight') : 0.5;
+			const currentWeight = dataNum(edge, 'controlPointWeight') ?? 0.5;
 			const midX = sourcePos.x + (targetPos.x - sourcePos.x) * currentWeight;
 			const midY = sourcePos.y + (targetPos.y - sourcePos.y) * currentWeight;
 			const dx = targetPos.x - sourcePos.x;
@@ -727,7 +727,7 @@ export class EdgeControls {
 			const perpY = dx / len;
 
 			isDragging = true;
-			dragStartDistance = edge.data('controlPointDistance') !== undefined ? edge.data('controlPointDistance') : distance;
+			dragStartDistance = dataNum(edge, 'controlPointDistance') ?? distance;
 			dragStartProjection = (mouseX - midX) * perpX + (mouseY - midY) * perpY;
 			controlPoint.setCssStyles({ cursor: 'grabbing' });
 			activeDocument.addEventListener('mousemove', handleMouseMove);
@@ -742,7 +742,7 @@ export class EdgeControls {
 			const containerRect = currentContainer.getBoundingClientRect();
 			const mouseX = e.clientX - containerRect.left;
 			const mouseY = e.clientY - containerRect.top;
-			const currentWeight = edge.data('controlPointWeight') !== undefined ? edge.data('controlPointWeight') : 0.5;
+			const currentWeight = dataNum(edge, 'controlPointWeight') ?? 0.5;
 			const midX = sourcePos.x + (targetPos.x - sourcePos.x) * currentWeight;
 			const midY = sourcePos.y + (targetPos.y - sourcePos.y) * currentWeight;
 			const dx = targetPos.x - sourcePos.x;
@@ -809,7 +809,7 @@ export class EdgeControls {
 		const targetNode = cy.$id(data.target ?? '');
 		if (!sourceNode.length || !targetNode.length) return;
 
-		const originalTargetNode = targetNode.data().originalNode;
+		const originalTargetNode = dataAs<ZKNode | undefined>(targetNode, 'originalNode');
 		const canModifyTarget = originalTargetNode && originalTargetNode.nodeSons === 1;
 		const sourceHandle = this.createEndpointHandle('source', sourceNode, edge, container);
 		let targetHandle: HTMLElement | null = null;
@@ -987,7 +987,7 @@ export class EdgeControls {
 						edgeId: edgeData.id,
 						edgeType: edgeData.type,
 						oldSource: edgeData.originalSource || edgeData.source,
-						newSource: newTargetNode.data().originalNode.IDStr,
+						newSource: dataAs<ZKNode>(newTargetNode, 'originalNode').IDStr,
 						target: edgeData.originalTarget || edgeData.target,
 						label: edgeData.label
 					}
@@ -995,15 +995,15 @@ export class EdgeControls {
 				return;
 			}
 
-			const newTargetData = newTargetNode.data();
-			const newTargetNodeSons = newTargetData.originalNode.nodeSons;
+			const newTargetOriginalNode = dataAs<ZKNode>(newTargetNode, 'originalNode');
+			const newTargetNodeSons = newTargetOriginalNode.nodeSons;
 			if (newTargetNodeSons > 1) {
 				new Notice('无法连接到有子节点的节点');
 				return;
 			}
 			const originalTargetNode = cy.$id(edgeData.target ?? '');
-			const oldTargetID = originalTargetNode.data().originalNode.IDStr;
-			const newTargetID = newTargetData.originalNode.IDStr;
+			const oldTargetID = dataAs<ZKNode>(originalTargetNode, 'originalNode').IDStr;
+			const newTargetID = newTargetOriginalNode.IDStr;
 			graphContainer.dispatchEvent(new CustomEvent('edge-target-changed', {
 				detail: {
 					edgeId: edgeData.id,

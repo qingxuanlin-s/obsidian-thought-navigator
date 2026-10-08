@@ -3,6 +3,12 @@ import { App, moment, TFile } from "obsidian";
 import { LayoutPreset } from "src/utils/growthDirection";
 import { ZKNode } from "src/view/indexView";
 
+/** 从 unknown(通常是 catch 的 e)安全提取错误信息,收口 any 传播。 */
+export function errorMessage(e: unknown): string {
+    if (e instanceof Error) return e.message;
+    return String(e);
+}
+
 // 节点类型
 // - file:  文件节点（[[link]] 或 [[link|alias]]）
 // - text:  纯文字节点（不关联文件）
@@ -473,7 +479,8 @@ export async function mainNoteInit(plugin: ZKNavigationPlugin) {
                 if (nodeCache !== null && node.file?.extension == 'md') {
                     if (typeof nodeCache.frontmatter !== 'undefined' && plugin.settings.TitleField !== "") {
 
-                        const title = nodeCache.frontmatter[plugin.settings.TitleField]?.toString();
+                        const titleValue: unknown = nodeCache.frontmatter[plugin.settings.TitleField];
+                        const title = titleValue == null ? undefined : String(titleValue);
                         if (typeof title == "string" && title.length > 0) {
                             node.title = title;
                         }
@@ -485,12 +492,13 @@ export async function mainNoteInit(plugin: ZKNavigationPlugin) {
                 if (node.file?.extension == 'md') {
                     if (nodeCache !== null) {
                         if (typeof nodeCache.frontmatter !== 'undefined' && plugin.settings.IDField !== "") {
-                            const id = nodeCache.frontmatter[plugin.settings.IDField];
+                            const id: unknown = nodeCache.frontmatter[plugin.settings.IDField];
                             if (Array.isArray(id)) {
-                                if (id[0] === null) {
+                                const firstElem: unknown = id[0];
+                                if (firstElem === null) {
                                     continue;
                                 }
-                                node.ID = id[0].toString();
+                                node.ID = String(firstElem);
                                 node.IDArr = await ID_formatting(node.ID, node.IDArr, plugin.settings.siblingsOrder);
                                 node.IDStr = node.IDArr.toString();
                                 node.title = note.basename;
@@ -539,7 +547,7 @@ export async function mainNoteInit(plugin: ZKNavigationPlugin) {
 
         if (plugin.settings.CustomCreatedTime.length > 0 && node.file?.extension == 'md') {
 
-            const ctime = nodeCache?.frontmatter?.[plugin.settings.CustomCreatedTime];
+            const ctime: unknown = nodeCache?.frontmatter?.[plugin.settings.CustomCreatedTime];
 
             if (ctime) {
                 const time = moment(ctime as string);
@@ -621,11 +629,11 @@ export function displayWidth(str: string) {
 
 function getfileTags(app: App, file: TFile) {
     const fileTags: string[] = [];
-    const fmTags = app.metadataCache.getFileCache(file)?.frontmatter?.tags;
+    const fmTags: unknown = app.metadataCache.getFileCache(file)?.frontmatter?.tags;
     if (fmTags) {
         if (Array.isArray(fmTags)) {
 
-            for (const tag of fmTags) {
+            for (const tag of fmTags as string[]) {
                 splitNestedTags("#" + tag, fileTags);
             }
 

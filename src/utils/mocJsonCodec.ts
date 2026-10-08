@@ -167,7 +167,7 @@ export function parseMOCJson(content: string, filePath: string, app: App): MOCPa
 
     let json: MOCJsonSchema;
     try {
-        json = JSON.parse(content);
+        json = JSON.parse(content) as MOCJsonSchema;
     } catch {
         json = {
             version: 1, nodes: [], reverseRelations: [],

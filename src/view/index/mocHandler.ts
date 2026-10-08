@@ -707,7 +707,7 @@ export class MOCHandler {
             });
         }
 
-        const newReverseRelations = new Map();
+        const newReverseRelations = new Map<string, ReverseRelation>();
         for (const [key, relation] of mocData.reverseRelations) {
             if (!deletedNodeIds.has(relation.sourceID) && !deletedNodeIds.has(relation.targetID)) {
                 newReverseRelations.set(key, relation);
@@ -949,7 +949,7 @@ export class MOCHandler {
             updateCount = idMappings.length - 1;
 
             // 更新 reverseRelations 中的节点 ID（处理所有映射）
-            const newReverseRelations = new Map();
+            const newReverseRelations = new Map<string, ReverseRelation>();
             for (const [, relation] of mocData.reverseRelations) {
                 let newSourceID = relation.sourceID;
                 let newTargetID = relation.targetID;
@@ -1397,7 +1397,7 @@ export class MOCHandler {
                 ? freeNodeID.split('.').slice(0, -1).join('.')
                 : null;
 
-            const newReverseRelations = new Map();
+            const newReverseRelations = new Map<string, ReverseRelation>();
             for (const [, relation] of mocData.reverseRelations) {
                 let newSourceID = relation.sourceID;
                 let newTargetID = relation.targetID;
@@ -1579,7 +1579,7 @@ export class MOCHandler {
             }
 
             // 6. 更新 reverseRelations 中的节点 ID，但要移除父节点到该子节点的反向关系
-            const newReverseRelations = new Map();
+            const newReverseRelations = new Map<string, ReverseRelation>();
 
             // 找到原父节点 ID（从 childID 中提取）
             const idParts = childID.split('.');

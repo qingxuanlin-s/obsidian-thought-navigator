@@ -1,4 +1,5 @@
 import type { ElementDefinition, Position } from 'cytoscape';
+import type { TFile } from 'obsidian';
 import { ZKNode } from 'src/view/indexView';
 import { isMocPath, stripMocSuffix, GroupInfo } from 'src/utils/utils';
 import { Edge, GraphData, RenderOptions, CyData } from './types';
@@ -97,8 +98,8 @@ export function convertNodesToElements(
 	const nodeRemarks = data?.metadata.nodeRemarks || {};
 	const nodeAnchors = data?.metadata.nodeAnchors || {};
 	// 跨领域链接:不再物化为虚拟节点,而是挂在源节点上由 badge 层渲染成「出口角标」(↗)
-	const crossDomainLinks = ((data?.metadata as any)?.crossDomainLinks || {}) as Record<string, any[]>;
-	const embedNodeSizes = ((data?.metadata as any)?.embedNodeSizes || {}) as Record<string, { width: number; height: number }>;
+	const crossDomainLinks = data?.metadata.crossDomainLinks || {};
+	const embedNodeSizes = data?.metadata.embedNodeSizes || {};
 	const resolvedContext = context || buildElementConversionContext(data, options);
 	const vividStyleMap = resolvedContext.nodeStyleMap;
 	const parentLinkedNodeIds = resolvedContext.parentLinkedNodeIds;
@@ -230,9 +231,9 @@ export function convertEdgesToElements(
 		};
 
 		// 跨领域边:透传链接信息 + 持久化定位键(供双击改标签写回 ext metadata)
-		if ((edge as any).crossDomainLink) {
-			element.data.crossDomainLink = (edge as any).crossDomainLink;
-			element.data.crossDomainSourceNodeId = (edge as any).crossDomainSourceNodeId;
+		if (edge.crossDomainLink) {
+			element.data.crossDomainLink = edge.crossDomainLink;
+			element.data.crossDomainSourceNodeId = edge.crossDomainSourceNodeId;
 		}
 
 		const key = `${edge.source}-${edge.target}`;
@@ -407,7 +408,7 @@ export function escapeId(id: string): string {
 	return id.replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
-export function buildWikiLinkForFile(file: any): string {
+export function buildWikiLinkForFile(file: TFile): string {
 	const path = String(file?.path || '').trim();
 	const name = String(file?.name || '').trim();
 	const basename = String(file?.basename || '').trim();

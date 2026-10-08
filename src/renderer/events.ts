@@ -2,9 +2,20 @@ import type { CytoscapeRenderer } from './CytoscapeRenderer';
 import type * as cytoscape from 'cytoscape';
 import { Notice, setIcon } from 'obsidian';
 import { t } from 'src/lang/helper';
+import type { ZKNode } from 'src/view/indexView';
 import { GraphChanges, CyData } from './types';
-import { dataStr, dataBool } from './cyData';
+import { dataStr, dataBool, dataAs } from './cyData';
 import * as layoutAdapter from './layoutAdapter';
+
+/**
+ * 占位符连接线在运行时写进节点 data() 的附加字段(非持久化,
+ * 随节点移除清理,见 remove-placeholder-node 监听)。
+ */
+interface PlaceholderRuntimeData extends CyData {
+    connectionLine?: SVGLineElement;
+    connectionParentNode?: cytoscape.CollectionReturnValue;
+    connectionLineUpdater?: () => void;
+}
 
 function getClipboardTextForNode(node: cytoscape.NodeSingular): string {
     const data = node.data() as CyData;
@@ -452,7 +463,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
             if (this.isReadOnlyMode()) {
                 return;
             }
-            const target = evt.target;
+            const target: unknown = evt.target;
             cleanupRightDragBlade(this);
             this.rightDragDeleteState.start = { ...evt.renderedPosition };
             this.rightDragDeleteState.startNode = target !== this.cy && (target as cytoscape.SingularElementArgument).isNode?.()
@@ -480,7 +491,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
                 if (this.rightDragDeleteState.startNode) {
                     addNodeToRightDragDeleteSelection(this, this.rightDragDeleteState.startNode);
                 }
-                const target = evt.target;
+                const target: unknown = evt.target;
                 if (target !== this.cy && (target as cytoscape.SingularElementArgument).isNode?.()) {
                     addNodeToRightDragDeleteSelection(this, target as cytoscape.NodeSingular);
                 }
@@ -721,15 +732,15 @@ export function bindEvents(this: CytoscapeRenderer): void {
             const node = this.cy?.$id(nodeId);
             if (node && node.length > 0) {
                 // 清理连接线（备用方法）
-                const nodeData = node.data() as CyData;
-                const connectionLineFromData = (nodeData as any).connectionLine;
+                const nodeData = node.data() as PlaceholderRuntimeData;
+                const connectionLineFromData = nodeData.connectionLine;
 
                 if (connectionLineFromData && connectionLineFromData.parentNode) {
                     connectionLineFromData.parentNode.removeChild(connectionLineFromData);
                 }
 
                 // 从 overlay 调度器移除连接线更新器
-                const lineUpdater = (nodeData as { connectionLineUpdater?: () => void }).connectionLineUpdater;
+                const lineUpdater = nodeData.connectionLineUpdater;
                 if (lineUpdater) {
                     this.overlayScheduler.updaters.delete(lineUpdater);
                 }
@@ -770,7 +781,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
             if (!this.cy) return;
             const child = this.cy.$id(childId);
             if (!child || child.length === 0) return;
-            let parent = this.cy.$('node').filter((n: cytoscape.NodeSingular) => n.data('originalNode')?.IDStr === parentNodeId);
+            let parent = this.cy.$('node').filter((n: cytoscape.NodeSingular) => dataAs<ZKNode | undefined>(n, 'originalNode')?.IDStr === parentNodeId);
             if (!parent || parent.length === 0) parent = this.cy.$id(parentNodeId);
             if (!parent || parent.length === 0) return;
             const edgeId = `draft-edge-${childId}`;
@@ -829,7 +840,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
         // 端点解析:真实节点按 originalNode.IDStr 命中,草稿节点(IDStr=draftId)同样命中,兜底直查 cy id
         const resolveEndpoint = (idStr: string): cytoscape.NodeSingular | null => {
             if (!this.cy) return null;
-            let n = this.cy.$('node').filter((x: cytoscape.NodeSingular) => x.data('originalNode')?.IDStr === idStr);
+            let n = this.cy.$('node').filter((x: cytoscape.NodeSingular) => dataAs<ZKNode | undefined>(x, 'originalNode')?.IDStr === idStr);
             if (!n || n.length === 0) n = this.cy.$id(idStr);
             return n && n.length > 0 ? n[0] : null;
         };
@@ -970,7 +981,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
         let pendingGroupLeave: { nodeId: string; groupId: string } | null = null;
         let pendingGroupJoin: { nodeId: string; groupId: string } | null = null;
         let groupDragNodeActuallyMoved = false; // 区分拖动和点击，避免 free/dragfree 顺序问题
-        let groupJoinPreviewNode: any = null;
+        let groupJoinPreviewNode: cytoscape.NodeSingular | null = null;
 
         // 拖拽期静态候选快照：grab 时构建一次，drag 期间复用，避免每帧 N 次 renderedPosition
         type DragCandidate = {
@@ -1133,7 +1144,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
         // 独子/无兄弟用默认最小半径。自由布局父节点下的 auto 子树根不参与此圆,
         // 它是独立的自动子树岛,位置由用户放在自由区域后自行锚定。
         const computeSeparationOrbit = (
-            grabbedNode: any,
+            grabbedNode: cytoscape.NodeSingular,
             grabbedBizId: string
         ): { cx: number; cy: number; radius: number; parentId: string } | null => {
             if (!this.cy) return null;
@@ -1145,7 +1156,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
             const parentEdges = grabbedNode.connectedEdges().filter((e: cytoscape.EdgeSingular) =>
                 e.data('type') === 'parent' && e.target().id() === grabbedNode.id());
             if (parentEdges.length === 0) return null;
-            const parentNode = parentEdges.last().source() as cytoscape.NodeSingular;
+            const parentNode = (parentEdges.last() as cytoscape.EdgeSingular).source() as cytoscape.NodeSingular;
             if (parentNode.length === 0) return null;
             const parentBizId = bizIdOf(parentNode);
             const parentData = parentNode.data() as CyData;
@@ -1180,7 +1191,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
         };
 
         // drag 期间刷新虚线圆位置 + 内外状态(模型空间判定,与 zoom 无关)
-        const updateSeparationCircle = (grabbedNode: any) => {
+        const updateSeparationCircle = (grabbedNode: cytoscape.NodeSingular) => {
             if (!separationOrbit || !separationCircle || !this.cy) return;
             const zoom = this.cy.zoom();
             const pan = this.cy.pan();
@@ -1247,8 +1258,8 @@ export function bindEvents(this: CytoscapeRenderer): void {
             let horizontalGuide: { y: number; x1: number; x2: number } | null = null;
             let verticalBest = Number.POSITIVE_INFINITY;
             let horizontalBest = Number.POSITIVE_INFINITY;
-            let horizontalSpacing: { left: any; right: any; y: number } | null = null;
-            let verticalSpacing: { top: any; bottom: any; x: number } | null = null;
+            let horizontalSpacing: { left: typeof originalMetrics; right: typeof originalMetrics; y: number } | null = null;
+            let verticalSpacing: { top: typeof originalMetrics; bottom: typeof originalMetrics; x: number } | null = null;
 
             // 单次遍历：同时算对齐候选 + 收集 axis peers，metrics 来自 grab 时建立的快照
             const proximitySq = GUIDE_PROXIMITY * GUIDE_PROXIMITY;
@@ -1363,8 +1374,8 @@ export function bindEvents(this: CytoscapeRenderer): void {
 
             const draggedPos = draggedNode.renderedPosition();
             const draggedMetrics = getRenderedMetrics(draggedNode);
-            const currentVerticalGuide: any = verticalGuide;
-            const currentHorizontalGuide: any = horizontalGuide;
+            const currentVerticalGuide: { x: number; y1: number; y2: number } | null = verticalGuide;
+            const currentHorizontalGuide: { y: number; x1: number; x2: number } | null = horizontalGuide;
 
             if (currentVerticalGuide) {
                 verticalAlignmentLine.setAttribute('x1', `${currentVerticalGuide.x}`);
@@ -2069,7 +2080,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
 
                 if (isOutside) {
                     const nodeId = data.originalNode?.ID || data.originalSource || data.id;
-                    const currentIds: string[] = draggedNodeOriginalGroup.data('nodeIds') || [];
+                    const currentIds: string[] = dataAs<string[]>(draggedNodeOriginalGroup, 'nodeIds') || [];
                     draggedNodeOriginalGroup.data('nodeIds', currentIds.filter((id: string) => id !== nodeId));
                     // 记录脱组信息，合并到 node-position-changed 里原子保存，避免并发写竞态
                     pendingGroupLeave = { nodeId, groupId: sourceGroupId };
@@ -2095,7 +2106,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
             if (data.isPlaceholder) {
                 // 检查是否启用了智能连线并且有附近的节点
                 if (smartEnabled && smartTargetNodeId) {
-                    const parentData = this.cy!.$id(smartTargetNodeId).data();
+                    const parentData = this.cy!.$id(smartTargetNodeId).data() as CyData;
                     const parentId = parentData.originalNode?.ID || parentData.originalSource || smartTargetNodeId;
                     const placeholderId = data.id;
 
@@ -2118,7 +2129,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
 
             // 检查是否有自动连接（自由节点）
             if (smartEnabled && smartTargetNodeId) {
-                const parentData = this.cy!.$id(smartTargetNodeId).data();
+                const parentData = this.cy!.$id(smartTargetNodeId).data() as CyData;
 
                 // 使用 originalNode.ID（带点的格式）而不是转义后的 ID
                 const childId = data.originalNode?.ID || data.originalSource || data.id;
@@ -2150,7 +2161,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
                 const connectedEdges = this.cy!.$(`edge[type="cross-domain"][target="${data.id}"]`);
                 let sourceNodeId = null;
                 if (connectedEdges.length > 0) {
-                    sourceNodeId = connectedEdges.first().data().originalSource;
+                    sourceNodeId = (connectedEdges.first().data() as CyData).originalSource;
                 }
 
                 this.container?.dispatchEvent(new CustomEvent('cross-domain-node-position-changed', {
@@ -2175,9 +2186,9 @@ export function bindEvents(this: CytoscapeRenderer): void {
                 const targetGroup = findContainingGroup(node, originalGroupId);
                 if (targetGroup && targetGroup.length > 0) {
                     const targetGroupId = targetGroup.id();
-                    const currentParent = node.data('parent');
+                    const currentParent = dataStr(node, 'parent');
                     if (currentParent !== targetGroupId) {
-                        const currentIds: string[] = targetGroup.data('nodeIds') || [];
+                        const currentIds: string[] = dataAs<string[]>(targetGroup, 'nodeIds') || [];
                         if (!currentIds.includes(nodeId)) {
                             targetGroup.data('nodeIds', [...currentIds, nodeId]);
                         }
@@ -2415,9 +2426,9 @@ export function bindKeyboardEvents(this: CytoscapeRenderer): void {
                 event.preventDefault();
                 event.stopPropagation();
                 this.clipboardNodes = selected.map((node: cytoscape.NodeSingular) => ({
-                    originalNode: node.data('originalNode'),
+                    originalNode: node.data('originalNode') as ZKNode | undefined,
                     position: { ...node.position() }
-                })).filter((item: any) => item.originalNode);
+                })).filter((item): item is { originalNode: ZKNode; position: { x: number; y: number } } => Boolean(item.originalNode));
                 if (this.clipboardNodes.length > 0) {
                     const clipboardText = selected
                         .map((node: cytoscape.NodeSingular) => getClipboardTextForNode(node))
@@ -2531,7 +2542,7 @@ export function bindKeyboardEvents(this: CytoscapeRenderer): void {
                     event.stopPropagation();
                     
                     // 触发删除分组事件
-                    selectedGroups.forEach((groupNode: any) => {
+                    selectedGroups.forEach((groupNode: cytoscape.NodeSingular) => {
                         const data = groupNode.data() as CyData;
                         this.container?.dispatchEvent(new CustomEvent('group-delete-key', {
                             detail: {
@@ -2554,7 +2565,7 @@ export function bindKeyboardEvents(this: CytoscapeRenderer): void {
                     event.stopPropagation();
                     selectedDraftRels.forEach((edge: cytoscape.EdgeSingular) => {
                         this.container?.dispatchEvent(new CustomEvent('draft-relation-delete', {
-                            detail: { relKey: edge.data('relKey') }
+                            detail: { relKey: dataStr(edge, 'relKey') }
                         }));
                     });
                     if (selectedEdges.filter('edge[!isDraftRelation]').length === 0) return;
@@ -2736,7 +2747,7 @@ export function addGroupResizeHandles(this: CytoscapeRenderer): void {
         this.container.appendChild(handleContainer);
 
         let currentHandles: HTMLElement[] = [];
-        let selectedGroup: any = null;
+        let selectedGroup: cytoscape.NodeSingular | null = null;
         let resizePreview: HTMLElement | null = null;  // 添加预览框
 
         // 清除所有手柄
@@ -2751,7 +2762,7 @@ export function addGroupResizeHandles(this: CytoscapeRenderer): void {
         };
 
         // 创建四个角的调整大小手柄
-        const createResizeHandles = (groupNode: any) => {
+        const createResizeHandles = (groupNode: cytoscape.NodeSingular) => {
             clearHandles();
             selectedGroup = groupNode;
 
@@ -2828,14 +2839,14 @@ export function addGroupResizeHandles(this: CytoscapeRenderer): void {
      * 绑定调整大小手柄的拖动事件
      */
 export function bindResizeHandleDrag(this: CytoscapeRenderer, handle: HTMLElement,
-        groupNode: any,
+        groupNode: cytoscape.NodeSingular,
         position: { name: string; cursor: string; x: number; y: number },
         handleContainer: HTMLElement): void {
         if (!this.cy || !this.container) return;
 
         let isDragging = false;
         let startMousePos: { x: number; y: number } | null = null;
-        let startBoundingBox: any = null;
+        let startBoundingBox: cytoscape.BoundingBox12 & cytoscape.BoundingBoxWH | null = null;
         let originalNodeIds: string[] = [];
         let resizePreview: HTMLElement | null = null;
 
@@ -2848,7 +2859,7 @@ export function bindResizeHandleDrag(this: CytoscapeRenderer, handle: HTMLElemen
             startBoundingBox = groupNode.renderedBoundingBox();
             
             // 记录原始节点列表
-            originalNodeIds = groupNode.data('nodeIds') || [];
+            originalNodeIds = dataAs<string[]>(groupNode, 'nodeIds') || [];
 
 
             // 创建预览框
@@ -3011,8 +3022,8 @@ export function bindResizeHandleDrag(this: CytoscapeRenderer, handle: HTMLElemen
 
                         // 设置新的 parent 关系
                         nodesInBounds.forEach(node => {
-                            const currentParent = node.data('parent');
-                            const isGroup = node.data('isGroup');
+                            const currentParent = dataStr(node, 'parent');
+                            const isGroup = dataBool(node, 'isGroup');
                     
                             // 分组节点不能作为子节点
                             if (isGroup) {
@@ -3062,7 +3073,7 @@ export function bindResizeHandleDrag(this: CytoscapeRenderer, handle: HTMLElemen
                     this.container?.dispatchEvent(new CustomEvent('group-resize', {
                         detail: {
                             groupId: groupNode.id(),
-                            groupLabel: groupNode.data('label'),
+                            groupLabel: dataAs<string | undefined>(groupNode, 'label'),
                             nodeIds: finalNodeIds
                         }
                     }));
@@ -3314,7 +3325,7 @@ export function showSearchBar(this: CytoscapeRenderer): void {
             return;
         }
 
-        let matchedNodes: any[] = [];
+        let matchedNodes: cytoscape.NodeSingular[] = [];
         let filteredNodes: cytoscape.NodeSingular[] = [];
         let currentIndex = -1;
         let activeSuggestionIndex = -1;
@@ -3716,7 +3727,7 @@ export function batchCreateGroup(this: CytoscapeRenderer): void {
     /**
      * 获取当前活动的节点（第一个选中的节点）
      */
-export function getActiveNode(this: CytoscapeRenderer): any | null {
+export function getActiveNode(this: CytoscapeRenderer): cytoscape.NodeSingular | null {
         if (!this.cy) return null;
 
         const selectedNodes = this.cy.$('node:selected');
@@ -3726,7 +3737,7 @@ export function getActiveNode(this: CytoscapeRenderer): any | null {
             return null;
         }
 
-        return selectedNodes.first();
+        return selectedNodes.first() as cytoscape.NodeSingular;
     }
 
 export function normalizeVector(this: CytoscapeRenderer, vx: number, vy: number): { x: number; y: number } {
@@ -3962,9 +3973,9 @@ export function createPlaceholderConnectionLine(this: CytoscapeRenderer, placeho
         svgOverlay.appendChild(connectionLine);
 
         // 保存连接线引用
-        const nodeData = placeholderNode.data() as CyData;
-        (nodeData as any).connectionLine = connectionLine;
-        (nodeData as any).connectionParentNode = parentNode;
+        const nodeData = placeholderNode.data() as PlaceholderRuntimeData;
+        nodeData.connectionLine = connectionLine;
+        nodeData.connectionParentNode = parentNode;
 
         // 缓存父节点引用，避免每次都遍历所有节点(复用上面已解析到的 parentNode)
         const cachedParent = parentNode;
@@ -3990,7 +4001,7 @@ export function createPlaceholderConnectionLine(this: CytoscapeRenderer, placeho
         this.overlayScheduler.updaters.add(updateConnectionLine);
 
         // 保存更新处理器引用，以便后续清理
-        (nodeData as any).connectionLineUpdater = updateConnectionLine;
+        nodeData.connectionLineUpdater = updateConnectionLine;
     }
 
     /**

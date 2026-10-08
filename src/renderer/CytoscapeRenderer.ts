@@ -6,6 +6,7 @@ import { ZKNode } from 'src/view/indexView';
 import { Component, MarkdownRenderer, Platform, TFile } from 'obsidian';
 import { EmbeddableMarkdownEditor } from 'src/utils/EmbeddableMarkdownEditor';
 import { Minimap } from './Minimap';
+import { dataStr } from './cyData';
 import { buildStylesheet, StyleEntry } from './stylesheet';
 import * as layoutAdapter from './layoutAdapter';
 import { OverlayScheduler } from './overlayScheduler';
@@ -89,19 +90,28 @@ import {
 } from './inlineEditor';
 
 // 处理 CommonJS 和 ESM 模块的兼容性
-const getCytoscape = (): any => {
-    const cy = (cytoscapeNamespace as any).default || cytoscapeNamespace;
-    return cy;
+// 打包后 import * 可能被包成 { default: 原模块 },运行时优先取 default;
+// 类型层面经 unknown 中转后收窄回模块自身形状。
+// 构造参数保持宽松:样式表条目在 stylesheet.ts 用 Record<string, unknown> 维护,
+// 直接对齐 CytoscapeOptions(Css.* 字面量类型)会过严。
+type CytoscapeFactory = {
+    (options?: Record<string, unknown>): cytoscape.Core;
+    use(module: cytoscape.Ext): void;
 };
 
-const getDagre = (): any => {
-    const d = (dagreNamespace as any).default || dagreNamespace;
-    return d;
+const getCytoscape = (): CytoscapeFactory => {
+    const mod = cytoscapeNamespace as unknown as { default?: CytoscapeFactory };
+    return mod.default || (cytoscapeNamespace as unknown as CytoscapeFactory);
 };
 
-const getCoseBilkent = (): any => {
-    const cb = (coseBilkentNamespace as any).default || coseBilkentNamespace;
-    return cb;
+const getDagre = (): cytoscape.Ext => {
+    const mod = dagreNamespace as unknown as { default?: cytoscape.Ext };
+    return mod.default || dagreNamespace;
+};
+
+const getCoseBilkent = (): cytoscape.Ext => {
+    const mod = coseBilkentNamespace as unknown as { default?: cytoscape.Ext };
+    return mod.default || coseBilkentNamespace;
 };
 
 // 延迟注册扩展的标志
@@ -446,8 +456,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         style: {
                             'background-color': 'transparent',
                             'background-opacity': 0
-                        } as any
-                    }
+                        }
+                    } as StyleEntry
                 ],
                 // 没有保存位置时，先用轻量网格打散，避免首帧节点重叠导致边端点无效
                 // preset 也禁用构造期 fit:fit 会触发 boundingBox→求边端点,而此时层级边的
@@ -515,8 +525,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
                         style: {
                             'background-color': 'transparent',
                             'background-opacity': 0
-                        } as any
-                    }
+                        }
+                    } as StyleEntry
                 ]);
             }
 
@@ -728,8 +738,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
                             // 特殊处理 parent 属性，确保分组关系正确更新
                             if (ele.group === 'nodes' && 'parent' in ele.data) {
-                                const newParent = ele.data.parent;
-                                const currentParent = existing.data('parent');
+                                const newParent = (ele.data as { parent?: string }).parent;
+                                const currentParent = existing.data('parent') as string | undefined;
 
                                 // 如果 parent 发生变化，需要使用 move() 方法更新
                                 if (newParent !== currentParent) {
@@ -1337,14 +1347,14 @@ export class CytoscapeRenderer implements IGraphRenderer {
         // 这里先在 batch 之外纯读一遍,把所有端点几何一次性灌进 dimCache —— 纯读只触发一次 recalc,
         // 之后 batch 内的 dim() 全是缓存命中、零节点读,recalc 从上千次降到一次。
         targetEdges.forEach((edge: cytoscape.EdgeSingular) => {
-            const type = edge.data('type');
+            const type = dataStr(edge, 'type');
             if (type !== 'parent' && type !== 'forward') return;
             dim(edge.source());
             dim(edge.target());
         });
         cy.batch(() => {
             targetEdges.forEach((edge: cytoscape.EdgeSingular) => {
-                const type = edge.data('type');
+                const type = dataStr(edge, 'type');
                 if (type !== 'parent' && type !== 'forward') return;
                 const sn = edge.source();
                 const tn = edge.target();

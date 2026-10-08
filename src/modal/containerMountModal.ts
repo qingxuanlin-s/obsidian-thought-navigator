@@ -2,6 +2,7 @@ import { App, SuggestModal, Notice, setIcon } from "obsidian";
 import { WorkspaceNode } from "src/types/workspace";
 import { WorkspaceStore } from "src/workspace/WorkspaceStore";
 import { t } from "src/lang/helper";
+import { errorMessage } from "src/utils/utils";
 
 interface PickItem {
     node: WorkspaceNode;
@@ -99,7 +100,7 @@ export class ContainerMountModal extends SuggestModal<PickItem> {
             }
             this.app.workspace.trigger("zk-navigation:refresh-index-graph");
         } catch (e) {
-            new Notice(t("Operation failed").replace("{message}", String(e?.message || e)));
+            new Notice(t("Operation failed").replace("{message}", errorMessage(e)));
         }
     }
 }

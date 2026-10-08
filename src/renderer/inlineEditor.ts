@@ -3,6 +3,7 @@ import { App, Component, Notice, TFile, moment, setIcon } from 'obsidian';
 import type * as cytoscape from 'cytoscape';
 import { ZKNode } from 'src/view/indexView';
 import { EmbeddableMarkdownEditor } from 'src/utils/EmbeddableMarkdownEditor';
+import { dataStr } from './cyData';
 
 /** App 未公开的内部命令表(slash 命令菜单用) */
 interface AppCommandsInternal {
@@ -994,19 +995,19 @@ export function showInlineNodeEditor(this: CytoscapeRenderer, node: cytoscape.No
             return Number.isFinite(n) && n > 0 ? n : fallback;
         };
         const getRenderedNodeFontSize = (): string => {
-            const renderedFontSize = node.renderedStyle?.('font-size');
+            const renderedFontSize: unknown = node.renderedStyle?.('font-size');
             return (typeof renderedFontSize === 'string' && renderedFontSize.trim())
                 ? renderedFontSize
                 : String(node.style('font-size') || '20px');
         };
         const getRenderedNodeFontFamily = (): string => {
-            const renderedFontFamily = node.renderedStyle?.('font-family');
+            const renderedFontFamily: unknown = node.renderedStyle?.('font-family');
             return (typeof renderedFontFamily === 'string' && renderedFontFamily.trim())
                 ? renderedFontFamily
                 : String(node.style('font-family') || 'inherit');
         };
         const getRenderedNodeFontWeight = (): string => {
-            const renderedFontWeight = node.renderedStyle?.('font-weight');
+            const renderedFontWeight: unknown = node.renderedStyle?.('font-weight');
             return (typeof renderedFontWeight === 'string' && renderedFontWeight.trim())
                 ? renderedFontWeight
                 : String(node.style('font-weight') || '500');
@@ -2114,7 +2115,6 @@ export function startPlaceholderInPlaceEdit(this: CytoscapeRenderer, node: cytos
      */
 export function startPlaceholderTextareaFallback(this: CytoscapeRenderer, node: cytoscape.NodeSingular, options?: { cursor?: 'select' | 'end' }): void {
         if (!this.cy || !this.container) return;
-        const data = node.data();
 
         const bb = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
         const boxW = Math.max(bb?.w || 0, 100);
@@ -2196,7 +2196,7 @@ export function startPlaceholderTextareaFallback(this: CytoscapeRenderer, node: 
             textarea.remove();
             const pos = node.position();
             this.container?.dispatchEvent(new CustomEvent('placeholder-node-edit', {
-                detail: { nodeId: data.id, label: val, position: { x: pos.x, y: pos.y }, suggestedNodeId: data.suggestedNodeId }
+                detail: { nodeId: dataStr(node, 'id'), label: val, position: { x: pos.x, y: pos.y }, suggestedNodeId: dataStr(node, 'suggestedNodeId') }
             }));
             this.container?.focus();
         };
@@ -2206,7 +2206,7 @@ export function startPlaceholderTextareaFallback(this: CytoscapeRenderer, node: 
             isSaved = true;
             textarea.remove();
             this.container?.dispatchEvent(new CustomEvent('placeholder-node-cancel', {
-                detail: { nodeId: data.id }
+                detail: { nodeId: dataStr(node, 'id') }
             }));
             this.container?.focus();
         };
@@ -2759,7 +2759,7 @@ export function showLinkSuggester(this: CytoscapeRenderer, textarea: HTMLTextAre
             // 兼容旧逻辑
             this.container?.dispatchEvent(new CustomEvent('add-free-node-from-suggester', {
                 detail: {
-                    nodeId: node.data().id,
+                    nodeId: dataStr(node, 'id'),
                     wikiLink: buildWikiLinkForFile(file),
                     file: file,
                     isEmbed

@@ -54,7 +54,7 @@ function resolveEmbeddableEditorCtor(app: App): EditorCtor | null {
 				widgetView.editable = true;
 				widgetView.showEditor?.();
 				const editMode = widgetView.editMode ?? widgetView;
-				const editorProto = Object.getPrototypeOf(Object.getPrototypeOf(editMode as object));
+				const editorProto = Object.getPrototypeOf(Object.getPrototypeOf(editMode as object)) as { constructor?: EditorCtor } | null;
 				const ctor = editorProto?.constructor;
 				if (ctor) {
 					embeddableEditorCtor = ctor;
@@ -79,7 +79,7 @@ function resolveEmbeddableEditorCtor(app: App): EditorCtor | null {
 		const mdView = mdLeaf?.view as MarkdownView | undefined;
 		const editMode = mdView ? ((mdView as { editMode?: unknown; modes?: { source?: unknown } }).editMode ?? (mdView as { modes?: { source?: unknown } }).modes?.source) : null;
 		if (editMode) {
-			const editorProto = Object.getPrototypeOf(Object.getPrototypeOf(editMode as object));
+			const editorProto = Object.getPrototypeOf(Object.getPrototypeOf(editMode as object)) as { constructor?: EditorCtor } | null;
 			const ctor = editorProto?.constructor;
 			if (ctor) {
 				embeddableEditorCtor = ctor;

@@ -169,7 +169,7 @@ export class ScratchpadManager {
 
         try {
             if (await adapter.exists(this.storePath)) {
-                const parsed = JSON.parse(await adapter.read(this.storePath));
+                const parsed = JSON.parse(await adapter.read(this.storePath)) as Record<string, unknown>;
                 if (parsed && Array.isArray(parsed.scratchpads)) {
                     loaded = {
                         scratchpads: parsed.scratchpads as Scratchpad[],

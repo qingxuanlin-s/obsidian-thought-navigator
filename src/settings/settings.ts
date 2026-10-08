@@ -264,8 +264,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                         this.plugin.settings.FolderList[i] = value;
                         this.plugin.RefreshIndexViewFlag = true;
                     });
-                    // @ts-ignore
-                    cb.containerEl.addClass("zk-full-search");
+                    (cb as unknown as { containerEl: HTMLElement }).containerEl.addClass("zk-full-search");
 
             })
             .addExtraButton((cb)=>{

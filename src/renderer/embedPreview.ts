@@ -5,7 +5,7 @@ import { ZKNode } from 'src/view/indexView';
 import { isMocPath } from 'src/utils/utils';
 import { applyPreviewHeaderLinkStyle, getPreviewCardTheme } from './colorUtils';
 import { getMocPreviewPngCandidates } from './renderPipeline';
-import { dataStr } from './cyData';
+import { dataAs, dataBool, dataStr } from './cyData';
 
 // Excalidraw 插件未提供官方类型，这里按用到的最小表面声明
 interface ExcalidrawAutomate {
@@ -310,8 +310,8 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
         };
 
         embedNodes.forEach((node: cytoscape.NodeSingular) => {
-            const data = node.data();
-            const originalNode = data.originalNode as ZKNode | undefined;
+            const data = node.data() as Record<string, unknown>;
+            const originalNode = dataAs<ZKNode | undefined>(node, 'originalNode');
             if (!originalNode?.file) return;
             const sourceFile = originalNode.file;
             const isExcalidrawFile = sourceFile.path.includes('.excalidraw');
@@ -332,11 +332,11 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
 				'overlay-opacity': 0,
 				'padding': 0
 			});
-			const theme = getPreviewCardTheme(data as Record<string, unknown>, this.currentOptions);
+			const theme = getPreviewCardTheme(data, this.currentOptions);
 			const isLightTheme = this.currentOptions?.themeMode === 'light';
-            const resolvedCardBorder = isExcalidrawFile && !!data.isFreeNode ? 'none' : theme.cardBorder;
+            const resolvedCardBorder = isExcalidrawFile && dataBool(node, 'isFreeNode') ? 'none' : theme.cardBorder;
             const resolvedCardBackground = isExcalidrawFile ? 'transparent' : theme.cardBackground;
-            const resolvedCardShadow = isExcalidrawFile && !!data.isFreeNode ? 'none' : theme.cardShadow;
+            const resolvedCardShadow = isExcalidrawFile && dataBool(node, 'isFreeNode') ? 'none' : theme.cardShadow;
 
             const card = activeDocument.createElement('div');
             card.className = 'zk-embed-preview-card';
@@ -494,14 +494,15 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
             embedToggleEl.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                const clickedNode = dataAs<ZKNode | undefined>(node, 'originalNode');
                 this.container?.dispatchEvent(new CustomEvent('toggle-embed-node', {
                     detail: {
-                        node: data.originalNode,
-                        nodeId: data.originalNodeId || data.originalNode?.IDStr || data.originalNode?.ID || '',
-                        wikiLink: data.originalNode?.wikiLink || '',
-                        filePath: data.filePath || '',
-                        displayText: data.displayText || '',
-                        title: data.title || '',
+                        node: clickedNode,
+                        nodeId: dataStr(node, 'originalNodeId') || clickedNode?.IDStr || clickedNode?.ID || '',
+                        wikiLink: clickedNode?.wikiLink || '',
+                        filePath: dataStr(node, 'filePath'),
+                        displayText: dataStr(node, 'displayText'),
+                        title: dataStr(node, 'title'),
                         currentIsEmbed: true
                     }
                 }));
@@ -622,11 +623,10 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
                 activeDocument.removeEventListener('mousemove', onHeaderMouseMove);
                 activeDocument.removeEventListener('mouseup', onHeaderMouseUp);
                 // 保存拖动后的位置（取最新 data，增量更新可能已替换）
-                const currentData = node.data();
                 const pos = node.position();
                 this.container?.dispatchEvent(new CustomEvent('node-position-changed', {
                     detail: {
-                        node: currentData.originalNode,
+                        node: dataAs<ZKNode | undefined>(node, 'originalNode'),
                         nodeId: node.id(),
                         position: { x: pos.x, y: pos.y }
                     }
@@ -727,7 +727,7 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
                     this.overlayScheduler.immediate();
                     this.container?.dispatchEvent(new CustomEvent('embed-node-size-changed', {
                         detail: {
-                            node: data.originalNode,
+                            node: dataAs<ZKNode | undefined>(node, 'originalNode'),
                             size: modelSize
                         }
                     }));
@@ -1097,8 +1097,8 @@ export function renderImageNodePreviews(this: CytoscapeRenderer): void {
         };
 
         imageNodes.forEach((node: cytoscape.NodeSingular) => {
-            const data = node.data();
-            const originalNode = data.originalNode as ZKNode;
+            const data = node.data() as Record<string, unknown>;
+            const originalNode = dataAs<ZKNode>(node, 'originalNode');
             const filePath = dataStr(node, 'filePath');
             const file = app.vault.getAbstractFileByPath(filePath);
             if (!(file instanceof TFile)) return;
@@ -1116,7 +1116,7 @@ export function renderImageNodePreviews(this: CytoscapeRenderer): void {
                 });
             }
 
-			const theme = getPreviewCardTheme(data as Record<string, unknown>, this.currentOptions);
+			const theme = getPreviewCardTheme(data, this.currentOptions);
 			const isLightTheme = this.currentOptions?.themeMode === 'light';
             const resolvedCardBorder = 'none';
 
@@ -1308,11 +1308,10 @@ export function renderImageNodePreviews(this: CytoscapeRenderer): void {
                 activeDocument.removeEventListener('mousemove', onCardMouseMove);
                 activeDocument.removeEventListener('mouseup', onCardMouseUp);
                 // 取最新 data，增量更新可能已替换闭包中的旧引用
-                const currentData = node.data();
                 const pos = node.position();
                 this.container?.dispatchEvent(new CustomEvent('node-position-changed', {
                     detail: {
-                        node: currentData.originalNode,
+                        node: dataAs<ZKNode | undefined>(node, 'originalNode'),
                         nodeId: node.id(),
                         position: { x: pos.x, y: pos.y }
                     }
@@ -1404,7 +1403,7 @@ export function renderImageNodePreviews(this: CytoscapeRenderer): void {
                     this.overlayScheduler.immediate();
                     this.container?.dispatchEvent(new CustomEvent('embed-node-size-changed', {
                         detail: {
-                            node: data.originalNode,
+                            node: dataAs<ZKNode | undefined>(node, 'originalNode'),
                             size: modelSize
                         }
                     }));

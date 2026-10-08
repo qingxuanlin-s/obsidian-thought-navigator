@@ -4,7 +4,7 @@ import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
 import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
 import { requestMOCSetup } from "src/modal/createMocModal";
 import { ZKNavigationSettngTab } from "src/settings/settings";
-import { mainNoteInit, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX } from "src/utils/utils";
+import { mainNoteInit, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX, errorMessage } from "src/utils/utils";
 import { createMOCJsonWithInitialNode } from "src/utils/mocJsonCodec";
 import { MOCHandler, MOCNodeView, MOCQueryOptions } from "src/view/index/mocHandler";
 import { MOCFileMonitor } from "src/utils/mocMonitor";
@@ -881,7 +881,7 @@ export default class ZKNavigationPlugin extends Plugin {
                     await this.openCreatedMOC(newFile);
                     this.app.workspace.trigger('zk-navigation:refresh-index-graph');
                 } catch (e) {
-                    new Notice('新建失败: ' + e.message);
+                    new Notice('新建失败: ' + errorMessage(e));
                 }
             }
         })
@@ -1608,7 +1608,7 @@ export default class ZKNavigationPlugin extends Plugin {
             return file;
         } catch (e) {
             console.error('[zk-navigation] 新建思维树失败', e);
-            new Notice(`新建失败: ${e.message}`);
+            new Notice(`新建失败: ${errorMessage(e)}`);
             return null;
         }
     }

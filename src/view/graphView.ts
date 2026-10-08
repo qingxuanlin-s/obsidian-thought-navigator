@@ -22,6 +22,16 @@ interface LocalMocContext {
     currentNode: ZKNode | null;
 }
 
+/** 渲染器 node-click / node-select / node-hover 事件的 detail 形状（dispatch 端见 nodeBadges.ts / events.ts）。 */
+interface RendererNodeEventDetail {
+    node?: ZKNode | null;
+    event?: MouseEvent;
+    ctrlKey?: boolean;
+    metaKey?: boolean;
+    shiftKey?: boolean;
+    altKey?: boolean;
+}
+
 export class ZKGraphView extends ItemView {
 
     plugin: ZKNavigationPlugin;
@@ -876,14 +886,14 @@ export class ZKGraphView extends ItemView {
                 }
                 this.familyGraphRenderer.fitAndCenter();
 
-                const handleLocalNodeClick = async (event: CustomEvent, textNodeOnly = false) => {
+                const handleLocalNodeClick = async (event: CustomEvent<RendererNodeEventDetail>, textNodeOnly = false) => {
                     const detail = event.detail || {};
-                    const triggerEvent = detail.event as MouseEvent | undefined;
+                    const triggerEvent = detail.event;
                     const ctrlKey = detail.ctrlKey || triggerEvent?.ctrlKey;
                     const metaKey = detail.metaKey || triggerEvent?.metaKey;
                     const shiftKey = detail.shiftKey || triggerEvent?.shiftKey;
                     const altKey = detail.altKey || triggerEvent?.altKey;
-                    const clicked = this.resolveLocalGraphNode(allNodes, detail.node as ZKNode | null);
+                    const clicked = this.resolveLocalGraphNode(allNodes, detail.node);
                     if (!clicked) return;
 
                     if (!clicked?.file) {
@@ -918,15 +928,15 @@ export class ZKGraphView extends ItemView {
                     }
                 };
 
-                mocNodeTreeDiv.addEventListener('node-click', (event: CustomEvent) => {
+                mocNodeTreeDiv.addEventListener('node-click', (event: CustomEvent<RendererNodeEventDetail>) => {
                     void handleLocalNodeClick(event);
                 });
 
-                mocNodeTreeDiv.addEventListener('node-select', (event: CustomEvent) => {
+                mocNodeTreeDiv.addEventListener('node-select', (event: CustomEvent<RendererNodeEventDetail>) => {
                     void handleLocalNodeClick(event, true);
                 });
 
-                mocNodeTreeDiv.addEventListener('node-hover', (event: CustomEvent) => {
+                mocNodeTreeDiv.addEventListener('node-hover', (event: CustomEvent<RendererNodeEventDetail>) => {
                     const { node, event: mouseEvent } = event.detail;
                     if (!node || !node.file || !mouseEvent) return;
 
@@ -1405,7 +1415,7 @@ export class ZKGraphView extends ItemView {
             const fileCache = this.app.metadataCache.getFileCache(file);
             if (fileCache) {
                 // 检查 frontmatter 标签
-                const fmTags = fileCache.frontmatter?.tags;
+                const fmTags = fileCache.frontmatter?.tags as string | string[] | undefined;
                 if (fmTags) {
                     const tags = Array.isArray(fmTags) ? fmTags : [fmTags];
                     if (tags.some(tag => `#${tag}` === this.plugin.settings.TagOfMainNotes || tag === this.plugin.settings.TagOfMainNotes)) {
@@ -1528,10 +1538,10 @@ export class ZKGraphView extends ItemView {
         }
 
         // 监听节点点击事件
-        mocTreeDiv.addEventListener('node-click', (event: CustomEvent) => { void (async () => {
+        mocTreeDiv.addEventListener('node-click', (event: CustomEvent<RendererNodeEventDetail>) => { void (async () => {
             const detail = event.detail || {};
-            const triggerEvent = detail.event as MouseEvent | undefined;
-            const node = this.resolveLocalGraphNode(mocNodes, detail.node as ZKNode | null);
+            const triggerEvent = detail.event;
+            const node = this.resolveLocalGraphNode(mocNodes, detail.node);
             const ctrlKey = detail.ctrlKey || triggerEvent?.ctrlKey;
             const shiftKey = detail.shiftKey || triggerEvent?.shiftKey;
             const altKey = detail.altKey || triggerEvent?.altKey;
@@ -1571,7 +1581,7 @@ export class ZKGraphView extends ItemView {
         })(); });
 
         // 监听节点悬停事件
-        mocTreeDiv.addEventListener('node-hover', (event: CustomEvent) => {
+        mocTreeDiv.addEventListener('node-hover', (event: CustomEvent<RendererNodeEventDetail>) => {
             const { node, event: mouseEvent } = event.detail;
             if (!node || !node.file || !mouseEvent) return;
 

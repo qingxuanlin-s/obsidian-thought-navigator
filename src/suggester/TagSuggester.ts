@@ -9,8 +9,11 @@ export class TagSuggest extends AbstractInputSuggest<string> {
         this.inputEl = inputEl
     }
     getSuggestions(inputStr: string): string[] {
-        // @ts-expect-error getTags 在当前 obsidian 类型版本中未声明
-        const allTags = Object.keys(this.app.metadataCache.getTags() as Record<string, number>);
+        // getTags 在当前 obsidian 类型版本中未声明,这里补最小调用表面
+        const metadataCache = this.app.metadataCache as unknown as {
+            getTags: () => Record<string, number>;
+        };
+        const allTags = Object.keys(metadataCache.getTags());
         const tags: string[] = [];
         const lowerCaseInputStr = inputStr.toLowerCase();
 

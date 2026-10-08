@@ -77,7 +77,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
     const FIRST_LEVEL_FILE_NODE_PADDING_Y = 61;
     const getVisibleTextForMeasure = (label: string): string => {
         return String(label || '')
-            .replace(/<span\s+style=["'][^"']*["']>(.*?)<\/span>/gis, '$1')
+            .replace(/<span\s+style=["'][^"']*["']>([\s\S]*?)<\/span>/gi, '$1')
             .replace(/!\[\[([^\]\n]+)\]\]/g, (_m, target) => String(target || '').split('|').pop()?.trim() || '')
             .replace(/\[\[([^\]\n]+)\]\]/g, (_m, target) => String(target || '').split('|').pop()?.trim() || '')
             .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')

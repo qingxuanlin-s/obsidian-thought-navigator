@@ -87,7 +87,7 @@ export class MOCFileUtils {
             const match = line.match(/^%%\s*ext:\s*(\{.*\})\s*%%$/);
             if (match) {
                 try {
-                    const parsed = JSON.parse(match[1]);
+                    const parsed = JSON.parse(match[1]) as MOCExtData;
                     extData.node_positions = parsed.node_positions || {};
                     extData.node_colors = parsed.node_colors || {};
                     extData.node_style_colors = parsed.node_style_colors || {};

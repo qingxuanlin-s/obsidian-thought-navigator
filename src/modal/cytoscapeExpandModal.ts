@@ -1,6 +1,7 @@
 import { App, Modal, Notice } from "obsidian";
 import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
 import { GraphData, RenderOptions } from "src/renderer/types";
+import type { ZKNode } from "src/view/indexView";
 
 export class CytoscapeExpandModal extends Modal {
     private renderer: CytoscapeRenderer | null = null;
@@ -73,9 +74,9 @@ export class CytoscapeExpandModal extends Modal {
     };
 
     private handleNodeHover = (event: Event): void => {
-        const detail = (event as CustomEvent).detail;
+        const detail = (event as CustomEvent<{ node?: ZKNode; event?: MouseEvent }>).detail;
         const node = detail?.node;
-        const mouseEvent = detail?.event as MouseEvent | undefined;
+        const mouseEvent = detail?.event;
         if (!node?.file?.path || !mouseEvent) return;
 
         this.app.workspace.trigger('hover-link', {

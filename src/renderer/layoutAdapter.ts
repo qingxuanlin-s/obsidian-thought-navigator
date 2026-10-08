@@ -211,7 +211,7 @@ export function runLayoutSafely(cy: cytoscape.Core | null, layoutConfig: LayoutC
     try {
         const layout = cy.layout(layoutConfig as cytoscape.LayoutOptions);
         layout.run();
-    } catch (error) {
+    } catch (error: unknown) {
         console.error('[CytoscapeRenderer] layout run failed, fallback to breadthfirst', {
             layout: layoutConfig?.name,
             error
@@ -305,7 +305,7 @@ export function applyCollapsedState(cy: cytoscape.Core, collapsedNodeIds: Set<st
     });
 
     cy.nodes('[?isGroup]').forEach((groupNode: cytoscape.NodeSingular) => {
-        const groupNodeIds: string[] = groupNode.data('nodeIds') || [];
+        const groupNodeIds = (groupNode.data() as CyData).nodeIds || [];
         if (groupNodeIds.length === 0) return;
 
         const hasVisibleMember = groupNodeIds.some((nodeId) => !hiddenIds.has(nodeId));

@@ -105,7 +105,8 @@ export class GlobalSearchModal extends SuggestModal<ScoredEntry> {
     }
 
     onOpen(): void {
-        super.onOpen();
+        // 基类 onOpen 返回 Promise<void> | void,此处为 fire-and-forget
+        void super.onOpen();
         this.renderScopeBar();
     }
 

@@ -39,7 +39,7 @@ function basenameOf(path: string): string {
 async function readLegacySpaces(adapter: DataAdapter, storePath: string): Promise<LegacySpaceNode[]> {
     try {
         if (!(await adapter.exists(storePath))) return [];
-        const parsed = JSON.parse(await adapter.read(storePath));
+        const parsed = JSON.parse(await adapter.read(storePath)) as Record<string, unknown> | null | undefined;
         const nodes = parsed?.nodes;
         return Array.isArray(nodes) ? (nodes as LegacySpaceNode[]) : [];
     } catch (e) {

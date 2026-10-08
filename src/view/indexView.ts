@@ -19,16 +19,15 @@ type FileDropPreview = {
 	parentNode: ZKNode | null;
 };
 import ZKNavigationPlugin from "main";
-import { ExtraButtonComponent, FileView, Menu, Modal, Notice, Platform, Scope, Setting, TFile, WorkspaceLeaf, debounce, moment, setIcon, setTooltip } from "obsidian";
+import { ExtraButtonComponent, FileView, Menu, Modal, Notice, Platform, Scope, TFile, WorkspaceLeaf, debounce, moment, setIcon, setTooltip } from "obsidian";
 import { t } from "src/lang/helper";
-import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
 import { AddFreeNodeModal } from "src/modal/addFreeNodeModal";
 import { MOCSelectorModal } from "src/modal/mocSelectorModal";
 import { NoteSearchModal } from "src/modal/noteSearchModal";
 import { GlobalSearchModal, openTaskAtLine } from "src/modal/globalSearchModal";
 import { WorkspaceContextModal } from "src/modal/workspaceContextModal";
 import { MOCParentPickerModal } from "src/modal/mocParentPickerModal";
-import { convertMOCToZKNodes, CrossDomainLink, createMOCTreeNode, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX, MOCParseResult, MOCTreeNode, NODE_FLAG_SEPARATED, NODE_FLAG_SIDE_PINNED, parseMOCStructure, saveMOCStructure, stripMocSuffix } from "src/utils/utils";
+import { convertMOCToZKNodes, CrossDomainLink, createMOCTreeNode, errorMessage, getMOCFilesInFolder, isMocFile, isMocPath, MOC_FILE_SUFFIX, MOCParseResult, MOCTreeNode, NODE_FLAG_SEPARATED, NODE_FLAG_SIDE_PINNED, parseMOCStructure, saveMOCStructure, stripMocSuffix } from "src/utils/utils";
 import { WorkspacePanel } from "src/view/workspace/WorkspacePanel";
 import { OpenTarget, WSMocNode, WSMapNode } from "src/types/workspace";
 import { WorkspaceSessionSnapshot } from "src/workspace/WorkspaceSession";
@@ -36,7 +35,7 @@ import { ScratchpadDrawer } from "src/view/scratchpadDrawer";
 import { NodeDetailPanel } from "src/view/index/detailPanel";
 import { ScratchpadEntry } from "src/scratch/scratchpadManager";
 import { resolveDroppedVaultFiles } from "src/utils/dropFileResolver";
-import { createEmptyMOCJson, createMOCJsonWithInitialNode, parseMOCJson, serializeMOCJson } from "src/utils/mocJsonCodec";
+import { createEmptyMOCJson, parseMOCJson, serializeMOCJson } from "src/utils/mocJsonCodec";
 import { exportMOCAsMarkdown, exportMOCAsXMind } from "src/utils/mocExport";
 import { importMarkdown, importXMind } from "src/utils/mocImport";
 import { requestMOCSetup } from "src/modal/createMocModal";
@@ -45,7 +44,7 @@ import { createSelectionColorPanel } from "src/renderer/colorUtils";
 import { ensureMOCPreviewPNG } from "src/embed/mocEmbedExporter";
 import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
 import { RenderOptions, CyData } from "src/renderer/types";
-import { dataStr, dataAs } from "src/renderer/cyData";
+import { dataStr, dataBool, dataAs } from "src/renderer/cyData";
 import { getTopBranchId } from "src/renderer/renderPipeline";
 import { MOCHandler } from "src/view/index/mocHandler";
 import { computeAutoLayout, AutoLayoutNodeInput } from "src/utils/autoLayoutEngine";
@@ -1531,7 +1530,7 @@ export class ZKIndexView extends FileView {
             new Notice('已回退 1 步');
         } catch (error) {
             console.error('Undo failed:', error);
-            new Notice(`回退失败: ${error.message}`);
+            new Notice(`回退失败: ${errorMessage(error)}`);
         } finally {
             this.isApplyingUndo = false;
         }
@@ -2107,7 +2106,7 @@ export class ZKIndexView extends FileView {
             new Notice(t('import success').replace('{path}', file.path));
         } catch (err) {
             console.error('[ZK] MOC import failed', err);
-            new Notice(t('import fail').replace('{message}', err instanceof Error ? err.message : String(err)));
+            new Notice(t('import fail').replace('{message}', errorMessage(err)));
         }
     }
 
@@ -2225,6 +2224,9 @@ export class ZKIndexView extends FileView {
         }
 
         try {
+            // cytoscape `.style(key)` 返回 any,统一经此收窄为导出 JSON 里实际出现的值类型
+            const styleValue = (ele: cytoscape.NodeSingular | cytoscape.EdgeSingular, key: string): string | number =>
+                ele.style(key) as string | number;
             // 提取每个节点/边的计算后样式
             const nodes: Array<{ data: Record<string, unknown>; position?: { x: number; y: number }; style: Record<string, unknown> }> = [];
             const graphDiv = activeDocument.getElementById('zk-branch-cytoscape');
@@ -2255,34 +2257,33 @@ export class ZKIndexView extends FileView {
             }
             cy.nodes().forEach((n: cytoscape.NodeSingular) => {
                 if (n.style('display') === 'none') return;
-                const d = n.data();
                 const preview = previewImages.get(n.id());
                 nodes.push({
                     data: {
-                        id: d.id,
-                        label: d.label || '',
-                        filePath: d.filePath || '',
+                        id: dataStr(n, 'id'),
+                        label: dataStr(n, 'label'),
+                        filePath: dataStr(n, 'filePath'),
                         previewImage: preview?.src || '',
-                        isRoot: !!d.isRoot,
-                        isEmbed: !!d.isEmbed,
-                        isGroup: !!d.isGroup,
-                        isTextOnly: !!d.isTextOnly,
-                        isStandaloneText: !!d.isStandaloneText,
+                        isRoot: dataBool(n, 'isRoot'),
+                        isEmbed: dataBool(n, 'isEmbed'),
+                        isGroup: dataBool(n, 'isGroup'),
+                        isTextOnly: dataBool(n, 'isTextOnly'),
+                        isStandaloneText: dataBool(n, 'isStandaloneText'),
                     },
                     position: { ...n.position() },
                     style: {
                         'width': preview?.width || n.width(),
                         'height': preview?.height || n.height(),
-                        'background-color': n.style('background-color'),
-                        'background-opacity': n.style('background-opacity'),
-                        'border-width': n.style('border-width'),
-                        'border-color': n.style('border-color'),
-                        'color': n.style('color'),
-                        'font-size': n.style('font-size'),
-                        'font-weight': n.style('font-weight'),
-                        'shape': n.style('shape'),
-                        'label': d.isEmbed ? '' : (d.label || ''),
-                        'opacity': n.style('opacity'),
+                        'background-color': styleValue(n, 'background-color'),
+                        'background-opacity': styleValue(n, 'background-opacity'),
+                        'border-width': styleValue(n, 'border-width'),
+                        'border-color': styleValue(n, 'border-color'),
+                        'color': styleValue(n, 'color'),
+                        'font-size': styleValue(n, 'font-size'),
+                        'font-weight': styleValue(n, 'font-weight'),
+                        'shape': styleValue(n, 'shape'),
+                        'label': dataBool(n, 'isEmbed') ? '' : dataStr(n, 'label'),
+                        'opacity': styleValue(n, 'opacity'),
                     }
                 });
             });
@@ -2290,20 +2291,19 @@ export class ZKIndexView extends FileView {
             const edges: Array<{ data: Record<string, unknown>; position?: { x: number; y: number }; style: Record<string, unknown> }> = [];
             cy.edges().forEach((e: cytoscape.EdgeSingular) => {
                 if (e.style('display') === 'none') return;
-                const d = e.data();
                 edges.push({
                     data: {
-                        id: d.id,
-                        source: d.source,
-                        target: d.target,
-                        label: d.label || '',
+                        id: dataStr(e, 'id'),
+                        source: dataStr(e, 'source'),
+                        target: dataStr(e, 'target'),
+                        label: dataStr(e, 'label'),
                     },
                     style: {
-                        'width': e.style('width'),
-                        'line-color': e.style('line-color'),
-                        'target-arrow-color': e.style('target-arrow-color'),
-                        'target-arrow-shape': e.style('target-arrow-shape'),
-                        'curve-style': e.style('curve-style'),
+                        'width': styleValue(e, 'width'),
+                        'line-color': styleValue(e, 'line-color'),
+                        'target-arrow-color': styleValue(e, 'target-arrow-color'),
+                        'target-arrow-shape': styleValue(e, 'target-arrow-shape'),
+                        'curve-style': styleValue(e, 'curve-style'),
                     }
                 });
             });
@@ -3299,7 +3299,7 @@ window.addEventListener('resize', function() {
             await this.plugin.saveData(this.plugin.settings);
             return newFile;
         } catch (error) {
-            new Notice(t("Create failed").replace("{message}", String(error instanceof Error ? error.message : error)));
+            new Notice(t("Create failed").replace("{message}", errorMessage(error)));
             return null;
         } finally {
             this.isCreateMOCPromptOpen = false;
@@ -3873,7 +3873,7 @@ window.addEventListener('resize', function() {
                     .replace("{child}", String(childNode.displayText)));
             } catch (error) {
                 console.error('[auto-connect-node] 连接失败:', error);
-                new Notice(t("Connection failed").replace("{message}", String(error.message)));
+                new Notice(t("Connection failed").replace("{message}", errorMessage(error)));
             }
         });
 
@@ -3947,7 +3947,7 @@ window.addEventListener('resize', function() {
                 new Notice(`已将 ${newChildIds.length} 个节点移至「${parentNode.displayText}」`);
             } catch (error) {
                 console.error('[reparent-auto-nodes] 换父失败:', error);
-                new Notice(`换父失败: ${error.message}`);
+                new Notice(`换父失败: ${errorMessage(error)}`);
             }
         });
 
@@ -4522,7 +4522,7 @@ window.addEventListener('resize', function() {
         // 录音命令产出的音频文件 → 追加为当前文本节点的嵌入(![[audio]])
         this.addTrackedListener(branchGraphDiv, 'node-append-embed', async (event: CustomEvent) => {
             if (this.isMobileReadOnly()) return;
-            const { nodeIdStr, embedPath } = event.detail || {};
+            const { nodeIdStr, embedPath } = (event.detail || {}) as { nodeIdStr?: string; embedPath?: string };
             if (!nodeIdStr || !embedPath) return;
             await this.appendEmbedToTextNode(String(nodeIdStr), String(embedPath));
         });
@@ -4613,9 +4613,9 @@ window.addEventListener('resize', function() {
                 );
                 this.lastRenderSignature = null;
                 await this.refreshBranchMermaid();
-            } catch (error) {
+            } catch (error: unknown) {
                 console.error('[indexView] toggle-embed-node failed:', { nodeId, node, error });
-                new Notice(`切换失败: ${error?.message || error}`);
+                new Notice(`切换失败: ${errorMessage(error)}`);
             }
         });
 
@@ -4649,7 +4649,7 @@ window.addEventListener('resize', function() {
                 new Notice(`已跳转到 MOC: ${mocFile.basename}`);
             } catch (error) {
                 console.error('Failed to jump to cross-domain MOC:', error);
-                new Notice(`跳转失败: ${error.message}`);
+                new Notice(`跳转失败: ${errorMessage(error)}`);
             }
         });
 
@@ -4684,7 +4684,7 @@ window.addEventListener('resize', function() {
                 new Notice(`已跳转到: ${mocFile.basename}`);
             } catch (error) {
                 console.error('Failed to jump to cross-domain note:', error);
-                new Notice(`跳转失败: ${error.message}`);
+                new Notice(`跳转失败: ${errorMessage(error)}`);
             }
         });
 
@@ -4718,7 +4718,7 @@ window.addEventListener('resize', function() {
                 );
             } catch (error) {
                 console.error('Failed to remove cross-domain link:', error);
-                new Notice(`删除失败: ${error.message}`);
+                new Notice(`删除失败: ${errorMessage(error)}`);
             }
         });
 
@@ -5255,7 +5255,7 @@ window.addEventListener('resize', function() {
                             }
                         } catch (error) {
                             console.error('Failed to restore edge auto style:', error);
-                            new Notice(`恢复自动样式失败: ${error.message}`);
+                            new Notice(`恢复自动样式失败: ${errorMessage(error)}`);
                         }
                     });
             });
@@ -5273,7 +5273,7 @@ window.addEventListener('resize', function() {
                             }
                         } catch (error) {
                             console.error('Failed to delete arrow relation:', error);
-                            new Notice(`删除箭头关系失败: ${error.message}`);
+                            new Notice(`删除箭头关系失败: ${errorMessage(error)}`);
                         }
                     });
             });
@@ -5297,7 +5297,7 @@ window.addEventListener('resize', function() {
                 }
             } catch (error) {
                 console.error('Failed to delete group:', error);
-                new Notice(`删除分组失败: ${error.message}`);
+                new Notice(`删除分组失败: ${errorMessage(error)}`);
             }
         });
 
@@ -5317,7 +5317,7 @@ window.addEventListener('resize', function() {
                 }
             } catch (error) {
                 console.error('Failed to delete arrow relation:', error);
-                new Notice(`删除箭头关系失败: ${error.message}`);
+                new Notice(`删除箭头关系失败: ${errorMessage(error)}`);
             }
         });
 
@@ -5350,7 +5350,7 @@ window.addEventListener('resize', function() {
                 await this.refreshBranchMermaid();
             } catch (error) {
                 console.error('Failed to update arrow relation label:', error);
-                new Notice(`更新关系文本失败: ${error.message}`);
+                new Notice(`更新关系文本失败: ${errorMessage(error)}`);
             }
         });
 
@@ -5384,7 +5384,7 @@ window.addEventListener('resize', function() {
                 }
             } catch (error) {
                 console.error('Failed to update edge source:', error);
-                new Notice(`修改边起点失败: ${error.message}`);
+                new Notice(`修改边起点失败: ${errorMessage(error)}`);
             }
         });
 
@@ -5417,7 +5417,7 @@ window.addEventListener('resize', function() {
                 }
             } catch (error) {
                 console.error('Failed to update edge target:', error);
-                new Notice(`修改边终点失败: ${error.message}`);
+                new Notice(`修改边终点失败: ${errorMessage(error)}`);
             }
         });
 
@@ -5491,7 +5491,7 @@ window.addEventListener('resize', function() {
                 }
             } catch (error) {
                 console.error('Failed to create arrow relation:', error);
-                new Notice(`创建箭头关系失败: ${error.message}`);
+                new Notice(`创建箭头关系失败: ${errorMessage(error)}`);
             }
         });
 
@@ -5556,7 +5556,7 @@ window.addEventListener('resize', function() {
                 }
             } catch (error) {
                 console.error('Failed to create batch group:', error);
-                new Notice(`批量分组失败: ${error.message}`);
+                new Notice(`批量分组失败: ${errorMessage(error)}`);
             }
         });
 
@@ -5574,7 +5574,7 @@ window.addEventListener('resize', function() {
                 })));
             } catch (error) {
                 console.error('Failed to batch delete nodes:', error);
-                new Notice(t("Batch delete failed").replace("{message}", String(error.message)));
+                new Notice(t("Batch delete failed").replace("{message}", errorMessage(error)));
             }
         });
 
@@ -6166,7 +6166,7 @@ window.addEventListener('resize', function() {
 
                 // 先处理组节点(compound parent),确保父节点状态正确
                 cy.nodes('.group-node').forEach((groupNode: cytoscape.NodeSingular) => {
-                    const memberIds: string[] = groupNode.data('nodeIds') || [];
+                    const memberIds: string[] = dataAs<string[] | undefined>(groupNode, 'nodeIds') || [];
                     const escapedMemberIds = memberIds.map((id: string) => id.replace(/[^a-zA-Z0-9_-]/g, '_'));
                     const hasVisibleMember = escapedMemberIds.some((id: string) => visibleCyIds.has(id));
                     if (this.focusVisibilityMode === 'dim') {
@@ -6215,7 +6215,7 @@ window.addEventListener('resize', function() {
                 cy.edges().removeClass('zk-level-dimmed');
 
                 cy.nodes('.group-node').forEach((groupNode: cytoscape.NodeSingular) => {
-                    const memberIds: string[] = groupNode.data('nodeIds') || [];
+                    const memberIds: string[] = dataAs<string[] | undefined>(groupNode, 'nodeIds') || [];
                     const escapedMemberIds = memberIds.map((id: string) => id.replace(/[^a-zA-Z0-9_-]/g, '_'));
                     const hasVisibleMember = escapedMemberIds.some((id: string) => visibleCyIds.has(id));
                     if (this.focusVisibilityMode === 'dim') {
@@ -6773,7 +6773,7 @@ window.addEventListener('resize', function() {
             new Notice(`已关联跨领域节点: ${sourceId} ↔ ${targetIds} (${targetNodes.length} 个节点)`);
         } catch (error) {
             console.error('Failed to link cross-domain node:', error);
-            new Notice(`关联跨领域节点失败: ${error.message}`);
+            new Notice(`关联跨领域节点失败: ${errorMessage(error)}`);
         }
     }
 
@@ -6950,7 +6950,7 @@ window.addEventListener('resize', function() {
             }
         } catch (error) {
             console.error('Failed to toggle anchor:', error);
-            new Notice(`操作失败: ${error.message}`);
+            new Notice(`操作失败: ${errorMessage(error)}`);
         }
     }
 
@@ -6998,7 +6998,7 @@ window.addEventListener('resize', function() {
             }
         } catch (error) {
             console.error('Failed to change branch color scheme:', error);
-            new Notice(`修改分支色系失败: ${error.message}`);
+            new Notice(`修改分支色系失败: ${errorMessage(error)}`);
         }
     }
 
@@ -7129,7 +7129,7 @@ window.addEventListener('resize', function() {
             }
         } catch (error) {
             console.error('Failed to rename node ID:', error);
-            new Notice(`修改节点 ID 失败: ${error.message}`);
+            new Notice(`修改节点 ID 失败: ${errorMessage(error)}`);
         }
     }
 
@@ -7164,7 +7164,7 @@ window.addEventListener('resize', function() {
             }
         } catch (error) {
             console.error('Failed to make free node root:', error);
-            new Notice(`转为根节点失败: ${error.message}`);
+            new Notice(`转为根节点失败: ${errorMessage(error)}`);
         }
     }
 
@@ -7251,7 +7251,7 @@ window.addEventListener('resize', function() {
             new Notice(t("Node deleted").replace("{id}", String(node.ID)));
         } catch (error) {
             console.error('Failed to delete node:', error);
-            new Notice(t("Delete node failed").replace("{message}", String(error.message)));
+            new Notice(t("Delete node failed").replace("{message}", errorMessage(error)));
         }
     }
 
@@ -7403,7 +7403,7 @@ window.addEventListener('resize', function() {
             }
         } catch (error) {
             console.error('Failed to edit node content:', error);
-            new Notice(`修改节点内容失败: ${error.message}`);
+            new Notice(`修改节点内容失败: ${errorMessage(error)}`);
         }
     }
 
@@ -7439,7 +7439,7 @@ window.addEventListener('resize', function() {
             new Notice('录音已嵌入当前节点');
         } catch (error) {
             console.error('[indexView] appendEmbedToTextNode failed:', error);
-            new Notice(`录音嵌入失败: ${error?.message || error}`);
+            new Notice(`录音嵌入失败: ${errorMessage(error)}`);
         }
     }
 
@@ -7463,7 +7463,7 @@ window.addEventListener('resize', function() {
             await this.refreshBranchMermaid();
         } catch (error) {
             console.error('Failed to save node remark from panel:', error);
-            new Notice(`修改备注失败: ${error.message}`);
+            new Notice(`修改备注失败: ${errorMessage(error)}`);
         }
     }
 
@@ -8301,7 +8301,7 @@ window.addEventListener('resize', function() {
                 }
             } catch (error) {
                 console.error('Failed to add arrow relation:', error);
-                new Notice(t("Add reverse relation failed").replace("{message}", String(error.message)));
+                new Notice(t("Add reverse relation failed").replace("{message}", errorMessage(error)));
             }
         };
         
@@ -9294,10 +9294,9 @@ window.addEventListener('resize', function() {
             const cy = this.branchRenderer?.getCytoscapeInstance();
             if (cy) {
                 cy.nodes('[!isGroup]').forEach((cyNode: cytoscape.NodeSingular) => {
-                    const data = cyNode.data();
-                    const originalNode = data?.originalNode as ZKNode | undefined;
+                    const originalNode = dataAs<ZKNode | undefined>(cyNode, 'originalNode');
                     if (!originalNode || originalNode.isCrossDomain) return;
-                    if (data?.isPlaceholder) return;
+                    if (dataBool(cyNode, 'isPlaceholder')) return;
 
                     const nodePos = cyNode.position();
                     const distance = Math.hypot(position.x - nodePos.x, position.y - nodePos.y);
@@ -10487,7 +10486,7 @@ window.addEventListener('resize', function() {
                 return !!o && (o.IDStr === refId || o.ID === refId);
             }).first() as cytoscape.NodeSingular;
             if (refNode && refNode.length > 0) {
-                colorKey = refNode.data('branchNodeBorder') || refNode.data('branchNodeBackground') || undefined;
+                colorKey = dataStr(refNode, 'branchNodeBorder') || dataStr(refNode, 'branchNodeBackground') || undefined;
             }
         }
         if (isNewRootBranch) {
@@ -10766,7 +10765,7 @@ window.addEventListener('resize', function() {
         const draftSavedPositions: Record<string, { x: number; y: number }> = {};
         cy.$('node').forEach((node: cytoscape.NodeSingular) => {
             if (!node.data('isDraft')) return;
-            const id = node.data('originalNode')?.IDStr;
+            const id = dataAs<ZKNode | undefined>(node, 'originalNode')?.IDStr;
             if (id) { const p = node.position(); draftSavedPositions[id] = { x: p.x, y: p.y }; }
         });
         // 预览占位符同理:把其 cy 坐标喂进 nodePositions,使引擎按"位置相对父节点"定左右侧,
@@ -11121,7 +11120,7 @@ window.addEventListener('resize', function() {
             new Notice(t("Free node added").replace("{id}", String(result.nodeID)));
         } catch (error) {
             console.error("保存自由节点失败:", error);
-            new Notice(t("Save failed").replace("{message}", String(error.message)));
+            new Notice(t("Save failed").replace("{message}", errorMessage(error)));
         }
     }
 
@@ -11226,7 +11225,7 @@ window.addEventListener('resize', function() {
             new Notice(`已重命名分组: ${newLabel}`);
         } catch (error) {
             console.error('Failed to rename group:', error);
-            new Notice(`重命名分组失败: ${error.message}`);
+            new Notice(`重命名分组失败: ${errorMessage(error)}`);
         }
     }
 
@@ -11323,7 +11322,7 @@ window.addEventListener('resize', function() {
             new Notice(`已将分组 ID 从 "${oldGroupId}" 修改为 "${newGroupId}"`);
         } catch (error) {
             console.error('Failed to rename group ID:', error);
-            new Notice(`修改分组 ID 失败: ${error.message}`);
+            new Notice(`修改分组 ID 失败: ${errorMessage(error)}`);
         }
     }
 
@@ -11346,7 +11345,7 @@ window.addEventListener('resize', function() {
             });
         } catch (error) {
             console.error('Failed to delete group:', error);
-            new Notice(`删除分组失败: ${error.message}`);
+            new Notice(`删除分组失败: ${errorMessage(error)}`);
         }
     }
 
@@ -11367,7 +11366,7 @@ window.addEventListener('resize', function() {
             });
         } catch (error) {
             console.error('Failed to update group nodes:', error);
-            new Notice(`更新分组失败: ${error.message}`);
+            new Notice(`更新分组失败: ${errorMessage(error)}`);
         }
     }
 
@@ -11392,7 +11391,7 @@ window.addEventListener('resize', function() {
             });
         } catch (error) {
             console.error('Failed to add arrow relation:', error);
-            const errMsg = error instanceof Error ? error.message : String(error);
+            const errMsg = errorMessage(error);
             if (errMsg.includes('已存在')) {
                 new Notice(errMsg);
             } else {
@@ -11449,7 +11448,7 @@ window.addEventListener('resize', function() {
             }
         } catch (error) {
             console.error('Failed to delete arrow relation:', error);
-            new Notice(`删除箭头关系失败: ${error.message}`);
+            new Notice(`删除箭头关系失败: ${errorMessage(error)}`);
         }
     }
 
@@ -11485,7 +11484,7 @@ window.addEventListener('resize', function() {
             new Notice(`已更新关系文本: ${sourceID} → ${targetID}`);
         } catch (error) {
             console.error('Failed to update arrow relation label:', error);
-            new Notice(`更新关系文本失败: ${error.message}`);
+            new Notice(`更新关系文本失败: ${errorMessage(error)}`);
         }
     }
 
@@ -11716,7 +11715,7 @@ window.addEventListener('resize', function() {
 
         } catch (error) {
             console.error('Failed to save node position to MOC:', error);
-            new Notice(`保存节点位置失败: ${error.message}`);
+            new Notice(`保存节点位置失败: ${errorMessage(error)}`);
         }
     }
 
@@ -11743,7 +11742,7 @@ window.addEventListener('resize', function() {
 
         } catch (error) {
             console.error('Failed to save edge curvature:', error);
-            new Notice(`保存边弧度失败: ${error.message}`);
+            new Notice(`保存边弧度失败: ${errorMessage(error)}`);
         }
     }
 
@@ -11765,7 +11764,7 @@ window.addEventListener('resize', function() {
 
         } catch (error) {
             console.error('Failed to restore edge auto style:', error);
-            new Notice(`恢复自动样式失败: ${error.message}`);
+            new Notice(`恢复自动样式失败: ${errorMessage(error)}`);
         }
     }
 
@@ -11795,7 +11794,7 @@ window.addEventListener('resize', function() {
             await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
         } catch (error) {
             console.error('Failed to save embed node size to MOC:', error);
-            new Notice(`保存预览节点尺寸失败: ${error.message}`);
+            new Notice(`保存预览节点尺寸失败: ${errorMessage(error)}`);
         }
     }
 
@@ -11811,7 +11810,7 @@ window.addEventListener('resize', function() {
             await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
         } catch (error) {
             console.error('Failed to clear embed node size from MOC:', error);
-            new Notice(`清理节点尺寸失败: ${error.message}`);
+            new Notice(`清理节点尺寸失败: ${errorMessage(error)}`);
         }
     }
 
@@ -11834,7 +11833,7 @@ window.addEventListener('resize', function() {
             await this.refreshBranchMermaid();
         } catch (error) {
             console.error('Failed to reset text node auto size:', error);
-            new Notice(`恢复自动尺寸失败: ${error.message}`);
+            new Notice(`恢复自动尺寸失败: ${errorMessage(error)}`);
         }
     }
 
@@ -11935,7 +11934,7 @@ window.addEventListener('resize', function() {
             new Notice(`已切换到: ${mocFile.basename}`);
         } catch (error) {
             console.error('Failed to open cross-domain MOC:', error);
-            new Notice(`打开跨界思维树失败: ${error.message}`);
+            new Notice(`打开跨界思维树失败: ${errorMessage(error)}`);
         }
     }
 
@@ -12175,10 +12174,9 @@ window.addEventListener('resize', function() {
             if (!cy) return false;
             const selectedRaw = cy.$(':selected').filter('node[!isGroup]');
             selectedRaw.forEach((cyNode: cytoscape.NodeSingular) => {
-                const data = cyNode.data();
-                const original = data?.originalNode as ZKNode | undefined;
+                const original = dataAs<ZKNode | undefined>(cyNode, 'originalNode');
                 if (!original) return;
-                if (data?.isPlaceholder) return;
+                if (dataBool(cyNode, 'isPlaceholder')) return;
                 if (original.isCrossDomain || original.isPlaceholder) return;
                 nodes.push(original);
             });

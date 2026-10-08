@@ -1,6 +1,7 @@
 import { TextFileView, WorkspaceLeaf, Menu, IconName } from "obsidian";
 import ZKNavigationPlugin from "main";
 import { ensureMOCPreviewPNG } from "src/embed/mocEmbedExporter";
+import { errorMessage } from "src/utils/utils";
 
 export const MOC_PREVIEW_VIEW_TYPE = 'moc-preview';
 
@@ -77,7 +78,7 @@ export class MOCPreviewView extends TextFileView {
             if (token !== this.renderToken) return;
             this.contentEl.empty();
             this.contentEl.createDiv('zk-moc-preview-error')
-                .setText(`预览生成失败: ${e?.message ?? e}`);
+                .setText(`预览生成失败: ${errorMessage(e)}`);
         }
     }
 

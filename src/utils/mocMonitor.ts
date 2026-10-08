@@ -1,6 +1,6 @@
 import { TFile, Notice } from "obsidian";
 import ZKNavigationPlugin from "main";
-import { isMocFile } from "src/utils/utils";
+import { isMocFile, errorMessage } from "src/utils/utils";
 
 /**
  * MOC 文件监听器
@@ -206,7 +206,7 @@ export class MOCFileMonitor {
 
         } catch (error) {
             console.error(`MOC Monitor: Failed to refresh views for ${file.path}`, error);
-            new Notice(`MOC 文件更新失败: ${error.message}`);
+            new Notice(`MOC 文件更新失败: ${errorMessage(error)}`);
         }
     }
 

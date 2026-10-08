@@ -132,7 +132,7 @@ export class MOCReverseIndex {
             // JSON 格式：遍历节点树提取 wikilink
             type MocJsonNode = { nodeID?: string; nodeType?: string; isTextOnly?: boolean; isEmbed?: boolean; target?: string; wikiLink?: string; children?: MocJsonNode[] };
             let json: { nodes?: MocJsonNode[] };
-            try { json = JSON.parse(content); } catch { return; }
+            try { json = JSON.parse(content) as { nodes?: MocJsonNode[] }; } catch { return; }
             this.searchEntries.push({
                 kind: 'mocFile',
                 text: file.basename,

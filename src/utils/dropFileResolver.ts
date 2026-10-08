@@ -102,11 +102,12 @@ export function resolveDroppedVaultFiles(app: App, event: DragEvent): TFile[] {
     for (const value of candidateValues) {
         stringCandidates.push(value);
         try {
-            const parsed = JSON.parse(value);
+            const parsed: unknown = JSON.parse(value);
             if (typeof parsed === 'string') {
                 stringCandidates.push(parsed);
             } else if (parsed && typeof parsed === 'object') {
-                const pathLike = parsed.path || parsed.file || parsed.filePath || parsed.sourcePath;
+                const obj = parsed as Record<string, unknown>;
+                const pathLike = obj.path || obj.file || obj.filePath || obj.sourcePath;
                 if (typeof pathLike === 'string') stringCandidates.push(pathLike);
             }
         } catch {

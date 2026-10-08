@@ -5,7 +5,7 @@ import { ZKNode } from 'src/view/indexView';
 import { CrossDomainLink } from 'src/utils/utils';
 import { t } from 'src/lang/helper';
 import { darkenColor, hexToRgba, isModernThemeStyle, normalizeHexColor } from './colorUtils';
-import { dataStr } from './cyData';
+import { dataAs, dataBool, dataStr } from './cyData';
 import type { CyData } from './types';
 import { estimateWrappedLines } from './renderPipeline';
 import { renderExcalidrawPreview, wrapForImageToolkit } from './embedPreview';
@@ -261,7 +261,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
 
             const labelEl = activeDocument.createElement('div');
             labelEl.className = 'zk-group-glass-label';
-            labelEl.textContent = groupNode.data('label') || '';
+            labelEl.textContent = dataStr(groupNode, 'label');
             labelEl.setCssStyles({
                 position: 'absolute',
                 fontWeight: '600',
@@ -338,7 +338,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                     fontSize: `${Math.max(11, 13 * zoom)}px`,
                     padding: `${Math.max(2, 3 * zoom)}px ${Math.max(10, 14 * zoom)}px`,
                 });
-                labelEl.textContent = groupNode.data('label') || '';
+                labelEl.textContent = dataStr(groupNode, 'label');
 
                 // 遮罩尺寸略大于标签，确保边框不会穿透到文字和标签底色
                 const labelW = labelEl.offsetWidth || 0;
@@ -567,26 +567,26 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                         e.preventDefault();
                         e.stopPropagation();
                         this.container?.dispatchEvent(new CustomEvent('node-click', {
-                            detail: { node: node.data('originalNode'), event: e }
+                            detail: { node: dataAs<ZKNode>(node, 'originalNode'), event: e }
                         }));
                     });
                     const emitHover = (e: MouseEvent) => {
                         this.container?.dispatchEvent(new CustomEvent('node-hover', {
-                            detail: { node: node.data('originalNode'), event: e }
+                            detail: { node: dataAs<ZKNode>(node, 'originalNode'), event: e }
                         }));
                     };
                     hitEl.addEventListener('mouseenter', emitHover);
                     hitEl.addEventListener('mousemove', emitHover);
                     hitEl.addEventListener('mouseleave', () => {
                         this.container?.dispatchEvent(new CustomEvent('node-leave', {
-                            detail: { node: node.data('originalNode') }
+                            detail: { node: dataAs<ZKNode>(node, 'originalNode') }
                         }));
                     });
                     hitEl.addEventListener('touchend', (e) => {
                         e.preventDefault();
                         e.stopPropagation();
                         this.container?.dispatchEvent(new CustomEvent('node-click', {
-                            detail: { node: node.data('originalNode'), event: e }
+                            detail: { node: dataAs<ZKNode>(node, 'originalNode'), event: e }
                         }));
                     }, { passive: false });
 
@@ -723,7 +723,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
 			remarkEl.setAttribute('title', t('detail open'));
             let lastRemarkColor = '';
             const applyRemarkBadgeStyle = () => {
-                const remarkColor = node.data('branchNodeBorder') || '#ef4444';
+                const remarkColor = dataStr(node, 'branchNodeBorder') || '#ef4444';
                 if (remarkColor === lastRemarkColor) return;
                 lastRemarkColor = remarkColor;
                 const badgeColor = normalizeHexColor(String(remarkColor)) || '#ef4444';
@@ -843,8 +843,8 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                 const size = 20 * zoom;
 
                 let x: number, y: number;
-                const curIsImageNode = node.data('isImageNode');
-                const curIsEmbedNode = node.data('isEmbed');
+                const curIsImageNode = dataBool(node, 'isImageNode');
+                const curIsEmbedNode = dataBool(node, 'isEmbed');
                 if (curIsImageNode) {
                     // 图片节点：用卡片宽度计算右上角（懒缓存 DOM 引用，避免每帧 querySelector）
                     if (!remarkImageCardCache) remarkImageCardCache = this.container?.querySelector(`.zk-image-preview-card[data-node-id="${node.id()}"]`) as HTMLElement ?? null;
@@ -900,7 +900,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                 node.select();
                 this.container?.dispatchEvent(new CustomEvent('node-detail-toggle', {
                     detail: {
-                        node: node.data('originalNode'),
+                        node: dataAs<ZKNode>(node, 'originalNode'),
                         event: e
                     }
                 }));
@@ -1077,7 +1077,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
         this.cy.nodes('[?hasCrossDomain]').forEach((node: cytoscape.NodeSingular) => {
             if (incIds && !incIds.has(node.id())) return;
             if (node.data('isGroup') || node.data('isPlaceholder')) return;
-            const links: CrossDomainLink[] = node.data('crossDomainLinks') || [];
+            const links = dataAs<CrossDomainLink[]>(node, 'crossDomainLinks') || [];
             if (!links.length) return;
             const sourceNodeId = String(node.data('originalNodeId') || node.id());
 
@@ -1566,10 +1566,11 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                     this.overlayScheduler.immediate();
                     const widthModel = Number(node.width());
                     const heightModel = Number(node.height());
+                    const originalNode = dataAs<ZKNode>(node, 'originalNode');
                     this.container?.dispatchEvent(new CustomEvent('embed-node-size-changed', {
                         detail: {
-                            node: node.data('originalNode'),
-                            nodeId: node.data('originalNodeId') || node.data('originalNode')?.IDStr || node.data('originalNode')?.ID || '',
+                            node: originalNode,
+                            nodeId: dataStr(node, 'originalNodeId') || originalNode?.IDStr || originalNode?.ID || '',
                             size: { widthModel, heightModel }
                         }
                     }));
@@ -1677,14 +1678,15 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                 toggleEl.addEventListener('click', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    const originalNode = dataAs<ZKNode>(node, 'originalNode');
                     this.container?.dispatchEvent(new CustomEvent('toggle-embed-node', {
                         detail: {
-                            node: node.data('originalNode'),
-                            nodeId: node.data('originalNodeId') || node.data('originalNode')?.IDStr || node.data('originalNode')?.ID || '',
-                            wikiLink: node.data('originalNode')?.wikiLink || '',
-                            filePath: node.data('filePath') || '',
-                            displayText: node.data('displayText') || '',
-                            title: node.data('title') || '',
+                            node: originalNode,
+                            nodeId: dataStr(node, 'originalNodeId') || originalNode?.IDStr || originalNode?.ID || '',
+                            wikiLink: originalNode?.wikiLink || '',
+                            filePath: dataStr(node, 'filePath') || '',
+                            displayText: dataStr(node, 'displayText') || '',
+                            title: dataStr(node, 'title') || '',
                             currentIsEmbed: isEmbed
                         }
                     }));
@@ -2013,7 +2015,8 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
 
         this.cy.nodes('[?isTextOnly]').forEach((node: cytoscape.NodeSingular) => {
             if (incIds && !incIds.has(node.id())) return;
-            const data = node.data();
+            // CyData 缺 isStandaloneText/isCurrentFile 两个 data 键,用交叉类型补齐
+            const data = node.data() as CyData & { isStandaloneText?: boolean; isCurrentFile?: boolean };
             if (data.isPlaceholder) return;
             // 草稿节点(#20)虽有 synthetic originalNode,但走 Cytoscape 原生 label 渲染,不建 Markdown overlay
             // (否则与原生 label 叠成双重文字,且需全量重建 overlay 影响 embed 预览)
@@ -2157,8 +2160,8 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                     const nodeId = overlayEl.dataset.nodeId || '';
                     const latestNode = nodeId && this.cy ? this.cy.$id(nodeId) : null;
                     const originalNode = latestNode?.length
-                        ? latestNode.data('originalNode')
-                        : node.data('originalNode');
+                        ? dataAs<ZKNode>(latestNode, 'originalNode')
+                        : dataAs<ZKNode>(node, 'originalNode');
                     this.container?.dispatchEvent(new CustomEvent('node-select', {
                         detail: {
                             node: originalNode,
@@ -2660,7 +2663,7 @@ function addCollapseToggleHandle(this: CytoscapeRenderer): void {
         // childId.startsWith(`${originalId}.`) 的判定,故二者结果完全一致。
         const parentIdsWithChildren = new Set<string>();
         this.cy.nodes().forEach((n: cytoscape.NodeSingular) => {
-            const id = n.data()?.originalNode?.IDStr;
+            const id = dataAs<ZKNode>(n, 'originalNode')?.IDStr;
             if (typeof id !== 'string' || !id) return;
             const parts = id.split('.');
             let prefix = '';
