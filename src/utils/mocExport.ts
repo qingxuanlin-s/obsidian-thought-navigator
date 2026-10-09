@@ -1,4 +1,4 @@
-import JSZip from 'jszip';
+import { strToU8, zipSync } from 'fflate';
 import type { MOCParseResult, MOCTreeNode } from './utils';
 
 interface XMindTopic {
@@ -111,11 +111,12 @@ export async function exportMOCAsXMind(data: MOCParseResult, title: string): Pro
         ...(relationships.length ? { relationships } : {}),
     };
 
-    const zip = new JSZip();
-    zip.file('content.json', JSON.stringify([sheet]));
-    zip.file('metadata.json', '{}');
-    zip.file('manifest.json', JSON.stringify({
-        'file-entries': { 'content.json': {}, 'metadata.json': {} },
-    }));
-    return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.xmind.workbook' });
+    const zip = zipSync({
+        'content.json': strToU8(JSON.stringify([sheet])),
+        'metadata.json': strToU8('{}'),
+        'manifest.json': strToU8(JSON.stringify({
+            'file-entries': { 'content.json': {}, 'metadata.json': {} },
+        })),
+    });
+    return new Blob([zip], { type: 'application/vnd.xmind.workbook' });
 }

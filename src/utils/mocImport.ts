@@ -1,4 +1,4 @@
-import JSZip from 'jszip';
+import { strFromU8, unzipSync } from 'fflate';
 import type { MOCTreeNode, ReverseRelation } from './utils';
 
 export interface ImportedMOC {
@@ -140,11 +140,11 @@ export function importMarkdown(content: string): ImportedMOC {
 }
 
 export async function importXMind(buffer: ArrayBuffer): Promise<ImportedMOC> {
-    const zip = await JSZip.loadAsync(buffer);
-    const json = zip.file('content.json');
-    if (json) return importXMindJson(await json.async('string'));
-    const xml = zip.file('content.xml');
-    if (xml) return importXMindXml(await xml.async('string'));
+    const files = unzipSync(new Uint8Array(buffer));
+    const json = files['content.json'];
+    if (json) return importXMindJson(strFromU8(json));
+    const xml = files['content.xml'];
+    if (xml) return importXMindXml(strFromU8(xml));
     throw new Error('XMind content.json or content.xml is missing');
 }
 
