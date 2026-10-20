@@ -6,6 +6,7 @@ import type { ZKNode } from 'src/view/indexView';
 import { GraphChanges, CyData } from './types';
 import { dataStr, dataBool, dataAs } from './cyData';
 import * as layoutAdapter from './layoutAdapter';
+import { getNodeClipboardContent, getPasteTarget } from './clipboard';
 
 /**
  * 占位符连接线在运行时写进节点 data() 的附加字段(非持久化,
@@ -19,18 +20,13 @@ interface PlaceholderRuntimeData extends CyData {
 
 function getClipboardTextForNode(node: cytoscape.NodeSingular): string {
     const data = node.data() as CyData;
-    const o = data.originalNode;
-    return String(
-        o?.displayText ||
-        o?.title ||
-        data.displayText ||
-        data.title ||
-        data.label ||
-        o?.wikiLink ||
-        o?.IDStr ||
-        o?.ID ||
-        ''
-    ).trim();
+    if (data.originalNode) return getNodeClipboardContent(data.originalNode);
+    return getNodeClipboardContent({
+        title: data.title || '',
+        displayText: data.displayText || data.label || '',
+        ID: data.originalNodeId || '',
+        IDStr: data.originalNodeId || '',
+    });
 }
 
 const RIGHT_DRAG_DELETE_THRESHOLD = 8;
@@ -254,12 +250,7 @@ export async function readSystemClipboardText(): Promise<string> {
  */
 export async function handlePasteShortcut(this: CytoscapeRenderer): Promise<boolean> {
     if (!this.cy) return false;
-    const pan = this.cy.pan();
-    const zoom = this.cy.zoom();
-    const pasteCenter = {
-        x: (this.cy.width() / 2 - pan.x) / zoom,
-        y: (this.cy.height() / 2 - pan.y) / zoom,
-    };
+    const pasteCenter = getPasteTarget(this.cy);
     const systemText = await readTextFromSystemClipboard();
     const trimmed = (systemText || '').trim();
     const hasInternal = this.clipboardNodes.length > 0;

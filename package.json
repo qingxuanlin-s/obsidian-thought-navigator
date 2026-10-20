@@ -1,6 +1,6 @@
 {
 	"name": "thought-navigator",
-	"version": "0.3.7",
+	"version": "0.3.8",
 	"description": "A visual knowledge-processing workspace: connect notes, shape MOCs, build mind maps, and turn Zettelkasten-style thinking into navigable thought maps.",
 	"main": "main.js",
 	"scripts": {
@@ -40,6 +40,7 @@
 		"d3": "^7.9.0",
 		"dagre": "^0.8.5",
 		"fflate": "^0.8.3",
-		"html-to-image": "^1.11.13"
+		"html-to-image": "^1.11.13",
+		"markdown-it": "^15.0.3"
 	}
 }

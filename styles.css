@@ -2315,7 +2315,8 @@ align-items: center;
 .zk-node-ctx-label {
     padding: 2px 8px;
     font-size: 11px;
-    opacity: 0.5;
+    color: #a6a6bd;
+    opacity: 1;
     user-select: none;
 }
 
@@ -3120,7 +3121,7 @@ align-items: center;
     border-top-color: var(--background-modifier-border, #e0e0e0);
 }
 
-.zk-theme-light .zk-node-ctx-menu {
+:is(.zk-theme-light .zk-node-ctx-menu, .zk-node-ctx-menu.zk-theme-light) {
   background: #f8fafc;
   border-color: rgba(101, 116, 139, 0.28);
   box-shadow: 0 14px 34px rgba(42, 57, 82, 0.18);
@@ -4358,8 +4359,9 @@ align-items: center;
 
 .zk-text-md-overlay code {
   font-size: 0.9em;
-  padding: 1px 4px;
-  border-radius: 3px;
+  /* Scale code spacing with the overlay font size to keep wrapping stable while zooming. */
+  padding: 0.0556em 0.2222em;
+  border-radius: 0.1667em;
 }
 
 .zk-text-md-overlay blockquote {
@@ -5532,7 +5534,8 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 
 /* ==================== Light theme consolidation ==================== */
 .zk-theme-light .zk-view-content,
-.zk-view-content.zk-theme-light {
+.zk-view-content.zk-theme-light,
+.zk-node-ctx-menu.zk-theme-light {
   --zk-canvas-bg: #f5f7fb;
   --zk-surface: rgba(248, 250, 253, 0.92);
   --zk-surface-solid: #f8fafd;
@@ -5576,7 +5579,7 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 }
 
 .zk-theme-light .zk-graph-text,
-.zk-theme-light .zk-node-ctx-menu,
+:is(.zk-theme-light .zk-node-ctx-menu, .zk-node-ctx-menu.zk-theme-light),
 .zk-theme-light .zk-text-selection-toolbar,
 .zk-theme-light .zk-text-selection-color-panel,
 .zk-theme-light .zk-text-selection-size-panel,
@@ -5633,55 +5636,55 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
   color: var(--zk-text);
 }
 
-.zk-theme-light .zk-node-ctx-menu.zk-node-context-menu {
+:is(.zk-theme-light .zk-node-ctx-menu, .zk-node-ctx-menu.zk-theme-light).zk-node-context-menu {
   background: #f8fafc;
   border-color: rgba(101, 116, 139, 0.32);
   box-shadow: 0 18px 42px rgba(42, 57, 82, 0.2);
   color: #202838;
 }
 
-.zk-theme-light .zk-node-ctx-menu .zk-node-ctx-item {
+:is(.zk-theme-light .zk-node-ctx-menu, .zk-node-ctx-menu.zk-theme-light) .zk-node-ctx-item {
   background: rgba(255, 255, 255, 0.8);
   border-color: rgba(118, 127, 153, 0.5);
   color: #243044;
   opacity: 1;
 }
 
-.zk-theme-light .zk-node-ctx-menu .zk-node-ctx-item svg {
+:is(.zk-theme-light .zk-node-ctx-menu, .zk-node-ctx-menu.zk-theme-light) .zk-node-ctx-item svg {
   color: #64748b;
   opacity: 0.92;
 }
 
-.zk-theme-light .zk-node-ctx-menu .zk-node-ctx-item:hover {
+:is(.zk-theme-light .zk-node-ctx-menu, .zk-node-ctx-menu.zk-theme-light) .zk-node-ctx-item:hover {
   background: rgba(232, 239, 250, 0.98);
   border-color: rgba(74, 118, 212, 0.6);
   color: #142033;
 }
 
-.zk-theme-light .zk-node-ctx-menu .zk-node-ctx-item:hover svg {
+:is(.zk-theme-light .zk-node-ctx-menu, .zk-node-ctx-menu.zk-theme-light) .zk-node-ctx-item:hover svg {
   color: #256fd1;
 }
 
-.zk-theme-light .zk-node-ctx-menu .zk-node-ctx-disabled,
-.zk-theme-light .zk-node-ctx-menu .zk-node-ctx-disabled:hover {
+:is(.zk-theme-light .zk-node-ctx-menu, .zk-node-ctx-menu.zk-theme-light) .zk-node-ctx-disabled,
+:is(.zk-theme-light .zk-node-ctx-menu, .zk-node-ctx-menu.zk-theme-light) .zk-node-ctx-disabled:hover {
   background: rgba(248, 250, 252, 0.62);
   border-color: rgba(148, 163, 184, 0.32);
   color: #94a3b8;
   opacity: 1;
 }
 
-.zk-theme-light .zk-node-ctx-menu .zk-node-ctx-disabled svg,
-.zk-theme-light .zk-node-ctx-menu .zk-node-ctx-disabled:hover svg {
+:is(.zk-theme-light .zk-node-ctx-menu, .zk-node-ctx-menu.zk-theme-light) .zk-node-ctx-disabled svg,
+:is(.zk-theme-light .zk-node-ctx-menu, .zk-node-ctx-menu.zk-theme-light) .zk-node-ctx-disabled:hover svg {
   color: #b6c0ce;
 }
 
-.zk-theme-light .zk-node-ctx-menu .zk-node-ctx-label {
+:is(.zk-theme-light .zk-node-ctx-menu, .zk-node-ctx-menu.zk-theme-light) .zk-node-ctx-label {
   color: #64748b;
   opacity: 1;
   font-weight: 600;
 }
 
-.zk-theme-light .zk-node-ctx-menu .zk-node-ctx-sep {
+:is(.zk-theme-light .zk-node-ctx-menu, .zk-node-ctx-menu.zk-theme-light) .zk-node-ctx-sep {
   background: rgba(101, 116, 139, 0.22);
 }
 

@@ -4,6 +4,7 @@ import type * as cytoscape from 'cytoscape';
 import { ZKNode } from 'src/view/indexView';
 import { CrossDomainLink } from 'src/utils/utils';
 import { t } from 'src/lang/helper';
+import { renderInlineMarkdown } from 'src/utils/inlineMarkdown';
 import { darkenColor, hexToRgba, isModernThemeStyle, normalizeHexColor } from './colorUtils';
 import { dataAs, dataBool, dataStr } from './cyData';
 import type { CyData } from './types';
@@ -11,7 +12,7 @@ import { estimateWrappedLines } from './renderPipeline';
 import { renderExcalidrawPreview, wrapForImageToolkit } from './embedPreview';
 import type { TextMdOverlayEntry } from './CytoscapeRenderer';
 
-export const TEXT_MD_OVERLAY_RENDER_VERSION = 3;
+export const TEXT_MD_OVERLAY_RENDER_VERSION = 5;
 
 // overlay 定位 updater + 其所属 Cytoscape 节点(用于视口剔除)。
 // node 为 null 表示该 updater 不绑定单一节点(始终执行,不参与剔除)。
@@ -2188,7 +2189,7 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                 const normalizedSource = rawSource.replace(/\r\n?/g, '\n');
                 // 本节点是否含 $...$ / $$...$$ 数学公式(决定是否在渲染后 flush MathJax 并重新测量)
                 let mathRendered = false;
-                // 粗糙渲染：用 DOM API 构建，避免大量字符串拼接
+                // markdown-it 负责行内语法;节点链接、嵌入和公式沿用现有 DOM/交互。
                 const applyRoughInlineMarkdown = (container: HTMLElement, input: string): void => {
                     const toOverlayEm = (px: number): string => `${Number((px / overlayFontSize).toFixed(4))}em`;
                     const createExternalLink = (rawUrl: string, text?: string): HTMLAnchorElement => {
@@ -2357,67 +2358,12 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                         }
                         return wrap;
                     };
-                    const tokenRe = /!\[\[([^\]\n]+)\]\]|\[\[([^\]\n]+)\]\]|\*\*(.+?)\*\*|~~(.+?)~~|__(.+?)__|<u>(.*?)<\/u>|\[([^\]]+)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)|<span\s+style=["']([^"']+)["']>(.*?)<\/span>|((?:https?:\/\/|www\.)[^\s<>()\]]+)|\$\$([^$]+?)\$\$|\$([^$\n]+?)\$/g;
-                    let lastIndex = 0;
-                    let m: RegExpExecArray | null;
-                    while ((m = tokenRe.exec(input)) !== null) {
-                        if (m.index > lastIndex) {
-                            container.appendChild(activeDocument.createTextNode(input.slice(lastIndex, m.index)));
-                        }
-                        if (m[1] !== undefined) {
-                            container.appendChild(createEmbedNode(m[1]));
-                        } else if (m[2] !== undefined) {
-                            container.appendChild(createInternalLink(m[2]));
-                        } else if (m[3] !== undefined) {
-                            const strong = activeDocument.createElement('strong');
-                            strong.textContent = m[3];
-                            container.appendChild(strong);
-                        } else if (m[4] !== undefined) {
-                            const del = activeDocument.createElement('del');
-                            del.textContent = m[4];
-                            container.appendChild(del);
-                        } else if (m[5] !== undefined) {
-                            const u = activeDocument.createElement('u');
-                            u.textContent = m[5];
-                            container.appendChild(u);
-                        } else if (m[6] !== undefined) {
-                            const u = activeDocument.createElement('u');
-                            u.textContent = m[6];
-                            container.appendChild(u);
-                        } else if (m[7] !== undefined) {
-                            const a = createExternalLink(m[8] || '', m[7]);
-                            if (m[9]) a.title = m[9];
-                            container.appendChild(a);
-                        } else if (m[10] !== undefined) {
-                            const span = activeDocument.createElement('span');
-                            const spanStyles: Record<string, string> = {};
-                            for (const decl of m[10].split(';')) {
-                                const ci = decl.indexOf(':');
-                                if (ci === -1) continue;
-                                const key = decl.slice(0, ci).trim();
-                                if (key) spanStyles[key] = decl.slice(ci + 1).trim();
-                            }
-                            span.setCssProps(spanStyles);
-                            span.textContent = m[11];
-                            container.appendChild(span);
-                        } else if (m[12] !== undefined) {
-                            const rawUrl = m[12];
-                            const trimmedUrl = rawUrl.replace(/[.,;:!?，。；：！？]+$/, '');
-                            const trailing = rawUrl.slice(trimmedUrl.length);
-                            container.appendChild(createExternalLink(trimmedUrl));
-                            if (trailing) {
-                                container.appendChild(activeDocument.createTextNode(trailing));
-                            }
-                        } else if (m[13] !== undefined) {
-                            container.appendChild(renderMathInline(m[13], true));
-                        } else if (m[14] !== undefined) {
-                            container.appendChild(renderMathInline(m[14], false));
-                        }
-                        lastIndex = m.index + m[0].length;
-                    }
-                    if (lastIndex < input.length) {
-                        container.appendChild(activeDocument.createTextNode(input.slice(lastIndex)));
-                    }
+                    renderInlineMarkdown(container, input, {
+                        createExternalLink,
+                        createInternalLink,
+                        createEmbed: createEmbedNode,
+                        renderMath: renderMathInline,
+                    });
                 };
                 // 列表缩进层级：tab 折算 4 空格，每 2 空格算 1 级，封顶 8 级
                 const computeListIndentLevel = (ws: string): number => {

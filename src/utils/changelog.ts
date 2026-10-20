@@ -12,6 +12,24 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
     {
+        version: '0.3.8',
+        date: '2026-10-20',
+        highlights: [
+            {
+                zh: '节点支持更完整的 Markdown 行内格式，包括行内代码、嵌套加粗与斜体，并修复代码内容在画布缩小时意外换行的问题。',
+                en: 'Nodes now support more inline Markdown formatting, including inline code and nested bold and italic text. Fixed unexpected wrapping of inline code when zooming out.',
+            },
+            {
+                zh: '右键菜单跟随插件主题，修复浅色模式下菜单仍显示深色背景及文字不清晰的问题。',
+                en: 'Context menus now follow the plugin theme, fixing dark backgrounds and unreadable text in light mode.',
+            },
+            {
+                zh: '复制节点时仅复制内容，不再附带节点 ID；粘贴到当前选中节点右侧，无选中节点时放到当前画布视口中心，多节点粘贴保留相对位置。',
+                en: 'Copying nodes now copies content without node IDs. Paste beside the current selection, or at the current viewport center when nothing is selected. Multiple pasted nodes retain their relative positions.',
+            },
+        ],
+    },
+    {
         version: '0.3.5',
         date: '2026-09-29',
         highlights: [

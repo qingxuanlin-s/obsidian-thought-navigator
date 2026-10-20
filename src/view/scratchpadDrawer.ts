@@ -779,6 +779,11 @@ export class ScratchpadDrawer {
         activeDocument.querySelector(".zk-scratch-context-menu")?.remove();
 
         const menu = activeDocument.body.createDiv("zk-node-ctx-menu zk-scratch-context-menu");
+        const themeHost = this.root.closest('.zk-theme-light, .zk-theme-dark');
+        const isLight = themeHost
+            ? themeHost.classList.contains('zk-theme-light')
+            : activeDocument.body.classList.contains('theme-light');
+        menu.addClass(isLight ? 'zk-theme-light' : 'zk-theme-dark');
         menu.setCssStyles({
             position: "fixed",
             zIndex: "10000",

@@ -46,6 +46,7 @@ import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
 import { RenderOptions, CyData } from "src/renderer/types";
 import { dataStr, dataBool, dataAs } from "src/renderer/cyData";
 import { getTopBranchId } from "src/renderer/renderPipeline";
+import { getNodeClipboardContent, getPasteTarget, getPasteTranslation, PasteTarget } from "src/renderer/clipboard";
 import { MOCHandler } from "src/view/index/mocHandler";
 import { computeAutoLayout, AutoLayoutNodeInput } from "src/utils/autoLayoutEngine";
 import { resolveThemeMode } from "src/utils/themeMode";
@@ -4733,7 +4734,7 @@ window.addEventListener('resize', function() {
             if (this.isMobileReadOnly()) return;
             const { nodes, pasteCenter } = event.detail as {
                 nodes: Array<{ originalNode: ZKNode; position: { x: number; y: number } }>;
-                pasteCenter: { x: number; y: number };
+                pasteCenter: PasteTarget;
             };
             if (!nodes || nodes.length === 0) return;
 
@@ -4745,7 +4746,7 @@ window.addEventListener('resize', function() {
             // 计算原始节点群的中心，粘贴时保持相对位置
             const origCenterX = nodes.reduce((s, n) => s + n.position.x, 0) / nodes.length;
             const origCenterY = nodes.reduce((s, n) => s + n.position.y, 0) / nodes.length;
-            const PASTE_OFFSET = 60; // 避免完全重叠
+            const pastedIds: string[] = [];
 
             await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
                 // 在 mocData 内部计算可用 ID，避免批量粘贴时 ID 冲突
@@ -4767,8 +4768,8 @@ window.addEventListener('resize', function() {
                     const zkIsTextOnly = !!originalNode.isTextOnly;
                     const zkIsEmbed = !!originalNode.isEmbed;
                     const zkTarget = zkIsTextOnly
-                        ? (originalNode.displayText || '')
-                        : (originalNode.wikiLink || originalNode.displayText || '');
+                        ? getNodeClipboardContent(originalNode)
+                        : (originalNode.wikiLink || getNodeClipboardContent(originalNode));
                     const newNode: MOCTreeNode = {
                         nodeID: newID,
                         nodeType: zkIsTextOnly ? 'text' : (zkIsEmbed ? 'embed' : 'file'),
@@ -4778,23 +4779,25 @@ window.addEventListener('resize', function() {
                         file: zkIsTextOnly ? null : (originalNode.file || null),
                         relationText: '',
                     };
-                    // 仅 file 节点 + displayText 与 target 不同时保留 alias
+                    // 仅 file 节点的原始标题与 target 不同时保留 alias
                     if (!zkIsTextOnly && !zkIsEmbed
-                        && originalNode.displayText
-                        && originalNode.displayText !== zkTarget) {
-                        newNode.alias = originalNode.displayText;
+                        && originalNode.title
+                        && originalNode.title !== zkTarget) {
+                        newNode.alias = originalNode.title;
                     }
                     mocData.nodes.push(newNode);
+                    pastedIds.push(newID);
 
                     if (!mocData.nodePositions) mocData.nodePositions = {};
                     mocData.nodePositions[newID] = {
-                        x: pasteCenter.x + (position.x - origCenterX) + PASTE_OFFSET,
-                        y: pasteCenter.y + (position.y - origCenterY) + PASTE_OFFSET
+                        x: pasteCenter.x + (position.x - origCenterX),
+                        y: pasteCenter.y + (position.y - origCenterY)
                     };
                 }
             });
 
             await this.refreshBranchMermaid();
+            await this.placePastedNodes(mocFile, pastedIds, pasteCenter);
             new Notice(t("Pasted nodes").replace("{count}", String(nodes.length)));
         });
 
@@ -4804,7 +4807,7 @@ window.addEventListener('resize', function() {
             if (this.isMobileReadOnly()) return;
             const { text, pasteCenter } = event.detail as {
                 text: string;
-                pasteCenter: { x: number; y: number };
+                pasteCenter: PasteTarget;
             };
             if (!text) return;
 
@@ -4831,6 +4834,7 @@ window.addEventListener('resize', function() {
             };
 
             const parsed = parseClipboard(text);
+            const pastedIds: string[] = [];
 
             await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
                 const collectIds = (nodes: MOCTreeNode[]): string[] =>
@@ -4853,12 +4857,14 @@ window.addEventListener('resize', function() {
                     newNode.alias = parsed.alias;
                 }
                 mocData.nodes.push(newNode);
+                pastedIds.push(newID);
 
                 if (!mocData.nodePositions) mocData.nodePositions = {};
                 mocData.nodePositions[newID] = { x: pasteCenter.x, y: pasteCenter.y };
             });
 
             await this.refreshBranchMermaid();
+            await this.placePastedNodes(mocFile, pastedIds, pasteCenter);
             new Notice(t("Pasted nodes").replace("{count}", '1'));
         });
 
@@ -6432,6 +6438,7 @@ window.addEventListener('resize', function() {
         if (existing) existing.remove();
 
         const menu = activeDocument.body.createDiv('zk-node-ctx-menu zk-node-context-menu');
+        menu.addClass(`zk-theme-${resolveThemeMode(this.plugin.settings.themeMode)}`);
         menu.setCssStyles({
             position: 'fixed',
             zIndex: '10000',
@@ -6580,6 +6587,7 @@ window.addEventListener('resize', function() {
         if (existing) existing.remove();
 
         const menu = activeDocument.body.createDiv('zk-node-ctx-menu zk-node-context-menu');
+        menu.addClass(`zk-theme-${resolveThemeMode(this.plugin.settings.themeMode)}`);
         menu.setCssStyles({
             position: 'fixed',
             zIndex: '10000',
@@ -9784,6 +9792,8 @@ window.addEventListener('resize', function() {
         const blob = imageItem.getAsFile();
         if (!blob) return;
 
+        const pasteTarget = getPasteTarget(this.branchRenderer?.getCytoscapeInstance());
+
         // 根据 MIME 类型确定扩展名
         const mimeToExt: Record<string, string> = {
             'image/png': 'png',
@@ -9818,17 +9828,8 @@ window.addEventListener('resize', function() {
             const arrayBuffer = await blob.arrayBuffer();
             const savedFile = await this.app.vault.createBinary(savePath, arrayBuffer);
 
-            // 计算视口中心位置（模型坐标）
-            const cy = this.branchRenderer?.getCytoscapeInstance();
-            let position = { x: 0, y: 0 };
-            if (cy) {
-                const pan = cy.pan();
-                const zoom = cy.zoom();
-                position = {
-                    x: (cy.width() / 2 - pan.x) / zoom,
-                    y: (cy.height() / 2 - pan.y) / zoom
-                };
-            }
+            // 使用粘贴开始时捕获的模型坐标。
+            const position = { x: pasteTarget.x, y: pasteTarget.y };
 
             // 生成节点 ID 并保存到 MOC
             const nodeID = this.generateNextFreeNodeID();
@@ -9846,6 +9847,7 @@ window.addEventListener('resize', function() {
 
             // 刷新视图
             await this.refreshBranchMermaid();
+            await this.placePastedNodes(mocFile, [nodeID], pasteTarget);
 
             new Notice(t('Paste image success'));
         } catch (error) {
@@ -12226,7 +12228,7 @@ window.addEventListener('resize', function() {
     }
 
     /**
-     * 粘贴暂存区顶部(最新)的一个节点到视口中心。返回 true 表示拦截。
+     * 粘贴暂存区顶部(最新)的一个节点到选中节点右侧或视口中心。返回 true 表示拦截。
      */
     private pasteTopFromScratchpad(): boolean {
         const scratchpad = this.plugin.scratchpad;
@@ -12234,8 +12236,8 @@ window.addEventListener('resize', function() {
         const top = scratchpad.list()[0];
         if (!top) return false;
 
-        const position = this.getViewportCenterModelPosition();
-        void this.materializeScratchpadEntryAt(top, position);
+        const target = getPasteTarget(this.branchRenderer?.getCytoscapeInstance());
+        void this.materializeScratchpadEntryAt(top, target, target);
         return true;
     }
 
@@ -12251,15 +12253,31 @@ window.addEventListener('resize', function() {
         this.pasteTopFromScratchpad();
     }
 
-    private getViewportCenterModelPosition(): { x: number; y: number } {
+    /** Align the pasted group after its actual node dimensions are available. */
+    private async placePastedNodes(mocFile: TFile, ids: string[], target: PasteTarget): Promise<void> {
         const cy = this.branchRenderer?.getCytoscapeInstance();
-        if (!cy) return { x: 0, y: 0 };
-        const pan = cy.pan();
-        const zoom = cy.zoom();
-        return {
-            x: (cy.width() / 2 - pan.x) / zoom,
-            y: (cy.height() / 2 - pan.y) / zoom,
-        };
+        if (!cy || ids.length === 0) return;
+        const idSet = new Set(ids);
+        const pasted = cy.nodes().filter((node) => idSet.has(dataStr(node, 'originalNodeId')));
+        if (pasted.length === 0) return;
+        const bb = pasted.boundingBox({ includeLabels: false, includeOverlays: false });
+        const delta = getPasteTranslation(bb, target);
+        const positions: Record<string, { x: number; y: number }> = {};
+        cy.batch(() => {
+            pasted.forEach((node) => {
+                const pos = node.position();
+                const position = { x: pos.x + delta.x, y: pos.y + delta.y };
+                node.position(position);
+                positions[dataStr(node, 'originalNodeId')] = position;
+            });
+        });
+        // Like saveNodePositionToMOC, position correction belongs to the paste's
+        // existing undo step rather than creating a second undo snapshot.
+        const heading = this.plugin.settings.mocHeadingTitle;
+        const mocData = await parseMOCStructure(this.app, mocFile.path, heading);
+        this.ensureMOCNodeLayoutStyle(mocData);
+        mocData.nodePositions = { ...mocData.nodePositions, ...positions };
+        await saveMOCStructure(this.app, mocFile.path, heading, mocData);
     }
 
     private getScratchpadTextContent(entry: ScratchpadEntry): string {
@@ -12277,7 +12295,8 @@ window.addEventListener('resize', function() {
      */
     private async materializeScratchpadEntryAt(
         entry: ScratchpadEntry,
-        position: { x: number; y: number }
+        position: { x: number; y: number },
+        pasteTarget?: PasteTarget
     ): Promise<void> {
         const mocPath = this.plugin.settings.mocCurrentFile;
         if (!mocPath) {
@@ -12327,6 +12346,8 @@ window.addEventListener('resize', function() {
             await new Promise(r => window.setTimeout(r, 20));
             await this.refreshBranchMermaid();
 
+            if (pasteTarget) await this.placePastedNodes(mocFile, [newID], pasteTarget);
+
             // 选中新节点
             const branchGraphDiv = activeDocument.getElementById("zk-branch-cytoscape");
             branchGraphDiv?.dispatchEvent(new CustomEvent('select-node-by-id', {
@@ -12339,7 +12360,7 @@ window.addEventListener('resize', function() {
     }
 
     /**
-     * 双击暂存卡片 → 落到画布视口中心(替代鼠标拖拽的备用路径)
+     * 双击暂存卡片 → 按当前选区粘贴(替代鼠标拖拽的备用路径)
      */
     private registerScratchpadDocumentListeners(): void {
         const onPasteCenter = (e: CustomEvent) => {
@@ -12347,8 +12368,8 @@ window.addEventListener('resize', function() {
             if (!tempId) return;
             const found = this.plugin.scratchpad?.get(tempId);
             if (!found) return;
-            const pos = this.getViewportCenterModelPosition();
-            void this.materializeScratchpadEntryAt(found.entry, pos);
+            const target = getPasteTarget(this.branchRenderer?.getCytoscapeInstance());
+            void this.materializeScratchpadEntryAt(found.entry, target, target);
         };
         this.addTrackedListener(activeDocument, 'scratchpad-paste-center', onPasteCenter);
     }
