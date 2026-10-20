@@ -29,3 +29,6 @@ claude_code_env.sh
 
 # Local-only deploy target for `npm run build`
 deploy.local.mjs
+
+# Local Claude configuration and skills
+.claude/
