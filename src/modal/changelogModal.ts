@@ -35,8 +35,8 @@ export class ChangelogModal extends Modal {
         for (const entry of this.entries) {
             const section = list.createDiv({ cls: 'zk-changelog-entry' });
             const head = section.createDiv({ cls: 'zk-changelog-entry-head' });
-            head.createEl('span', { cls: 'zk-changelog-version', text: `v${entry.version}` });
-            head.createEl('span', { cls: 'zk-changelog-date', text: entry.date });
+            head.createSpan({ cls: 'zk-changelog-version', text: `v${entry.version}` });
+            head.createSpan({ cls: 'zk-changelog-date', text: entry.date });
 
             const ul = section.createEl('ul', { cls: 'zk-changelog-highlights' });
             for (const item of entry.highlights) {

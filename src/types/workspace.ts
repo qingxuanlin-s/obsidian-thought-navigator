@@ -181,8 +181,8 @@ export const FRAMEWORKS: Record<FrameworkId, Framework> = {
     overview: {
         id: 'overview', label: '总览·主题·局部', chip: '总览体系',
         buckets: [
-            { id: 'overview', label: '总览', match: n => n.type === 'moc' && !isWorkspaceNodeArchived(n) && !!(n as WSMocNode).isTop },
-            { id: 'theme', label: '主题', match: n => n.type === 'moc' && !isWorkspaceNodeArchived(n) && !(n as WSMocNode).isTop },
+            { id: 'overview', label: '总览', match: n => n.type === 'moc' && !isWorkspaceNodeArchived(n) && !!(n).isTop },
+            { id: 'theme', label: '主题', match: n => n.type === 'moc' && !isWorkspaceNodeArchived(n) && !(n).isTop },
             { id: 'local', label: '局部知识', match: n => (n.type === 'note' || n.type === 'map') && !isWorkspaceNodeArchived(n) },
             { id: 'action', label: '行动·项目', match: n => n.type === 'project' && !isWorkspaceNodeArchived(n) },
         ],

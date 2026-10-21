@@ -1,4 +1,4 @@
-import { FileView, MarkdownView, moment, Notice, Plugin, TFile, TFolder, WorkspaceLeaf } from "obsidian";
+import { FileView, ItemView, MarkdownView, moment, Notice, Plugin, TFile, TFolder, WorkspaceLeaf } from "obsidian";
 import { t } from "src/lang/helper";
 import { indexFuzzyModal, indexModal } from "src/modal/indexModal";
 import { mainNoteFuzzyModal, mainNoteModal } from "src/modal/mainNoteModal";
@@ -462,7 +462,7 @@ export default class ZKNavigationPlugin extends Plugin {
         const createMOCPreviewImage = async (mocFile: TFile): Promise<HTMLImageElement | null> => {
             try {
                 const pngFile = await ensureMOCPreviewPNG(mocFile, this);
-                const img = activeDocument.createElement('img');
+                const img = activeWindow.createEl('img');
                 img.className = 'zk-moc-embed-img';
                 img.dataset.mocFile = mocFile.path;
                 img.src = this.app.vault.getResourcePath(pngFile);
@@ -751,7 +751,7 @@ export default class ZKNavigationPlugin extends Plugin {
                             .setIcon("git-branch")
                             .setSection("plugin")
                             .onClick(async () => {
-                                await this.createMOCInFolder(file as TFolder);
+                                await this.createMOCInFolder(file);
                             });
                     });
                     return;
@@ -795,30 +795,35 @@ export default class ZKNavigationPlugin extends Plugin {
         this.registerView(ZK_WORKSPACE_TYPE, (leaf) => new ZKWorkspaceView(leaf, this));
 
         // 只前置拦截 .moc / .moc.md 的打开，避免 Obsidian 先渲染成 markdown 再由 file-open 切换造成闪屏。
-        const originalOpenFile = WorkspaceLeaf.prototype.openFile;
-        const plugin = this;
-            const openMocFile = async function (this: WorkspaceLeaf, file: TFile, ...rest: unknown[]) {
+        type OpenFileFn = (this: WorkspaceLeaf, file: TFile, ...rest: unknown[]) => Promise<void>;
+        const leafProto = WorkspaceLeaf.prototype as unknown as { openFile: OpenFileFn };
+        const originalOpenFile = leafProto.openFile;
+        const app = this.app;
+        const rememberMocFile = async (path: string) => {
+            this.settings.mocCurrentFile = path;
+            await this.saveData(this.settings);
+        };
+            const openMocFile: OpenFileFn = async function (this: WorkspaceLeaf, file: TFile, ...rest: unknown[]) {
                 if (file instanceof TFile && isMocFile(file)) {
                     const openState = isRecord(rest[0]) ? rest[0] : {};
-                    plugin.settings.mocCurrentFile = file.path;
-                    await plugin.saveData(plugin.settings);
+                    await rememberMocFile(file.path);
                     await this.setViewState({
                         type: ZK_INDEX_TYPE,
                         state: { file: file.path },
                         active: typeof openState.active === 'boolean' ? openState.active : true,
                     });
                     if (openState.active !== false) {
-                        void plugin.app.workspace.revealLeaf(this);
+                        void app.workspace.revealLeaf(this);
                 }
-                plugin.app.workspace.trigger('zk-navigation:refresh-index-graph');
+                app.workspace.trigger('zk-navigation:refresh-index-graph');
                 return;
             }
             return originalOpenFile.apply(this, [file, ...rest]);
         };
-        WorkspaceLeaf.prototype.openFile = openMocFile as typeof WorkspaceLeaf.prototype.openFile;
+        leafProto.openFile = openMocFile;
         this.register(() => {
-            if (WorkspaceLeaf.prototype.openFile === openMocFile) {
-                WorkspaceLeaf.prototype.openFile = originalOpenFile;
+            if (leafProto.openFile === openMocFile) {
+                leafProto.openFile = originalOpenFile;
             }
         });
               
@@ -948,7 +953,7 @@ export default class ZKNavigationPlugin extends Plugin {
             this.app.workspace.on('file-open', async (file) => {
                 if (!file || !isMocFile(file)) return;
 
-                const activeLeaf = this.app.workspace.activeLeaf;
+                const activeLeaf = this.app.workspace.getActiveViewOfType(ItemView)?.leaf ?? null;
                 this.settings.mocCurrentFile = file.path;
                 await this.saveData(this.settings);
 
@@ -1092,9 +1097,7 @@ export default class ZKNavigationPlugin extends Plugin {
                 if (!view || typeof view.requestDeleteNodes !== 'function') {
                     throw new Error(t('Draft view not open').replace('{path}', filePath));
                 }
-                return await view.requestDeleteNodes(nodeIDs || []) as {
-                    deleted: string[]; draftsDiscarded: string[]; cancelled: string[]; notFound: string[];
-                };
+                return await view.requestDeleteNodes(nodeIDs || []);
             },
             queryNodes: async (filePath: string, opts: MOCQueryOptions = {}) => {
                 const target = this.app.vault.getAbstractFileByPath(filePath);
@@ -1107,11 +1110,11 @@ export default class ZKNavigationPlugin extends Plugin {
                 const view = leaves.find((l) => (l.view as FileView).file?.path === filePath)?.view as ZKIndexView | undefined;
                 // 视图已打开时,用 cy 上的实时坐标覆盖存档坐标(auto 布局未必把每个节点写进 nodePositions)
                 const live = typeof view?.getLivePositions === 'function'
-                    ? view!.getLivePositions() as Record<string, { x: number; y: number }>
+                    ? view.getLivePositions() as Record<string, { x: number; y: number }>
                     : {};
                 // #20:把当前视图里未落地的草稿节点也并入结果(扁平,带 isDraft 标记与父引用)
                 const drafts = typeof view?.getDraftNodeViews === 'function'
-                    ? view!.getDraftNodeViews(opts || {}) as MOCNodeView[]
+                    ? view.getDraftNodeViews(opts || {})
                     : [];
                 const result = drafts.length ? [...base, ...drafts] : base;
                 if (Object.keys(live).length) {
@@ -1140,7 +1143,7 @@ export default class ZKNavigationPlugin extends Plugin {
                 if (!view || typeof view.injectDraftNodes !== 'function') {
                     throw new Error(t('Draft view not open').replace('{path}', filePath));
                 }
-                return view.injectDraftNodes(items || [], 'ai', batchId) as string[];
+                return view.injectDraftNodes(items || [], 'ai', batchId);
             },
             addDraftRelations: async (
                 filePath: string,
@@ -1158,7 +1161,7 @@ export default class ZKNavigationPlugin extends Plugin {
                 if (!view || typeof view.injectDraftRelations !== 'function') {
                     throw new Error(t('Draft view not open').replace('{path}', filePath));
                 }
-                return view.injectDraftRelations(items || [], 'ai', batchId) as string[];
+                return view.injectDraftRelations(items || [], 'ai', batchId);
             },
             setDraftMode: async (filePath: string, on: boolean) => {
                 const target = this.app.vault.getAbstractFileByPath(filePath);
@@ -1654,15 +1657,15 @@ export default class ZKNavigationPlugin extends Plugin {
     }
 
     private registerNotebookNavigatorFolderMenu() {
-        const nnPlugin = (this.app as { plugins?: { plugins?: Record<string, { api?: NotebookNavigatorApi } | undefined> } }).plugins?.plugins?.['notebook-navigator'] as { api?: NotebookNavigatorApi } | undefined;
+        const nnPlugin = (this.app as { plugins?: { plugins?: Record<string, { api?: NotebookNavigatorApi } | undefined> } }).plugins?.plugins?.['notebook-navigator'];
         const nn = nnPlugin?.api;
-        const register = nn?.menus?.registerFolderMenu;
-        if (typeof register !== 'function') return;
+        const menus = nn?.menus;
+        if (typeof menus?.registerFolderMenu !== 'function') return;
         try {
-            this.nnFolderMenuDispose = register.call(
-                nn?.menus,
-                ({ addItem, folder }: NotebookNavigatorMenuContext) => {
-                    addItem((item: NotebookNavigatorMenuItem) => {
+            this.nnFolderMenuDispose = menus.registerFolderMenu(
+                (ctx: NotebookNavigatorMenuContext) => {
+                    const folder = ctx.folder;
+                    ctx.addItem((item: NotebookNavigatorMenuItem) => {
                         item.setTitle(t('New MOC file'))
                             .setIcon('git-branch')
                             .onClick(async () => {
@@ -1676,8 +1679,8 @@ export default class ZKNavigationPlugin extends Plugin {
         }
     }
 
-    async onunload() {
-        await this.detachPluginViews();
+    onunload() {
+        this.detachPluginViews();
 
         // 移除工作区注入的 <style>,避免热重载后残留旧 CSS
         activeDocument.getElementById('zkw-styles')?.remove();
@@ -1689,7 +1692,7 @@ export default class ZKNavigationPlugin extends Plugin {
         }
         // 注销 notebook-navigator 文件夹右键菜单
         if (this.nnFolderMenuDispose) {
-            try { this.nnFolderMenuDispose(); } catch {}
+            try { this.nnFolderMenuDispose(); } catch { /* 第三方插件可能已卸载 */ }
             this.nnFolderMenuDispose = null;
         }
         window.onerror = this.originalWindowOnError;
@@ -1698,7 +1701,7 @@ export default class ZKNavigationPlugin extends Plugin {
         void this.saveData(this.settings);
     }
 
-    private async detachPluginViews(): Promise<void> {
+    private detachPluginViews(): void {
         const viewTypes = [
             ZK_GRAPH_TYPE,
             ZK_INDEX_TYPE,
@@ -1707,7 +1710,7 @@ export default class ZKNavigationPlugin extends Plugin {
 
         for (const viewType of viewTypes) {
             try {
-                await this.app.workspace.detachLeavesOfType(viewType);
+                this.app.workspace.detachLeavesOfType(viewType);
             } catch (e) {
                 console.error(`[zk-navigation] failed to detach ${viewType} on unload`, e);
             }

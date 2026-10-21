@@ -47,7 +47,7 @@ export class ZKRecentView extends ItemView {
         for(let i=0;i<this.plugin.settings.HistoryList.length;i++){
 
             const item = this.plugin.settings.HistoryList[i]
-            const line = historyListDiv.createEl('div', {text: `${i+1}. ${item.displayText}`, cls:"vertical-tab-nav-item recent-item"});
+            const line = historyListDiv.createDiv({text: `${i+1}. ${item.displayText}`, cls:"vertical-tab-nav-item recent-item"});
             
             line.addEventListener(`mousemove`, (event:MouseEvent)=>{
                 this.app.workspace.trigger(`hover-link`, {

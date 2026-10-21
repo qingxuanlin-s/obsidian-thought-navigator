@@ -113,7 +113,7 @@ export class EdgeControls {
 		const oldHandleContainer = container.querySelector('.zk-connection-handles');
 		if (oldHandleContainer) oldHandleContainer.remove();
 
-		const handleContainer = activeDocument.createElement('div');
+		const handleContainer = activeWindow.createDiv();
 		handleContainer.className = 'zk-connection-handles';
 		handleContainer.setCssStyles({
 			position: 'absolute',
@@ -142,7 +142,7 @@ export class EdgeControls {
 				if (oldListeners.select) node.off('select', undefined, oldListeners.select);
 				if (oldListeners.unselect) node.off('unselect', undefined, oldListeners.unselect);
 			}
-			const handle = activeDocument.createElement('div');
+			const handle = activeWindow.createDiv();
 			handle.className = 'zk-connection-handle';
 			const hitTargetSize = 40;
 			const visualSize = 28;
@@ -158,7 +158,7 @@ export class EdgeControls {
 				opacity: '0',
 				transition: 'opacity 160ms ease-out',
 			});
-			const handleGlyph = activeDocument.createElement('span');
+			const handleGlyph = activeWindow.createSpan();
 			handleGlyph.textContent = '+';
 			handleGlyph.setCssStyles({
 				position: 'absolute',
@@ -227,7 +227,7 @@ export class EdgeControls {
 						handle.setCssStyles({ display: 'none' });
 						return;
 					}
-					if (!handleImageCardCache) handleImageCardCache = currentContainer.querySelector(`.zk-image-preview-card[data-node-id="${nodeId}"]`) as HTMLElement ?? null;
+					if (!handleImageCardCache) handleImageCardCache = currentContainer.querySelector(`.zk-image-preview-card[data-node-id="${nodeId}"]`) ?? null;
 					if (handleImageCardCache && handleImageCardCache.dataset.renderedWidth) {
 						const cardW = parseFloat(handleImageCardCache.dataset.renderedWidth);
 						x = rp.x + cardW / 2;
@@ -241,7 +241,7 @@ export class EdgeControls {
 						handle.setCssStyles({ display: 'none' });
 						return;
 					}
-					if (!handleEmbedCardCache) handleEmbedCardCache = currentContainer.querySelector(`.zk-embed-preview-card[data-node-id="${nodeId}"]`) as HTMLElement ?? null;
+					if (!handleEmbedCardCache) handleEmbedCardCache = currentContainer.querySelector(`.zk-embed-preview-card[data-node-id="${nodeId}"]`) ?? null;
 					if (handleEmbedCardCache) {
 						const cardW = handleEmbedCardCache.offsetWidth;
 						x = boundingBox.x1 + cardW;
@@ -346,7 +346,7 @@ export class EdgeControls {
 		const oldControlPointContainer = container.querySelector('.zk-edge-control-points');
 		if (oldControlPointContainer) oldControlPointContainer.remove();
 
-		const controlPointContainer = activeDocument.createElement('div');
+		const controlPointContainer = activeWindow.createDiv();
 		controlPointContainer.className = 'zk-edge-control-points';
 		controlPointContainer.setCssStyles({
 			position: 'absolute',
@@ -399,7 +399,7 @@ export class EdgeControls {
 		const oldContainer = container.querySelector('.zk-edge-endpoint-handles');
 		if (oldContainer) oldContainer.remove();
 
-		const handleContainer = activeDocument.createElement('div');
+		const handleContainer = activeWindow.createDiv();
 		handleContainer.className = 'zk-edge-endpoint-handles';
 		handleContainer.setCssStyles({
 			position: 'absolute',
@@ -491,7 +491,7 @@ export class EdgeControls {
 			isDragging = true;
 			dragStart = { x: e.clientX, y: e.clientY };
 			handle.setCssStyles({ opacity: '1' });
-			svgOverlay = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'svg');
+			svgOverlay = activeWindow.createSvg('svg');
 			svgOverlay.setCssStyles({
 				position: 'absolute',
 				top: '0',
@@ -503,7 +503,7 @@ export class EdgeControls {
 			});
 			container.appendChild(svgOverlay);
 
-			dragLine = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'line');
+			dragLine = activeWindow.createSvg('line');
 			dragLine.setAttribute('stroke', '#10b981');
 			dragLine.setAttribute('stroke-width', '2');
 			dragLine.setAttribute('stroke-dasharray', '5,5');
@@ -656,7 +656,7 @@ export class EdgeControls {
 		if (!sourceNode.length || !targetNode.length) return;
 
 		const distance = (data as CyData & { controlPointDistance?: number }).controlPointDistance ?? 0;
-		const controlPoint = activeDocument.createElement('div');
+		const controlPoint = activeWindow.createDiv();
 		controlPoint.className = 'zk-edge-control-point';
 		controlPoint.setCssStyles({
 			position: 'absolute',
@@ -830,7 +830,7 @@ export class EdgeControls {
 	}
 
 	private createEndpointHandle(type: 'source' | 'target', node: cytoscape.NodeSingular, edge: cytoscape.EdgeSingular, container: HTMLElement): HTMLElement {
-		const handle = activeDocument.createElement('div');
+		const handle = activeWindow.createDiv();
 		handle.className = `zk-edge-endpoint-handle zk-edge-endpoint-${type}`;
 		handle.setCssStyles({ display: 'none' });
 		container.appendChild(handle);
@@ -895,7 +895,7 @@ export class EdgeControls {
 
 			isDragging = true;
 			handle.setCssStyles({ cursor: 'grabbing' });
-			svgOverlay = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'svg');
+			svgOverlay = activeWindow.createSvg('svg');
 			svgOverlay.setCssStyles({
 				position: 'absolute',
 				top: '0',
@@ -907,7 +907,7 @@ export class EdgeControls {
 			});
 			graphContainer.appendChild(svgOverlay);
 
-			dragLine = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'line');
+			dragLine = activeWindow.createSvg('line');
 			dragLine.setAttribute('stroke', 'var(--interactive-accent, #3b82f6)');
 			dragLine.setAttribute('stroke-width', '2');
 			dragLine.setAttribute('stroke-dasharray', '6,4');
@@ -950,10 +950,10 @@ export class EdgeControls {
 				if (!isDragging || !dragLine || !currentCy) return;
 				const targetNode = this.getNodeAtPosition({ x: mouseX, y: mouseY });
 				if (targetNode && targetNode !== sourceOrTargetNode) {
-					dragLine!.setAttribute('stroke', '#10b981');
+					dragLine.setAttribute('stroke', '#10b981');
 					targetNode.addClass('connection-target-hover');
 				} else {
-					dragLine!.setAttribute('stroke', 'var(--interactive-accent, #3b82f6)');
+					dragLine.setAttribute('stroke', 'var(--interactive-accent, #3b82f6)');
 					currentCy.nodes('.connection-target-hover').removeClass('connection-target-hover');
 				}
 			});

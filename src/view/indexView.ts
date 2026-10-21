@@ -293,14 +293,14 @@ export class ZKIndexView extends FileView {
         const branchGraphDiv = this.currentBranchGraphDiv || activeDocument.getElementById('zk-branch-cytoscape');
         if (!branchGraphDiv) return;
 
-        const backBtn = branchGraphDiv.querySelector('.zk-branch-fullscreen-back-btn') as HTMLButtonElement | null;
+        const backBtn = branchGraphDiv.querySelector<HTMLButtonElement>('.zk-branch-fullscreen-back-btn');
         if (!backBtn) return;
 
         backBtn.setCssStyles({ display: this.getFullscreenElement() === branchGraphDiv ? 'inline-flex' : 'none' });
     }
 
     private ensureBranchFullscreenBackButton(branchGraphDiv: HTMLElement): void {
-        let backBtn = branchGraphDiv.querySelector('.zk-branch-fullscreen-back-btn') as HTMLButtonElement | null;
+        let backBtn = branchGraphDiv.querySelector<HTMLButtonElement>('.zk-branch-fullscreen-back-btn');
         if (!backBtn) {
             backBtn = branchGraphDiv.createEl('button', {
                 cls: 'zk-branch-fullscreen-back-btn',
@@ -792,9 +792,9 @@ export class ZKIndexView extends FileView {
         }
 
         while (this.mocViewStates.size > this.MAX_MOC_VIEW_STATES) {
-            const oldestKey = this.mocViewStates.keys().next().value as string | undefined;
-            if (!oldestKey) break;
-            this.mocViewStates.delete(oldestKey);
+            const oldest = this.mocViewStates.keys().next();
+            if (oldest.done) break;
+            this.mocViewStates.delete(oldest.value);
         }
     }
 
@@ -1410,7 +1410,7 @@ export class ZKIndexView extends FileView {
         const host = activeDocument.getElementById("zk-branch-cytoscape");
         if (!host) return;
 
-        const bar = activeDocument.createElement('div');
+        const bar = activeWindow.createDiv();
         bar.className = 'zk-draft-batch-bar';
         bar.setCssStyles({
             position: 'absolute',
@@ -1428,7 +1428,7 @@ export class ZKIndexView extends FileView {
             boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
         });
 
-        const tag = activeDocument.createElement('span');
+        const tag = activeWindow.createSpan();
         tag.textContent = hasAi ? t('Draft tag ai') : t('Draft tag manual');
         tag.setCssStyles({
             fontSize: '11px',
@@ -1439,7 +1439,7 @@ export class ZKIndexView extends FileView {
             background: `${hasAi ? '#a855f7' : '#64748b'}`,
         });
 
-        const label = activeDocument.createElement('span');
+        const label = activeWindow.createSpan();
         label.textContent = total === 0
             ? t('Draft mode entered')
             : (nodeCount > 0 && relCount > 0)
@@ -1457,7 +1457,7 @@ export class ZKIndexView extends FileView {
         bar.appendChild(label);
 
         if (total > 0) {
-            const commitBtn = activeDocument.createElement('button');
+            const commitBtn = activeWindow.createEl('button');
             commitBtn.textContent = t('Draft confirm');
             commitBtn.setCssStyles({
                 fontSize: '12px',
@@ -1472,7 +1472,7 @@ export class ZKIndexView extends FileView {
             bar.appendChild(commitBtn);
         }
 
-        const discardBtn = activeDocument.createElement('button');
+        const discardBtn = activeWindow.createEl('button');
         discardBtn.textContent = total > 0 ? t('Draft discard') : t('Draft mode exit');
         discardBtn.setCssStyles({
             fontSize: '12px',
@@ -1605,7 +1605,7 @@ export class ZKIndexView extends FileView {
     private showLoadingIndicator(container: HTMLElement): HTMLElement {
         const indicator = container.createDiv("zk-loading-indicator");
         indicator.createDiv("zk-spinner");
-        indicator.createEl("span", { text: t("Updating...") });
+        indicator.createSpan({ text: t("Updating...") });
         indicator.setCssStyles({
             position: 'absolute',
             top: '50%',
@@ -1832,7 +1832,7 @@ export class ZKIndexView extends FileView {
         this.navForwardBtn.onClick(() => this.navForward());
         this.updateNavButtons();
 
-        const navSep = activeDocument.createElement("span");
+        const navSep = activeWindow.createSpan();
         navSep.className = "zk-toolbar-separator";
         rightBtns.appendChild(navSep);
 
@@ -1842,7 +1842,7 @@ export class ZKIndexView extends FileView {
             this.openGlobalSearchModal(true);
         });
 
-        const sep = activeDocument.createElement("span");
+        const sep = activeWindow.createSpan();
         sep.className = "zk-toolbar-separator";
         rightBtns.appendChild(sep);
 
@@ -1871,7 +1871,7 @@ export class ZKIndexView extends FileView {
 
         // 模式切换键钉在工具栏最末端,与工作区面板的「图谱」键同处右上角,
         // 形成原地翻面开关(切完再切回时鼠标无需移动)。前置分隔线与普通工具区分。
-        const modeSep = activeDocument.createElement("span");
+        const modeSep = activeWindow.createSpan();
         modeSep.className = "zk-toolbar-separator";
         rightBtns.appendChild(modeSep);
 
@@ -1939,7 +1939,7 @@ export class ZKIndexView extends FileView {
         importOption.addEventListener('click', (e) => {
             e.stopPropagation();
             menu.remove();
-            const input = activeDocument.createElement('input');
+            const input = activeWindow.createEl('input');
             input.type = 'file';
             input.accept = '.xmind,.md';
             input.onchange = () => {
@@ -1959,7 +1959,7 @@ export class ZKIndexView extends FileView {
         exportOption.addEventListener('click', (e) => {
             e.stopPropagation();
             // 切换子菜单
-            let sub = menu.querySelector('.zk-more-submenu') as HTMLElement | null;
+            let sub = menu.querySelector<HTMLElement>('.zk-more-submenu');
             if (sub) {
                 sub.remove();
                 return;
@@ -2044,7 +2044,7 @@ export class ZKIndexView extends FileView {
                 ? await exportMOCAsXMind(data, title)
                 : new Blob([exportMOCAsMarkdown(data, title)], { type: 'text/markdown;charset=utf-8' });
             const url = URL.createObjectURL(blob);
-            const a = activeDocument.createElement('a');
+            const a = activeWindow.createEl('a');
             a.href = url;
             a.download = `${title}.${format}`;
             activeDocument.body.appendChild(a);
@@ -2191,7 +2191,7 @@ export class ZKIndexView extends FileView {
             cy.viewport({ zoom: savedZoom, pan: savedPan });
 
             // 触发下载
-            const a = activeDocument.createElement('a');
+            const a = activeWindow.createEl('a');
             const mocPath = this.plugin.settings.mocCurrentFile || 'graph';
             const baseName = mocPath.replace(/^.*\//, '').replace(/\.[^.]+$/, '');
             a.href = dataUrl;
@@ -2695,7 +2695,7 @@ window.addEventListener('resize', function() {
 
             const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
             const url = URL.createObjectURL(blob);
-            const a = activeDocument.createElement('a');
+            const a = activeWindow.createEl('a');
             const mocPath = this.plugin.settings.mocCurrentFile || 'graph';
             const baseName = mocPath.replace(/^.*\//, '').replace(/\.[^.]+$/, '');
             a.href = url;
@@ -2712,7 +2712,7 @@ window.addEventListener('resize', function() {
         }
     }
 
-    async onload() {
+    onload(): void {
 
         this.registerEvent(this.app.workspace.on("active-leaf-change", async (leaf) => {
 
@@ -2924,7 +2924,7 @@ window.addEventListener('resize', function() {
             .find(Boolean) || '';
         const firstEntry = raw.split(/\r?\n/).find((entry) => !!entry.trim())?.trim() || '';
         let decodedEntry = firstEntry;
-        try { decodedEntry = decodeURIComponent(firstEntry); } catch {}
+        try { decodedEntry = decodeURIComponent(firstEntry); } catch { /* ignore */ }
         const name = decodedEntry
             .replace(/^file:\/\//, '')
             .replace(/^.*[\\/]/, '')
@@ -2954,7 +2954,7 @@ window.addEventListener('resize', function() {
 
         cy.nodes().forEach((node: cytoscape.NodeSingular) => {
             const data = node.data() as CyData;
-            const original = data.originalNode as ZKNode | undefined;
+            const original = data.originalNode;
             if (!original || data.isGroup || data.isPlaceholder || data.isDraft || data.isCrossDomain || original.isCrossDomain) return;
             if (this.isFreeNodeID(original.IDStr)) return;
 
@@ -2992,11 +2992,11 @@ window.addEventListener('resize', function() {
         this.clearFileDropPreview();
 
         const host = branchGraphDiv.createDiv('zk-file-drop-preview');
-        const guide = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        const guide = activeWindow.createSvg('svg');
         guide.addClass('zk-file-drop-preview-guide');
-        const guideLine = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'line');
+        const guideLine = activeWindow.createSvg('line');
         guideLine.addClass('zk-file-drop-preview-line');
-        const targetOutline = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        const targetOutline = activeWindow.createSvg('rect');
         targetOutline.addClass('zk-file-drop-preview-target');
         guide.append(guideLine, targetOutline);
         host.appendChild(guide);
@@ -3421,7 +3421,7 @@ window.addEventListener('resize', function() {
                 ...(currentState.state || {}),
                 file: mocFile.path,
             },
-            active: currentState.active ?? (this.app.workspace.activeLeaf === this.leaf),
+            active: currentState.active ?? (this.app.workspace.getActiveViewOfType(ZKIndexView) === this),
         });
     }
 
@@ -3476,7 +3476,7 @@ window.addEventListener('resize', function() {
         const renderSignature = this.computeRenderSignature(currentMOCPath, currentMOCFile.stat.mtime);
         const cyInstance = this.branchRenderer?.getCytoscapeInstance();
         if (!force && cyInstance && this.lastRenderedMOCPath === currentMOCPath && this.lastRenderSignature === renderSignature) {
-            const existingGraphDiv = activeDocument.getElementById("zk-branch-cytoscape") as HTMLElement | null;
+            const existingGraphDiv = activeDocument.getElementById("zk-branch-cytoscape");
             if (existingGraphDiv) {
                 const graphHeight = Math.max(220, this.containerEl.offsetHeight - 80);
                 if (existingGraphDiv.style.height !== `${graphHeight}px`) {
@@ -3539,7 +3539,7 @@ window.addEventListener('resize', function() {
         if (!branchGraphDiv) {
             // 首次创建：创建容器
             const branchGraphContainer = indexMermaidDiv.createDiv("zk-branch-graph-container");
-            branchGraphDiv = branchGraphContainer.createEl("div", {
+            branchGraphDiv = branchGraphContainer.createDiv({
                 cls: "zk-graph-cytoscape"
             });
             branchGraphDiv.id = "zk-branch-cytoscape";
@@ -3650,7 +3650,7 @@ window.addEventListener('resize', function() {
         __lap('render');
         if (__zkPerf) {
             const total = Object.values(__mark).reduce((a, b) => a + b, 0);
-            console.log(
+            console.debug(
                 `[zkPerf] nodes=${this.mocNodes.length} total=${total.toFixed(1)}ms`,
                 Object.fromEntries(Object.entries(__mark).map(([k, v]) => [k, +v.toFixed(1)]))
             );
@@ -4210,7 +4210,7 @@ window.addEventListener('resize', function() {
                 return;
             }
             const detail = event.detail as { nodeId?: unknown; collapsedNodeIds?: unknown };
-            const nodeId = String(detail.nodeId ?? '').trim();
+            const nodeId = typeof detail.nodeId === 'string' || typeof detail.nodeId === 'number' ? String(detail.nodeId).trim() : '';
             const collapsedNodeIds = Array.isArray(detail.collapsedNodeIds)
                 ? detail.collapsedNodeIds.map((id: unknown) => String(id)).filter(Boolean)
                 : [];
@@ -7820,7 +7820,7 @@ window.addEventListener('resize', function() {
                     Math.min(240, window.innerHeight - inputRect.bottom - viewportBottomPadding - 8)
                 );
 
-                const popover = activeDocument.createElement('div');
+                const popover = activeWindow.createDiv();
                 popover.className = 'node-link-suggester';
                 popover.setCssStyles({
                     position: 'fixed',
@@ -7837,7 +7837,7 @@ window.addEventListener('resize', function() {
                     padding: '4px 0',
                 });
 
-                const searchInput = activeDocument.createElement('input');
+                const searchInput = activeWindow.createEl('input');
                 searchInput.type = 'text';
                 searchInput.placeholder = 'Search notes...';
                 searchInput.setCssStyles({
@@ -7882,7 +7882,7 @@ window.addEventListener('resize', function() {
                     suggesterState.selectedIndex = 0;
 
                     suggesterState.currentFiles.forEach((file, index) => {
-                        const item = activeDocument.createElement('div');
+                        const item = activeWindow.createDiv();
                         item.className = 'suggester-item';
                         item.setCssStyles({
                             padding: '6px 12px',
@@ -7892,12 +7892,12 @@ window.addEventListener('resize', function() {
                             gap: '2px',
                         });
 
-                        const basenameEl = item.createEl('span', { text: file.basename });
+                        const basenameEl = item.createSpan({ text: file.basename });
                         basenameEl.setCssStyles({
                             fontWeight: '500',
                             color: 'var(--text-normal)',
                         });
-                        const pathEl = item.createEl('span', { text: file.path });
+                        const pathEl = item.createSpan({ text: file.path });
                         pathEl.setCssStyles({
                             fontSize: '11px',
                             color: 'var(--text-muted)',
@@ -8942,7 +8942,7 @@ window.addEventListener('resize', function() {
         const childObstacles = childNodes
             .filter((node) => {
                 const data = node.data() as CyData;
-                const originalNode = data.originalNode as ZKNode | undefined;
+                const originalNode = data.originalNode;
                 const nodeId = originalNode?.IDStr || originalNode?.ID || data.id;
                 return nodeId !== options.excludeNodeId;
             })
@@ -10656,12 +10656,12 @@ window.addEventListener('resize', function() {
                 id: nodeId,
                 // 预览占位符优先用调用方给的真实尺寸(编辑框实测),避免空 label 量到兜底小尺寸,
                 // 使预览让位间距与提交后真实尺寸的最终间距一致 → 不再弹动。
-                size: (isIncludedPlaceholder && includePlaceholder!.size)
-                    ? includePlaceholder!.size
+                size: (isIncludedPlaceholder && includePlaceholder.size)
+                    ? includePlaceholder.size
                     : getNodeSize(node),
                 position: node.position(),
                 colorKey: isIncludedPlaceholder
-                    ? (includePlaceholder!.colorKey || getColorKey(node))
+                    ? (includePlaceholder.colorKey || getColorKey(node))
                     : getColorKey(node)
             };
             childrenById[nodeId] = [];
@@ -11069,7 +11069,7 @@ window.addEventListener('resize', function() {
                         return null;
                     };
 
-                    const parentNode = findNodeInTree(mocData.nodes, parentNodeId as string);
+                    const parentNode = findNodeInTree(mocData.nodes, parentNodeId);
                     if (parentNode) {
                         // 计算深度
                         newNode.depth = parentNode.depth + 1;
@@ -11315,7 +11315,7 @@ window.addEventListener('resize', function() {
                     Object.entries(mocData.edgeCurvatures).forEach(([key, value]) => {
                         const parts = key.split('-');
                         const remapped = parts.map((part) => remapId(part)).join('-');
-                        nextCurvatures[remapped] = value as { distance: number; weight: number };
+                        nextCurvatures[remapped] = value;
                     });
                     mocData.edgeCurvatures = nextCurvatures;
                 }
@@ -12101,7 +12101,7 @@ window.addEventListener('resize', function() {
                 activeDocument.querySelectorAll(cls).forEach((el) => el.addClass('zk-hidden'));
             });
             // 直接挂到 activeDocument.body，彻底脱离 Obsidian 视图层级
-            const btn = activeDocument.createElement('button');
+            const btn = activeWindow.createEl('button');
             btn.className = 'zk-moc-fullscreen-exit';
             setIcon(btn, 'arrow-left');
             btn.setCssStyles({
@@ -12123,19 +12123,18 @@ window.addEventListener('resize', function() {
                 pointerEvents: 'auto',
                 touchAction: 'manipulation',
             });
-            const self = this;
-            btn.ontouchstart = function(e) {
+            btn.ontouchstart = (e) => {
                 e.stopPropagation();
             };
-            btn.ontouchend = function(e) {
+            btn.ontouchend = (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                self.toggleMocFullscreen();
+                this.toggleMocFullscreen();
             };
-            btn.onclick = function(e) {
+            btn.onclick = (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                self.toggleMocFullscreen();
+                this.toggleMocFullscreen();
             };
             activeDocument.body.appendChild(btn);
             this.mocFullscreenExitBtn = btn;

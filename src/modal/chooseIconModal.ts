@@ -36,7 +36,7 @@ export default class ChooseIconModal extends FuzzySuggestModal<string> {
             this.onChooseItem = (item): void => resolve(item);
             //This is wrapped inside a setTimeout, because onClose is called before onChooseItem
             this.onClose = (): number =>
-                window.setTimeout(() => reject("No Icon selected"), 0);
+                window.setTimeout(() => reject(new Error("No Icon selected")), 0);
         });
     }
 

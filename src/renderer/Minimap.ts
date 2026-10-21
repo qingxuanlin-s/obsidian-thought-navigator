@@ -49,11 +49,11 @@ export class Minimap {
         this.host = host;
         this.cy = cy;
 
-        this.root = activeDocument.createElement('div');
+        this.root = activeWindow.createDiv();
         this.root.className = 'zk-minimap';
         this.root.title = '缩略导航 · 拖拽视口框 / 点击跳转';
 
-        this.canvas = activeDocument.createElement('canvas');
+        this.canvas = activeWindow.createEl('canvas');
         this.canvas.className = 'zk-minimap-canvas';
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
         this.canvas.width = Minimap.W * dpr;
@@ -65,7 +65,7 @@ export class Minimap {
         this.ctx = this.canvas.getContext('2d');
         if (this.ctx) this.ctx.scale(dpr, dpr);
 
-        this.viewport = activeDocument.createElement('div');
+        this.viewport = activeWindow.createDiv();
         this.viewport.className = 'zk-minimap-viewport';
 
         this.root.appendChild(this.canvas);

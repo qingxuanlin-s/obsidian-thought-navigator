@@ -444,7 +444,7 @@ export class MOCHandler {
         if (hasDom) {
             try { measurer = new DomTextMeasurer(activeDocument.body); } catch { measurer = null; }
         }
-        const domMeasure = measurer ? (text: string, opts: DomTextMeasureOptions) => measurer!.measure(text, opts) : null;
+        const domMeasure = measurer ? (text: string, opts: DomTextMeasureOptions) => measurer.measure(text, opts) : null;
         const sizeOf = (label: string, depth: number) => measureTextNodeBox(label, depth, domMeasure);
 
         // 方向提示:沿用视图首次布局的同款偏置(depth 越深 x 越大 → 全部朝同侧 E,竖向堆叠),

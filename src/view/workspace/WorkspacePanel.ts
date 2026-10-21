@@ -80,7 +80,7 @@ export class WorkspacePanel {
     constructor(parent: HTMLElement, deps: WorkspacePanelDeps) {
         this.deps = deps;
         this.root = parent.createDiv({ cls: 'zkw' });
-        try { this.railCollapsed = deps.app.loadLocalStorage(LS_RAIL) === '1'; } catch {}
+        try { this.railCollapsed = deps.app.loadLocalStorage(LS_RAIL) === '1'; } catch { /* ignore */ }
 
         this.taskStore = deps.taskStore;
         this.taskStoreUnsubscribe = this.taskStore.onChange(() => this.refresh());
@@ -158,7 +158,7 @@ export class WorkspacePanel {
     /** 收起/展开整个左侧 rail 面板 */
     private toggleRail() {
         this.railCollapsed = !this.railCollapsed;
-        try { this.deps.app.saveLocalStorage(LS_RAIL, this.railCollapsed ? '1' : '0'); } catch {}
+        try { this.deps.app.saveLocalStorage(LS_RAIL, this.railCollapsed ? '1' : '0'); } catch { /* ignore */ }
         this.applyRailCollapsed();
     }
 
@@ -342,8 +342,8 @@ export class WorkspacePanel {
         this.unlinkedGraphContext = null;
         const targetNode = target.kind === 'home' ? null : this.deps.store.getNode(target.id);
         this.deps.session.selectWorkspaceTarget(target, targetNode?.title);
-        if (target.kind !== 'home') { try { this.deps.app.saveLocalStorage(LS_LAST, JSON.stringify(target)); } catch {} }
-        try { this.deps.app.saveLocalStorage(LS_OPEN, JSON.stringify(target)); } catch {}
+        if (target.kind !== 'home') { try { this.deps.app.saveLocalStorage(LS_LAST, JSON.stringify(target)); } catch { /* ignore */ } }
+        try { this.deps.app.saveLocalStorage(LS_OPEN, JSON.stringify(target)); } catch { /* ignore */ }
         this.tree.setCurrent(target);
         this.tree.revealTarget(target);
         this.renderCenter();
@@ -482,7 +482,7 @@ export class WorkspacePanel {
 
     private restoreSession() {
         let target: OpenTarget | null = null;
-        try { const raw = this.deps.app.loadLocalStorage(LS_OPEN) as string | null; if (raw) target = JSON.parse(raw) as OpenTarget; } catch {}
+        try { const raw = this.deps.app.loadLocalStorage(LS_OPEN) as string | null; if (raw) target = JSON.parse(raw) as OpenTarget; } catch { /* ignore */ }
         if (target && target.kind !== 'home' && 'id' in target && !this.deps.store.getNode(target.id)) target = null;
         if (!target) {
             const first = this.deps.store.getSpaces()[0];

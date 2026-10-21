@@ -89,7 +89,11 @@ export class ContainerMountModal extends SuggestModal<PickItem> {
         }
     }
 
-    async onChooseSuggestion(item: PickItem): Promise<void> {
+    onChooseSuggestion(item: PickItem): void {
+        void this.toggleMount(item);
+    }
+
+    private async toggleMount(item: PickItem): Promise<void> {
         try {
             if (item.mounted) {
                 await this.store.unmountFileFromContainer(this.filePath, item.node.id, item.spaceId);

@@ -246,21 +246,21 @@ export class ModalUtils {
         });
 
         if (icon) {
-            const iconDiv = warningDiv.createEl('div', { text: icon });
+            const iconDiv = warningDiv.createDiv({ text: icon });
             iconDiv.setCssStyles({
                 fontSize: '24px',
                 marginBottom: '10px',
             });
         }
 
-        const titleDiv = warningDiv.createEl('div');
+        const titleDiv = warningDiv.createDiv();
         titleDiv.createEl('strong', { text: title });
         titleDiv.setCssStyles({
             fontWeight: '600',
             marginBottom: '8px',
         });
 
-        const messageDiv = warningDiv.createEl('div');
+        const messageDiv = warningDiv.createDiv();
         messageDiv.setText(message);
         messageDiv.setCssStyles({ color: 'var(--text-muted)' });
 
@@ -284,7 +284,7 @@ export class ModalUtils {
         });
 
         content.forEach(line => {
-            const lineDiv = infoDiv.createEl('div');
+            const lineDiv = infoDiv.createDiv();
             lineDiv.setText(line);
             lineDiv.setCssStyles({ marginBottom: line === content[content.length - 1] ? '0' : '5px' });
         });

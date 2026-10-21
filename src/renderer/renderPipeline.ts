@@ -602,7 +602,7 @@ let _canvasMeasureCtx: CanvasRenderingContext2D | null = null;
 function getCanvasCtx(): CanvasRenderingContext2D | null {
 	if (_canvasMeasureCtx) return _canvasMeasureCtx;
 	try {
-		const canvas = activeDocument.createElement('canvas');
+		const canvas = activeWindow.createEl('canvas');
 		_canvasMeasureCtx = canvas.getContext('2d');
 	} catch { /* ignore */ }
 	return _canvasMeasureCtx;

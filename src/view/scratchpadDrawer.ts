@@ -2,6 +2,7 @@ import { App, FuzzySuggestModal, Menu, Notice, setIcon, setTooltip, TFile } from
 import { Scratchpad, ScratchpadEntry, ScratchpadManager, ScratchpadSplitRule } from "src/scratch/scratchpadManager";
 import { resolveDroppedVaultFiles, hasVaultFileDragTypes } from "src/utils/dropFileResolver";
 import { t } from "src/lang/helper";
+import { confirmModal } from "src/view/workspace/modals";
 
 const IDLE_FADE_MS = 3000;
 const NEAR_HANDLE_PX = 60; // 鼠标距离句柄多近算"靠近"
@@ -447,11 +448,13 @@ export class ScratchpadDrawer {
     }
 
     private confirmDeletePad(pad: Scratchpad): void {
-        const ok = window.confirm(
-            t("scratch confirm delete pad").replace("{name}", pad.name)
+        confirmModal(
+            this.app,
+            t("scratch delete pad"),
+            t("scratch confirm delete pad").replace("{name}", pad.name),
+            () => this.manager.deletePad(pad.id),
+            { confirmLabel: t("scratch delete pad") },
         );
-        if (!ok) return;
-        this.manager.deletePad(pad.id);
     }
 
     private async movePadItem(tempId: string, targetPadId: string): Promise<void> {
@@ -508,7 +511,7 @@ export class ScratchpadDrawer {
         this.isTextComposerOpen = true;
         this.render();
         window.requestAnimationFrame(() => {
-            const textarea = this.bodyEl.querySelector(".zk-scratch-composer-textarea") as HTMLTextAreaElement | null;
+            const textarea = this.bodyEl.querySelector<HTMLTextAreaElement>(".zk-scratch-composer-textarea");
             textarea?.focus();
         });
     }
@@ -523,7 +526,7 @@ export class ScratchpadDrawer {
         this.textComposerSourceTempIds.add(entry.tempId);
         this.render();
         window.requestAnimationFrame(() => {
-            const textarea = this.bodyEl.querySelector(".zk-scratch-composer-textarea") as HTMLTextAreaElement | null;
+            const textarea = this.bodyEl.querySelector<HTMLTextAreaElement>(".zk-scratch-composer-textarea");
             if (!textarea) return;
             textarea.focus();
             textarea.setSelectionRange(0, textarea.value.length);
@@ -574,7 +577,7 @@ export class ScratchpadDrawer {
             this.textComposerValue = "";
             this.render();
             window.requestAnimationFrame(() => {
-                const nextTextarea = this.bodyEl.querySelector(".zk-scratch-composer-textarea") as HTMLTextAreaElement | null;
+                const nextTextarea = this.bodyEl.querySelector<HTMLTextAreaElement>(".zk-scratch-composer-textarea");
                 nextTextarea?.focus();
             });
         };

@@ -81,7 +81,7 @@ export class CrossDomainNodeModal extends FuzzySuggestModal<CrossDomainModalNode
         // 在模态框底部添加设置区域
         const promptContainer = this.modalEl.querySelector('.prompt');
         if (promptContainer) {
-            const settingContainer = activeDocument.createElement('div');
+            const settingContainer = activeWindow.createDiv();
             settingContainer.addClass('cross-domain-setting');
             settingContainer.setCssStyles({
                 padding: '10px 20px',
@@ -89,7 +89,7 @@ export class CrossDomainNodeModal extends FuzzySuggestModal<CrossDomainModalNode
             });
 
             // 添加标题说明
-            const heading = settingContainer.createEl('div');
+            const heading = settingContainer.createDiv();
             heading.textContent = '是否包含子节点';
             heading.setCssStyles({
                 fontWeight: 'bold',

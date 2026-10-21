@@ -98,11 +98,11 @@ function ensureRightDragBlade(renderer: CytoscapeRenderer): SVGSVGElement | null
         return state.bladeSvg;
     }
 
-    const svg = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const svg = activeWindow.createSvg('svg');
     svg.addClass('zk-right-drag-blade');
-    const glowPolygon = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    const glowPolygon = activeWindow.createSvg('polygon');
     glowPolygon.addClass('zk-right-drag-blade-glow');
-    const corePolygon = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    const corePolygon = activeWindow.createSvg('polygon');
     corePolygon.addClass('zk-right-drag-blade-core');
     svg.appendChild(glowPolygon);
     svg.appendChild(corePolygon);
@@ -171,7 +171,7 @@ function showRightDragNodeCut(renderer: CytoscapeRenderer, node: cytoscape.NodeS
     const bb = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
     if (!Number.isFinite(bb.x1) || !Number.isFinite(bb.y1) || !Number.isFinite(bb.w) || !Number.isFinite(bb.h)) return;
 
-    const slash = activeDocument.createElement('div');
+    const slash = activeWindow.createDiv();
     slash.addClass('zk-right-drag-node-cut');
     const width = Math.max(34, Math.min(120, Math.hypot(bb.w, bb.h) * 0.78));
     const x = bb.x1 + bb.w / 2 - width / 2;
@@ -196,7 +196,7 @@ async function writeTextToSystemClipboard(text: string): Promise<boolean> {
         console.warn('[ZK] navigator.clipboard.writeText failed, falling back to execCommand:', error);
     }
 
-    const textarea = activeDocument.createElement('textarea');
+    const textarea = activeWindow.createEl('textarea');
     textarea.value = text;
     textarea.setCssStyles({
         position: 'fixed',
@@ -395,7 +395,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
         this.cy.on('dbltap', 'node', (evt: cytoscape.EventObject) => {
             const node = evt.target as cytoscape.NodeSingular;
             const data = node.data() as CyData;
-            const originalEvent = evt.originalEvent as MouseEvent;
+            const originalEvent = evt.originalEvent;
 
             // 如果是分组节点，不触发
             if (data.isGroup) {
@@ -531,7 +531,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
             }
             const node = evt.target as cytoscape.NodeSingular;
             const data = node.data() as CyData;
-            const originalEvent = evt.originalEvent as MouseEvent;
+            const originalEvent = evt.originalEvent;
 
             // 触发分组右键菜单事件
             this.container?.dispatchEvent(new CustomEvent('group-contextmenu', {
@@ -551,7 +551,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
         this.cy.on('mouseover', 'node', (evt: cytoscape.EventObject) => {
             const node = evt.target as cytoscape.NodeSingular;
             const data = node.data() as CyData;
-            const originalEvent = evt.originalEvent as MouseEvent;
+            const originalEvent = evt.originalEvent;
 
             this.container?.dispatchEvent(new CustomEvent('node-hover', {
                 detail: {
@@ -587,7 +587,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
             }
             const node = evt.target as cytoscape.NodeSingular;
             const data = node.data() as CyData;
-            const originalEvent = evt.originalEvent as MouseEvent;
+            const originalEvent = evt.originalEvent;
             const renderedPosition = node.renderedPosition();
 
             // 跨领域节点：发送专门的跨领域右键菜单事件
@@ -1061,7 +1061,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
 
         const ensureAlignmentOverlay = () => {
             if (alignmentOverlay || !this.container) return;
-            alignmentOverlay = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            alignmentOverlay = activeWindow.createSvg('svg');
             alignmentOverlay.setCssStyles({
                 position: 'absolute',
                 top: '0',
@@ -1072,10 +1072,10 @@ export function bindEvents(this: CytoscapeRenderer): void {
                 zIndex: '3',
             });
 
-            verticalAlignmentLine = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'line');
-            horizontalAlignmentLine = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'line');
-            spacingGuideLineA = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'line');
-            spacingGuideLineB = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'line');
+            verticalAlignmentLine = activeWindow.createSvg('line');
+            horizontalAlignmentLine = activeWindow.createSvg('line');
+            spacingGuideLineA = activeWindow.createSvg('line');
+            spacingGuideLineB = activeWindow.createSvg('line');
 
             [verticalAlignmentLine, horizontalAlignmentLine].forEach((line) => {
                 if (!line) return;
@@ -1110,7 +1110,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
 
         const ensureSeparationOverlay = () => {
             if (separationCircle || !this.container) return;
-            separationOverlay = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            separationOverlay = activeWindow.createSvg('svg');
             separationOverlay.setCssStyles({
                 position: 'absolute',
                 top: '0',
@@ -1120,7 +1120,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
                 pointerEvents: 'none',
                 zIndex: '3',
             });
-            separationCircle = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            separationCircle = activeWindow.createSvg('circle');
             separationCircle.setAttribute('fill', 'none');
             separationCircle.setAttribute('stroke', SEPARATION_STROKE);
             separationCircle.setAttribute('stroke-width', '1.5');
@@ -1147,7 +1147,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
             const parentEdges = grabbedNode.connectedEdges().filter((e: cytoscape.EdgeSingular) =>
                 e.data('type') === 'parent' && e.target().id() === grabbedNode.id());
             if (parentEdges.length === 0) return null;
-            const parentNode = (parentEdges.last() as cytoscape.EdgeSingular).source() as cytoscape.NodeSingular;
+            const parentNode = (parentEdges.last() as cytoscape.EdgeSingular).source();
             if (parentNode.length === 0) return null;
             const parentBizId = bizIdOf(parentNode);
             const parentData = parentNode.data() as CyData;
@@ -1578,7 +1578,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
 
         const ensureConnectionOverlay = (): void => {
             if (svgOverlay || !this.container) return;
-            svgOverlay = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svgOverlay = activeWindow.createSvg('svg');
             svgOverlay.setCssStyles({
                 position: 'absolute',
                 top: '0',
@@ -1597,7 +1597,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
             if (tempConnectionLine && tempConnectionLine.parentNode === svgOverlay) {
                 return tempConnectionLine;
             }
-            const line = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'line');
+            const line = activeWindow.createSvg('line');
             line.setAttribute('stroke', '#10b981');
             line.setAttribute('stroke-width', '2');
             line.setAttribute('stroke-dasharray', '5,5');
@@ -1808,7 +1808,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
                         const bb = groupNode.boundingBox({ includeLabels: false, includeOverlays: false });
                         draggedNodeOriginalGroup = groupNode;
                         draggedNodeOriginalGroupModelBounds = { x1: bb.x1, y1: bb.y1, x2: bb.x2, y2: bb.y2 };
-                        try { node.move({ parent: null }); } catch {}
+                        try { node.move({ parent: null }); } catch { /* ignore */ }
                     }
                 }
             }
@@ -2076,7 +2076,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
                     // 记录脱组信息，合并到 node-position-changed 里原子保存，避免并发写竞态
                     pendingGroupLeave = { nodeId, groupId: sourceGroupId };
                 } else {
-                    try { node.move({ parent: draggedNodeOriginalGroup.id() }); } catch {}
+                    try { node.move({ parent: draggedNodeOriginalGroup.id() }); } catch { /* ignore */ }
                 }
 
                 draggedNodeOriginalGroup = null;
@@ -2183,7 +2183,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
                         if (!currentIds.includes(nodeId)) {
                             targetGroup.data('nodeIds', [...currentIds, nodeId]);
                         }
-                        try { node.move({ parent: targetGroupId }); } catch {}
+                        try { node.move({ parent: targetGroupId }); } catch { /* ignore */ }
                         pendingGroupJoin = { nodeId, groupId: targetGroupId };
                     }
                 }
@@ -2223,7 +2223,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
             // 纯点击（未发生移动）时，dragfree 不触发，在此恢复分组关系
             // 若实际发生了拖动，由 dragfree 负责处理，free 不干预
             if (draggedNodeOriginalGroup && !groupDragNodeActuallyMoved) {
-                try { node.move({ parent: draggedNodeOriginalGroup.id() }); } catch {}
+                try { node.move({ parent: draggedNodeOriginalGroup.id() }); } catch { /* ignore */ }
                 draggedNodeOriginalGroup.removeClass('group-exit-warning');
                 setGroupJoinPreview(null);
                 draggedNodeOriginalGroup = null;
@@ -2256,7 +2256,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
         this.cy.on('tap', 'edge', (evt: cytoscape.EventObject) => {
             const edge = evt.target as cytoscape.EdgeSingular;
             const data = edge.data() as CyData;
-            const originalEvent = evt.originalEvent as MouseEvent;
+            const originalEvent = evt.originalEvent;
 
             // 触发边点击事件
             this.container?.dispatchEvent(new CustomEvent('edge-click', {
@@ -2293,7 +2293,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
             }
             const edge = evt.target as cytoscape.EdgeSingular;
             const data = edge.data() as CyData;
-            const originalEvent = evt.originalEvent as MouseEvent;
+            const originalEvent = evt.originalEvent;
 
             // 草稿边(#20):不弹删除菜单(改父用连线手柄重连,丢弃用批次操作条)
             if (data.isDraftEdge) return;
@@ -2724,7 +2724,7 @@ export function addGroupResizeHandles(this: CytoscapeRenderer): void {
         }
 
         // 创建手柄容器
-        const handleContainer = activeDocument.createElement('div');
+        const handleContainer = activeWindow.createDiv();
         handleContainer.className = 'zk-group-resize-handles';
         handleContainer.setCssStyles({
             position: 'absolute',
@@ -2765,7 +2765,7 @@ export function addGroupResizeHandles(this: CytoscapeRenderer): void {
             ];
 
             positions.forEach(pos => {
-                const handle = activeDocument.createElement('div');
+                const handle = activeWindow.createDiv();
                 handle.className = `zk-group-resize-handle zk-group-resize-${pos.name}`;
                 handle.setCssStyles({
                     position: 'absolute',
@@ -2854,7 +2854,7 @@ export function bindResizeHandleDrag(this: CytoscapeRenderer, handle: HTMLElemen
 
 
             // 创建预览框
-            resizePreview = activeDocument.createElement('div');
+            resizePreview = activeWindow.createDiv();
             resizePreview.className = 'zk-group-resize-preview';
             resizePreview.setCssStyles({
                 position: 'absolute',
@@ -2916,7 +2916,7 @@ export function bindResizeHandleDrag(this: CytoscapeRenderer, handle: HTMLElemen
                     if (x2 - x1 < minSize || y2 - y1 < minSize) return;
 
                     const nodesInBounds: cytoscape.NodeSingular[] = [];
-                    this.cy!.nodes('[!isGroup]').forEach((node: cytoscape.NodeSingular) => {
+                    this.cy.nodes('[!isGroup]').forEach((node: cytoscape.NodeSingular) => {
                         const nodeBB = node.renderedBoundingBox();
                         const nodeCenterX = (nodeBB.x1 + nodeBB.x2) / 2;
                         const nodeCenterY = (nodeBB.y1 + nodeBB.y2) / 2;
@@ -2938,7 +2938,7 @@ export function bindResizeHandleDrag(this: CytoscapeRenderer, handle: HTMLElemen
                         }
                     });
 
-                    this.cy!.nodes(`[parent="${groupNode.id()}"]`).forEach((node: cytoscape.NodeSingular) => {
+                    this.cy.nodes(`[parent="${groupNode.id()}"]`).forEach((node: cytoscape.NodeSingular) => {
                         if (!node.data('isPlaceholder') && node.data('originalNode')) {
                             const nodeId = (node.data() as CyData).originalNode?.ID ?? '';
                             if (!newNodeIds.includes(nodeId)) {
@@ -3112,7 +3112,7 @@ export function initBoxSelection(this: CytoscapeRenderer): void {
         this.boxSelectionElement?.remove();
 
         // 创建选择框元素
-        const selectionBox = activeDocument.createElement('div');
+        const selectionBox = activeWindow.createDiv();
         selectionBox.className = 'zk-selection-box';
         selectionBox.setCssStyles({
             position: 'absolute',
@@ -3282,7 +3282,7 @@ export function showBatchToolbar(this: CytoscapeRenderer): void {
         });
 
         // 如果正在退出动画中，先移除
-        let toolbar = this.container.querySelector('.zk-batch-toolbar') as HTMLElement | null;
+        let toolbar = this.container.querySelector('.zk-batch-toolbar');
         if (toolbar && toolbar.classList.contains('zk-batch-toolbar-exiting')) {
             toolbar.remove();
             toolbar = null;
@@ -3321,51 +3321,51 @@ export function showSearchBar(this: CytoscapeRenderer): void {
         let currentIndex = -1;
         let activeSuggestionIndex = -1;
 
-        const bar = activeDocument.createElement('div');
+        const bar = activeWindow.createDiv();
         bar.className = 'zk-search-bar';
 
         // 阻止事件穿透到画布
         bar.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
         bar.addEventListener('mousedown', (e) => { e.stopPropagation(); });
 
-        const inputWrap = activeDocument.createElement('div');
+        const inputWrap = activeWindow.createDiv();
         inputWrap.className = 'zk-search-bar-input-wrap';
         bar.appendChild(inputWrap);
 
         // 搜索输入框
-        const input = activeDocument.createElement('input');
+        const input = activeWindow.createEl('input');
         input.type = 'text';
         input.className = 'zk-search-bar-input';
         input.placeholder = t('search placeholder');
         inputWrap.appendChild(input);
 
         // 候选框
-        const suggestionBox = activeDocument.createElement('div');
+        const suggestionBox = activeWindow.createDiv();
         suggestionBox.className = 'zk-search-suggestions zk-hidden';
         inputWrap.appendChild(suggestionBox);
 
         // 计数
-        const countLabel = activeDocument.createElement('span');
+        const countLabel = activeWindow.createSpan();
         countLabel.className = 'zk-search-bar-count';
         countLabel.textContent = '';
         bar.appendChild(countLabel);
 
         // 上一个
-        const prevBtn = activeDocument.createElement('button');
+        const prevBtn = activeWindow.createEl('button');
         prevBtn.className = 'zk-search-bar-btn';
         setIcon(prevBtn, 'chevron-up');
         prevBtn.title = 'Previous';
         bar.appendChild(prevBtn);
 
         // 下一个
-        const nextBtn = activeDocument.createElement('button');
+        const nextBtn = activeWindow.createEl('button');
         nextBtn.className = 'zk-search-bar-btn';
         setIcon(nextBtn, 'chevron-down');
         nextBtn.title = 'Next';
         bar.appendChild(nextBtn);
 
         // 关闭
-        const closeBtn = activeDocument.createElement('button');
+        const closeBtn = activeWindow.createEl('button');
         closeBtn.className = 'zk-search-bar-btn';
         setIcon(closeBtn, 'x');
         bar.appendChild(closeBtn);
@@ -3432,7 +3432,7 @@ export function showSearchBar(this: CytoscapeRenderer): void {
             const visibleCount = Math.min(filteredNodes.length, 12);
             for (let i = 0; i < visibleCount; i++) {
                 const node = filteredNodes[i];
-                const item = activeDocument.createElement('button');
+                const item = activeWindow.createEl('button');
                 item.type = 'button';
                 item.className = 'zk-search-suggestion-item';
                 if (i === activeSuggestionIndex) {
@@ -3613,7 +3613,7 @@ export function hideBatchToolbar(this: CytoscapeRenderer): void {
      * 创建批量操作工具栏
      */
 export function createBatchToolbar(this: CytoscapeRenderer): HTMLElement {
-        const toolbar = activeDocument.createElement('div');
+        const toolbar = activeWindow.createDiv();
         toolbar.className = 'zk-batch-toolbar';
 
         // 防止事件穿透到画布
@@ -3625,13 +3625,13 @@ export function createBatchToolbar(this: CytoscapeRenderer): HTMLElement {
         toolbar.addEventListener('mousedown', stopPropagation);
 
         // 计数徽章
-        const countBadge = activeDocument.createElement('span');
+        const countBadge = activeWindow.createSpan();
         countBadge.className = 'zk-batch-toolbar-count';
         countBadge.textContent = t('batch selected count').replace('{count}', '0');
         toolbar.appendChild(countBadge);
 
         // 分隔线
-        const divider1 = activeDocument.createElement('div');
+        const divider1 = activeWindow.createDiv();
         divider1.className = 'zk-batch-toolbar-divider';
         toolbar.appendChild(divider1);
 
@@ -3642,7 +3642,7 @@ export function createBatchToolbar(this: CytoscapeRenderer): HTMLElement {
         toolbar.appendChild(this.createToolbarButton('trash-2', t('batch delete'), 'zk-batch-btn-delete', () => { this.batchDeleteNodes(); }));
 
         // 分隔线
-        const divider2 = activeDocument.createElement('div');
+        const divider2 = activeWindow.createDiv();
         divider2.className = 'zk-batch-toolbar-divider';
         toolbar.appendChild(divider2);
 
@@ -3661,17 +3661,17 @@ export function createBatchToolbar(this: CytoscapeRenderer): HTMLElement {
      * 创建工具栏按钮（带 Lucide 图标）
      */
 export function createToolbarButton(this: CytoscapeRenderer, iconName: string, label: string, extraClass: string, onClick: () => void): HTMLElement {
-        const btn = activeDocument.createElement('button');
+        const btn = activeWindow.createEl('button');
         btn.className = `zk-batch-toolbar-btn ${extraClass}`.trim();
 
         // 图标
-        const iconEl = activeDocument.createElement('span');
+        const iconEl = activeWindow.createSpan();
         iconEl.className = 'zk-batch-toolbar-icon';
         setIcon(iconEl, iconName);
         btn.appendChild(iconEl);
 
         // 文字
-        const labelEl = activeDocument.createElement('span');
+        const labelEl = activeWindow.createSpan();
         labelEl.textContent = label;
         btn.appendChild(labelEl);
 
@@ -3816,7 +3816,7 @@ export function getAutoChildShortcutPosition(this: CytoscapeRenderer, activeNode
     }
 
 export function handleCreateChildNode(this: CytoscapeRenderer, node?: cytoscape.NodeSingular): void {
-		const activeNode = node || this.getActiveNode() as cytoscape.NodeSingular | null;
+		const activeNode = node || this.getActiveNode();
         if (!activeNode) return;
 
         const nodeData = activeNode.data() as CyData;
@@ -3846,7 +3846,7 @@ export function getAutoSiblingShortcutPosition(this: CytoscapeRenderer, activeNo
     }
 
 export function handleCreateSiblingNode(this: CytoscapeRenderer): void {
-        const activeNode = this.getActiveNode() as cytoscape.NodeSingular | null;
+        const activeNode = this.getActiveNode();
         if (!activeNode) return;
 
         const nodeData = activeNode.data() as CyData;
@@ -3880,7 +3880,7 @@ export function getAutoParentShortcutPosition(this: CytoscapeRenderer, activeNod
     }
 
 export function handleCreateParentNode(this: CytoscapeRenderer): void {
-        const activeNode = this.getActiveNode() as cytoscape.NodeSingular | null;
+        const activeNode = this.getActiveNode();
         if (!activeNode) return;
 
         const nodeData = activeNode.data() as CyData;
@@ -3930,7 +3930,7 @@ export function createPlaceholderConnectionLine(this: CytoscapeRenderer, placeho
         // 创建 SVG 叠加层（如果不存在）
         let svgOverlay = this.container.querySelector('.placeholder-connections-svg') as SVGSVGElement;
         if (!svgOverlay) {
-            svgOverlay = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svgOverlay = activeWindow.createSvg('svg');
             svgOverlay.classList.add('placeholder-connections-svg');
             svgOverlay.setCssStyles({
                 position: 'absolute',
@@ -3945,7 +3945,7 @@ export function createPlaceholderConnectionLine(this: CytoscapeRenderer, placeho
         }
 
         // 创建连接线 - 使用绿色虚线（与智能连线一致）
-        const connectionLine = activeDocument.createElementNS('http://www.w3.org/2000/svg', 'line');
+        const connectionLine = activeWindow.createSvg('line');
         connectionLine.setAttribute('stroke', '#10b981');  // 淡绿色
         connectionLine.setAttribute('stroke-width', '2');
         connectionLine.setAttribute('stroke-dasharray', '5,5');  // 虚线
@@ -4001,7 +4001,7 @@ export function createPlaceholderConnectionLine(this: CytoscapeRenderer, placeho
 export function handleArrowKeyNavigation(this: CytoscapeRenderer, key: string): void {
         if (!this.cy) return;
 
-        const activeNode = this.getActiveNode() as cytoscape.NodeSingular | null;
+        const activeNode = this.getActiveNode();
         if (!activeNode) return;
 
         const nodePosition = activeNode.position();

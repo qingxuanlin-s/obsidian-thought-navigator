@@ -32,7 +32,7 @@ export class CytoscapeExpandModal extends Modal {
                 justifyContent: 'space-between',
                 padding: '10px 12px 8px',
             });
-            header.createEl("div", { text: this.titleText });
+            header.createDiv({ text: this.titleText });
 
             this.graphContainer = contentEl.createDiv({ cls: "zk-graph-cytoscape" });
             this.graphContainer.setCssStyles({
@@ -45,8 +45,8 @@ export class CytoscapeExpandModal extends Modal {
             await this.renderer.render(this.graphContainer, this.graphData, this.renderOptions);
 
             // 复用局部图常用交互：点击打开文件、悬浮预览
-            this.graphContainer.addEventListener('node-click', this.handleNodeClick as EventListener);
-            this.graphContainer.addEventListener('node-hover', this.handleNodeHover as EventListener);
+            this.graphContainer.addEventListener('node-click', this.handleNodeClick);
+            this.graphContainer.addEventListener('node-hover', this.handleNodeHover);
         } catch (error) {
             console.error('[CytoscapeExpandModal] failed to open', error);
             new Notice('放大视图打开失败，请查看控制台日志');
@@ -55,8 +55,8 @@ export class CytoscapeExpandModal extends Modal {
 
     onClose(): void {
         if (this.graphContainer) {
-            this.graphContainer.removeEventListener('node-click', this.handleNodeClick as EventListener);
-            this.graphContainer.removeEventListener('node-hover', this.handleNodeHover as EventListener);
+            this.graphContainer.removeEventListener('node-click', this.handleNodeClick);
+            this.graphContainer.removeEventListener('node-hover', this.handleNodeHover);
         }
         if (this.renderer) {
             this.renderer.destroy();

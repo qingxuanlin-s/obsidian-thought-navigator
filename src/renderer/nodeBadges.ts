@@ -64,7 +64,7 @@ function middleEllipsizeToWidth(text: string, maxWidth: number, ctx: CanvasRende
 
 function parseRenderedNumber(value: unknown, fallback = 0): number {
 	if (typeof value === 'number' && Number.isFinite(value)) return value;
-	const parsed = parseFloat(String(value ?? ''));
+	const parsed = typeof value === 'string' ? parseFloat(value) : NaN;
 	return Number.isFinite(parsed) ? parsed : fallback;
 }
 
@@ -133,8 +133,8 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
 
         const isLightTheme = this.currentOptions?.themeMode === 'light' || activeDocument.body.classList.contains('theme-light');
 
-        const existingBadgeContainer = this.container.querySelector('.zk-node-badges') as HTMLElement | null;
-        const existingGlassLayer = this.container.querySelector('.zk-group-glass-layer') as HTMLElement | null;
+        const existingBadgeContainer = this.container.querySelector<HTMLElement>('.zk-node-badges');
+        const existingGlassLayer = this.container.querySelector<HTMLElement>('.zk-group-glass-layer');
         // 缺少可复用容器(理论上增量前必有一次全量渲染)→ 降级为全量,避免空指针
         if (incIds && (!existingBadgeContainer || !existingGlassLayer)) {
             incIds = null;
@@ -183,7 +183,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
             if (existingGlassLayer) existingGlassLayer.remove();
 
             // 创建分组 glass 层（插到最前，位于 canvas 下方）
-            glassLayer = activeDocument.createElement('div');
+            glassLayer = activeWindow.createDiv();
             glassLayer.className = 'zk-group-glass-layer';
             glassLayer.setCssStyles({
                 position: 'absolute',
@@ -198,7 +198,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
             this.container.insertBefore(glassLayer, this.container.firstChild);
 
             // 创建徽章容器
-            badgeContainer = activeDocument.createElement('div');
+            badgeContainer = activeWindow.createDiv();
             badgeContainer.className = 'zk-node-badges';
             badgeContainer.setCssStyles({
                 position: 'absolute',
@@ -215,9 +215,9 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
         // 存储所有徽章的更新函数
         const badgeUpdaters: BadgeUpdater[] = [];
         const readOnly = this.isReadOnlyMode();
-        const underlineMeasure = activeDocument.createElement('canvas');
+        const underlineMeasure = activeWindow.createEl('canvas');
         const underlineMeasureCtx = underlineMeasure.getContext('2d');
-        const badgeMeasure = activeDocument.createElement('canvas');
+        const badgeMeasure = activeWindow.createEl('canvas');
         const badgeMeasureCtx = badgeMeasure.getContext('2d');
 
         // 分组 glass overlay
@@ -225,7 +225,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
             // 增量模式跳过分组 glass:组 bbox 由 Cytoscape 复合节点维护,旧 glass updater 仍在
             // scheduler 中,pan/zoom 时会自动把新子节点纳入。
             if (incIds) return;
-            const glassEl = activeDocument.createElement('div');
+            const glassEl = activeWindow.createDiv();
             glassEl.className = 'zk-group-glass';
             glassEl.setCssStyles({
                 position: 'absolute',
@@ -245,7 +245,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
             glassLayer.appendChild(glassEl);
 
             // 标签下方的遮罩层：用于“切断”被标签覆盖区域的上边框，降低视觉噪声
-            const labelMaskEl = activeDocument.createElement('div');
+            const labelMaskEl = activeWindow.createDiv();
             labelMaskEl.className = 'zk-group-glass-label-mask';
             labelMaskEl.setCssStyles({
                 position: 'absolute',
@@ -260,7 +260,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
             labelMaskEl.setCssStyles({ background: containerBg || (isLightTheme ? '#f5f5f5' : '#2a2a2a') });
             glassEl.appendChild(labelMaskEl);
 
-            const labelEl = activeDocument.createElement('div');
+            const labelEl = activeWindow.createDiv();
             labelEl.className = 'zk-group-glass-label';
             labelEl.textContent = dataStr(groupNode, 'label');
             labelEl.setCssStyles({
@@ -364,7 +364,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
             if (incIds && !incIds.has(node.id())) return;
             // 跳过所有 embed 节点（由预览卡片渲染标题和内容）
             if (node.data('isEmbed')) return;
-			const underlineGroupEl = activeDocument.createElement('div');
+			const underlineGroupEl = activeWindow.createDiv();
 			underlineGroupEl.className = 'zk-node-file-underline-group';
 			underlineGroupEl.dataset.nodeId = node.id();
 			underlineGroupEl.setCssStyles({
@@ -423,9 +423,9 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                     // 下划线用 visible width,避免线头伸到首字之前。
                     cachedModelLineWidths = cachedWrappedLines.map(line =>
                         measureVisibleTextWidth(
-                            underlineMeasureCtx!,
+                            underlineMeasureCtx,
                             line || ' ',
-                            underlineMeasureCtx!.measureText(line || ' ').width
+                            underlineMeasureCtx.measureText(line || ' ').width
                         )
                     );
                 } else {
@@ -469,7 +469,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                     return null;
                 }
 
-                const lines = rawLines.map((line: unknown) => String(line || ' '));
+                const lines = rawLines.map((line: unknown) => (typeof line === 'string' || typeof line === 'number') && line ? String(line) : ' ');
                 const zoom = this.cy.zoom();
                 const pan = this.cy.pan();
                 const marginXModel = parseRenderedNumber(node.style('text-margin-x'), 0);
@@ -547,7 +547,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                 }
                 // 补充不足的元素
                 while (lineElements.length < count) {
-                    const hitEl = activeDocument.createElement('div');
+                    const hitEl = activeWindow.createDiv();
                     hitEl.className = 'zk-node-file-link-hit';
                     hitEl.setCssStyles({
                         position: 'absolute',
@@ -591,7 +591,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                         }));
                     }, { passive: false });
 
-                    const underlineEl = activeDocument.createElement('div');
+                    const underlineEl = activeWindow.createDiv();
                     underlineEl.className = 'zk-node-file-underline';
                     underlineEl.setCssStyles({
                         position: 'absolute',
@@ -714,7 +714,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                 return;
             }
 
-			const remarkEl = activeDocument.createElement('div');
+			const remarkEl = activeWindow.createDiv();
 			remarkEl.className = 'zk-node-remark-badge';
 			remarkEl.dataset.nodeId = node.id();
 			setIcon(remarkEl, 'sticky-note');
@@ -753,7 +753,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
             applyRemarkBadgeStyle();
             badgeContainer.appendChild(remarkEl);
 
-			const tooltipEl = activeDocument.createElement('div');
+			const tooltipEl = activeWindow.createDiv();
 			tooltipEl.className = 'zk-node-remark-tooltip markdown-rendered';
 			tooltipEl.dataset.nodeId = node.id();
 			tooltipEl.setCssStyles({
@@ -933,7 +933,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
             if (incIds && !incIds.has(node.id())) return;
             if (node.data('isGroup') || node.data('isPlaceholder')) return;
 
-			const starEl = activeDocument.createElement('div');
+			const starEl = activeWindow.createDiv();
 			starEl.className = 'zk-node-anchor-badge';
 			starEl.dataset.nodeId = node.id();
 			starEl.textContent = '✦';
@@ -1009,7 +1009,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
             const badgeText = origin === 'ai' ? 'AI' : '草';
             const badgeColor = origin === 'ai' ? '#a855f7' : '#64748b';
 
-            const draftEl = activeDocument.createElement('div');
+            const draftEl = activeWindow.createDiv();
             draftEl.className = 'zk-node-draft-badge';
             draftEl.dataset.nodeId = node.id();
             draftEl.textContent = badgeText;
@@ -1082,7 +1082,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
             if (!links.length) return;
             const sourceNodeId = String(node.data('originalNodeId') || node.id());
 
-            const cdEl = activeDocument.createElement('div');
+            const cdEl = activeWindow.createDiv();
             cdEl.className = 'zk-node-cross-domain-badge';
             cdEl.dataset.nodeId = node.id();
             cdEl.textContent = links.length > 1 ? `↗ ${links.length}` : '↗';
@@ -1111,7 +1111,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
             badgeContainer.appendChild(cdEl);
 
             // hover 展开卡片:列出每条链接(关系标签 / 目标笔记 / 来源 MOC / 删除)
-            const cdPanel = activeDocument.createElement('div');
+            const cdPanel = activeWindow.createDiv();
             cdPanel.className = 'zk-node-cross-domain-panel';
             cdPanel.dataset.nodeId = node.id();
             cdPanel.setCssStyles({
@@ -1137,7 +1137,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
             badgeContainer.appendChild(cdPanel);
 
             links.forEach((link) => {
-                const row = activeDocument.createElement('div');
+                const row = activeWindow.createDiv();
                 row.className = 'zk-cd-panel-row';
                 row.setCssStyles({
                     display: 'flex',
@@ -1154,7 +1154,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                 row.addEventListener('mouseleave', () => { row.setCssStyles({ background: 'transparent' }); });
 
                 const relText = (link?.relationLabel && String(link.relationLabel).trim()) || '跨领域';
-                const chip = activeDocument.createElement('span');
+                const chip = activeWindow.createSpan();
                 chip.textContent = relText;
                 chip.setCssStyles({
                     flex: '0 0 auto',
@@ -1167,7 +1167,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                     border: `1px solid ${isLightTheme ? 'rgba(115,87,198,0.3)' : 'rgba(160,139,232,0.35)'}`,
                 });
 
-                const textWrap = activeDocument.createElement('div');
+                const textWrap = activeWindow.createDiv();
                 textWrap.setCssStyles({
                     flex: '1 1 auto',
                     minWidth: '0',
@@ -1175,7 +1175,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                     flexDirection: 'column',
                     gap: '1px',
                 });
-                const nameEl = activeDocument.createElement('div');
+                const nameEl = activeWindow.createDiv();
                 nameEl.textContent = cdLinkTargetText(link);
                 nameEl.setCssStyles({
                     fontSize: '13px',
@@ -1184,7 +1184,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
                 });
-                const mocEl = activeDocument.createElement('div');
+                const mocEl = activeWindow.createDiv();
                 const mocName = cdMocBasename(link?.mocPath);
                 mocEl.textContent = mocName ? `来自《${mocName}》` : '来自其它 MOC';
                 mocEl.setCssStyles({
@@ -1210,7 +1210,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
 
                 // 删除 ×(只读态隐藏)
                 if (!readOnly) {
-                    const delEl = activeDocument.createElement('span');
+                    const delEl = activeWindow.createSpan();
                     delEl.textContent = '×';
                     delEl.title = '删除此跨领域链接';
                     delEl.setCssStyles({
@@ -1332,7 +1332,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
             const color = normalizeHexColor(rawColor);
             if (!color) return;
 
-			const dotEl = activeDocument.createElement('div');
+			const dotEl = activeWindow.createDiv();
 			dotEl.className = 'zk-node-color-dot';
 			dotEl.dataset.nodeId = node.id();
 			dotEl.setCssStyles({
@@ -1419,7 +1419,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                 ? hexToRgba(darkenColor(modernBase, 0.42), 0.38)
                 : 'transparent';
 
-			const badgeEl = activeDocument.createElement('div');
+			const badgeEl = activeWindow.createDiv();
 			badgeEl.className = 'zk-node-badge';
 			badgeEl.dataset.nodeId = node.id();
 			badgeEl.textContent = badge;
@@ -1499,7 +1499,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                 if (incIds && !incIds.has(node.id())) return;
                 if (node.data('isGroup') || node.data('isPlaceholder') || node.data('isEmbed')) return;
 
-                const resizeEl = activeDocument.createElement('div');
+                const resizeEl = activeWindow.createDiv();
                 resizeEl.className = 'zk-text-node-resize-handle';
                 resizeEl.dataset.nodeId = node.id();
                 resizeEl.setCssStyles({
@@ -1639,7 +1639,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
                 if (node.data('isCrossDomain')) return;
                 const isEmbed = !!node.data('isEmbed');
                 if (isEmbed) return;
-                const toggleEl = activeDocument.createElement('div');
+                const toggleEl = activeWindow.createDiv();
                 toggleEl.className = 'zk-embed-toggle';
                 const toggleLabel = isEmbed ? '切换为文件节点' : '切换为 Embed 节点';
                 toggleEl.setAttribute('aria-label', toggleLabel);
@@ -1877,7 +1877,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
         }
         if (__zkPerf) {
             const total = Object.values(__bMark).reduce((a, b) => a + b, 0);
-            console.log(
+            console.debug(
                 `[zkPerf:badges] total=${total.toFixed(1)}ms`,
                 Object.fromEntries(Object.entries(__bMark).map(([k, v]) => [k, +v.toFixed(1)]))
             );
@@ -2146,7 +2146,7 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                 measureAndSizePending.push({ node, entry });
             } else {
                 // 缓存未命中：创建新 overlay
-                const overlayEl = activeDocument.createElement('div');
+                const overlayEl = activeWindow.createDiv();
                 overlayEl.className = 'zk-text-md-overlay markdown-rendered';
                 applyTextOverlayBaseStyle(overlayEl);
                 // 初始隐藏:base 样式把 overlay 钉在容器原点(left/top:0)且 display:block。
@@ -2193,7 +2193,7 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                 const applyRoughInlineMarkdown = (container: HTMLElement, input: string): void => {
                     const toOverlayEm = (px: number): string => `${Number((px / overlayFontSize).toFixed(4))}em`;
                     const createExternalLink = (rawUrl: string, text?: string): HTMLAnchorElement => {
-                        const a = activeDocument.createElement('a');
+                        const a = activeWindow.createEl('a');
                         const href = rawUrl.startsWith('www.') ? `https://${rawUrl}` : rawUrl;
                         a.href = href;
                         a.textContent = text || rawUrl;
@@ -2209,7 +2209,7 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                         const [targetPart, aliasPart] = rawTarget.split('|');
                         const linkText = (targetPart || '').trim();
                         const displayText = (aliasPart || linkText).trim();
-                        const a = activeDocument.createElement('a');
+                        const a = activeWindow.createEl('a');
                         a.className = 'internal-link';
                         a.href = linkText;
                         a.dataset.href = linkText;
@@ -2255,7 +2255,7 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                         if (!(file instanceof TFile)) return createInternalLink(rawTarget);
 
                         if (isExcalidraw) {
-                            const preview = activeDocument.createElement('div');
+                            const preview = activeWindow.createDiv();
                             preview.className = 'zk-text-md-excalidraw-embed';
                             preview.textContent = file.basename || linkText;
                             preview.title = `${file.basename || linkText}\n按住 Cmd/Ctrl 点击打开`;
@@ -2276,7 +2276,7 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                         }
 
                         if (isAudio) {
-                            const audio = activeDocument.createElement('audio');
+                            const audio = activeWindow.createEl('audio');
                             audio.className = 'zk-text-md-embed-audio';
                             audio.src = app.vault.getResourcePath(file);
                             audio.controls = true;
@@ -2301,7 +2301,7 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                             return audio;
                         }
 
-                        const img = activeDocument.createElement('img');
+                        const img = activeWindow.createEl('img');
                         img.className = 'zk-text-md-embed-image';
                         img.src = app.vault.getResourcePath(file);
                         img.alt = linkText;
@@ -2349,7 +2349,7 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                     // 按内联标记拆分并逐段追加 DOM 节点
                     const renderMathInline = (expr: string, display: boolean): HTMLElement => {
                         mathRendered = true;
-                        const wrap = activeDocument.createElement('span');
+                        const wrap = activeWindow.createSpan();
                         wrap.className = 'zk-text-md-math';
                         try {
                             wrap.appendChild(renderMath(expr, display));
@@ -2375,7 +2375,7 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                     for (const line of lines) {
                         const trimmed = line.trim();
                         if (!trimmed) {
-                            const empty = activeDocument.createElement('div');
+                            const empty = activeWindow.createDiv();
                             empty.className = 'zk-rough-empty-line';
                             parent.appendChild(empty);
                             continue;
@@ -2383,7 +2383,7 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                         const headingMatch = line.match(/^\s*(#{1,6})\s+(.+)$/);
                         if (headingMatch) {
                             const level = Math.min(headingMatch[1].length, 6);
-                            const div = activeDocument.createElement('div');
+                            const div = activeWindow.createDiv();
                             div.className = `zk-rough-heading-line zk-rough-h${level}-line`;
                             applyRoughInlineMarkdown(div, headingMatch[2]);
                             parent.appendChild(div);
@@ -2397,23 +2397,23 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                             const indentWs = (bulletMatch ? bulletMatch[1] : orderedMatch![1]) || '';
                             const indentLevel = computeListIndentLevel(indentWs);
                             const content = bulletMatch ? bulletMatch[3] : orderedMatch![4];
-                            const div = activeDocument.createElement('div');
+                            const div = activeWindow.createDiv();
                             div.className = `zk-rough-list-line ${bulletMatch ? 'zk-rough-list-bullet' : 'zk-rough-list-ordered'}`;
                             if (indentLevel > 0) {
                                 div.setCssStyles({ marginLeft: `${indentLevel * 1.2}em` });
                             }
-                            const marker = activeDocument.createElement('span');
+                            const marker = activeWindow.createSpan();
                             marker.className = 'zk-rough-list-marker';
                             marker.textContent = bulletMatch ? '•' : `${orderedMatch![2]}${orderedMatch![3]}`;
                             div.appendChild(marker);
-                            const body = activeDocument.createElement('span');
+                            const body = activeWindow.createSpan();
                             body.className = 'zk-rough-list-content';
                             applyRoughInlineMarkdown(body, content);
                             div.appendChild(body);
                             parent.appendChild(div);
                             continue;
                         }
-                        const div = activeDocument.createElement('div');
+                        const div = activeWindow.createDiv();
                         div.className = 'zk-rough-text-line';
                         applyRoughInlineMarkdown(div, line);
                         parent.appendChild(div);
@@ -2421,7 +2421,7 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                 };
                 overlayEl.empty?.();
                 if (isRootTextNode) {
-                    const inner = activeDocument.createElement('div');
+                    const inner = activeWindow.createDiv();
                     inner.className = 'zk-root-text-md-inner';
                     buildRoughLines(inner);
                     overlayEl.appendChild(inner);
@@ -2588,7 +2588,7 @@ function addCollapseToggleHandle(this: CytoscapeRenderer): void {
             this.collapseHandleCleanup = null;
         }
 
-        const handleContainer = activeDocument.createElement('div');
+        const handleContainer = activeWindow.createDiv();
         handleContainer.className = 'zk-collapse-toggle-handle';
         handleContainer.setCssStyles({
             position: 'absolute',
@@ -2626,7 +2626,7 @@ function addCollapseToggleHandle(this: CytoscapeRenderer): void {
             if (!originalId || data?.isGroup || data?.isPlaceholder) return;
             if (!hasChildren(originalId)) return;
 
-            const handle = activeDocument.createElement('div');
+            const handle = activeWindow.createDiv();
             handle.setCssStyles({
                 position: 'absolute',
                 width: '24px',

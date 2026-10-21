@@ -223,7 +223,7 @@ export class ScratchpadManager {
             this.store.scratchpads.push({
                 id: `pad-legacy-${Date.now().toString(36)}`,
                 name: localizedDefaultName,
-                items: legacyItems as ScratchpadEntry[],
+                items: legacyItems,
                 createdAt: Date.now(),
             });
         }

@@ -39,7 +39,7 @@ export class TaskModal extends Modal {
         const init = this.opts.initial ?? {};
 
         const field = (label: string) => {
-            contentEl.createEl('div', { text: label }).setCssStyles({ fontSize: '12px', color: 'var(--text-muted)', margin: '10px 0 4px' });
+            contentEl.createDiv({ text: label }).setCssStyles({ fontSize: '12px', color: 'var(--text-muted)', margin: '10px 0 4px' });
         };
         const fullWidth = { width: '100%' } as const;
 
@@ -61,7 +61,7 @@ export class TaskModal extends Modal {
         const mkDate = (label: string, val?: string) => {
             const col = dateRow.createDiv();
             col.setCssStyles({ flex: '1' });
-            col.createEl('div', { text: label }).setCssStyles({ fontSize: '12px', color: 'var(--text-muted)', margin: '6px 0 4px' });
+            col.createDiv({ text: label }).setCssStyles({ fontSize: '12px', color: 'var(--text-muted)', margin: '6px 0 4px' });
             const inp = col.createEl('input', { type: 'datetime-local' });
             inp.step = '1'; // 精确到秒
             inp.setCssStyles({ width: '100%' });

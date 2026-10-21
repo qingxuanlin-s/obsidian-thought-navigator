@@ -219,7 +219,7 @@ export function attachInlineTextSelectionToolbar(this: CytoscapeRenderer, inputE
         };
 
         const createToolbarButton = (iconName: string, title: string, handler: () => void): HTMLButtonElement => {
-            const btn = activeDocument.createElement('button');
+            const btn = activeWindow.createEl('button');
             btn.type = 'button';
             btn.className = 'zk-text-selection-btn';
             btn.title = title;
@@ -239,7 +239,7 @@ export function attachInlineTextSelectionToolbar(this: CytoscapeRenderer, inputE
 
         const ensureToolbar = () => {
             if (toolbar || !this.container) return;
-            toolbar = activeDocument.createElement('div');
+            toolbar = activeWindow.createDiv();
             toolbar.className = 'zk-text-selection-toolbar';
             toolbar.addEventListener('pointerdown', (e) => {
                 e.preventDefault();
@@ -300,7 +300,7 @@ export function attachInlineTextSelectionToolbar(this: CytoscapeRenderer, inputE
                     return;
                 }
 
-                sizePanel = activeDocument.createElement('div');
+                sizePanel = activeWindow.createDiv();
                 sizePanel.className = 'zk-text-selection-size-panel';
                 sizePanel.addEventListener('pointerdown', (e) => {
                     e.preventDefault();
@@ -312,7 +312,7 @@ export function attachInlineTextSelectionToolbar(this: CytoscapeRenderer, inputE
                 });
 
                 fontSizeChoices.forEach((size) => {
-                    const sizeBtn = activeDocument.createElement('button');
+                    const sizeBtn = activeWindow.createEl('button');
                     sizeBtn.type = 'button';
                     sizeBtn.className = 'zk-text-selection-size-btn';
                     sizeBtn.textContent = `${size}px`;
@@ -329,16 +329,16 @@ export function attachInlineTextSelectionToolbar(this: CytoscapeRenderer, inputE
                     sizePanel!.appendChild(sizeBtn);
                 });
 
-                const customWrap = activeDocument.createElement('div');
+                const customWrap = activeWindow.createDiv();
                 customWrap.className = 'zk-text-selection-size-custom';
-                const customInput = activeDocument.createElement('input');
+                const customInput = activeWindow.createEl('input');
                 customInput.type = 'number';
                 customInput.min = '8';
                 customInput.max = '96';
                 customInput.step = '1';
                 customInput.value = '16';
                 customInput.className = 'zk-text-selection-size-input';
-                const customApply = activeDocument.createElement('button');
+                const customApply = activeWindow.createEl('button');
                 customApply.type = 'button';
                 customApply.className = 'zk-text-selection-size-apply';
                 customApply.textContent = '应用';
@@ -540,7 +540,7 @@ export function attachContentSelectionToolbar(this: CytoscapeRenderer, rootEl: H
         };
 
         const createToolbarButton = (iconName: string, title: string, handler: () => void): HTMLButtonElement => {
-            const btn = activeDocument.createElement('button');
+            const btn = activeWindow.createEl('button');
             btn.type = 'button';
             btn.className = 'zk-text-selection-btn';
             btn.title = title;
@@ -559,7 +559,7 @@ export function attachContentSelectionToolbar(this: CytoscapeRenderer, rootEl: H
 
         const ensureToolbar = () => {
             if (toolbar || !this.container) return;
-            toolbar = activeDocument.createElement('div');
+            toolbar = activeWindow.createDiv();
             toolbar.className = 'zk-text-selection-toolbar';
             toolbar.addEventListener('pointerdown', (e) => {
                 e.preventDefault();
@@ -620,7 +620,7 @@ export function attachContentSelectionToolbar(this: CytoscapeRenderer, rootEl: H
                     return;
                 }
 
-                sizePanel = activeDocument.createElement('div');
+                sizePanel = activeWindow.createDiv();
                 sizePanel.className = 'zk-text-selection-size-panel';
                 sizePanel.addEventListener('pointerdown', (e) => {
                     e.preventDefault();
@@ -632,7 +632,7 @@ export function attachContentSelectionToolbar(this: CytoscapeRenderer, rootEl: H
                 });
 
                 fontSizeChoices.forEach((size) => {
-                    const sizeBtn = activeDocument.createElement('button');
+                    const sizeBtn = activeWindow.createEl('button');
                     sizeBtn.type = 'button';
                     sizeBtn.className = 'zk-text-selection-size-btn';
                     sizeBtn.textContent = `${size}px`;
@@ -649,16 +649,16 @@ export function attachContentSelectionToolbar(this: CytoscapeRenderer, rootEl: H
                     sizePanel!.appendChild(sizeBtn);
                 });
 
-                const customWrap = activeDocument.createElement('div');
+                const customWrap = activeWindow.createDiv();
                 customWrap.className = 'zk-text-selection-size-custom';
-                const customInput = activeDocument.createElement('input');
+                const customInput = activeWindow.createEl('input');
                 customInput.type = 'number';
                 customInput.min = '8';
                 customInput.max = '96';
                 customInput.step = '1';
                 customInput.value = '16';
                 customInput.className = 'zk-text-selection-size-input';
-                const customApply = activeDocument.createElement('button');
+                const customApply = activeWindow.createEl('button');
                 customApply.type = 'button';
                 customApply.className = 'zk-text-selection-size-apply';
                 customApply.textContent = '应用';
@@ -786,7 +786,7 @@ export function showInlineEdgeLabelEditor(this: CytoscapeRenderer, edge: cytosca
         const midY = (sourcePos.y + targetPos.y) / 2;
 
         // 创建输入框
-        const input = activeDocument.createElement('input');
+        const input = activeWindow.createEl('input');
         input.type = 'text';
         input.value = currentLabel;
         input.className = 'edge-label-editor';
@@ -981,7 +981,7 @@ export function showInlineNodeEditor(this: CytoscapeRenderer, node: cytoscape.No
         const lockedBoxTop = bb.y1;
 
         // 创建 textarea，直接覆盖在节点上
-        const textarea = activeDocument.createElement('textarea');
+        const textarea = activeWindow.createEl('textarea');
         const originalDisplayLabel = data.label || '';
         const initialValue = (isPlaceholder || isDraft)
             ? (data.label || '')
@@ -1088,7 +1088,7 @@ export function showInlineNodeEditor(this: CytoscapeRenderer, node: cytoscape.No
         };
         const selectionToolbar = this.attachInlineTextSelectionToolbar(textarea);
 
-        const measureCanvas = activeDocument.createElement('canvas');
+        const measureCanvas = activeWindow.createEl('canvas');
         const measureContext = measureCanvas.getContext('2d');
         const resizeEditorToContent = () => {
             const minWidth = initialBoxWidth;
@@ -1303,7 +1303,7 @@ export function showInlineNodeEditor(this: CytoscapeRenderer, node: cytoscape.No
                 if (e.key === 'Escape') {
                     // ESC 键关闭 suggester
                     e.preventDefault();
-                    (suggesterPopoverRef.value as HTMLElement).remove();
+                    (suggesterPopoverRef.value).remove();
                     return;
                 }
                 // 其他按键（方向键、Enter、删除键）由 suggester 的 handleKeyDown 处理
@@ -1330,7 +1330,7 @@ export function showInlineNodeEditor(this: CytoscapeRenderer, node: cytoscape.No
         textarea.addEventListener('blur', () => {
             window.setTimeout(() => {
                 // 如果焦点移到了 suggester 上，不保存
-                if (suggesterPopoverRef.value && (suggesterPopoverRef.value as Node).contains(activeDocument.activeElement as Node)) {
+                if (suggesterPopoverRef.value && (suggesterPopoverRef.value as Node).contains(activeDocument.activeElement)) {
                     return;
                 }
 
@@ -1468,7 +1468,7 @@ export function startInPlaceTextEdit(this: CytoscapeRenderer, node: cytoscape.No
         const prevPointerEvents = overlayEl.style.pointerEvents;
         overlayEl.setCssStyles({ pointerEvents: 'auto' });
 
-        const editorHost = activeDocument.createElement('div');
+        const editorHost = activeWindow.createDiv();
         editorHost.className = 'zk-text-md-live-edit-host';
         editorHost.setCssStyles({
             position: 'absolute',
@@ -1792,7 +1792,7 @@ export function startPlaceholderInPlaceEdit(this: CytoscapeRenderer, node: cytos
         node.style({ width: defaultW, height: defaultH });
 
         // 创建临时 overlay，定位到节点位置
-        const overlayEl = activeDocument.createElement('div');
+        const overlayEl = activeWindow.createDiv();
         overlayEl.className = 'zk-text-md-overlay zk-placeholder-edit-overlay';
         overlayEl.dataset.baseFontSize = '20';
         overlayEl.setCssStyles({
@@ -1827,7 +1827,7 @@ export function startPlaceholderInPlaceEdit(this: CytoscapeRenderer, node: cytos
         syncOverlayPos();
 
         // 创建 CM6 编辑器宿主
-        const editorHost = activeDocument.createElement('div');
+        const editorHost = activeWindow.createDiv();
         editorHost.className = 'zk-text-md-live-edit-host';
         editorHost.setCssStyles({
             position: 'absolute',
@@ -2121,7 +2121,7 @@ export function startPlaceholderTextareaFallback(this: CytoscapeRenderer, node: 
         const boxH = Math.max(bb?.h || 0, 80);
         const renderedPosition = node.renderedPosition();
 
-        const textarea = activeDocument.createElement('textarea');
+        const textarea = activeWindow.createEl('textarea');
         textarea.className = 'node-label-editor';
         textarea.value = '';
         textarea.setCssStyles({
@@ -2279,7 +2279,7 @@ export function startInPlaceTextEditLegacy(this: CytoscapeRenderer, node: cytosc
         const prevPointerEvents = overlayEl.style.pointerEvents;
         overlayEl.setCssStyles({ pointerEvents: 'auto' });
 
-        const textarea = activeDocument.createElement('textarea');
+        const textarea = activeWindow.createEl('textarea');
         textarea.className = 'node-label-editor zk-text-md-inline-editor';
         textarea.value = String(
             originalNode.title
@@ -2483,7 +2483,7 @@ export function startInPlaceTextEditLegacy(this: CytoscapeRenderer, node: cytosc
             if (suggesterPopoverRef.value && suggesterPopoverRef.value.parentNode) {
                 if (e.key === 'Escape') {
                     e.preventDefault();
-                    (suggesterPopoverRef.value as HTMLElement).remove();
+                    (suggesterPopoverRef.value).remove();
                     suggesterPopoverRef.value = null;
                     return;
                 }
@@ -2506,7 +2506,7 @@ export function startInPlaceTextEditLegacy(this: CytoscapeRenderer, node: cytosc
 
         textarea.addEventListener('blur', () => {
             window.setTimeout(() => {
-                if (suggesterPopoverRef.value && (suggesterPopoverRef.value as Node).contains(activeDocument.activeElement as Node)) {
+                if (suggesterPopoverRef.value && (suggesterPopoverRef.value as Node).contains(activeDocument.activeElement)) {
                     return;
                 }
                 if (suggesterPopoverRef.value) {
@@ -2639,7 +2639,7 @@ export function showLinkSuggester(this: CytoscapeRenderer, textarea: HTMLTextAre
         );
 
         // 创建 suggester popover
-        const popover = activeDocument.createElement('div');
+        const popover = activeWindow.createDiv();
         popover.className = 'node-link-suggester';
         // 使用 textarea 的实际位置定位，避免 boundingBox 缺少 y2 或尺寸过期
         const suggesterLeft = textarea.offsetLeft;
@@ -2660,7 +2660,7 @@ export function showLinkSuggester(this: CytoscapeRenderer, textarea: HTMLTextAre
         });
 
         // 搜索输入框
-        const searchInput = activeDocument.createElement('input');
+        const searchInput = activeWindow.createEl('input');
         searchInput.type = 'text';
         searchInput.placeholder = 'Search notes...';
         searchInput.setCssStyles({
@@ -2702,7 +2702,7 @@ export function showLinkSuggester(this: CytoscapeRenderer, textarea: HTMLTextAre
             selectedIndex = 0;
 
             currentFiles.forEach((file: TFile, index: number) => {
-                const item = activeDocument.createElement('div');
+                const item = activeWindow.createDiv();
                 item.className = 'suggester-item';
                 item.dataset.index = index.toString();
                 item.setCssStyles({
@@ -2713,12 +2713,12 @@ export function showLinkSuggester(this: CytoscapeRenderer, textarea: HTMLTextAre
                     gap: '2px',
                 });
 
-                const basenameEl = item.createEl('span', { text: file.basename });
+                const basenameEl = item.createSpan({ text: file.basename });
                 basenameEl.setCssStyles({
                     fontWeight: '500',
                     color: 'var(--text-normal)',
                 });
-                const pathEl = item.createEl('span', { text: file.path });
+                const pathEl = item.createSpan({ text: file.path });
                 pathEl.setCssStyles({
                     fontSize: '11px',
                     color: 'var(--text-muted)',
@@ -2861,9 +2861,9 @@ export function showLinkSuggester(this: CytoscapeRenderer, textarea: HTMLTextAre
                     if (removedNode === popover) {
                         textarea.removeEventListener('keydown', handleKeyDown);
                         searchInput.removeEventListener('keydown', handleKeyDown);
-                        popover.removeEventListener('wheel', handlePopoverWheel as EventListener);
-                        searchInput.removeEventListener('wheel', handlePopoverWheel as EventListener);
-                        this.container?.removeEventListener('wheel', handleContainerWheelCapture as EventListener, true);
+                        popover.removeEventListener('wheel', handlePopoverWheel);
+                        searchInput.removeEventListener('wheel', handlePopoverWheel);
+                        this.container?.removeEventListener('wheel', handleContainerWheelCapture, true);
                         if (suggesterPopoverRef.value === popover) {
                             suggesterPopoverRef.value = null;
                         }
@@ -2986,7 +2986,7 @@ export function attachSlashCommandMenu(
             if (!items.length) { close(); return; }
 
             if (!popover) {
-                popover = activeDocument.createElement('div');
+                popover = activeWindow.createDiv();
                 popover.className = 'zk-slash-suggester';
                 popover.setCssStyles({
                     position: 'fixed',
@@ -3008,7 +3008,7 @@ export function attachSlashCommandMenu(
 
             popover.empty();
             items.forEach((cmd, index) => {
-                const item = activeDocument.createElement('div');
+                const item = activeWindow.createDiv();
                 item.className = 'zk-slash-item';
                 item.setCssStyles({
                     padding: '6px 12px',
@@ -3145,7 +3145,7 @@ export function startNodeAudioRecording(
         };
 
         // 录音浮条
-        const bar = activeDocument.createElement('div');
+        const bar = activeWindow.createDiv();
         bar.className = 'zk-audio-recording-bar';
         bar.setCssStyles({
             position: 'fixed',
@@ -3165,7 +3165,7 @@ export function startNodeAudioRecording(
             color: 'var(--text-normal)',
         });
         bar.addEventListener('mousedown', (e) => e.preventDefault()); // 防止编辑框 blur
-        const dot = activeDocument.createElement('span');
+        const dot = activeWindow.createSpan();
         dot.setCssStyles({
             width: '10px',
             height: '10px',
@@ -3173,9 +3173,9 @@ export function startNodeAudioRecording(
             background: '#e5484d',
             animation: 'zk-rec-blink 1s steps(2,start) infinite',
         });
-        const timeEl = activeDocument.createElement('span');
+        const timeEl = activeWindow.createSpan();
         timeEl.textContent = '0:00';
-        const stopBtn = activeDocument.createElement('button');
+        const stopBtn = activeWindow.createEl('button');
         stopBtn.textContent = '停止';
         stopBtn.setCssStyles({
             padding: '3px 12px',
@@ -3186,7 +3186,7 @@ export function startNodeAudioRecording(
             cursor: 'pointer',
             fontSize: '12px',
         });
-        const cancelBtn = activeDocument.createElement('button');
+        const cancelBtn = activeWindow.createEl('button');
         cancelBtn.textContent = '取消';
         cancelBtn.setCssStyles({
             padding: '3px 10px',

@@ -38,7 +38,7 @@ export class addCommandModal extends FuzzySuggestModal<Command>{
 			this.onChooseItem = (item): void => resolve(item);
 			//This is wrapped inside a setTimeout, because onClose is called before onChooseItem
 			this.onClose = (): number =>
-				window.setTimeout(() => reject("No Command selected"), 0);
+				window.setTimeout(() => reject(new Error("No Command selected")), 0);
 		});
 	}
 

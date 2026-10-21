@@ -25,7 +25,7 @@ function delay(ms: number): Promise<void> {
 }
 
 function waitForImages(root: HTMLElement, timeoutMs = 1800): Promise<void> {
-	const imgs = Array.from(root.querySelectorAll('img')) as HTMLImageElement[];
+	const imgs = Array.from(root.querySelectorAll('img'));
 	if (imgs.length === 0) return Promise.resolve();
 
 	const waits = imgs.map((img) => {
@@ -69,7 +69,7 @@ async function waitForPreviewCardsReady(root: HTMLElement, timeoutMs = 5000): Pr
 }
 
 function previewCardHasRenderableContent(card: Element): boolean {
-	const contentEl = card.querySelector('[data-role="embed-content"]') as HTMLElement | null;
+	const contentEl = card.querySelector('[data-role="embed-content"]');
 	if (!contentEl) {
 		// 图片卡片无 embed-content，直接看是否有 img
 		return !!card.querySelector('img');
@@ -132,7 +132,7 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
 
 	// 创建隐藏容器（Cytoscape 需要真实 DOM 才能完成布局/overlay 渲染）
 	// opacity 必须保持 1，否则 html-to-image 截图全透明
-	const hiddenDiv = activeDocument.createElement('div');
+	const hiddenDiv = activeWindow.createDiv();
 	hiddenDiv.setCssStyles({
 		position: 'fixed',
 		left: '-99999px',

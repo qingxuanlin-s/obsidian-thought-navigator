@@ -9,6 +9,13 @@ export function errorMessage(e: unknown): string {
     return String(e);
 }
 
+/** 把 frontmatter 等来源的标量值转成字符串;对象/数组/空值返回 undefined,避免产出 "[object Object]"。 */
+export function scalarToString(value: unknown): string | undefined {
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value);
+    return undefined;
+}
+
 // 节点类型
 // - file:  文件节点（[[link]] 或 [[link|alias]]）
 // - text:  纯文字节点（不关联文件）
@@ -203,7 +210,7 @@ export async function parseMOCStructure(
     const { parseMOCJson } = await import('./mocJsonCodec');
     const result = parseMOCJson(diskContent, filePath, app);
     if (__perf) {
-        console.log('[zkPerf:parseMOC]', {
+        console.debug('[zkPerf:parseMOC]', {
             adapterRead: +(__t1 - __t0).toFixed(1),
             parseJson: +(performance.now() - __t1).toFixed(1),
             bytes: diskContent.length,
@@ -480,7 +487,7 @@ export async function mainNoteInit(plugin: ZKNavigationPlugin) {
                     if (typeof nodeCache.frontmatter !== 'undefined' && plugin.settings.TitleField !== "") {
 
                         const titleValue: unknown = nodeCache.frontmatter[plugin.settings.TitleField];
-                        const title = titleValue == null ? undefined : String(titleValue);
+                        const title = scalarToString(titleValue);
                         if (typeof title == "string" && title.length > 0) {
                             node.title = title;
                         }
@@ -494,11 +501,11 @@ export async function mainNoteInit(plugin: ZKNavigationPlugin) {
                         if (typeof nodeCache.frontmatter !== 'undefined' && plugin.settings.IDField !== "") {
                             const id: unknown = nodeCache.frontmatter[plugin.settings.IDField];
                             if (Array.isArray(id)) {
-                                const firstElem: unknown = id[0];
-                                if (firstElem === null) {
+                                const firstElem = scalarToString(id[0]);
+                                if (firstElem === undefined) {
                                     continue;
                                 }
-                                node.ID = String(firstElem);
+                                node.ID = firstElem;
                                 node.IDArr = await ID_formatting(node.ID, node.IDArr, plugin.settings.siblingsOrder);
                                 node.IDStr = node.IDArr.toString();
                                 node.title = note.basename;
@@ -550,7 +557,7 @@ export async function mainNoteInit(plugin: ZKNavigationPlugin) {
             const ctime: unknown = nodeCache?.frontmatter?.[plugin.settings.CustomCreatedTime];
 
             if (ctime) {
-                const time = moment(ctime as string);
+                const time = moment(ctime);
                 if (time.isValid()) {
                     node.ctime = time.valueOf();
                 }

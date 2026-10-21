@@ -184,7 +184,7 @@ export function parseMOCJson(content: string, filePath: string, app: App): MOCPa
     const normalized = (json.nodes || []).map(normalizeNode);
     const nodes = normalized.map(n => resolveJsonNode(app, n, basePath, resolvedFileCache));
     if (__perf) {
-        console.log('[zkPerf:parseJson]', {
+        console.debug('[zkPerf:parseJson]', {
             resolveNodes: +(performance.now() - __tParsed).toFixed(1),
             uniqueTargets: resolvedFileCache.size,
         });

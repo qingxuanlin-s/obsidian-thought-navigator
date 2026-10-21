@@ -49,8 +49,10 @@ export interface MocRulePreview {
 
 function propertyValues(value: unknown): string[] {
 	if (Array.isArray(value)) return value.flatMap(propertyValues);
-	if (value === null || value === undefined || typeof value === 'object') return [];
-	return [String(value)];
+	if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+		return [String(value)];
+	}
+	return [];
 }
 
 function valuesFor(file: MocCandidate, condition: MocRuleCondition): string[] {

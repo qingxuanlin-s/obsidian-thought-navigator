@@ -1,5 +1,5 @@
 import { Menu, TFile, setIcon } from "obsidian";
-import { WSSpaceNode, WorkspaceNode, WorkspacePlacement, WSProjectNode, FRAMEWORKS, OpenTarget, isWorkspaceNodeArchived } from "src/types/workspace";
+import { WSSpaceNode, WorkspaceNode, WorkspacePlacement, FRAMEWORKS, OpenTarget, isWorkspaceNodeArchived } from "src/types/workspace";
 import { t } from "src/lang/helper";
 import { RenderCtx, glyph, fwChip, bucketLabel, STATUS_COLOR, progressFor } from "./render";
 
@@ -35,11 +35,11 @@ export class SpacesTree {
                 const arr = JSON.parse(raw) as string[];
                 if (Array.isArray(arr)) this.collapsed = new Set(arr);
             }
-        } catch {}
+        } catch { /* ignore */ }
     }
 
     private save() {
-        try { this.ctx.app.saveLocalStorage(LS_COLLAPSED, JSON.stringify([...this.collapsed])); } catch {}
+        try { this.ctx.app.saveLocalStorage(LS_COLLAPSED, JSON.stringify([...this.collapsed])); } catch { /* ignore */ }
     }
 
     setCurrent(t: OpenTarget | null) { this.current = t; }
@@ -59,7 +59,7 @@ export class SpacesTree {
         const { spaceId } = placement;
         this.collapsed.delete('space:' + spaceId);
         const space = this.ctx.store.getNode(spaceId);
-        const fw = space?.type === 'space' ? FRAMEWORKS[(space as WSSpaceNode).framework] : null;
+        const fw = space?.type === 'space' ? FRAMEWORKS[(space).framework] : null;
         const bucket = fw?.buckets.find(b => b.match(node));
         let current: WorkspacePlacement | null = placement;
         const guard = new Set<string>();
@@ -230,7 +230,7 @@ export class SpacesTree {
         nm.setText(displayNodeTitle(n));
 
         if (n.type === 'project') {
-            const p = n as WSProjectNode;
+            const p = n;
             row.createSpan({ cls: `sd ${p.status}` });
             const pct = progressFor(this.ctx, p);
             if (pct !== null) {

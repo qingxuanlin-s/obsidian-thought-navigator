@@ -1,6 +1,6 @@
 import { App, Component, DataAdapter, Notice, TFile } from "obsidian";
 import {
-    WorkspaceNode, WSLink, WSSpaceNode, WSMocNode, WSProjectNode, WSNoteNode,
+    WorkspaceNode, WSLink, WSSpaceNode, WSMocNode, WSProjectNode,
     WorkspaceStoreFile, WorkspaceStoreFileV1, WorkspaceStoreFileV2, WorkspacePlacement,
     MocWorkspaceBridge, MocWorkspaceBridgeRole, FrameworkId, OpenTarget, targetFor, ChecklistItem,
     LinkType,
@@ -631,7 +631,7 @@ export class WorkspaceStore extends Component {
         if (affected.length === 0) return;
         await this.commit(ctx => {
             for (const n of affected) {
-                if (n.type === 'note' && !(n as WSNoteNode).body) {
+                if (n.type === 'note' && !(n).body) {
                     ctx.remove(n.id);
                 } else {
                     ctx.update(n.id, x => { delete (x as { filePath?: string }).filePath; });

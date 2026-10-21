@@ -197,9 +197,9 @@ function renderActions(body: HTMLElement, ctx: RenderCtx, p: WSProjectNode): voi
         sortSel.setAttribute('title', t('ws sort by'));
         ([['doc', t('ws sort doc')], ['due', t('ws sort due')], ['start', t('ws sort start')]] as [SortMode, string][])
             .forEach(([v, l]) => { const o = sortSel.createEl('option', { value: v, text: l }); if (v === sortMode) o.selected = true; });
-        sortSel.onchange = () => { try { ctx.app.saveLocalStorage(LS_SORT, sortSel.value); } catch {} ctx.refresh(); };
+        sortSel.onchange = () => { try { ctx.app.saveLocalStorage(LS_SORT, sortSel.value); } catch { /* ignore */ } ctx.refresh(); };
         const toggle = ctls.createSpan({ cls: 'dsec-add' + (hideDone ? ' on' : ''), text: t(hideDone ? 'ws action show done' : 'ws action hide done') });
-        toggle.onclick = () => { try { ctx.app.saveLocalStorage(LS_HIDE_DONE, hideDone ? '0' : '1'); } catch {} ctx.refresh(); };
+        toggle.onclick = () => { try { ctx.app.saveLocalStorage(LS_HIDE_DONE, hideDone ? '0' : '1'); } catch { /* ignore */ } ctx.refresh(); };
     }
 
     // ── 新增任务(弹框)+ 打开笔记(置顶)──
@@ -412,33 +412,33 @@ function loadHomeRange(ctx: RenderCtx): HomeRange {
     try {
         const v = ctx.app.loadLocalStorage(LS_HOME_RANGE) as string | null;
         if (v === 'today' || v === '7d' || v === '30d' || v === 'all') return v;
-    } catch {}
+    } catch { /* ignore */ }
     return 'today';
 }
 function saveHomeRange(ctx: RenderCtx, r: HomeRange): void {
-    try { ctx.app.saveLocalStorage(LS_HOME_RANGE, r); } catch {}
+    try { ctx.app.saveLocalStorage(LS_HOME_RANGE, r); } catch { /* ignore */ }
 }
 
 function loadHomeTaskView(ctx: RenderCtx): HomeTaskView {
 	try {
 		const v = ctx.app.loadLocalStorage(LS_HOME_TASK_VIEW) as string | null;
 		if (v === 'list' || v === 'table') return v;
-	} catch {}
+	} catch { /* ignore */ }
 	return 'list';
 }
 function saveHomeTaskView(ctx: RenderCtx, v: HomeTaskView): void {
-	try { ctx.app.saveLocalStorage(LS_HOME_TASK_VIEW, v); } catch {}
+	try { ctx.app.saveLocalStorage(LS_HOME_TASK_VIEW, v); } catch { /* ignore */ }
 }
 
 function loadHomeTaskScope(ctx: RenderCtx): HomeTaskScope {
 	try {
 		const v = ctx.app.loadLocalStorage(LS_HOME_TASK_SCOPE) as string | null;
 		if (v === 'open' || v === 'all') return v;
-	} catch {}
+	} catch { /* ignore */ }
 	return 'open';
 }
 function saveHomeTaskScope(ctx: RenderCtx, v: HomeTaskScope): void {
-	try { ctx.app.saveLocalStorage(LS_HOME_TASK_SCOPE, v); } catch {}
+	try { ctx.app.saveLocalStorage(LS_HOME_TASK_SCOPE, v); } catch { /* ignore */ }
 }
 
 /**
@@ -700,7 +700,7 @@ export function renderMocPage(container: HTMLElement, ctx: RenderCtx, m: WSMocNo
             card.onclick = () => ctx.open(ctx.store.targetFor(n));
             glyph(card, n.type);
             card.createSpan({ cls: 'nn', text: n.title });
-            if (n.type === 'project') card.createSpan({ cls: 'nmeta', text: statusLabel((n as WSProjectNode).status) });
+            if (n.type === 'project') card.createSpan({ cls: 'nmeta', text: statusLabel((n).status) });
         });
     }
 }

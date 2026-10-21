@@ -60,7 +60,7 @@ export class indexModal extends SuggestModal<ZKIndex> {
            if(file !== null){              
               const outlink = this.MainNotes.find(n=>n.file === file);
               if(typeof outlink !== 'undefined'){
-                const count = this.MainNotes.filter(n=>n.IDStr.startsWith(outlink!.IDStr)).length
+                const count = this.MainNotes.filter(n=>n.IDStr.startsWith(outlink.IDStr)).length
                 outlinks.push(outlink.ID+` (${count.toString()})`);
               }else{
                 outlinks.push(file.basename);
@@ -145,7 +145,7 @@ export class indexFuzzyModal extends FuzzySuggestModal<ZKIndex> {
               const outlinkArr = this.MainNotes.filter(n=>n.file === file);
               if(outlinkArr.length > 0){
                 for(const outlink of outlinkArr){
-                  const count = this.MainNotes.filter(n=>n.IDStr.startsWith(outlink!.IDStr)).length;
+                  const count = this.MainNotes.filter(n=>n.IDStr.startsWith(outlink.IDStr)).length;
                   outlinks.push(outlink.ID+` (${count.toString()})`);
                 }
               }else{

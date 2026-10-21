@@ -46,7 +46,7 @@ function resolveEmbeddableEditorCtor(app: App): EditorCtor | null {
 	const embedRegistry = (app as { embedRegistry?: { embedByExtension?: { md?: (...args: unknown[]) => MarkdownEditorView } } }).embedRegistry;
 	const mdCreator = embedRegistry?.embedByExtension?.md;
 	if (typeof mdCreator === 'function') {
-		const dummy = activeDocument.createElement('div');
+		const dummy = activeWindow.createDiv();
 		let widgetView: MarkdownEditorView | null = null;
 		try {
 			widgetView = mdCreator({ app, containerEl: dummy }, null, '');
@@ -54,7 +54,7 @@ function resolveEmbeddableEditorCtor(app: App): EditorCtor | null {
 				widgetView.editable = true;
 				widgetView.showEditor?.();
 				const editMode = widgetView.editMode ?? widgetView;
-				const editorProto = Object.getPrototypeOf(Object.getPrototypeOf(editMode as object)) as { constructor?: EditorCtor } | null;
+				const editorProto = Object.getPrototypeOf(Object.getPrototypeOf(editMode)) as { constructor?: EditorCtor } | null;
 				const ctor = editorProto?.constructor;
 				if (ctor) {
 					embeddableEditorCtor = ctor;
@@ -79,7 +79,7 @@ function resolveEmbeddableEditorCtor(app: App): EditorCtor | null {
 		const mdView = mdLeaf?.view as MarkdownView | undefined;
 		const editMode = mdView ? ((mdView as { editMode?: unknown; modes?: { source?: unknown } }).editMode ?? (mdView as { modes?: { source?: unknown } }).modes?.source) : null;
 		if (editMode) {
-			const editorProto = Object.getPrototypeOf(Object.getPrototypeOf(editMode as object)) as { constructor?: EditorCtor } | null;
+			const editorProto = Object.getPrototypeOf(Object.getPrototypeOf(editMode)) as { constructor?: EditorCtor } | null;
 			const ctor = editorProto?.constructor;
 			if (ctor) {
 				embeddableEditorCtor = ctor;
@@ -206,7 +206,7 @@ export class EmbeddableMarkdownEditor extends Component {
 		if (this.opts.readOnly) {
 			// 只读模式：禁用编辑，隐藏光标
 			if (this.cm?.contentDOM) {
-				(this.cm.contentDOM as HTMLElement).contentEditable = 'false';
+				(this.cm.contentDOM).contentEditable = 'false';
 			}
 		} else {
 			this.bindCallbacks();
@@ -283,7 +283,7 @@ export class EmbeddableMarkdownEditor extends Component {
 			}
 		}
 		if (lastError) {
-			throw lastError;
+			throw lastError instanceof Error ? lastError : new Error('Failed to instantiate markdown editor');
 		}
 		return null;
 	}
@@ -428,11 +428,11 @@ export class EmbeddableMarkdownEditor extends Component {
 	}
 
 	getContentHeight(): number {
-		const contentDom = this.cm?.contentDOM as HTMLElement | undefined;
+		const contentDom = this.cm?.contentDOM;
 		if (contentDom && contentDom.scrollHeight > 0) {
 			return contentDom.scrollHeight;
 		}
-		const scrollDom = this.cm?.scrollDOM as HTMLElement | undefined;
+		const scrollDom = this.cm?.scrollDOM;
 		if (scrollDom && scrollDom.scrollHeight > 0) {
 			return scrollDom.scrollHeight;
 		}
@@ -440,13 +440,13 @@ export class EmbeddableMarkdownEditor extends Component {
 	}
 
 	getVerticalOverflow(): number {
-		const scrollDom = this.cm?.scrollDOM as HTMLElement | undefined;
+		const scrollDom = this.cm?.scrollDOM;
 		if (!scrollDom) return 0;
 		return Math.max(0, scrollDom.scrollHeight - scrollDom.clientHeight);
 	}
 
 	getDom(): HTMLElement | null {
-		return (this.cm?.dom as HTMLElement | undefined) ?? null;
+		return (this.cm?.dom) ?? null;
 	}
 
 	getCM(): CMView | null {

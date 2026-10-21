@@ -20,7 +20,7 @@ interface AppWithPlugins {
 }
 
 export const wrapForImageToolkit = (img: HTMLElement): HTMLElement => {
-    const wrap = activeDocument.createElement('div');
+    const wrap = activeWindow.createDiv();
     wrap.className = 'modal-content';
     wrap.setCssStyles({ display: 'contents' });
     // .modal-content 在 Obsidian 里带固定 font-size,会把子元素 em 单位锁死,
@@ -77,7 +77,7 @@ export const renderExcalidrawPreview = async (
                     const encoded = encodeURIComponent(svgString)
                         .replace(/'/g, '%27')
                         .replace(/"/g, '%22');
-                    const img = activeDocument.createElement('img');
+                    const img = activeWindow.createEl('img');
                     img.src = `data:image/svg+xml;charset=utf-8,${encoded}`;
                     img.draggable = false;
                     img.setCssStyles({
@@ -121,7 +121,7 @@ export const renderExcalidrawPreview = async (
             if (f) { exportedFile = f; break; }
         }
         if (exportedFile) {
-            const img = activeDocument.createElement('img');
+            const img = activeWindow.createEl('img');
             img.src = app.vault.getResourcePath(exportedFile);
             img.draggable = false;
             img.setCssStyles({
@@ -264,14 +264,14 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
         // 镜像 nodeBadges 里 textMdOverlayCache 的同款回收。
         const liveEmbedNodeIds = new Set<string>();
         embedNodes.forEach((node: cytoscape.NodeSingular) => { liveEmbedNodeIds.add(node.id()); });
-        for (const key of Array.from(this.embedCardCache.keys()) as string[]) {
+        for (const key of Array.from(this.embedCardCache.keys())) {
             if (!liveEmbedNodeIds.has(key)) this.embedCardCache.delete(key);
         }
 
         const app = this.currentOptions?.app;
         if (!app) return;
 
-        const previewContainer = activeDocument.createElement('div');
+        const previewContainer = activeWindow.createDiv();
         previewContainer.className = 'zk-embed-previews';
         previewContainer.setCssStyles({
             position: 'absolute',
@@ -338,7 +338,7 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
             const resolvedCardBackground = isExcalidrawFile ? 'transparent' : theme.cardBackground;
             const resolvedCardShadow = isExcalidrawFile && dataBool(node, 'isFreeNode') ? 'none' : theme.cardShadow;
 
-            const card = activeDocument.createElement('div');
+            const card = activeWindow.createDiv();
             card.className = 'zk-embed-preview-card';
             card.dataset.nodeId = nodeId;
             card.setCssStyles({
@@ -358,7 +358,7 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
                 willChange: 'transform',
             });
 
-            const headerEl = activeDocument.createElement('div');
+            const headerEl = activeWindow.createDiv();
             headerEl.dataset.role = 'embed-header';
             headerEl.setCssStyles({
                 height: '32px',
@@ -376,7 +376,7 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
                 userSelect: 'none',
             });
             // 文件名链接；若节点有 alias（ZKNode.title 与 wikiLink 不同），拼成 "basename|alias"
-            const headerLink = activeDocument.createElement('span');
+            const headerLink = activeWindow.createSpan();
             const aliasCandidate = String(originalNode?.title || '').trim();
             const rawWikiLink = String(originalNode?.wikiLink || '').trim();
             const hasAlias = aliasCandidate && aliasCandidate !== rawWikiLink
@@ -401,7 +401,7 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
             });
             headerEl.appendChild(headerLink);
 
-            const contentEl = activeDocument.createElement('div');
+            const contentEl = activeWindow.createDiv();
             contentEl.dataset.role = 'embed-content';
             contentEl.setCssStyles({
                 height: 'calc(100% - 36px)',
@@ -414,7 +414,7 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
             });
 
             // 右下角 resize 焦点（仅在选中时可用）
-            const resizeHandle = activeDocument.createElement('div');
+            const resizeHandle = activeWindow.createDiv();
             resizeHandle.setCssStyles({
                 position: 'absolute',
                 right: '0',
@@ -456,7 +456,7 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
             card.appendChild(resizeHandle);
             previewContainer.appendChild(card);
 
-            const embedToggleEl = activeDocument.createElement('div');
+            const embedToggleEl = activeWindow.createDiv();
             embedToggleEl.className = 'zk-embed-toggle';
             const embedToggleLabel = '切换为文件节点';
             embedToggleEl.setAttribute('aria-label', embedToggleLabel);
@@ -802,7 +802,7 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
                     }
 
                     if (previewFile) {
-                        const img = activeDocument.createElement('img');
+                        const img = activeWindow.createEl('img');
                         img.src = app.vault.getResourcePath(previewFile);
                         img.draggable = false;
                         img.setCssStyles({
@@ -871,7 +871,7 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
 					overflow: 'hidden',
 				});
 
-				const audio = activeDocument.createElement('audio');
+				const audio = activeWindow.createEl('audio');
 				audio.src = app.vault.getResourcePath(sourceFile);
 				audio.controls = true;
 				audio.preload = 'metadata';
@@ -1060,7 +1060,7 @@ export function renderImageNodePreviews(this: CytoscapeRenderer): void {
 
         if (imageNodes.length === 0) return;
 
-        const previewContainer = activeDocument.createElement('div');
+        const previewContainer = activeWindow.createDiv();
         previewContainer.className = 'zk-image-previews';
         previewContainer.setCssStyles({
             position: 'absolute',
@@ -1133,7 +1133,7 @@ export function renderImageNodePreviews(this: CytoscapeRenderer): void {
             });
 
             // 创建卡片容器
-            const card = activeDocument.createElement('div');
+            const card = activeWindow.createDiv();
             card.className = 'zk-image-preview-card';
             card.setCssStyles({
                 position: 'absolute',
@@ -1153,7 +1153,7 @@ export function renderImageNodePreviews(this: CytoscapeRenderer): void {
             card.dataset.nodeId = nodeId;
 
             // 标题栏（文件名 + 点击跳转）
-            const headerEl = activeDocument.createElement('div');
+            const headerEl = activeWindow.createDiv();
             headerEl.dataset.role = 'image-header';
             headerEl.setCssStyles({
                 height: '32px',
@@ -1172,7 +1172,7 @@ export function renderImageNodePreviews(this: CytoscapeRenderer): void {
             });
 
 
-            const headerLink = activeDocument.createElement('span');
+            const headerLink = activeWindow.createSpan();
             headerLink.textContent = file.basename || filePath.split('/').pop() || '';
 			applyPreviewHeaderLinkStyle(headerLink, isLightTheme);
             headerLink.addEventListener('click', (e) => {
@@ -1209,7 +1209,7 @@ export function renderImageNodePreviews(this: CytoscapeRenderer): void {
             });
 
             // 图片内容区
-            const img = activeDocument.createElement('img');
+            const img = activeWindow.createEl('img');
             img.src = resourcePath;
             img.draggable = false;
             img.setCssStyles({
@@ -1239,7 +1239,7 @@ export function renderImageNodePreviews(this: CytoscapeRenderer): void {
             });
 
             // 右下角 resize 手柄（仅选中时可见）
-            const resizeHandle = activeDocument.createElement('div');
+            const resizeHandle = activeWindow.createDiv();
             resizeHandle.setCssStyles({
                 position: 'absolute',
                 right: '0',

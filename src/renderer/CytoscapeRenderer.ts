@@ -101,7 +101,7 @@ type CytoscapeFactory = {
 
 const getCytoscape = (): CytoscapeFactory => {
     const mod = cytoscapeNamespace as unknown as { default?: CytoscapeFactory };
-    return mod.default || (cytoscapeNamespace as unknown as CytoscapeFactory);
+    return mod.default || (cytoscapeNamespace);
 };
 
 const getDagre = (): cytoscape.Ext => {
@@ -526,7 +526,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                             'background-color': 'transparent',
                             'background-opacity': 0
                         }
-                    } as StyleEntry
+                    }
                 ]);
             }
 
@@ -704,7 +704,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                             }
                             if (dataChanged) {
                                 if (isExisting) {
-                                    const mkey = overlayMeaningfulChange(currentData, ele.data as Record<string, unknown>);
+                                    const mkey = overlayMeaningfulChange(currentData, ele.data);
                                     if (mkey) markExistingChanged(`data:${id}:${mkey}`);
                                 }
                                 existing.data(ele.data);
@@ -772,7 +772,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 this._incrementalRepositionAll = existingMoved;
             }
             if ((window as unknown as { __zkPerf?: boolean }).__zkPerf === true) {
-                console.log('[zkPerf:fastadd]', {
+                console.debug('[zkPerf:fastadd]', {
                     taken: fastAddOk,
                     added: addedNodeIds.length,
                     toRemove: toRemove.length,
@@ -851,7 +851,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         __lap('finalize');
         if (__zkPerf) {
             const total = Object.values(__mark).reduce((a, b) => a + b, 0);
-            console.log(
+            console.debug(
                 `[zkPerf:render] total=${total.toFixed(1)}ms`,
                 Object.fromEntries(Object.entries(__mark).map(([k, v]) => [k, +v.toFixed(1)]))
             );
@@ -1031,7 +1031,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
             if (entry.mdEditor) {
                 try { entry.mdEditor.unload(); } catch { /* ignore */ }
             }
-            const liveHost = entry.el.querySelector('.zk-text-md-live-edit-host') as (HTMLElement & { _mdEditor?: EmbeddableMarkdownEditor | null }) | null;
+            const liveHost = entry.el.querySelector<HTMLElement & { _mdEditor?: EmbeddableMarkdownEditor | null }>('.zk-text-md-live-edit-host');
             if (liveHost?._mdEditor) {
                 try { liveHost._mdEditor.unload(); } catch { /* ignore */ }
             }
@@ -1100,7 +1100,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
                     return;
                 }
 
-                const isVisible = visibleCyIds!.has(card.dataset.nodeId || '');
+                const isVisible = visibleCyIds.has(card.dataset.nodeId || '');
                 if (visibilityMode === 'dim') {
                     card.setCssStyles({ display: '' });
                     if (isVisible) {
@@ -1148,7 +1148,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
                 const nodeId = el.dataset.nodeId || '';
                 const cyNode = nodeId && this.cy ? this.cy.$id(nodeId) : null;
-                const isVisible = !!nodeId && visibleCyIds!.has(nodeId);
+                const isVisible = !!nodeId && visibleCyIds.has(nodeId);
                 const isDimmed = !!cyNode?.length && cyNode.hasClass('zk-level-dimmed');
                 const isRemarkBadge = el.classList.contains('zk-node-remark-badge');
                 if (visibilityMode === 'dim') {
@@ -1325,7 +1325,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         const opts = this.currentOptions;
         // 仅贝塞尔风格需要;直线/折线无控制点
         if (opts?.edgeStyle && opts.edgeStyle !== 'bezier') return;
-        const direction = ((opts?.direction) || 'LR') as 'LR' | 'RL' | 'TB' | 'BT';
+        const direction = ((opts?.direction) || 'LR');
         const horizontal = direction === 'LR' || direction === 'RL';
         const targetEdges = edges || cy.edges('[type="parent"], [type="forward"]');
         // 节点几何缓存:一个父节点是其所有子边的 source,width()/outerWidth() 等会被重复读取
@@ -1629,7 +1629,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         callback: (action: 'new' | 'add', groupId?: string) => void
     ): void {
         // 创建遮罩层
-        const overlay = activeDocument.createElement('div');
+        const overlay = activeWindow.createDiv();
         overlay.setCssStyles({
             position: 'fixed',
             top: '0',
@@ -1644,7 +1644,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 创建对话框
-        const dialog = activeDocument.createElement('div');
+        const dialog = activeWindow.createDiv();
         dialog.setCssStyles({
             backgroundColor: 'var(--background-primary)',
             border: '1px solid var(--background-modifier-border)',
@@ -1656,7 +1656,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 标题
-        const title = activeDocument.createElement('h3');
+        const title = activeWindow.createEl('h3');
         title.textContent = '选择操作';
         title.setCssStyles({
             margin: '0 0 15px 0',
@@ -1665,7 +1665,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 提示信息
-        const info = activeDocument.createElement('p');
+        const info = activeWindow.createEl('p');
         info.textContent = '部分节点已在分组中，请选择操作：';
         info.setCssStyles({
             margin: '0 0 15px 0',
@@ -1674,11 +1674,11 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 选项容器
-        const optionsContainer = activeDocument.createElement('div');
+        const optionsContainer = activeWindow.createDiv();
         optionsContainer.setCssStyles({ marginBottom: '20px' });
 
         // 创建新分组选项
-        const newGroupOption = activeDocument.createElement('div');
+        const newGroupOption = activeWindow.createDiv();
         newGroupOption.setCssStyles({
             padding: '10px',
             marginBottom: '10px',
@@ -1719,7 +1719,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
 
         // 为每个现有分组创建选项
         existingGroups.forEach(group => {
-            const groupOption = activeDocument.createElement('div');
+            const groupOption = activeWindow.createDiv();
             groupOption.setCssStyles({
                 padding: '10px',
                 marginBottom: '10px',
@@ -1760,7 +1760,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 取消按钮
-        const cancelButton = activeDocument.createElement('button');
+        const cancelButton = activeWindow.createEl('button');
         cancelButton.textContent = '取消';
         cancelButton.setCssStyles({
             width: '100%',
@@ -1790,7 +1790,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
      */
     showGroupNameDialog(callback: (name: string | null) => void, defaultValue = '分组1'): void {
         // 创建遮罩层
-        const overlay = activeDocument.createElement('div');
+        const overlay = activeWindow.createDiv();
         overlay.setCssStyles({
             position: 'fixed',
             top: '0',
@@ -1805,7 +1805,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 创建对话框
-        const dialog = activeDocument.createElement('div');
+        const dialog = activeWindow.createDiv();
         dialog.setCssStyles({
             backgroundColor: 'var(--background-primary)',
             border: '1px solid var(--background-modifier-border)',
@@ -1816,7 +1816,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 标题
-        const title = activeDocument.createElement('h3');
+        const title = activeWindow.createEl('h3');
         title.textContent = '创建分组';
         title.setCssStyles({
             margin: '0 0 15px 0',
@@ -1825,7 +1825,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 输入框
-        const input = activeDocument.createElement('input');
+        const input = activeWindow.createEl('input');
         input.type = 'text';
         input.placeholder = '请输入分组名称';
         input.value = defaultValue;
@@ -1842,7 +1842,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 按钮容器
-        const buttonContainer = activeDocument.createElement('div');
+        const buttonContainer = activeWindow.createDiv();
         buttonContainer.setCssStyles({
             display: 'flex',
             justifyContent: 'flex-end',
@@ -1850,7 +1850,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 取消按钮
-        const cancelButton = activeDocument.createElement('button');
+        const cancelButton = activeWindow.createEl('button');
         cancelButton.textContent = '取消';
         cancelButton.setCssStyles({
             padding: '6px 16px',
@@ -1867,7 +1867,7 @@ export class CytoscapeRenderer implements IGraphRenderer {
         });
 
         // 确认按钮
-        const confirmButton = activeDocument.createElement('button');
+        const confirmButton = activeWindow.createEl('button');
         confirmButton.textContent = '确认';
         confirmButton.setCssStyles({
             padding: '6px 16px',

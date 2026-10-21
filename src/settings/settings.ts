@@ -17,7 +17,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
         this.plugin = plugin;
     }
 
-    async display() {
+    display(): void {
 
         const { containerEl } = this;
         containerEl.empty();
@@ -76,7 +76,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
         this.plugin.settings.graphType = "structure";
         const structureSettingDiv = branchSection.createDiv("zk-local-section")
 
-        await this.updateSructureSettings(structureSettingDiv);
+        void this.updateSructureSettings(structureSettingDiv);
 
         new Setting(branchSection)
             .setName(t("detail panel side"))
@@ -254,7 +254,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
 
         for(let i=0;i<this.plugin.settings.FolderList.length;i++){
             const folder = this.plugin.settings.FolderList[i];
-            const folderDiv = folderListDiv.createEl('div');
+            const folderDiv = folderListDiv.createDiv();
             new Setting(folderDiv)
             .addSearch((cb) => {
                 new FolderSuggest(this.app, cb.inputEl);
@@ -505,7 +505,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
             );
     }
 
-    async hide() {
+    hide(): void {
         if(this.plugin.RefreshIndexViewFlag === true){
             this.app.workspace.trigger("zk-navigation:refresh-index-graph");
         }

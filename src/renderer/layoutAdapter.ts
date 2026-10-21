@@ -209,7 +209,7 @@ export function runLayoutSafely(cy: cytoscape.Core | null, layoutConfig: LayoutC
     }
 
     try {
-        const layout = cy.layout(layoutConfig as cytoscape.LayoutOptions);
+        const layout = cy.layout(layoutConfig);
         layout.run();
     } catch (error: unknown) {
         console.error('[CytoscapeRenderer] layout run failed, fallback to breadthfirst', {

@@ -70,7 +70,7 @@ export function renderInlineMarkdown(container: HTMLElement, source: string, han
 		if (token.type === 'text' && !token.content) continue;
 		switch (token.type) {
 			case 'strong_open': case 'em_open': case 's_open':
-				open(doc.createElement(token.tag), token.tag);
+				open(doc.win.createEl(token.tag as 'strong' | 'em' | 's'), token.tag);
 				break;
 			case 'strong_close': case 'em_close': case 's_close': case 'link_close':
 				close(token.tag);
@@ -84,7 +84,7 @@ export function renderInlineMarkdown(container: HTMLElement, source: string, han
 				break;
 			}
 			case 'code_inline': {
-				const code = doc.createElement('code');
+				const code = doc.win.createEl('code');
 				code.textContent = token.content;
 				current().appendChild(code);
 				break;
@@ -102,7 +102,7 @@ export function renderInlineMarkdown(container: HTMLElement, source: string, han
 				// Preserve the formatting emitted by the selection toolbar, including nesting.
 				const tag = token.content.match(/^<(u|span)(?:\s+style\s*=\s*(["'])(.*?)\2)?\s*>$/i);
 				if (tag) {
-					const el = doc.createElement(tag[1].toLowerCase());
+					const el = doc.win.createEl(tag[1].toLowerCase() as 'u' | 'span');
 					if (tag[3]) el.style.cssText = tag[3];
 					open(el, tag[1].toLowerCase());
 				} else if (/^<\/(u|span)\s*>$/i.test(token.content)) {
@@ -113,7 +113,7 @@ export function renderInlineMarkdown(container: HTMLElement, source: string, han
 				break;
 			}
 			case 'hardbreak':
-				current().appendChild(doc.createElement('br'));
+				current().appendChild(doc.win.createEl('br'));
 				break;
 			case 'softbreak':
 				current().appendChild(doc.createTextNode('\n'));

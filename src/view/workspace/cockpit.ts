@@ -46,7 +46,7 @@ export function renderCockpit(container: HTMLElement, ctx: RenderCtx, space: WSS
     const tabs = ck.createDiv({ cls: 'lenstabs' });
 
     const validLens = initialLens && (initialLens === 'all' || fw.buckets.some(b => b.id === initialLens));
-    let activeLens = validLens ? initialLens! : 'all';
+    let activeLens = validLens ? initialLens : 'all';
 
     // ---------- 上下文入口:Project 绑定主文件;其它桶挂载 Note/MOC ----------
     const createbar = ck.createDiv({ cls: 'createbar' });

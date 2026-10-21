@@ -211,38 +211,38 @@ export function createInlineColorPicker(
 	onConfirm: (hexColor: string) => void,
 	onCancel?: () => void
 ): HTMLElement {
-	const picker = activeDocument.createElement('div');
+	const picker = activeWindow.createDiv();
 	picker.className = 'zk-inline-color-picker';
 	picker.addEventListener('pointerdown', (e) => e.stopPropagation());
 	picker.addEventListener('mousedown', (e) => e.stopPropagation());
 
-	const svArea = activeDocument.createElement('div');
+	const svArea = activeWindow.createDiv();
 	svArea.className = 'zk-inline-color-picker-sv';
-	const svWhite = activeDocument.createElement('div');
+	const svWhite = activeWindow.createDiv();
 	svWhite.className = 'zk-inline-color-picker-sv-white';
-	const svBlack = activeDocument.createElement('div');
+	const svBlack = activeWindow.createDiv();
 	svBlack.className = 'zk-inline-color-picker-sv-black';
-	const svHandle = activeDocument.createElement('div');
+	const svHandle = activeWindow.createDiv();
 	svHandle.className = 'zk-inline-color-picker-handle';
 	svArea.appendChild(svWhite);
 	svArea.appendChild(svBlack);
 	svArea.appendChild(svHandle);
 
-	const hueSlider = activeDocument.createElement('div');
+	const hueSlider = activeWindow.createDiv();
 	hueSlider.className = 'zk-inline-color-picker-hue';
-	const hueHandle = activeDocument.createElement('div');
+	const hueHandle = activeWindow.createDiv();
 	hueHandle.className = 'zk-inline-color-picker-hue-handle';
 	hueSlider.appendChild(hueHandle);
 
-	const footer = activeDocument.createElement('div');
+	const footer = activeWindow.createDiv();
 	footer.className = 'zk-inline-color-picker-footer';
-	const preview = activeDocument.createElement('span');
+	const preview = activeWindow.createSpan();
 	preview.className = 'zk-inline-color-picker-preview';
-	const confirmBtn = activeDocument.createElement('button');
+	const confirmBtn = activeWindow.createEl('button');
 	confirmBtn.type = 'button';
 	confirmBtn.className = 'zk-inline-color-picker-btn';
 	confirmBtn.textContent = '确认';
-	const cancelBtn = activeDocument.createElement('button');
+	const cancelBtn = activeWindow.createEl('button');
 	cancelBtn.type = 'button';
 	cancelBtn.className = 'zk-inline-color-picker-btn';
 	cancelBtn.textContent = '取消';
@@ -356,7 +356,7 @@ export function createSelectionColorPanel(
 	customTitle: string,
 	onPick: (hexColor: string) => void
 ): HTMLElement {
-	const panel = activeDocument.createElement('div');
+	const panel = activeWindow.createDiv();
 	panel.className = 'zk-text-selection-color-panel';
 	panel.addEventListener('pointerdown', (e) => e.stopPropagation());
 	panel.addEventListener('mousedown', (e) => e.stopPropagation());
@@ -373,7 +373,7 @@ export function createSelectionColorPanel(
 	};
 
 	const appendSwatch = (color: string, extraClass: string, title: string) => {
-		const swatch = activeDocument.createElement('button');
+		const swatch = activeWindow.createEl('button');
 		swatch.type = 'button';
 		swatch.className = `zk-text-selection-color-swatch${extraClass ? ' ' + extraClass : ''}`;
 		swatch.dataset.color = color;
@@ -401,7 +401,7 @@ export function createSelectionColorPanel(
 	});
 
 	let inlinePicker: HTMLElement | null = null;
-	const customSwatch = activeDocument.createElement('button');
+	const customSwatch = activeWindow.createEl('button');
 	customSwatch.type = 'button';
 	customSwatch.className = 'zk-text-selection-color-swatch zk-text-selection-color-custom';
 	customSwatch.title = customTitle;

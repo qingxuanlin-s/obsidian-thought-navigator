@@ -1,5 +1,5 @@
 import { Component, MarkdownRenderer, TFile } from "obsidian";
-import { WorkspaceNode, WorkspacePlacement, WSProjectNode, WSMocNode, isWorkspaceNodeArchived } from "src/types/workspace";
+import { WorkspaceNode, WorkspacePlacement, WSMocNode, isWorkspaceNodeArchived } from "src/types/workspace";
 import { FilePickerModal } from "src/modal/filePickerModal";
 import { t } from "src/lang/helper";
 import { RenderCtx, TYPE_COLOR, statusLabel, STATUS_COLOR, relTime, progressFor, nextActionText, renderWorkspaceFileSummary } from "./render";
@@ -88,7 +88,7 @@ export class Deck {
 
     private renderBody(node: WorkspaceNode) {
         if (node.type === 'project') {
-            const p = node as WSProjectNode;
+            const p = node;
             const meta = this.body.createDiv({ cls: 'dmeta' });
             const mi = (k: string, v: string, color?: string) => {
                 const cell = meta.createDiv({ cls: 'mi' });

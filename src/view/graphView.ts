@@ -423,9 +423,9 @@ export class ZKGraphView extends ItemView {
                 console.warn(`Graph View: No tree structure found for heading: ${headingTitle}`);
                 const emptyContainer = graphMermaidDiv.createDiv("zk-family-graph-container");
                 const emptyTextDiv = emptyContainer.createDiv("zk-graph-text");
-                emptyTextDiv.createEl('span', { text: `${headingTitle}` });
+                emptyTextDiv.createSpan({ text: `${headingTitle}` });
                 
-                const errorDiv = emptyContainer.createEl('div', {
+                const errorDiv = emptyContainer.createDiv({
                     text: `${t("No tree structure found under heading:")} # ${headingTitle}`,
                     cls: "zk-graph-mermaid"
                 });
@@ -839,7 +839,7 @@ export class ZKGraphView extends ItemView {
             if (relatedNodes.length === 0 && inlinkArr.length === 0 && outlinkArr.length === 0) {
                 section.body.createDiv('zk-local-empty').setText(t("no local relations"));
             } else {
-                const mocNodeTreeDiv = section.body.createEl("div", {
+                const mocNodeTreeDiv = section.body.createDiv({
                     cls: "zk-graph-cytoscape zk-local-cytoscape"
                 });
                 mocNodeTreeDiv.id = "zk-moc-node-tree-cytoscape";
@@ -1144,7 +1144,7 @@ export class ZKGraphView extends ItemView {
         stage.setCssProps({ '--zk-focus-card-max-w': `${sideCardMaxW}px` });
         stage.setCssProps({ '--zk-focus-center-min-w': `${centerCardMinW}px` });
         stage.setCssProps({ '--zk-focus-center-max-w': `${centerCardMaxW}px` });
-        const edgeLayer = stage.createEl('div', { cls: 'zk-focus-edge-layer', attr: { 'aria-hidden': 'true' } });
+        const edgeLayer = stage.createDiv({ cls: 'zk-focus-edge-layer', attr: { 'aria-hidden': 'true' } });
         const centerZone = stage.createDiv('zk-focus-center-zone zk-focus-radial-center-zone');
 
         const openFile = (file: TFile, event?: MouseEvent | KeyboardEvent) => {
@@ -1467,7 +1467,7 @@ export class ZKGraphView extends ItemView {
         mocGraphContainer.addClass('zk-moc-tree-section');
         const mocGraphTextDiv = mocGraphContainer.createDiv("zk-graph-text");
         mocGraphTextDiv.empty();
-        mocGraphTextDiv.createEl('span', { text: `${headingTitle}` });
+        mocGraphTextDiv.createSpan({ text: `${headingTitle}` });
 
         // 添加图标按钮
         const graphIconDiv = mocGraphContainer.createDiv("zk-graph-icon");
@@ -1485,7 +1485,7 @@ export class ZKGraphView extends ItemView {
         expandBtn.setIcon("expand").setTooltip(t("expand graph"));
 
         // 创建图形容器
-        const mocTreeDiv = mocGraphContainer.createEl("div", {
+        const mocTreeDiv = mocGraphContainer.createDiv({
             cls: "zk-graph-cytoscape"
         });
         mocTreeDiv.id = "zk-moc-tree-cytoscape";
@@ -1655,7 +1655,7 @@ export class ZKGraphView extends ItemView {
 
         // 创建节点卡片
         const createNodeCard = (file: TFile, type: 'inlink' | 'outlink'): HTMLElement => {
-            const card = activeDocument.createElement('div');
+            const card = activeWindow.createDiv();
             card.className = `zk-iol-card zk-iol-card-${type}`;
             card.addEventListener('click', (e) => handleFileClick(file, e));
             card.addEventListener('mouseover', (e) => handleFileHover(file, e, inoutlinksContainer));
@@ -1663,7 +1663,7 @@ export class ZKGraphView extends ItemView {
             const iconEl = card.createDiv('zk-iol-card-icon');
             setIcon(iconEl, getFileIcon(file));
 
-            card.createEl('span', { cls: 'zk-iol-card-name', text: file.basename });
+            card.createSpan({ cls: 'zk-iol-card-name', text: file.basename });
 
             return card;
         };
@@ -1671,7 +1671,7 @@ export class ZKGraphView extends ItemView {
         // === 入链区域 ===
         // 入链标题（始终保留，避免只有出链时上半区塌陷）
         const inHeader = inoutlinksContainer.createDiv('zk-iol-header zk-iol-header-inlink');
-        inHeader.createEl('span', { text: `${t("inlinks")} · ${inlinkArr.length}` });
+        inHeader.createSpan({ text: `${t("inlinks")} · ${inlinkArr.length}` });
 
         // 入链卡片网格
         const inGrid = inoutlinksContainer.createDiv('zk-iol-grid');
@@ -1688,7 +1688,7 @@ export class ZKGraphView extends ItemView {
         const centerCard = inoutlinksContainer.createDiv('zk-iol-center');
         const centerIcon = centerCard.createDiv('zk-iol-center-icon');
         setIcon(centerIcon, 'git-branch');
-        centerCard.createEl('div', { cls: 'zk-iol-center-title', text: currentFile.basename });
+        centerCard.createDiv({ cls: 'zk-iol-center-title', text: currentFile.basename });
         centerCard.addEventListener('click', (e) => handleFileClick(currentFile, e));
 
         // === 出链区域 ===
@@ -1705,7 +1705,7 @@ export class ZKGraphView extends ItemView {
 
         // 出链标题（始终放在底部）
         const outHeader = inoutlinksContainer.createDiv('zk-iol-header zk-iol-header-outlink');
-        outHeader.createEl('span', { text: `${t("outlinks")} · ${outlinkArr.length}` });
+        outHeader.createSpan({ text: `${t("outlinks")} · ${outlinkArr.length}` });
 
         // 展开按钮：用 Cytoscape 渲染放大视图
         expandBtn.onClick(() => {
@@ -1713,7 +1713,7 @@ export class ZKGraphView extends ItemView {
                 const graphData = GraphDataBuilder.fromInOutLinks(currentFile, inlinkArr, outlinkArr);
                 const options: RenderOptions = {
                     app: this.app,
-                    direction: 'TB' as 'TB' | 'BT' | 'LR' | 'RL',
+                    direction: 'TB',
                     layoutType: 'preset',
                     animate: true,
                     animationDuration: 500,
