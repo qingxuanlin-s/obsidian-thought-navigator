@@ -341,29 +341,45 @@ align-items: center;
   height: 8px;
   pointer-events: none;
   z-index: 13;
-  clip-path: polygon(0 50%, 9% 38%, 50% 6%, 91% 38%, 100% 50%, 91% 62%, 50% 94%, 9% 62%);
-  background:
-    linear-gradient(90deg, transparent 0%, rgba(168, 245, 255, 0.34) 14%, rgba(255, 255, 255, 0.98) 48%, rgba(125, 211, 252, 0.9) 60%, transparent 100%);
   filter:
     drop-shadow(0 0 9px rgba(125, 211, 252, 0.85))
     drop-shadow(0 0 2px rgba(255, 255, 255, 0.9));
   animation: zk-right-drag-node-cut 260ms ease-out forwards;
 }
 
+/* 刀光本体放在伪元素上:外层 transform 由 JS 内联写入(定位+旋转),
+   展开动画只能作用于伪元素自身的 transform。两端收尖用椭圆圆角,不依赖 clip-path。 */
+.zk-right-drag-node-cut::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background:
+    linear-gradient(90deg, transparent 0%, rgba(168, 245, 255, 0.34) 14%, rgba(255, 255, 255, 0.98) 48%, rgba(125, 211, 252, 0.9) 60%, transparent 100%);
+  animation: zk-right-drag-node-cut-reveal 260ms ease-out forwards;
+}
+
 @keyframes zk-right-drag-node-cut {
   from {
     opacity: 0;
-    clip-path: inset(0 48% 0 48%);
     filter: blur(0);
   }
   28% {
     opacity: 1;
-    clip-path: inset(0 0 0 0);
   }
   to {
     opacity: 0;
-    clip-path: inset(0 0 0 0);
     filter: blur(3px);
+  }
+}
+
+@keyframes zk-right-drag-node-cut-reveal {
+  from {
+    transform: scaleX(0.04);
+  }
+  28%,
+  to {
+    transform: scaleX(1);
   }
 }
 
@@ -3508,7 +3524,6 @@ align-items: center;
 }
 
 .zk-search-suggestion-item {
-  display: block;
   width: 100%;
   text-align: left;
   background: transparent;
@@ -4300,15 +4315,16 @@ align-items: center;
   vertical-align: middle;
 }
 .zk-text-md-math .math-block,
-.zk-text-md-math mjx-container[display="true"] {
+.zk-text-md-math .MathJax[display="true"] {
   margin: 0.2em 0;
 }
-.zk-text-md-math mjx-container {
+/* MathJax 3 给 mjx-container 加了 .MathJax 类,用类选择器代替自定义元素类型选择器 */
+.zk-text-md-math .MathJax {
   margin: 0;
   display: inline-block;
   vertical-align: middle;
 }
-.zk-text-md-math mjx-container > svg {
+.zk-text-md-math .MathJax > svg {
   display: block;
   height: auto;
 }
@@ -4634,14 +4650,20 @@ align-items: center;
    这里的 CM 子元素统一用 font-size: inherit + em padding,跟随 overlay 的 font-size
    等比伸缩。CM/vim 在任何 zoom 下都在"自然像素"里工作,fat cursor 不会错位。 */
 
-/* 关键:Obsidian 在 .markdown-source-view / .cm-scroller 上塞了默认 font-size
-   (.markdown-source-view.mod-cm6 .cm-scroller 优先级 0,3,0),会截断继承链且压过
-   我们 0,2,0 的 inherit 规则。统一用 !important 越过它,让 overlay 的 base*zoom
-   一路传到 cm-content,保证编辑态字号与展示态一致(否则编辑态被钉死在 16px,
-   缩小白板时字偏大,导致换行比展示态多)。 */
-.zk-text-md-live-edit-host,
-.zk-text-md-live-edit-host .markdown-source-view {
-  font-size: inherit !important;
+/* 关键:Obsidian 在 .markdown-source-view 上设置 font-size: var(--font-text-size)
+   (侧栏/悬浮预览里分别是 --sidebar-markdown-font-size / --popover-font-size),
+   会截断继承链,把编辑态钉死在 16px(缩小白板时字偏大,换行比展示态多)。
+   在宿主上把这些变量改成 1em,Obsidian 自己的规则就会解析为"跟随父级",
+   overlay 的 base*zoom 一路传到 cm-content,编辑态字号与展示态一致,无需 !important。 */
+.zk-text-md-live-edit-host {
+  --font-text-size: 1em;
+  --sidebar-markdown-font-size: 1em;
+  --popover-font-size: 1em;
+  font-size: inherit;
+}
+
+.zk-text-md-live-edit-host .markdown-source-view.mod-cm6 {
+  font-size: inherit;
 }
 
 /* 主题感知:覆盖 Obsidian 主题变量,让插件 themeMode 能控制 CodeMirror 配色 */
@@ -4676,13 +4698,13 @@ align-items: center;
 .zk-text-md-live-edit-host .cm-editor {
   height: 100%;
   background: transparent;
-  font-size: inherit !important;
+  font-size: inherit;
   font-weight: 500;
 }
 
 .zk-text-md-live-edit-host .cm-scroller {
   font-family: var(--font-text);
-  font-size: inherit !important;
+  font-size: inherit;
   font-weight: 500;
   /* CM 内部的 .cm-scroller 是真正的滚动容器(overflow: auto)。内容稍高一点就会
      冒出竖向滚动条,吃掉约 15px 文字宽度,导致编辑态比展示态(.zk-rough-text-line)
@@ -4699,7 +4721,7 @@ align-items: center;
 .zk-text-md-live-edit-host .cm-content,
 .zk-text-md-live-edit-host .cm-line,
 .zk-text-md-live-edit-host .cm-editor .cm-line {
-  font-size: inherit !important;
+  font-size: inherit;
   font-weight: 500;
 }
 
@@ -6568,7 +6590,8 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 .zkw .g.map::before { content:''; width:11px; height:11px; border-radius:2.5px; border:1.6px solid currentColor; }
 .zkw .g.map::after { content:''; position:absolute; width:5px; height:1.6px; background:currentColor; border-radius:1px; box-shadow:0 3px 0 currentColor, 0 -3px 0 currentColor; transform:scaleX(0.7); }
 .zkw .g.proj::before { content:''; width:11px; height:11px; border-radius:50%; border:2px solid currentColor; border-right-color:transparent; transform:rotate(-45deg); }
-.zkw .g.folder::before { content:''; width:12px; height:9px; border-radius:1.5px 2.5px 2.5px 2.5px; background:currentColor; clip-path:polygon(0 22%, 42% 22%, 52% 0, 100% 0, 100% 100%, 0 100%); }
+.zkw .g.folder::before { content:''; width:12px; height:7px; margin-top:2px; border-radius:1.5px 0 2.5px 2.5px; background:currentColor; }
+.zkw .g.folder::after { content:''; position:absolute; width:6px; height:3px; border-radius:1px 1.5px 0 0; background:currentColor; transform:translate(3px, -3px); }
 
 /* ───────── Nav rail ───────── */
 .zkw .rail { border-right:1px solid var(--rule); background:var(--panel); min-height:0; display:flex; flex-direction:column; }
@@ -6663,7 +6686,7 @@ body.zk-theme-light .zk-scratch-tab-add:hover {
 .zkw .ck-bigic .g.space::before { width:17px; height:17px; }
 .zkw .ck-bigic .g.moc::before { width:18px; height:18px; }
 .zkw .ck-h1 { font-size:27px; font-weight:800; letter-spacing:-0.025em; margin:0; line-height:1.15; }
-.zkw .ck-h1.clickable { cursor:pointer; display:inline; text-decoration-color:transparent; transition:color 0.12s ease; }
+.zkw .ck-h1.clickable { cursor:pointer; display:inline; transition:color 0.12s ease; }
 .zkw .ck-h1.clickable:hover { color:var(--interactive-accent); text-decoration:underline; text-underline-offset:3px; }
 .zkw .ck-tagrow { display:flex; align-items:center; gap:9px; margin-top:9px; flex-wrap:wrap; }
 .zkw .ck-tagrow .stat { font-family:var(--mono); font-size:10.5px; color:var(--ink-dim); }
@@ -7151,20 +7174,21 @@ body.zk-theme-light .zk-workspace-source-capsule:hover,
   color:color-mix(in srgb, var(--zk-accent, #6d57c4) 84%, var(--zk-text, #253044));
 }
 
-/* 该入口由 Obsidian 工具栏规则二次着色，浅色模式下需显式阻断深色表面回退。 */
-.zk-theme-light .zk-workspace-source-capsule,
-.zk-theme-light .zk-moc-parent-chip,
-.zk-view-content.zk-theme-light .zk-workspace-source-capsule,
-.zk-view-content.zk-theme-light .zk-moc-parent-chip {
-  color:#253044 !important;
-  background:#f8fafd !important;
-  border-color:rgba(92, 101, 128, 0.24) !important;
+/* 浅色模式下胶囊用中性表面,压过上方 body.theme-light / .zk-view-content.zk-theme-light
+   的强调色着色规则。经 .zk-breadcrumb-nav 提高优先级(两者都挂在它下面),不用 !important。 */
+.zk-theme-light .zk-breadcrumb-nav .zk-workspace-source-capsule,
+.zk-theme-light .zk-breadcrumb-nav .zk-moc-parent-chip,
+.zk-view-content.zk-theme-light .zk-breadcrumb-nav .zk-workspace-source-capsule,
+.zk-view-content.zk-theme-light .zk-breadcrumb-nav .zk-moc-parent-chip {
+  color:#253044;
+  background:#f8fafd;
+  border-color:rgba(92, 101, 128, 0.24);
 }
-.zk-theme-light .zk-workspace-source-capsule:hover,
-.zk-theme-light .zk-moc-parent-chip:hover,
-.zk-view-content.zk-theme-light .zk-workspace-source-capsule:hover,
-.zk-view-content.zk-theme-light .zk-moc-parent-chip:hover {
-  color:var(--zk-accent, #6d57c4) !important;
-  background:#eef2f8 !important;
-  border-color:var(--zk-accent, #6d57c4) !important;
+.zk-theme-light .zk-breadcrumb-nav .zk-workspace-source-capsule:hover,
+.zk-theme-light .zk-breadcrumb-nav .zk-moc-parent-chip:hover,
+.zk-view-content.zk-theme-light .zk-breadcrumb-nav .zk-workspace-source-capsule:hover,
+.zk-view-content.zk-theme-light .zk-breadcrumb-nav .zk-moc-parent-chip:hover {
+  color:var(--zk-accent, #6d57c4);
+  background:#eef2f8;
+  border-color:var(--zk-accent, #6d57c4);
 }
