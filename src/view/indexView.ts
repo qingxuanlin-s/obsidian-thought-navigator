@@ -10365,31 +10365,55 @@ window.addEventListener('resize', function() {
     }
 
     /**
-     * 自动布局的方向分组完成后，再做一次同父级的纵向碰撞收口。
-     * 新创建的节点占用当前槽位，已有兄弟及其完整子树依次向下让位，避免重叠。
+     * 自动布局的方向分组完成后，再做一次同父级的碰撞收口。
+     * 新创建的节点占用当前槽位，已有兄弟及其完整子树沿堆叠轴依次让位，避免重叠。
+     * 堆叠轴随 preset 而定(bidirectional 竖直、top-down 水平、radial 依对角方向),
+     * 不能固定往下推:top-down 下 y 是生长方向,往下推会把兄弟推进下一层。
      */
     private async resolveAutoSiblingVerticalOverlaps(parentNodeId: string, newNodeId: string): Promise<void> {
         const cy = this.branchRenderer?.getCytoscapeInstance();
         const newNode = this.getCyNodeForLayout(newNodeId);
-        if (!cy || !newNode) return;
+        const parentNode = this.getCyNodeForLayout(parentNodeId);
+        if (!cy || !newNode || !parentNode) return;
+
+        const preset = this.getPresetForChildren(parentNodeId);
+        const parentPosition = parentNode.position();
+        const newPosition = newNode.position();
+        const direction = quantizeToPool(
+            newPosition.x - parentPosition.x,
+            newPosition.y - parentPosition.y,
+            PRESET_POOL[preset]
+        );
+        const axis = this.getAutoStackAxis(direction, preset);
+        const project = (node: cytoscape.NodeSingular): number => {
+            const position = node.position();
+            return position.x * axis.x + position.y * axis.y;
+        };
+        // 节点矩形在堆叠轴上的投影区间
+        const projectedRange = (node: cytoscape.NodeSingular): { min: number; max: number } => {
+            const center = project(node);
+            const size = this.getLayoutNodeSize(node);
+            const halfSpan = (Math.abs(axis.x) * size.width + Math.abs(axis.y) * size.height) / 2;
+            return { min: center - halfSpan, max: center + halfSpan };
+        };
 
         const siblings = this.getRealChildNodeIds(parentNodeId)
             .filter((nodeId) => nodeId !== newNodeId)
             .map((nodeId) => ({ nodeId, node: this.getCyNodeForLayout(nodeId) }))
             .filter((entry): entry is { nodeId: string; node: cytoscape.NodeSingular } => !!entry.node)
-            .sort((a, b) => a.node.position().y - b.node.position().y);
+            .sort((a, b) => project(a.node) - project(b.node));
 
         const placedNodes: cytoscape.NodeSingular[] = [newNode];
         const movedNodeIds = new Set<string>();
         for (const sibling of siblings) {
             const siblingBounds = this.getLayoutNodeBounds(sibling.node);
-            const shiftY = Math.round(Math.max(0, ...placedNodes.map((placed) => {
-                const placedBounds = this.getLayoutNodeBounds(placed);
-                return this.rectanglesOverlap(placedBounds, siblingBounds, 32)
-                    ? placedBounds.bottom + 64 - siblingBounds.top
+            const siblingRange = projectedRange(sibling.node);
+            const shift = Math.round(Math.max(0, ...placedNodes.map((placed) => {
+                return this.rectanglesOverlap(this.getLayoutNodeBounds(placed), siblingBounds, 32)
+                    ? projectedRange(placed).max + 64 - siblingRange.min
                     : 0;
             })) * 100) / 100;
-            if (shiftY < 0.01) {
+            if (shift < 0.01) {
                 placedNodes.push(sibling.node);
                 continue;
             }
@@ -10399,7 +10423,10 @@ window.addEventListener('resize', function() {
                     const node = this.getCyNodeForLayout(nodeId);
                     if (!node) return;
                     const position = node.position();
-                    node.position({ x: position.x, y: position.y + shiftY });
+                    node.position({
+                        x: Math.round((position.x + axis.x * shift) * 100) / 100,
+                        y: Math.round((position.y + axis.y * shift) * 100) / 100,
+                    });
                 });
             });
             subtreeIds.forEach((nodeId) => movedNodeIds.add(nodeId));
@@ -10813,49 +10840,15 @@ window.addEventListener('resize', function() {
             })(),
             layoutPreset: normalizeLayoutPreset(this.plugin.settings.autoLayoutDefaultGrowthDirection),
             nodeLayoutPresets: mocData.nodeLayoutPresets,
+            // 引擎只让"子节点围绕父节点对称";子节点被手动拖动或追加导致整体偏移时,
+            // 需要反过来把父节点移到子节点中点。只动 auto 节点:free 锚点(issue #48)保持不动,
+            // 局部重排时锚点(父)固定。
+            recenterParents: true,
+            recenterSkipIds: new Set(Object.keys(nodes).filter((id) =>
+                !this.isNodeAutoLayout(id)
+                || (!!relayoutOptions.localOnly && id === relayoutRootId)
+            )),
         });
-
-        // 自底向上把每个 auto 父节点重定位到其子节点的横轴中点。
-        // 引擎只让"子节点围绕父节点对称",从不反过来"父节点对齐子节点中点";
-        // 当子节点被手动拖动或顺序向下追加导致整体偏移时,父节点会停在顶端不居中。
-        // 对称健康的子树里 中点==父节点 → 本步是空操作,幂等安全。
-        // 只动 auto 节点;根/分支根(分组放置)与 free 锚点(issue #48)保持不动。
-        {
-            const depthOf = (id: string): number => {
-                let depth = 0;
-                let cur: string | undefined = id;
-                const seen = new Set<string>();
-                while (cur && parentById[cur] && !seen.has(cur)) {
-                    seen.add(cur);
-                    cur = parentById[cur];
-                    depth++;
-                }
-                return depth;
-            };
-            const round2 = (v: number) => Math.round(v * 100) / 100;
-            const order = Object.keys(nodePositions).sort((a, b) => depthOf(b) - depthOf(a));
-            for (const id of order) {
-                if (!this.isNodeAutoLayout(id)) continue;
-                if (realMocRootIds.has(id)) continue;            // 根:分组放置,跳过
-                if (relayoutOptions.localOnly && id === relayoutRootId) continue; // 局部重排:锚点(父)固定不动
-                const pid = parentById[id];
-                if (pid && realMocRootIds.has(pid)) continue;     // 分支根:分组放置,跳过
-                const cur = nodePositions[id];
-                if (!cur) continue;
-                const pts = (childrenById[id] || [])
-                    .map((kid) => nodePositions[kid])
-                    .filter(Boolean) as { x: number; y: number }[];
-                if (pts.length === 0) continue;
-                const xs = pts.map((p) => p.x);
-                const ys = pts.map((p) => p.y);
-                const minX = Math.min(...xs), maxX = Math.max(...xs);
-                const minY = Math.min(...ys), maxY = Math.max(...ys);
-                // 横轴 = 子节点铺开(跨度更大)的那条轴;沿该轴取中点,前进轴坐标保持不变
-                nodePositions[id] = (maxY - minY) >= (maxX - minX)
-                    ? { x: cur.x, y: round2((minY + maxY) / 2) }
-                    : { x: round2((minX + maxX) / 2), y: cur.y };
-            }
-        }
 
         // auto → free 边界:free 节点不参加自动布局,但它相对自动父节点的人工偏移应保持。
         // 自动父节点移动多少,其直接 free 子节点的整棵结构后继树就整体平移多少；

@@ -190,7 +190,19 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                 'text-valign': 'center',
                 'text-halign': 'center',
                 'text-wrap': 'wrap',
-                'text-max-width': '280px',
+                // 文件节点框宽按单行全宽计算(无上限),换行宽度必须同源,否则长标题在框内折行、
+                // 框高却只算了一行。文本节点由 node[?isTextOnly] 规则覆盖。
+                'text-max-width': (ele: cytoscape.NodeSingular) => {
+                    if (ele.data('isTextOnly') || ele.data('isPlaceholder')) return 280;
+                    return measureSingleLineFileNode(dataStr(ele, 'label'), {
+                        fontSize: deps.FIRST_LEVEL_NODE_FONT_SIZE - 4,
+                        fontWeight: '500',
+                        baseWidth: 90,
+                        minHeight: 42,
+                        paddingX: 40,
+                        paddingY: FILE_NODE_PADDING_Y
+                    }).wrapWidth;
+                },
                 'text-overflow-wrap': 'anywhere',
                 'background-color': (ele: cytoscape.NodeSingular) => {
                     const fillColor = dataStr(ele, 'customFillColor');

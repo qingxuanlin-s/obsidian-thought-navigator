@@ -1701,7 +1701,9 @@ export class MOCHandler {
             if (preset === null) {
                 delete mocData.nodeLayoutPresets[nodeId];
             } else {
-                const filePreset = normalizeLayoutPreset(mocData.layoutPreset);
+                // 未单独设置的分支跟随全局默认生长方向(布局时引擎也用全局设置作 filePreset),
+                // 必须与它比较;用文件里创建时写入的 layoutPreset 比较,全局设置改过后会误删用户的选择。
+                const filePreset = normalizeLayoutPreset(this.plugin.settings.autoLayoutDefaultGrowthDirection);
                 const normalized = normalizeLayoutPreset(preset);
                 if (normalized === filePreset) {
                     delete mocData.nodeLayoutPresets[nodeId];

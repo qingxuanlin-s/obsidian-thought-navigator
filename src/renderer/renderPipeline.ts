@@ -613,7 +613,7 @@ function getCanvasCtx(): CanvasRenderingContext2D | null {
 const _textWidthCache = new Map<string, number>();
 
 export function measureTextWidthCanvas(text: string, fontSize: number, fontWeight = '500'): number {
-	const cacheKey = `${fontWeight} ${fontSize} ${text}`;
+	const cacheKey = `${fontWeight}|${fontSize}|${text}`;
 	const cached = _textWidthCache.get(cacheKey);
 	if (cached !== undefined) return cached;
 

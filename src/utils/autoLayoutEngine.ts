@@ -32,6 +32,10 @@ export interface ComputeAutoLayoutInput {
 	nodeLayoutPresets?: Record<string, LayoutPreset>;
 	forwardGap?: number;
 	stackGap?: number;
+	// 放置完成后,自底向上把父节点沿其堆叠轴移到子节点投影区间的中点。
+	// 根/分支起点(分组放置)与子节点方向不一致的节点不参与;skip 集内的节点保持不动。
+	recenterParents?: boolean;
+	recenterSkipIds?: Set<string>;
 }
 
 interface LayoutNode {
@@ -299,8 +303,38 @@ export function computeAutoLayout(input: ComputeAutoLayoutInput): Record<string,
 		placeChildren(layout, ax, ay);
 	};
 
+	// 沿堆叠轴(而非按 x/y 跨度猜轴)取子节点中点:单子节点时中点即子节点在轴上的投影,
+	// 父节点只在轴向移动、前进方向坐标不变,不会被拉到子节点身上;radial 也保持在对角线上。
+	const recenter = (layout: LayoutNode) => {
+		for (const child of layout.children) recenter(child);
+		if (layout.children.length === 0 || layout.groupChildren || !layout.stackAxis) return;
+		if (input.realMocRootIds.has(layout.id) || isBranchStart(layout.id)) return;
+		if (input.recenterSkipIds?.has(layout.id)) return;
+		const cur = positions[layout.id];
+		if (!cur) return;
+		const axis = layout.stackAxis;
+		let min = Infinity;
+		let max = -Infinity;
+		for (const child of layout.children) {
+			const p = positions[child.id];
+			if (!p) continue;
+			const proj = p.x * axis.x + p.y * axis.y;
+			min = Math.min(min, proj);
+			max = Math.max(max, proj);
+		}
+		if (!Number.isFinite(min)) return;
+		const delta = (min + max) / 2 - (cur.x * axis.x + cur.y * axis.y);
+		if (Math.abs(delta) < 0.01) return;
+		positions[layout.id] = {
+			x: Math.round((cur.x + axis.x * delta) * 100) / 100,
+			y: Math.round((cur.y + axis.y * delta) * 100) / 100,
+		};
+	};
+
 	const root = input.nodes[input.relayoutRootId];
 	if (!root) return positions;
-	placeLayout(buildLayout(input.relayoutRootId), root.position.x, root.position.y);
+	const rootLayout = buildLayout(input.relayoutRootId);
+	placeLayout(rootLayout, root.position.x, root.position.y);
+	if (input.recenterParents) recenter(rootLayout);
 	return positions;
 }
