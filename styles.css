@@ -7192,3 +7192,24 @@ body.zk-theme-light .zk-workspace-source-capsule:hover,
   background:#eef2f8;
   border-color:var(--zk-accent, #6d57c4);
 }
+
+/* Nebula:画布本身透明,透出外层 .zk-index-mermaid-container 的星云/浅灰渐变。
+   全屏时只有画布进入顶层、外层背景不可见,透明会露出浏览器默认的黑色 backdrop,
+   所以全屏下由画布自己画与外层容器同款的底色和渐变。放在文件末尾以压过同优先级的主题规则。 */
+.zk-view-content.zk-style-nebula .zk-graph-cytoscape {
+  background-color: transparent;
+}
+
+.zk-view-content.zk-style-nebula.zk-theme-dark .zk-graph-cytoscape:fullscreen {
+  background-color: #06070b;
+  background-image:
+    radial-gradient(ellipse 70% 55% at 50% 42%, rgba(49, 37, 82, 0.29), transparent 62%),
+    radial-gradient(ellipse 50% 45% at 82% 78%, rgba(29, 51, 82, 0.19), transparent 60%);
+}
+
+.zk-view-content.zk-style-nebula.zk-theme-light .zk-graph-cytoscape:fullscreen {
+  background-color: #eceef2;
+  background-image:
+    radial-gradient(ellipse 70% 55% at 38% 30%, rgba(255, 255, 255, 0.6), transparent 62%),
+    radial-gradient(ellipse 55% 48% at 82% 80%, rgba(124, 111, 224, 0.05), transparent 60%);
+}

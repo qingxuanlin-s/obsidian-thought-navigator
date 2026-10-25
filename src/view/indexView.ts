@@ -1911,28 +1911,6 @@ export class ZKIndexView extends FileView {
         });
         menu.createDiv('zk-menu-separator');
 
-        // 添加到项目文件夹(仅 .moc / .moc.md 可用)
-        const currentPath = this.plugin.settings.mocCurrentFile;
-        const currentFile = currentPath ? this.app.vault.getFileByPath(currentPath) : null;
-        if (currentFile && isMocFile(currentFile)) {
-            const mountedCount = this.plugin.workspaceStore
-                ?.containersHostingFile(currentFile.path).length ?? 0;
-            const mountOption = menu.createDiv('zk-menu-option');
-            setIcon(mountOption.createSpan('zk-menu-option-icon'), 'folder-plus');
-            const labelText = mountedCount > 0
-                ? t("Manage project folder mounts").replace("{count}", String(mountedCount))
-                : t("Add to project folder...");
-            mountOption.createSpan().setText(labelText);
-            mountOption.addEventListener('click', (e) => {
-                e.stopPropagation();
-                menu.remove();
-                this.plugin.openFolderMountModal(currentFile);
-            });
-
-            // 分隔线
-            menu.createDiv('zk-menu-separator');
-        }
-
         const importOption = menu.createDiv('zk-menu-option');
         setIcon(importOption.createSpan('zk-menu-option-icon'), 'file-input');
         importOption.createSpan().setText(t('import xmind or markdown'));
@@ -3564,11 +3542,12 @@ window.addEventListener('resize', function() {
                 outline: '',
             });
         }
-        // Nebula 走透明底(让 CSS 按 dark/light 提供的星云/浅灰径向渐变透出),
-        // 否则按 light/dark 给纯色底。注意:这里是 inline 样式,会盖过 CSS,必须显式处理 nebula。
+        // 非 Nebula 按 light/dark 给纯色底。Nebula 不写 inline,交给 styles.css:
+        // 平时透明以透出外层容器的星云/浅灰渐变,全屏时外层不可见,由画布自己画同款底
+        // (inline 会盖过 :fullscreen 规则,全屏时透出浏览器默认的黑色 backdrop)。
         const isNebulaStyle = this.plugin.settings.themeStyle === 'nebula';
         branchGraphDiv.setCssStyles({ backgroundColor: isNebulaStyle
-            ? 'transparent'
+            ? ''
             : (resolveThemeMode(this.plugin.settings.themeMode) === 'light' ? '#f2f5fa' : '#2a2a2a') });
         this.ensureBranchFullscreenBackButton(branchGraphDiv);
 

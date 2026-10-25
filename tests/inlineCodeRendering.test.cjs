@@ -42,8 +42,9 @@ class Element {
 const activeDocument = {
 	createElement: tagName => new Element(tagName),
 	createTextNode: text => new Element('#text', text),
+	win: { createEl: tagName => new Element(tagName) },
 };
-const render = new Function('activeDocument', 'renderInlineMarkdown', `${compiled}\nreturn render;`)(activeDocument, renderInlineMarkdown);
+const render = new Function('activeWindow', 'renderInlineMarkdown', `${compiled}\nreturn render;`)(activeDocument.win, renderInlineMarkdown);
 function parts(input) {
 	const root = new Element('div');
 	render(root, input);

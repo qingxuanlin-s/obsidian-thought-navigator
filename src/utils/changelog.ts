@@ -12,6 +12,28 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
     {
+        version: '0.3.9',
+        date: '2026-10-25',
+        highlights: [
+            {
+                zh: '修复自动布局中父子节点重叠的问题，新建节点时按分支生长方向避让，并保留分支单独设置的布局方向。',
+                en: 'Fixed overlapping parent and child nodes in automatic layouts. New nodes now make room along the branch growth direction, and branch-specific layout directions are preserved.',
+            },
+            {
+                zh: '修复深层文件节点长标题的换行宽度与节点框宽度不一致的问题。',
+                en: 'Fixed inconsistent title wrapping and node widths for deeply nested file nodes.',
+            },
+            {
+                zh: '修复星云主题画布全屏时背景变黑的问题，浅色和深色模式均保持对应的渐变背景。',
+                en: 'Fixed black canvas backgrounds in fullscreen with the Nebula theme. Light and dark modes now retain their matching gradient backgrounds.',
+            },
+            {
+                zh: '精简 MOC 菜单，移除“添加到项目文件夹”入口。',
+                en: 'Simplified the MOC menu by removing the “Add to project folder” entry.',
+            },
+        ],
+    },
+    {
         version: '0.3.8',
         date: '2026-10-20',
         highlights: [
