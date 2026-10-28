@@ -279,6 +279,8 @@ export class EdgeControls {
 			// 选中节点时操作柄持续可见；hover 仅作为未选中节点的临时发现入口。
 			// 延迟隐藏仍保留，以桥接节点与操作柄之间的指针交接。
 			let hideTimer: number | null = null;
+			let overNode = false;
+			let overHandle = false;
 			const cancelHide = () => {
 				if (hideTimer !== null) {
 					window.clearTimeout(hideTimer);
@@ -292,10 +294,11 @@ export class EdgeControls {
 				updateHandlePosition();
 			};
 			const scheduleHide = () => {
-				if (node.selected()) return;
 				cancelHide();
+				if (node.selected() || overNode || overHandle) return;
 				hideTimer = window.setTimeout(() => {
 					hideTimer = null;
+					if (node.selected() || overNode || overHandle) return;
 					handle.setCssStyles({
 						opacity: '0',
 						display: 'none',
@@ -303,8 +306,8 @@ export class EdgeControls {
 				}, 260);
 			};
 
-			const handleMouseOver = showHandle;
-			const handleMouseOut = scheduleHide;
+			const handleMouseOver = () => { overNode = true; showHandle(); };
+			const handleMouseOut = () => { overNode = false; scheduleHide(); };
 			const handleSelect = showHandle;
 			const handleUnselect = scheduleHide;
 			node.on('mouseover', handleMouseOver);
@@ -319,8 +322,9 @@ export class EdgeControls {
 			});
 			if (node.selected()) showHandle();
 
-			handle.addEventListener('mouseenter', showHandle);
+			handle.addEventListener('mouseenter', () => { overHandle = true; showHandle(); });
 			handle.addEventListener('mouseleave', (e: MouseEvent) => {
+				overHandle = false;
 				const currentContainer = this.deps.getContainer();
 				const imageCard = currentContainer?.querySelector(`.zk-image-preview-card[data-node-id="${nodeId}"]`);
 				if (imageCard && (e.relatedTarget === imageCard || imageCard.contains(e.relatedTarget as Node))) return;

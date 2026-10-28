@@ -28,6 +28,10 @@ export const CHANGELOG: ChangelogEntry[] = [
                 en: 'Move file previews by dragging their headers. Content retains native scrolling and text selection, and the first scroll no longer also zooms the canvas.',
             },
             {
+                zh: '修复“新建子节点”按钮悬停时提前消失的问题：鼠标停在按钮或对应节点上时持续显示，移开后才延迟隐藏。',
+                en: 'Fixed the New child button disappearing while hovered. It now stays visible while the pointer is over the button or its node, and hides after a short delay only once the pointer leaves.',
+            },
+            {
                 zh: '预览和图片节点拖动时支持分离圆提示。圆的半径按最远的未分离自动子节点中心计算，拖动超过约 12 像素后显示；拖出圆保留位置，拖回圆恢复自动布局。',
                 en: 'Preview and image nodes now show the separation guide while dragging. Its radius reaches the farthest attached automatic child and appears after about 12 pixels of movement. Drag outside to retain a position, or back inside to resume automatic layout.',
             },
