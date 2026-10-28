@@ -1,6 +1,6 @@
 import ZKNavigationPlugin from "main";
 import { App, moment, TFile } from "obsidian";
-import { LayoutPreset } from "src/utils/growthDirection";
+import { LayoutPreset, NodeLayoutIntent } from "src/utils/growthDirection";
 import { ZKNode } from "src/view/indexView";
 
 /** 从 unknown(通常是 catch 的 e)安全提取错误信息,收口 any 传播。 */
@@ -27,6 +27,7 @@ export interface MOCTreeNode {
     nodeID: string;             // 节点ID，如 "a", "a.1", "a.1.a"
     nodeType: MOCNodeType;      // 节点类型
     extBitMap?: number;         // 节点扩展位图 (8位, 0-255); 见 NODE_FLAG_* 常量
+    layout?: NodeLayoutIntent;
     target: string;             // file/embed: wiki 链接目标；text: 原始文本内容
     alias?: string;             // 显示别名（仅 file 类型 + [[link|alias]] 语法；与 target 不同时才有值）
     depth: number;              // 缩进深度（用于确定父子关系）
@@ -64,6 +65,7 @@ export function createMOCTreeNode(opts: {
     nodeID: string;
     nodeType?: MOCNodeType;
     extBitMap?: number;
+    layout?: NodeLayoutIntent;
     target?: string;
     alias?: string;
     depth?: number;
@@ -85,6 +87,7 @@ export function createMOCTreeNode(opts: {
     };
     if (opts.alias !== undefined && opts.alias !== node.target) node.alias = opts.alias;
     if (opts.extBitMap !== undefined && opts.extBitMap !== 0) node.extBitMap = opts.extBitMap & 0xff;
+    if (opts.layout) node.layout = { ...opts.layout, ...(opts.layout.offset ? { offset: { ...opts.layout.offset } } : {}) };
     if (opts.isArrowRelation) node.isArrowRelation = opts.isArrowRelation;
     if (opts.arrowSource !== undefined) node.arrowSource = opts.arrowSource;
     if (opts.arrowTarget !== undefined) node.arrowTarget = opts.arrowTarget;
@@ -108,11 +111,10 @@ export interface ReverseRelation {
 // 保留坐标、子树独立生长,且不占父节点的排布槽位。
 // (兼容:旧版此位语义为"用户手动拖动过 NODE_FLAG_MANUALLY_MOVED",复用同一 bit
 //  平滑迁移——旧的手动钉住节点会被当作已分离锚点。)
-export const NODE_FLAG_SEPARATED = 1 << 0;
-// bit1: 侧别已被用户固定 —— auto 布局下被拖到某一侧的节点,无论层级深浅都按自身
-// 保存位置导出左右(E/W 等),不再继承父节点方向。否则深层节点会在每次 reflow 时
+export { NODE_FLAG_SEPARATED, NODE_FLAG_SIDE_PINNED } from "src/utils/nodeFlags";
+// bit1: 侧别已被用户固定 —— auto 布局下被拖到某一侧的节点,无论层级深浅都使用
+// layout.direction(E/W 等),不再继承父节点方向。否则深层节点会在每次 reflow 时
 // 被强制继承父方向 → 用户拖到对侧的节点会弹回。
-export const NODE_FLAG_SIDE_PINNED = 1 << 1;
 
 // MOC 解析结果
 export interface MOCParseResult {
@@ -140,6 +142,7 @@ export interface MOCParseResult {
         parseTime: number;      // 解析耗时（毫秒）
         filePath: string;       // MOC 文件路径
         headingTitle: string;   // 标题名称
+        needsLayoutMigration?: boolean;
     };
 }
 

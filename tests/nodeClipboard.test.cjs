@@ -88,6 +88,7 @@ test('pasted group keeps relative positions, clears the anchor, and persists the
 		const view = new View();
 		view.plugin = { settings: { mocHeadingTitle: '' } };
 		view.ensureMOCNodeLayoutStyle = () => {};
+		view.getRuntimeNodePositions = () => ({});
 		view.branchRenderer = { getCytoscapeInstance: () => cy };
 		await view.placePastedNodes({}, ['a', 'b'], { x: 900, y: 400, align: 'left' });
 		let bb = cy.nodes().boundingBox({ includeLabels: false, includeOverlays: false });

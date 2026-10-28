@@ -188,33 +188,16 @@ async function writeTextToSystemClipboard(text: string): Promise<boolean> {
     if (!text) return false;
 
     try {
-        if (navigator.clipboard?.writeText) {
-            await navigator.clipboard.writeText(text);
+        const clipboard = activeWindow.navigator.clipboard;
+        if (clipboard?.writeText) {
+            await clipboard.writeText(text);
             return true;
         }
     } catch (error) {
-        console.warn('[ZK] navigator.clipboard.writeText failed, falling back to execCommand:', error);
+        console.warn('[ZK] navigator.clipboard.writeText failed:', error);
     }
 
-    const textarea = activeWindow.createEl('textarea');
-    textarea.value = text;
-    textarea.setCssStyles({
-        position: 'fixed',
-        left: '-9999px',
-        top: '0',
-    });
-    textarea.setAttribute('readonly', 'true');
-    activeDocument.body.appendChild(textarea);
-    textarea.select();
-    let copied = false;
-    try {
-        copied = activeDocument.execCommand('copy');
-    } catch (error) {
-        console.warn('[ZK] document.execCommand copy failed:', error);
-    } finally {
-        textarea.remove();
-    }
-    return copied;
+    return false;
 }
 
 // 用 localStorage 跨会话持久化"插件最近一次写入系统剪贴板的文本",
@@ -961,8 +944,9 @@ export function bindEvents(this: CytoscapeRenderer): void {
         let separationOrbit: { cx: number; cy: number; radius: number; parentId: string } | null = null;
         let separationWillSeparate = false;
         let separationWasSeparated = false; // 拖动前该节点是否已分离
-        const SEPARATION_FORWARD_GAP = 150;  // 与 autoLayoutEngine forwardGap 默认值一致
-        const SEPARATION_MIN_RADIUS = SEPARATION_FORWARD_GAP * 2; // 独子/无兄弟时的默认轨道半径
+        let separationHasMoved = false;
+        const SEPARATION_SHOW_THRESHOLD_PX = 12;
+        const SEPARATION_TOLERANCE_PX = 8; // 圆外少量像素容差，避免边界轻微移动就分离
         const SEPARATION_STROKE = 'rgba(148, 163, 184, 0.7)';      // 圈内:中性灰
         const SEPARATION_STROKE_ACTIVE = 'rgba(248, 113, 113, 0.95)'; // 越界:将分离,红
 
@@ -1131,68 +1115,28 @@ export function bindEvents(this: CytoscapeRenderer): void {
             this.activeSeparationOverlay = separationOverlay;
         };
 
-        // grab 时计算分离圆:圆心=父节点位置,半径=非分离兄弟最远距离+forwardGap,
-        // 独子/无兄弟用默认最小半径。自由布局父节点下的 auto 子树根不参与此圆,
-        // 它是独立的自动子树岛,位置由用户放在自由区域后自行锚定。
-        const computeSeparationOrbit = (
-            grabbedNode: cytoscape.NodeSingular,
-            grabbedBizId: string
-        ): { cx: number; cy: number; radius: number; parentId: string } | null => {
-            if (!this.cy) return null;
-            const bizIdOf = (n: cytoscape.NodeSingular): string => {
-                const d = n.data() as CyData;
-                return d.originalNode?.ID || d.originalSource || n.id();
-            };
-            // 找父节点(指向 grabbedNode 的 parent 边的源)
-            const parentEdges = grabbedNode.connectedEdges().filter((e: cytoscape.EdgeSingular) =>
-                e.data('type') === 'parent' && e.target().id() === grabbedNode.id());
-            if (parentEdges.length === 0) return null;
-            const parentNode = (parentEdges.last() as cytoscape.EdgeSingular).source();
-            if (parentNode.length === 0) return null;
-            const parentBizId = bizIdOf(parentNode);
-            const parentData = parentNode.data() as CyData;
-            const parentUsesFreeLayout = parentData.isFreeNode
-                || parentBizId.startsWith('free.')
-                || !this.isNodeAutoLayoutForId(parentBizId);
-            if (parentUsesFreeLayout) return null;
-            const ppos = parentNode.position();
-            const separatedSet = new Set(this.currentOptions?.separatedNodeIds || []);
-            // 只收集父节点的其它 auto 子节点(非分离、可见),取最远距离。
-            // free 兄弟可被放在任意远处,若计入会把分离圆撑到几千像素,
-            // 导致 auto 节点无论拖多远都仍被判定在圆内、松手后吸附回原位。
-            let maxDist = 0;
-            parentNode.connectedEdges().forEach((e: cytoscape.EdgeSingular) => {
-                if (e.data('type') !== 'parent' || e.source().id() !== parentNode.id()) return;
-                const sib = e.target();
-                if (sib.id() === grabbedNode.id()) return;
-                const sd = sib.data() as CyData;
-                if (sd.isGroup || sd.isPlaceholder || sd.isCrossDomain) return;
-                if (sib.removed() || !sib.visible() || sib.hasClass('zk-collapsed-hidden')) return;
-                const siblingBizId = bizIdOf(sib);
-                if (!this.isNodeAutoLayoutForId(siblingBizId)) return;
-                if (separatedSet.has(siblingBizId)) return; // 已分离的远处兄弟不计入
-                const sp = sib.position();
-                const dist = Math.hypot(sp.x - ppos.x, sp.y - ppos.y);
-                if (dist > maxDist) maxDist = dist;
-            });
-            const radius = maxDist > 0
-                ? Math.max(maxDist + SEPARATION_FORWARD_GAP, SEPARATION_MIN_RADIUS)
-                : SEPARATION_MIN_RADIUS;
-            return { cx: ppos.x, cy: ppos.y, radius, parentId: parentBizId };
-        };
+        // 只在 grab 时计算一次，拖动期间保持轨道不变，避免圆随被拖节点不断扩大。
+        const computeSeparationOrbit = (node: cytoscape.NodeSingular) => layoutAdapter.getSeparationOrbit(
+            node,
+            id => this.isNodeAutoLayoutForId(id),
+            new Set(this.currentOptions?.separatedNodeIds || [])
+        );
 
         // drag 期间刷新虚线圆位置 + 内外状态(模型空间判定,与 zoom 无关)
         const updateSeparationCircle = (grabbedNode: cytoscape.NodeSingular) => {
             if (!separationOrbit || !separationCircle || !this.cy) return;
             const zoom = this.cy.zoom();
+            const np = grabbedNode.position();
+            const movedPixels = Math.hypot(np.x - autoHierarchyGrabStartX, np.y - autoHierarchyGrabStartY) * zoom;
+            if (!separationHasMoved && movedPixels < SEPARATION_SHOW_THRESHOLD_PX) return;
+            separationHasMoved = true;
             const pan = this.cy.pan();
             separationCircle.setAttribute('cx', String(separationOrbit.cx * zoom + pan.x));
             separationCircle.setAttribute('cy', String(separationOrbit.cy * zoom + pan.y));
             separationCircle.setAttribute('r', String(separationOrbit.radius * zoom));
             separationCircle.setCssStyles({ display: 'block' });
-            const np = grabbedNode.position();
             const dist = Math.hypot(np.x - separationOrbit.cx, np.y - separationOrbit.cy);
-            const willSeparate = dist > separationOrbit.radius;
+            const willSeparate = dist > separationOrbit.radius + SEPARATION_TOLERANCE_PX / zoom;
             if (willSeparate !== separationWillSeparate) {
                 separationWillSeparate = willSeparate;
                 separationCircle.setAttribute('stroke', willSeparate ? SEPARATION_STROKE_ACTIVE : SEPARATION_STROKE);
@@ -1200,10 +1144,14 @@ export function bindEvents(this: CytoscapeRenderer): void {
         };
 
         const clearSeparation = () => {
-            if (separationCircle) separationCircle.setCssStyles({ display: 'none' });
+            if (separationCircle) {
+                separationCircle.setCssStyles({ display: 'none' });
+                separationCircle.setAttribute('stroke', SEPARATION_STROKE);
+            }
             separationOrbit = null;
             separationWillSeparate = false;
             separationWasSeparated = false;
+            separationHasMoved = false;
         };
 
         const getRenderedMetrics = (node: cytoscape.NodeSingular) => {
@@ -1774,7 +1722,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
                     const prefix = `${grabbedId}.`;
                     // 分离圆:对所有 auto 子节点(含叶子)生效,拖出圆即与父节点轨道分离
                     ensureSeparationOverlay();
-                    separationOrbit = computeSeparationOrbit(node, grabbedId);
+                    separationOrbit = computeSeparationOrbit(node);
                     separationWasSeparated = new Set(this.currentOptions?.separatedNodeIds || []).has(grabbedId);
                     const grabPos = node.position();
                     autoHierarchyGrabStartX = grabPos.x;
@@ -1840,7 +1788,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
         });
 
         // 节点拖动事件
-        this.cy.on('drag', 'node', (evt: cytoscape.EventObject) => {
+        this.cy.on('drag', 'node', (evt: cytoscape.EventObject, overlayEvent?: MouseEvent) => {
             const node = evt.target as cytoscape.NodeSingular;
             const data = node.data() as CyData;
 
@@ -1878,7 +1826,7 @@ export function bindEvents(this: CytoscapeRenderer): void {
 
             const smartEnabled = this.isSmartConnectionEnabled();
             if (reparentGesture && node.id() === reparentGesture.primaryCyId) {
-                const altPressed = Boolean((evt.originalEvent as { altKey?: boolean } | undefined)?.altKey);
+                const altPressed = Boolean(((evt.originalEvent || overlayEvent) as { altKey?: boolean } | undefined)?.altKey);
                 if (altPressed) {
                     hideTempConnectionLine();
                     setReparentTarget(null);
@@ -2039,12 +1987,12 @@ export function bindEvents(this: CytoscapeRenderer): void {
             // 分离判定:auto 子节点拖出/拖回分离圆 → 记录意图,随被拖节点的
             // node-position-changed 一并派发,由 indexView 决定置/清 SEPARATED 标志。
             let separationDetail: { parentId: string; willSeparate: boolean; wasSeparated: boolean } | null = null;
-            if (separationOrbit) {
+            if (separationOrbit && separationHasMoved) {
                 const np = node.position();
                 const dist = Math.hypot(np.x - separationOrbit.cx, np.y - separationOrbit.cy);
                 separationDetail = {
                     parentId: separationOrbit.parentId,
-                    willSeparate: dist > separationOrbit.radius,
+                    willSeparate: dist > separationOrbit.radius + SEPARATION_TOLERANCE_PX / this.cy!.zoom(),
                     wasSeparated: separationWasSeparated,
                 };
             }

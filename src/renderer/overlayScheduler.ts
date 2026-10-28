@@ -25,6 +25,7 @@ export class OverlayScheduler {
 
 	private managedDomListeners: ManagedDomListener[] = [];
 	private updateScheduled = false;
+	private extraUpdateScheduled = false;
 	private listenerBound = false;
 	private interacting = false;
 	private interactTimer: number | null = null;
@@ -32,6 +33,7 @@ export class OverlayScheduler {
 	private dragfreeHandler: (() => void) | null = null;
 	private extraUpdateHandler: (() => void) | null = null;
 	private selectionHandler: (() => void) | null = null;
+	private renderHandler: (() => void) | null = null;
 
 	constructor(private deps: OverlaySchedulerDeps) {}
 
@@ -43,33 +45,35 @@ export class OverlayScheduler {
 		if (this.updateScheduled) return;
 		this.updateScheduled = true;
 		window.requestAnimationFrame(() => {
+			// 画布 render 回调可能已经同步定位，避免下一帧再执行一次。
+			if (!this.updateScheduled) return;
 			this.updateScheduled = false;
+			const includeExtra = this.extraUpdateScheduled;
+			this.extraUpdateScheduled = false;
 			const cy = this.deps.getCy();
 			const container = this.deps.getContainer();
 			if (!cy || !container?.isConnected) return;
 			this.updaters.forEach(fn => fn());
+			if (includeExtra) this.extraUpdaters.forEach(fn => { if (!this.updaters.has(fn)) fn(); });
 		});
 	}
 
 	immediate(): void {
+		const includeExtra = this.extraUpdateScheduled;
+		this.updateScheduled = false;
+		this.extraUpdateScheduled = false;
 		this.updaters.forEach(fn => fn());
 		// immediateUpdaters 中已在 updaters 里的成员上一行已执行,跳过避免每次 immediate()
 		// 把 badge/边控制点等最贵的定位 updater 重复跑一遍(它们三者目前都同时注册在两个集合)。
 		this.immediateUpdaters.forEach(fn => { if (!this.updaters.has(fn)) fn(); });
-		this.updateScheduled = false;
+		if (includeExtra) this.extraUpdaters.forEach(fn => {
+			if (!this.updaters.has(fn) && !this.immediateUpdaters.has(fn)) fn();
+		});
 	}
 
 	scheduleExtra(): void {
-		if (this.updateScheduled) return;
-		this.updateScheduled = true;
-		window.requestAnimationFrame(() => {
-			this.updateScheduled = false;
-			const cy = this.deps.getCy();
-			const container = this.deps.getContainer();
-			if (!cy || !container?.isConnected) return;
-			this.updaters.forEach(fn => fn());
-			this.extraUpdaters.forEach(fn => fn());
-		});
+		this.extraUpdateScheduled = true;
+		this.schedule();
 	}
 
 	markInteracting(): void {
@@ -113,6 +117,11 @@ export class OverlayScheduler {
 			this.handleSelectionChange();
 			this.scheduleExtra();
 		};
+		// 与 Canvas 同一帧提交 DOM 位置/显隐，避免收起展开时文字还停在上一帧。
+		// 仅消费已请求的更新，不让普通画布重绘触发全量 overlay 定位。
+		this.renderHandler = () => {
+			if (this.updateScheduled) this.immediate();
+		};
 
 		// 注: zoom/pan ⊂ viewport,只订阅 viewport 避免同一变化三次触发。
 		// drag/position 在拖拽和布局期间会按节点逐个触发;markInteracting 已加 idempotent guard。
@@ -120,6 +129,7 @@ export class OverlayScheduler {
 		cy.on('dragfree', this.dragfreeHandler);
 		cy.on('class data add remove layoutstop', this.extraUpdateHandler);
 		cy.on('select unselect', this.selectionHandler);
+		cy.on('render', this.renderHandler);
 	}
 
 	cleanupEventBindings(): void {
@@ -130,6 +140,7 @@ export class OverlayScheduler {
 			this.dragfreeHandler = null;
 			this.extraUpdateHandler = null;
 			this.selectionHandler = null;
+			this.renderHandler = null;
 			return;
 		}
 		if (this.coreUpdateHandler) {
@@ -154,6 +165,10 @@ export class OverlayScheduler {
 			cy.off('select', this.selectionHandler);
 			cy.off('unselect', this.selectionHandler);
 			this.selectionHandler = null;
+		}
+		if (this.renderHandler) {
+			cy.off('render', this.renderHandler);
+			this.renderHandler = null;
 		}
 		this.listenerBound = false;
 	}
@@ -181,6 +196,7 @@ export class OverlayScheduler {
 		this.extraUpdaters.clear();
 		this.selectionUpdaters.clear();
 		this.updateScheduled = false;
+		this.extraUpdateScheduled = false;
 		this.interacting = false;
 		if (this.interactTimer !== null) {
 			window.clearTimeout(this.interactTimer);

@@ -209,7 +209,7 @@ obsidian://zk-navigation?action=create
   &open=<true|false,可选;默认 true,创建后在思维树视图打开>
 ```
 
-> 节点不写坐标，交给自动布局；`layout` 仅为 `free|auto`，与 Mermaid 的 `LR/RL/TB/BT` 方向无关。
+> 普通自动节点不保存绝对坐标：节点的 `layout.direction`、`layout.order` 记录方向与兄弟顺序，显示和导出时按实际尺寸计算位置。`nodePositions` 仅保留根锚点、自由节点和手动分离的分支锚点；自由节点挂在自动父节点下时，`layout.offset` 保留人工偏移。旧自动坐标会在读取时迁移为方向与顺序，并在保存时清理。`layout` 参数仅为 `free|auto`，与 Mermaid 的 `LR/RL/TB/BT` 方向无关。
 
 ### 命令行示例
 

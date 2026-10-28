@@ -5,6 +5,7 @@ import {
 	LayoutPreset,
 	PRESET_POOL,
 	Vec2,
+	NodeLayoutIntent,
 	normalizeLayoutPreset,
 	projectSize,
 	quantizeToPool,
@@ -25,8 +26,9 @@ export interface ComputeAutoLayoutInput {
 	childrenById: Record<string, string[]>;
 	realMocRootIds: Set<string>;
 	nodePositions: Record<string, Vec2>;
+	nodeLayoutIntents?: Record<string, NodeLayoutIntent>;
 	ignoreSavedPositionsForIds?: Set<string>;
-	// 侧别已固定的节点:无论层级都按自身保存位置导出方向,不继承父方向。
+	// 侧别已固定的节点:无论层级都使用自身方向意图(或临时交互位置),不继承父方向。
 	sidePinnedIds?: Set<string>;
 	layoutPreset?: LayoutPreset;
 	nodeLayoutPresets?: Record<string, LayoutPreset>;
@@ -57,7 +59,7 @@ const DIAGONAL_GAP_FACTOR = 1.2;
  *    其余沿继承方向单侧铺开。有保存位置且不在 ignore 集的节点以保存位置为锚;
  *    若旧位置与继承方向相反,则丢弃该旧位置,避免父分支换侧后子树残留在另一侧。
  *
- * 方向解析:分支起点按"保存位置相对父节点的偏移"量化到所属 preset 的方向池
+ * 方向解析:优先读取持久化方向意图；新草稿/占位符按临时位置量化到 preset 方向池
  * (bidirectional=E/W、top-down=S/N、radial=四对角);深层节点继承父方向,
  * 除非带 SIDE_PINNED 标志(按自身位置定向)。
  *
@@ -104,6 +106,11 @@ export function computeAutoLayout(input: ComputeAutoLayoutInput): Record<string,
 
 	const resolveFromPool = (nodeId: string, parentId: string, preset: LayoutPreset): GrowthDirection => {
 		const pool = PRESET_POOL[preset];
+		const direction = input.nodeLayoutIntents?.[nodeId]?.direction;
+		if (direction) {
+			const vector = DIR_VECTORS[direction];
+			return quantizeToPool(vector.x, vector.y, pool);
+		}
 		const savedPos = input.nodePositions[nodeId];
 		const parentPos = input.nodePositions[parentId] || input.nodes[parentId]?.position;
 		if (savedPos && parentPos) {
@@ -184,7 +191,11 @@ export function computeAutoLayout(input: ComputeAutoLayoutInput): Record<string,
 			const p = getSortPosition(id);
 			proj.set(id, p.x * axis.x + p.y * axis.y);
 		}
-		const byProj = [...ids].sort((a, b) => proj.get(a)! - proj.get(b)!);
+		const useOrder = ids.every(id => Number.isFinite(input.nodeLayoutIntents?.[id]?.order));
+		const compare = (a: string, b: string) => useOrder
+			? input.nodeLayoutIntents![a].order! - input.nodeLayoutIntents![b].order!
+			: proj.get(a)! - proj.get(b)!;
+		const byProj = [...ids].sort(compare);
 		const colorOrder = new Map<string, number>();
 		for (const id of byProj) {
 			const colorKey = input.nodes[id].colorKey;
@@ -196,7 +207,7 @@ export function computeAutoLayout(input: ComputeAutoLayoutInput): Record<string,
 			const rankA = colorOrder.get(input.nodes[a].colorKey) ?? Number.MAX_SAFE_INTEGER;
 			const rankB = colorOrder.get(input.nodes[b].colorKey) ?? Number.MAX_SAFE_INTEGER;
 			if (rankA !== rankB) return rankA - rankB;
-			return proj.get(a)! - proj.get(b)!;
+			return compare(a, b);
 		});
 	};
 

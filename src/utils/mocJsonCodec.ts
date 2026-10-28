@@ -1,6 +1,7 @@
 import { App, TFile } from "obsidian";
 import { MOCParseResult, MOCTreeNode, MOCNodeType, ReverseRelation, GroupInfo, CrossDomainLink, createMOCTreeNode } from "./utils";
-import { LayoutPreset, normalizeLayoutPreset, normalizeNodeLayoutPresets } from "src/utils/growthDirection";
+import { LayoutPreset, NodeLayoutIntent, normalizeLayoutPreset, normalizeNodeLayoutPresets, DIR_VECTORS } from "src/utils/growthDirection";
+import { normalizeMOCLayout } from "src/utils/mocAutoLayout";
 
 // ---- JSON 存储 Schema（新）----
 
@@ -8,6 +9,7 @@ interface JsonNodeData {
     nodeID: string;
     nodeType: MOCNodeType;      // 'file' | 'text' | 'embed'
     extBitMap?: number;         // 节点扩展位图 (8位); 见 NODE_FLAG_* 常量
+    layout?: NodeLayoutIntent;
     target: string;             // file/embed: wiki link；text: 原始文本
     alias?: string;             // 仅 file + [[link|alias]] 时存在
     depth: number;
@@ -60,6 +62,7 @@ function normalizeNode(data: JsonNodeData | LegacyJsonNodeData): JsonNodeData {
     return {
         nodeID: data.nodeID,
         nodeType: data.nodeType,
+        layout: normalizeLayoutIntent(data.layout),
         ...(typeof data.extBitMap === 'number' && data.extBitMap !== 0 ? { extBitMap: data.extBitMap & 0xff } : {}),
         target: data.target ?? '',
         ...(data.alias ? { alias: data.alias } : {}),
@@ -117,6 +120,7 @@ function resolveJsonNode(app: App, data: JsonNodeData, basePath: string, resolve
         nodeID: data.nodeID,
         nodeType: data.nodeType,
         extBitMap: data.extBitMap,
+        layout: data.layout,
         target: data.target,
         alias: data.alias,
         depth: data.depth,
@@ -137,7 +141,17 @@ function treeNodeToJson(node: MOCTreeNode): JsonNodeData {
     };
     if (node.alias !== undefined && node.alias !== node.target) d.alias = node.alias;
     if (typeof node.extBitMap === 'number' && node.extBitMap !== 0) d.extBitMap = node.extBitMap & 0xff;
+    if (node.layout && Object.keys(node.layout).length > 0) d.layout = node.layout;
     return d;
+}
+
+function normalizeLayoutIntent(value: NodeLayoutIntent | undefined): NodeLayoutIntent | undefined {
+    if (!value || typeof value !== 'object') return undefined;
+    const intent: NodeLayoutIntent = {};
+    if (value.direction && Object.prototype.hasOwnProperty.call(DIR_VECTORS, value.direction)) intent.direction = value.direction;
+    if (typeof value.order === 'number' && Number.isFinite(value.order)) intent.order = value.order;
+    if (value.offset && Number.isFinite(value.offset.x) && Number.isFinite(value.offset.y)) intent.offset = { ...value.offset };
+    return intent;
 }
 
 function countNodes(nodes: MOCTreeNode[]): { total: number; maxDepth: number } {
@@ -214,7 +228,7 @@ export function parseMOCJson(content: string, filePath: string, app: App): MOCPa
 
     const { total, maxDepth } = countNodes(nodes);
 
-    return {
+    const result: MOCParseResult = {
         nodes,
         reverseRelations,
         nodePositions: json.nodePositions || {},
@@ -241,12 +255,17 @@ export function parseMOCJson(content: string, filePath: string, app: App): MOCPa
             headingTitle: '',
         },
     };
+    const migrated = normalizeMOCLayout(result);
+    migrated.metadata.needsLayoutMigration = Object.keys(result.nodePositions).some(id => !(id in migrated.nodePositions));
+    return migrated;
 }
 
 /**
  * 序列化 MOCParseResult → .moc 文件内容（JSON 字符串）
  */
 export function serializeMOCJson(data: MOCParseResult): string {
+    // 所有写入路径共用此边界：自动坐标转成方向/顺序，只有锚点和自由坐标落盘。
+    data = normalizeMOCLayout(data);
     const json: MOCJsonSchema = {
         version: 1,
         nodes: data.nodes.map(treeNodeToJson),

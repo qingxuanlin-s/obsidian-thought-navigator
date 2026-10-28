@@ -1781,7 +1781,6 @@ export function startPlaceholderInPlaceEdit(this: CytoscapeRenderer, node: cytos
 
         const data = node.data() as CyData;
         const isDraft = !!data.isDraft;                 // 草稿节点(#20):复用本 CM6 编辑器,但保存只更新内存
-        const isPlaceholder = !!data.isPlaceholder;
         const originalLabel = String(data.label || ''); // 草稿原始内容,用于取消时还原 / 判断是否新建空节点
 
         this.ensureNodeVisibleInViewport(node);
@@ -1903,9 +1902,8 @@ export function startPlaceholderInPlaceEdit(this: CytoscapeRenderer, node: cytos
 
         let syncRaf: number | null = null;
         const anchorLeftModel = node.position().x - (Number(node.width()) || defaultW) / 2;
-        const autoGrow = () => {
+        const autoGrow = (value = mdEditor?.getValue() ?? '') => {
             if (!this.cy || node.removed()) return;
-            const value = mdEditor?.getValue() ?? '';
             node.data('label', value);
             this.cy.batch(() => {
                 if (value.trim() && typeof node.removeStyle === 'function') {
@@ -1916,9 +1914,8 @@ export function startPlaceholderInPlaceEdit(this: CytoscapeRenderer, node: cytos
             const currentWidth = Number(node.width()) || defaultW;
             const currentPosition = node.position();
             const anchoredX = anchorLeftModel + currentWidth / 2;
-            // Tab 新建的占位节点以快捷键计算出的中心坐标为锚点。编辑时若为保持左边缘
-            // 而改变 x，提交刷新又会按该初始坐标重建，视觉上便会先偏移再跳回。
-            if (!isPlaceholder && Number.isFinite(anchoredX) && Math.abs(currentPosition.x - anchoredX) > 0.5) {
+            // 宽度变化时同步调整中心坐标，让新建节点的左边缘保持不动。
+            if (Number.isFinite(anchoredX) && Math.abs(currentPosition.x - anchoredX) > 0.5) {
                 node.position({ x: anchoredX, y: currentPosition.y });
             }
             if (syncRaf !== null) return;
@@ -1997,11 +1994,7 @@ export function startPlaceholderInPlaceEdit(this: CytoscapeRenderer, node: cytos
                 cancelEdit();
                 return;
             }
-            node.data('label', newValue);
-            if (typeof node.removeStyle === 'function') {
-                node.removeStyle('width height');
-            }
-            this.cy?.style().update();
+            autoGrow(newValue);
             syncOverlayPos();
             // 捕获占位符当前的模型尺寸。
             // 该尺寸只适合文件/嵌入节点；普通文本节点应走文字测量自适应，
@@ -3127,8 +3120,6 @@ export function startNodeAudioRecording(
                 container.dispatchEvent(new CustomEvent('node-append-embed', {
                     detail: { nodeIdStr, embedPath: filePath }
                 }));
-            } else {
-                new Notice(`录音已保存:${filePath}`);
             }
         };
 

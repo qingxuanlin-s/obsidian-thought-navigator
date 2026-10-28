@@ -1,6 +1,6 @@
 import { App, TFile } from "obsidian";
 import { ZKNode } from "src/view/indexView";
-import { CrossDomainLink, GroupInfo } from "src/utils/utils";
+import { CrossDomainLink, GroupInfo, MOCParseResult } from "src/utils/utils";
 
 /**
  * 图形数据结构
@@ -89,6 +89,7 @@ export interface ViewState {
  */
 export interface RenderOptions {
     app?: App;
+    mocLayout?: MOCParseResult;
     direction?: 'TB' | 'BT' | 'LR' | 'RL';
     layoutType?: 'breadthfirst' | 'dagre' | 'cose' | 'cose-bilkent' | 'grid' | 'preset';
     animate?: boolean;

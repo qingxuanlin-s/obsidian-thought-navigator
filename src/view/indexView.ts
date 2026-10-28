@@ -46,6 +46,7 @@ import { GraphDataBuilder } from "src/renderer/GraphDataBuilder";
 import { RenderOptions, CyData } from "src/renderer/types";
 import { dataStr, dataBool, dataAs } from "src/renderer/cyData";
 import { getTopBranchId } from "src/renderer/renderPipeline";
+import { getMOCLayoutContext } from "src/utils/mocAutoLayout";
 import { getNodeClipboardContent, getPasteTarget, getPasteTranslation, PasteTarget } from "src/renderer/clipboard";
 import { MOCHandler } from "src/view/index/mocHandler";
 import { computeAutoLayout, AutoLayoutNodeInput } from "src/utils/autoLayoutEngine";
@@ -138,8 +139,6 @@ export class ZKIndexView extends FileView {
     private currentNodeLayoutOverrides: Record<string, 'auto' | 'free'> = {}; // 节点级布局风格覆盖
     private currentLayoutPreset: LayoutPreset = DEFAULT_LAYOUT_PRESET;
     private currentNodeLayoutPresets: Record<string, LayoutPreset> = {};
-    // ensureNodePositions 为 auto 文件补齐缺失坐标后置位,渲染完成后触发一次居中 reflow
-    private pendingInitialAutoCenter = false;
 
     // 防抖相关属性
     resizeTimeout: number | null = null;
@@ -381,6 +380,7 @@ export class ZKIndexView extends FileView {
         this.scope.register(['Mod'], '[', (event: KeyboardEvent) => navIfNotTyping(event, () => this.navBack()));
         this.scope.register(['Mod'], ']', (event: KeyboardEvent) => navIfNotTyping(event, () => this.navForward()));
         this.mocHandler = new MOCHandler(plugin, this.app, {
+            getNodePositions: filePath => this.getRuntimeNodePositions(filePath),
             onBeforeModify: ({ filePath, content }) => {
                 if (this.isApplyingUndo) return;
                 this.pushUndoSnapshot(filePath, content);
@@ -1079,7 +1079,6 @@ export class ZKIndexView extends FileView {
     setDraftMode(on: boolean): void {
         if (this.draftMode === on) return;
         this.draftMode = on;
-        new Notice(on ? t('Draft mode entered') : t('Draft mode exited'));
         this.refreshDraftBatchBar();
     }
 
@@ -1342,9 +1341,6 @@ export class ZKIndexView extends FileView {
                 }));
                 await this.mocHandler.addRelationsToMOC(mocFile, relItems);
             }
-            new Notice(allRels.length
-                ? t('Draft committed mixed').replace('{n}', String(localToReal.size)).replace('{r}', String(allRels.length))
-                : t('Draft committed').replace('{n}', String(localToReal.size)));
         } catch (e) {
             console.error('[Draft] commit failed:', e);
             new Notice(t('Draft commit failed'));
@@ -1528,7 +1524,6 @@ export class ZKIndexView extends FileView {
         try {
             await this.app.vault.modify(mocFile, snapshot.content);
             await this.refreshBranchMermaid();
-            new Notice('已回退 1 步');
         } catch (error) {
             console.error('Undo failed:', error);
             new Notice(`回退失败: ${errorMessage(error)}`);
@@ -3335,49 +3330,45 @@ window.addEventListener('resize', function() {
         return await parseMOCStructure(this.app, mocFile.path, headingTitle);
     }
 
+    private getRuntimeNodePositions(filePath: string): Record<string, { x: number; y: number }> {
+        const positions: Record<string, { x: number; y: number }> = {};
+        if (filePath !== this.lastRenderedMOCPath) return positions;
+        this.branchRenderer?.getCytoscapeInstance()?.nodes().forEach(node => {
+            const original = dataAs<ZKNode | undefined>(node, 'originalNode');
+            const id = original?.IDStr || original?.ID;
+            if (!id || original?.isDraft || original?.isCrossDomain || node.data('isGroup') || node.data('isPlaceholder')
+                || node.hasClass('zk-collapsed-hidden')) return;
+            positions[id] = { ...node.position() };
+        });
+        return positions;
+    }
+
     private async ensureNodePositions(
         mocFile: TFile,
         mocParseResult: MOCParseResult,
         headingTitle: string
     ): Promise<MOCParseResult> {
-        if (mocParseResult.nodes.length === 0) {
-            return mocParseResult;
-        }
-
-        if (!mocParseResult.nodePositions) {
-            mocParseResult.nodePositions = {};
-        }
-
-        let changed = false;
-        let fallbackIndex = 0;
-        const visit = (nodes: MOCTreeNode[], depth: number) => {
-            for (const node of nodes) {
-                if (node.nodeID && !mocParseResult.nodePositions[node.nodeID]) {
-                    mocParseResult.nodePositions[node.nodeID] = {
-                        x: Math.round(depth * 260),
-                        y: Math.round(fallbackIndex * 150),
-                    };
-                    changed = true;
-                }
-                fallbackIndex++;
-                visit(node.children || [], depth + 1);
+        const { nodes, parents, auto } = getMOCLayoutContext(mocParseResult);
+        let changed = mocParseResult.metadata.needsLayoutMigration === true;
+        let index = 0;
+        for (const [id, node] of nodes) {
+            const fixed = !parents[id] || !auto.has(id) || !!((node.extBitMap || 0) & NODE_FLAG_SEPARATED);
+            if (fixed && !mocParseResult.nodePositions[id]) {
+                mocParseResult.nodePositions[id] = { x: node.depth * 260, y: index * 150 };
+                changed = true;
             }
-        };
-
-        visit(mocParseResult.nodes, 0);
-        if (!changed) {
-            return mocParseResult;
+            index++;
         }
-
-        // auto 文件若刚补齐了缺失坐标(典型:CLI/脚本写入的节点没有坐标),
-        // 用的是上面那套粗糙的 depth*260 / index*150 兜底排布,会偏左上不居中。
-        // 标记一下,渲染完成后用真正的 reflow(带节点尺寸)重排居中。
-        if (mocParseResult.nodeLayoutStyle === 'auto') {
-            this.pendingInitialAutoCenter = true;
+        if (changed) {
+            // 迁移也进入同一写入队列，避免文件监听刷新与尺寸编辑覆盖彼此的数据。
+            await this.mocHandler.modifyMOCData(mocFile, latest => {
+                for (const [id, position] of Object.entries(mocParseResult.nodePositions)) {
+                    if (!latest.nodePositions[id]) latest.nodePositions[id] = position;
+                }
+            });
+            return await parseMOCStructure(this.app, mocFile.path, headingTitle);
         }
-
-        await saveMOCStructure(this.app, mocFile.path, headingTitle, mocParseResult);
-        return await parseMOCStructure(this.app, mocFile.path, headingTitle);
+        return mocParseResult;
     }
 
     // 依赖 onLoadFile/onUnloadFile 不做重渲染:setViewState 切换 file 会回调这两个钩子,
@@ -3500,7 +3491,7 @@ window.addEventListener('resize', function() {
             'free'
         );
         this.currentNodeLayoutOverrides = mocParseResult.nodeLayoutOverrides || {};
-        this.currentLayoutPreset = normalizeLayoutPreset(this.plugin.settings.autoLayoutDefaultGrowthDirection);
+        this.currentLayoutPreset = normalizeLayoutPreset(mocParseResult.layoutPreset, normalizeLayoutPreset(this.plugin.settings.autoLayoutDefaultGrowthDirection));
         this.currentNodeLayoutPresets = mocParseResult.nodeLayoutPresets || {};
 
         // 转换为 ZKNode（即使为空也继续）
@@ -3596,6 +3587,7 @@ window.addEventListener('resize', function() {
         // 配置渲染选项
         const options: RenderOptions = {
             app: this.app,
+            mocLayout: mocParseResult,
             direction: (this.plugin.settings.DirectionOfBranchGraph || 'LR') as 'TB' | 'BT' | 'LR' | 'RL',
             layoutType: 'dagre',
             animate: true,
@@ -3636,34 +3628,6 @@ window.addEventListener('resize', function() {
         }
         this.lastRenderedMOCPath = currentMOCPath;
         this.lastRenderSignature = renderSignature;
-
-        // auto 文件首次补齐坐标后(如 CLI 创建),此时已有真实节点尺寸,做一次居中重排,
-        // 让根节点相对子节点竖直居中,而非粗糙兜底的左上排布。
-        if (this.pendingInitialAutoCenter) {
-            this.pendingInitialAutoCenter = false;
-            const rootId = this.getPrimaryMocRootId();
-            if (rootId) {
-                await this.reflowAutoLayout(rootId);
-                this.lastRenderSignature = null;
-            }
-        }
-
-        // 收起态紧凑视图 = f(文件坐标, collapsedNodeIds) 的纯函数,渲染后统一重放。
-        // 收起时的紧凑重排不落盘(避免污染文件坐标),而任何文件驱动的刷新
-        // (persistCollapseState 自写触发的 mocMonitor 刷新、外部编辑、主题切换)
-        // 都会把节点打回文件坐标 —— 不在这里重放,临时紧凑布局就会被刷新撤销,
-        // 表现为收起/展开后位置错乱。relayout 内部对纯 free 树自动跳过。
-        if (this.collapsedNodeIds.length > 0) {
-            const collapseRootId = this.getPrimaryMocRootId();
-            if (collapseRootId) {
-                await this.relayoutAutoLayoutSiblings(collapseRootId, {
-                    collapsedNodeIds: this.collapsedNodeIds,
-                    compactVisibleNodes: true,
-                    rebalanceRootChildren: true,
-                    persistPositions: false,
-                });
-            }
-        }
 
         // 恢复或自动居中视图
         const cy = this.branchRenderer.getCytoscapeInstance();
@@ -3848,9 +3812,6 @@ window.addEventListener('resize', function() {
                     await this.reflowAutoLayout(newChildID);
                 }
 
-                new Notice(t("Parent-child relation created")
-                    .replace("{parent}", String(parentNode.displayText))
-                    .replace("{child}", String(childNode.displayText)));
             } catch (error) {
                 console.error('[auto-connect-node] 连接失败:', error);
                 new Notice(t("Connection failed").replace("{message}", errorMessage(error)));
@@ -3924,7 +3885,6 @@ window.addEventListener('resize', function() {
 
                 await this.refreshBranchMermaid();
                 if (newChildIds.length > 0) await this.reflowAutoLayout(newChildIds[0]);
-                new Notice(`已将 ${newChildIds.length} 个节点移至「${parentNode.displayText}」`);
             } catch (error) {
                 console.error('[reparent-auto-nodes] 换父失败:', error);
                 new Notice(`换父失败: ${errorMessage(error)}`);
@@ -4021,6 +3981,11 @@ window.addEventListener('resize', function() {
                                 const oldSideDirById = new Map<string, GrowthDirection>();
                                 for (const [nodeID, sep] of separations) {
                                     if (sep.willSeparate) continue;
+                                    const oldDirection = this.findNodeInTree(mocData.nodes, nodeID)?.layout?.direction;
+                                    if (oldDirection) {
+                                        oldSideDirById.set(nodeID, oldDirection);
+                                        continue;
+                                    }
                                     const oldPos = mocData.nodePositions[nodeID];
                                     const parentPos = mocData.nodePositions[sep.parentId];
                                     if (!oldPos || !parentPos) continue;
@@ -4204,17 +4169,13 @@ window.addEventListener('resize', function() {
                     this.branchRenderer?.applyCollapsedState();
                 }
                 await this.persistCollapseState(mocFile, collapsedNodeIds);
-                if (this.isNodeAutoLayout(nodeId)) {
-                    // auto 布局:收起和展开都按当前 collapsedNodeIds 重新计算可见节点的紧凑布局。
-                    // 收起/部分展开 → persistPositions:false,仅临时视觉重排,不污染文件坐标
-                    // (文件驱动的刷新会在渲染后统一重放这份紧凑布局,见 refreshBranchMermaidMOC 尾部);
-                    // 全部展开 → 落盘整树重算结果:收起期间的持久化 reflow(新建/删除/移动节点)
-                    // 不包含隐藏节点,会让隐藏子树的文件坐标过期,此时必须整体重写使其重新自洽。
+                if (this.isNodeAutoLayout(nodeId) || this.hasAutoLayoutChild(nodeId)) {
+                    // 折叠状态已保存；可见节点的位置只在内存中重算，展开后也不保存自动坐标。
                     await this.relayoutAutoLayoutSiblings(nodeId, {
                         collapsedNodeIds,
                         compactVisibleNodes: true,
                         rebalanceRootChildren: true,
-                        persistPositions: collapsedNodeIds.length === 0,
+                        persistPositions: false,
                     });
                 } else if (collapsedNodeIds.length === 0) {
                     // free 布局:节点都有保存坐标,展开时还原即可。
@@ -4593,6 +4554,10 @@ window.addEventListener('resize', function() {
                 );
                 this.lastRenderSignature = null;
                 await this.refreshBranchMermaid();
+                // 预览卡片尺寸在渲染后才同步到 cy；用实际尺寸给自动布局的兄弟让位。
+                if (this.isNodeAutoLayout(nodeId) || this.hasAutoLayoutChild(nodeId)) {
+                    await this.reflowAutoLayout(nodeId);
+                }
             } catch (error: unknown) {
                 console.error('[indexView] toggle-embed-node failed:', { nodeId, node, error });
                 new Notice(`切换失败: ${errorMessage(error)}`);
@@ -4626,7 +4591,6 @@ window.addEventListener('resize', function() {
                 // 刷新视图
                 await this.refreshBranchMermaid();
 
-                new Notice(`已跳转到 MOC: ${mocFile.basename}`);
             } catch (error) {
                 console.error('Failed to jump to cross-domain MOC:', error);
                 new Notice(`跳转失败: ${errorMessage(error)}`);
@@ -4661,7 +4625,6 @@ window.addEventListener('resize', function() {
                     };
                     if (!locate()) window.setTimeout(locate, 160);
                 }
-                new Notice(`已跳转到: ${mocFile.basename}`);
             } catch (error) {
                 console.error('Failed to jump to cross-domain note:', error);
                 new Notice(`跳转失败: ${errorMessage(error)}`);
@@ -4691,21 +4654,13 @@ window.addEventListener('resize', function() {
                     );
                 }
                 await this.refreshBranchMermaid();
-                new Notice(
-                    nearRemoved && farRemoved ? '已删除跨领域链接(双向)'
-                    : (nearRemoved || farRemoved) ? '已删除跨领域链接(单向·对侧原本缺失)'
-                    : '未找到要删除的跨领域链接'
-                );
+                if (!nearRemoved && !farRemoved) {
+                    new Notice('未找到要删除的跨领域链接');
+                }
             } catch (error) {
                 console.error('Failed to remove cross-domain link:', error);
                 new Notice(`删除失败: ${errorMessage(error)}`);
             }
-        });
-
-        // 监听节点复制事件（Cmd+C）
-        this.addTrackedListener(branchGraphDiv, 'node-copy', (event: CustomEvent) => {
-            const { count } = event.detail as { count: number };
-            new Notice(t("Copied nodes").replace("{count}", String(count)));
         });
 
         // 监听节点粘贴事件（Cmd+V）
@@ -4777,7 +4732,6 @@ window.addEventListener('resize', function() {
 
             await this.refreshBranchMermaid();
             await this.placePastedNodes(mocFile, pastedIds, pasteCenter);
-            new Notice(t("Pasted nodes").replace("{count}", String(nodes.length)));
         });
 
         // 监听系统剪贴板粘贴事件(Cmd+V 且内部剪贴板为空时回退)
@@ -4844,7 +4798,6 @@ window.addEventListener('resize', function() {
 
             await this.refreshBranchMermaid();
             await this.placePastedNodes(mocFile, pastedIds, pasteCenter);
-            new Notice(t("Pasted nodes").replace("{count}", '1'));
         });
 
         // 监听节点删除键事件
@@ -5360,12 +5313,10 @@ window.addEventListener('resize', function() {
                     if (this.isNodeAutoLayout(newChildID)) {
                         await this.reflowAutoLayout(newChildID);
                     }
-                    new Notice(`已修改父节点: ${target} 从 ${oldSource} → ${newSource} (新ID: ${newChildID})`);
                 } else {
                     // 箭头关系边：修改关系起点
                     await this.updateEdgeSourceInMOC(mocFile, oldSource, newSource, target, label ?? '');
                     await this.refreshBranchMermaid();
-                    new Notice(`已修改边起点: ${oldSource} → ${newSource}`);
                 }
             } catch (error) {
                 console.error('Failed to update edge source:', error);
@@ -5393,12 +5344,10 @@ window.addEventListener('resize', function() {
                     if (this.isNodeAutoLayout(source)) {
                         await this.reflowAutoLayout(source);
                     }
-                    new Notice(`已修改边终点: ${oldTarget} → ${newTarget}`);
                 } else {
                     // 箭头关系边
                     await this.updateEdgeTargetInMOC(mocFile, source, oldTarget, newTarget, label ?? '');
                     await this.refreshBranchMermaid();
-                    new Notice(`已修改边终点: ${oldTarget} → ${newTarget}`);
                 }
             } catch (error) {
                 console.error('Failed to update edge target:', error);
@@ -5457,7 +5406,6 @@ window.addEventListener('resize', function() {
                             await this.applyNewSiblingSide(newChildID);
                             await this.reflowAutoLayout(newChildID);
                         }
-                        new Notice(`已将自由节点挂载为子节点: ${finalTargetId} → ${newChildID}`);
                         return;
                     }
 
@@ -5471,8 +5419,6 @@ window.addEventListener('resize', function() {
                     // 刷新视图
                     await this.refreshBranchMermaid();
 
-                    const relationType = (sourceIsFree || targetIsFree) ? '自由节点虚线关系' : '箭头关系';
-                    new Notice(`已创建${relationType}: ${finalSourceId} → ${finalTargetId}`);
                 }
             } catch (error) {
                 console.error('Failed to create arrow relation:', error);
@@ -5535,7 +5481,6 @@ window.addEventListener('resize', function() {
                 if (mocFile) {
                     await this.mocHandler.createGroupInMOC(mocFile, nodeIds, groupName);
                     await this.refreshBranchMermaid();
-                    new Notice(`已创建分组 "${groupName}"，包含 ${nodeIds.length} 个节点`);
                 } else {
                     console.error('MOC file not found:', this.plugin.settings.mocCurrentFile);
                 }
@@ -6755,9 +6700,6 @@ window.addEventListener('resize', function() {
             // 刷新视图
             await this.refreshBranchMermaid();
 
-            const sourceId = (sourceNode as { nodeID?: string }).nodeID || sourceNode.IDStr;
-            const targetIds = targetNodes.map(n => n.nodeID || n.IDStr).join(', ');
-            new Notice(`已关联跨领域节点: ${sourceId} ↔ ${targetIds} (${targetNodes.length} 个节点)`);
         } catch (error) {
             console.error('Failed to link cross-domain node:', error);
             new Notice(`关联跨领域节点失败: ${errorMessage(error)}`);
@@ -6933,7 +6875,6 @@ window.addEventListener('resize', function() {
             if (mocFile) {
                 await this.mocHandler.toggleNodeAnchorInMOC(mocFile, node.IDStr, !isAnchor);
                 await this.refreshBranchMermaid();
-                new Notice(isAnchor ? `已取消节点 ${node.ID} 的锚点` : `已置顶锚点：节点 ${node.ID}`);
             }
         } catch (error) {
             console.error('Failed to toggle anchor:', error);
@@ -6977,11 +6918,6 @@ window.addEventListener('resize', function() {
                 // 刷新视图
                 await this.refreshBranchMermaid();
                 
-                if (selectedColor) {
-                    new Notice(`已修改分支 ${branchId} 的色系`);
-                } else {
-                    new Notice(`已重置分支 ${branchId} 的色系`);
-                }
             }
         } catch (error) {
             console.error('Failed to change branch color scheme:', error);
@@ -7104,15 +7040,11 @@ window.addEventListener('resize', function() {
         try {
             const mocFile = this.app.vault.getFileByPath(this.plugin.settings.mocCurrentFile);
             if (mocFile) {
-                const childCount = await this.mocHandler.updateNodeIDInMOC(mocFile, node.IDStr, newID);
+                await this.mocHandler.updateNodeIDInMOC(mocFile, node.IDStr, newID);
 
                 // 刷新视图
                 await this.refreshBranchMermaid();
 
-                const message = childCount > 0
-                    ? `已将节点 ID 从 "${node.IDStr}" 修改为 "${newID}"，并更新了 ${childCount} 个子节点`
-                    : `已将节点 ID 从 "${node.IDStr}" 修改为 "${newID}"`;
-                new Notice(message);
             }
         } catch (error) {
             console.error('Failed to rename node ID:', error);
@@ -7147,7 +7079,6 @@ window.addEventListener('resize', function() {
             if (mocFile) {
                 await this.mocHandler.updateNodeIDInMOC(mocFile, node.IDStr, newID);
                 await this.refreshBranchMermaid();
-                new Notice(`已将自由节点 "${node.IDStr}" 转为根节点 "${newID}"`);
             }
         } catch (error) {
             console.error('Failed to make free node root:', error);
@@ -7235,7 +7166,6 @@ window.addEventListener('resize', function() {
             // 选中态接力:让邻居节点(后一个,没有则前一个,再没有则父节点)接管选中
             this.selectNeighborAfterDelete(neighborIdAfterDelete);
 
-            new Notice(t("Node deleted").replace("{id}", String(node.ID)));
         } catch (error) {
             console.error('Failed to delete node:', error);
             new Notice(t("Delete node failed").replace("{message}", errorMessage(error)));
@@ -7275,7 +7205,6 @@ window.addEventListener('resize', function() {
             await this.reflowAutoLayout(reflowParentId);
         }
 
-        new Notice(t("Deleted nodes").replace("{count}", String(batchNodes.length)));
     }
 
     /**
@@ -7386,7 +7315,6 @@ window.addEventListener('resize', function() {
                     }
                 }
 
-                new Notice(`已更新节点内容`);
             }
         } catch (error) {
             console.error('Failed to edit node content:', error);
@@ -7423,7 +7351,6 @@ window.addEventListener('resize', function() {
             }
             this.lastRenderSignature = null;
             await this.refreshBranchMermaid();
-            new Notice('录音已嵌入当前节点');
         } catch (error) {
             console.error('[indexView] appendEmbedToTextNode failed:', error);
             new Notice(`录音嵌入失败: ${errorMessage(error)}`);
@@ -8282,9 +8209,6 @@ window.addEventListener('resize', function() {
                     // 刷新视图
                     await this.refreshBranchMermaid();
                     
-                    new Notice(t("Reverse relation added")
-                        .replace("{source}", String(targetNode.ID))
-                        .replace("{target}", String(selectedNode.ID)));
                 }
             } catch (error) {
                 console.error('Failed to add arrow relation:', error);
@@ -9425,7 +9349,7 @@ window.addEventListener('resize', function() {
 
         // 保存位置
         if (mocFile) {
-            const finalPosition = placeholderInfo?.position || position;
+            const finalPosition = position;
             await this.savePlaceholderLayoutPositions(
                 mocFile,
                 suggestedID,
@@ -9523,7 +9447,7 @@ window.addEventListener('resize', function() {
 
         // 保存位置
         if (mocFile) {
-            const finalPosition = placeholderInfo?.position || position;
+            const finalPosition = position;
             await this.savePlaceholderLayoutPositions(
                 mocFile,
                 suggestedID,
@@ -9828,7 +9752,6 @@ window.addEventListener('resize', function() {
             await this.refreshBranchMermaid();
             await this.placePastedNodes(mocFile, [nodeID], pasteTarget);
 
-            new Notice(t('Paste image success'));
         } catch (error) {
             console.error('Failed to paste image:', error);
             new Notice(t('Paste image failed'));
@@ -10791,6 +10714,14 @@ window.addEventListener('resize', function() {
             childrenById,
             realMocRootIds,
             sidePinnedIds,
+            nodeLayoutIntents: (() => {
+                const { intents } = getMOCLayoutContext(mocData);
+                // 占位预览和草稿以实时位置插入已有顺序；提交后才保存新的 order。
+                if (includePlaceholder || this.draftNodes.size > 0) {
+                    Object.values(intents).forEach(intent => { delete intent.order; });
+                }
+                return intents;
+            })(),
             nodePositions: { ...(mocData.nodePositions || {}), ...draftSavedPositions },
             ignoreSavedPositionsForIds: (() => {
                 // 已分离节点必须保留其保存位置作为锚点 (复用上方 isSeparated)
@@ -10817,7 +10748,7 @@ window.addEventListener('resize', function() {
                 }
                 return explicit && explicit.length > 0 ? new Set(explicit) : undefined;
             })(),
-            layoutPreset: normalizeLayoutPreset(this.plugin.settings.autoLayoutDefaultGrowthDirection),
+            layoutPreset: normalizeLayoutPreset(mocData.layoutPreset, this.currentLayoutPreset),
             nodeLayoutPresets: mocData.nodeLayoutPresets,
             // 引擎只让"子节点围绕父节点对称";子节点被手动拖动或追加导致整体偏移时,
             // 需要反过来把父节点移到子节点中点。只动 auto 节点:free 锚点(issue #48)保持不动,
@@ -11091,7 +11022,6 @@ window.addEventListener('resize', function() {
                 }
             });
 
-            new Notice(t("Free node added").replace("{id}", String(result.nodeID)));
         } catch (error) {
             console.error("保存自由节点失败:", error);
             new Notice(t("Save failed").replace("{message}", errorMessage(error)));
@@ -11179,7 +11109,6 @@ window.addEventListener('resize', function() {
             }
         });
 
-        new Notice(`已创建分组: ${group.label}`);
     }
 
     /**
@@ -11196,7 +11125,6 @@ window.addEventListener('resize', function() {
                 mocData.groups[groupIndex].label = newLabel;
             });
 
-            new Notice(`已重命名分组: ${newLabel}`);
         } catch (error) {
             console.error('Failed to rename group:', error);
             new Notice(`重命名分组失败: ${errorMessage(error)}`);
@@ -11293,7 +11221,6 @@ window.addEventListener('resize', function() {
                 }
             });
 
-            new Notice(`已将分组 ID 从 "${oldGroupId}" 修改为 "${newGroupId}"`);
         } catch (error) {
             console.error('Failed to rename group ID:', error);
             new Notice(`修改分组 ID 失败: ${errorMessage(error)}`);
@@ -11312,10 +11239,8 @@ window.addEventListener('resize', function() {
                     throw new Error(`未找到分组: ${groupId}`);
                 }
 
-                const deletedGroup = mocData.groups[groupIndex];
                 mocData.groups.splice(groupIndex, 1);
 
-                new Notice(`已删除分组: ${deletedGroup.label}`);
             });
         } catch (error) {
             console.error('Failed to delete group:', error);
@@ -11404,21 +11329,13 @@ window.addEventListener('resize', function() {
                 const targetNodeHasParent = await this.mocHandler.checkNodeHasParent(mocFile, targetID);
 
                 if (targetNodeHasParent) {
-                    new Notice(`已删除箭头关系: ${sourceID} → ${targetID}`);
 
                     // 无论目标节点 ID 是否以 free. 开头，都生成新的自由节点 ID
                     // 例如：free.1.a 会被重命名为 free.2，成为真正的自由节点
                     const newFreeID = this.generateNextFreeNodeID();
 
                     await this.mocHandler.convertChildToFreeNode(mocFile, targetID, newFreeID);
-                    new Notice(`${targetID} 已转换为自由节点: ${newFreeID}`);
-                } else {
-                    new Notice(`已删除箭头关系: ${sourceID} → ${targetID}`);
                 }
-            } else {
-                // 删除的是反向关系或跨领域关系，不需要转换节点
-                const relationType = edgeType === 'cross-domain' ? '跨领域关系' : '反向关系';
-                new Notice(`已删除${relationType}: ${sourceID} → ${targetID}`);
             }
         } catch (error) {
             console.error('Failed to delete arrow relation:', error);
@@ -11455,7 +11372,6 @@ window.addEventListener('resize', function() {
                 }
             });
 
-            new Notice(`已更新关系文本: ${sourceID} → ${targetID}`);
         } catch (error) {
             console.error('Failed to update arrow relation label:', error);
             new Notice(`更新关系文本失败: ${errorMessage(error)}`);
@@ -11590,7 +11506,7 @@ window.addEventListener('resize', function() {
             const nodeId = originalNode?.IDStr || originalNode?.ID;
             if (originalNode && nodeId) {
                 // 草稿节点(#20)纯内存,绝不写文件
-                if (data.isDraft || originalNode.isDraft) return;
+                if (data.isDraft || originalNode.isDraft || node.hasClass('zk-collapsed-hidden')) return;
                 // 跳过跨领域节点（跨领域节点的位置保存在 cross_domain_links 中）
                 if (originalNode.isCrossDomain || nodeId.startsWith('cd-')) {
                     return;
@@ -11604,35 +11520,10 @@ window.addEventListener('resize', function() {
             }
         });
 
-        // 批量保存所有位置（仅在位置发生变化时）
+        // 保存人工布局意图；序列化边界会过滤普通自动节点的坐标。
         try {
             await this.mocHandler.modifyMOCData(mocFile, (mocData) => {
-                // 检查位置是否发生变化
-                const oldPositions = mocData.nodePositions || {};
-                let hasChanged = false;
-
-                // 检查节点数量是否变化
-                const newKeys = Object.keys(positions);
-                const oldKeys = Object.keys(oldPositions);
-                if (newKeys.length !== oldKeys.length) {
-                    hasChanged = true;
-                } else {
-                    // 检查每个节点的位置是否变化
-                    for (const nodeId of newKeys) {
-                        const newPos = positions[nodeId];
-                        const oldPos = oldPositions[nodeId];
-
-                        if (!oldPos || newPos.x !== oldPos.x || newPos.y !== oldPos.y) {
-                            hasChanged = true;
-                            break;
-                        }
-                    }
-                }
-
-                // 只有在位置真正变化时才更新
-                if (hasChanged) {
-                    mocData.nodePositions = positions;
-                } 
+                Object.assign(mocData.nodePositions, positions);
             });
         } catch (error) {
             console.error('[saveAllNodePositions] Failed to save:', error);
@@ -11641,7 +11532,7 @@ window.addEventListener('resize', function() {
 
     /**
      * 提交新节点前调用:若挂到 auto 父节点下,先用编辑框【实测尺寸】把占位符再跑一遍预览让位
-     * (使兄弟间距=提交后真实尺寸的最终间距),再把当前 cy 坐标快照落盘。
+     * (使兄弟间距=提交后真实尺寸的最终间距),再从当前 cy 快照保存方向与顺序。
      * 这样随后的 refresh 直接渲染最终布局,提交后的 reflow 变成幂等,消除
      * "预览(空占位尺寸)→ 提交(真实尺寸)再排一次" 的弹动。
      * 须在新节点写入文件【之前】调用:此时占位符仍在 cy、真实节点尚未加入,
@@ -11677,6 +11568,7 @@ window.addEventListener('resize', function() {
             const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
             const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
             this.ensureMOCNodeLayoutStyle(mocData);
+            Object.assign(mocData.nodePositions, this.getRuntimeNodePositions(mocFile.path));
 
             // 更新节点位置
             mocData.nodePositions[nodeID] = {
@@ -11751,21 +11643,13 @@ window.addEventListener('resize', function() {
         size: { widthModel: number; heightModel: number }
     ): Promise<void> {
         try {
-            const headingTitle = this.plugin.settings.mocHeadingTitle;
-            const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
-            const mocData = await parseMOCStructure(this.app, mocFile.path, headingTitle);
-            this.ensureMOCNodeLayoutStyle(mocData);
-
-            if (!mocData.embedNodeSizes) {
-                mocData.embedNodeSizes = {};
-            }
-
-            mocData.embedNodeSizes[nodeID] = {
-                width: Math.round(size.widthModel * 100) / 100,
-                height: Math.round(size.heightModel * 100) / 100
-            };
-
-            await saveMOCStructure(this.app, mocFile.path, headingTitle, mocData);
+            await this.mocHandler.modifyMOCData(mocFile, mocData => {
+                if (!mocData.embedNodeSizes) mocData.embedNodeSizes = {};
+                mocData.embedNodeSizes[nodeID] = {
+                    width: Math.round(size.widthModel * 100) / 100,
+                    height: Math.round(size.heightModel * 100) / 100
+                };
+            });
         } catch (error) {
             console.error('Failed to save embed node size to MOC:', error);
             new Notice(`保存预览节点尺寸失败: ${errorMessage(error)}`);
@@ -11905,7 +11789,6 @@ window.addEventListener('resize', function() {
             // 刷新视图
             await this.refreshBranchMermaid();
 
-            new Notice(`已切换到: ${mocFile.basename}`);
         } catch (error) {
             console.error('Failed to open cross-domain MOC:', error);
             new Notice(`打开跨界思维树失败: ${errorMessage(error)}`);
@@ -12185,13 +12068,10 @@ window.addEventListener('resize', function() {
                         await this.reflowAutoLayout(reflowParentId);
                     }
 
-                    new Notice(t("scratch cut notice").replace('{n}', String(nodes.length)));
                 } catch (e) {
                     console.error("[scratchpad] cut 失败", e);
                     new Notice(t("scratch cut failed"));
                 }
-            } else {
-                new Notice(t("scratch copy notice").replace('{n}', String(nodes.length)));
             }
         })();
 
@@ -12247,6 +12127,7 @@ window.addEventListener('resize', function() {
         const heading = this.plugin.settings.mocHeadingTitle;
         const mocData = await parseMOCStructure(this.app, mocFile.path, heading);
         this.ensureMOCNodeLayoutStyle(mocData);
+        Object.assign(mocData.nodePositions, this.getRuntimeNodePositions(mocFile.path));
         mocData.nodePositions = { ...mocData.nodePositions, ...positions };
         await saveMOCStructure(this.app, mocFile.path, heading, mocData);
     }

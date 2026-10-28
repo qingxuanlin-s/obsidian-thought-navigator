@@ -148,6 +148,10 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
 
 	try {
 		const options: RenderOptions = {
+			app,
+			mocLayout: mocData,
+			nodeLayoutOverrides: mocData.nodeLayoutOverrides,
+			initialCollapsedNodeIds: mocData.collapsedNodeIds,
 			direction: (plugin.settings.DirectionOfBranchGraph || 'LR') as RenderOptions['direction'],
 			layoutType: 'dagre',
 			animate: false,

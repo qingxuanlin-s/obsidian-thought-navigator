@@ -12,6 +12,48 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
     {
+        version: '0.3.10',
+        date: '2026-10-27',
+        highlights: [
+            {
+                zh: '自动布局节点改为保存方向和兄弟顺序，打开时按实际尺寸重新排布；旧坐标自动迁移，根节点、自由节点和手动分离的分支继续保留坐标。',
+                en: 'Automatic nodes now save direction and sibling order, then lay out again using their actual sizes when opened. Existing coordinates are migrated, while root anchors, free nodes, and manually separated branches retain their positions.',
+            },
+            {
+                zh: '修复文件预览与普通节点重叠，以及收起、展开子节点时文字层短暂错位、出现虚影的问题。',
+                en: 'Fixed overlaps between file previews and regular nodes, along with briefly misaligned or ghosted text when collapsing and expanding children.',
+            },
+            {
+                zh: '文件预览改为拖动标题栏移动，内容区保留原生滚动和文字选择；修复第一次滚动内容时画布跟着缩放的问题。',
+                en: 'Move file previews by dragging their headers. Content retains native scrolling and text selection, and the first scroll no longer also zooms the canvas.',
+            },
+            {
+                zh: '预览和图片节点拖动时支持分离圆提示。圆的半径按最远的未分离自动子节点中心计算，拖动超过约 12 像素后显示；拖出圆保留位置，拖回圆恢复自动布局。',
+                en: 'Preview and image nodes now show the separation guide while dragging. Its radius reaches the farthest attached automatic child and appears after about 12 pixels of movement. Drag outside to retain a position, or back inside to resume automatic layout.',
+            },
+            {
+                zh: '优化新建节点输入时的自动尺寸适配，保持左边缘稳定，减少提交内容后的位置跳动。',
+                en: 'Improved automatic sizing while entering new nodes, keeping the left edge steady and reducing position jumps after submission.',
+            },
+            {
+                zh: '设置项支持新版 Obsidian 的设置搜索，同时保留旧版本的设置界面兼容。',
+                en: 'Settings now support settings search in newer Obsidian versions while retaining the compatible interface for older versions.',
+            },
+            {
+                zh: '修复工作区项目卡片和全局搜索中所属空间显示不正确的问题。',
+                en: 'Fixed incorrect space labels on workspace project cards and in global search.',
+            },
+            {
+                zh: '减少新建、复制粘贴、草稿提交、撤销和录音等日常操作的成功弹窗，保留失败提示，减少打扰。',
+                en: 'Reduced success notifications for everyday actions such as creation, copy and paste, draft submission, undo, and recording. Failure messages remain available.',
+            },
+            {
+                zh: '调整独立窗口中的剪贴板访问方式，使用当前窗口的剪贴板接口。',
+                en: 'Clipboard access in pop-out windows now uses the current window’s clipboard interface.',
+            },
+        ],
+    },
+    {
         version: '0.3.9',
         date: '2026-10-25',
         highlights: [

@@ -6,6 +6,14 @@ export interface Vec2 {
 	y: number;
 }
 
+/** 用户的布局意图；自动布局计算出来的绝对坐标不属于持久化状态。 */
+export interface NodeLayoutIntent {
+	direction?: GrowthDirection;
+	order?: number;
+	// 自由节点挂在自动父节点下时，保留相对父节点的人工偏移。
+	offset?: Vec2;
+}
+
 const R = Math.SQRT1_2;
 
 export const DEFAULT_LAYOUT_PRESET: LayoutPreset = 'bidirectional';

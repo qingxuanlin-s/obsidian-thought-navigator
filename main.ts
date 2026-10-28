@@ -614,7 +614,6 @@ export default class ZKNavigationPlugin extends Plugin {
 
                     this.settings.mocCurrentFile = file.path;
                     await this.saveData(this.settings);
-                    new Notice(t('MOC created').replace('{path}', file.path));
 
                     if(para.open !== 'false'){
                         this.settings.lastRetrival = {
@@ -651,11 +650,10 @@ export default class ZKNavigationPlugin extends Plugin {
                     }
                     const kind = para.kind === 'file' ? 'file' : 'text';
                     const handler = this.cliMocHandler ??= new MOCHandler(this, this.app);
-                    const newID = await handler.addChildNodeToMOC(target, para.parent, para.title, kind);
+                    await handler.addChildNodeToMOC(target, para.parent, para.title, kind);
 
                     this.settings.mocCurrentFile = target.path;
                     await this.saveData(this.settings);
-                    new Notice(t('MOC node added').replace('{id}', newID));
 
                     if(para.open !== 'false'){
                         this.settings.lastRetrival = {

@@ -10,6 +10,43 @@ export const VERTICAL_GAP = 80;
 export const HORIZONTAL_GAP = 200;
 export const SIBLING_GAP = 100;
 
+/** 拖动开始时取快照：父节点为圆心，半径经过最远的未分离自动子节点中心。 */
+export function getSeparationOrbit(
+    grabbedNode: cytoscape.NodeSingular,
+    isAutoLayout: (id: string) => boolean,
+    separatedIds: Set<string>
+): { cx: number; cy: number; radius: number; parentId: string } | null {
+    const businessId = (node: cytoscape.NodeSingular) => {
+        const data = node.data() as CyData;
+        return data.originalNode?.IDStr || data.originalNode?.ID || data.originalSource || node.id();
+    };
+    const parents = grabbedNode.incomers('edge').filter(edge => edge.data('type') === 'parent');
+    if (!parents.length) return null;
+    const parent = (parents.last() as cytoscape.EdgeSingular).source();
+    const parentId = businessId(parent);
+    if (parent.data('isFreeNode') || parentId.startsWith('free.') || !isAutoLayout(parentId)) return null;
+    const center = parent.position();
+    let radius = 0;
+    parent.outgoers('edge').forEach((edge: cytoscape.EdgeSingular) => {
+        if (edge.data('type') !== 'parent') return;
+        const child = edge.target();
+        const id = businessId(child);
+        const data = child.data() as CyData;
+        if (data.isGroup || data.isPlaceholder || data.isCrossDomain || data.isFreeNode || id.startsWith('free.')) return;
+        if (!child.visible() || child.hasClass('zk-collapsed-hidden') || separatedIds.has(id) || !isAutoLayout(id)) return;
+        const position = child.position();
+        radius = Math.max(radius, Math.hypot(position.x - center.x, position.y - center.y));
+    });
+    // 全部分离后仍需有可拖回的轨道；按节点尺寸估算正常排布距离，不采用固定最小半径。
+    if (radius === 0) {
+        const position = grabbedNode.position();
+        const horizontal = Math.abs(position.x - center.x) >= Math.abs(position.y - center.y);
+        radius = ((horizontal ? parent.outerWidth() : parent.outerHeight())
+            + (horizontal ? grabbedNode.outerWidth() : grabbedNode.outerHeight())) / 2 + 150;
+    }
+    return { cx: center.x, cy: center.y, radius, parentId };
+}
+
 /**
  * 将方向字符串转换为 dagre 的 rankDir 格式
  */

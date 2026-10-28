@@ -1,12 +1,19 @@
 import ZKNavigationPlugin from "main";
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, PluginSettingTab, Setting, SettingDefinitionItem, requireApiVersion } from "obsidian";
 import { FolderSuggest } from "../suggester/FolderSuggester";
 import { t } from "../lang/helper";
 import { FileSuggest } from "src/suggester/FileSuggester";
 
+interface SearchableSetting {
+    name: string;
+    desc?: string;
+    render: (setting: Setting) => void;
+}
+
 export class ZKNavigationSettngTab extends PluginSettingTab {
 
     plugin: ZKNavigationPlugin
+    private showFileExtensionSettings = false;
     private hiddenMOCOptionsUnlocked = false;
     private generalTitleClickCount = 0;
     private lastGeneralTitleClickTime = 0;
@@ -17,6 +24,41 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
         this.plugin = plugin;
     }
 
+    getSettingDefinitions(): SettingDefinitionItem[] {
+        return [
+            { name: t("Zettelkasten Navigation"), render: (setting) => { setting.setHeading(); } },
+            {
+                name: t("General"),
+                render: (setting) => {
+                    setting.setHeading();
+                    this.bindGeneralTitleUnlock(setting.settingEl);
+                },
+            },
+            { type: 'group', cls: 'zk-setting-card', items: this.getGeneralSettings() },
+            {
+                type: 'group', heading: t("thought-tree-graph-view"), cls: 'zk-setting-card',
+                items: [...this.getStructureSettings(), ...this.getQuickActionSettings(), ...this.getBranchSettings()],
+            },
+            { type: 'group', heading: t("ws settings section"), cls: 'zk-setting-card', items: this.getWorkspaceSettings() },
+            {
+                type: 'group', heading: t("thought-local-graph-view"), cls: 'zk-setting-card',
+                items: [
+                    ...this.getLocalSettings(() => {
+                        this.showFileExtensionSettings = !this.showFileExtensionSettings;
+                        if (requireApiVersion('1.13.0')) this.refreshDomState();
+                    }),
+                    ...this.getFileExtensionSettings().map(item => ({ ...item, visible: () => this.showFileExtensionSettings })),
+                ],
+            },
+            {
+                type: 'group', heading: "隐藏选项", cls: 'zk-setting-card',
+                visible: () => this.hiddenMOCOptionsUnlocked,
+                items: this.getHiddenSettings(),
+            },
+        ];
+    }
+
+    // Obsidian 1.13 之前沿用原布局，控件与声明式设置共用定义。
     display(): void {
 
         const { containerEl } = this;
@@ -29,46 +71,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
         const generalSection = containerEl.createDiv("zk-setting-card");
 
         // 主题模式设置
-        new Setting(generalSection)
-            .setName(t("Theme mode"))
-            .addDropdown(options => options
-                .addOption("auto", t("Follow Obsidian theme"))
-                .addOption("dark", t("Dark theme"))
-                .addOption("light", t("Light theme"))
-                .setValue(this.plugin.settings.themeMode)
-                .onChange((value) => {
-                    this.plugin.settings.themeMode = value as 'dark' | 'light' | 'auto';
-                    this.plugin.applyTheme();
-                    this.plugin.RefreshIndexViewFlag = true;
-                })
-            );
-
-        new Setting(generalSection)
-            .setName(t("Theme style"))
-            .addDropdown(options => options
-                .addOption("default", t("Default style"))
-                .addOption("modern", t("Modern style"))
-                .addOption("nebula", t("Nebula style"))
-                .setValue(this.plugin.settings.themeStyle || "modern")
-                .onChange((value) => {
-                    this.plugin.settings.themeStyle = value as 'default' | 'modern' | 'nebula';
-                    this.plugin.applyTheme();
-                    this.plugin.RefreshIndexViewFlag = true;
-                })
-            );
-
-        new Setting(generalSection)
-            .setName(t("Edge style"))
-            .addDropdown(options => options
-                .addOption("straight", t("Straight line"))
-                .addOption("bezier", t("Bezier curve"))
-                .addOption("polyline", t("Polyline"))
-                .setValue(this.plugin.settings.edgeStyle || "bezier")
-                .onChange((value) => {
-                    this.plugin.settings.edgeStyle = value as 'straight' | 'bezier' | 'polyline';
-                    this.plugin.RefreshIndexViewFlag = true;
-                })
-            );
+        this.renderSettings(generalSection, this.getGeneralSettings());
 
         // ========== 分支视图 (Index Graph) ==========
         new Setting(containerEl).setName(t("thought-tree-graph-view")).setHeading();
@@ -78,141 +81,23 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
 
         void this.updateSructureSettings(structureSettingDiv);
 
-        new Setting(branchSection)
-            .setName(t("detail panel side"))
-            .setDesc(t("detail panel side desc"))
-            .addDropdown(options => options
-                .addOption("right", t("detail side right"))
-                .addOption("left", t("detail side left"))
-                .setValue(this.plugin.settings.detailPanelSide || "right")
-                .onChange((value) => {
-                    this.plugin.settings.detailPanelSide = value as 'left' | 'right';
-                    this.plugin.RefreshIndexViewFlag = true;
-                })
-            );
-
-        new Setting(branchSection)
-            .setName(t("detail auto open"))
-            .setDesc(t("detail auto open desc"))
-            .addToggle(toggle => toggle.setValue(this.plugin.settings.detailPanelAutoOpen === true)
-                .onChange((value) => {
-                    this.plugin.settings.detailPanelAutoOpen = value;
-                })
-            );
-
-        new Setting(branchSection)
-            .setName(t("default file open mode"))
-            .setDesc(t("default file open mode desc"))
-            .addDropdown(options => options
-                .addOption("replace", t("open mode replace"))
-                .addOption("tab", t("open mode tab"))
-                .addOption("split-left", t("open mode split-left"))
-                .addOption("split-right", t("open mode split-right"))
-                .setValue(this.plugin.settings.defaultFileOpenMode || "tab")
-                .onChange((value) => {
-                    this.plugin.settings.defaultFileOpenMode = value as 'replace' | 'tab' | 'split-left' | 'split-right';
-                    void this.plugin.saveData(this.plugin.settings);
-                })
-            );
+        this.renderSettings(branchSection, this.getBranchSettings());
 
         // ========== 工作区 (Workspace) ==========
         new Setting(containerEl).setName(t("ws settings section")).setHeading();
         const workspaceSection = containerEl.createDiv("zk-setting-card");
 
-        new Setting(workspaceSection)
-            .setName(t("ws project folder"))
-            .setDesc(t("ws project folder desc"))
-            .addSearch((cb) => {
-                new FolderSuggest(this.app, cb.inputEl);
-                cb.setPlaceholder("config/workspace")
-                    .setValue(this.plugin.settings.projectFolderPath)
-                    .onChange((value) => {
-                        this.plugin.settings.projectFolderPath = value.trim();
-                        void this.plugin.saveData(this.plugin.settings);
-                        this.notifyWorkspaceTaskSettingsChanged();
-                    });
-            });
-
-        new Setting(workspaceSection)
-            .setName(t("ws task prefix"))
-            .setDesc(t("ws task prefix desc"))
-            .addText((cb) => {
-                cb.setPlaceholder(t("ws task prefix placeholder"))
-                    .setValue(this.plugin.settings.wsTaskPrefix)
-                    .onChange((value) => {
-                        this.plugin.settings.wsTaskPrefix = value;
-                        void this.plugin.saveData(this.plugin.settings);
-                        this.notifyWorkspaceTaskSettingsChanged();
-                    });
-            });
-
-        const autoPrefixSetting = new Setting(workspaceSection)
-            .setName(t("ws task prefix auto"))
-            .setDesc(t("ws task prefix auto desc"))
-            .addToggle(toggle => toggle.setValue(this.plugin.settings.wsTaskPrefixAuto !== false)
-                .onChange((value) => {
-                    this.plugin.settings.wsTaskPrefixAuto = value;
-                    void this.plugin.saveData(this.plugin.settings);
-                    this.notifyWorkspaceTaskSettingsChanged();
-                })
-            );
-        autoPrefixSetting.settingEl.addClass('zk-setting-subsetting');
-
-        new Setting(workspaceSection)
-            .setName(t("ws task file tag"))
-            .setDesc(t("ws task file tag desc"))
-            .addText((cb) => {
-                cb.setPlaceholder(t("ws task file tag placeholder"))
-                    .setValue(this.plugin.settings.wsTaskFileTag)
-                    .onChange((value) => {
-                        this.plugin.settings.wsTaskFileTag = value.trim();
-                        void this.plugin.saveData(this.plugin.settings);
-                        this.notifyWorkspaceTaskSettingsChanged();
-                    });
-            });
+        this.renderSettings(workspaceSection, this.getWorkspaceSettings());
 
         // ========== 局部视图 (Local Graph) ==========
         new Setting(containerEl).setName(t("thought-local-graph-view")).setHeading();
         const localSection = containerEl.createDiv("zk-setting-card");
 
-        new Setting(localSection)
-            .setName(t("Open close-relative graph"))
-            .setDesc(t("Mermaid graph to display parent, siblings and sons"))
-            .addToggle(toggle => toggle.setValue(this.plugin.settings.FamilyGraphToggle)
-                .onChange((value) => {
-                    this.plugin.settings.FamilyGraphToggle = value;
-                    this.plugin.RefreshIndexViewFlag = true;
-                })
-            );
-
-        new Setting(localSection)
-            .setName(t("Open inoutlinks graph"))
-            .setDesc(t("Mermaid graph to display inlinks and outlinks"))
-            .addToggle(toggle => toggle.setValue(this.plugin.settings.InOutlinksGraphToggle)
-                .onChange((value) => {
-                    this.plugin.settings.InOutlinksGraphToggle = value;
-                    this.plugin.RefreshIndexViewFlag = true;
-                })
-            ).addExtraButton((cb)=>{
-                cb.setIcon("settings")
-                .onClick(()=>{
-                    this.hideDiv(inoutlinksSectionDiv);
-                })
-            })
+        this.renderSettings(localSection, this.getLocalSettings(() => this.hideDiv(inoutlinksSectionDiv)));
 
         const inoutlinksSectionDiv = localSection.createDiv("zk-local-section zk-hidden")
 
-        new Setting(inoutlinksSectionDiv)
-        .setName(t("Detect file extensions"))
-        .addDropdown(options => options
-            .addOption("all", t("all file extension"))
-            .addOption("md", t(".md only"))
-            .setValue(this.plugin.settings.FileExtension)
-                .onChange((value) => {
-                this.plugin.settings.FileExtension = value;
-                    this.plugin.RefreshIndexViewFlag = true;
-                })
-        )
+        this.renderSettings(inoutlinksSectionDiv, this.getFileExtensionSettings());
 
         // ========== 隐藏选项（通过通用功能标题快速点击 3 次解锁） ==========
         const hiddenSectionTitle = new Setting(containerEl).setName("隐藏选项").setHeading().settingEl;
@@ -227,6 +112,369 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
         }
 
         this.bindGeneralTitleUnlock(generalTitle, hiddenSectionTitle, hiddenSection);
+    }
+
+    private getGeneralSettings(): SearchableSetting[] {
+        return [
+            {
+                name: t("Theme mode"),
+                render: (setting) => {
+                    setting
+                    .addDropdown(options => options
+                        .addOption("auto", t("Follow Obsidian theme"))
+                        .addOption("dark", t("Dark theme"))
+                        .addOption("light", t("Light theme"))
+                        .setValue(this.plugin.settings.themeMode)
+                        .onChange((value) => {
+                            this.plugin.settings.themeMode = value as 'dark' | 'light' | 'auto';
+                            this.plugin.applyTheme();
+                            this.plugin.RefreshIndexViewFlag = true;
+                        })
+                    );
+                },
+            },
+            {
+                name: t("Theme style"),
+                render: (setting) => {
+                    setting
+                    .addDropdown(options => options
+                        .addOption("default", t("Default style"))
+                        .addOption("modern", t("Modern style"))
+                        .addOption("nebula", t("Nebula style"))
+                        .setValue(this.plugin.settings.themeStyle || "modern")
+                        .onChange((value) => {
+                            this.plugin.settings.themeStyle = value as 'default' | 'modern' | 'nebula';
+                            this.plugin.applyTheme();
+                            this.plugin.RefreshIndexViewFlag = true;
+                        })
+                    );
+                },
+            },
+            {
+                name: t("Edge style"),
+                render: (setting) => {
+                    setting
+                    .addDropdown(options => options
+                        .addOption("straight", t("Straight line"))
+                        .addOption("bezier", t("Bezier curve"))
+                        .addOption("polyline", t("Polyline"))
+                        .setValue(this.plugin.settings.edgeStyle || "bezier")
+                        .onChange((value) => {
+                            this.plugin.settings.edgeStyle = value as 'straight' | 'bezier' | 'polyline';
+                            this.plugin.RefreshIndexViewFlag = true;
+                        })
+                    );
+                },
+            }
+        ];
+    }
+
+    private getBranchSettings(): SearchableSetting[] {
+        return [
+            {
+                name: t("detail panel side"),
+                desc: t("detail panel side desc"),
+                render: (setting) => {
+                    setting
+                    .addDropdown(options => options
+                        .addOption("right", t("detail side right"))
+                        .addOption("left", t("detail side left"))
+                        .setValue(this.plugin.settings.detailPanelSide || "right")
+                        .onChange((value) => {
+                            this.plugin.settings.detailPanelSide = value as 'left' | 'right';
+                            this.plugin.RefreshIndexViewFlag = true;
+                        })
+                    );
+                },
+            },
+            {
+                name: t("detail auto open"),
+                desc: t("detail auto open desc"),
+                render: (setting) => {
+                    setting
+                    .addToggle(toggle => toggle.setValue(this.plugin.settings.detailPanelAutoOpen === true)
+                        .onChange((value) => {
+                            this.plugin.settings.detailPanelAutoOpen = value;
+                        })
+                    );
+                },
+            },
+            {
+                name: t("default file open mode"),
+                desc: t("default file open mode desc"),
+                render: (setting) => {
+                    setting
+                    .addDropdown(options => options
+                        .addOption("replace", t("open mode replace"))
+                        .addOption("tab", t("open mode tab"))
+                        .addOption("split-left", t("open mode split-left"))
+                        .addOption("split-right", t("open mode split-right"))
+                        .setValue(this.plugin.settings.defaultFileOpenMode || "tab")
+                        .onChange((value) => {
+                            this.plugin.settings.defaultFileOpenMode = value as 'replace' | 'tab' | 'split-left' | 'split-right';
+                            void this.plugin.saveData(this.plugin.settings);
+                        })
+                    );
+                },
+            }
+        ];
+    }
+
+    private getWorkspaceSettings(): SearchableSetting[] {
+        return [
+            {
+                name: t("ws project folder"),
+                desc: t("ws project folder desc"),
+                render: (setting) => {
+                    setting
+                    .addSearch((cb) => {
+                        new FolderSuggest(this.app, cb.inputEl);
+                cb.setPlaceholder(t("Example: folder1/folder2"))
+                            .setValue(this.plugin.settings.projectFolderPath)
+                            .onChange((value) => {
+                                this.plugin.settings.projectFolderPath = value.trim();
+                                void this.plugin.saveData(this.plugin.settings);
+                                this.notifyWorkspaceTaskSettingsChanged();
+                            });
+                    });
+                },
+            },
+            {
+                name: t("ws task prefix"),
+                desc: t("ws task prefix desc"),
+                render: (setting) => {
+                    setting
+                    .addText((cb) => {
+                        cb.setPlaceholder(t("ws task prefix placeholder"))
+                            .setValue(this.plugin.settings.wsTaskPrefix)
+                            .onChange((value) => {
+                                this.plugin.settings.wsTaskPrefix = value;
+                                void this.plugin.saveData(this.plugin.settings);
+                                this.notifyWorkspaceTaskSettingsChanged();
+                            });
+                    });
+                },
+            },
+            {
+                name: t("ws task prefix auto"),
+                desc: t("ws task prefix auto desc"),
+                render: (setting) => {
+                    setting
+                    .addToggle(toggle => toggle.setValue(this.plugin.settings.wsTaskPrefixAuto !== false)
+                        .onChange((value) => {
+                            this.plugin.settings.wsTaskPrefixAuto = value;
+                            void this.plugin.saveData(this.plugin.settings);
+                            this.notifyWorkspaceTaskSettingsChanged();
+                        })
+                    );
+                        setting.settingEl.addClass('zk-setting-subsetting');
+                },
+            },
+            {
+                name: t("ws task file tag"),
+                desc: t("ws task file tag desc"),
+                render: (setting) => {
+                    setting
+                    .addText((cb) => {
+                        cb.setPlaceholder(t("ws task file tag placeholder"))
+                            .setValue(this.plugin.settings.wsTaskFileTag)
+                            .onChange((value) => {
+                                this.plugin.settings.wsTaskFileTag = value.trim();
+                                void this.plugin.saveData(this.plugin.settings);
+                                this.notifyWorkspaceTaskSettingsChanged();
+                            });
+                    });
+                },
+            }
+        ];
+    }
+
+    private getLocalSettings(onToggleDetails: () => void): SearchableSetting[] {
+        return [
+            {
+                name: t("Open close-relative graph"),
+                desc: t("Mermaid graph to display parent, siblings and sons"),
+                render: (setting) => {
+                    setting
+                    .addToggle(toggle => toggle.setValue(this.plugin.settings.FamilyGraphToggle)
+                        .onChange((value) => {
+                            this.plugin.settings.FamilyGraphToggle = value;
+                            this.plugin.RefreshIndexViewFlag = true;
+                        })
+                    );
+                },
+            },
+            {
+                name: t("Open inoutlinks graph"),
+                desc: t("Mermaid graph to display inlinks and outlinks"),
+                render: (setting) => {
+                    setting
+                    .addToggle(toggle => toggle.setValue(this.plugin.settings.InOutlinksGraphToggle)
+                        .onChange((value) => {
+                            this.plugin.settings.InOutlinksGraphToggle = value;
+                            this.plugin.RefreshIndexViewFlag = true;
+                        })
+                    ).addExtraButton((cb)=>{
+                        cb.setIcon("settings")
+                        .onClick(()=>{
+                            onToggleDetails();
+                        })
+                    });
+                },
+            }
+        ];
+    }
+
+    private getFileExtensionSettings(): SearchableSetting[] {
+        return [
+            {
+                name: t("Detect file extensions"),
+                render: (setting) => {
+                    setting
+                    .addDropdown(options => options
+                        .addOption("all", t("all file extension"))
+                        .addOption("md", t(".md only"))
+                        .setValue(this.plugin.settings.FileExtension)
+                            .onChange((value) => {
+                            this.plugin.settings.FileExtension = value;
+                                this.plugin.RefreshIndexViewFlag = true;
+                            })
+                    );
+                },
+            }
+        ];
+    }
+
+    private getStructureSettings(): SearchableSetting[] {
+        return [
+            {
+                name: t("Show note ID in branch view"),
+                desc: t("Display note IDs on cards in branch view"),
+                render: (setting) => {
+                    setting
+                    .addToggle(toggle => toggle.setValue(this.plugin.settings.showNoteIdInBranchView)
+                        .onChange((value) => {
+                            this.plugin.settings.showNoteIdInBranchView = value;
+                            this.plugin.RefreshIndexViewFlag = true;
+                        })
+                    );
+                },
+            },
+            {
+                name: t("Node text display mode"),
+                desc: t("Control whether branch nodes show ID, title, or combined text"),
+                render: (setting) => {
+                    setting
+                    .addDropdown(options => options
+                        .addOption("id", t("id"))
+                        .addOption("title", t("title"))
+                        .addOption("both", t("both"))
+                        .addOption("id-title", t("id-title"))
+                        .setValue(this.plugin.settings.NodeText || "both")
+                        .onChange((value) => {
+                            this.plugin.settings.NodeText = value;
+                            this.plugin.RefreshIndexViewFlag = true;
+                        })
+                    );
+                },
+            },
+            {
+                name: t("Node layout style"),
+                desc: t("Free nodes keep manual placement; auto nodes create new nodes in a fixed mind-map layout"),
+                render: (setting) => {
+                    setting
+                    .addDropdown(options => options
+                        .addOption("free", t("Free nodes"))
+                        .addOption("auto", t("Auto nodes"))
+                        .setValue(this.plugin.settings.nodeLayoutStyle || "auto")
+                        .onChange((value) => {
+                            this.plugin.settings.nodeLayoutStyle = value as 'free' | 'auto';
+                            this.plugin.RefreshIndexViewFlag = true;
+                        })
+                    );
+                },
+            },
+            {
+                name: t("Default growth direction for auto layout"),
+                desc: t("Used when an auto-layout branch has no separate growth direction"),
+                render: (setting) => {
+                    setting
+                    .addDropdown(options => options
+                        .addOption("bidirectional", t("Bidirectional"))
+                        .addOption("top-down", t("Top down"))
+                        .addOption("radial", t("Radial"))
+                        .setValue(this.plugin.settings.autoLayoutDefaultGrowthDirection || "bidirectional")
+                        .onChange((value) => {
+                            this.plugin.settings.autoLayoutDefaultGrowthDirection = value as 'bidirectional' | 'top-down' | 'radial';
+                            this.plugin.RefreshIndexViewFlag = true;
+                        })
+                    );
+                },
+            }
+        ];
+    }
+
+    private getQuickActionSettings(): SearchableSetting[] {
+        return [
+            {
+                name: t("Smart connection"),
+                desc: t("When enabled, dragging a placeholder or unconnected free node near another node automatically attaches it as a child"),
+                render: (setting) => {
+                    setting
+                    .addToggle(toggle => toggle.setValue(this.plugin.settings.smartConnection)
+                        .onChange((value) => {
+                            this.plugin.settings.smartConnection = value;
+                            this.plugin.RefreshIndexViewFlag = true;
+                        })
+                    );
+                },
+            }
+        ];
+    }
+
+    private getHiddenSettings(): SearchableSetting[] {
+        return [
+            {
+                name: t("MOC Folder Location"),
+                desc: t("Folder containing MOC index notes"),
+                render: (setting) => {
+                    setting
+                    .addSearch((cb) => {
+                        new FolderSuggest(this.app, cb.inputEl);
+                        cb.setPlaceholder(t("Example: folder1/folder2"))
+                            .setValue(this.plugin.settings.mocFolderPath)
+                            .onChange((value) => {
+                                this.plugin.settings.mocFolderPath = value;
+                                this.plugin.settings.mocCurrentFile = '';
+                                this.plugin.RefreshIndexViewFlag = true;
+                            });
+                    });
+                },
+            },
+            {
+                name: t("Heading Title"),
+                desc: t("The heading title to parse (e.g. '思维树' for '# 思维树')"),
+                render: (setting) => {
+                    setting
+                    .addText((cb) =>
+                        cb.setValue(this.plugin.settings.mocHeadingTitle)
+                            .setPlaceholder(t("default MOC heading title"))
+                            .onChange((value) => {
+                                this.plugin.settings.mocHeadingTitle = value;
+                                this.plugin.RefreshIndexViewFlag = true;
+                            })
+                    );
+                },
+            }
+        ];
+    }
+
+    private renderSettings(container: HTMLElement, definitions: SearchableSetting[]): void {
+        for (const definition of definitions) {
+            const setting = new Setting(container).setName(definition.name);
+            if (definition.desc) setting.setDesc(definition.desc);
+            definition.render(setting);
+        }
     }
 
     hideDiv(div:HTMLDivElement){
@@ -342,7 +590,6 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
                     })
                 );
 
-
         new Setting(canvasAdditionSection)
             .setName(t("Set color for cards"))
             .addExtraButton((cb)=>{
@@ -379,57 +626,7 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
 
         structureSettingDiv.empty();
 
-        new Setting(structureSettingDiv)
-            .setName(t("Show note ID in branch view"))
-            .setDesc(t("Display note IDs on cards in branch view"))
-            .addToggle(toggle => toggle.setValue(this.plugin.settings.showNoteIdInBranchView)
-                .onChange((value) => {
-                    this.plugin.settings.showNoteIdInBranchView = value;
-                    this.plugin.RefreshIndexViewFlag = true;
-                })
-            );
-
-        new Setting(structureSettingDiv)
-            .setName(t("Node text display mode"))
-            .setDesc(t("Control whether branch nodes show ID, title, or combined text"))
-            .addDropdown(options => options
-                .addOption("id", t("id"))
-                .addOption("title", t("title"))
-                .addOption("both", t("both"))
-                .addOption("id-title", t("id-title"))
-                .setValue(this.plugin.settings.NodeText || "both")
-                .onChange((value) => {
-                    this.plugin.settings.NodeText = value;
-                    this.plugin.RefreshIndexViewFlag = true;
-                })
-            );
-
-        new Setting(structureSettingDiv)
-            .setName(t("Node layout style"))
-            .setDesc(t("Free nodes keep manual placement; auto nodes create new nodes in a fixed mind-map layout"))
-            .addDropdown(options => options
-                .addOption("free", t("Free nodes"))
-                .addOption("auto", t("Auto nodes"))
-                .setValue(this.plugin.settings.nodeLayoutStyle || "auto")
-                .onChange((value) => {
-                    this.plugin.settings.nodeLayoutStyle = value as 'free' | 'auto';
-                    this.plugin.RefreshIndexViewFlag = true;
-                })
-            );
-
-        new Setting(structureSettingDiv)
-            .setName(t("Default growth direction for auto layout"))
-            .setDesc(t("Used when an auto-layout branch has no separate growth direction"))
-            .addDropdown(options => options
-                .addOption("bidirectional", t("Bidirectional"))
-                .addOption("top-down", t("Top down"))
-                .addOption("radial", t("Radial"))
-                .setValue(this.plugin.settings.autoLayoutDefaultGrowthDirection || "bidirectional")
-                .onChange((value) => {
-                    this.plugin.settings.autoLayoutDefaultGrowthDirection = value as 'bidirectional' | 'top-down' | 'radial';
-                    this.plugin.RefreshIndexViewFlag = true;
-                })
-            );
+        this.renderSettings(structureSettingDiv, this.getStructureSettings());
 
         // 添加"快捷操作"展开项
         const quickActionDetails = structureSettingDiv.createEl('details');
@@ -441,21 +638,13 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
 
         const quickActionContent = quickActionDetails.createDiv('zk-details-content');
 
-        new Setting(quickActionContent)
-            .setName(t("Smart connection"))
-            .setDesc(t("When enabled, dragging a placeholder or unconnected free node near another node automatically attaches it as a child"))
-            .addToggle(toggle => toggle.setValue(this.plugin.settings.smartConnection)
-                .onChange((value) => {
-                    this.plugin.settings.smartConnection = value;
-                    this.plugin.RefreshIndexViewFlag = true;
-                })
-            );
+        this.renderSettings(quickActionContent, this.getQuickActionSettings());
     }
 
     private bindGeneralTitleUnlock(
         generalTitleEl: HTMLElement,
-        hiddenTitleEl: HTMLElement,
-        hiddenSectionEl: HTMLDivElement
+        hiddenTitleEl?: HTMLElement,
+        hiddenSectionEl?: HTMLDivElement
     ) {
         generalTitleEl.addEventListener("click", () => {
             const now = Date.now();
@@ -468,8 +657,11 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
 
             if (this.generalTitleClickCount >= 3) {
                 this.hiddenMOCOptionsUnlocked = true;
-                hiddenTitleEl.removeClass("zk-hidden");
-                hiddenSectionEl.removeClass("zk-hidden");
+                hiddenTitleEl?.removeClass("zk-hidden");
+                hiddenSectionEl?.removeClass("zk-hidden");
+                if (requireApiVersion('1.13.0')) {
+                    if (!hiddenSectionEl) this.refreshDomState();
+                }
                 this.generalTitleClickCount = 0;
             }
         });
@@ -478,31 +670,8 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
     private renderHiddenMOCSettings(container: HTMLDivElement) {
         container.empty();
 
-        new Setting(container)
-            .setName(t("MOC Folder Location"))
-            .setDesc(t("Folder containing MOC index notes"))
-            .addSearch((cb) => {
-                new FolderSuggest(this.app, cb.inputEl);
-                cb.setPlaceholder(t("Example: folder1/folder2"))
-                    .setValue(this.plugin.settings.mocFolderPath)
-                    .onChange((value) => {
-                        this.plugin.settings.mocFolderPath = value;
-                        this.plugin.settings.mocCurrentFile = '';
-                        this.plugin.RefreshIndexViewFlag = true;
-                    });
-            });
+        this.renderSettings(container, this.getHiddenSettings());
 
-        new Setting(container)
-            .setName(t("Heading Title"))
-            .setDesc(t("The heading title to parse (e.g. '思维树' for '# 思维树')"))
-            .addText((cb) =>
-                cb.setValue(this.plugin.settings.mocHeadingTitle)
-                    .setPlaceholder(t("default MOC heading title"))
-                    .onChange((value) => {
-                        this.plugin.settings.mocHeadingTitle = value;
-                        this.plugin.RefreshIndexViewFlag = true;
-                    })
-            );
     }
 
     hide(): void {
@@ -511,6 +680,5 @@ export class ZKNavigationSettngTab extends PluginSettingTab {
         }
         void this.plugin.saveData(this.plugin.settings);
     }
-
 
 }

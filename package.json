@@ -1,6 +1,6 @@
 {
 	"name": "thought-navigator",
-	"version": "0.3.9",
+	"version": "0.3.10",
 	"description": "A visual knowledge-processing workspace: connect notes, shape MOCs, build mind maps, and turn Zettelkasten-style thinking into navigable thought maps.",
 	"main": "main.js",
 	"scripts": {
@@ -27,6 +27,7 @@
 		"esbuild": "0.14.47",
 		"eslint": "^9.39.4",
 		"eslint-plugin-obsidianmd": "^0.4.2",
+		"moment": "^2.31.0",
 		"obsidian": "^1.14.4",
 		"tslib": "2.4.0",
 		"typescript": "~5.9.3",

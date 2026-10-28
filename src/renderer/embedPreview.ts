@@ -358,6 +358,7 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
                 willChange: 'transform',
             });
 
+            let headerWasDragged = false;
             const headerEl = activeWindow.createDiv();
             headerEl.dataset.role = 'embed-header';
             headerEl.setCssStyles({
@@ -389,6 +390,7 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
             headerLink.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
+                if (headerWasDragged) { headerWasDragged = false; return; }
                 if (isMocPath(sourceFile.path)) {
                     // .moc / .moc.md 文件：触发分支视图打开
                     this.container?.dispatchEvent(new CustomEvent('open-moc-in-index-view', {
@@ -526,7 +528,8 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
                     pointerEvents: isSelected ? 'auto' : 'none',
                     opacity: isSelected ? '1' : '0',
                 });
-                contentEl.setCssStyles({ cursor: isSelected ? 'move' : 'default' });
+                contentEl.setCssStyles({ cursor: 'auto' });
+                headerEl.setCssStyles({ cursor: this.isReadOnlyMode() ? 'default' : 'grab' });
                 card.setCssStyles({
                     opacity: isSelected ? '1' : '0.82',
                     filter: isSelected ? 'brightness(1) saturate(1)' : 'brightness(0.86) saturate(0.92)',
@@ -577,29 +580,6 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
                 releaseCanvasSuppression();
             });
 
-            let wheelSuppressTimeout: number | null = null;
-            const handleWheel = (e: WheelEvent) => {
-                if (!node.selected()) return;
-                e.preventDefault();
-                e.stopPropagation();
-                if (!isHoveringCard) {
-                    isHoveringCard = true;
-                    setCanvasInteractionSuppressed(true);
-                }
-                if (wheelSuppressTimeout !== null) {
-                    window.clearTimeout(wheelSuppressTimeout);
-                }
-                wheelSuppressTimeout = window.setTimeout(() => {
-                    if (!isHoveringCard) {
-                        setCanvasInteractionSuppressed(false);
-                    }
-                    wheelSuppressTimeout = null;
-                }, 180);
-                contentEl.scrollTop += e.deltaY;
-            };
-            card.addEventListener('wheel', handleWheel, { passive: false });
-            contentEl.addEventListener('wheel', handleWheel, { passive: false });
-
             let draggingFromHeader = false;
             let dragStartMouseX = 0;
             let dragStartMouseY = 0;
@@ -610,31 +590,29 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
                 if (!draggingFromHeader || !this.cy) return;
                 const dx = e.clientX - dragStartMouseX;
                 const dy = e.clientY - dragStartMouseY;
+                if (Math.hypot(dx, dy) > 4) headerWasDragged = true;
                 node.renderedPosition({
                     x: dragStartRenderedX + dx,
                     y: dragStartRenderedY + dy
                 });
+                node.emit('drag', [e]);
             };
 
             const onHeaderMouseUp = () => {
                 if (!draggingFromHeader) return;
                 draggingFromHeader = false;
+                headerEl.setCssStyles({ cursor: 'grab' });
                 setCanvasInteractionSuppressed(false);
                 activeDocument.removeEventListener('mousemove', onHeaderMouseMove);
                 activeDocument.removeEventListener('mouseup', onHeaderMouseUp);
-                // 保存拖动后的位置（取最新 data，增量更新可能已替换）
-                const pos = node.position();
-                this.container?.dispatchEvent(new CustomEvent('node-position-changed', {
-                    detail: {
-                        node: dataAs<ZKNode | undefined>(node, 'originalNode'),
-                        nodeId: node.id(),
-                        position: { x: pos.x, y: pos.y }
-                    }
-                }));
+                // 由统一拖动处理器判定分离/归队，并只发送一次保存事件。
+                const pos = node.renderedPosition();
+                if (pos.x !== dragStartRenderedX || pos.y !== dragStartRenderedY) node.emit('dragfree');
+                node.emit('free');
             };
 
-            contentEl.addEventListener('mousedown', (e: MouseEvent) => {
-                if (!this.cy) return;
+            const onPreviewMouseDown = (e: MouseEvent) => {
+                if (!this.cy || this.isReadOnlyMode()) return;
                 if (e.button !== 0) return;
                 if (e.detail >= 2) return; // 双击交给编辑逻辑
                 const target = e.target as HTMLElement | null;
@@ -646,6 +624,9 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
                     node.select();
                 }
                 draggingFromHeader = true;
+                headerWasDragged = false;
+                headerEl.setCssStyles({ cursor: 'grabbing' });
+                node.emit('grab');
                 setCanvasInteractionSuppressed(true);
                 dragStartMouseX = e.clientX;
                 dragStartMouseY = e.clientY;
@@ -660,7 +641,8 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
                 };
                 activeDocument.addEventListener('mousemove', onHeaderMouseMove, { signal: ctrl.signal });
                 activeDocument.addEventListener('mouseup', () => { onHeaderMouseUp(); finalize(); }, { signal: ctrl.signal });
-            });
+            };
+            headerEl.addEventListener('mousedown', onPreviewMouseDown);
 
             headerEl.addEventListener('dblclick', (e: MouseEvent) => {
                 if (this.isReadOnlyMode()) {
@@ -1299,6 +1281,7 @@ export function renderImageNodePreviews(this: CytoscapeRenderer): void {
                     x: dragStartRenderedX + dx,
                     y: dragStartRenderedY + dy
                 });
+                node.emit('drag', [e]);
             };
 
             const onCardMouseUp = () => {
@@ -1307,15 +1290,10 @@ export function renderImageNodePreviews(this: CytoscapeRenderer): void {
                 setCanvasInteractionSuppressed(false);
                 activeDocument.removeEventListener('mousemove', onCardMouseMove);
                 activeDocument.removeEventListener('mouseup', onCardMouseUp);
-                // 取最新 data，增量更新可能已替换闭包中的旧引用
-                const pos = node.position();
-                this.container?.dispatchEvent(new CustomEvent('node-position-changed', {
-                    detail: {
-                        node: dataAs<ZKNode | undefined>(node, 'originalNode'),
-                        nodeId: node.id(),
-                        position: { x: pos.x, y: pos.y }
-                    }
-                }));
+                // 由统一拖动处理器判定分离/归队，并只发送一次保存事件。
+                const pos = node.renderedPosition();
+                if (pos.x !== dragStartRenderedX || pos.y !== dragStartRenderedY) node.emit('dragfree');
+                node.emit('free');
             };
 
             // 点击卡片：选中节点；图片内容区拖拽移动
@@ -1339,7 +1317,7 @@ export function renderImageNodePreviews(this: CytoscapeRenderer): void {
             });
 
             img.addEventListener('mousedown', (e: MouseEvent) => {
-                if (!this.cy) return;
+                if (!this.cy || this.isReadOnlyMode()) return;
                 if (e.button !== 0) return;
                 if (e.detail >= 2) return;
                 e.preventDefault();
@@ -1349,6 +1327,7 @@ export function renderImageNodePreviews(this: CytoscapeRenderer): void {
                     node.select();
                 }
                 draggingCard = true;
+                node.emit('grab');
                 setCanvasInteractionSuppressed(true);
                 dragStartMouseX = e.clientX;
                 dragStartMouseY = e.clientY;

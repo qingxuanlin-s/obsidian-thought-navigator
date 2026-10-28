@@ -285,7 +285,8 @@ export class GlobalSearchModal extends SuggestModal<ScoredEntry> {
     }
 
     private fromWorkspaceNode(node: WorkspaceNode, store: WorkspaceStore): GlobalSearchEntry {
-        const space = node.type === 'space' ? node : store.getNode(node.spaceId);
+        const spaceId = store.getNodeSpaceIds(node.id)[0];
+        const space = node.type === 'space' ? node : spaceId ? store.getNode(spaceId) : undefined;
         const typeLabel = t(WORKSPACE_TYPE_KEY[node.type]);
         const subtitle = space && space.id !== node.id
             ? t('gs in space').replace('{type}', typeLabel).replace('{space}', space.title)

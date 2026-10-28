@@ -2,37 +2,6 @@ import { App, TFile } from "obsidian";
 import ZKNavigationPlugin from "main";
 import { MOCParseResult, CrossDomainLink, MOCTreeNode, ReverseRelation, GroupInfo, NODE_FLAG_SEPARATED, NODE_FLAG_SIDE_PINNED } from "src/utils/utils";
 import { LayoutPreset, normalizeLayoutPreset } from "src/utils/growthDirection";
-import { computeAutoLayout, AutoLayoutNodeInput } from "src/utils/autoLayoutEngine";
-import { DomTextMeasurer, DomTextMeasureOptions } from "src/renderer/domTextMeasurer";
-import { measureNodeLabel } from "src/renderer/renderPipeline";
-
-// 文本节点盒子尺寸:与 src/renderer/stylesheet.ts 的逐层级测量保持一致
-// (root 用纯函数 measureNodeLabel;一级/更深用 DomTextMeasurer 实测文本宽 + 同款 padding)。
-// 修改这里时务必同步 stylesheet.ts 对应选择器的常量,否则 CLI 与视图布局会漂移。
-function measureTextNodeBox(
-    label: string,
-    depth: number,
-    domMeasure: ((text: string, opts: { fontSize: number; fontWeight?: string; maxWidth: number; lineHeight?: number }) => { width: number; height: number }) | null
-): { width: number; height: number } {
-    const text = label || ' ';
-    if (depth <= 0) {
-        // 根节点(stylesheet.ts node[?isRoot] 文本分支)
-        const m = measureNodeLabel(text, { baseWidth: 210, minHeight: 78, maxWidth: 560, charWidth: 18, lineHeight: 42, paddingX: 88, paddingY: 38 });
-        return { width: m.width, height: m.height };
-    }
-    // computeAutoTextMetrics 的等价实现
-    const opts = depth === 1
-        ? { fontSize: 24, fontWeight: 'bold', maxContentWidth: 296, baseWidth: 118, minHeight: 90, paddingX: 72, paddingY: 34 }
-        : { fontSize: 20, fontWeight: '500', maxContentWidth: 280, baseWidth: 90, minHeight: 42, paddingX: 72, paddingY: 44 };
-    const lineHeight = Math.ceil(opts.fontSize * 1.4);
-    const m = domMeasure
-        ? domMeasure(text, { fontSize: opts.fontSize, fontWeight: opts.fontWeight, maxWidth: opts.maxContentWidth, lineHeight })
-        : measureNodeLabel(text, { fontSize: opts.fontSize, maxWidth: opts.maxContentWidth, lineHeight, paddingX: 0, paddingY: 0 });
-    const width = Math.max(opts.baseWidth, Math.min(opts.maxContentWidth + opts.paddingX, Math.ceil(m.width) + opts.paddingX));
-    const height = Math.max(opts.minHeight, Math.ceil(m.height) + opts.paddingY);
-    return { width, height };
-}
-
 /**
  * 深拷贝 MOCTreeNode 树结构
  */
@@ -47,6 +16,7 @@ function deepCopyMOCTreeNode(node: MOCTreeNode): MOCTreeNode {
         relationText: node.relationText,
     };
     if (node.alias !== undefined) copy.alias = node.alias;
+    if (node.layout) copy.layout = { ...node.layout, ...(node.layout.offset ? { offset: { ...node.layout.offset } } : {}) };
     if (typeof node.extBitMap === 'number' && node.extBitMap !== 0) copy.extBitMap = node.extBitMap & 0xff;
     if (node.isArrowRelation) copy.isArrowRelation = node.isArrowRelation;
     if (node.arrowSource !== undefined) copy.arrowSource = node.arrowSource;
@@ -118,6 +88,7 @@ export class MOCHandler {
         private app: App,
         private hooks?: {
             onBeforeModify?: (payload: { filePath: string; content: string }) => void | Promise<void>;
+            getNodePositions?: (filePath: string) => Record<string, { x: number; y: number }>;
         }
     ) {}
 
@@ -178,10 +149,8 @@ export class MOCHandler {
     ): Promise<void> {
         await this.enqueueModify(mocFile.path, async () => {
             const headingTitle = this.plugin.settings.mocHeadingTitle;
-            const originalContent = await this.app.vault.read(mocFile);
-            if (this.hooks?.onBeforeModify) {
-                await this.hooks.onBeforeModify({ filePath: mocFile.path, content: originalContent });
-            }
+            // 与 parseMOCStructure 一样直读磁盘，避免快速连续操作命中旧的 vault.read 缓存。
+            const originalContent = await this.app.vault.adapter.read(mocFile.path);
 
             // 使用 JSON codec：通过 parse/modify/save 流程来保留所有 metadata
             const { parseMOCStructure, saveMOCStructure } = await import('src/utils/utils');
@@ -189,6 +158,8 @@ export class MOCHandler {
 
             // 深拷贝数据，避免修改缓存中的数据
             const mocDataCopy = deepCopyMOCResult(mocData);
+            // 交互所需的坐标只在本次修改期间存在；序列化时提取意图并过滤自动坐标。
+            Object.assign(mocDataCopy.nodePositions, this.hooks?.getNodePositions?.(mocFile.path));
 
             // 锁定文件级布局风格：新建 MOC 已在创建时写入 nodeLayoutStyle。
             // 老 MOC 没有该字段，必须按历史默认 free 补齐，避免全局默认切到 auto 后污染旧文件。
@@ -199,6 +170,9 @@ export class MOCHandler {
             // 调用修改回调（操作的是拷贝，不影响缓存）
             await modifyCallback(mocDataCopy);
 
+            const { serializeMOCJson } = await import('src/utils/mocJsonCodec');
+            if (serializeMOCJson(mocDataCopy) === originalContent) return;
+            await this.hooks?.onBeforeModify?.({ filePath: mocFile.path, content: originalContent });
             // 保存更新后的数据（这会保留 crossDomainLinks 等所有 metadata）
             await saveMOCStructure(this.app, mocFile.path, headingTitle, mocDataCopy);
         });
@@ -231,7 +205,6 @@ export class MOCHandler {
         let newID = '';
         await this.modifyMOCData(mocFile, (mocData) => {
             newID = MOCHandler.insertChildNode(mocData, parentID, title, kind);
-            this.applyHeadlessAutoLayout(mocData, [newID]);
         });
         return newID;
     }
@@ -252,7 +225,6 @@ export class MOCHandler {
             for (const item of items) {
                 newIDs.push(MOCHandler.insertChildNode(mocData, item.parent, item.title, item.kind ?? 'text'));
             }
-            this.applyHeadlessAutoLayout(mocData, newIDs);
         });
         return newIDs;
     }
@@ -317,13 +289,12 @@ export class MOCHandler {
                 const newId = MOCHandler.insertChildNode(mocData, parent, item.title, item.kind ?? 'text');
                 localToReal.set(item.localId, newId);
                 // 把草稿在画布上的落点写入 nodePositions,让落地后节点停在用户看到的位置(free 布局尤为关键)。
-                // auto 布局文件随后由 applyHeadlessAutoLayout 重算居中坐标覆盖,符合"自动排布"语义。
+                // 自动节点的落点只用于提取方向/顺序，不把计算坐标写进文件。
                 if (item.position) {
                     if (!mocData.nodePositions) mocData.nodePositions = {};
                     mocData.nodePositions[newId] = { x: item.position.x, y: item.position.y };
                 }
             }
-            this.applyHeadlessAutoLayout(mocData, Array.from(localToReal.values()));
         });
         return localToReal;
     }
@@ -392,148 +363,6 @@ export class MOCHandler {
 
         // 无条件:整棵树
         return roots.map((n) => viewOf(n, levels));
-    }
-
-    /**
-     * 无头(CLI/脚本)场景下,直接为 auto 节点算好居中坐标写入 nodePositions,
-     * 使文件创建时即居中——视图打开无需再 reflow,避免"先歪后居中"的闪动。
-     * 节点尺寸用文本长度估算;居中的对称性不依赖精确尺寸,故根节点必然居中。
-     *
-     * 既处理整库 auto 文件,也处理 free 文件里的 auto 子树岛(nodeLayoutOverrides 把
-     * 某子树标为 auto)——后者以该岛顶点为固定锚点(保留其坐标),只重排其下的 auto 后代,
-     * 与视图 relayoutAutoLayoutSiblings 的"free 父锚点 + auto 子树"语义一致。
-     * 不这么做的话,CLI 往 free 文件的 auto 岛里加节点会完全不布局、和既有兄弟堆叠重叠。
-     *
-     * @param newNodeIds 本次新增的节点 ID(可选)。给定时只重排"含新节点的 auto 岛",
-     *   避免动到用户手动摆好的其它 auto 岛;省略时重排全部 auto 岛。
-     */
-    private applyHeadlessAutoLayout(mocData: MOCParseResult, newNodeIds?: string[]): void {
-        const tree: MOCTreeNode[] = mocData.nodes;
-        if (!tree?.length) return;
-
-        const fileDefault: 'auto' | 'free' = mocData.nodeLayoutStyle === 'auto' ? 'auto' : 'free';
-        const overrides: Record<string, 'auto' | 'free'> = mocData.nodeLayoutOverrides || {};
-        const hasAutoOverride = Object.values(overrides).some((v) => v === 'auto');
-        // 整库 free 且无任何 auto 岛 → 没有需要自动排布的节点,直接返回(自由节点坐标由调用方给)。
-        if (fileDefault !== 'auto' && !hasAutoOverride) return;
-
-        // 沿父级链解析有效布局风格(与视图 getEffectiveNodeLayoutStyle 同逻辑)。
-        const effectiveStyle = (nodeId: string): 'auto' | 'free' => {
-            let cur = nodeId;
-            while (cur.length > 0) {
-                const o = overrides[cur];
-                if (o !== undefined) return o;
-                const parts = cur.split('.');
-                if (parts.length <= 1) break;
-                cur = parts.slice(0, -1).join('.');
-            }
-            return fileDefault;
-        };
-        const isAuto = (id: string) => effectiveStyle(id) === 'auto';
-
-        const nodes: Record<string, AutoLayoutNodeInput> = {};
-        const parentById: Record<string, string | undefined> = {};
-        const childrenById: Record<string, string[]> = {};  // 仅含 auto 子节点(供引擎下行)
-        const rootIds: string[] = [];
-
-        // 用真实 DOM 测量(与视图同一套字体/算法),使 CLI 产出的尺寸=视图实测尺寸,
-        // 从而布局与手动创建像素级一致。运行环境是 Obsidian 渲染进程,activeDocument 可用;
-        // 万一不可用(无 activeDocument)则回退到 measureNodeLabel 纯估算。
-        let measurer: DomTextMeasurer | null = null;
-        const hasDom = typeof activeDocument !== 'undefined' && !!activeDocument.body;
-        if (hasDom) {
-            try { measurer = new DomTextMeasurer(activeDocument.body); } catch { measurer = null; }
-        }
-        const domMeasure = measurer ? (text: string, opts: DomTextMeasureOptions) => measurer.measure(text, opts) : null;
-        const sizeOf = (label: string, depth: number) => measureTextNodeBox(label, depth, domMeasure);
-
-        // 方向提示:沿用视图首次布局的同款偏置(depth 越深 x 越大 → 全部朝同侧 E,竖向堆叠),
-        // 保证 CLI 产出与手动/视图重排一致(同侧堆叠、根竖直居中),而非左右交替。
-        const dirHint: Record<string, { x: number; y: number }> = {};
-        let order = 0;
-        const walk = (list: MOCTreeNode[], parentId: string | undefined, depth: number) => {
-            for (const n of list) {
-                const id = String(n.nodeID);
-                nodes[id] = {
-                    id,
-                    size: sizeOf(n.target, depth),
-                    position: { x: 0, y: 0 },
-                    colorKey: '__default__',
-                };
-                dirHint[id] = { x: depth * 260, y: order * 150 };
-                parentById[id] = parentId;
-                if (!childrenById[id]) childrenById[id] = [];
-                // 引擎只沿 auto 子链下行:free 子树(包括 auto 文件里被 override 成 free 的)
-                // 不进父节点排布列表,保留其自身坐标。
-                if (parentId && isAuto(id)) (childrenById[parentId] ||= []).push(id);
-                if (!parentId) rootIds.push(id);
-                order++;
-                walk(n.children || [], id, depth + 1);
-            }
-        };
-        walk(tree, undefined, 0);
-
-        const realMocRootIds = new Set<string>(rootIds);
-
-        // 锚点 = 各 auto 子树岛的顶点:岛内最高的 auto 节点(其父非 auto,即 free 或不存在)。
-        // 引擎以锚点为根、保留其坐标,向下重排整岛的 auto 后代。
-        const islandTopOf = (id: string): string => {
-            let cur = id;
-            while (true) {
-                const p = parentById[cur];
-                if (!p || !isAuto(p)) return cur;
-                cur = p;
-            }
-        };
-        // 收集某锚点下的全部 auto 后代(不含锚点自身)→ 放进 ignore 集让引擎重算坐标。
-        const autoDescendantsOf = (anchor: string): string[] => {
-            const out: string[] = [];
-            const stack = [...(childrenById[anchor] || [])];
-            while (stack.length) {
-                const id = stack.pop()!;
-                out.push(id);
-                for (const c of childrenById[id] || []) stack.push(c);
-            }
-            return out;
-        };
-
-        const seedIds = (newNodeIds && newNodeIds.length)
-            ? newNodeIds.filter((id) => nodes[id] && isAuto(id))
-            // 未指定新增节点:重排所有 auto 岛(岛顶点 = 自身 auto 但父非 auto)。
-            : Object.keys(nodes).filter((id) => isAuto(id) && !isAuto(parentById[id] || '__none__'));
-        const anchors = new Set<string>(seedIds.map(islandTopOf));
-        if (anchors.size === 0) { measurer?.destroy(); return; }
-
-        const preset = normalizeLayoutPreset(this.plugin.settings.autoLayoutDefaultGrowthDirection);
-        const merged: Record<string, { x: number; y: number }> = {};
-        for (const anchor of anchors) {
-            // 锚点用其真实保存坐标作为放置起点(整库 auto 时根可能尚无坐标 → 退回原点);
-            // 引擎按 nodes[anchor].position 放根,围绕它对称重排后代。
-            nodes[anchor].position = mocData.nodePositions?.[anchor]
-                ? { ...mocData.nodePositions[anchor] }
-                : { x: 0, y: 0 };
-            // 岛内 auto 后代全部进 ignore → 用引擎算出的坐标(关闭旧空位、给新兄弟让位),
-            // 而非各自保留旧坐标(那会让新增节点直接堆在既有兄弟上)。
-            const ignore = new Set<string>(autoDescendantsOf(anchor));
-            const positions = computeAutoLayout({
-                relayoutRootId: anchor,
-                nodes,
-                parentById,
-                childrenById,
-                realMocRootIds,
-                nodePositions: dirHint,
-                ignoreSavedPositionsForIds: ignore,
-                layoutPreset: preset,
-                nodeLayoutPresets: mocData.nodeLayoutPresets,
-            });
-            Object.assign(merged, positions);
-        }
-
-        if (!mocData.nodePositions) mocData.nodePositions = {};
-        Object.assign(mocData.nodePositions, merged);
-        if (!mocData.layoutPreset) mocData.layoutPreset = preset;
-
-        measurer?.destroy();
     }
 
     /**

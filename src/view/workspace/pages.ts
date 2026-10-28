@@ -775,7 +775,8 @@ export function renderHome(container: HTMLElement, ctx: RenderCtx, lastTarget: W
     if (!projects.length) { emptyState(body, 'target', t('ws no active'), t('ws no active hint')); return; }
     const grid = body.createDiv({ cls: 'pgrid' });
     projects.forEach(p => {
-        const space = ctx.store.getNode(p.spaceId);
+        const spaceId = ctx.store.getNodeSpaceIds(p.id)[0];
+        const space = spaceId ? ctx.store.getNode(spaceId) : undefined;
         const card = grid.createDiv({ cls: 'pcard' });
         card.onclick = () => ctx.open({ kind: 'project', id: p.id });
         const top = card.createDiv({ cls: 'ptop' });

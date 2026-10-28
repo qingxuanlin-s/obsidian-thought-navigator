@@ -9,6 +9,8 @@ import { Minimap } from './Minimap';
 import { dataStr } from './cyData';
 import { buildStylesheet, StyleEntry } from './stylesheet';
 import * as layoutAdapter from './layoutAdapter';
+import { computeMOCLayout } from 'src/utils/mocAutoLayout';
+import { interceptPreviewWheel } from './previewEvents';
 import { OverlayScheduler } from './overlayScheduler';
 import { EdgeControls } from './edgeControls';
 import {
@@ -154,6 +156,7 @@ export interface TextMdOverlayEntry {
 export class CytoscapeRenderer implements IGraphRenderer {
     cy: cytoscape.Core | null = null;
     container: HTMLElement | null = null;
+    private previewWheelCleanup: (() => void) | null = null;
     currentData: GraphData | null = null;
     currentOptions: RenderOptions | null = null;
     edgeControlPoints: Map<string, { distance: number; weight: number }> = new Map();
@@ -385,6 +388,10 @@ export class CytoscapeRenderer implements IGraphRenderer {
         const containerChanged = this.container !== container;
         const previousOptions = this.currentOptions;
 
+        if (containerChanged || !this.previewWheelCleanup) {
+            this.previewWheelCleanup?.();
+            this.previewWheelCleanup = interceptPreviewWheel(container);
+        }
         this.container = container;
         this.currentData = data;
         this.currentOptions = options;
@@ -829,6 +836,33 @@ export class CytoscapeRenderer implements IGraphRenderer {
                 this.runLayoutSafely(layoutConfig);
             }
         }
+        if (this.cy && options.mocLayout) {
+            // 展开后的节点必须先恢复显示，才能测量真实尺寸。
+            this.applyCollapsedState();
+            const sizes: Record<string, { width: number; height: number }> = {};
+            const positions: Record<string, { x: number; y: number }> = {};
+            const hiddenIds = new Set<string>();
+            const nodeById = new Map<string, cytoscape.NodeSingular>();
+            this.cy.nodes().forEach(node => {
+                const original = node.data('originalNode') as ZKNode | undefined;
+                const id = original?.IDStr || original?.ID;
+                if (!id || node.data('isGroup') || node.data('isPlaceholder')) return;
+                nodeById.set(id, node);
+                sizes[id] = { width: node.outerWidth(), height: node.outerHeight() };
+                positions[id] = node.position();
+            });
+            const collectHidden = (nodes: typeof options.mocLayout.nodes, hidden = false) => {
+                for (const node of nodes) {
+                    if (hidden) hiddenIds.add(node.nodeID);
+                    collectHidden(node.children || [], hidden || (options.initialCollapsedNodeIds || []).includes(node.nodeID));
+                }
+            };
+            collectHidden(options.mocLayout.nodes);
+            const computed = computeMOCLayout(options.mocLayout, sizes, positions, hiddenIds);
+            this.cy.batch(() => {
+                for (const [id, position] of Object.entries(computed)) nodeById.get(id)?.position(position);
+            });
+        }
         __lap('layout');
         this.applyCollapsedState();
         __lap('fin:collapse');
@@ -986,6 +1020,8 @@ export class CytoscapeRenderer implements IGraphRenderer {
      * 销毁渲染器
      */
     destroy(): void {
+        this.previewWheelCleanup?.();
+        this.previewWheelCleanup = null;
         this.cleanupLiveEditHandlers();
         this.cleanupInlineEditingDom();
         this.overlayScheduler.cleanupManagedDomListeners();
