@@ -12,6 +12,28 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
     {
+        version: '0.3.11',
+        date: '2026-10-29',
+        highlights: [
+            {
+                zh: '重新设计深色星云风格：采用深蓝灰工作面与高对比文字，减弱厚重光晕，选中节点使用清晰的紫色描边和实心底色。',
+                en: 'Redesigned dark Nebula with deep blue-gray surfaces and high-contrast text. Reduced heavy halos and added a clear violet outline and solid background for selected nodes.',
+            },
+            {
+                zh: '修复插件明暗模式与 Obsidian 宿主主题不一致时文字、代码和预览颜色不正确的问题，统一普通视图与全屏背景，改善缩略导航的深色显示。',
+                en: 'Fixed text, code, and preview colors when the plugin mode differs from the Obsidian theme. Unified normal and fullscreen backgrounds and improved the dark minimap.',
+            },
+            {
+                zh: '重构主题与风格系统，将明暗配色、节点规则和预览表现拆分为独立模块，通过统一注册表组合；视图、预览和导出共用主题入口，便于后续扩展。',
+                en: 'Refactored themes and visual styles into separate palettes, node rules, and preview modules composed through one registry. Views, previews, and exports now share theme entry points for easier extension.',
+            },
+            {
+                zh: '修复“新建子节点”按钮悬停时提前消失的问题：鼠标停在按钮或对应节点上时持续显示，移开后才延迟隐藏。',
+                en: 'Fixed the New child button disappearing while hovered. It now stays visible while the pointer is over the button or its node, and hides after a short delay only once the pointer leaves.',
+            },
+        ],
+    },
+    {
         version: '0.3.10',
         date: '2026-10-27',
         highlights: [
