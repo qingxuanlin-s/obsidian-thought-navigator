@@ -2,6 +2,7 @@
 
 .zk-view-content{
   --zk-canvas-bg: #252525;
+  --zk-graph-bg: #2a2a2a;
   --zk-surface: rgba(32, 32, 32, 0.82);
   --zk-surface-solid: #202020;
   --zk-surface-raised: #282828;
@@ -20,12 +21,20 @@
   --zk-panel-bg: #252525;
   --zk-panel-muted-bg: #2b2b2d;
   --zk-shadow-soft: 0 12px 32px rgba(0, 0, 0, 0.28);
+  /* 插件内容使用自己的配色，显式明暗模式不依赖宿主主题。 */
+  --text-normal: var(--zk-text);
+  --text-muted: var(--zk-text-muted);
+  --text-faint: var(--zk-text-faint);
+  --code-normal: var(--zk-text);
+  --code-background: var(--zk-control-bg);
+  --link-color: var(--zk-accent);
   background-color: var(--zk-canvas-bg);
   position: relative;
 }
 
 .zk-view-content.zk-theme-light {
   --zk-canvas-bg: #f2f5fa;
+  --zk-graph-bg: #f2f5fa;
   --zk-surface: rgba(255, 255, 255, 0.86);
   --zk-surface-solid: #f7f9fc;
   --zk-surface-raised: #ffffff;
@@ -46,32 +55,65 @@
   --zk-shadow-soft: 0 12px 30px rgba(42, 57, 82, 0.12);
 }
 
-/* Nebula 风格(暗色):深空黑底 + 霓虹冷色调,
-   配合 stylesheet 的节点发光 underlay / 左侧色条 / 药丸边标签。 */
+/* 星云深色：深蓝灰工作面、稳定文字对比度、清晰焦点。 */
 .zk-view-content.zk-style-nebula.zk-theme-dark {
-  --zk-canvas-bg: #07080d;
-  --zk-surface: rgba(20, 23, 33, 0.86);
-  --zk-surface-solid: #14161f;
-  --zk-surface-raised: #1a1d28;
-  --zk-border-subtle: rgba(150, 140, 220, 0.12);
-  --zk-border-strong: rgba(155, 107, 255, 0.42);
-  --zk-text: #eef2f8;
-  --zk-text-muted: #8b93a7;
-  --zk-text-faint: #636978;
-  --zk-accent: #9b6bff;
-  --zk-accent-soft: rgba(155, 107, 255, 0.18);
-  --zk-focus: #7cb2ff;
-  --zk-panel-bg: #11131c;
-  --zk-panel-muted-bg: #171a24;
-  --zk-shadow-soft: 0 14px 40px rgba(0, 0, 0, 0.5);
+  --zk-canvas-bg: #0f1624;
+  --zk-graph-bg: transparent;
+  --zk-surface: #182235;
+  --zk-surface-solid: #182235;
+  --zk-surface-raised: #22324b;
+  --zk-border-subtle: #3c4c65;
+  --zk-border-strong: #879ab9;
+  --zk-text: #edf2fb;
+  --zk-text-muted: #bdcbe0;
+  --zk-text-faint: #93a5c1;
+  --zk-accent: #b5a4ff;
+  --zk-accent-soft: #2d2b4c;
+  --zk-focus: #b5a4ff;
+  --zk-control-bg: #182235;
+  --zk-control-bg-hover: #263650;
+  --zk-control-border: #526684;
+  --zk-control-text: #edf2fb;
+  --zk-panel-bg: #141e30;
+  --zk-panel-muted-bg: #1e2c43;
+  --zk-shadow-soft: 0 10px 28px rgba(0, 0, 0, 0.25);
+  --text-normal: var(--zk-text);
+  --text-muted: var(--zk-text-muted);
+  --text-faint: var(--zk-text-faint);
+  --text-accent: #b5a4ff;
+  --link-color: #c1b2ff;
+  --link-color-hover: #e3dcff;
+  --code-normal: #e0e9fc;
+  --code-background: #29364e;
+  --background-primary: var(--zk-surface-solid);
+  --background-secondary: var(--zk-panel-muted-bg);
+  --h1-color: #edf2fb;
+  --h2-color: #e0e9fc;
+  --h3-color: #d3dff3;
+  --zk-canvas-image: radial-gradient(ellipse 85% 65% at 50% 40%, rgba(60, 71, 119, 0.16), transparent 70%),
+    radial-gradient(ellipse 60% 55% at 85% 85%, rgba(39, 69, 106, 0.12), transparent 75%);
 }
 
-/* 画布(暗色):近纯黑 + 居中淡紫星云径向渐变,制造深空纵深 */
-.zk-view-content.zk-style-nebula.zk-theme-dark .zk-index-mermaid-container {
-  background-color: #06070b;
-  background-image:
-    radial-gradient(ellipse 70% 55% at 50% 42%, rgba(49, 37, 82, 0.29), transparent 62%),
-    radial-gradient(ellipse 50% 45% at 82% 78%, rgba(29, 51, 82, 0.19), transparent 60%);
+.zk-view-content.zk-style-nebula.zk-theme-dark .zk-text-md-overlay,
+.zk-view-content.zk-style-nebula.zk-theme-dark .zk-text-md-overlay .zk-root-text-md-inner {
+  color: var(--zk-text);
+}
+.zk-view-content.zk-style-nebula.zk-theme-dark .zk-text-md-overlay[data-level-muted="1"] :is(p, li, blockquote, .zk-rough-text-line, .zk-rough-heading-line) {
+  color: var(--zk-text-muted);
+}
+.zk-view-content.zk-style-nebula.zk-theme-dark .zk-text-md-overlay[data-selected="1"],
+.zk-view-content.zk-style-nebula.zk-theme-dark .zk-text-md-overlay[data-selected="1"] :is(p, li, blockquote, .zk-rough-text-line, .zk-rough-heading-line) {
+  color: #ffffff;
+}
+.zk-view-content.zk-style-nebula.zk-theme-dark .zk-minimap {
+  background: #141e30;
+  border-color: #526684;
+  box-shadow: none;
+}
+.zk-view-content.zk-style-nebula.zk-theme-dark .zk-minimap-viewport {
+  border-color: #b5a4ff;
+  background: rgba(181, 164, 255, 0.12);
+  box-shadow: none;
 }
 
 /* Nebula 风格(浅色):浅灰冷底 + 白卡柔影,绿色为主强调、紫色语义线。
@@ -92,14 +134,13 @@
   --zk-panel-bg: #f4f5f8;
   --zk-panel-muted-bg: #eceef2;
   --zk-shadow-soft: 0 14px 36px rgba(50, 60, 80, 0.14);
+  --zk-graph-bg: transparent;
 }
 
 /* 画布(浅色):浅灰冷底 + 极淡的冷色径向渐变,保留纵深但不抢卡片 */
-.zk-view-content.zk-style-nebula.zk-theme-light .zk-index-mermaid-container {
-  background-color: #eceef2;
-  background-image:
-    radial-gradient(ellipse 70% 55% at 38% 30%, rgba(255, 255, 255, 0.6), transparent 62%),
-    radial-gradient(ellipse 55% 48% at 82% 80%, rgba(124, 111, 224, 0.05), transparent 60%);
+.zk-view-content.zk-style-nebula .zk-index-mermaid-container {
+  background-color: var(--zk-canvas-bg);
+  background-image: var(--zk-canvas-image);
 }
 
 .zk-index-toolbar{
@@ -113,6 +154,8 @@ display: flex;
 align-items: center;
 gap: 8px;
 flex-wrap: wrap;
+  --zk-canvas-image: radial-gradient(ellipse 70% 55% at 38% 30%, rgba(255, 255, 255, 0.6), transparent 62%),
+    radial-gradient(ellipse 55% 48% at 82% 80%, rgba(124, 111, 224, 0.05), transparent 60%);
 }
 
 .zk-index-toolbar-block{
@@ -7200,16 +7243,10 @@ body.zk-theme-light .zk-workspace-source-capsule:hover,
   background-color: transparent;
 }
 
-.zk-view-content.zk-style-nebula.zk-theme-dark .zk-graph-cytoscape:fullscreen {
-  background-color: #06070b;
-  background-image:
-    radial-gradient(ellipse 70% 55% at 50% 42%, rgba(49, 37, 82, 0.29), transparent 62%),
-    radial-gradient(ellipse 50% 45% at 82% 78%, rgba(29, 51, 82, 0.19), transparent 60%);
+.zk-view-content .zk-graph-cytoscape {
+  background-color: var(--zk-graph-bg, var(--zk-canvas-bg));
 }
-
-.zk-view-content.zk-style-nebula.zk-theme-light .zk-graph-cytoscape:fullscreen {
-  background-color: #eceef2;
-  background-image:
-    radial-gradient(ellipse 70% 55% at 38% 30%, rgba(255, 255, 255, 0.6), transparent 62%),
-    radial-gradient(ellipse 55% 48% at 82% 80%, rgba(124, 111, 224, 0.05), transparent 60%);
+.zk-view-content.zk-style-nebula .zk-graph-cytoscape:fullscreen {
+  background-color: var(--zk-canvas-bg);
+  background-image: var(--zk-canvas-image);
 }

@@ -8,6 +8,7 @@ import { CytoscapeRenderer } from "src/renderer/CytoscapeRenderer";
 import { RenderOptions } from "src/renderer/types";
 import type * as cytoscape from "cytoscape";
 import { resolveThemeMode } from "src/utils/themeMode";
+import { applyViewTheme } from "src/renderer/theme";
 
 const PNG_SUFFIX = '.png';
 
@@ -164,6 +165,8 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
 			exportMode: false,  // 截图模式：需要渲染 embed/image overlay
 		};
 
+		hiddenDiv.classList.add('zk-view-content');
+		applyViewTheme(hiddenDiv, options);
 		await renderer.render(hiddenDiv, graphData, options);
 
 		const cy = renderer.getCytoscapeInstance();
@@ -202,7 +205,7 @@ async function exportMOCToPNG(mocFile: TFile, plugin: ZKNavigationPlugin): Promi
 		await waitForPreviewContentReady(hiddenDiv, 6000);
 		await waitForImages(hiddenDiv);
 
-		const canvasBg = getComputedStyle(activeDocument.body).getPropertyValue('--background-primary').trim()
+		const canvasBg = getComputedStyle(hiddenDiv).getPropertyValue('--zk-canvas-bg').trim()
 			|| (resolveThemeMode(plugin.settings.themeMode) === 'light' ? '#ffffff' : '#0f172a');
 
 		// 一次截图同时拿到 cytoscape canvas 和 HTML overlay（含 markdown 富文本）

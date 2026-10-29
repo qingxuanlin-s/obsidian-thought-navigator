@@ -349,7 +349,7 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
                 border: `${resolvedCardBorder}`,
                 borderRadius: '8px',
                 boxShadow: `${resolvedCardShadow}`,
-				color: isLightTheme ? '#253044' : 'var(--text-normal)',
+				color: theme.textColor,
                 overflow: 'hidden',
                 pointerEvents: 'auto',
 				opacity: isLightTheme ? '0.92' : '0.82',
@@ -386,7 +386,7 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
             headerLink.textContent = hasAlias
                 ? `${sourceFile.basename}|${aliasCandidate}`
                 : sourceFile.basename;
-			applyPreviewHeaderLinkStyle(headerLink, isLightTheme);
+			applyPreviewHeaderLinkStyle(headerLink, this.currentOptions);
             headerLink.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
@@ -412,7 +412,7 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
                 padding: '12px 14px',
                 fontSize: '14px',
                 lineHeight: '1.6',
-				color: isLightTheme ? '#253044' : 'var(--text-normal)',
+				color: theme.textColor,
             });
 
             // 右下角 resize 焦点（仅在选中时可用）
@@ -531,8 +531,10 @@ export function renderEmbedNodePreviews(this: CytoscapeRenderer): void {
                 contentEl.setCssStyles({ cursor: 'auto' });
                 headerEl.setCssStyles({ cursor: this.isReadOnlyMode() ? 'default' : 'grab' });
                 card.setCssStyles({
-                    opacity: isSelected ? '1' : '0.82',
-                    filter: isSelected ? 'brightness(1) saturate(1)' : 'brightness(0.86) saturate(0.92)',
+                    border: isSelected ? theme.selectedBorder : resolvedCardBorder,
+                    boxShadow: isSelected ? theme.selectedShadow : resolvedCardShadow,
+                    opacity: isSelected ? '1' : theme.opacity,
+                    filter: isSelected ? 'none' : theme.filter,
                 });
                 if (!isSelected) {
                     releaseCanvasSuppression();
@@ -1156,7 +1158,7 @@ export function renderImageNodePreviews(this: CytoscapeRenderer): void {
 
             const headerLink = activeWindow.createSpan();
             headerLink.textContent = file.basename || filePath.split('/').pop() || '';
-			applyPreviewHeaderLinkStyle(headerLink, isLightTheme);
+			applyPreviewHeaderLinkStyle(headerLink, this.currentOptions);
             headerLink.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
@@ -1258,8 +1260,8 @@ export function renderImageNodePreviews(this: CytoscapeRenderer): void {
                 card.setCssStyles({
                     borderColor: 'transparent',
                     cursor: 'default',
-                    opacity: isSelected ? '1' : '0.82',
-                    filter: isSelected ? 'brightness(1) saturate(1)' : 'brightness(0.86) saturate(0.92)',
+                    opacity: isSelected ? '1' : theme.opacity,
+                    filter: isSelected ? 'none' : theme.filter,
                 });
                 img.setCssStyles({ cursor: isSelected ? 'move' : 'default' });
             };

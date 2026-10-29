@@ -1,3 +1,4 @@
+import { applyViewTheme } from 'src/renderer/theme';
 import ZKNavigationPlugin from "main";
 import { ExtraButtonComponent, FileView, ItemView, Notice, TFile, WorkspaceLeaf, debounce, setIcon } from "obsidian";
 import { ZKIndexView, ZKNode, ZK_INDEX_TYPE } from "./indexView";
@@ -142,8 +143,7 @@ export class ZKGraphView extends ItemView {
 
     private applyLocalGraphTheme(containerEl: HTMLElement): void {
         containerEl.addClass('zk-view-content');
-        containerEl.toggleClass('zk-theme-light', resolveThemeMode(this.plugin.settings.themeMode) === 'light');
-        containerEl.toggleClass('zk-theme-dark', resolveThemeMode(this.plugin.settings.themeMode) !== 'light');
+        applyViewTheme(containerEl, { themeMode: resolveThemeMode(this.plugin.settings.themeMode), themeStyle: this.plugin.settings.themeStyle });
     }
 
     onload() {

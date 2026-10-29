@@ -1,3 +1,4 @@
+import { getGraphStyle, getGraphTheme } from './theme';
 import type { ElementDefinition, Position } from 'cytoscape';
 import type { TFile } from 'obsidian';
 import { ZKNode } from 'src/view/indexView';
@@ -6,11 +7,8 @@ import { Edge, GraphData, RenderOptions, CyData } from './types';
 import {
 	getBranchStylePalette,
 	hashString,
-	hexToRgba,
-	isModernThemeStyle,
 	lightenColor,
 	normalizeHexColor,
-	softenColor,
 } from './colorUtils';
 
 export type NodeBranchStyle = { background: string; border: string; shadow: string };
@@ -543,9 +541,9 @@ export function buildVividNodeStyleMap(
 	options: RenderOptions | null
 ): Map<string, NodeBranchStyle> {
 	const styleMap = new Map<string, NodeBranchStyle>();
-	const isNebula = options?.themeStyle === 'nebula';
-	// Nebula 也需要分支色(左侧色条 / 1 级边框继承),与 modern 共用调色板但取更亮的 accent。
-	if (!isModernThemeStyle(options) && !isNebula) return styleMap;
+	const appearance = getGraphStyle(options).branch;
+	if (!appearance) return styleMap;
+	const theme = getGraphTheme(options);
 
 	const branchIds = Array.from(
 		new Set(
@@ -567,24 +565,7 @@ export function buildVividNodeStyleMap(
 		const accentColor = storedColor
 			? lightenColor(baseBackground, isLight ? 0.10 : 0.22)
 			: paletteColor.accent;
-		let background: string;
-		let border: string;
-		let shadow: string;
-		if (isNebula) {
-			// border 用鲜亮 accent —— 既作概念节点左侧色条,又作 1 级节点边框,继承分支色系。
-			background = baseBackground;
-			border = accentColor;
-			shadow = hexToRgba(accentColor, 0.3);
-		} else if (isLight) {
-			border = softenColor(accentColor, true);
-			background = hexToRgba(border, 0.12);
-			shadow = 'transparent';
-		} else {
-			background = baseBackground;
-			border = lightenColor(baseBackground, 0.12);
-			shadow = hexToRgba(baseBackground, 0.22);
-		}
-		branchColorById.set(branchId, { background, border, shadow });
+		branchColorById.set(branchId, appearance(theme, baseBackground, accentColor));
 	});
 
 	nodes.forEach((node) => {

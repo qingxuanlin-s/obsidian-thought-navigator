@@ -1,3 +1,4 @@
+import { getGraphStyle, getGraphTheme } from './theme';
 import type { CytoscapeRenderer } from './CytoscapeRenderer';
 import { Component, Platform, TFile, finishRenderMath, renderMath, setIcon } from 'obsidian';
 import type * as cytoscape from 'cytoscape';
@@ -5,7 +6,7 @@ import { ZKNode } from 'src/view/indexView';
 import { CrossDomainLink } from 'src/utils/utils';
 import { t } from 'src/lang/helper';
 import { renderInlineMarkdown } from 'src/utils/inlineMarkdown';
-import { darkenColor, hexToRgba, isModernThemeStyle, normalizeHexColor } from './colorUtils';
+import { darkenColor, hexToRgba, normalizeHexColor } from './colorUtils';
 import { dataAs, dataBool, dataStr } from './cyData';
 import type { CyData } from './types';
 import { estimateWrappedLines } from './renderPipeline';
@@ -131,7 +132,7 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
         const repositionAll = this._incrementalRepositionAll === true;
         this._incrementalRepositionAll = false;
 
-        const isLightTheme = this.currentOptions?.themeMode === 'light' || activeDocument.body.classList.contains('theme-light');
+        const isLightTheme = getGraphTheme(this.currentOptions).isLight;
 
         const existingBadgeContainer = this.container.querySelector<HTMLElement>('.zk-node-badges');
         const existingGlassLayer = this.container.querySelector<HTMLElement>('.zk-group-glass-layer');
@@ -1404,18 +1405,18 @@ export function renderNodeBadges(this: CytoscapeRenderer): void {
             if (incIds && !incIds.has(node.id())) return;
             const badge = String(node.data('badge') || '');
             if (!badge || node.data('isEmbed')) return;
-            const isModern = isModernThemeStyle(this.currentOptions);
+            const useBranchBadge = getGraphStyle(this.currentOptions).branchBadges;
             const branchBorderColor = typeof node.data('branchNodeBorder') === 'string'
                 ? normalizeHexColor(dataStr(node, 'branchNodeBorder'))
                 : null;
             const modernBase = branchBorderColor || '#64748b';
-            const badgeBackgroundColor = isModern
+            const badgeBackgroundColor = useBranchBadge
                 ? hexToRgba(darkenColor(modernBase, 0.62), 0.22)
                 : 'rgba(0, 0, 0, 0.25)';
-            const badgeTextColor = isModern
+            const badgeTextColor = useBranchBadge
                 ? hexToRgba(darkenColor(modernBase, 0.30), 0.86)
                 : 'rgba(255, 255, 255, 0.9)';
-            const badgeBorderColor = isModern
+            const badgeBorderColor = useBranchBadge
                 ? hexToRgba(darkenColor(modernBase, 0.42), 0.38)
                 : 'transparent';
 
@@ -2115,8 +2116,7 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                 }
                 const isLevelDimmed = node.hasClass?.('zk-level-dimmed') === true;
                 if (isLevelDimmed) {
-                    const isLightTheme = this.container?.classList.contains('zk-theme-light')
-                        || (!this.container?.classList.contains('zk-theme-dark') && activeDocument.body.classList.contains('theme-light'));
+                    const isLightTheme = getGraphTheme(this.currentOptions).isLight;
                     overlayEl.dataset.levelDimmed = '1';
                     overlayEl.setCssStyles({
                         opacity: isLightTheme ? '0.92' : '0.16',
@@ -2481,6 +2481,7 @@ function buildTextMarkdownOverlays(this: CytoscapeRenderer, badgeContainer: HTML
                 }
                 const zoom = this.cy.zoom();
                 const isEditing = currentEntry.el.dataset.editing === '1';
+                currentEntry.el.dataset.selected = node.selected() ? '1' : '0';
                 currentEntry.el.setCssStyles({
                     display: 'block',
                     left: `${bb.x1}px`,

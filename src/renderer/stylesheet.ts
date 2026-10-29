@@ -1,5 +1,5 @@
 import { RenderOptions } from './types';
-import { getGraphTheme } from './theme';
+import { getGraphTheme, getGraphStyle } from './theme';
 import { dataStr, dataNum, dataAs } from './cyData';
 import type * as cytoscape from 'cytoscape';
 
@@ -51,8 +51,7 @@ export interface StylesheetDeps {
 export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): StyleEntry[] {
     const theme = getGraphTheme(options);
     const isLight = theme.isLight;
-    const isModern = (options.themeStyle || 'modern') === 'modern';
-    const isNebula = options.themeStyle === 'nebula';
+    const visualStyle = getGraphStyle(options);
     const edgeStyle = options.edgeStyle || 'bezier';
     const colors = {
         nodeBackground: theme.node.background,
@@ -266,7 +265,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                 'border-width': '2px',
                 'border-opacity': 0.72,
                 'border-color': (ele: cytoscape.NodeSingular) => {
-                    if (isModern && ele.data('branchNodeBorder') && !ele.data('isRoot') && !ele.data('isFreeNode')) {
+                    if (visualStyle.branchBorders && ele.data('branchNodeBorder') && !ele.data('isRoot') && !ele.data('isFreeNode')) {
                         return dataStr(ele, 'branchNodeBorder');
                     }
                     return colors.nodeBorder;
@@ -275,13 +274,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                 'transition-duration': '0.2s'
             }
         },
-        // 现代风格：边框增强（无 shadow-*，避免 Cytoscape 样式告警）
-        ...(isModern ? [{
-            selector: 'node[!isRoot][!isEmbed][!isStandaloneText]',
-            style: {
-                'border-width': '2.5px',
-            }
-        }] : []),
+        ...visualStyle.earlyRules(theme, deps),
         // 带 ID 徽标的文件节点：主标题略上移，为右下角徽标预留空间
         {
             selector: 'node[badge][!isTextOnly][!isEmbed][!isGroup]',
@@ -930,7 +923,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                 'background-color': theme.node.freeBackground,
                 'background-opacity': theme.effects.freeBackgroundOpacity,
                 'font-size': '20px',
-                'border-width': isModern ? '2.5px' : '2px',
+                'border-width': visualStyle.freeBorderWidth,
                 'border-opacity': 0,
                 'border-color': 'transparent',
                 'corner-radius': '10px',
@@ -1133,108 +1126,7 @@ export function buildStylesheet(options: RenderOptions, deps: StylesheetDeps): S
                 'z-index': 1004
             }
         },
-        // ===== Nebula 风格专属层 =====
-        // 放在所有常规节点/边状态之后、dimmed 之前:既能压过 muted/firstLevel/selected 的底色,
-        // 又不会把被 dimmed 的无关分支重新点亮(dimmed 规则在后,underlay/opacity 仍胜出)。
-        ...(isNebula ? [
-            // 节点外发光:暗色沿分支色散出霓虹光晕,营造"星云"漂浮感;
-            // 浅色改为中性灰柔影(模拟卡片投影,Cytoscape 无真阴影)。
-            // 排除分组/嵌入/图片/占位/锚点(锚点有自己的金光 underlay)。
-            {
-                selector: 'node[!isGroup][!isEmbed][!isImageNode][!isPlaceholder][!isAnchor][!isStandaloneText]',
-                style: {
-                    'underlay-color': (ele: cytoscape.NodeSingular) => {
-                        if (isLight) return '#5b6678';
-                        return dataStr(ele, 'branchNodeBorder')
-                            || (ele.data('isRoot') ? theme.node.rootBorder : theme.node.borderSelected);
-                    },
-                    'underlay-opacity': isLight ? 0.08 : 0.12,
-                    'underlay-padding': isLight ? 8 : 7,
-                    'underlay-shape': 'round-rectangle',
-                }
-            },
-            // 左侧色条:概念节点(2 级及以下,非根/非 1 级/非特殊节点)左缘一道分支色亮条,
-            // 用 to-right 线性渐变实现(前 ~4% 为色条,其余为卡片底色)。仅未选中态启用,
-            // 选中时回退实心底,选中高亮正常显示。
-            {
-                selector: 'node[!isRoot][!isFirstLevelNode][!isFreeNode][!isEmbed][!isStandaloneText][!isGroup][!isPlaceholder][!isImageNode][!isCrossDomain][!isDraft]:unselected',
-                style: {
-                    'background-opacity': 0.96,
-                    'background-fill': 'linear-gradient',
-                    'background-gradient-direction': 'to-right',
-                    // stop-colors 必须是空格分隔的纯色 token,内部不能含空格/逗号
-                    // (rgba(r, g, b, a) 会被 Cytoscape 解析器拆错),故一律用 hex。
-                    'background-gradient-stop-colors': (ele: cytoscape.NodeSingular) => {
-                        const accent = deps.normalizeHexColor(dataStr(ele, 'branchNodeBorder'))
-                            || (isLight ? '#3fae72' : '#5fd3c6');
-                        const fill = deps.normalizeHexColor(dataStr(ele, 'customFillColor')) || theme.node.background;
-                        return `${accent} ${accent} ${fill} ${fill}`;
-                    },
-                    // 色条按固定模型像素宽(~6px)而非节点宽度的百分比:
-                    // 大尺寸节点等比放大后,百分比色条会变得很宽并盖住文字,故按宽度反算 stop 百分比。
-                    'background-gradient-stop-positions': (ele: cytoscape.NodeSingular) => {
-                        const w = Number(ele.width()) || 0;
-                        const pct = w > 0 ? Math.min(18, (6 / w) * 100) : 4;
-                        return `0 ${pct} ${pct} 100`;
-                    },
-                    'border-opacity': 0.5,
-                    // 不写 'color':让前面 2 级及以下的 muted 文字规则透出,
-                    // 与 text-only 节点 DOM overlay 的 [data-level-muted] 色保持一致。
-                }
-            },
-            // 1 级节点:卡片左缘同样加一道更亮的分支色条(未选中态)。
-            {
-                selector: 'node[?isFirstLevelNode][!isRoot][!isFreeNode][!isEmbed][!isStandaloneText]:unselected',
-                style: {
-                    'background-fill': 'linear-gradient',
-                    'background-gradient-direction': 'to-right',
-                    // 同上:stop-colors 仅用 hex,避免 rgba() 内的空格/逗号破坏解析。
-                    // 暗色压暗分支色作卡底;浅色提亮分支色作淡彩卡底。
-                    'background-gradient-stop-colors': (ele: cytoscape.NodeSingular) => {
-                        const branch = deps.normalizeHexColor(dataStr(ele, 'branchNodeBorder'));
-                        const accent = branch || theme.node.borderSelected;
-                        const fill = branch
-                            ? (isLight ? deps.lightenColor(branch, 0.82) : deps.darkenColor(branch, 0.62))
-                            : theme.node.firstLevelFallback;
-                        return `${accent} ${accent} ${fill} ${fill}`;
-                    },
-                    // 同上:1 级卡片色条也按固定模型像素宽(~8px,略粗以突出主干)反算百分比。
-                    'background-gradient-stop-positions': (ele: cytoscape.NodeSingular) => {
-                        const w = Number(ele.width()) || 0;
-                        const pct = w > 0 ? Math.min(18, (8 / w) * 100) : 5;
-                        return `0 ${pct} ${pct} 100`;
-                    },
-                }
-            },
-            // 语义/反向边:紫色虚线,提高可见度(默认反向边偏灰且很淡)。
-            {
-                selector: 'edge[type="reverse"]',
-                style: {
-                    'line-color': isLight ? '#7c6fe0' : '#9b6bff',
-                    'target-arrow-color': isLight ? '#7c6fe0' : '#9b6bff',
-                    'line-dash-pattern': [10, 7],
-                    'width': 2.2,
-                    'opacity': isLight ? 0.82 : 0.72,
-                }
-            },
-            // 带标签的边:药丸式标签底(圆角 + 紫色细描边),漂在连线之上清晰可读。
-            // 暗色深底浅字;浅色淡紫底紫字。
-            {
-                selector: 'edge[label]',
-                style: {
-                    'color': isLight ? '#5b4bbd' : '#dccbff',
-                    'font-size': '14px',
-                    'font-weight': 600,
-                    'text-background-color': isLight ? '#efecfb' : '#191430',
-                    'text-background-opacity': isLight ? 0.96 : 0.92,
-                    'text-background-shape': 'roundrectangle',
-                    'text-background-padding': '5px',
-                    'text-border-color': isLight ? 'rgba(124, 111, 224, 0.45)' : 'rgba(155, 107, 255, 0.55)',
-                    'text-border-width': 1,
-                    'text-border-opacity': 0.85,
-                }
-            },
-        ] : []),
+        ...visualStyle.lateRules(theme, deps),
         // 弱化无关分支的节点需要放在所有节点状态之后，避免被选中/当前文件/自定义状态覆盖。
         {
             selector: 'node.zk-level-dimmed',

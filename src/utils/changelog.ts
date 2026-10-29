@@ -16,6 +16,18 @@ export const CHANGELOG: ChangelogEntry[] = [
         date: '2026-10-27',
         highlights: [
             {
+                zh: '重新设计深色星云风格：采用深蓝灰工作面与高对比文字，减弱厚重光晕，选中节点使用清晰的紫色描边和实心底色。',
+                en: 'Redesigned dark Nebula with deep blue-gray surfaces and high-contrast text. Reduced heavy halos and added a clear violet outline and solid background for selected nodes.',
+            },
+            {
+                zh: '修复插件明暗模式与 Obsidian 宿主主题不一致时文字、代码和预览颜色不正确的问题，统一普通视图与全屏背景，改善缩略导航的深色显示。',
+                en: 'Fixed text, code, and preview colors when the plugin mode differs from the Obsidian theme. Unified normal and fullscreen backgrounds and improved the dark minimap.',
+            },
+            {
+                zh: '重构主题与风格系统，将明暗配色、节点规则和预览表现拆分为独立模块，通过统一注册表组合；视图、预览和导出共用主题入口，便于后续扩展。',
+                en: 'Refactored themes and visual styles into separate palettes, node rules, and preview modules composed through one registry. Views, previews, and exports now share theme entry points for easier extension.',
+            },
+            {
                 zh: '自动布局节点改为保存方向和兄弟顺序，打开时按实际尺寸重新排布；旧坐标自动迁移，根节点、自由节点和手动分离的分支继续保留坐标。',
                 en: 'Automatic nodes now save direction and sibling order, then lay out again using their actual sizes when opened. Existing coordinates are migrated, while root anchors, free nodes, and manually separated branches retain their positions.',
             },

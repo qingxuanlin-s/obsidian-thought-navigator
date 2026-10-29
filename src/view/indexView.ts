@@ -1,3 +1,4 @@
+import { applyViewTheme } from 'src/renderer/theme';
 import { toPng } from "html-to-image";
 import type * as cytoscape from 'cytoscape';
 type CrossDomainNodeLike = { IDStr?: string; nodeID?: string; displayText?: string; title?: string; alias?: string; target?: string; file?: TFile | null; filePath?: string };
@@ -1638,14 +1639,7 @@ export class ZKIndexView extends FileView {
     async IndexViewInterfaceInit() {
         const { containerEl } = this;
 
-        // 主题类(每次都要重设,否则切主题不生效)
-        // Nebula 跟随 themeMode:暗色=深空黑底霓虹,浅色=浅灰冷底白卡柔影
-        // (styles.css 按 .zk-style-nebula.zk-theme-dark/light 分别提供容器变量与画布渐变)。
-        const isNebula = this.plugin.settings.themeStyle === 'nebula';
-        const isLight = resolveThemeMode(this.plugin.settings.themeMode) === 'light';
-        containerEl.toggleClass('zk-theme-light', isLight);
-        containerEl.toggleClass('zk-theme-dark', !isLight);
-        containerEl.toggleClass('zk-style-nebula', isNebula);
+        applyViewTheme(containerEl, { themeMode: resolveThemeMode(this.plugin.settings.themeMode), themeStyle: this.plugin.settings.themeStyle });
 
         // 性能优化：分离静态 UI 层和动态图形层
         // 只在首次创建时初始化静态 UI
@@ -3533,13 +3527,8 @@ window.addEventListener('resize', function() {
                 outline: '',
             });
         }
-        // 非 Nebula 按 light/dark 给纯色底。Nebula 不写 inline,交给 styles.css:
-        // 平时透明以透出外层容器的星云/浅灰渐变,全屏时外层不可见,由画布自己画同款底
-        // (inline 会盖过 :fullscreen 规则,全屏时透出浏览器默认的黑色 backdrop)。
-        const isNebulaStyle = this.plugin.settings.themeStyle === 'nebula';
-        branchGraphDiv.setCssStyles({ backgroundColor: isNebulaStyle
-            ? ''
-            : (resolveThemeMode(this.plugin.settings.themeMode) === 'light' ? '#f2f5fa' : '#2a2a2a') });
+        // 背景由风格 CSS 变量提供，视图不再判断任何具体风格。
+        branchGraphDiv.style.removeProperty('background-color');
         this.ensureBranchFullscreenBackButton(branchGraphDiv);
 
         // 注意：不再清空 branchGraphDiv，让 CytoscapeRenderer 内部的增量更新逻辑处理
